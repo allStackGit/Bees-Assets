@@ -293,6 +293,12 @@ def rollout_metrics(summary_path, config, manifest_sha):
                     reclaimed > queens["policy_minions_bound"]):
                 raise ValueError("invalid reclaimed dynamic policy route count")
             metrics["queen_minion_controllers"]["retired_policy_routes_reclaimed"] = reclaimed
+        recycled = queens.get("recycled_group_agent_bindings")
+        if recycled is not None:
+            if (type(recycled) is not int or recycled < 0 or
+                    recycled > queens["policy_minions_bound"]):
+                raise ValueError("invalid recycled native MA-POCA controller count")
+            metrics["queen_minion_controllers"]["recycled_group_agent_bindings"] = recycled
     borders = summary.get("map_border_ships")
     if borders is not None:
         keys = ("entries", "movement_stops", "override_skips",
@@ -569,6 +575,12 @@ def combined_rollout_metrics(shards, wall_seconds):
                for shard in shards):
             metrics["queen_minion_controllers"]["retired_policy_routes_reclaimed"] = sum(
                 shard["queen_minion_controllers"]["retired_policy_routes_reclaimed"]
+                for shard in shards
+            )
+        if all("recycled_group_agent_bindings" in shard["queen_minion_controllers"]
+               for shard in shards):
+            metrics["queen_minion_controllers"]["recycled_group_agent_bindings"] = sum(
+                shard["queen_minion_controllers"]["recycled_group_agent_bindings"]
                 for shard in shards
             )
     samples = [shard["sampled_model_timing"] for shard in shards if "sampled_model_timing" in shard]
