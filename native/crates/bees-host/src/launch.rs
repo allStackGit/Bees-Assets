@@ -3294,7 +3294,11 @@ fn run_library_quick_battle(
     save_root: &Path, game_id: &str, config: &Path,
 ) -> Result<(), Box<dyn Error>> {
     let root = save_root.join("battles").join(game_id);
-    let _writer = battle_catalog::CampaignWriterLease::acquire(&root)?;
+    // Non-checkpointed quick battles remain independent: they can launch
+    // in parallel and keep their original replay-recording behavior.
+    let _writer = if QuickBattleStart::capture(config)?.is_some() {
+        Some(battle_catalog::CampaignWriterLease::acquire(&root)?)
+    } else { None };
     let output = select_library_quick_battle_output(save_root, game_id, config)?;
     run_session(config, true, true, Some(output), None, None, None)
 }
@@ -3395,7 +3399,9 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     let quick_source = if campaign.is_none() && fleet.is_none() {
         game_source.as_ref()
     } else { None };
-    let _quick_writer = if quick_source.is_some() {
+    let _quick_writer = if quick_source.map(|source|
+        QuickBattleStart::capture(source)
+    ).transpose()?.flatten().is_some() {
         Some(battle_catalog::CampaignWriterLease::acquire(
             &save_root.join("battles").join(&settings.game_id),
         )?)
