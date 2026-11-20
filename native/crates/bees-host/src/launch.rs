@@ -2108,20 +2108,18 @@ fn preflight_native_fleet_edit_with_squads(
         .collect::<Vec<_>>();
     let mut highest_fleet_id = 0_i64;
     let mut checked = 0_u64;
-    let has_upcoming = catalog.battles.iter().filter_map(|entry|
-        entry.mission.as_ref()).any(|mission|
-            mission.player_side == side && !progress.completed(&mission.id));
+    // Completed missions remain replayable with the current career fleet.
+    // Preflight every authored configuration, not only unfinished missions;
+    // otherwise a purchase or victory reward could make an older Stage
+    // unloadable despite having passed its original account transaction.
     for entry in &catalog.battles {
-        let Some(mission) = entry.mission.as_ref().filter(|mission|
+        let Some(_mission) = entry.mission.as_ref().filter(|mission|
             mission.player_side == side) else { continue };
-        let relevant_for_deployment = !progress.completed(&mission.id) || !has_upcoming;
         for config in entry.configurations() {
             let run_path = resolve(root, config).canonicalize()?;
             let mut source = load_native_fleet_edit_scene(&run_path)?;
-            // Purchase and victory-grant FleetShip IDs must remain unique
-            // across the entire authored campaign, including completed
-            // missions that can be replayed and alternate victory routes.
-            // A deployment preflight alone cannot reserve those identities.
+            // Purchase and victory-grant FleetShip IDs remain unique across
+            // replayable completed missions and alternate victory routes.
             for entity in &source.entities {
                 if let NativeAuthoredEntity::Ship(ship) = entity {
                     if let Some(id) = ship.fleet_ship_id {
@@ -2129,19 +2127,8 @@ fn preflight_native_fleet_edit_with_squads(
                     }
                 }
             }
-            // Victory-created SavedSquads are persistent across all
-            // missions, including completed ones that remain replayable.
-            // Reject an award colliding with any route's original squad
-            // identity, even when that route is not part of today's fleet
-            // deployment preflight.
-            if new_squads.iter().any(|earned| source.source_squads.iter()
-                .any(|squad| squad.saved_squad_id == Some(earned.saved_squad_id)))
-            {
-                return Err(invalid(
-                    "victory SavedSquad identity collides with an authored campaign route",
-                ).into());
-            }
-            if !relevant_for_deployment { continue; }
+            // The authoritative scene installer checks both SavedSquad
+            // identity collisions and actual source template availability.
             let mut projected_squads = progress.created_squads_for_side(side);
             projected_squads.extend_from_slice(new_squads);
             source.install_created_squads(
