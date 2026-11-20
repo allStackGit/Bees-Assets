@@ -5029,6 +5029,34 @@ class ExperimentHub {
                     }
                 }
                 const snapshot=this.snapshot();
+                const phase=plan.status.endsWith('collectors')?'collectors':'optimizer';
+                let members=null,bundleId=null;
+                if(plan.status.startsWith('awaiting_')) {
+                    members=(plan[phase+'_job_ids']||[]).map(jobId=>
+                        snapshot.jobs.find(job=>job.id===jobId));
+                    bundleId=plan[phase+'_bundle_id'];
+                    if(!UUID.test(String(bundleId||''))||
+                        !members.length||members.some((job,index)=>
+                            !job||job.resource_bundle?.id!==bundleId||
+                            job.resource_bundle.index!==index+1))
+                        throw Error('Frozen native round resource bundle ownership changed.');
+                    // A known terminal failure cannot be repaired by waiting
+                    // for an unrelated offline machine. Settle surviving
+                    // native Stop owners and surface manual review now.
+                    if(members.some(job=>['failed','unverified','stopped','cancelled']
+                        .includes(job.status))) {
+                        if(phase==='collectors') {
+                            this.stopResourceBundle({
+                                bundle_id:bundleId,
+                                expected_job_ids:members.map(job=>job.id),
+                                confirm_stop:true,
+                            });
+                        }
+                        throw Error(phase==='collectors'
+                            ?'A native collector failed; sibling Stop and terminal lease reconciliation are required.'
+                            :'A synchronized native optimizer rank failed; the existing group Stop and checkpoint consensus need review.');
+                    }
+                }
                 const machines=Object.entries(plan.agent_instances);
                 if(machines.some(([machineId,instance])=>{
                     const live=this.agentReports.get(machineId);
@@ -5045,7 +5073,6 @@ class ExperimentHub {
                         update(plan.status,reason);
                     continue;
                 }
-                const phase=plan.status.endsWith('collectors')?'collectors':'optimizer';
                 if(phase==='collectors'&&plan.collector_source_contracts) {
                     const expected=plan.collector_source_contracts[plan.completed_rounds];
                     if(!SHA256.test(String(expected||''))||
@@ -5069,14 +5096,6 @@ class ExperimentHub {
                         throw Error('Native round resource reservation did not publish a Hub bundle.');
                     continue;
                 }
-                const members=(plan[phase+'_job_ids']||[]).map(jobId=>
-                    this.state.jobs.find(job=>job.id===jobId));
-                const bundleId=plan[phase+'_bundle_id'];
-                if(!UUID.test(String(bundleId||''))||
-                    !members.length||members.some((job,index)=>
-                        !job||job.resource_bundle?.id!==bundleId||
-                        job.resource_bundle.index!==index+1))
-                    throw Error('Frozen native round resource bundle ownership changed.');
                 const launch=(this.state.bundle_start_plans||[])
                     .filter(item=>item.bundle_id===bundleId).at(-1);
                 if(!launch||launch.status==='disarmed'&&
@@ -5092,22 +5111,6 @@ class ExperimentHub {
                 }
                 if(['needs_review','expired','cancelled','disarmed'].includes(launch.status))
                     throw Error('Native group Start is no longer authorized: '+launch.reason);
-                if(members.some(job=>['failed','unverified','stopped','cancelled'].includes(job.status))) {
-                    if(phase==='collectors') {
-                        // The first failed physical collector invalidates the
-                        // round's experience barrier. Stop its remaining
-                        // workers through their existing native owners,
-                        // retaining any uncertain claim until terminal proof.
-                        this.stopResourceBundle({
-                            bundle_id:bundleId,
-                            expected_job_ids:members.map(job=>job.id),
-                            confirm_stop:true,
-                        });
-                    }
-                    throw Error(phase==='collectors'
-                        ?'A native collector failed; sibling Stop and terminal lease reconciliation are required.'
-                        :'A synchronized native optimizer rank failed; the existing group Stop and checkpoint consensus need review.');
-                }
                 if(!members.every(job=>job.status==='finished'&&
                     job.capacity_released_at))continue;
                 if(phase==='collectors') {
