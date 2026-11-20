@@ -5095,6 +5095,35 @@ class ExperimentHub {
         this.commit(next);
         return copy(action);
     }
+    // Manual reconciliation never issues a second command. A nonresponsive
+    // remote service must be inspected before the operator can reissue it.
+    reconcileEvaluatorAction(value) {
+        if(!object(value)||Object.keys(value).some(key=>
+            !['id','confirm_reconcile'].includes(key))||
+            value.confirm_reconcile!==true||!UUID.test(String(value.id||'')))
+            throw Error('Explicit remote evaluator reconciliation is required.');
+        const entry=(this.state.evaluator_actions||[]).find(a=>a.id===value.id);
+        if(!entry||!['pending','dispatched','unverified'].includes(entry.status))
+            throw Error('No outstanding evaluator operation has this identity.');
+        if(entry.status==='dispatched'&&
+            Date.now()-Date.parse(entry.dispatched_at||'')<120000)
+            throw Error('Wait for the agent result before reconciling a dispatched operation.');
+        if(entry.status!=='pending') {
+            const host=this.snapshot().machines.find(m=>m.id===entry.machine_id);
+            if(host?.status!=='connected'||!host.evaluator_services?.some(service=>
+                service.unit===entry.unit&&service.executor===entry.executor))
+                throw Error('Refresh the enrolled agent service observation before reconciling.');
+        }
+        const next=copy(this.state);
+        const saved=next.evaluator_actions.find(a=>a.id===entry.id);
+        saved.status=entry.status==='pending'?'cancelled':'reviewed';
+        saved.finished_at=now();
+        saved.reason=entry.status==='pending'
+            ?'Cancelled before dispatch.'
+            :'Operator explicitly reconciled the observed remote service; original action not replayed.';
+        this.commit(next);
+        return copy(saved);
+    }
     evaluatorActionReport(next,machine,items,instance) {
         if(!Array.isArray(items)||items.length>1)
             throw Error('Invalid evaluator result batch.');
