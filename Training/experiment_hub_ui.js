@@ -1046,6 +1046,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         lastRound.collector_work_totals.successful_policy_rows.toLocaleString()+
                         ' policy rows'
                     :'')+
+                (lastRound?.optimizer_group
+                    ?' · '+lastRound.optimizer_group.total_leased_gpu_slots+
+                        ' GPU learner ranks across '+lastRound.optimizer_group.nodes+' machines'
+                    :'')+
                 (lastRound?.collector_world_partitions?.[0]?.source_run_contract_sha256
                     ?' · Level source '+
                         lastRound.collector_world_partitions[0].source_run_contract_sha256.slice(0,12)
@@ -1111,7 +1115,22 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ?' source '+part.source_run_contract_sha256.slice(0,12):'')
                         ).join(', ')
                         :'')+
-                    ' · optimizers '+entry.optimizer_job_ids.join(', ')
+                    ' · optimizers '+entry.optimizer_job_ids.join(', ')+
+                    (entry.optimizer_group
+                        ?' · synchronized '+entry.optimizer_group.nodes+
+                            ' machine PPO group '+entry.optimizer_group.group_id+
+                            '; '+entry.optimizer_group.total_leased_gpu_slots+
+                            ' leased GPU ranks / '+entry.optimizer_group.total_leased_cpus+
+                            ' leased CPU cores; input '+
+                            entry.optimizer_group.input_sha256.slice(0,16)+
+                            '; model consensus '+
+                            entry.optimizer_group.model_consensus_sha256.slice(0,16)+
+                            ' · rank ownership '+entry.optimizer_group.ranks.map(rank=>
+                                rank.machine_id+':'+rank.job_id.slice(-8)+
+                                ' ['+rank.leased_gpu_count+' GPU, '+
+                                rank.leased_cpus+' CPU]'
+                            ).join(', ')
+                        :'')
                     ),
                 ].join('\n');
             row.append(details);
