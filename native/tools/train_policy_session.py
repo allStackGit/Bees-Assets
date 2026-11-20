@@ -911,6 +911,37 @@ def measured_distributed_collection_windows(completed):
         except (OSError, ValueError, TypeError, KeyError, AttributeError):
             rejected.append(number)
             continue
+        # Export, Hub dispatch and collection-barrier timing are sequential
+        # subwindows of the measured order-to-receipt interval. In contrast,
+        # upload/verification calls and independent collector wall time may
+        # overlap. Never add either of those to fleet critical-path time.
+        stage_keys = (
+            "collector_source_export_wall_seconds",
+            "hub_dispatch_wall_seconds",
+            "collector_barrier_wall_seconds",
+        )
+        stages = [window.get(key) for key in stage_keys]
+        stage_breakdown = None
+        if all(type(value) in (int, float) and math.isfinite(value) and value >= 0
+               for value in stages) and sum(stages) <= seconds + 0.01:
+            stage_breakdown = {
+                "source_export_wall_seconds": stages[0],
+                "hub_dispatch_wall_seconds": stages[1],
+                "collector_barrier_wall_seconds": stages[2],
+                "other_coordinator_wall_seconds":
+                    max(0.0, seconds - sum(stages)),
+            }
+        network = {}
+        for key in (
+            "collector_input_bytes_served",
+            "collector_output_bytes_received",
+            "collector_uploads_received",
+            "collector_upload_and_verify_wall_seconds",
+        ):
+            value = window.get(key)
+            if (type(value) in (int, float) and math.isfinite(value) and
+                    value >= 0):
+                network[key] = value
         measured.append({
             "round": number,
             "world_steps": steps,
@@ -918,6 +949,9 @@ def measured_distributed_collection_windows(completed):
             "work_order_to_last_receipt_wall_seconds": seconds,
             "world_steps_per_wall_second": steps / seconds,
             "policy_rows_per_wall_second": rows / seconds,
+            **({"coordinator_critical_path": stage_breakdown}
+               if stage_breakdown is not None else {}),
+            **({"transfer_activity": network} if network else {}),
         })
     if distributed == 0:
         return None
