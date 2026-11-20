@@ -939,6 +939,93 @@ def measured_distributed_collection_windows(completed):
     }
 
 
+def measured_learner_pipeline(completed):
+    """Attribute verified MA-POCA learner time without timing GPU kernels twice.
+
+    Trajectory read/ingest are subdivisions of trajectory processing, not
+    independent additive phases. Gradient submission on multiple GPU ranks
+    can overlap; this report uses the publishing learner's measured update
+    wall time, with full per-rank evidence in the original round receipt.
+    """
+    phases = (
+        "total_wall_seconds", "trajectory_processing_wall_seconds",
+        "capture_read_and_validation_wall_seconds",
+        "trajectory_assembly_and_ingest_wall_seconds",
+        "optimizer_update_wall_seconds",
+        "total_cpu_seconds", "trajectory_processing_cpu_seconds",
+        "optimizer_update_cpu_seconds",
+    )
+    measured, missing = [], []
+    for number, (_, receipt) in enumerate(completed, 1):
+        metrics = receipt["learner_metrics"]
+        if any(type(metrics.get(key)) not in (int, float) or
+               not math.isfinite(metrics[key]) or metrics[key] < 0
+               for key in phases):
+            missing.append(number)
+            continue
+        total = metrics["total_wall_seconds"]
+        preparation = metrics["trajectory_processing_wall_seconds"]
+        update = metrics["optimizer_update_wall_seconds"]
+        read = metrics["capture_read_and_validation_wall_seconds"]
+        ingest = metrics["trajectory_assembly_and_ingest_wall_seconds"]
+        if (total <= 0 or update <= 0 or preparation > total or
+                preparation + update > total + 0.01 or
+                read + ingest > preparation + 0.01):
+            missing.append(number)
+            continue
+        remainder = max(0.0, total - preparation - update)
+        measured.append({
+            "round": number,
+            "optimizer_device": metrics["optimizer_device"],
+            "optimizer_input_steps": metrics["optimizer_input_steps"],
+            "learner_wall_seconds": total,
+            "trajectory_processing_wall_seconds": preparation,
+            "capture_read_and_validation_wall_seconds": read,
+            "trajectory_assembly_and_ingest_wall_seconds": ingest,
+            "other_trajectory_processing_wall_seconds":
+                max(0.0, preparation - read - ingest),
+            "optimizer_update_wall_seconds": update,
+            "initialization_and_checkpoint_publication_wall_seconds": remainder,
+            "learner_process_cpu_seconds": metrics["total_cpu_seconds"],
+            "trajectory_processing_process_cpu_seconds":
+                metrics["trajectory_processing_cpu_seconds"],
+            "optimizer_update_process_cpu_seconds":
+                metrics["optimizer_update_cpu_seconds"],
+            "optimizer_input_steps_per_update_wall_second":
+                metrics["optimizer_input_steps"] / update,
+        })
+    sum_phase = lambda name: sum(row[name] for row in measured)
+    total_steps = sum_phase("optimizer_input_steps")
+    total_update = sum_phase("optimizer_update_wall_seconds")
+    total_wall = sum_phase("learner_wall_seconds")
+    return {
+        "scope": "publishing_learner_process_not_gpu_rank_sum_or_collector_wall_time",
+        "completed_rounds": len(completed),
+        "measured_rounds": len(measured),
+        "unmeasured_rounds": missing,
+        "measured_optimizer_input_steps": total_steps,
+        "sum_learner_wall_seconds": total_wall,
+        "sum_trajectory_processing_wall_seconds":
+            sum_phase("trajectory_processing_wall_seconds"),
+        "sum_capture_read_and_validation_wall_seconds":
+            sum_phase("capture_read_and_validation_wall_seconds"),
+        "sum_trajectory_assembly_and_ingest_wall_seconds":
+            sum_phase("trajectory_assembly_and_ingest_wall_seconds"),
+        "sum_optimizer_update_wall_seconds": total_update,
+        "sum_initialization_and_checkpoint_publication_wall_seconds":
+            sum_phase("initialization_and_checkpoint_publication_wall_seconds"),
+        "sum_learner_process_cpu_seconds":
+            sum_phase("learner_process_cpu_seconds"),
+        "sum_optimizer_update_process_cpu_seconds":
+            sum_phase("optimizer_update_process_cpu_seconds"),
+        "optimizer_input_steps_per_update_wall_second":
+            total_steps / total_update if total_update > 0 else None,
+        "optimizer_input_steps_per_learner_wall_second":
+            total_steps / total_wall if total_wall > 0 else None,
+        "rounds": measured,
+    }
+
+
 def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
     """Stop only on verified, comparable fixed-reference holdout observations.
 
