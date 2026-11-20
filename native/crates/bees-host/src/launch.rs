@@ -2488,12 +2488,12 @@ fn launch_catalog_battle(
         Some(setup)
     } else { None };
 
-    if let Some(campaign_id) = catalog.campaign_id.as_deref() {
+    if let (Some(campaign_id), Some(chosen)) =
+        (catalog.campaign_id.as_deref(), entry.mission.as_ref())
+    {
         if let Some((output, prior)) =
             interrupted_campaign_world(output_root, campaign_id)?
         {
-            let chosen = entry.mission.as_ref().ok_or_else(||
-                invalid("an unfinished campaign World must resume its original mission"))?;
             if prior.mission_id != chosen.id {
                 return Err(invalid(format!(
                     "campaign mission {} still owns an interrupted World; resume it before starting {}",
