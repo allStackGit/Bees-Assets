@@ -7,7 +7,7 @@ MODE=install
 PROJECTS=tinybrains,courier
 ROOT="${HOME}/ai/experiment-hub-worker"
 MACHINE_ID=""
-HUB_IP=""
+HUB_IP="100.97.43.98"
 START=0
 TB_KEY=""
 COURIER_KEY=""
@@ -28,9 +28,9 @@ Usage: bash Training/experiment_hub_worker_install.sh [install|update|status]
        [--tinybrains-root EXISTING_ANTS_MAPOCA_DIRECTORY]
        [--courier-root EXISTING_COURIER_DIRECTORY] [--start]
 
-First enroll ONE machine in the Hub Machines tab and keep its one-time token
-private; the installer requests it without echo. Halifax must run its authenticated
-agent-only API on its own Tailscale IPv4 at port 7149.
+Run the file, follow the Tailscale sign-in link if prompted, and the worker
+enrolls automatically. No SSH tunnel, GitHub password, copied secrets, Hub
+registration form, or separate enrollment token.
 'HELP'
 }
 if [[ ${1:-} == install || ${1:-} == update || ${1:-} == status ]]; then
