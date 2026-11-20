@@ -20,7 +20,7 @@ use bees_host::durable_connection::DurableHiveMindConnection;
 use bees_host::socket_worker::NativeSocketWorker;
 use bees_host::socket::{SetupKind, SetupLevelIdentity};
 use bees_host::runtime::{NativeHostRuntime, NativeHostSocketEvent};
-use bees_host::checkpoint_file::{NativeHostCheckpointFile, CheckpointFileError};
+use bees_host::checkpoint_file::NativeHostCheckpointFile;
 use bees_host::source_command_scheduler::NativeSourceCommandScheduler;
 use bees_host::policy_only_metadata::NativePolicyOnlyMetadata;
 use bees_host::fleet_inventory::NativeFleetCombatStats;
@@ -4947,7 +4947,11 @@ fn run_battle(
     let mut trace_input_sync_wall_seconds = 0.0_f64;
     let mut verified_physical_checkpoints = 0_u64;
     let mut verified_gameplay_checkpoints = 0_u64;
+    // Do not rehash or fsync a large journal while a window is paused and
+    // polling UI/network with no authoritative simulation progress.
+    let mut checkpointed_round = resume_cursor.as_ref().map(|cursor| cursor.rounds);
     'battle: loop {
+        if checkpointed_round != Some(rounds) {
         if let Some(file) = &host_checkpoint_file {
             // One stable boundary after the previous round's episode
             // accounting, model transition, journal ACK and reinforcements.
@@ -4988,6 +4992,8 @@ fn run_battle(
                 ));
                 break 'battle;
             }
+            checkpointed_round = Some(rounds);
+        }
         }
         if let Some(trace) = &mut input_trace {
             if (rounds == 0 || rounds % 64 == 0) &&
