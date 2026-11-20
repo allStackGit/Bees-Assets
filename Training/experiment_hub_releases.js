@@ -59,11 +59,17 @@ class ReleaseStore {
         this.latest={};
         this.files=new Map();
         this.failures={};
+        this.localVersions={};
+        this.bootWorkerVersion=null;
         this.pending=null;
         fs.mkdirSync(this.root,{recursive:true,mode:0o700});
     }
     async publish(name,source) {
         const repo=source.path;
+        const localVersion=await git(['rev-parse','HEAD'],repo);
+        this.localVersions[name]=localVersion;
+        if(name==='worker'&&this.bootWorkerVersion===null)
+            this.bootWorkerVersion=localVersion;
         await git(['fetch','--quiet','--no-tags','origin',source.branch],repo);
         const sha=await git(['rev-parse','FETCH_HEAD'],repo);
         if(!SHA.test(sha))throw Error('Invalid Git commit from '+name);
@@ -106,8 +112,41 @@ class ReleaseStore {
         const projects=new Set(installedProjects||[]);
         const components={};
         for(const [name,entry] of Object.entries(this.latest))
-            if(name==='worker'||projects.has(name))components[name]=entry;
+            if(name==='worker'||projects.has(name))components[name]={
+                ...entry,
+                activation_ready:name==='worker'
+                    ?entry.version===this.bootWorkerVersion
+                    :entry.version===this.localVersions[name],
+            };
         return components;
+    }
+    async applyLocalWhenIdle(hub) {
+        // Synchronize the Halifax learner from the same reviewed Git
+        // branches before remote workers activate a staged new protocol.
+        // Never modify a dirty checkout or touch source under a live job.
+        if(hub.state.jobs.some(job=>job.dispatch_id&&
+            !job.capacity_released_at&&
+            !['finished','failed','stopped','cancelled'].includes(job.status)))
+            return {deferred:true,changed:[]};
+        const changed=[];
+        for(const [name,source] of Object.entries(this.sources)) {
+            try {
+                const local=await git(['rev-parse','HEAD'],source.path);
+                const target=this.latest[name]?.version;
+                if(!target||local===target)continue;
+                const branch=await git(['branch','--show-current'],source.path);
+                if(branch!==source.branch)
+                    throw Error('Local checkout is not on the approved release branch.');
+                const dirty=await git(['status','--porcelain','--untracked-files=no'],source.path);
+                if(dirty)throw Error('Local checkout has modifications; release source remains staged.');
+                await git(['merge','--ff-only',target],source.path);
+                this.localVersions[name]=target;
+                changed.push(name);
+            }catch(error) {
+                this.failures[name]='Local activation: '+String(error.message||error).slice(0,220);
+            }
+        }
+        return {deferred:false,changed};
     }
     archive(component,sha) {
         if(!COMPONENTS.includes(component)||!DIGEST.test(sha))
