@@ -835,6 +835,8 @@ pub struct CombatWorldRecoveryOwnersCheckpoint {
     map_objects: HashMap<i64, CombatMapObject>,
     range_visible_map_objects: HashSet<i64>,
     reserved_ship_ids: HashMap<i32, HashSet<i64>>,
+    queens: BTreeMap<i64, queen::QueenRuntimeCheckpoint>,
+    queen_measurements: QueenSpawnMeasurements,
     movement: CombatWorldMovementCheckpoint,
     game_specials: CombatWorldGameSpecialsCheckpoint,
     discovery: LevelDiscovery,
@@ -1476,7 +1478,7 @@ impl CombatWorld {
     /// before claiming that the battle is recoverable.
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 6,
+            schema_version: 7,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
@@ -1489,6 +1491,9 @@ impl CombatWorld {
             map_objects: self.map_objects.clone(),
             range_visible_map_objects: self.range_visible_map_objects.clone(),
             reserved_ship_ids: self.reserved_ship_ids.clone(),
+            queens: self.game_queens.iter().map(|(&id, state)| (id, state.checkpoint()))
+                .collect(),
+            queen_measurements: self.queen_spawn_measurements,
             movement: CombatWorldMovementCheckpoint {
                 steering: self.game_ship_steering.clone(),
                 point_orders_pending: self.pending_game_point_orders.clone(),
@@ -1551,7 +1556,7 @@ impl CombatWorld {
     pub fn restore_recovery_owners(
         &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<(), CombatWorldError> {
-        if snapshot.schema_version != 6 {
+        if snapshot.schema_version != 7 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         let physics = self.physics.restored_for_same_geometry(snapshot.physics)?;
@@ -1706,6 +1711,28 @@ impl CombatWorld {
         // Imported steering and registration indexes must reference
         // authentic dense slots, and every deferred order stays on its
         // original ship. Do not substitute a fresh A* plan at restore.
+        // Queen waves use authored immutable templates, never serialized
+        // new copies of assets. Both delayed waves and their source
+        // registration order survive a native game/headless restart.
+        let mut game_queens = BTreeMap::new();
+        for (&queen_id, saved) in &snapshot.queens {
+            let original = self.game_queens.get(&queen_id)
+                .ok_or(CombatWorldError::InvalidRecoveryCheckpoint)?;
+            if !self.ship_by_id.contains_key(&queen_id) ||
+                snapshot.ships[self.ship_by_id[&queen_id]].ship_type != queen::QUEEN_TYPE {
+                return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+            }
+            let recovered = original.prepare_restore(saved)
+                .ok_or(CombatWorldError::InvalidRecoveryCheckpoint)?;
+            game_queens.insert(queen_id, recovered);
+        }
+        if snapshot.queen_measurements.max_concurrent_waves <
+            game_queens.values().map(|queen|
+                queen.checkpoint().waves.len()
+            ).max().unwrap_or(0)
+        {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
         let movement = &snapshot.movement;
         let registered_ship = |id: i64| {
             id > 0 && self.ship_by_id.contains_key(&id)
@@ -1903,6 +1930,9 @@ impl CombatWorld {
         self.map_objects = snapshot.map_objects;
         self.range_visible_map_objects = snapshot.range_visible_map_objects;
         self.reserved_ship_ids = snapshot.reserved_ship_ids;
+        self.game_queens = game_queens;
+        self.queen_spawn_measurements = snapshot.queen_measurements;
+        self.queen_spawn_ids.clear();
         let movement = snapshot.movement;
         self.game_ship_steering = movement.steering;
         self.pending_game_point_orders = movement.point_orders_pending;

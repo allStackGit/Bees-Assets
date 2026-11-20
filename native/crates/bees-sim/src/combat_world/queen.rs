@@ -76,7 +76,7 @@ impl QueenSpawnSpec {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct QueenSpawnMeasurements {
     pub waves_started: u64,
     pub minions_spawned: u64,
@@ -97,10 +97,26 @@ impl QueenSpawnMeasurements {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct QueenWave {
     elapsed_seconds: f32,
     next_index: u8,
+}
+
+/// Mutable Queen coroutine clocks only. Prefab catalogs, animation,
+/// physics and the minion template remain owned by the authored Stage.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct QueenRuntimeCheckpoint {
+    schema_version: u32,
+    minions_per_wave: u8,
+    frequency_seconds: f32,
+    seconds_between_minions: f32,
+    spawn_point: Vec2,
+    until_next_wave: f32,
+    next_sequence: u64,
+    waves: Vec<QueenWave>,
 }
 
 #[derive(Clone, Debug)]
@@ -109,6 +125,47 @@ pub(super) struct QueenRuntime {
     until_next_wave: f32,
     next_sequence: u64,
     waves: Vec<QueenWave>,
+}
+
+impl QueenRuntime {
+    pub(super) fn checkpoint(&self) -> QueenRuntimeCheckpoint {
+        QueenRuntimeCheckpoint {
+            schema_version: 1,
+            minions_per_wave: self.spec.minions_per_wave,
+            frequency_seconds: self.spec.spawn_frequency_seconds,
+            seconds_between_minions: self.spec.seconds_between_minions,
+            spawn_point: self.spec.spawn_point,
+            until_next_wave: self.until_next_wave,
+            next_sequence: self.next_sequence,
+            waves: self.waves.clone(),
+        }
+    }
+
+    /// Continue exactly the original coroutine schedule without
+    /// serializing or recreating the immutable YellowJacket template.
+    pub(super) fn prepare_restore(
+        &self, saved: &QueenRuntimeCheckpoint,
+    ) -> Option<Self> {
+        if saved.schema_version != 1 ||
+            saved.minions_per_wave != self.spec.minions_per_wave ||
+            saved.frequency_seconds != self.spec.spawn_frequency_seconds ||
+            saved.seconds_between_minions != self.spec.seconds_between_minions ||
+            saved.spawn_point != self.spec.spawn_point ||
+            !saved.until_next_wave.is_finite() ||
+            saved.waves.iter().any(|wave|
+                !wave.elapsed_seconds.is_finite() ||
+                wave.elapsed_seconds < 0.0 ||
+                wave.next_index >= self.spec.minions_per_wave
+            ) {
+            return None;
+        }
+        Some(Self {
+            spec: Arc::clone(&self.spec),
+            until_next_wave: saved.until_next_wave,
+            next_sequence: saved.next_sequence,
+            waves: saved.waves.clone(),
+        })
+    }
 }
 
 impl CombatWorld {
