@@ -9,7 +9,12 @@ const path=require('node:path');
 const http=require('node:http');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
-const {isTailnetIPv4}=require('./experiment_hub_agent_listener');
+const net=require('node:net');
+const isTailnetIPv4=value=>{
+    if(net.isIP(value)!==4)return false;
+    const octets=value.split('.').map(Number);
+    return octets[0]===100&&octets[1]>=64&&octets[1]<=127;
+};
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const SHA=/^[0-9a-f]{40}$/;
 const HASH=/^[0-9a-f]{64}$/;
@@ -133,7 +138,7 @@ async function status(base,env,entry,state,message='') {
 function journalActive(root) {
     const file=path.join(root,process.platform==='win32'
         ?'NativeState/windows-supervisor-v1.json':'native-state/supervisor-v1.json');
-    if(!fs.existsSync(file))throw Error('Native owner journal missing; update blocked.');
+    if(!fs.existsSync(file))return false; // No native job has ever been dispatched.
     const state=JSON.parse(fs.readFileSync(file,'utf8'));
     if(!Array.isArray(state.records))throw Error('Invalid native job journal.');
     const lock=path.join(path.dirname(file),process.platform==='win32'
@@ -338,6 +343,7 @@ async function main(argv=process.argv.slice(2)) {
             ?JSON.parse(fs.readFileSync(activeFile,'utf8')):{};
         const manifest=await request(base,env,'GET','');
         if(!manifest||!manifest.components||
+            !Array.isArray(manifest.pending_native_jobs)||
             !['defer','override'].includes(manifest.mode))
             throw Error('Invalid authenticated Hub software manifest.');
         const installed=new Set((env.EXPERIMENT_HUB_WORKER_PROJECTS||'').split(','));
@@ -355,7 +361,7 @@ async function main(argv=process.argv.slice(2)) {
         }
         if(!dirty)return;
         let busy;
-        try{busy=journalActive(root);}catch(error) {
+        try{busy=journalActive(root)||manifest.pending_native_jobs.length>0;}catch(error) {
             for(const item of Object.values(plan))
                 await status(base,env,item.entry,'waiting',error.message);
             return;
@@ -390,6 +396,7 @@ async function main(argv=process.argv.slice(2)) {
             // Self-updater is copied only from an authenticated verified worker
             // release after the running invocation has completed its work.
             if(changes.worker) {
+                fs.mkdirSync(path.join(root,'Update'),{recursive:true,mode:0o700});
                 const replacement=path.join(changes.worker,'Training',
                     'experiment_hub_worker_updater.js');
                 if(fs.existsSync(replacement))
