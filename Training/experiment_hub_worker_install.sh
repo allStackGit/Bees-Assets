@@ -86,6 +86,18 @@ if [[ "$MODE" == update ]] && systemctl --user is-active --quiet "$SERVICE"; the
     echo "Stop active Hub jobs through the dashboard, then stop the agent before updating." >&2
     exit 1
 fi
+if [[ "$MODE" == update ]]; then
+    # Pinned project selection and installation paths belong to the
+    # original enrolled worker, not new default CLI arguments.
+    config_value() {
+        local name=$1
+        sed -n "s/^$name=//p" "$ENVFILE" | head -n 1
+    }
+    PROJECTS=$(config_value EXPERIMENT_HUB_WORKER_PROJECTS)
+    TB_ROOT=$(config_value EXPERIMENT_HUB_TINYBRAINS_PROJECT_ROOT)
+    COURIER_ROOT=$(config_value EXPERIMENT_HUB_COURIER_PROJECT_ROOT)
+    [[ -n "$PROJECTS" ]] || { echo "Existing worker project selection missing." >&2; exit 1; }
+fi
 
 install_dependencies() {
     if ! command -v apt-get >/dev/null; then
