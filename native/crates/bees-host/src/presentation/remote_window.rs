@@ -1610,8 +1610,12 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
     let mut held_fire_target:Option<Vec2>=None;
     let mut show_art=true;
     let started=Instant::now();
+    let mut previous_frame=started;
 
     while window.is_open() {
+        let now=Instant::now();
+        let elapsed=now.duration_since(previous_frame).as_secs_f32().min(0.1);
+        previous_frame=now;
         if window.is_key_pressed(Key::F6, KeyRepeat::No) {
             show_art=!show_art;
             peer.notice=if show_art {
@@ -1874,14 +1878,40 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     }
                 }
             }
-            let pan=24.0/cam.pixels_per_unit;
+            // Same source-native camera speed in physical pixels/second,
+            // independent of the remote window's rendered frame rate.
+            let pan=500.0*elapsed/cam.pixels_per_unit;
             if window.is_key_down(Key::Up){cam.center.y+=pan;}
             if window.is_key_down(Key::Down){cam.center.y-=pan;}
             if window.is_key_down(Key::Left){cam.center.x-=pan;}
             if window.is_key_down(Key::Right){cam.center.x+=pan;}
-            if let Some((_,wheel))=window.get_scroll_wheel(){
-                if wheel!=0.0 {cam.zoom_at((1.15_f32).powf(wheel),FIELD as f32/2.0,
-                    HEIGHT as f32/2.0,FIELD,HEIGHT,None);}
+            let mouse=window.get_mouse_pos(MouseMode::Discard);
+            let minimap = peer.state.as_ref().and_then(bounds)
+                .and_then(|map| MiniMapLayout::top_right(FIELD, HEIGHT, map));
+            // Shift+wheel pans horizontally and Ctrl+wheel vertically,
+            // matching the local native camera. Unmodified wheel zooms
+            // at the pointer or centers on the real host-derived minimap.
+            if let Some((horizontal,vertical))=window.get_scroll_wheel() {
+                let wheel_pixels=120.0/cam.pixels_per_unit;
+                let mut wheel_pan=Vec2::new(
+                    horizontal.clamp(-10.0,10.0)*wheel_pixels,0.0);
+                if shift {
+                    wheel_pan.x-=vertical.clamp(-10.0,10.0)*wheel_pixels;
+                } else if control {
+                    wheel_pan.y+=vertical.clamp(-10.0,10.0)*wheel_pixels;
+                } else if vertical!=0.0 {
+                    if let Some((x,y))=mouse {
+                        let factor=1.15_f32.powf(vertical.clamp(-10.0,10.0));
+                        if let Some(point)=minimap.and_then(|map|map.world_at(x,y)) {
+                            cam.center=point;
+                            cam.zoom_at(factor,FIELD as f32/2.0,
+                                HEIGHT as f32/2.0,FIELD,HEIGHT,None);
+                        } else if x>=0.0&&x<FIELD as f32&&y>=0.0&&y<HEIGHT as f32 {
+                            cam.zoom_at(factor,x,y,FIELD,HEIGHT,None);
+                        }
+                    }
+                }
+                cam.center+=wheel_pan;
             }
             if window.is_key_down(Key::Equal){cam.zoom_at(1.035,FIELD as f32/2.0,
                 HEIGHT as f32/2.0,FIELD,HEIGHT,None);}
@@ -1890,9 +1920,6 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
             if let Some(map)=peer.state.as_ref().and_then(bounds) {
                 cam.constrain_to_map(map,FIELD,HEIGHT);
             }
-            let mouse=window.get_mouse_pos(MouseMode::Discard);
-            let minimap = peer.state.as_ref().and_then(bounds)
-                .and_then(|map| MiniMapLayout::top_right(FIELD, HEIGHT, map));
             let within=mouse.and_then(|(x,y)| {
                 (x>=0.0 && x<FIELD as f32 && y>=0.0 && y<HEIGHT as f32 &&
                     !minimap.is_some_and(|layout| layout.world_at(x, y).is_some()))
