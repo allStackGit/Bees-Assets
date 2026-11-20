@@ -1418,6 +1418,11 @@ fn current_state(
         Some(json!({
             "owner": owner, "side": squad.side, "owned": owned,
             "controllable": owned && permissions.is_some_and(|p| p.can_accept_input),
+            // Source Ctrl+A selects only top-level player squads. A live
+            // Queen/Carrier child may be individually controllable, but
+            // mass selection must not silently include every dependent
+            // drone in addition to its source parent.
+            "source_root": owned && squad.mother_squad.is_none(),
             "locked_on": if owned { permissions.map(|p| p.locked_on) } else { None },
             "members": members,
             "source_number": if owned { squad.source_hotkey_number } else { None },
