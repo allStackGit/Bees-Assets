@@ -4104,6 +4104,13 @@ class ExperimentHub {
                         collector_replacement_of_job_id:
                             job.collector_replacement_of_job_id,
                     }:{}),
+                    ...(job.optimizer_restart_of_job_id?{
+                        optimizer_restart_of_job_id:job.optimizer_restart_of_job_id,
+                    }:{}),
+                    ...(job.optimizer_restart_of_bundle_id?{
+                        optimizer_restart_of_bundle_id:
+                            job.optimizer_restart_of_bundle_id,
+                    }:{}),
                     frozen_parameters:copy(job.frozen_parameters),
                     configuration_sha256:job.configuration_sha256,
                     continuation_of_job_id:job.continuation_of_job_id||null,
