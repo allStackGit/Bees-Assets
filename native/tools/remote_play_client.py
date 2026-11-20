@@ -252,7 +252,11 @@ class RemoteConsole:
         with self.lock:
             if cue in self.briefing_acknowledgments:
                 return False
-        request_id = self.next_request
+            request_id = self.next_request
+            self.next_request += 1
+            # Reserve before transmission: the network receiver may
+            # process the host's immediate rejection before sendall returns.
+            self.briefing_acknowledgments[cue] = request_id
         packet = {
             "kind": "briefing_ready",
             "request_id": request_id,
@@ -260,12 +264,15 @@ class RemoteConsole:
             "episode_revision": cue[1],
             "sequence": cue[2],
         }
-        self.socket.sendall(
-            (json.dumps(packet, separators=(",", ":")) + "\n").encode("utf-8")
-        )
-        self.next_request += 1
-        with self.lock:
-            self.briefing_acknowledgments[cue] = request_id
+        try:
+            self.socket.sendall(
+                (json.dumps(packet, separators=(",", ":")) + "\n").encode("utf-8")
+            )
+        except OSError:
+            with self.lock:
+                if self.briefing_acknowledgments.get(cue) == request_id:
+                    del self.briefing_acknowledgments[cue]
+            raise
         return True
 
     @staticmethod
