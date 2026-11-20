@@ -12,7 +12,6 @@ import re
 from pathlib import Path, PurePosixPath
 import subprocess
 import sys
-import uuid
 
 from native_training_artifacts import (
     check_learner, file_sha256, native_source_contract_sha256,
@@ -167,7 +166,9 @@ def main():
             recovered = candidate
     else:
         prefix = f"native-collector-{job['collection_id'][:12]}-"
-        for previous in sorted(scratch.glob(prefix + "*"), reverse=True):
+        candidates = [scratch / f"native-collector-{job['collection_id']}"]
+        candidates += sorted(scratch.glob(prefix + "*"), reverse=True)
+        for previous in candidates:
             if previous.is_symlink() or not previous.is_dir():
                 continue
             candidate = previous / job["bundle_directory"] / "rollout-bundle.json"
