@@ -127,9 +127,10 @@ done
 # Private repositories require the operator's GitHub credential. Never
 # reset branches, remove local changes, or run an unreviewed remote script.
 sync_checkout() {
-    local url=$1 branch=$2 dir=$3
+    local url=$1 branch=$2 dir=$3 sparse=${4:-}
     if [[ ! -d "$dir/.git" ]]; then
-        git clone --filter=blob:none --depth=1 --branch "$branch" "$url" "$dir"
+        git clone --filter=blob:none --depth=1 --sparse --branch "$branch" "$url" "$dir"
+        if [[ -n "$sparse" ]]; then git -C "$dir" sparse-checkout set "$sparse"; fi
     else
         [[ -z "$(git -C "$dir" status --porcelain --untracked-files=no)" ]] ||
             { echo "Refusing to change a dirty checkout: $dir" >&2; exit 1; }
@@ -138,9 +139,9 @@ sync_checkout() {
         git -C "$dir" pull --ff-only origin "$branch"
     fi
 }
-sync_checkout https://github.com/allStackGit/Bees-Assets.git "$ASSETS_BRANCH" "$SRC/Bees-Assets"
+sync_checkout https://github.com/allStackGit/Bees-Assets.git "$ASSETS_BRANCH" "$SRC/Bees-Assets" Training
 if has_project tinybrains && [[ -z "$TB_ROOT" ]]; then
-    sync_checkout https://github.com/allStackGit/TinyBrains.git "$TB_BRANCH" "$SRC/TinyBrains"
+    sync_checkout https://github.com/allStackGit/TinyBrains.git "$TB_BRANCH" "$SRC/TinyBrains" Ants-MAPOCA
     TB_ROOT="$SRC/TinyBrains/Ants-MAPOCA"
 fi
 if has_project courier && [[ -z "$COURIER_ROOT" ]]; then
