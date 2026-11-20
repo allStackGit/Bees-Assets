@@ -1066,12 +1066,13 @@ function nativeStartReadiness(snapshot, job) {
                 nativeResourceBlock(worker,owned)||
                 gpuStartBlock(worker,owned,host))
                 return block('The remote collector has lost its authenticated host or CPU/RAM ownership.');
+            const endpoint=tinybrainsWorkerListener(host,worker)?.endpoint;
             if(!distributedRolloutHost(snapshot,worker,host)||
-                !expectedEndpoints.includes(host.tinybrains_rollout_endpoint)||
-                matchedEndpoints.has(host.tinybrains_rollout_endpoint)||
+                !expectedEndpoints.includes(endpoint)||
+                matchedEndpoints.has(endpoint)||
                 host.tinybrains_rollout_key_fingerprint!==keyFingerprint)
                 return block('Remote CPU collector endpoint or key identity differs from the learner\'s pinned worker set.');
-            matchedEndpoints.add(host.tinybrains_rollout_endpoint);
+            matchedEndpoints.add(endpoint);
         }
     }
     if(!supportsEvaluation(machine.evaluation_suites,job))
@@ -3329,14 +3330,14 @@ class ExperimentHub {
                 throw Error('An original group member or Hub resource lease changed.');
             if(index!==0) {
                 if(seen.has(machine.id)||
-                    machine.tinybrains_rollout_endpoint!==endpoints[index-1]||
+                    tinybrainsWorkerListener(machine,job)?.endpoint!==endpoints[index-1]||
                     machine.tinybrains_rollout_key_fingerprint!==
                         host.tinybrains_remote_key_fingerprint)
                     throw Error('Remote machine/HMAC endpoint identity does not match the learner slot.');
                 seen.add(machine.id);
             }
             return {job_id:job.id,lease_id:lease.id,machine_id:machine.id,
-                ...(index?{endpoint:machine.tinybrains_rollout_endpoint}:{})};
+                ...(index?{endpoint:tinybrainsWorkerListener(machine,job)?.endpoint}:{})};
         });
         const plans=copy(this.state.distributed_group_plans||[]);
         if(plans.length>=64) {
@@ -3646,7 +3647,7 @@ class ExperimentHub {
                 members.slice(1).some((worker,index)=>{
                     const host=snapshot.machines.find(item=>
                         item.id===worker.assigned_machine_id);
-                    return host?.tinybrains_rollout_endpoint!==
+                    return tinybrainsWorkerListener(host,worker)?.endpoint!==
                         plan.frozen_members[index+1].endpoint||
                         host?.tinybrains_rollout_key_fingerprint!==plan.key_fingerprint;
                 })) {
@@ -3782,14 +3783,15 @@ class ExperimentHub {
             if(!readiness.eligible)
                 throw Error('Collector '+worker.id+' is not ready: '+readiness.reason);
             const host=snapshot.machines.find(item=>item.id===worker.assigned_machine_id);
+            const endpoint=tinybrainsWorkerListener(host,worker)?.endpoint;
             if(!host||seenMachines.has(host.id)||
-                !endpoints.includes(host.tinybrains_rollout_endpoint)||
-                seenEndpoints.has(host.tinybrains_rollout_endpoint)||
+                !endpoints.includes(endpoint)||
+                seenEndpoints.has(endpoint)||
                 host.tinybrains_rollout_key_fingerprint!==
                     learnerHost.tinybrains_remote_key_fingerprint)
                 throw Error('Collector host or pinned HMAC endpoint identity changed; no Starts authorized.');
             seenMachines.add(host.id);
-            seenEndpoints.add(host.tinybrains_rollout_endpoint);
+            seenEndpoints.add(endpoint);
         }
         const coordinated=value.start_learner_when_ready===true;
         const agents={};
@@ -3834,7 +3836,7 @@ class ExperimentHub {
                     const host=snapshot.machines.find(m=>m.id===worker.assigned_machine_id);
                     return {job_id:worker.id,dispatch_id:collectorDispatches[worker.id],
                         machine_id:worker.assigned_machine_id,lease_id:worker.lease_id,
-                        endpoint:host.tinybrains_rollout_endpoint,
+                        endpoint:tinybrainsWorkerListener(host,worker)?.endpoint,
                         key_fingerprint:host.tinybrains_rollout_key_fingerprint};
                 }),
                 key_fingerprint:learnerHost.tinybrains_remote_key_fingerprint,
@@ -4322,7 +4324,7 @@ class ExperimentHub {
                         item.id===worker.assigned_machine_id);
                     const frozen=intent.collector_owners.find(owner=>owner.job_id===worker.id);
                     return !host||!frozen||
-                        host.tinybrains_rollout_endpoint!==frozen.endpoint||
+                        tinybrainsWorkerListener(host,worker)?.endpoint!==frozen.endpoint||
                         host.tinybrains_rollout_key_fingerprint!==frozen.key_fingerprint||
                         frozen.key_fingerprint!==intent.key_fingerprint||
                         !endpoints.includes(frozen.endpoint);
