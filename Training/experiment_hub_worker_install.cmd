@@ -319,14 +319,20 @@ if($Command -eq 'install'){
         if($ipLines.Count){Assert-TailnetIP (([string]$ipLines[0]).Trim());$connected=$true}
     }catch{$connected=$false}
     if(-not $connected){
-        Write-Host 'Tailscale is installed. Complete its one-time sign-in to the Halifax tailnet.'
+        Write-Host 'Tailscale is installed. Follow its one-time browser sign-in link.'
         & $tailscaleCli up
-        Assert-Exit 'Tailscale sign-in'
-        $ipLines=@(& $tailscaleCli ip -4)
-        if(-not $ipLines.Count){
-            throw 'Open Tailscale, sign in to the Halifax tailnet, then rerun this installer.'
+        Assert-Exit 'Start Tailscale sign-in'
+        for($attempt=0;$attempt -lt 120 -and -not $connected;$attempt++){
+            $ipLines=@(& $tailscaleCli ip -4 2>$null)
+            if($ipLines.Count){
+                try {
+                    Assert-TailnetIP (([string]$ipLines[0]).Trim())
+                    $connected=$true
+                }catch { $connected=$false }
+            }
+            if(-not $connected){Start-Sleep -Seconds 2}
         }
-        Assert-TailnetIP (([string]$ipLines[0]).Trim())
+        if(-not $connected){throw 'Tailscale login did not finish; worker not installed.'}
     }
 }
 # Complete the Tailscale browser login once; Halifax verifies this node
