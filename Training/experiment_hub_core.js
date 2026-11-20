@@ -5539,7 +5539,7 @@ class ExperimentHub {
                         config.id===selection.configuration_id)?.project_id==='bees_native'
                         ?{continuation_of_job_id:modelSourceId}:{}),
                 }:{}),
-            });
+            },restartGroup?{optimizerRestartFrom:restartGroup[index]}:undefined);
             if(nativeCollectionId!==null) {
                 // The native run configuration, not the Hub, knows how
                 // many authored Levels must be preserved and how much
@@ -6379,7 +6379,7 @@ class ExperimentHub {
         return {jobs,executable:false,
             note:'Frozen pipeline only; native execution remains subject to separate authorization.'};
     }
-    queueIn(next,value) {
+    queueIn(next,value,{optimizerRestartFrom=null}={}) {
         if (!object(value) || typeof value.configuration_id !== 'string')
             throw Error('Select a saved configuration to queue.');
         const selected = next.configurations.find(x=>x.id===value.configuration_id);
@@ -6501,10 +6501,33 @@ class ExperimentHub {
             if(!waitingPredecessor&&
                 (!checkpointContinuationComplete(parent)||!parent.capacity_released_at))
                 throw Error('Continuation requires a verified resumable checkpoint and released capacity (or an eligible active or prequeued predecessor).');
-            if(next.jobs.some(j=>
+            const successors=next.jobs.filter(j=>
                 (j.continuation_of_job_id===parent.id||
-                 j.after_job_id===parent.id)&&occupiesSuccessorSlot(j,next.jobs)))
-                throw Error('This predecessor already has an active or unresolved successor.');
+                 j.after_job_id===parent.id)&&occupiesSuccessorSlot(j,next.jobs));
+            if(successors.length) {
+                // A synchronized restart does not consume another source
+                // checkpoint or open a parallel continuation. It replaces
+                // the failed optimizer group at the end of one exact, fully
+                // released rank-zero lineage, retaining the original
+                // model and collector receipts.
+                const allowed=new Set();
+                let previous=optimizerRestartFrom;
+                while(previous&&!allowed.has(previous.id)) {
+                    allowed.add(previous.id);
+                    previous=next.jobs.find(job=>
+                        job.id===previous.optimizer_restart_of_job_id);
+                }
+                if(!(optimizerRestartFrom&&
+                    project.id==='bees_native'&&
+                    optimizerRestartFrom.continuation_of_job_id===parent.id&&
+                    successors.every(job=>allowed.has(job.id)&&
+                        job.project_id==='bees_native'&&
+                        job.frozen_parameters?.optimizer_group===true&&
+                        job.capacity_released_at&&
+                        ['finished','failed','stopped'].includes(job.status)&&
+                        nativeOptimizerGroupBlock(next,job))))
+                    throw Error('This predecessor already has an active or unresolved successor.');
+            }
         }
         if(parent) {
             const digestField=project.id==='tinybrains'?'profile_sha256':'config_sha256';
