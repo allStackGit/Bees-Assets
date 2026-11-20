@@ -425,7 +425,8 @@ async function main() {
             if(evaluatorOrders.length) {
                 executingNative=true;
                 try {
-                    pendingEvaluatorReports=[await remoteEvaluator.execute(id,evaluatorOrders[0])];
+                    pendingEvaluatorReports=[await remoteEvaluator.execute(
+                        id,evaluatorOrders[0],advertisement.installed_projects||[])];
                 }finally {
                     executingNative=false;
                     if(busyHeartbeat)await busyHeartbeat;
