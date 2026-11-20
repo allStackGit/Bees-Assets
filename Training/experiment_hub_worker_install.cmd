@@ -213,15 +213,15 @@ $CacheRoot=Join-Path $InstallRoot 'Cache'
 $EnvFile=Join-Path $Private 'worker.env'
 
 function Install-UpdateTask([string]$NodeExecutable,[string]$UpdaterScript,[string]$WorkerRoot) {
-    # Keep the executable and arguments separate. schtasks.exe /TR loses
-    # embedded quotes under Windows PowerShell when Node is in Program Files.
+    # Supply executable and arguments as separate Task Scheduler fields:
+    # schtasks.exe /TR loses embedded quotes around Program Files paths.
     $scheduler=New-Object -ComObject 'Schedule.Service'
     $scheduler.Connect()
     $task=$scheduler.NewTask(0)
     $task.RegistrationInfo.Description='Authenticated Experiment Hub worker software updater'
     $task.Settings.Enabled=$true
     $task.Settings.StartWhenAvailable=$true
-    $task.Settings.MultipleInstances=2 # Ignore overlapping updater executions.
+    $task.Settings.MultipleInstances=2
     $task.Settings.ExecutionTimeLimit='PT4H'
     $task.Principal.UserId='SYSTEM'
     $task.Principal.LogonType=5
@@ -243,9 +243,8 @@ if($Command -eq 'status'){
 $existing=Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 $hasEnrollment=Test-Path -LiteralPath $EnvFile -PathType Leaf
 if($Command -eq 'install' -and $hasEnrollment -and $existing) {
-    # The last install may have started this service but failed to create
-    # its updater task. Only repair that task; never rotate credentials,
-    # download runtimes, or restart a possibly job-owning native agent.
+    # Finish only the update task after a partially successful installation.
+    # Preserve machine token, running service and any native job ownership.
     $configFile=Join-Path $Private 'agent-service.json'
     $updater=Join-Path $InstallRoot 'Update\experiment_hub_worker_updater.js'
     $serviceBinary=Join-Path $InstallRoot 'Binaries\Service\ExperimentHubWindowsService.exe'
@@ -256,7 +255,7 @@ if($Command -eq 'install' -and $hasEnrollment -and $existing) {
             [StringComparison]::OrdinalIgnoreCase) -or
         -not (Test-Path -LiteralPath $configFile -PathType Leaf) -or
         -not (Test-Path -LiteralPath $updater -PathType Leaf)) {
-        throw 'An existing worker was found but its installation is incomplete or uses another root. No changes were made.'
+        throw 'Existing worker installation is incomplete or belongs to another root. No changes were made.'
     }
     $configuration=Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
     $saved=@{}
@@ -268,192 +267,14 @@ if($Command -eq 'install' -and $hasEnrollment -and $existing) {
         $configuration.EnvironmentFile -ne $EnvFile -or
         $configuration.TrainingDirectory -ne (Join-Path $SourceRoot 'Bees-Assets\Training') -or
         $saved['EXPERIMENT_HUB_LOCAL_ROOT'] -ne $NativeRoot -or
-        $saved['EXPERIMENT_HUB_AGENT_TOKEN'] -cnotmatch '^[0-9a-f]{64}
-if($Command -eq 'update' -and $existing -and $existing.Status -eq 'Running'){
-    throw 'A running Hub agent may own live jobs. Stop the jobs through the Hub before updating and restarting.'
-}
-if($Command -eq 'update'){
-    # Reuse the installed project contract rather than guessing from
-    # installer defaults or moving an active machine's approved source.
-    $saved=@{}
-    foreach($entry in (Get-Content -LiteralPath $EnvFile)){
-        $pair=$entry.Split('=',2)
-        if($pair.Count -eq 2){$saved[$pair[0]]=$pair[1]}
-    }
-    $Projects=[string]$saved['EXPERIMENT_HUB_WORKER_PROJECTS']
-    if(-not $HubTailnetIp){
-        $oldUrl=$saved['EXPERIMENT_HUB_URL']
-        if($oldUrl -match '^http://(100\.[0-9.]+):7149$'){
-            $HubTailnetIp=$Matches[1]
-        }else{
-            throw 'Supply -HubTailnetIp to migrate the saved SSH-forwarded worker endpoint.'
-        }
-    }
-}
-Assert-TailnetIP $HubTailnetIp
-
-if($Command -eq 'install'){
-    if($Projects){throw 'Install project software through Experiment Hub, not the base worker installer.'}
-    Ensure-Winget 'node.exe' 'OpenJS.NodeJS.LTS'
-    Ensure-Winget 'dotnet.exe' 'Microsoft.DotNet.SDK.8'
-    if(-not (Test-Path "$env:ProgramFiles\Tailscale\tailscale.exe")){
-        Ensure-Winget 'tailscale.exe' 'Tailscale.Tailscale'
-    }
-    $tailscaleCli=if(Test-Path "$env:ProgramFiles\Tailscale\tailscale.exe"){
-        "$env:ProgramFiles\Tailscale\tailscale.exe"
-    }else{Tool 'tailscale.exe'}
-    $connected=$false
-    try{
-        $ipLines=@(& $tailscaleCli ip -4)
-        if($ipLines.Count){Assert-TailnetIP (([string]$ipLines[0]).Trim());$connected=$true}
-    }catch{$connected=$false}
-    if(-not $connected){
-        Write-Host 'Tailscale is installed. Follow its one-time browser sign-in link.'
-        & $tailscaleCli up
-        Assert-Exit 'Start Tailscale sign-in'
-        for($attempt=0;$attempt -lt 120 -and -not $connected;$attempt++){
-            $ipLines=@(& $tailscaleCli ip -4 2>$null)
-            if($ipLines.Count){
-                try {
-                    Assert-TailnetIP (([string]$ipLines[0]).Trim())
-                    $connected=$true
-                }catch { $connected=$false }
-            }
-            if(-not $connected){Start-Sleep -Seconds 2}
-        }
-        if(-not $connected){throw 'Tailscale login did not finish; worker not installed.'}
-    }
-}
-# Complete the Tailscale browser login once; Halifax verifies this node
-# belongs to the same Tailscale owner and returns machine-scoped credentials.
-$Enrollment=$null
-if($Command -eq 'install'){
-    $stats=Get-CimInstance -ClassName Win32_ComputerSystem
-    $payload=@{
-        projects=@()
-        cpus=[Environment]::ProcessorCount
-        ram_mb=[int][Math]::Floor([double]$stats.TotalPhysicalMemory/1MB)
-    } | ConvertTo-Json -Compress
-    $Enrollment=Invoke-RestMethod -Method Post -ContentType 'application/json' `
-        -Uri "http://$($HubTailnetIp):7149/api/hub/agent/bootstrap" -Body $payload
-    $MachineId=[string]$Enrollment.machine_id
-    if($MachineId -cnotmatch '^[a-z][a-z0-9_-]{0,47}$' -or
-        [string]$Enrollment.agent_token -cnotmatch '^[0-9a-f]{64}$'){
-        throw 'Invalid authenticated Hub enrollment response.'
-    }
-}
-foreach($tool in @('node.exe','dotnet.exe')){
-    $null=Tool $tool
-}
-$node=Tool 'node.exe'
-$major=& $node -p 'parseInt(process.versions.node)'
-Assert-Exit 'Node runtime inspection'
-if([int]$major -lt 22){throw 'The Windows native Hub agent service requires Node.js 22 or newer.'}
-foreach($dir in @($InstallRoot,$Private,$SourceRoot,$NativeRoot,$ServiceState,
-    $CacheRoot)){
-    New-Item -ItemType Directory -Path $dir -Force | Out-Null
-}
-Private-Permissions $InstallRoot
-Service-Permissions $NativeRoot
-Service-Permissions $ServiceState
-Service-Permissions $CacheRoot
-# Python and uv are installed by the machine-local updater only when
-# a specific TinyBrains or Courier simulation is requested.
-$assets=if($Command -eq 'install'){Install-HubRelease 'worker' 'Bees-Assets'}
-    else {Join-Path $SourceRoot 'Bees-Assets'}
-$Training=Join-Path $assets 'Training'
-# Build both reviewed native owners locally; never download unpinned
-# helper binaries or allow Hub job parameters to pick their executable.
-$ownerOut=Join-Path $InstallRoot 'Binaries\Owner'
-$serviceOut=Join-Path $InstallRoot 'Binaries\Service'
-foreach($dir in @($ownerOut,$serviceOut)){New-Item -ItemType Directory -Path $dir -Force | Out-Null}
-& (Tool 'dotnet.exe') publish (Join-Path $Training 'experiment_hub_windows_owner\ExperimentHubWindowsOwner.csproj') -c Release -r win-x64 --self-contained true -o $ownerOut
-Assert-Exit 'Build pinned Windows native resource owner'
-& (Tool 'dotnet.exe') publish (Join-Path $Training 'experiment_hub_windows_service\ExperimentHubWindowsService.csproj') -c Release -r win-x64 --self-contained true -o $serviceOut
-Assert-Exit 'Build Windows agent service launcher'
-$owner=Join-Path $ownerOut 'ExperimentHubWindowsOwner.exe'
-$launcher=Join-Path $serviceOut 'ExperimentHubWindowsService.exe'
-$ownerSha=(Get-FileHash -LiteralPath $owner -Algorithm SHA256).Hash.ToLowerInvariant()
-
-if($Command -eq 'install'){
-    $token=[string]$Enrollment.agent_token
-
-    $tailscale=if(Test-Path "$env:ProgramFiles\Tailscale\tailscale.exe"){
-        "$env:ProgramFiles\Tailscale\tailscale.exe"
-    }else{Tool 'tailscale.exe'}
-    $ipLines=@(& $tailscale ip -4 2>$null)
-    $tailnetIp=if($ipLines.Count){([string]$ipLines[0]).Trim()}else{''}
-    try{Assert-TailnetIP $tailnetIp}catch{throw 'Sign this worker into Tailscale before installing.'}
-    $lines=[System.Collections.Generic.List[string]]::new()
-    Add-Line $lines 'EXPERIMENT_HUB_MACHINE_ID' $MachineId
-    Add-Line $lines 'EXPERIMENT_HUB_AGENT_TOKEN' $token
-    Add-Line $lines 'EXPERIMENT_HUB_ENABLE_EXECUTION' '1'
-    Add-Line $lines 'EXPERIMENT_HUB_LOCAL_ADAPTERS' (Join-Path $Training 'experiment_hub_worker_adapters.js')
-    Add-Line $lines 'EXPERIMENT_HUB_LOCAL_ROOT' $NativeRoot
-    Add-Line $lines 'EXPERIMENT_HUB_WINDOWS_HELPER' $owner
-    Add-Line $lines 'EXPERIMENT_HUB_WINDOWS_HELPER_SHA256' $ownerSha
-    Add-Line $lines 'EXPERIMENT_HUB_URL' "http://$($HubTailnetIp):7149"
-    Add-Line $lines 'EXPERIMENT_HUB_TAILNET_IP' $tailnetIp
-    if($Projects){Add-Line $lines 'EXPERIMENT_HUB_WORKER_PROJECTS' $Projects}
-    $lines | Set-Content -LiteralPath $EnvFile -Encoding ascii
-}else{
-    $lines=Get-Content -LiteralPath $EnvFile
-    $new=[System.Collections.Generic.List[string]]::new()
-    $hadUrl=$false
-    foreach($line in $lines){
-        if($line.StartsWith('EXPERIMENT_HUB_SSH_')){continue}
-        if($line.StartsWith('EXPERIMENT_HUB_URL=')){
-            $new.Add("EXPERIMENT_HUB_URL=http://$($HubTailnetIp):7149")
-            $hadUrl=$true
-        }elseif($line.StartsWith('EXPERIMENT_HUB_WINDOWS_HELPER_SHA256=')){
-            $new.Add("EXPERIMENT_HUB_WINDOWS_HELPER_SHA256=$ownerSha")
-        }else{$new.Add($line)}
-    }
-    if(-not $hadUrl){$new.Add("EXPERIMENT_HUB_URL=http://$($HubTailnetIp):7149")}
-    $new | Set-Content -LiteralPath $EnvFile -Encoding ascii
-}
-# Secrets stay readable only by this installer account, administrators,
-# SYSTEM and the explicitly chosen Windows service account.
-Private-Permissions $Private
-Service-Permissions $NativeRoot
-Service-Permissions $ServiceState
-Service-Permissions $CacheRoot
-
-if(-not $existing){
-    & (Join-Path $Training 'experiment_hub_windows_service.ps1') -Role agent `
-        -ServiceExecutable $launcher -ConfigurationFile (Join-Path $Private 'agent-service.json') `
-        -StateDirectory $ServiceState -TrainingDirectory $Training -NodePath $node `
-        -EnvironmentFile $EnvFile -Name $ServiceName -Install
-    if(-not $?){throw 'Windows Hub service installation failed.'}
-}
-if($Start -or $Command -eq 'install'){
-    $current=Get-Service -Name $ServiceName
-    if($current.Status -eq 'Running'){
-        throw 'Agent is already running; stop any active Hub jobs before a restart.'
-    }
-    Set-Service -Name $ServiceName -StartupType Automatic
-    Start-Service -Name $ServiceName
-}
-# A SYSTEM scheduled task must outlive the native agent to activate an
-# update. It cannot depend on the interactive operator's Git credentials.
-$updateDir=Join-Path $InstallRoot 'Update'
-New-Item -ItemType Directory -Path $updateDir -Force | Out-Null
-$updater=Join-Path $updateDir 'experiment_hub_worker_updater.js'
-Copy-Item -LiteralPath (Join-Path $Training 'experiment_hub_worker_updater.js') -Destination $updater -Force
-& "$env:SystemRoot\System32\icacls.exe" $updateDir /grant 'NT AUTHORITY\SYSTEM:(OI)(CI)F' | Out-Null
-Assert-Exit 'Set updater service permissions'
-Install-UpdateTask $node $updater $InstallRoot
-Write-Host "Hub worker installed. Service: $ServiceName (automatic startup when -Start was selected)."
-Write-Host 'Simulation software is installed separately by Experiment Hub when required.'
-Write-Host 'Automatically enrolled via Tailscale; Hub Machines will display native capabilities.'
- -or
+        $saved['EXPERIMENT_HUB_AGENT_TOKEN'] -cnotmatch '^[0-9a-f]{64}$' -or
         -not (Test-Path -LiteralPath ([string]$configuration.NodePath) -PathType Leaf)) {
-        throw 'Existing worker configuration does not match this installation root. No changes were made.'
+        throw 'Existing worker configuration does not match this root. No changes were made.'
     }
     Install-UpdateTask ([string]$configuration.NodePath) $updater $InstallRoot
     $existing.Refresh()
-    Write-Host "Hub worker setup completed; existing enrollment preserved. Agent service: $($existing.Status)."
-    Write-Host 'The authenticated update task will run every two minutes.'
+    Write-Host "Worker setup completed; enrollment preserved. Agent service: $($existing.Status)."
+    Write-Host 'The software updater task is registered to run every two minutes.'
     return
 }
 if($Command -eq 'install' -and ($hasEnrollment -or $existing)){
@@ -635,10 +456,7 @@ $updater=Join-Path $updateDir 'experiment_hub_worker_updater.js'
 Copy-Item -LiteralPath (Join-Path $Training 'experiment_hub_worker_updater.js') -Destination $updater -Force
 & "$env:SystemRoot\System32\icacls.exe" $updateDir /grant 'NT AUTHORITY\SYSTEM:(OI)(CI)F' | Out-Null
 Assert-Exit 'Set updater service permissions'
-$taskName='Bees Experiment Hub Worker Updates'
-$taskCommand='"'+$node+'" "'+$updater+'" --root "'+$InstallRoot+'"'
-& "$env:SystemRoot\System32\schtasks.exe" /Create /F /SC MINUTE /MO 2 /TN $taskName /TR $taskCommand /RU SYSTEM /RL HIGHEST
-Assert-Exit 'Install two-minute authenticated software update task'
+Install-UpdateTask $node $updater $InstallRoot
 Write-Host "Hub worker installed. Service: $ServiceName (automatic startup when -Start was selected)."
 Write-Host 'Simulation software is installed separately by Experiment Hub when required.'
 Write-Host 'Automatically enrolled via Tailscale; Hub Machines will display native capabilities.'
