@@ -26,7 +26,7 @@ use bees_sim::navigation::NavigationError;
 use bees_sim::physics::CollisionMatrix;
 use bees_sim::policy::Decision;
 use bees_sim::rl_shaping::DamageRewardMetadata;
-use bees_sim::simulation::{GameRules, World};
+use bees_sim::simulation::{GameRules, World, WorldCheckpoint, WorldOwnersRestoreError};
 use bees_sim::telemetry::StepCounts;
 
 use crate::campaign_dialogue::{CampaignDialogueCheckpoint, CampaignDialogueRestoreError};
@@ -894,6 +894,30 @@ pub enum NativeLevelRecoveryError {
     Events(NativeLevelEventRecoveryError),
     HeldFire,
     Combat(CombatWorldError),
+}
+
+/// A single authoritative Level ownership projection with its owning
+/// simulation clock and RNG position. Authored metadata callbacks and the
+/// resident policy/network connection remain separate host-owned contracts.
+pub type NativeLevelWorldRecoveryCheckpoint =
+    WorldCheckpoint<NativeLevelRecoveryOwnersCheckpoint>;
+
+pub fn checkpoint_native_level_world<M, A>(
+    world: &World<NativeLevelState<M, A>>,
+) -> NativeLevelWorldRecoveryCheckpoint {
+    world.checkpoint_owner_state(world.state.recovery_owners_checkpoint())
+}
+
+/// Restore both fixed-step World ownership and all staged combat, command,
+/// campaign and reward Level owners. Failed preparation changes neither
+/// the authoritative game state nor its random/tick sequence.
+pub fn restore_native_level_world<M, A>(
+    world: &mut World<NativeLevelState<M, A>>,
+    checkpoint: NativeLevelWorldRecoveryCheckpoint,
+) -> Result<(), WorldOwnersRestoreError<NativeLevelRecoveryError>> {
+    world.restore_owner_state(checkpoint, |state, owners, completed_ticks|
+        state.restore_recovery_owners(owners, completed_ticks)
+    )
 }
 
 pub struct NativeLevelState<M, A> {
