@@ -117,6 +117,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--machine", required=True)
     parser.add_argument("--port", type=int, default=7148)
+    parser.add_argument("--hub-host", default="127.0.0.1")
     parser.add_argument("--engine-path", type=Path)
     parser.add_argument("--suite", required=True, type=Path, action="append",
                         help="Repeat 2–8 times for one same-checkpoint evaluation batch.")
@@ -126,7 +127,7 @@ def main():
     try:
         configure_engine(args.engine_path)
         if not SUITE_ID.fullmatch(args.machine) or not 1 <= args.port <= 65535:
-            raise ValueError("Invalid machine ID or loopback port.")
+            raise ValueError("Invalid machine ID or Hub port.")
         args.artifact_root = args.artifact_root.resolve(strict=True)
         if not args.artifact_root.is_dir():
             raise ValueError("Expected the worker's artifact directory.")
