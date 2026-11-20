@@ -137,47 +137,96 @@ uv python install 3.11.18
 umask 077
 mkdir -p "$PRIVATE" "$SRC" "$VENV" "$ROOT/cache/tinybrains" "$ROOT/cache/courier"
 chmod 700 "$PRIVATE"
-for private in "$TB_KEY" "$COURIER_KEY"; do
-    [[ -z "$private" || -f "$private" ]] ||
-        { echo "Approved private rollout key file is missing." >&2; exit 1; }
-done
-
-# Private repositories require the operator's GitHub credential. Never
-# reset branches, remove local changes, or run an unreviewed remote script.
-sync_checkout() {
-    local url=$1 branch=$2 dir=$3 sparse=${4:-}
-    if [[ ! -d "$dir/.git" ]]; then
-        git clone --filter=blob:none --depth=1 --sparse --branch "$branch" "$url" "$dir"
-        if [[ -n "$sparse" ]]; then git -C "$dir" sparse-checkout set "$sparse"; fi
-    else
-        [[ -z "$(git -C "$dir" status --porcelain --untracked-files=no)" ]] ||
-            { echo "Refusing to change a dirty checkout: $dir" >&2; exit 1; }
-        [[ "$(git -C "$dir" branch --show-current)" == "$branch" ]] ||
-            { echo "Unexpected source branch at $dir" >&2; exit 1; }
-        git -C "$dir" pull --ff-only origin "$branch"
-    fi
-}
-sync_checkout https://github.com/allStackGit/Bees-Assets.git "$ASSETS_BRANCH" "$SRC/Bees-Assets" Training
-# Require an exact, approved Tailscale carrier address. Never contact a
-# generic LAN, wildcard, public host or legacy SSH forward with the Hub token.
-node -e 'if(!require(process.argv[1]).isTailnetIPv4(process.argv[2]))process.exit(1)' \
-    "$TRAINING/experiment_hub_agent_listener.js" "$HUB_IP" || {
-    echo "Supply Halifax's Tailscale IPv4 with --hub-tailnet-ip (100.64.0.0/10)." >&2
-    exit 1
-}
-TAILNET_IP=$(tailscale ip -4 2>/dev/null | head -n 1)
-node -e 'if(!require(process.argv[1]).isTailnetIPv4(process.argv[2]))process.exit(1)' \
-    "$TRAINING/experiment_hub_agent_listener.js" "$TAILNET_IP" || {
-    echo "Sign this machine into Tailscale and rerun setup." >&2
-    exit 1
-}
-if has_project tinybrains && [[ -z "$TB_ROOT" ]]; then
-    sync_checkout https://github.com/allStackGit/TinyBrains.git "$TB_BRANCH" "$SRC/TinyBrains" Ants-MAPOCA
-    TB_ROOT="$SRC/TinyBrains/Ants-MAPOCA"
+# The installer invokes Tailscale itself. The browser sign-in link is the
+# only user action; a previously signed-in machine skips the login.
+[[ "$HUB_IP" =~ ^100\\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\\.[0-9]{1,3}\\.[0-9]{1,3}$ ]] ||
+    { echo "Halifax must be addressed by its private Tailscale IPv4." >&2; exit 1; }
+TAILNET_IP=$(tailscale ip -4 2>/dev/null | head -n 1 || true)
+if [[ ! "$TAILNET_IP" =~ ^100\\. ]]; then
+    echo "Sign in using the Tailscale URL below:"
+    sudo tailscale up
+    TAILNET_IP=$(tailscale ip -4 2>/dev/null | head -n 1 || true)
 fi
-if has_project courier && [[ -z "$COURIER_ROOT" ]]; then
-    sync_checkout https://github.com/allStackGit/Basic-Training.git "$COURIER_BRANCH" "$SRC/Basic-Training"
-    COURIER_ROOT="$SRC/Basic-Training"
+[[ "$TAILNET_IP" =~ ^100\\. ]] ||
+    { echo "Tailscale authentication is required." >&2; exit 1; }
+HUB_URL="http://$HUB_IP:7149"
+
+# Bootstrap only on an owner-authenticated tailnet connection; no SSH or
+# manual tokens. The returned rollout secrets are written with mode 0600.
+if [[ "$MODE" == install ]]; then
+    BOOT_BODY=$(node -e '
+      const os=require("node:os");const projects=process.argv[1].split(",");
+      process.stdout.write(JSON.stringify({projects,cpus:os.cpus().length,
+        ram_mb:Math.floor(os.totalmem()/1048576)}));' "$PROJECTS")
+    BOOT_REPLY=$(curl --noproxy '*' -fsS --max-time 30 -H 'Content-Type: application/json' \\
+        --data "$BOOT_BODY" "$HUB_URL/api/hub/agent/bootstrap")
+    bootstrap_value() {
+        printf '%s' "$BOOT_REPLY" | node -e '
+          let data="";process.stdin.on("data",x=>data+=x);
+          process.stdin.on("end",()=>{
+            const r=JSON.parse(data),key=process.argv[1];
+            const v=key==="machine_id"?r.machine_id:
+              key==="agent_token"?r.agent_token:r.rollout_keys?.[key];
+            if(typeof v!=="string"||!v)process.exitCode=1;
+            else process.stdout.write(v);
+          });' "$1"
+    }
+    MACHINE_ID=$(bootstrap_value machine_id)
+    TOKEN=$(bootstrap_value agent_token)
+    [[ "$MACHINE_ID" =~ ^[a-z][a-z0-9_-]{0,47}$ && "$TOKEN" =~ ^[0-9a-f]{64}$ ]] ||
+        { echo "Invalid coordinator enrollment response." >&2; exit 1; }
+    if has_project tinybrains; then bootstrap_value tinybrains > "$PRIVATE/tinybrains-rollout.key"; fi
+    if has_project courier; then bootstrap_value courier > "$PRIVATE/courier-rollout.key"; fi
+    chmod 600 "$PRIVATE/"*rollout.key
+    unset BOOT_REPLY BOOT_BODY
+fi
+
+# Immutable SHA-256-checked archives come only from the Hub release publisher.
+# Worker GitHub credentials are never needed.
+install_release() {
+    local component=$1 dest=$2 manifest sha bytes archive actual
+    [[ ! -e "$dest" ]] ||
+        { echo "Refusing to replace an existing source directory: $dest" >&2; return 1; }
+    manifest=$(curl --noproxy '*' -fsS --max-time 30 \\
+        -H "x-hub-agent-token: $TOKEN" \\
+        "$HUB_URL/api/hub/agent/releases?machine_id=$MACHINE_ID")
+    read -r sha bytes < <(printf '%s' "$manifest" | node -e '
+      let data="";process.stdin.on("data",x=>data+=x);
+      process.stdin.on("end",()=>{
+        const v=JSON.parse(data).components?.[process.argv[1]];
+        if(!v||!v.activation_ready||!/^[0-9a-f]{64}$/.test(v.sha256)||
+           !Number.isSafeInteger(v.bytes)||v.bytes<1||v.bytes>536870912)
+          process.exitCode=1;
+        else process.stdout.write(v.sha256+" "+v.bytes+"\\n");
+      });' "$component")
+    [[ "$sha" =~ ^[0-9a-f]{64}$ && "$bytes" =~ ^[0-9]+$ ]] ||
+        { echo "Published $component release is unavailable." >&2; return 1; }
+    archive="$PRIVATE/$component-$$.tar"
+    curl --noproxy '*' -fsS --max-time 180 \\
+        -H "x-hub-agent-token: $TOKEN" \\
+        "$HUB_URL/api/hub/agent/releases/bundle?machine_id=$MACHINE_ID&component=$component&sha256=$sha" \\
+        -o "$archive"
+    actual=$(sha256sum "$archive" | cut -d' ' -f1)
+    [[ "$actual" == "$sha" && "$(stat -c %s "$archive")" == "$bytes" ]] ||
+        { rm -f "$archive"; echo "$component release checksum mismatch." >&2; return 1; }
+    if tar -tvf "$archive" | grep -Eq '^[lh]' ||
+        tar -tf "$archive" | grep -Eq '(^/|(^|/)\\.\\.(/|$)|\\\\|:)'; then
+        rm -f "$archive"; echo "Unsafe release archive." >&2; return 1
+    fi
+    mkdir -p "$dest"
+    tar -xf "$archive" -C "$dest"
+    rm -f "$archive"
+}
+if [[ "$MODE" == install ]]; then
+    install_release worker "$SRC/Bees-Assets"
+    if has_project tinybrains && [[ -z "$TB_ROOT" ]]; then
+        install_release tinybrains "$SRC/TinyBrains"
+        TB_ROOT="$SRC/TinyBrains/Ants-MAPOCA"
+    fi
+    if has_project courier && [[ -z "$COURIER_ROOT" ]]; then
+        install_release courier "$SRC/Basic-Training"
+        COURIER_ROOT="$SRC/Basic-Training"
+    fi
 fi
 
 # Preserve the official TinyBrains simulator; never create a simplified
