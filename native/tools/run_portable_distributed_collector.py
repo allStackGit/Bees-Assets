@@ -34,10 +34,10 @@ def pinned_allocation_matches(orders, job, args):
         job["world_count"] == args.expected_worlds and
         job["rollout_workers"] == args.expected_workers and
         job.get("physics_workers", 1) == args.expected_physics_workers and
-        ("hub_gpu_count" not in job or (
-            bool(job["hub_gpu_count"]) == args.permit_leased_gpu and
-            (job["hub_gpu_count"] or 1) == args.leased_gpu_count
-        ))
+        type(job.get("hub_gpu_count")) is int and
+        job["hub_gpu_count"] in (0, 1, 2) and
+        bool(job["hub_gpu_count"]) == args.permit_leased_gpu and
+        (job["hub_gpu_count"] or 1) == args.leased_gpu_count
     )
 
 

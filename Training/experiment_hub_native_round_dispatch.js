@@ -53,8 +53,11 @@ function checkPlan(plan,orders) {
             !/^[A-Za-z0-9_-]{1,96}$/.test(job.bundle_directory)||
             !Number.isSafeInteger(job.world_start)||job.world_start<0||
             !Number.isSafeInteger(job.world_count)||job.world_count<1||
-            !Number.isSafeInteger(job.rollout_workers)||job.rollout_workers<1)
-            throw Error('Malformed issued native collector identity or simulation window.');
+            !Number.isSafeInteger(job.rollout_workers)||job.rollout_workers<1||
+            ![0,1,2].includes(job.hub_gpu_count)||
+            job.hub_gpu_count>job.rollout_workers||
+            job.hub_gpu_count>job.world_count)
+            throw Error('Malformed issued native collector identity, simulation window or pinned GPU count.');
         jobs.set(job.id,job);
     }
     if(orders.kind!=='native_distributed_collection_orders'||
@@ -80,8 +83,7 @@ function checkPlan(plan,orders) {
             allocation.cpus<job.rollout_workers*physics||
             !Number.isSafeInteger(allocation.ram_mb)||allocation.ram_mb<128||
             ![0,1,2].includes(allocation.gpu_count??0)||
-            (job.hub_gpu_count!==undefined&&
-             job.hub_gpu_count!==(allocation.gpu_count??0))||
+            job.hub_gpu_count!==(allocation.gpu_count??0)||
             (allocation.gpu_count>0&&(
                 allocation.gpu_mode!=='exclusive'||
                 plan.confirm_gpu_start!==true||
