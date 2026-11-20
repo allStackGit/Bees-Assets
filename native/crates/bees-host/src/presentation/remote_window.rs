@@ -478,7 +478,11 @@ impl PeerClient {
                     }
                     self.host_session_id = Some(host_id.to_owned());
                     self.authenticated = true;
-                    self.notice = format!("Connected as player side {}", self.side);
+                    self.notice = if message["recovered_host"] == true {
+                        format!("Recovered original battle as player side {}. Unacknowledged commands were not resent.", self.side)
+                    } else {
+                        format!("Connected as player side {}", self.side)
+                    };
                 }
                 Some("world_state") => {
                     if !self.authenticated || message["protocol"].as_u64() != Some(1) ||
