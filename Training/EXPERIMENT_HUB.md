@@ -2524,9 +2524,11 @@ non-learner policy slot** from the original opponent set. The installed
 learner manifest and final checkpoint are taken from the original
 Hub-owned publisher's `learner/` artifacts; the independent evaluator
 copies the verified checkpoint into its own workspace. The suite's
-comparison hash excludes local source/reference paths, but includes their
-pinned content SHA-256s, the native source-scene contract, seeds, policy
-side, and trial count. Multiple suites use the existing coordinated
+comparison hash excludes machine-local paths and raw file-layout hashes,
+but includes the portable native source-scene contract, reference policy
+ABI and model content hashes, seeds, policy side, and trial count. Local
+raw SHA-256s are still checked against their original files before and
+after evaluation. Multiple suites use the existing coordinated
 same-checkpoint batch worker. Reuse the native training source-contract
 command `python -B native/tools/native_training_artifacts.py
 /absolute/eval-run.json` to obtain `source_contract_sha256`.
