@@ -34,10 +34,23 @@ pub struct NativeReinforcementPlan {
     pub entry: Option<Vec2>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 enum ReinforcementDue {
     Tick(u64),
     Event(NativeMissionEvent),
+}
+
+/// Source-authored deferred wave identity. Checkpoints retain the
+/// remainder of the queue, not a second copy of ship prefabs.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ReinforcementWaveIdentity {
+    due: ReinforcementDue,
+    entry: Option<Vec2>,
+    squads: Vec<(SquadLifetime, i32, Vec<i64>)>,
+    ships: Vec<(i64, u8, i32)>,
+    policy_agents: usize,
+    group_agents: Vec<(i64, i32, u64)>,
 }
 
 pub(crate) struct ReinforcementWave {
@@ -64,7 +77,7 @@ pub(crate) struct ReinforcementWakeup {
 }
 
 impl ReinforcementWakeup {
-    fn from_waves(waves: &VecDeque<ReinforcementWave>) -> Self {
+    pub(crate) fn from_waves(waves: &VecDeque<ReinforcementWave>) -> Self {
         let mut state = Self::default();
         for wave in waves {
             match wave.due {
@@ -89,6 +102,21 @@ impl ReinforcementWakeup {
 }
 
 impl ReinforcementWave {
+    pub(crate) fn identity(&self) -> ReinforcementWaveIdentity {
+        ReinforcementWaveIdentity {
+            due: self.due,
+            entry: self.entry,
+            squads: self.squads.iter().map(|squad|
+                (squad.owner, squad.side, squad.members.clone())
+            ).collect(),
+            ships: self.ships.iter().map(|ship|
+                (ship.entity_id, ship.ship_type, ship.side)
+            ).collect(),
+            policy_agents: self.policy_agents,
+            group_agents: self.group_agents.clone(),
+        }
+    }
+
     pub(crate) fn scheduled_tick(&self) -> Option<u64> {
         match self.due {
             ReinforcementDue::Tick(tick) => Some(tick),

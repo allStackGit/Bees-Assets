@@ -260,6 +260,7 @@ pub struct NativePolicySourceLedgerCheckpoint {
     navigation_worker_counts: NativeNavigationWorkerMeasurements,
     reinforcement_idle_ticks_skipped: u64,
     reinforcement_wakeup_scans: u64,
+    remaining_reinforcements: Vec<crate::reinforcements::ReinforcementWaveIdentity>,
 }
 
 #[derive(Debug)]
@@ -268,6 +269,7 @@ pub enum NativePolicySourceLedgerRestoreError {
     InvalidSide,
     InvalidPolicyAgents,
     InvalidScriptedState,
+    InvalidReinforcementQueue,
     InvalidTimer,
     Fleet(crate::fleet_inventory::NativeFleetRestoreError),
 }
@@ -290,6 +292,7 @@ pub struct NativePolicySourceLedgerPrepared {
     navigation_worker_counts: NativeNavigationWorkerMeasurements,
     reinforcement_idle_ticks_skipped: u64,
     reinforcement_wakeup_scans: u64,
+    reinforcement_drop_count: usize,
 }
 
 impl NativePolicyOnlyMetadata {
@@ -317,6 +320,8 @@ impl NativePolicyOnlyMetadata {
             navigation_worker_counts: self.navigation_worker_counts,
             reinforcement_idle_ticks_skipped: self.reinforcement_idle_ticks_skipped,
             reinforcement_wakeup_scans: self.reinforcement_wakeup_scans,
+            remaining_reinforcements: self.reinforcements.iter()
+                .map(|wave| wave.identity()).collect(),
         }
     }
 
@@ -405,6 +410,20 @@ impl NativePolicyOnlyMetadata {
             saved.scripted_retry_ticks == 0 {
             return Err(Error::InvalidTimer);
         }
+        // The constructed scene still owns the immutable deferred
+        // wave definitions. A recovered queue can only be a suffix of
+        // that authored sequence: consumed waves are not spawned again.
+        if saved.remaining_reinforcements.len() > self.reinforcements.len() {
+            return Err(Error::InvalidReinforcementQueue);
+        }
+        let reinforcement_drop_count = self.reinforcements.len() -
+            saved.remaining_reinforcements.len();
+        if self.reinforcements.iter().skip(reinforcement_drop_count)
+            .map(|wave| wave.identity())
+            .ne(saved.remaining_reinforcements.iter().cloned())
+        {
+            return Err(Error::InvalidReinforcementQueue);
+        }
         let fleet = self.fleet.prepare_restore(saved.fleet).map_err(Error::Fleet)?;
         if saved.authored_ships.keys().any(|id| fleet.get(*id).is_none()) {
             return Err(Error::InvalidPolicyAgents);
@@ -427,6 +446,7 @@ impl NativePolicyOnlyMetadata {
             navigation_worker_counts: saved.navigation_worker_counts,
             reinforcement_idle_ticks_skipped: saved.reinforcement_idle_ticks_skipped,
             reinforcement_wakeup_scans: saved.reinforcement_wakeup_scans,
+            reinforcement_drop_count,
         })
     }
 
@@ -453,6 +473,11 @@ impl NativePolicyOnlyMetadata {
         self.navigation_worker_counts = staged.navigation_worker_counts;
         self.reinforcement_idle_ticks_skipped = staged.reinforcement_idle_ticks_skipped;
         self.reinforcement_wakeup_scans = staged.reinforcement_wakeup_scans;
+        for _ in 0..staged.reinforcement_drop_count {
+            self.reinforcements.pop_front();
+        }
+        self.reinforcement_wakeup =
+            crate::reinforcements::ReinforcementWakeup::from_waves(&self.reinforcements);
     }
 
     /// Temporarily select an authenticated peer's authored player side.
