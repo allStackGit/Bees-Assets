@@ -1473,6 +1473,13 @@ impl KinematicPhysics {
         // Cache/buckets are reconstructible from these authoritative bodies
         // and retain NO mutable contact history. Force one lazy rebuild.
         self.grid_contents = GridContents::Stale;
+        // The next sparse-grid rebuild reuses bucket storage. Clear every
+        // retained bucket BEFORE resetting the active count, otherwise
+        // previously occupied buckets can leak old slot indices into the
+        // first post-restore collision/vision query.
+        for bucket in &mut self.grid.buckets {
+            bucket.clear();
+        }
         self.grid.cell_to_bucket.clear();
         self.grid.active_buckets = 0;
         self.grid.sorted_cells.clear();
