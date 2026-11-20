@@ -255,8 +255,11 @@ pub struct NativeReinforcementArrivals {
     pub waves: u64,
     pub squads: u64,
     pub ships: u64,
-    /// Policy participants admitted with these real physical ships.
+    /// Policy-controlled physical ships admitted by the real wave.
     pub policy_agents: u64,
+    /// Subset with an authenticated MA-POCA reward-group admission.
+    #[serde(default)]
+    pub group_agents: u64,
 }
 
 impl NativeReinforcementArrivals {
@@ -265,6 +268,7 @@ impl NativeReinforcementArrivals {
         self.squads += other.squads;
         self.ships += other.ships;
         self.policy_agents += other.policy_agents;
+        self.group_agents += other.group_agents;
     }
 }
 
@@ -1166,7 +1170,8 @@ impl NativeLevelEventProcessor {
     }
 
     pub fn record_reinforcements(
-        &mut self, tick: u64, ships: usize, squads: usize, policy_agents: usize,
+        &mut self, tick: u64, ships: usize, squads: usize,
+        policy_agents: usize, group_agents: usize,
     )
         -> Result<(), NativeLevelEventError>
     {
@@ -1180,6 +1185,7 @@ impl NativeLevelEventProcessor {
         self.reinforcement_arrivals.squads += squads as u64;
         self.reinforcement_arrivals.ships += ships as u64;
         self.reinforcement_arrivals.policy_agents += policy_agents as u64;
+        self.reinforcement_arrivals.group_agents += group_agents as u64;
         self.last_reinforcement_tick = Some(tick);
         Ok(())
     }
