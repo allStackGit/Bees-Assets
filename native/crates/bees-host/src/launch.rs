@@ -3366,7 +3366,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                         authored_from: None,
                     });
                 }
-                for &destination in &squads {
+                for &destination in squads {
                     if purchased.saved_squad_id == destination { continue; }
                     transfer_rows.push(NativeTransferMenuRow {
                         title: format!(
