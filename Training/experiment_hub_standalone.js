@@ -62,6 +62,12 @@ function renderPage(html) {
         '</div>'+
         '<div id="hub-local-evaluator-rows" class="hub-standalone"></div>'+
         '<p id="hub-local-evaluator-message" class="hub-notice" role="status"></p>'+
+        '<h4>Remote evaluator services</h4>'+
+        '<p class="muted">Control only existing services verified by enrolled remote agents. '+
+        'Operations are one-use; uncertain results require review, not automatic replay. '+
+        'Host enrollment and initial service installation remain separate authorized steps.</p>'+
+        '<div id="hub-remote-evaluator-rows" class="hub-standalone"></div>'+
+        '<p id="hub-remote-evaluator-message" class="hub-notice" role="status"></p>'+
         '</div>';
     return normalized.slice(0,at+script.length)
         .replace('<html lang="en">',
@@ -155,6 +161,12 @@ function createAdminServer(hub,{html,ui,dataRoot}={}) {
                 if(body.confirm_action!==true)
                     return json(res,400,{error:'Explicit evaluator confirmation required.'});
                 return json(res,200,await localServices.evaluatorAction(hub,body));
+            }
+            if(req.method==='POST'&&route==='/api/hub/local-services/remote-evaluator') {
+                return json(res,202,hub.queueEvaluatorAction(await readJson(req)));
+            }
+            if(req.method==='POST'&&route==='/api/hub/local-services/remote-evaluator/reconcile') {
+                return json(res,200,hub.reconcileEvaluatorAction(await readJson(req)));
             }
             if(req.method==='POST'&&route==='/api/hub/exports')
                 return json(res,202,exporter.start(await readJson(req)));
