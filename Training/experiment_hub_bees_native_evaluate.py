@@ -65,9 +65,11 @@ def read_suite(source):
         native_source_contract_sha256(run) != raw["source_contract_sha256"]):
         raise ValueError("Native evaluation physical scene or policy contract differs from frozen suite.")
     source_config = json.loads(read_bounded(run, 1024 * 1024))
+    if not isinstance(source_config, dict):
+        raise ValueError("Native evaluation source must be a physical run document.")
     count = source_config.get("episodes_per_world", 1)
     levels = source_config.get("levels")
-    if (not isinstance(source_config, dict) or type(count) is not int or
+    if (type(count) is not int or
         not 1 <= count <= 10000 or
         not isinstance(levels, list) or not levels or
         count * len(levels) != raw["trials"]):
@@ -116,7 +118,8 @@ def fixed_reference_manifest(checkpoint, digest, installed, definition, workspac
     if learner.get("backend") != "mlagents" or learner.get("sha256") != digest:
         raise ValueError("Native learner slot does not own the evaluated checkpoint.")
     models = []
-    for identifier in sorted(by_slot):
+    for current in current_models:
+        identifier = current["slot"]
         if identifier == slot:
             models.append({**learner, "path": str(checkpoint)})
             continue
