@@ -7685,11 +7685,19 @@ fn run_battle(
                         "final_physical_worlds", "final_gameplay_worlds",
                         "campaign_outcome", "campaign_fleet", "campaign_squads",
                         "campaign_banked_minerals",
-                        "remote_session_id", "remote_authorized_sides",
-                        "remote_terminal_receipt",
+                        "remote_session_id", "remote_terminal_receipt",
                     ];
+                    // Pre-side-identity archives remain immutable. The
+                    // original host checkpoint independently pins the
+                    // complete side-token digest for their read-only
+                    // delivery; do not rewrite an already committed career
+                    // result merely to add this newer archive projection.
+                    let side_identity_matches =
+                        committed.get("remote_authorized_sides").is_none_or(|sides|
+                            Some(sides) == final_summary.get("remote_authorized_sides"));
                     if FIELDS.iter().any(|&field|
                         committed.get(field) != final_summary.get(field)) ||
+                        !side_identity_matches ||
                         committed["kind"] != "run_final" ||
                         !committed["failed_window"].is_null() ||
                         committed["cleanup_errors"] != json!([]) ||
