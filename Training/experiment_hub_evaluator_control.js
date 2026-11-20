@@ -66,11 +66,35 @@ async function inspect(machineId,platform=os.platform()) {
 }
 
 async function control(command,machineId,platform=os.platform()) {
-    if(!command||!['start','stop','inspect'].includes(command.action))
+    if(!command||!['start','stop','restart','inspect'].includes(command.action))
         throw Error('Invalid native evaluator service operation.');
     const name=evaluatorServiceName(machineId,platform);
     const before=await inspect(machineId,platform);
-    if(command.action==='start'&&before==='inactive') {
+    if(command.action==='restart') {
+        if(platform==='linux') {
+            await invoke('systemctl',['--user','stop',name,
+                name.replace(/\.timer$/,'.service')]);
+            if(await inspect(machineId,platform)!=='inactive')
+                throw Error('Native evaluator timer did not stop before restart.');
+            await invoke('systemctl',['--user','start',name]);
+        }else {
+            if(['active','activating','deactivating'].includes(before))
+                await invoke('sc.exe',['stop',name]);
+            // Windows SCM Stop is asynchronous. One bounded wait observes
+            // the actual service state; it never launches a second copy
+            // while the original evaluator Job Object is still closing.
+            let stopped=false;
+            for(let attempt=0;attempt<30;attempt++) {
+                if(await inspect(machineId,platform)==='inactive') {
+                    stopped=true;break;
+                }
+                await new Promise(resolve=>setTimeout(resolve,500));
+            }
+            if(!stopped)
+                throw Error('Evaluator Stop still pending; inspect the original Windows service.');
+            await invoke('sc.exe',['start',name]);
+        }
+    }else if(command.action==='start'&&before==='inactive') {
         if(platform==='linux')await invoke('systemctl',['--user','start',name]);
         else await invoke('sc.exe',['start',name]);
     }else if(command.action==='stop') {
@@ -83,7 +107,7 @@ async function control(command,machineId,platform=os.platform()) {
             await invoke('sc.exe',['stop',name]);
     }
     const observed=await inspect(machineId,platform);
-    if(command.action==='start'&&
+    if(['start','restart'].includes(command.action)&&
         !['active','activating'].includes(observed))
         throw Error('Native evaluator OS service did not accept Start.');
     if(command.action==='stop'&&
