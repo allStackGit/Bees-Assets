@@ -8,20 +8,30 @@ const {promisify}=require('node:util');
 const {evaluatorHealth}=require('./experiment_hub_evaluator_health');
 const tinybrains=require('./experiment_hub_local_evaluators');
 const courier=require('./experiment_hub_local_courier_evaluators');
+const localServices=require('./experiment_hub_local_services');
 const run=promisify(execFile);
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const MACHINE=/^[a-z][a-z0-9_-]{0,47}$/;
 
-async function execute(machine,order,installedProjects=[]) {
+async function execute(machine,order,installedProjects=[],hasUnresolvedNative=false) {
     if(!MACHINE.test(String(machine||''))||!order||
         typeof order!=='object'||Array.isArray(order)||
         Object.keys(order).sort().join(',')!=='action,id,unit'||
         !UUID.test(String(order.id||''))||
         typeof order.unit!=='string'||order.unit.length>160||
-        !['start','stop','restart','run','setup','refresh'].includes(order.action))
+        !['start','stop','restart','run','setup','refresh','restart-agent'].includes(order.action))
         throw Error('Invalid independent evaluator directive.');
     const receipt={id:order.id,unit:order.unit};
     try {
+        if(order.action==='restart-agent') {
+            if(process.platform!=='linux'||order.unit!=='@agent'||hasUnresolvedNative)
+                throw Error('Remote agent restart needs a trusted idle Linux native supervisor.');
+            const manager=await localServices.unitStatus('agent');
+            if(!manager.managed||!manager.active||manager.pid!==process.pid)
+                throw Error('This agent is not owned by its approved user-systemd service.');
+            return {...receipt,status:'completed',
+                diagnostic:'Agent restart preapproved; awaiting heartbeat acknowledgement and new agent instance.'};
+        }
         if(order.action==='setup') {
             const project=order.unit.slice('@setup:'.length);
             if(process.platform!=='linux'||!['tinybrains','courier'].includes(project)||
@@ -87,4 +97,16 @@ async function execute(machine,order,installedProjects=[]) {
             diagnostic:String(error.message||error).replace(/[\r\n\t]+/g,' ').slice(0,200)};
     }
 }
-module.exports={execute};
+async function restartAgentAfterAcknowledgement(hasUnresolvedNative=false) {
+    if(process.platform!=='linux'||hasUnresolvedNative)
+        throw Error('A native owner blocks remote agent service restart.');
+    const manager=await localServices.unitStatus('agent');
+    if(!manager.managed||!manager.active||manager.pid!==process.pid)
+        throw Error('Approved agent systemd owner identity changed.');
+    // The coordinator already durably accepted the pending action report.
+    // systemd remains the one process owner; do not spawn a second agent.
+    await run('/usr/bin/systemctl',['--user','restart','--no-block',
+        'bees-experiment-hub-agent.service'],
+        {timeout:15000,maxBuffer:16384,windowsHide:true});
+}
+module.exports={execute,restartAgentAfterAcknowledgement};
