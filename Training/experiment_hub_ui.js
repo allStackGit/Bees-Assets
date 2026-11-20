@@ -4317,8 +4317,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     capability?.reason||'No authenticated native capability report.';
             if(m.evaluation_suites?.bees_native?.length)
                 control.textContent+=' · Bees evaluator: '+
-                    (evaluator?.status==='pending'?'command pending':
-                        evaluator?.state||'not inspected')+
+                    (evaluator?.status==='pending'
+                        ?evaluator.pending_fresh
+                            ?'command awaiting machine report'
+                            :'previous agent command disarmed; reauthorize'
+                        :evaluator?.state||'not inspected')+
                     (evaluator?.diagnostic?' ('+evaluator.diagnostic+')':'');
             cell(tr,m.last_seen_at?.replace('T',' ').slice(0,19)||'—');
             const actions=cell(tr,'');
@@ -4374,7 +4377,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     ['Inspect evaluator','inspect'],
                 ]) {
                     const btn=button(label,()=>issueEvaluator(operation));
-                    btn.disabled=evaluator?.status==='pending';
+                    btn.disabled=evaluator?.status==='pending'&&
+                        evaluator.pending_fresh===true;
                     actions.append(btn);
                 }
             }
