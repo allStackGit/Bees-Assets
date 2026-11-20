@@ -170,11 +170,15 @@ pub(crate) enum PreparedSocketRequest {
 }
 
 impl PreparedSocketRequest {
-    pub(crate) fn setup(connection: &mut DurableHiveMindConnection, identity: SetupLevelIdentity<'_>)
-        -> Result<Self, HiveMindSocketError>
-    {
+    pub(crate) fn setup(
+        connection: &mut DurableHiveMindConnection,
+        identity: SetupLevelIdentity<'_>, run_identity: &str,
+    ) -> Result<Self, HiveMindSocketError> {
         validate_setup(&identity)?;
-        Ok(Self::Setup { hash: connection.next_hash()?, kind: identity.kind,
+        // Reserve the setup's original Game identity together with its
+        // canonical Hash before any I/O worker can transmit the request.
+        let hash = connection.begin_setup(run_identity, identity.server_game_id)?;
+        Ok(Self::Setup { hash, kind: identity.kind,
             level_id: identity.level_id, server_game_id: identity.server_game_id,
             user_id: identity.user_id, auth_ticket: identity.auth_ticket.map(str::to_owned),
             version: identity.version })
