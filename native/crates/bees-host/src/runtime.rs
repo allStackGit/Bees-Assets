@@ -125,7 +125,7 @@ pub enum HostNetworkError {
 
 /// Source Hive Mind's 0.25s queue-timer handoff. Counters are aggregated
 /// only on timer pulses, not during per-ship physics or inference steps.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativeSourceCommandPulse {
     pub eligible: usize,
     pub issued: usize,
