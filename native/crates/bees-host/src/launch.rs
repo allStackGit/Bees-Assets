@@ -4547,7 +4547,46 @@ fn run_battle(
     // installation ticks.
     let trace_output = output.filter(|_| (play || remote_step_interval.is_some()) &&
         replay_inputs.is_none() && navigation_workers.is_none() &&
-        config.model_updates.is_empty());
+        config.model_updates.is_empty() && config.host_recovery_checkpoint.is_none());
+    // A checkpointed session must not create an unrelated policy capture
+    // or input trace whose write cursor cannot be rolled back with a World.
+    if config.host_recovery_checkpoint.is_some() &&
+        (replay_inputs.is_some() || policy_capture.is_some()) {
+        return Err(invalid("native host continuation cannot share a policy capture or input replay").into());
+    }
+    if let Some(directory) = output { fs::create_dir(directory)?; }
+    let host_checkpoint_file = config.host_recovery_checkpoint.as_ref().map(|path| {
+        let path = output.map_or_else(
+            || resolve(root, path), |dir| dir.join("native-host-checkpoint.json"),
+        );
+        NativeHostCheckpointFile::open(path)
+    }).transpose().map_err(|error| contextual("native host checkpoint lease", error))?;
+    let saved_host_checkpoint = host_checkpoint_file.as_ref()
+        .map(|file| file.load()).transpose()
+        .map_err(|error| contextual("native host checkpoint load", error))?
+        .flatten();
+    let resume_cursor: Option<NativeBattleRecoveryCursor> =
+        saved_host_checkpoint.as_ref().map(|snapshot|
+            serde_json::from_value(snapshot.launcher().clone())
+        ).transpose().map_err(|error| contextual("native launcher recovery cursor", error))?;
+    if let Some(cursor) = &resume_cursor {
+        if cursor.schema_version != 1 || cursor.run_id != config.run_id ||
+            cursor.config_sha256 != config_digest ||
+            cursor.gameplay_sha256 != gameplay_digest ||
+            cursor.source_sha256 != source_digests ||
+            cursor.rounds > config.max_rounds ||
+            cursor.next_model_update > config.model_updates.len() ||
+            cursor.segment_generation != cursor.next_model_update as u64 ||
+            cursor.segment_start_round > cursor.rounds ||
+            cursor.completed_episodes.len() != config.levels.len() ||
+            cursor.counted_revisions.len() != config.levels.len() ||
+            cursor.completed_episodes.iter().any(|&count| count > config.episodes_per_world) ||
+            cursor.next_squad_item_id < next_id.load(Ordering::Relaxed) ||
+            config.hivemind.as_ref().is_some_and(|net| net.reconnect_game_id.is_none())
+        {
+            return Err(invalid("native launcher cursor does not match the authored run or recoverable network ownership").into());
+        }
+    }
 
     let mut model = RolloutModel::default();
     if let (Some(path), Some(trace), Some((_, _, _, manifest_digest))) =
@@ -4556,9 +4595,6 @@ fn run_battle(
         let actions = PolicyActionPlayback::open(&path.with_file_name("policy-actions.bin"),
             trace.policy_actions_sha256.as_deref().expect("validated policy trace digest"))?;
         model.playback = Some((actions, manifest_digest.clone()));
-    }
-    if let Some(directory) = output {
-        fs::create_dir(directory)?;
     }
     // An offline recording restores only the initial connection allocator
     // snapshot, never the original live account's current checkpoint.
@@ -4582,10 +4618,17 @@ fn run_battle(
     // reconnect is still recovery: creating a fresh checkpoint would lose
     // unresolved command credits while claiming the old Game identity.
     let restoring_connection =
+        saved_host_checkpoint.is_some() ||
         !config.recover_notifications.is_empty() ||
         !config.recover_outcome_journals.is_empty() ||
         config.hivemind.as_ref().is_some_and(|network|
             network.reconnect_game_id.is_some());
+    if saved_host_checkpoint.is_some() &&
+        (!config.recover_notifications.is_empty() ||
+         !config.recover_outcome_journals.is_empty())
+    {
+        return Err(invalid("native World continuation cannot also import independent outcome journals").into());
+    }
     let mut connection = if restoring_connection {
         DurableHiveMindConnection::open_existing(&checkpoint)
     } else {
@@ -4618,22 +4661,42 @@ fn run_battle(
         return Err(invalid("policy capture requires a resident model worker").into());
     }
     if let Some((python, worker, manifest, expected_sha)) = model_source.filter(|_| replay_inputs.is_none()) {
-        let resident = ResidentPolicyProcess::python_worker(
-            python, worker, manifest, policy_capture.is_some(),
+        let active_manifest = resume_cursor.as_ref()
+            .and_then(|cursor| cursor.next_model_update.checked_sub(1))
+            .map(|index| resolve(root, &config.model_updates[index].manifest))
+            .unwrap_or(manifest);
+        let active_sha256 = if resume_cursor.as_ref().is_some_and(|cursor|
+            cursor.next_model_update > 0)
+        {
+            format!("{:x}", Sha256::digest(fs::read(&active_manifest)?))
+        } else { expected_sha };
+        let mut resident = ResidentPolicyProcess::python_worker(
+            python, worker, &active_manifest, policy_capture.is_some(),
         ).map_err(|error| contextual("model worker startup", error))?;
-        if resident.model_manifest_sha256() != expected_sha {
+        if resident.model_manifest_sha256() != active_sha256 ||
+            resume_cursor.as_ref().is_some_and(|cursor|
+                cursor.segment_manifest_sha256.as_ref() != Some(&active_sha256))
+        {
             return Err(invalid(
                 "model manifest changed between route preflight and authenticated worker startup",
             ).into());
+        }
+        if let Some(cursor) = &resume_cursor {
+            resident.bind_recovered_generation(cursor.segment_generation)
+                .map_err(|error| contextual("recovered model generation", error))?;
         }
         model.resident = Some(resident);
         if let Some(directory) = trace_output {
             model.recorder = Some(PolicyActionRecorder::create(&directory.join("policy-actions.bin"))?);
         }
     }
-    let mut sink = DurableDiagnosticNotifications::create_new(
-        &notifications, config.run_id.clone(),
-    )?;
+    let mut sink = if let Some(snapshot) = &saved_host_checkpoint {
+        DurableDiagnosticNotifications::open_existing(
+            &notifications, &config.run_id, snapshot.notifications(),
+        )?
+    } else {
+        DurableDiagnosticNotifications::create_new(&notifications, config.run_id.clone())?
+    };
     if let Some(path) = policy_capture.as_ref() {
         sink.capture_policy_to(path)?;
     }
@@ -4648,11 +4711,16 @@ fn run_battle(
               .map_err(|error| contextual("navigation worker startup", error))?;
         }
     }
-    for (index, level) in config.levels.iter().enumerate() {
-        bind_evaluation_episode(
-            &mut host, index, level, level.episode_seed(0), &source_digests[index],
-            &gameplay_digest, 0, config.decision_period,
-        )?;
+    if let Some(snapshot) = saved_host_checkpoint {
+        host.restore_recovery_checkpoint(snapshot)
+            .map_err(|error| contextual("native World/Level/journal recovery", error))?;
+    } else {
+        for (index, level) in config.levels.iter().enumerate() {
+            bind_evaluation_episode(
+                &mut host, index, level, level.episode_seed(0), &source_digests[index],
+                &gameplay_digest, 0, config.decision_period,
+            )?;
+        }
     }
     host.set_timing_sample_period(timing);
     let recorded_inputs = trace_output.map(|directory| directory.join("player-inputs.jsonl"));
