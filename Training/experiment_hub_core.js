@@ -5064,23 +5064,30 @@ class ExperimentHub {
             !['machine_id','unit','action','confirm_action'].includes(key))||
             value.confirm_action!==true||!ID.test(String(value.machine_id||''))||
             typeof value.unit!=='string'||value.unit.length>160||
-            !['start','stop','restart','run','setup','refresh'].includes(value.action))
+            !['start','stop','restart','run','setup','refresh','restart-agent'].includes(value.action))
             throw Error('Confirm a bounded action for an enrolled evaluator service.');
         const host=this.snapshot().machines.find(m=>m.id===value.machine_id);
         const setup=value.action==='setup'&&
             ['@setup:tinybrains','@setup:courier'].includes(value.unit);
+        const restartAgent=value.action==='restart-agent'&&value.unit==='@agent';
         const row=host?.evaluator_services?.find(item=>item.unit===value.unit);
-        const project=setup?value.unit.slice('@setup:'.length):row?.project;
-        const executor=setup?'systemd-user':row?.executor;
+        const project=restartAgent?'agent':setup?value.unit.slice('@setup:'.length):row?.project;
+        const executor=restartAgent||setup?'systemd-user':row?.executor;
         if(!host||host.status!=='connected'||
-            !['tinybrains','courier'].includes(project)||
+            !['tinybrains','courier','agent'].includes(project)||
             !['systemd-user','windows-service'].includes(executor)||
             (setup&&(!host.installed_projects?.includes(project)||
                 host.agent_platform!=='linux'))||
-            (!setup&&(!row||
+            (restartAgent&&(host.agent_platform!=='linux'||!host.agent_enrolled||
+                this.state.jobs.some(job=>
+                    (!job.assigned_machine_id||job.assigned_machine_id===host.id)&&
+                    ['start_requested','launch_requested','running','stop_requested','unverified']
+                        .includes(job.status))))||
+            (!setup&&!restartAgent&&(!row||
                 (row.executor==='systemd-user'&&host.agent_platform!=='linux')||
                 (row.executor==='windows-service'&&host.agent_platform!=='win32')))||
             (!setup&&value.action==='setup')||
+            (!restartAgent&&value.action==='restart-agent')||
             (value.action==='refresh'&&
                 (project!=='tinybrains'||executor!=='systemd-user'||
                     !new RegExp('^bees-experiment-hub-tinybrains-'+
@@ -5126,8 +5133,10 @@ class ExperimentHub {
             if(host?.status!=='connected'||
                 (entry.action==='setup'
                     ?!host.installed_projects?.includes(entry.project)
-                    :!host.evaluator_services?.some(service=>
-                        service.unit===entry.unit&&service.executor===entry.executor)))
+                    :entry.action==='restart-agent'
+                        ?host.agent_platform!=='linux'
+                        :!host.evaluator_services?.some(service=>
+                            service.unit===entry.unit&&service.executor===entry.executor)))
                 throw Error('Refresh the enrolled agent service observation before reconciling.');
         }
         const next=copy(this.state);
@@ -5176,9 +5185,11 @@ class ExperimentHub {
             (item.action==='setup'
                 ?!(observed.platform==='linux'&&
                     observed.installed_projects?.includes(item.project))
-                :!observed.evaluator_services?.some(service=>
-                    service.unit===item.unit&&service.project===item.project&&
-                    service.executor===item.executor)))return [];
+                :item.action==='restart-agent'
+                    ?observed.platform!=='linux'
+                    :!observed.evaluator_services?.some(service=>
+                        service.unit===item.unit&&service.project===item.project&&
+                        service.executor===item.executor)))return [];
         const next=copy(this.state);
         const pending=next.evaluator_actions.find(action=>action.id===item.id);
         pending.status='dispatched';
