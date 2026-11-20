@@ -119,14 +119,21 @@
             const blocked=data.active_jobs>0;
             coordinator.disabled=busy||blocked||!data.coordinator.managed;
             agent.disabled=busy||blocked||!data.agent.managed;
+            const unavailable=[
+                !data.evaluators?.tinybrains_available
+                    ?'TinyBrains: '+(data.evaluators?.tinybrains_reason||'unavailable'):null,
+                !data.evaluators?.courier_available
+                    ?'Courier: '+(data.evaluators?.courier_reason||'unavailable'):null,
+            ].filter(Boolean);
             message.textContent=label('Coordinator',data.coordinator)+'; '+
                 label('Local agent',data.agent)+'.'+
                 (blocked?' Restart disabled while '+data.active_jobs+
-                    ' native job(s) are active or unverified.':'');
+                    ' native job(s) are active or unverified.':'')+
+                (unavailable.length?' Evaluator readiness — '+unavailable.join('; ')+'.':'');
         }catch(error){
             state=null;
             if(evaluatorSetup)evaluatorSetup.disabled=true;
-        if(courierSetup)courierSetup.disabled=true;
+            if(courierSetup)courierSetup.disabled=true;
             coordinator.disabled=true;
             agent.disabled=true;
             message.textContent='Could not reach coordinator: '+error.message;
