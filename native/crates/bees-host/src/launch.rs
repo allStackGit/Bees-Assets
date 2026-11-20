@@ -3765,6 +3765,44 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
         tokens.values().collect::<HashSet<_>>().len()!=tokens.len() {
         return Err(invalid("host must provide unique side 1/2 native multiplayer tokens").into());
     }
+    // Recovery of a terminal result is a different lifecycle from
+    // launching a new battle. Offer the same saved multiplayer host and
+    // side-token configuration without allocating a new physical World.
+    let receipt_root = if campaign_index.is_some() {
+        save_root.join("campaigns")
+    } else {
+        save_root.join("battles")
+    }.join(&settings.game_id);
+    if !archived_native_remote_receipts_from_root(&receipt_root, None)?.is_empty() {
+        use bees_host::presentation::{select_library, BattleMenuRow};
+        let rows = [
+            BattleMenuRow { title: "Host a new multiplayer battle",
+                status: "  [Live game]", unlocked: true },
+            BattleMenuRow { title: "Deliver completed multiplayer results",
+                status: "  [No battle started]", unlocked: true },
+        ];
+        let mut selected = 0;
+        match select_library(&rows, &mut selected, false)? {
+            Some(0) => {}
+            Some(1) => {
+                // The child owns only the LAN socket and the per-game
+                // writer lease; it opens no gameplay or policy runtime.
+                // Credentials remain inherited from this protected file,
+                // never written into any game archive.
+                let status = std::process::Command::new(env::current_exe()?)
+                    .arg("serve-receipts").arg(&receipt_root)
+                    .env("BEES_NATIVE_REMOTE_LISTEN", &settings.listen)
+                    .env("BEES_NATIVE_REMOTE_SIDE_TOKENS", &token_map)
+                    .env_remove("BEES_NATIVE_REMOTE_TOKEN")
+                    .status()?;
+                if !status.success() {
+                    return Err(invalid("archived native multiplayer host exited unsuccessfully").into());
+                }
+                return Ok(());
+            }
+            _ => return Ok(()),
+        }
+    }
     // A saved campaign game ID opens its original mission catalog and
     // career ledger. The same mission command used by headless multiplayer
     // applies unlocks, persistent fleet edits and durable battle receipts.
