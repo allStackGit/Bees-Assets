@@ -4657,6 +4657,13 @@ fn run_battle(
     } else {
         DurableHiveMindConnection::open(&checkpoint)
     }.map_err(|error| contextual("HiveMind checkpoint", error))?;
+    // Validate the independently durable network ledger BEFORE opening
+    // either diagnostic stream. Only then may the sink discard frames
+    // recorded after this committed World/Level checkpoint.
+    if let Some(saved) = &saved_host_checkpoint {
+        saved.validate_connection_for_recovery(&connection)
+            .map_err(|error| contextual("native connection checkpoint boundary", error))?;
+    }
     for previous in &config.recover_notifications {
         let path = resolve(root, previous);
         if path == notifications || path == checkpoint {
