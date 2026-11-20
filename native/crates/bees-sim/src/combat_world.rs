@@ -833,6 +833,7 @@ struct CombatWorldMovementCheckpoint {
     collision_profiles: HashMap<i64, ShipCollisionProfile>,
     original_ship_health: HashMap<i64, i32>,
     fleet_ids: HashMap<i64, i64>,
+    beacon_parent_by_id: HashMap<i64, i64>,
     target_front_offsets: HashMap<i64, f32>,
     support_zones: HashMap<(u8, i32), Vec<i64>>,
     mining_obstacle_ids: Vec<i64>,
@@ -1582,7 +1583,7 @@ impl CombatWorld {
 
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 15,
+            schema_version: 16,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
@@ -1648,6 +1649,7 @@ impl CombatWorld {
                 collision_profiles: self.ship_collision_profiles.clone(),
                 original_ship_health: self.authored_original_ship_health.clone(),
                 fleet_ids: self.fleet_id_by_ship.clone(),
+                beacon_parent_by_id: self.beacon_parent_by_id.clone(),
                 target_front_offsets: self.ship_target_front_offsets.clone(),
                 support_zones: self.support_zone_ids.clone(),
                 mining_obstacle_ids: self.mining_obstacle_ids.clone(),
@@ -1702,7 +1704,7 @@ impl CombatWorld {
     pub fn restore_recovery_owners(
         &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<(), CombatWorldError> {
-        if snapshot.schema_version != 15 {
+        if snapshot.schema_version != 16 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         if snapshot.level_geometry != self.level_geometry ||
@@ -2037,6 +2039,12 @@ impl CombatWorld {
                 !registered_ship(id) || value <= 0
             ) ||
             movement.fleet_ids.iter().any(|(&id, &fleet)| !registered_ship(id) || fleet == 0) ||
+            movement.beacon_parent_by_id.iter().any(|(&beacon, &parent)|
+                !registered_ship(beacon) || !registered_ship(parent) ||
+                snapshot.ships[self.ship_by_id[&beacon]].ship_type != 1 ||
+                snapshot.ships[self.ship_by_id[&beacon]].side !=
+                    snapshot.ships[self.ship_by_id[&parent]].side
+            ) ||
             movement.target_front_offsets.iter().any(|(&id, &offset)|
                 !registered_ship(id) || !offset.is_finite()
             ) ||
@@ -2263,6 +2271,7 @@ impl CombatWorld {
         self.ship_collision_profiles = movement.collision_profiles;
         self.authored_original_ship_health = movement.original_ship_health;
         self.fleet_id_by_ship = movement.fleet_ids;
+        self.beacon_parent_by_id = movement.beacon_parent_by_id;
         self.ship_target_front_offsets = movement.target_front_offsets;
         self.support_zone_ids = movement.support_zones;
         self.mining_obstacle_ids = movement.mining_obstacle_ids;
