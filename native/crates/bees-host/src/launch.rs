@@ -5685,6 +5685,9 @@ fn run_battle(
     // World changes and these unsent replies. Batch one tick's commands
     // into one checkpoint instead of serializing a World per input.
     let mut pending_remote_successes = Vec::<(u64, u64, &'static str)>::new();
+    // Local gameplay uses the same durable World/trace boundary. Its UI
+    // feedback must not promise a recoverable command before the checkpoint.
+    let mut pending_local_successes = Vec::<&'static str>::new();
     // One typed source of every launcher-owned progress field, reused for
     // regular and terminal persistence. The World and network journal
     // themselves remain owned by the native host runtime.
@@ -5799,7 +5802,8 @@ fn run_battle(
             previous != rounds &&
                 rounds.saturating_sub(previous) >= recovery_interval);
         if host_checkpoint_file.is_some() &&
-            (recovery_due || !pending_remote_successes.is_empty()) &&
+            (recovery_due || !pending_remote_successes.is_empty() ||
+                !pending_local_successes.is_empty()) &&
             network.as_ref().is_none_or(|session| session.server_game_id.is_some() &&
                 session.next_level == session.levels.len()) &&
             host.connection_mut().connection().pending_request_count() == 0
@@ -5831,6 +5835,12 @@ fn run_battle(
                 if let Some(server) = &mut remote {
                     for (peer, request, feedback) in pending_remote_successes.drain(..) {
                         server.reply(peer, request, Ok(feedback));
+                    }
+                }
+                #[cfg(feature = "client")]
+                if let Some(client) = &mut client {
+                    for feedback in pending_local_successes.drain(..) {
+                        client.report_move(feedback);
                     }
                 }
             }
@@ -6130,6 +6140,19 @@ fn run_battle(
                 failed_window = Some("selected Level disappeared".to_owned());
                 break;
             };
+            // A stalled HiveMind obligation can delay checkpoints. Keep
+            // the local UI responsive without allocating an unbounded
+            // queue of uncommitted accepted commands or trace events.
+            if host_checkpoint_file.is_some() && pending_local_successes.len() >= 256 &&
+                matches!(&action, Ok(bees_host::client::NativeClientAction::Input {
+                    action: input, ..
+                }) if !matches!(input, NativePlayerInput::HeldFire(gesture)
+                    if matches!(&gesture.action,
+                        bees_gameplay::player_inputs::NativeHeldFireAction::End)))
+            {
+                client.report_move("Native host checkpoint pending; retry command");
+                continue;
+            }
             if let (Some(trace), Ok(bees_host::client::NativeClientAction::Input { action: input, .. })) =
                 (&mut input_trace, &action)
             {
@@ -6169,6 +6192,8 @@ fn run_battle(
                         apply_remote_side_input(&mut host, input, side)
                     } else { apply_player_input(&mut host, input) };
                     match result {
+                        Ok(feedback) if feedback.accepted && host_checkpoint_file.is_some() =>
+                            pending_local_successes.push(feedback.message),
                         Ok(feedback) => client.report_move(feedback.message),
                         Err(error) => {
                             failed_window = Some(error);
@@ -6569,6 +6594,12 @@ fn run_battle(
                         if let Some(server) = &mut remote {
                             for (peer, request, feedback) in pending_remote_successes.drain(..) {
                                 server.reply(peer, request, Ok(feedback));
+                            }
+                        }
+                        #[cfg(feature = "client")]
+                        if let Some(client) = &mut client {
+                            for feedback in pending_local_successes.drain(..) {
+                                client.report_move(feedback);
                             }
                         }
                     }
