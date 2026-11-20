@@ -488,9 +488,28 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 tick, agent = int(row["tick"]), int(row["group_agent"])
                 team = int(row["team"])
                 if (tick >= terminal["tick"] or
-                        row["model_slot"] != context["model_slots_by_team"][str(team)] or
-                        agent not in context["group_agents_by_team"][str(team)]):
+                        str(team) not in context["group_agents_by_team"] or
+                        row["model_slot"] != context["model_slots_by_team"][str(team)]):
                     raise ValueError("decision disagrees with its authored episode")
+                if agent == 0:
+                    # Native game-only controllers legitimately share the
+                    # authoritative world and policy forward with an MA-POCA
+                    # team. Their actions still drive CombatWorld, but they
+                    # were never registered with GroupRewardDelivery and
+                    # therefore have no PPO trajectory or group reward.
+                    # Advance the compact selected-row iterator so later
+                    # genuine learner rows retain their original alignment.
+                    if learner_rows is not None and int(row["model_slot"]) in learner_slots:
+                        next(learner_rows)
+                    elif opponent_rows is not None:
+                        next(opponent_rows)
+                    if stats is not None:
+                        stats["ungrouped_policy_decision_rows"] = (
+                            stats.get("ungrouped_policy_decision_rows", 0) + 1
+                        )
+                    continue
+                if agent not in context["group_agents_by_team"][str(team)]:
+                    raise ValueError("decision references an unregistered MA-POCA group agent")
                 if key not in frames:
                     frames[key] = {}
                     first_seen.append(key)
