@@ -739,7 +739,13 @@ impl NativeRemotePlay {
     }
 
     pub fn broadcast(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) {
-        if !self.peers.iter().any(|peer| peer.side.is_some()) {
+        // A disconnected side must not retain old live vision or resurrect
+        // decaying death masks when its player authenticates again much
+        // later. Keep only currently authenticated, connected side caches;
+        // cooperative peers of the same side continue sharing one mask.
+        let sides=self.peers.iter().filter(|peer|!peer.closed)
+            .filter_map(|peer|peer.side).collect::<HashSet<_>>();
+        if sides.is_empty() {
             self.pending_audio.clear();
             self.fog_by_side.clear();
             return;
@@ -749,11 +755,13 @@ impl NativeRemotePlay {
             self.pending_audio.clear();
             self.fog_by_side.clear();
         }
+        self.fog_by_side.retain(|side,_|sides.contains(side));
+        self.pending_audio.retain(|side,_|sides.contains(side));
         // Build the same side-scoped sight masks for audio and world-state
         // snapshots. Track changes every physics tick, not every fifth
         // network frame, so a death starts its fade at the true source tick.
         let mut vision = HashMap::<i32, RemoteFogSources>::new();
-        for side in self.peers.iter().filter_map(|peer| peer.side).collect::<HashSet<_>>() {
+        for &side in &sides {
             let source = self.fog_by_side.entry(side).or_default()
                 .sources(view, side, &mut self.measurements);
             vision.insert(side, source);
@@ -774,14 +782,11 @@ impl NativeRemotePlay {
                         shot.entity_id, (shot.projectile_type, body.motion.position),
                     )).collect()
             } else { HashMap::new() };
-            let mut sides = HashSet::new();
-            for side in self.peers.iter().filter_map(|peer| peer.side) {
-                if sides.insert(side) {
-                    collect_remote_audio(view, side, &shot_positions,
-                        vision.get(&side).expect("authenticated side has sight"),
-                        self.pending_audio.entry(side).or_default(),
-                        &mut self.measurements);
-                }
+            for &side in &sides {
+                collect_remote_audio(view, side, &shot_positions,
+                    vision.get(&side).expect("authenticated side has sight"),
+                    self.pending_audio.entry(side).or_default(),
+                    &mut self.measurements);
             }
         }
         if self.last_state == Some(episode) &&
