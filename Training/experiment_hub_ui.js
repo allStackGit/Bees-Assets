@@ -1108,14 +1108,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 }));
             if(['pending_collectors','awaiting_collectors','pending_optimizer',
                 'awaiting_optimizer','needs_review','disarmed'].includes(plan.status))
-                row.append(button('Disarm future rounds',async()=>{
-                    if(!confirm('Disarm future native collection and optimizer rounds? Already dispatched jobs keep their original process and Stop owners.'))return;
+                row.append(button('Cancel rounds and stop active jobs',async()=>{
+                    if(!confirm('Cancel this native training-round plan and request native Stops for its running collectors and optimizers? Undelivered Starts will be cancelled and safe claims released. Failed or uncertain jobs retain their machine-owned leases for review.'))return;
                     try {
-                        await action('hub/native-bees/rounds/cancel',{
+                        const cancelled=await action('hub/native-bees/rounds/cancel',{
                             plan_id:plan.id,confirm_cancel:true,
                         });
                         feedback('hub-resource-bundle-message',
-                            'Future native training-round progression disarmed; active machine ownership unchanged.');
+                            'Native rounds cancelled · '+cancelled.stopped_pending.length+
+                            ' native Stops pending · '+cancelled.needs_review.length+
+                            ' jobs require terminal ownership review.');
                         await reload();
                     }catch(error){
                         feedback('hub-resource-bundle-message',String(error.message||error));

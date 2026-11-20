@@ -4913,7 +4913,8 @@ class ExperimentHub {
                 confirm_stop:true};
             const members=exactResourceBundle(next,request,'confirm_stop');
             if(members.some((job,index)=>
-                job.assigned_machine_id!==plan[stage+'_members'][index]?.machine_id))
+                job.assigned_machine_id!==plan[stage+'_members'][index]?.machine_id&&
+                !(job.status==='cancelled'&&!job.assigned_machine_id&&!job.lease_id)))
                 throw Error('Native training round '+stage+' machine ownership changed.');
             // All old and active bundle Stops, cancellations and lease
             // releases share this one registry transaction with the round
