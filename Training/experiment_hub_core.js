@@ -1895,6 +1895,39 @@ class ExperimentHub {
             this.commit(next);
         }
     }
+    // Durable transitions are observational. A missing heartbeat cannot
+    // authorize native Stop, release capacity, or mark a job terminal.
+    recordMachineConnectivity(machineId,kind,observedAt=Date.now()) {
+        if(!ID.test(String(machineId))||!['connected','offline'].includes(kind))
+            throw Error('Invalid machine connectivity observation.');
+        const current=this.state.machine_connectivity||{};
+        if(current[machineId]?.status===kind)return false;
+        const next=copy(this.state);
+        next.machine_connectivity=next.machine_connectivity||{};
+        next.machine_connection_events=next.machine_connection_events||[];
+        const stamp=new Date(observedAt).toISOString();
+        const affected=next.jobs.filter(job=>
+            job.assigned_machine_id===machineId&&job.dispatch_id&&
+            !job.capacity_released_at&&
+            !['finished','failed','stopped','cancelled'].includes(job.status))
+            .map(job=>job.id);
+        next.machine_connectivity[machineId]={status:kind,changed_at:stamp};
+        next.machine_connection_events.push({
+            machine_id:machineId,event:kind,at:stamp,active_job_ids:affected,
+        });
+        if(next.machine_connection_events.length>1000)
+            next.machine_connection_events=next.machine_connection_events.slice(-1000);
+        this.commit(next);
+        return true;
+    }
+    noteExpiredAgents(observedAt=Date.now()) {
+        for(const machine of this.state.machines) {
+            const report=this.agentReports.get(machine.id);
+            if(!machine.agent_key_sha256)continue;
+            if(!report||observedAt-report.received_ms>=AGENT_HEARTBEAT_TTL_MS)
+                this.recordMachineConnectivity(machine.id,'offline',observedAt);
+        }
+    }
     // Publish in-memory changes only after the complete registry is durably
     // written. A full disk must not leave the API believing a draft was saved.
     commit(next) {
@@ -2033,6 +2066,8 @@ class ExperimentHub {
             }
             return machine;
         });
+        snapshot.machine_connection_events=copy(snapshot.machine_connection_events||[]);
+        snapshot.machine_connectivity=copy(snapshot.machine_connectivity||{});
         snapshot.jobs = snapshot.jobs.map(job=>{
             const observed=this.executionTelemetry.get(job.id);
             const machine=snapshot.machines.find(m=>m.id===job.assigned_machine_id);
@@ -5467,6 +5502,7 @@ class ExperimentHub {
         this.agentReports.set(machine.id,{
             ...report,instance_id:instance||null,received_ms:received,
         });
+        this.recordMachineConnectivity(machine.id,'connected',received);
         // A successful heartbeat supersedes the previous receipt set for
         // this machine. Missing IDs, reduced CPU/RAM capacity, or changed GPU
         // identity revoke *freshness* immediately, without freeing the
