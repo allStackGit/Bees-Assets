@@ -168,10 +168,10 @@ namespace Assets.Scripts.Data
         }
 
         /// <summary>
-        /// Server reads are allowed to surface malformed legacy data as a loaded-but-invalid
-        /// payload so UserData.WaitForData can rebuild that profile member from current defaults.
-        /// This tolerant path is intentionally separate from SetContents' atomic replacement
-        /// contract.
+        /// A malformed server document must remain available for diagnosis/recovery without
+        /// replacing it with default player data. Keep the payload and report it as invalid to
+        /// UserData.WaitForData; that loader will stop startup rather than overwrite the save.
+        /// This path is intentionally separate from SetContents' atomic replacement contract.
         /// </summary>
         private void SetServerContents(string contents)
         {
@@ -183,7 +183,7 @@ namespace Assets.Scripts.Data
             {
                 _textContents = contents;
                 _jsonObject = null;
-                Debug.LogError($"Stored user data '{Name}' contains malformed JSON and will be recovered. {exception.GetType().Name}: {exception.Message}");
+                Debug.LogError($"Stored user data '{Name}' contains malformed JSON. The original stored payload will be preserved. {exception.GetType().Name}: {exception.Message}");
             }
         }
 
