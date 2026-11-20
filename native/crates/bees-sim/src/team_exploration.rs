@@ -26,7 +26,8 @@ pub enum ExplorationError {
 /// Per-side 16x16 global sight history, with progress -1 representing a cell
 /// never observed this episode. Like Unity, an update checks cell centers
 /// within each living allied ship's sight circle, with no heap allocation.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TeamExplorationGrid {
     last_seen_progress: [f32; EXPLORATION_LEN],
 }
@@ -42,6 +43,14 @@ impl TeamExplorationGrid {
 
     /// Explicit episode reset: do not accidentally retain knowledge when a
     /// recycled world starts a different training or evaluation episode.
+    /// The original 16x16 team memory is persistent episode state, not
+    /// reconstructed from the present positions of surviving observers.
+    pub fn valid_recovery(&self) -> bool {
+        self.last_seen_progress.iter().all(|&value|
+            value == -1.0 || value.is_finite() && (0.0..=1.0).contains(&value)
+        )
+    }
+
     pub fn reset(&mut self) {
         self.last_seen_progress.fill(-1.0);
     }

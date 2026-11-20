@@ -48,7 +48,7 @@ impl NativeMissionCue {
 
 /// Every mission event is evaluated against the canonical fixed-tick
 /// simulation and its original Level notification stream.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum NativeMissionEvent {
     CampaignCue(NativeMissionCue),
     ShipDestroyed(i64),

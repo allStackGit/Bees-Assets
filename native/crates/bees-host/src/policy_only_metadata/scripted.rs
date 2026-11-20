@@ -29,7 +29,7 @@ use bees_sim::squad_movement::SquadFormationOptions;
 use super::{NativePolicyOnlyMetadata, NativeMissionCue};
 use super::mission_cues::NativeMissionEvent;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum NativeScriptedOrder {
     MoveToPoint { destination: Vec2 },
     MoveToRandom { range: f32 },
@@ -265,6 +265,8 @@ pub struct NativeScriptedQueuePlan {
     pub orders: Vec<NativeScriptedOrder>,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct NativeScriptedQueueState {
     pub(super) owner: SquadLifetime,
     orders: Vec<NativeScriptedOrder>,
@@ -279,6 +281,16 @@ pub(super) struct NativeScriptedQueueState {
     /// the mission event actually claims this live squad. Once claimed,
     /// a late server reply cannot take ownership back.
     pub(super) claimed: bool,
+}
+
+impl NativeScriptedQueueState {
+    pub(super) fn valid_recovery(&self) -> bool {
+        self.owner.valid() && !self.orders.is_empty() &&
+        self.cursor <= self.orders.len() &&
+        self.orders.iter().all(NativeScriptedOrder::valid) &&
+        !(self.on_deployment && self.wait_for_entry) &&
+        self.ready_tick < u64::MAX
+    }
 }
 
 impl NativePolicyOnlyMetadata {
