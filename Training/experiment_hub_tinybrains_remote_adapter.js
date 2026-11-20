@@ -70,7 +70,7 @@ function createTinyBrainsRemoteRolloutAdapter({
         !Number.isSafeInteger(threads)||threads<1||threads>256)
         throw Error('Remote rollout listener needs an approved non-privileged port and CPU thread count.');
     if(typeof pythonPath!=='string'||!path.isAbsolute(pythonPath)||
-        !fs.statSync(pythonPath).isFile()||fs.realpathSync(pythonPath)!==pythonPath)
+        !fs.statSync(pythonPath).isFile()||path.resolve(pythonPath)!==pythonPath)
         throw Error('Remote rollout Python must be an installed regular file.');
     const probe=spawnSync(pythonPath,['-B','-c',
         'import ants_mapoca.remote_rollout'],{
