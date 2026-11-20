@@ -193,23 +193,78 @@ Commit the changed PowerShell source **and** generated CMD in the same branch.
 The CMD packages the installer for first use; it is not the live worker
 runtime.
 
-**Current deployment limitation:** Existing Windows/Linux workers are **not
-yet automatically upgraded** when a commit reaches these branches. Both
-installers have an explicit `update` operation, but it requires stopping the
-native agent first; automatic staging, safe-idle activation, private-repository
-distribution, and restart/recovery are not yet implemented. Do not assume
-that updating Halifax or pushing GitHub changes updates installed workers.
-For unattended updates, the Hub needs to publish authenticated versioned
-releases covering all three source repositories, let workers download them
-without GitHub credentials, and activate them only after the native
-supervisor has established an idle/drained state. Preserve machine
-enrollment, private keys, native journals and checkpoints throughout.
+**Unattended updater (implemented in this branch):** The Windows bootstrap
+registers a SYSTEM scheduled task, and Linux installs a lingering user-systemd
+timer. Every two minutes a separately installed updater retrieves the
+coordinator's machine-token-authenticated release manifest over Tailscale,
+downloads complete Git archives with strict SHA-256 and size verification, and
+stages them in immutable version-specific directories. It keeps prior
+software, native journals, enrollment tokens, private rollout keys and job
+data intact. Installed versions and update states appear in **Machines**.
+A worker code change regenerates Windows's native owner/service binaries
+from reviewed source; Python simulation releases get separate environments.
+A failed activation restores the previous service configuration and reports
+the failure. Neither installed worker needs private-repository Git credentials
+for subsequent source updates.
+
+**Coordinator setup:** The Hub's release publisher pulls approved Git refs
+using Halifax's GitHub access. Without additional configuration it publishes
+only the worker itself. To publish simulation sources, set
+`EXPERIMENT_HUB_RELEASE_SOURCES` in the **coordinator service environment**
+to JSON mapping approved existing **local Git checkout paths** and branches:
+
+```json
+{
+  "worker": {
+    "path": "/home/halifax/ai/projects/experiment-hub/Assets",
+    "branch": "feat/hub-resource-experiments-20261110"
+  },
+  "tinybrains": {
+    "path": "/home/halifax/ai/projects/tinybrains",
+    "branch": "feat/linux-tinybrains-runtime"
+  },
+  "courier": {
+    "path": "/absolute/path/to/Basic-Training",
+    "branch": "feat/hub-independent-courier-ppo-20261119"
+  }
+}
+```
+
+Replace the example checkout paths with the actual local paths. Only
+configured components are published; never put tokens or GitHub credentials
+in this JSON. The coordinator fetches approved branches every two minutes,
+stages them for remote machines, fast-forwards clean matching local
+checkouts at an idle native-job boundary, and restarts its user-systemd
+agent/coordinator before authorizing remote activation. A dirty checkout
+or failed private Git fetch is not overwritten. Check
+`GET http://127.0.0.1:7148/api/hub/software/releases` locally for
+published versions and errors.
+
+**Mid-job override:** In **Machines**, explicitly select **Override update**
+on the affected machine. Linux can refresh its agent/worker code while
+separately systemd-owned native jobs keep running on their original runtime.
+Windows Job Objects cannot safely replace active worker processes without
+a checkpoint/restart contract; Windows and simulation updates remain staged
+until the native job is terminal. A simulation's observation/action/model
+contract must not silently change mid-run. **A compatible, checkpointed
+mid-job simulation restart/continuation is not yet implemented**, so the
+override does not claim to perform one. The coordinator retains native
+leases during agent disappearance. Disconnect/reconnect transitions and
+affected job IDs are recorded durably; loss of connectivity alone is never
+proof a worker's native job stopped.
+
+**Scope:** The installer supports the TinyBrains/Courier native worker.
+The original Bees Unity remote worker and the unfinished unified-native
+Bees runtime are not automatically converted to this installer, and the
+new native Bees simulation is not yet an executable Hub worker project.
 
 ## Required unattended update and recovery behavior
 
-These are **requirements, not implemented functionality**. The currently
-checked-in one-file Windows CMD and Linux installer are bootstraps and do
-not yet provide unattended fleet updates.
+These define the intended full behavior. Unattended release staging, deferred
+activation, Linux worker-code override, status reporting, source synchronization
+and offline history are implemented; checkpointed live simulation migration,
+Bees native execution integration and full-machine qualification remain
+outstanding.
 
 - New versions of Bees, TinyBrains, Courier and the native Hub worker must
   be published through the trusted coordinator and staged on every
