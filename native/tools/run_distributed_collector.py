@@ -10,6 +10,7 @@ import json
 import os
 import re
 from pathlib import Path, PurePosixPath
+import tempfile
 import subprocess
 import sys
 
@@ -46,6 +47,65 @@ def acquire_collector_lease(parent):
     except BaseException:
         lease.close()
         raise
+
+
+def persist_delivery_acknowledgement(inbox, hub_job_id, job, orders, bundle, delivered):
+    """Durably attest the exact learner-accepted collector archive.
+
+    A local rollout receipt proves gameplay finished, not that the learner
+    received its samples. Only the authenticated receiver's acknowledgement
+    permits the Hub to mark the worker successful. Publication is create-only
+    so an unrelated later upload cannot rewrite that completion.
+    """
+    if (delivered.get("kind") != "native_bundle_received" or
+            delivered.get("collector_id") != job["id"] or
+            not re.fullmatch(r"[0-9a-f]{64}", str(delivered.get("archive_sha256", ""))) or
+            type(delivered.get("archive_bytes")) is not int or
+            delivered["archive_bytes"] <= 0):
+        raise ValueError("learner did not acknowledge the issued collector archive")
+    root = inbox / hub_job_id
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("Hub collector artifact destination is not an owned directory")
+    document = {
+        "schema_version": 1,
+        "kind": "native_collector_upload_accepted",
+        "hub_job_id": hub_job_id,
+        "collector_id": job["id"],
+        "collection_id": job["collection_id"],
+        "source_run_contract_sha256": orders["source_run_contract_sha256"],
+        "bundle_sha256": bundle["sha256"],
+        "archive_sha256": delivered["archive_sha256"],
+        "archive_bytes": delivered["archive_bytes"],
+    }
+    target = root / "delivery-acknowledgement.json"
+    if target.exists() or target.is_symlink():
+        if (target.is_symlink() or not target.is_file() or
+                target.stat().st_size > 4096 or
+                json.loads(target.read_text(encoding="utf-8")) != document):
+            raise ValueError("previous native collector upload acknowledgement differs")
+        sync_directory(root)
+        return
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
+                dir=root, prefix=".delivery-acknowledgement-", suffix=".pending",
+                delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(document, stream, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.link(temporary, target)
+        except FileExistsError:
+            if (target.is_symlink() or not target.is_file() or
+                    target.stat().st_size > 4096 or
+                    json.loads(target.read_text(encoding="utf-8")) != document):
+                raise ValueError("concurrent collector delivery published conflicting proof")
+        sync_directory(root)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def reusable_collection(receipt_path, job, orders, leased_gpu_inference=False,
@@ -106,6 +166,8 @@ def main():
     args = parser.parse_args()
     if args.leased_gpu_inference and args.hub_artifact_job_id is None:
         parser.error("--leased-gpu-inference requires the approved Hub artifact job")
+    if args.hub_artifact_job_id is not None and args.upload_url is None:
+        parser.error("Hub collectors require a learner receiver to confirm actual delivery")
     if args.leased_gpu_count not in (1, 2) or (
             args.leased_gpu_count != 1 and not args.leased_gpu_inference):
         parser.error("dual-GPU collector needs authorized Hub GPU placement")
@@ -303,6 +365,10 @@ def main():
                 archive_path, job["id"], args.upload_url,
                 archive_sha256=archive["archive_sha256"],
             )
+            if args.hub_artifact_job_id is not None:
+                persist_delivery_acknowledgement(
+                    inbox, args.hub_artifact_job_id, job, orders, receipt, delivered,
+                )
             print(json.dumps({
                 "kind": "native_distributed_collector_delivered",
                 "collector": job["id"], **delivered,
