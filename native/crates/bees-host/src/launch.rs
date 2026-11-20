@@ -2187,7 +2187,7 @@ fn launch_catalog_battle(
 
     if recoverable {
         let expected = setup.as_ref().expect("recoverable campaign has a saved setup");
-        let mut original_run: Option<PathBuf> = None;
+        let mut original_run: Option<(PathBuf, CampaignReplaySetup)> = None;
         for entry in fs::read_dir(output_root)? {
             let entry = entry?;
             if !entry.file_type()?.is_dir() { continue; }
@@ -2219,13 +2219,13 @@ fn launch_catalog_battle(
                     "interrupted campaign cannot resume after its source, saved career, or victory rewards changed",
                 ).into());
             }
-            if original_run.replace(run).is_some() {
+            if original_run.replace((run, prior)).is_some() {
                 return Err(invalid(
                     "multiple interrupted campaigns claim the same native mission",
                 ).into());
             }
         }
-        if let Some(output) = original_run {
+        if let Some((output, prior)) = original_run {
             println!("{}", json!({
                 "kind": "native_campaign_battle_recovered",
                 "campaign_id": expected.campaign_id,
