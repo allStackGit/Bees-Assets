@@ -4564,9 +4564,8 @@ fn run_battle(
         config.model_updates.is_empty() && config.host_recovery_checkpoint.is_none());
     // A checkpointed session must not create an unrelated policy capture
     // or input trace whose write cursor cannot be rolled back with a World.
-    if config.host_recovery_checkpoint.is_some() &&
-        (replay_inputs.is_some() || policy_capture.is_some()) {
-        return Err(invalid("native host continuation cannot share a policy capture or input replay").into());
+    if config.host_recovery_checkpoint.is_some() && replay_inputs.is_some() {
+        return Err(invalid("native host continuation cannot share an input replay").into());
     }
     if let Some(directory) = output { fs::create_dir(directory)?; }
     let host_checkpoint_file = config.host_recovery_checkpoint.as_ref().map(|path| {
@@ -4733,11 +4732,14 @@ fn run_battle(
     let mut sink = if let Some(snapshot) = &saved_host_checkpoint {
         DurableDiagnosticNotifications::open_existing(
             &notifications, &config.run_id, snapshot.notifications(),
+            policy_capture.as_deref(),
         )?
     } else {
         DurableDiagnosticNotifications::create_new(&notifications, config.run_id.clone())?
     };
-    if let Some(path) = policy_capture.as_ref() {
+    if let Some(path) = policy_capture.as_ref().filter(|_|
+        saved_host_checkpoint.is_none())
+    {
         sink.capture_policy_to(path)?;
     }
     let mut host = assets.build_imported_policy_runtime(
