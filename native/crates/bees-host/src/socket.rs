@@ -110,6 +110,8 @@ struct SetupServerResponse {
 struct PendingSetup {
     hash: i64,
     kind: SetupKind,
+    /// Reconnect must acknowledge exactly the previously authorized game.
+    server_game_id: i64,
 }
 
 /// Setup traffic is separate from the strategy/targeting/StoreCommands
@@ -366,7 +368,9 @@ impl NativeHiveMindSocket {
             version: identity.version,
         };
         self.send(&payload)?;
-        self.pending_setup = Some(PendingSetup { hash, kind: identity.kind });
+        self.pending_setup = Some(PendingSetup {
+            hash, kind: identity.kind, server_game_id: identity.server_game_id,
+        });
         Ok(hash)
     }
 
@@ -459,7 +463,9 @@ impl NativeHiveMindSocket {
                 self.send(&SetupLevelWire { message_type: kind.message_type(), hash,
                     level_id, server_game_id, user_id: user_id.to_string(),
                     auth_ticket: auth_ticket.as_deref(), version })?;
-                self.pending_setup = Some(PendingSetup { hash, kind });
+                self.pending_setup = Some(PendingSetup {
+                    hash, kind, server_game_id,
+                });
                 Ok(())
             }
             PreparedSocketRequest::Strategy(request) => { self.require_ready()?; self.send(&request) }
@@ -556,7 +562,12 @@ impl NativeHiveMindSocket {
                     .filter(|&id| id > 0 && id <= MAX_SAFE_REQUEST_HASH) else {
                     return self.reject_protocol(HiveMindSocketError::InvalidServerFrame);
                 };
-                if pending.kind == SetupKind::Initial &&
+                // The first reconnect response must identify precisely
+                // the saved server Game, not merely any authenticated
+                // positive ID. Later setup-levels on this same socket
+                // must remain bound to that identical Game as well.
+                if (pending.kind == SetupKind::Reconnect &&
+                    pending.server_game_id != id) ||
                     self.game_id.is_some_and(|original| original != id)
                 {
                     return self.reject_protocol(HiveMindSocketError::MismatchedServerGame);

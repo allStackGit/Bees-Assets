@@ -998,6 +998,9 @@ struct RecordedNetwork {
     levels: usize,
     next_level: usize,
     pending_setup_hash: Option<i64>,
+    /// The live socket pins the reconnect target and requires every
+    /// subsequently added Level to share exactly that server Game.
+    server_game_id: Option<i64>,
     issue_source_commands: bool,
 }
 
@@ -1013,7 +1016,8 @@ impl RecordedNetwork {
             .map_err(|error| contextual("recorded HiveMind first setup", error))?);
         Ok(Self {
             scheduler, levels: identities.len(), next_level: 0,
-            pending_setup_hash, issue_source_commands: config.issue_source_commands,
+            pending_setup_hash, server_game_id: config.reconnect_game_id,
+            issue_source_commands: config.issue_source_commands,
         })
     }
 
@@ -1024,11 +1028,14 @@ impl RecordedNetwork {
             NativeTraceNetworkEvent::Setup {
                 request_hash, server_game_id, ..
             } => {
-                if server_game_id <= 0 || self.pending_setup_hash != Some(request_hash) {
+                if server_game_id <= 0 || self.pending_setup_hash != Some(request_hash) ||
+                    self.server_game_id.is_some_and(|game| game != server_game_id)
+                {
                     return Err(invalid(
-                        "recorded HiveMind setup did not match the original connection identity",
+                        "recorded HiveMind setup did not match the original connection or shared server Game",
                     ));
                 }
+                self.server_game_id = Some(server_game_id);
                 self.next_level += 1;
                 self.pending_setup_hash = if self.next_level < self.levels {
                     Some(host.connection_mut().next_hash()
