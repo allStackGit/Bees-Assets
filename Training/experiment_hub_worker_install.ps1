@@ -30,8 +30,8 @@ function Tool([string]$Name) {
 function Assert-Exit([string]$Task) {
     if($LASTEXITCODE -ne 0){throw "$Task failed (exit $LASTEXITCODE)."}
 }
-function Exec-Git([string[]]$Args) {
-    & (Tool 'git.exe') @Args
+function Exec-Git([string[]]$GitArguments) {
+    & (Tool 'git.exe') @GitArguments
     Assert-Exit 'Git'
 }
 function Sync-Repo([string]$Name,[string]$Remote,[string]$Ref) {
@@ -167,7 +167,17 @@ if($Command -eq 'install'){
     Ensure-Winget 'node.exe' 'OpenJS.NodeJS.LTS'
     Ensure-Winget 'dotnet.exe' 'Microsoft.DotNet.SDK.8'
     Ensure-Winget 'py.exe' 'Python.Python.3.11'
-    Ensure-Winget 'tailscale.exe' 'Tailscale.Tailscale'
+    $python311=Get-Command py.exe -ErrorAction SilentlyContinue
+    if($python311){
+        & $python311.Source -3.11 --version 2>$null
+        if($LASTEXITCODE -ne 0){
+            & (Tool 'winget.exe') install --id Python.Python.3.11 -e --scope machine --accept-package-agreements --accept-source-agreements
+            Assert-Exit 'Install pinned Python 3.11'
+        }
+    }
+    if(-not (Test-Path "$env:ProgramFiles\Tailscale\tailscale.exe")){
+        Ensure-Winget 'tailscale.exe' 'Tailscale.Tailscale'
+    }
     if(-not (Get-Command ssh.exe -ErrorAction SilentlyContinue)){
         Add-WindowsCapability -Online -Name 'OpenSSH.Client~~~~0.0.1.0' | Out-Null
     }
