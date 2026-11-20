@@ -1480,6 +1480,13 @@ struct CampaignReplaySetup {
     created_squads: Option<Vec<NativeCreatedSquad>>,
     tactics: Option<Vec<NativeSavedSquadTactics>>,
     authored_roster: Option<Vec<(i64, i64, i64)>>,
+    // A live recovered battle must award exactly the rewards authorized
+    // when its original career snapshot was frozen. Older replay-only
+    // setups have no reward projection and remain valid for playback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    victory_grants: Option<Vec<NativePurchasedShip>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    victory_squads: Option<Vec<NativeCreatedSquad>>,
 }
 
 impl CampaignReplaySetup {
@@ -1503,6 +1510,8 @@ impl CampaignReplaySetup {
             created_squads: mission.created_squads.map(|squads| squads.to_vec()),
             tactics: mission.tactics.map(|tactics| tactics.to_vec()),
             authored_roster: mission.authored_roster.map(|roster| roster.to_vec()),
+            victory_grants: Some(mission.victory_grants.to_vec()),
+            victory_squads: Some(mission.victory_squads.to_vec()),
         })
     }
 
@@ -1545,6 +1554,8 @@ impl CampaignReplaySetup {
         Ok(current == earlier)
     }
 
+    // Offline replay never mutates the current career, even when its
+    // saved setup contains the original run's frozen victory rewards.
     fn mission(&self) -> CampaignMission<'_> {
         CampaignMission {
             campaign_id: &self.campaign_id,
@@ -1560,6 +1571,19 @@ impl CampaignReplaySetup {
             victory_grants: &[],
             victory_squads: &[],
         }
+    }
+
+    // Restore the ORIGINAL live career contract. No freshly computed
+    // prizes or squad grants may enter a resumed World after a crash.
+    fn recovery_mission(&self) -> Result<CampaignMission<'_>, Box<dyn Error>> {
+        let grants = self.victory_grants.as_deref()
+            .ok_or_else(|| invalid("recovered campaign lacks frozen victory grants"))?;
+        let squads = self.victory_squads.as_deref()
+            .ok_or_else(|| invalid("recovered campaign lacks frozen victory squads"))?;
+        let mut mission = self.mission();
+        mission.victory_grants = grants;
+        mission.victory_squads = squads;
+        Ok(mission)
     }
 }
 
@@ -2192,7 +2216,7 @@ fn launch_catalog_battle(
                 prior.mission_id != expected.mission_id { continue; }
             if !expected.matches_recovery_start(&prior)? {
                 return Err(invalid(
-                    "interrupted campaign cannot resume after its source or saved career changed",
+                    "interrupted campaign cannot resume after its source, saved career, or victory rewards changed",
                 ).into());
             }
             if original_run.replace(run).is_some() {
@@ -2208,8 +2232,8 @@ fn launch_catalog_battle(
                 "mission_id": expected.mission_id,
                 "run": output,
             }));
-            run_session(&config, interactive, interactive,
-                Some(output.clone()), None, None, mission)?;
+            run_session(&prior.source_config, interactive, interactive,
+                Some(output.clone()), None, None, Some(prior.recovery_mission()?))?;
             return Ok(output);
         }
     }
