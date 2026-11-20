@@ -7,7 +7,7 @@ MODE=install
 PROJECTS=tinybrains,courier
 ROOT="${HOME}/ai/experiment-hub-worker"
 MACHINE_ID=""
-HUB_TARGET=""
+HUB_IP=""
 START=0
 TB_KEY=""
 COURIER_KEY=""
@@ -22,15 +22,15 @@ usage() {
 Usage: bash Training/experiment_hub_worker_install.sh [install|update|status]
        [--projects tinybrains,courier] [--root ABSOLUTE_PATH]
        [--machine-id EXISTING_HUB_MACHINE_ID]
-       [--hub-ssh-target USER@HALIFAX_TAILSCALE_IPV4]
+       [--hub-tailnet-ip HALIFAX_TAILSCALE_IPV4]
        [--tinybrains-key EXISTING_PRIVATE_ROLLOUT_KEY]
        [--courier-key EXISTING_PRIVATE_HEX_KEY]
        [--tinybrains-root EXISTING_ANTS_MAPOCA_DIRECTORY]
        [--courier-root EXISTING_COURIER_DIRECTORY] [--start]
 
 First enroll ONE machine in the Hub Machines tab and keep its one-time token
-private; the installer requests it without echo. SSH to Halifax and its
-private agent-only port 7149 are required for a remote machine.
+private; the installer requests it without echo. Halifax must run its authenticated
+agent-only API on its own Tailscale IPv4 at port 7149.
 'HELP'
 }
 if [[ ${1:-} == install || ${1:-} == update || ${1:-} == status ]]; then
@@ -41,7 +41,7 @@ while (( $# )); do
         --projects) PROJECTS=$2; shift 2;;
         --root) ROOT=$2; shift 2;;
         --machine-id) MACHINE_ID=$2; shift 2;;
-        --hub-ssh-target) HUB_TARGET=$2; shift 2;;
+        --hub-tailnet-ip) HUB_IP=$2; shift 2;;
         --tinybrains-key) TB_KEY=$2; shift 2;;
         --courier-key) COURIER_KEY=$2; shift 2;;
         --tinybrains-root) TB_ROOT=$2; shift 2;;
@@ -97,21 +97,27 @@ if [[ "$MODE" == update ]]; then
     TB_ROOT=$(config_value EXPERIMENT_HUB_TINYBRAINS_PROJECT_ROOT)
     COURIER_ROOT=$(config_value EXPERIMENT_HUB_COURIER_PROJECT_ROOT)
     [[ -n "$PROJECTS" ]] || { echo "Existing worker project selection missing." >&2; exit 1; }
+    if [[ -z "$HUB_IP" ]]; then
+        PREVIOUS_URL=$(config_value EXPERIMENT_HUB_URL)
+        if [[ "$PREVIOUS_URL" =~ ^http://(100\.[0-9]+\.[0-9]+\.[0-9]+):7149$ ]]; then
+            HUB_IP="${BASH_REMATCH[1]}"
+        fi
+    fi
 fi
 
 install_dependencies() {
     if ! command -v apt-get >/dev/null; then
-        echo "Automatic prerequisites currently support Debian/Ubuntu; install Node 18+, Python 3.11+, Git, SSH and Tailscale manually." >&2
+        echo "Automatic prerequisites currently support Debian/Ubuntu; install Node 18+, Python 3.11+, Git and Tailscale manually." >&2
         return 1
     fi
     sudo apt-get update
-    sudo apt-get install -y git curl ca-certificates openssh-client python3 nodejs
+    sudo apt-get install -y git curl ca-certificates python3 nodejs
     if ! command -v tailscale >/dev/null; then
         curl -fsSL https://tailscale.com/install.sh | sudo sh
     fi
 }
 if [[ "$MODE" == install ]]; then install_dependencies; fi
-for tool in git node python3 ssh ssh-keygen ssh-keyscan ssh-copy-id tar sha256sum; do
+for tool in git node python3 tailscale tar sha256sum; do
     command -v "$tool" >/dev/null || { echo "Missing prerequisite: $tool" >&2; exit 1; }
 done
 node -e 'if(Number(process.versions.node.split(".")[0])<18)process.exit(1)' ||
@@ -152,6 +158,19 @@ sync_checkout() {
     fi
 }
 sync_checkout https://github.com/allStackGit/Bees-Assets.git "$ASSETS_BRANCH" "$SRC/Bees-Assets" Training
+# Require an exact, approved Tailscale carrier address. Never contact a
+# generic LAN, wildcard, public host or legacy SSH forward with the Hub token.
+node -e 'if(!require(process.argv[1]).isTailnetIPv4(process.argv[2]))process.exit(1)' \
+    "$TRAINING/experiment_hub_agent_listener.js" "$HUB_IP" || {
+    echo "Supply Halifax's Tailscale IPv4 with --hub-tailnet-ip (100.64.0.0/10)." >&2
+    exit 1
+}
+TAILNET_IP=$(tailscale ip -4 2>/dev/null | head -n 1)
+node -e 'if(!require(process.argv[1]).isTailnetIPv4(process.argv[2]))process.exit(1)' \
+    "$TRAINING/experiment_hub_agent_listener.js" "$TAILNET_IP" || {
+    echo "Sign this machine into Tailscale and rerun setup." >&2
+    exit 1
+}
 if has_project tinybrains && [[ -z "$TB_ROOT" ]]; then
     sync_checkout https://github.com/allStackGit/TinyBrains.git "$TB_BRANCH" "$SRC/TinyBrains" Ants-MAPOCA
     TB_ROOT="$SRC/TinyBrains/Ants-MAPOCA"
@@ -223,8 +242,6 @@ fi
 if [[ "$MODE" == install ]]; then
     [[ "$MACHINE_ID" =~ ^[a-z][a-z0-9_-]{0,47}$ ]] ||
         { echo "Supply the exact enrolled Hub machine ID via --machine-id." >&2; exit 1; }
-    [[ "$HUB_TARGET" =~ ^[A-Za-z_][A-Za-z0-9_.-]*@100\. ]] ||
-        { echo "Supply user@Halifax-tailnet-IP via --hub-ssh-target." >&2; exit 1; }
     [[ -n "$TB_KEY" || "$PROJECTS" != *tinybrains* ]] ||
         { echo "Supply the same private TinyBrains rollout key used by the Halifax learner." >&2; exit 1; }
     if has_project courier && [[ -z "$COURIER_KEY" ]]; then
@@ -234,29 +251,6 @@ if [[ "$MODE" == install ]]; then
     echo
     [[ "$TOKEN" =~ ^[0-9a-f]{64}$ ]] ||
         { echo "Invalid token; enroll the machine in the Hub first." >&2; exit 1; }
-    [[ -n "$HUB_TARGET" ]] || exit 1
-    if [[ ! -f "$PRIVATE/ssh_ed25519" ]]; then
-        ssh-keygen -q -t ed25519 -N '' -f "$PRIVATE/ssh_ed25519"
-    fi
-    if [[ ! -s "$PRIVATE/known_hosts" ]]; then
-        host="${HUB_TARGET#*@}"
-        ssh-keyscan -T 10 -t ed25519 "$host" > "$PRIVATE/known_hosts.candidate" 2>/dev/null
-        [[ -s "$PRIVATE/known_hosts.candidate" ]] ||
-            { echo "Cannot read Halifax SSH host key. Enable SSH over the tailnet first." >&2; exit 1; }
-        echo "Verify this fingerprint against 'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub' on Halifax:"
-        ssh-keygen -lf "$PRIVATE/known_hosts.candidate"
-        read -r -p 'Type VERIFIED after comparing the fingerprint on Halifax: ' CONFIRM
-        [[ "$CONFIRM" == VERIFIED ]] || { rm -f "$PRIVATE/known_hosts.candidate"; exit 1; }
-        mv "$PRIVATE/known_hosts.candidate" "$PRIVATE/known_hosts"
-    fi
-    echo "Authorizing this worker's SSH public key with the Halifax user (may request SSH password)..."
-    ssh-copy-id -i "$PRIVATE/ssh_ed25519.pub" -o "UserKnownHostsFile=$PRIVATE/known_hosts" \
-        -o StrictHostKeyChecking=yes "$HUB_TARGET"
-    ssh -o BatchMode=yes -o "UserKnownHostsFile=$PRIVATE/known_hosts" \
-        -o StrictHostKeyChecking=yes -i "$PRIVATE/ssh_ed25519" "$HUB_TARGET" true
-    TAILNET_IP=$(tailscale ip -4 2>/dev/null | head -n 1)
-    [[ "$TAILNET_IP" =~ ^100\. ]] ||
-        { echo "Sign this machine into Tailscale first; then rerun setup." >&2; exit 1; }
     if has_project tinybrains; then install -m 600 "$TB_KEY" "$PRIVATE/tinybrains-rollout.key"; fi
     if has_project courier; then install -m 600 "$COURIER_KEY" "$PRIVATE/courier-rollout.key"; fi
     {
@@ -265,10 +259,7 @@ if [[ "$MODE" == install ]]; then
         printf 'EXPERIMENT_HUB_ENABLE_EXECUTION=1\n'
         printf 'EXPERIMENT_HUB_LOCAL_ADAPTERS=%s\n' "$TRAINING/experiment_hub_worker_adapters.js"
         printf 'EXPERIMENT_HUB_LOCAL_ROOT=%s\n' "$ROOT/native-state"
-        printf 'EXPERIMENT_HUB_URL=http://127.0.0.1:17149\n'
-        printf 'EXPERIMENT_HUB_SSH_TARGET=%s\n' "$HUB_TARGET"
-        printf 'EXPERIMENT_HUB_SSH_KEY=%s\n' "$PRIVATE/ssh_ed25519"
-        printf 'EXPERIMENT_HUB_SSH_KNOWN_HOSTS=%s\n' "$PRIVATE/known_hosts"
+        printf 'EXPERIMENT_HUB_URL=http://%s:7149\n' "$HUB_IP"
         printf 'EXPERIMENT_HUB_TAILNET_IP=%s\n' "$TAILNET_IP"
         printf 'EXPERIMENT_HUB_WORKER_PROJECTS=%s\n' "$PROJECTS"
         if has_project tinybrains; then
@@ -286,6 +277,18 @@ if [[ "$MODE" == install ]]; then
         fi
     } > "$ENVFILE"
     chmod 600 "$ENVFILE"
+else
+    # Safe in-place upgrade: retain enrollment and native project identity,
+    # replace only transport configuration and discard retired SSH settings.
+    TEMP_ENV="$ENVFILE.tailnet.$$"
+    awk -v ip="$HUB_IP" '
+        /^EXPERIMENT_HUB_SSH_/ {next}
+        /^EXPERIMENT_HUB_URL=/ {print "EXPERIMENT_HUB_URL=http://" ip ":7149"; found=1; next}
+        {print}
+        END {if(!found) print "EXPERIMENT_HUB_URL=http://" ip ":7149"}
+    ' "$ENVFILE" > "$TEMP_ENV"
+    chmod 600 "$TEMP_ENV"
+    mv -f "$TEMP_ENV" "$ENVFILE"
 fi
 mkdir -p "$ROOT/native-state"
 chmod 700 "$ROOT/native-state"
