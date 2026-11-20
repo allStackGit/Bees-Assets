@@ -1637,8 +1637,15 @@ impl NativeSquadCommandDirector {
                 false
             }
             LocalCommandKind::Retreat => {
-                let enemy = squad.enemy.filter(|enemy| enemy.valid() && enemy.is_alive)
-                    .ok_or(GameCommandError::InvalidEnemy)?;
+                // Source Retreat.Execute immediately finalizes when its
+                // selected enemy has already died. That is normal command
+                // turnover, not a corrupt Level: an asynchronous HiveMind
+                // reply may arrive on the same tick the enemy retires.
+                // Never fail the shared World or credit unused reservations.
+                let Some(enemy) = squad.enemy.filter(|enemy| enemy.is_alive) else {
+                    self.measurements.unavailable += 1;
+                    return Ok(Activation::Unavailable(selection));
+                };
                 let delta = squad.squad_center - enemy.position;
                 let distance = delta.length_squared().sqrt();
                 let ideal_distance = enemy.max_range * 2.0;
