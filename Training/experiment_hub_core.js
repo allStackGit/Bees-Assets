@@ -4460,11 +4460,12 @@ class ExperimentHub {
         // No lease is evidence of OS resource enforcement.
         const next=copy(this.state);
         const evaluatorResult=value.evaluator_service_report;
+        let newEvaluatorReport=false;
         if(evaluatorResult!==undefined&&evaluatorResult!==null) {
             const command=(next.evaluator_services||[]).find(item=>
                 item.machine_id===machine.id);
             if(!object(evaluatorResult)||!command||
-                command.status!=='pending'||
+                !['pending','reported'].includes(command.status)||
                 command.command_id!==evaluatorResult.command_id||
                 command.action!==evaluatorResult.action||
                 command.agent_instance_id!==instance||
@@ -4477,17 +4478,27 @@ class ExperimentHub {
                     'command_id','action','state','diagnostic',
                 ].includes(key)))
                 throw Error('Native evaluator report does not match its one-use machine command.');
-            command.status='reported';
-            command.state=evaluatorResult.state;
-            command.diagnostic=evaluatorResult.diagnostic||null;
-            command.completed_at=now();
+            if(command.status==='reported') {
+                // The previous acknowledgment may have committed on the
+                // server while its HTTP response was lost. The same signed
+                // machine report is idempotent; conflicting bytes are not.
+                if(command.state!==evaluatorResult.state||
+                    command.diagnostic!==(evaluatorResult.diagnostic||null))
+                    throw Error('Native evaluator completion changed after acceptance.');
+            }else {
+                command.status='reported';
+                command.state=evaluatorResult.state;
+                command.diagnostic=evaluatorResult.diagnostic||null;
+                command.completed_at=now();
+                newEvaluatorReport=true;
+            }
         }
         // Receipt IDs are based on the agent's previous offer response,
         // while this heartbeat reports the current host capacity. Reject
         // carried-over IDs if *all* outstanding claims no longer fit.
         const withinCapacity=claimsFitCpuRam(next.reservations,machine,report.cpus,report.ram_mb);
         const acknowledgedIds=new Set();
-        let changed=Boolean(evaluatorResult);
+        let changed=newEvaluatorReport;
         for (const id of ids) {
             if(!withinCapacity)break;
             const lease=next.reservations.find(x=>x.id===id &&
