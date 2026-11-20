@@ -5457,6 +5457,23 @@ fn run_battle(
         ).into());
     }
     let mut remote = bees_host::remote_play::NativeRemotePlay::from_environment(local_player_side)?;
+    // Dedicated hosted campaigns have no local window to advance the
+    // opening story. Their authenticated campaign owner must be able to
+    // receive the briefing before the first physical tick is released.
+    if !play {
+        if let (Some(server), Some(view)) = (remote.as_ref(),host.render_world(0)) {
+            if let (Some(owner),Some((_,cue))) =
+                (view.campaign_dialogue_side,view.campaign_dialogue)
+            {
+                if cue.is_briefing() &&
+                    !server.configured_sides().any(|side|side==owner) {
+                    return Err(invalid(
+                        "hosted campaign briefing requires an authenticated token for its authored player side",
+                    ).into());
+                }
+            }
+        }
+    }
     if let Some(cursor) = &resume_cursor {
         match (remote.as_mut(), cursor.remote_play.as_ref()) {
             (Some(server), Some(saved)) => {
@@ -5936,6 +5953,15 @@ fn run_battle(
                 break;
             }
         }
+        // This presentation gate uses the original source Level cue:
+        // never add another story clock or alter the shared simulation.
+        let remote_briefing = if !play && remote.is_some() {
+            host.render_world(0).and_then(|view|
+                view.campaign_dialogue
+                    .filter(|(_,cue)|cue.is_briefing())
+                    .and_then(|(sequence,_)|
+                        view.campaign_dialogue_side.map(|side|(side,sequence))))
+        } else { None };
         // Network co-op enters through precisely the same authoritative
         // command dispatcher as the local window and recorded input replay.
         // Process it at this fixed-tick boundary, never during physics.
@@ -5945,7 +5971,19 @@ fn run_battle(
             let revision = world.episode_revision();
             let live_held_controllers: Vec<_> =
                 world.state.live_held_fire_controllers().collect();
-            for order in server.poll(world_id, revision, &live_held_controllers) {
+            for order in server.poll(world_id, revision, &live_held_controllers,
+                remote_briefing) {
+                // A story briefing blocks physical orders from both player
+                // sides until its authored viewer releases the real Level.
+                // End still frees an existing peer-owned held-fire gesture.
+                if remote_briefing.is_some() &&
+                    !matches!(&order.action, NativePlayerInput::HeldFire(input)
+                        if matches!(input.action,
+                            bees_gameplay::player_inputs::NativeHeldFireAction::End)) {
+                    server.reply(order.peer, order.request_id,
+                        Err("campaign briefing is still being presented"));
+                    continue;
+                }
                 if !remote_side_owns_input(&host, &order.action, order.side) {
                     server.reply(order.peer, order.request_id,
                         Err("stale world, unauthorized side, or unavailable squad"));
@@ -6070,6 +6108,25 @@ fn run_battle(
                 },
                 Ok(bees_host::client::NativeClientAction::Quit) => { user_closed = true; break; },
                 Err(error) => { failed_window = Some(format!("native window: {error}")); break; },
+            }
+        }
+        // The dedicated LAN server has no local presentation tick.
+        // While one or more connected story owners are reading the
+        // briefing, keep polling its normal nonblocking network transport
+        // but do not step a shadow World or change the fixed-step clock.
+        if let (Some(server),Some((owner,sequence))) =
+            (remote.as_mut(),remote_briefing)
+        {
+            let world=host.simulation().world(0).expect("hosted briefing Level");
+            if server.briefing_waiting(world.id,world.episode_revision(),
+                owner,sequence)
+            {
+                if let Some(view)=host.render_world(0) {
+                    server.broadcast_initial_if_pending(&view,client_bounds[0]);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(16));
+                remote_deadline=Instant::now();
+                continue 'battle;
             }
         }
         let until_update = config.model_updates.get(next_model_update)
