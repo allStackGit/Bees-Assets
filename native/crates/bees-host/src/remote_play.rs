@@ -23,8 +23,9 @@ use bees_sim::geometry::Vec2;
 use bees_sim::simulation::WorldId;
 use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerHeldFire};
 use bees_hivemind::session::SquadLifetime;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 use crate::player_trace::NativePlayerInput;
 use crate::presentation::{NativeFogFade, NativeRenderWorldView};
@@ -49,6 +50,7 @@ enum WireInput {
     Input { request_id: u64, action: NativePlayerInput },
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct RemoteOrder {
     pub peer: u64,
     pub side: i32,
@@ -59,7 +61,7 @@ pub struct RemoteOrder {
 /// One authenticated peer's gesture, independent of every other peer.
 /// The native Level owns the actual live weapons keyed by the same peer ID,
 /// never a duplicate target cache or independent physics simulation.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 struct HeldFireLease {
     peer: u64,
     side: i32,
@@ -192,7 +194,7 @@ impl Peer {
     }
 }
 
-#[derive(Default, serde::Serialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct RemotePlayMeasurements {
     pub connections_accepted: u64,
     pub authenticated_peers: u64,
@@ -246,12 +248,41 @@ pub struct RemotePlayMeasurements {
     pub combat_impacts_dropped: u64,
 }
 
+/// Transport ownership carried in the SAME durable host transaction as
+/// the actual World. Sockets are intentionally not recoverable: a crashed
+/// host must require a fresh authentication, and old held-fire controllers
+/// are released through the regular authoritative input dispatcher.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeRemotePlayRecoveryCheckpoint {
+    schema_version: u32,
+    host_session_id: String,
+    side_credentials_sha256: [u8; 32],
+    next_peer: u64,
+    held_fire: Vec<HeldFireLease>,
+    pending_releases: Vec<RemoteOrder>,
+    measurements: RemotePlayMeasurements,
+}
+
+fn credential_digest(tokens: &HashMap<i32, String>) -> [u8; 32] {
+    let mut sorted = tokens.iter().collect::<Vec<_>>();
+    sorted.sort_unstable_by_key(|(&side, _)| side);
+    let mut digest = Sha256::new();
+    for (&side, secret) in sorted {
+        digest.update(side.to_le_bytes());
+        digest.update((secret.len() as u64).to_le_bytes());
+        digest.update(secret.as_bytes());
+    }
+    digest.finalize().into()
+}
+
 pub struct NativeRemotePlay {
     listener: TcpListener,
     // Identifies this one authoritative host session across TCP reconnects.
     // A restarted process cannot silently claim to resume a different
     // physical World just because it uses the same player-side tokens.
     host_session_id: String,
+    recovered_session: bool,
     side_tokens: HashMap<i32, String>,
     peers: Vec<Peer>,
     next_peer: u64,
@@ -319,7 +350,8 @@ impl NativeRemotePlay {
             "configured_sides": configured_sides,
         }));
         Ok(Some(Self {
-            listener, host_session_id, side_tokens, peers: Vec::new(),
+            listener, host_session_id, recovered_session: false,
+            side_tokens, peers: Vec::new(),
             next_peer: 1, last_state: None, force_initial_state: false,
             pending_audio: HashMap::new(), fog_by_side: HashMap::new(),
             music_location: None,
@@ -330,6 +362,84 @@ impl NativeRemotePlay {
 
     pub fn measurements(&self) -> &RemotePlayMeasurements {
         &self.measurements
+    }
+
+    /// Save only transport-side command ownership and cumulative counters;
+    /// no World, policies or player permissions are duplicated here.
+    pub fn recovery_checkpoint(&self) -> NativeRemotePlayRecoveryCheckpoint {
+        NativeRemotePlayRecoveryCheckpoint {
+            schema_version: 1,
+            host_session_id: self.host_session_id.clone(),
+            side_credentials_sha256: credential_digest(&self.side_tokens),
+            next_peer: self.next_peer,
+            held_fire: self.held_fire.values().copied().collect(),
+            pending_releases: self.pending_releases.clone(),
+            measurements: self.measurements.clone(),
+        }
+    }
+
+    /// Rebind a restarted listener to the actual recovered World. The
+    /// previous TCP sockets are gone; release their real live gestures at
+    /// the next fixed-tick input boundary, before admitting new commands.
+    pub fn restore_recovery_checkpoint(
+        &mut self, saved: NativeRemotePlayRecoveryCheckpoint,
+        world_id: WorldId, revision: u64,
+    ) -> io::Result<()> {
+        let invalid = || io::Error::new(io::ErrorKind::InvalidData,
+            "native remote session does not match the recovered World and side owners");
+        if saved.schema_version != 1 ||
+            saved.host_session_id.len() != 32 ||
+            !saved.host_session_id.bytes().all(|ch| ch.is_ascii_hexdigit()) ||
+            saved.next_peer == 0 ||
+            saved.next_peer == u64::MAX ||
+            saved.side_credentials_sha256 != credential_digest(&self.side_tokens) ||
+            saved.held_fire.len() > MAX_PEERS ||
+            saved.pending_releases.len() > MAX_ORDERS_PER_POLL
+        {
+            return Err(invalid());
+        }
+        let mut previous = HashSet::new();
+        for lease in &saved.held_fire {
+            if lease.peer == 0 || lease.peer >= saved.next_peer ||
+                !previous.insert(lease.peer) ||
+                !self.side_tokens.contains_key(&lease.side) ||
+                lease.world_id != world_id ||
+                lease.episode_revision != revision
+            {
+                return Err(invalid());
+            }
+        }
+        for order in &saved.pending_releases {
+            if order.peer == 0 || order.peer >= saved.next_peer ||
+                !self.side_tokens.contains_key(&order.side) ||
+                order.request_id != 0 ||
+                !matches!(&order.action,
+                    NativePlayerInput::HeldFire(input) if
+                        input.world_id == world_id &&
+                        input.episode_revision == revision &&
+                        input.controller_id == order.peer &&
+                        matches!(&input.action, NativeHeldFireAction::End))
+            {
+                return Err(invalid());
+            }
+        }
+        // Every lease represented a peer-owned active weapon at the
+        // checkpoint. Its socket did not survive the process, so End must
+        // be applied against the restored CombatWorld, not a fresh World.
+        let mut releases = saved.pending_releases;
+        for lease in saved.held_fire {
+            releases.push(lease.release());
+        }
+        self.host_session_id = saved.host_session_id;
+        self.recovered_session = true;
+        self.next_peer = saved.next_peer;
+        self.pending_releases = releases;
+        self.measurements = saved.measurements;
+        self.measurements.held_fire_disconnect_releases += previous.len() as u64;
+        self.measurements.disconnected_peers += previous.len() as u64;
+        self.last_state = None;
+        self.force_initial_state = true;
+        Ok(())
     }
 
     /// The authored Level selects music, never a network client's request.
@@ -455,6 +565,7 @@ impl NativeRemotePlay {
                                 "kind": "welcome", "protocol": 1,
                                 "mode": "authenticated_player_side", "side": side,
                                 "host_session_id": self.host_session_id,
+                                "recovered_host": self.recovered_session,
                             }));
                         } else {
                             peer.closed = true;
