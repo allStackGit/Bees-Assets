@@ -792,11 +792,13 @@ function verifiedOptimizerCompletion(job,raw,state) {
     return copy(raw);
 }
 
-// Rank zero alone owns the published checkpoint. Keep its original lease
-// inspectable until both the optimizer consensus and durable model identity
-// have been independently verified. Worker ranks need only consensus proof.
+// Rank zero alone owns the published checkpoint. A successful Finish
+// must prove optimizer consensus and durable model identity before its
+// lease is released. A confirmed native Stop has no valid consensus
+// checkpoint to publish: the terminal OS receipt itself settles ownership.
 function nativeOptimizerTerminalProof(job) {
-    if(job.frozen_parameters?.optimizer_group!==true)return true;
+    if(job.status==='stopped'||job.frozen_parameters?.optimizer_group!==true)
+        return true;
     if(!job.optimizer_completion)return false;
     return job.project_id!=='bees_native'||
         job.checkpoint_ready_verified===true&&
