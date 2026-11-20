@@ -4,8 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::error::Error;
 use std::fs;
-use std::io::{self, ErrorKind};
-use std::io::Write;
+use std::io::{self, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, atomic::{AtomicI64, Ordering}};
@@ -384,6 +383,10 @@ struct NativeBattleRecoveryCursor {
     network_game_id: Option<i64>,
     #[serde(default)]
     remote_play: Option<bees_host::remote_play::NativeRemotePlayRecoveryCheckpoint>,
+    // Input and policy recordings are append-only projections of this same
+    // World. Their exact synced prefixes are committed with its cursor.
+    #[serde(default)]
+    recording: Option<NativeBattleRecordingCursor>,
     segment_start_round: u64,
     segment_baseline: NativeDiagnosticMeasurements,
     segment_generation: u64,
@@ -417,9 +420,100 @@ struct NativeBattleRecoveryCursor {
     past_queen_controllers: bees_host::policy_only_metadata::NativeQueenControllerMeasurements,
 }
 
+/// Each recorded file is owned by the host checkpoint through its prefix
+/// length and digest, never by a separate replay recovery authority.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeRecordedPrefix {
+    bytes: u64,
+    sha256: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeBattleRecordingCursor {
+    input_trace: NativeRecordedPrefix,
+    policy_actions: Option<NativeRecordedPrefix>,
+    last_physical_checkpoint_round: Option<u64>,
+    recorded_physical_checkpoints: u64,
+    recorded_player_inputs: u64,
+    trace_checkpoint_syncs: u64,
+    trace_checkpoint_sync_wall_seconds: f64,
+    trace_input_syncs: u64,
+    trace_input_sync_wall_seconds: f64,
+    network_events: u64,
+    network_syncs: u64,
+    network_sync_wall_seconds: f64,
+}
+
+/// Hash each newly synced prefix ONCE, not the full growing trace after
+/// every World checkpoint. On rare process recovery the complete committed
+/// prefix is rehashed before any trailing uncommitted bytes are discarded.
+struct NativeRecordedPrefixHasher {
+    hashed_bytes: u64,
+    hasher: Sha256,
+}
+
+impl NativeRecordedPrefixHasher {
+    fn new() -> Self { Self { hashed_bytes: 0, hasher: Sha256::new() } }
+
+    fn capture(&mut self, path: &Path, bytes: u64) -> io::Result<NativeRecordedPrefix> {
+        if bytes < self.hashed_bytes {
+            return Err(invalid("recording checkpoint moved backwards"));
+        }
+        let mut reader = fs::File::open(path)?;
+        reader.seek(SeekFrom::Start(self.hashed_bytes))?;
+        let mut remaining = bytes - self.hashed_bytes;
+        let mut buf = [0_u8; 64 * 1024];
+        while remaining > 0 {
+            let chunk = remaining.min(buf.len() as u64) as usize;
+            let n = reader.read(&mut buf[..chunk])?;
+            if n == 0 {
+                return Err(invalid("recording prefix was truncated before host checkpoint"));
+            }
+            self.hasher.update(&buf[..n]);
+            remaining -= n as u64;
+        }
+        self.hashed_bytes = bytes;
+        Ok(NativeRecordedPrefix {
+            bytes, sha256: format!("{:x}", self.hasher.clone().finalize()),
+        })
+    }
+
+    fn recover(path: &Path, saved: &NativeRecordedPrefix)
+        -> io::Result<(fs::File, Self)>
+    {
+        if saved.bytes == 0 || saved.sha256.len() != 64 ||
+            !saved.sha256.bytes().all(|ch|
+                ch.is_ascii_digit() || (b'a'..=b'f').contains(&ch))
+        {
+            return Err(invalid("invalid durable replay recording boundary"));
+        }
+        let metadata = fs::symlink_metadata(path)?;
+        if !metadata.file_type().is_file() || metadata.len() < saved.bytes {
+            return Err(invalid("native recording is missing its committed prefix"));
+        }
+        let mut hasher = Self::new();
+        let current = hasher.capture(path, saved.bytes)?;
+        if current.sha256 != saved.sha256 {
+            return Err(invalid("native recording differs from the committed World"));
+        }
+        // The original host checkpoint is already exclusively leased.
+        // Discard only bytes that were written after that committed World.
+        let mut file = fs::OpenOptions::new().read(true).write(true).open(path)?;
+        file.set_len(saved.bytes)?;
+        file.sync_data()?;
+        file.seek(SeekFrom::Start(saved.bytes))?;
+        Ok((file, hasher))
+    }
+}
+
 /// Opt-in training recovery batches full World serialization at a coarse
 /// interval; a crash replays the uncommitted tail from the last fixed tick.
 const TRAINING_RECOVERY_ROUND_INTERVAL: u64 = 4096;
+/// Interactive checkpointing must not serialize a large World on every
+/// rendered/physics tick. Bound lost work while retaining smooth play.
+const GAMEPLAY_RECOVERY_ROUND_INTERVAL: u64 = 256;
 
 fn one_episode() -> u32 { 1 }
 
