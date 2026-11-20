@@ -58,6 +58,7 @@ class LocalExecution {
             tinybrains_remote_rollout_endpoints:[...(this.supervisor.adapters?.tinybrains?.tinybrains_remote_rollout_endpoints||[])],
             tinybrains_remote_key_fingerprint:this.supervisor.adapters?.tinybrains?.tinybrains_remote_key_fingerprint||null,
             tinybrains_rollout_endpoint:this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_endpoint||null,
+            tinybrains_rollout_slots:structuredClone(this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_slots||[]),
             tinybrains_rollout_key_fingerprint:this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_key_fingerprint||null,
             tinybrains_rollout_thread_limit:this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_thread_limit||0,
             courier_remote_lineage_endpoints:[...(this.supervisor.adapters?.courier?.courier_remote_lineage_endpoints||[])],
