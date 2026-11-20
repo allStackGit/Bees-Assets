@@ -279,15 +279,23 @@ class RemoteBattleWindow:
         if self.console.alive:
             self.root.after(50, self.poll)
         else:
-            receipt = self.console.campaign_receipt_snapshot()
+            campaign = self.console.campaign_receipt_snapshot()
+            final = self.console.battle_receipt_snapshot()
             outcome = self.state.get("terminal_outcome") if self.state else None
             self.held_drag = False
-            if receipt is not None:
-                self.notice(self.console.campaign_receipt_summary(receipt))
+            if final is not None:
+                self.notice(
+                    f"Battle finished: {final['label']} — {final['reason']}"
+                    if final["kind"] == "battle_result"
+                    else f"Battle interrupted: {final['reason']}"
+                )
             elif outcome is not None:
-                self.notice(f"Battle finished: {outcome['label']} (host closed)")
+                self.notice("Host closed before a reliable final battle receipt")
             else:
                 self.notice("Disconnected from host; battle is no longer interactive")
+            if campaign is not None:
+                self.notice(self.console.campaign_receipt_summary(campaign))
+            self.draw()
 
     def refresh(self, _event=None):
         self.draw()
@@ -750,11 +758,18 @@ class RemoteBattleWindow:
             self.canvas.create_oval(x-8, y-8, x+8, y+8,
                                     outline=FRIENDLY, dash=(4, 2), width=2)
         info = f"Tick {state['tick']}  Side {state['viewer_side']}  Friendly squads {len(selected)}"
+        final = self.console.battle_receipt_snapshot()
         outcome = state.get("terminal_outcome")
+        if final is not None and final["kind"] == "battle_result":
+            # The reliable receipt is sent after the durable campaign /
+            # battle commit, even if the last world_state was superseded.
+            outcome = {"label": final["label"], "reason": final["reason"]}
+        elif final is not None:
+            outcome = {"label": "Battle interrupted", "reason": final["reason"]}
         if outcome is not None:
             info += f"  |  {outcome['label']}"
         elif state["terminal_result"] is not None:
-            info += f"  |  Winner: side {state['terminal_result']}"
+            info += f"  |  Winner: side {state['terminal_result']} (uncommitted)"
         if self.mode and outcome is None:
             info += f"  |  Targeting: {self.mode}"
         self.canvas.create_text(14, 14, text=info, anchor="nw", fill="#e7efff",
