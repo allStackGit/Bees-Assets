@@ -118,7 +118,13 @@ class RemoteConsole:
                                 self.selected.clear()
                                 self.held_scope = None
                                 self.held_begin_request = None
-                                self.last_campaign_receipt = None
+                                # A first world snapshot may arrive after
+                                # the reliably queued campaign commit. Never
+                                # discard that receipt on initial admission.
+                                # A true later episode must clear prior
+                                # career-result presentation instead.
+                                if self.selected_scope is not None:
+                                    self.last_campaign_receipt = None
                                 # Reliable terminal replies can overtake a
                                 # replaceable unsent world_state. Keep an
                                 # already received final receipt for exactly
