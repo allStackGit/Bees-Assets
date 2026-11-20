@@ -5487,9 +5487,19 @@ class ExperimentHub {
             restartGroup.length!==value.members.length||
             restartGroup.some((old,index)=>old.resource_bundle?.index!==index+1||
                 old.resource_bundle.size!==restartGroup.length||
-                old.status!=='finished'&&old.status!=='failed'&&old.status!=='stopped'||
-                !old.capacity_released_at||!old.dispatch_id)||
+                old.project_id!==(index===0?'bees_native':'bees_native_optimizer_worker')||
+                old.frozen_parameters?.optimizer_group!==true||
+                !['finished','failed','stopped'].includes(old.status)||
+                !old.capacity_released_at||!old.dispatch_id||
+                !old.start_first_offered_at||!old.execution_updated_at||
+                !next.reservations.some(lease=>
+                    lease.id===old.lease_id&&lease.job_id===old.id&&
+                    lease.project_id===old.project_id&&
+                    lease.machine_id===old.assigned_machine_id&&
+                    lease.issued_by==='experiment-hub'&&
+                    lease.status==='released'&&Boolean(lease.released_at)))||
             !restartGroup.some(old=>['failed','stopped'].includes(old.status))||
+            !nativeOptimizerGroupBlock(next,restartGroup[0])||
             next.jobs.some(job=>
                 job.optimizer_restart_of_bundle_id===value.restart_optimizer_bundle_id&&
                 job.status!=='cancelled')))
