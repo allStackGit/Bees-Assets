@@ -78,7 +78,7 @@
         const message=action==='setup'
             ?(project==='courier'
                 ?'Set up the approved Courier survival evaluator using the installed local environment? The suite is pinned to the current environment file. A local agent restart is needed to advertise it.'
-                :'Set up and start the two approved TinyBrains Nano/Micro evaluation timers? Each evaluator uses a fixed Docker image and its own CPU/RAM limits. This does not start or stop training.')
+                :'Set up TinyBrains Nano/Micro evaluators? The Hub creates missing frozen initial suites from the trusted installed runtime, then starts separate fixed-budget evaluation timers. Existing suites remain unchanged. This does not start or stop training.')
             :action==='refresh'
                 ?'Create a new immutable '+id+' evaluation suite pinned to the installed runtime and replace its local schedule? Old suite files and receipts are preserved. Restart the local agent afterward.'
             :action==='stop'
