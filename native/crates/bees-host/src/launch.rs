@@ -1736,6 +1736,28 @@ struct CampaignSquadOutcome {
     kills: u64,
 }
 
+/// Shared desktop/CLI save root. Explicit library --output-dir still owns
+/// its caller-selected path; a direct multiplayer connection uses this
+/// standard per-user location without placing state alongside credentials.
+#[cfg(feature = "client")]
+fn default_native_user_save_root(fallback: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        env::var_os("LOCALAPPDATA").or_else(|| env::var_os("USERPROFILE"))
+            .map(PathBuf::from).unwrap_or_else(|| fallback.to_path_buf())
+            .join("BeesNative")
+    }
+    #[cfg(not(windows))]
+    {
+        let xdg = env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from).filter(|path| path.is_absolute());
+        xdg.or_else(|| env::var_os("HOME")
+            .map(|home| PathBuf::from(home).join(".local").join("share")))
+            .unwrap_or_else(|| fallback.to_path_buf())
+            .join("bees-native")
+    }
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
     let mut args = env::args_os().skip(1);
     let first = match args.next() {
@@ -1749,23 +1771,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 if let Some(folder) = executable.parent() {
                     let library = folder.join("examples").join("native-library.json");
                     if library.is_file() {
-                        let saves = {
-                            #[cfg(windows)]
-                            {
-                                env::var_os("LOCALAPPDATA").or_else(|| env::var_os("USERPROFILE"))
-                                    .map(PathBuf::from).unwrap_or_else(|| folder.to_path_buf())
-                                    .join("BeesNative")
-                            }
-                            #[cfg(not(windows))]
-                            {
-                                let xdg = env::var_os("XDG_DATA_HOME")
-                                    .map(PathBuf::from).filter(|path| path.is_absolute());
-                                xdg.or_else(|| env::var_os("HOME")
-                                    .map(|home| PathBuf::from(home).join(".local").join("share")))
-                                    .unwrap_or_else(|| folder.to_path_buf())
-                                    .join("bees-native")
-                            }
-                        };
+                        let saves = default_native_user_save_root(folder);
                         env::set_current_dir(folder)?;
                         return run_library(&library, &saves);
                     }
@@ -2042,8 +2048,18 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             let side: i32 = args.next().ok_or_else(|| invalid(USAGE))?
                 .to_string_lossy().parse()?;
             if args.next().is_some() { return Err(invalid(USAGE).into()); }
+            // A direct CLI client must recover the same original session
+            // after its own process exits. Isolate sessions by endpoint,
+            // player side and credential-file identity without copying the
+            // private token into the save or introducing a new CLI option.
+            let session_key = format!("{:x}", Sha256::digest(format!(
+                "{}\0{}\0{}", address.to_string_lossy(), side,
+                token_file.canonicalize()?.display(),
+            )));
+            let session_file = default_native_user_save_root(&env::current_dir()?)
+                .join("multiplayer").join(format!("{session_key}.json"));
             return bees_host::presentation::connect_remote(
-                &address.to_string_lossy(), &token_file, side, None,
+                &address.to_string_lossy(), &token_file, side, Some(&session_file),
             );
         }
         #[cfg(not(feature = "client"))]
