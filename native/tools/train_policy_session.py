@@ -254,6 +254,52 @@ class NativeHubCollectionBarrier:
                 )
 
 
+def measured_hub_machine_collection(approved_plan, dispatched, bundles):
+    """Join verified collector work to Hub-owned machine and lease budgets.
+
+    CPU/RAM/GPU quantities below are reserved capacity, never invented
+    utilization. Throughput comes only from verified native bundle receipts.
+    This is terminal-only reporting, outside the simulation and learner.
+    """
+    approved = {row["id"]: row for row in approved_plan["collectors"]}
+    assigned = {row["collector_id"]: row for row in dispatched["collectors"]}
+    if (len(approved) != len(bundles) or len(assigned) != len(bundles) or
+            {bundle["collector_id"] for bundle in bundles} != set(approved) or
+            set(assigned) != set(approved)):
+        raise ValueError("Hub machine collection measurement lacks an issued collector")
+    rows = []
+    for bundle in bundles:
+        name = bundle["collector_id"]
+        allocation = approved[name]
+        machine = assigned[name]
+        if machine["machine_id"] != allocation["machine_id"]:
+            raise ValueError("Hub machine collection changed its approved machine ownership")
+        resources = allocation["resources"]
+        metrics = bundle["metrics"]
+        proof = metrics.get("gpu_inference")
+        rows.append({
+            "collector_id": name,
+            "machine_id": machine["machine_id"],
+            "hub_job_id": machine["hub_job_id"],
+            "reserved_cpu_slots": resources["cpus"],
+            "reserved_ram_mb": resources["ram_mb"],
+            "reserved_gpu_count": resources.get(
+                "gpu_count", len(resources.get("gpus", [])),
+            ),
+            "rollout_processes": bundle["rollout_processes"],
+            "physics_workers_per_process": bundle["physics_workers_per_process"],
+            "observed_world_steps": metrics["successful_world_steps"],
+            "observed_policy_rows": metrics["successful_policy_rows"],
+            "collector_execution_wall_seconds": metrics["wall_seconds"],
+            "observed_world_steps_per_collector_wall_second":
+                metrics["successful_world_steps"] / metrics["wall_seconds"],
+            **({"verified_gpu_model_forwards": proof["model_forwards"],
+                "verified_gpu_agent_rows": proof["agent_rows"]}
+               if isinstance(proof, dict) else {}),
+        })
+    return rows
+
+
 def pinned(path):
     path = path.resolve(strict=True)
     if not path.is_file():
@@ -1927,11 +1973,14 @@ def main():
                 hub_dispatch_wall_seconds = 0.0
                 hub_dispatch_job_count = 0
                 hub_barrier = None
+                approved_hub_plan = None
+                dispatched_hub_round = None
                 if "hub_dispatch_plan" in recipe:
                     dispatch_started = time.monotonic()
                     pinned_plan = recipe["hub_dispatch_plan"]
                     if file_sha256(Path(pinned_plan["path"])) != pinned_plan["sha256"]:
                         raise ValueError("approved native Hub machine/resource dispatch plan changed")
+                    approved_hub_plan = read_json(Path(pinned_plan["path"]))
                     node = shutil.which("node")
                     if node is None:
                         raise ValueError("Node.js is required for native Experiment Hub round dispatch")
@@ -1958,6 +2007,7 @@ def main():
                         hub_barrier = NativeHubCollectionBarrier(
                             args.hub_dispatch_port, report, orders,
                         )
+                        dispatched_hub_round = report
                         hub_dispatch_job_count = len(report.get("member_job_ids", []))
                         print(json.dumps(report, sort_keys=True), flush=True)
                     hub_dispatch_wall_seconds = time.monotonic() - dispatch_started
@@ -1999,6 +2049,11 @@ def main():
                         "collector_source_export_wall_seconds": export_wall_seconds,
                         "hub_dispatch_wall_seconds": hub_dispatch_wall_seconds,
                         "hub_dispatched_collectors": hub_dispatch_job_count,
+                        **({} if approved_hub_plan is None else {
+                            "hub_machine_collection": measured_hub_machine_collection(
+                                approved_hub_plan, dispatched_hub_round, bundles,
+                            ),
+                        }),
                         "hub_barrier_registry_checks": hub_barrier.checks if hub_barrier else 0,
                         "hub_barrier_unavailable_observations": (
                             hub_barrier.coordinator_unavailable if hub_barrier else 0
