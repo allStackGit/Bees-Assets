@@ -40,6 +40,7 @@ const MAX_RELIABLE_PENDING: usize = 256 * 1024;
 const READ_BYTES_PER_POLL: usize = 128 * 1024;
 const WRITE_BYTES_PER_FLUSH: usize = 256 * 1024;
 const MAX_ORDERS_PER_POLL: usize = 64;
+const MAX_PENDING_INPUT_REPLIES: usize = 256;
 const STATE_EVERY_TICKS: u64 = 5;
 const MAX_PENDING_AUDIO_EVENTS: usize = 32;
 
@@ -107,11 +108,40 @@ struct Peer {
     reliable: VecDeque<Vec<u8>>,
     reliable_bytes: usize,
     newest_state: Option<Vec<u8>>,
+    // Ordered input receipts may be resolved later than later requests
+    // because successful gameplay commands require a durable World checkpoint.
+    // Hold each result behind its preceding unresolved input on THIS peer.
+    input_replies: VecDeque<(u64, Option<Value>)>,
     closed: bool,
     accepted_at: Instant,
 }
 
 impl Peer {
+    fn begin_input(&mut self, request_id: u64) -> bool {
+        if self.input_replies.len() >= MAX_PENDING_INPUT_REPLIES {
+            return false;
+        }
+        self.input_replies.push_back((request_id, None));
+        true
+    }
+
+    fn finish_input(&mut self, request_id: u64, message: Value) {
+        let Some((_, reply)) = self.input_replies.iter_mut()
+            .find(|(id, _)| *id == request_id) else { return };
+        if reply.is_some() { return; }
+        *reply = Some(message);
+        // The client verifies strictly increasing input-result IDs.
+        // Negative answers may be ready before earlier checkpointed
+        // positive answers; only send the ready prefix in request order.
+        while self.input_replies.front()
+            .is_some_and(|(_, value)| value.is_some()) {
+            let (_, response) = self.input_replies.pop_front()
+                .expect("checked ready input receipt");
+            let _ = self.enqueue(&response.expect("checked ready response"));
+            if self.closed { break; }
+        }
+    }
+
     fn enqueue(&mut self, message: &Value) -> io::Result<()> {
         let mut data = serde_json::to_vec(message)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
@@ -579,8 +609,8 @@ impl NativeRemotePlay {
                 id, socket, side: None, last_request_id: 0, incoming: Vec::new(),
                 outgoing: Vec::new(), written: 0, writing_state: false,
                 reliable: VecDeque::new(), reliable_bytes: 0,
-                newest_state: None, closed: false,
-                accepted_at: Instant::now(),
+                newest_state: None, input_replies: VecDeque::new(),
+                closed: false, accepted_at: Instant::now(),
             });
         }
 
@@ -686,17 +716,20 @@ impl NativeRemotePlay {
                         // No delayed/doubled request may reissue a movement
                         // or special under the same authenticated connection.
                         if request_id <= peer.last_request_id {
+                            // A repeated input ID cannot be safely
+                            // acknowledged ahead of its original deferred
+                            // checkpoint receipt. Require a fresh peer seat.
                             self.measurements.orders_rejected += 1;
-                            let _ = peer.enqueue(&json!({
-                                "kind": "input_result", "request_id": request_id,
-                                "processed": false,
-                                "feedback": "duplicate or out-of-order request",
-                            }));
-                            continue;
+                            peer.closed = true;
+                            break;
                         }
                         peer.last_request_id = request_id;
                         if orders.len() >= MAX_ORDERS_PER_POLL ||
                            peer_orders >= MAX_ORDERS_PER_PEER_POLL {
+                            peer.closed = true;
+                            break;
+                        }
+                        if !peer.begin_input(request_id) {
                             peer.closed = true;
                             break;
                         }
@@ -745,7 +778,7 @@ impl NativeRemotePlay {
                             if !permitted {
                                 self.measurements.orders_rejected += 1;
                                 self.measurements.held_fire_rejected += 1;
-                                let _ = peer.enqueue(&json!({
+                                peer.finish_input(request_id, json!({
                                     "kind": "input_result", "request_id": request_id,
                                     "processed": false,
                                     "feedback": "held fire belongs to another player or episode",
@@ -850,7 +883,7 @@ impl NativeRemotePlay {
                 "processed": false, "feedback": message,
             }),
         };
-        let _ = peer.enqueue(&reply);
+        peer.finish_input(request_id, reply);
         self.measurements.state_bytes += peer.flush();
     }
 
