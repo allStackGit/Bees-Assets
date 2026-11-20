@@ -119,6 +119,16 @@ impl Peer {
         }
         self.reliable_bytes += data.len();
         self.reliable.push_back(data);
+        // A terminal result or command acknowledgement must not wait behind
+        // an entire unsent, replaceable world snapshot. If the socket has
+        // already written part of a JSON line, it MUST finish that line
+        // before sending any other payload. Otherwise the next flush may
+        // start with the oldest reliable frame, without mixing framing.
+        if self.writing_state && self.written == 0 {
+            self.outgoing.clear();
+            self.writing_state = false;
+            self.newest_state = None;
+        }
         Ok(())
     }
 
