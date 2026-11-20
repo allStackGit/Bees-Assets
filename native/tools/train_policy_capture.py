@@ -1604,8 +1604,18 @@ def main():
                 publish_immutable_optimizer_artifact(
                     args.output / "node-result.json", write_node_result,
                 )
+            # All non-primary GPU ranks must reach the same boundary.
+            # Only the per-machine local rank zero publishes a node proof,
+            # and it must already be durable before the global publisher
+            # is permitted to expose a model checkpoint.
+            torch.distributed.barrier()
             torch.distributed.destroy_process_group()
             return
+        # Rank zero cannot commit a group-level checkpoint until every
+        # remote node has durably recorded its own consensus and input
+        # identity. A crash before this barrier leaves NO committed model
+        # and the full group can be restarted as a fresh attempt.
+        torch.distributed.barrier()
     next_checkpoint = args.output / "checkpoint.pt"
     publish_immutable_optimizer_artifact(
         next_checkpoint,
