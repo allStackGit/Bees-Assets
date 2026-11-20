@@ -1845,8 +1845,20 @@ function createNativeBeesAdapter({
                         ...rolloutPolicyObservationMeasurements(rollout),
                         rollout_world_steps: {value: rollout.successful_world_steps, unit: 'count'},
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
-                        rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
-                        ...(rollout.workers ? {
+                        // One-process and locally parallel rollouts record
+                        // true elapsed time. Imported multi-machine bundles
+                        // record the SUM of overlapping collector seconds.
+                        ...(rollout.collector_count != null ? {
+                            rollout_workers: {
+                                value: rollout.total_rollout_processes, unit: 'count',
+                            },
+                            rollout_worlds: {value: rollout.worlds, unit: 'count'},
+                        } : {
+                            rollout_wall_seconds: {
+                                value: rollout.wall_seconds, unit: 'seconds',
+                            },
+                        }),
+                        ...(rollout.collector_count != null ? {} : rollout.workers ? {
                             rollout_workers: {value: rollout.workers, unit: 'count'},
                             ...(rollout.worker_execution_min_seconds !== undefined ? {
                                 rollout_worker_execution_min_seconds: {
