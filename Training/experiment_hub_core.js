@@ -5994,6 +5994,7 @@ class ExperimentHub {
         }
         // A --once agent closes its native session; never authorize a new
         // learner on the closing heartbeat when it cannot receive a Start.
+        this.advanceDistributedTinyBrainsPreparations();
         this.advancePendingDistributedGroups();
         this.advanceDistributedLaunches();
         this.advancePendingResourceBundles();
@@ -6535,11 +6536,149 @@ class ExperimentHub {
                 capacity_released:Boolean(j.capacity_released_at)})),
             note:'Stops are durable native requests. No active or uncertain service capacity is released without a native terminal receipt.'};
     }
+    // Queue intent is durable, but no machine claim is made before the
+    // signed-in remote agent reports its actual listener and HMAC identity.
+    prepareDistributedTinyBrains(value) {
+        if(!object(value)||value.confirm_prepare!==true||
+            Object.keys(value).some(k=>!['confirm_prepare','learner','collector'].includes(k))||
+            !object(value.learner)||!object(value.collector)||
+            Object.keys(value.learner).some(k=>!['configuration_id','expected_revision',
+                'machine_id','resources','metric_selection','continuation_of_job_id'].includes(k))||
+            Object.keys(value.collector).some(k=>!['machine_id','endpoint','resources','threads'].includes(k))||
+            !ID.test(String(value.learner.machine_id||''))||
+            !ID.test(String(value.collector.machine_id||''))||
+            !rolloutEndpoint(value.collector.endpoint))
+            throw Error('Select the exact TinyBrains learner, remote machine, endpoint and resource budgets.');
+        const snapshot=this.snapshot();
+        const learner=snapshot.machines.find(m=>m.id===value.learner.machine_id);
+        const worker=snapshot.machines.find(m=>m.id===value.collector.machine_id);
+        const config=snapshot.configurations.find(c=>
+            c.id===value.learner.configuration_id&&
+            c.revision===value.learner.expected_revision&&c.project_id==='tinybrains');
+        const endpoint=value.collector.endpoint;
+        const budget=sidecarBudget(value.collector,true);
+        const learnerBudget=resourceRequest(value.learner.resources);
+        const threads=value.collector.threads??budget.cpus;
+        if(!learner||learner.status!=='connected'||!learner.local_executor_enabled||
+            !learner.native_preflight_passed||
+            !learner.installed_projects?.includes('tinybrains')||
+            learner.tinybrains_rollout_subset!==true||
+            !learner.tinybrains_remote_rollout_endpoints?.includes(endpoint)||
+            !SHA256.test(String(learner.tinybrains_remote_key_fingerprint||''))||
+            !config||config.parameters?.remote_rollouts!==true||
+            !worker||worker.id===learner.id||worker.status!=='connected'||
+            worker.agent_enrolled!==true||worker.local_executor_enabled!==true||
+            !['win32','linux'].includes(worker.agent_platform)||
+            budget.gpu_count!==0||!Number.isSafeInteger(threads)||
+            threads<1||threads>budget.cpus||
+            snapshot.projects.find(p=>p.id==='tinybrains_rollout')?.adapter!=='unconfigured'||
+            !supportsTinyBrainsProfile(learner,{
+                project_id:'tinybrains',resources:learnerBudget,
+                frozen_parameters:{...config.parameters,
+                    device:tinyBrainsDeviceForLease(config.parameters,learnerBudget),
+                    rollout_endpoints:[endpoint]},
+                continuation_of_job_id:value.learner.continuation_of_job_id??null,
+            }))
+            throw Error('The learner, approved one-collector endpoint or remote CPU machine is ineligible.');
+        const pending=(this.state.tinybrains_preparations||[]).filter(p=>p.status==='pending');
+        if(pending.length>=24)throw Error('Resolve outstanding TinyBrains preparations first.');
+        if(pending.some(p=>p.collector.machine_id===worker.id&&p.collector.endpoint===endpoint))
+            throw Error('This worker endpoint already has a pending prepared run.');
+        const leases=snapshot.reservations.filter(l=>l.machine_id===worker.id&&
+            ['active','offered','acknowledged'].includes(l.status));
+        const used=(field)=>leases.reduce((n,l)=>n+(l.resources?.[field]||0),0)+
+            pending.filter(p=>p.collector.machine_id===worker.id)
+                .reduce((n,p)=>n+p.collector.resources[field],0);
+        if(used('cpus')+budget.cpus>worker.cpus||
+            used('ram_mb')+budget.ram_mb>worker.ram_mb)
+            throw Error('The two collector budgets would exceed the remote machine capacity.');
+        const id=crypto.randomUUID(),next=copy(this.state);
+        next.tinybrains_preparations=next.tinybrains_preparations||[];
+        next.tinybrains_preparations.push({
+            id,status:'pending',created_at:now(),
+            expires_at:new Date(Date.now()+86400000).toISOString(),
+            reason:'Waiting for authenticated collector installation and native readiness.',
+            learner:copy(value.learner),collector:copy(value.collector),
+            configuration_sha256:crypto.createHash('sha256')
+                .update(JSON.stringify(config.parameters)).digest('hex'),
+        });
+        next.machine_software_requests=next.machine_software_requests||{};
+        next.machine_software_requests[worker.id]=[...new Set([
+            ...(next.machine_software_requests[worker.id]||[]),'tinybrains',
+        ])];
+        this.commit(next);
+        return {preparation_id:id,status:'pending',machine_id:worker.id,
+            endpoint,native_starts:0};
+    }
+    cancelDistributedTinyBrainsPreparation(value) {
+        if(!object(value)||value.confirm_cancel!==true||
+            !UUID.test(String(value.preparation_id||'')))
+            throw Error('Confirm the exact unstarted TinyBrains preparation.');
+        const next=copy(this.state),plan=(next.tinybrains_preparations||[]).find(p=>
+            p.id===value.preparation_id&&p.status==='pending');
+        if(!plan)throw Error('Preparation is not pending.');
+        plan.status='cancelled';plan.reason='Operator cancelled the unstarted queue intent.';
+        plan.resolved_at=now();this.commit(next);
+        return {preparation_id:plan.id,status:'cancelled',native_starts:0};
+    }
+    advanceDistributedTinyBrainsPreparations() {
+        const ids=(this.state.tinybrains_preparations||[])
+            .filter(p=>p.status==='pending').map(p=>p.id);
+        for(const id of ids) {
+            const p=this.state.tinybrains_preparations.find(item=>item.id===id);
+            if(!p||p.status!=='pending')continue;
+            const finish=(status,reason,learnerId)=>{
+                const next=copy(this.state),item=next.tinybrains_preparations.find(v=>v.id===id);
+                if(!item||item.status!=='pending')return;
+                item.status=status;item.reason=reason;item.resolved_at=now();
+                if(learnerId)item.learner_job_id=learnerId;
+                this.commit(next);
+            };
+            const existing=this.state.jobs.find(j=>j.distributed_preparation_id===id);
+            if(existing){finish('queued','Jobs queued; Start needs separate approval.',existing.id);continue;}
+            if(Date.now()>=Date.parse(p.expires_at)) {
+                finish('expired','Collector was not ready within 24 hours.');continue;
+            }
+            const snapshot=this.snapshot();
+            const learner=snapshot.machines.find(m=>m.id===p.learner.machine_id);
+            const machine=snapshot.machines.find(m=>m.id===p.collector.machine_id);
+            const config=snapshot.configurations.find(c=>c.id===p.learner.configuration_id&&
+                c.revision===p.learner.expected_revision&&c.project_id==='tinybrains');
+            if(!config||crypto.createHash('sha256')
+                .update(JSON.stringify(config.parameters)).digest('hex')!==p.configuration_sha256) {
+                finish('needs_review','The frozen learner configuration changed.');continue;
+            }
+            if(!learner||learner.status!=='connected'||!machine||
+                machine.status!=='connected'||!machine.installed_projects?.includes('tinybrains_rollout')||
+                !readySidecar(machine,'tinybrains_rollout',sidecarBudget(p.collector,true)))
+                continue;
+            const endpoint=p.collector.endpoint;
+            if(learner.tinybrains_remote_key_fingerprint!==
+                machine.tinybrains_rollout_key_fingerprint||
+                !learner.tinybrains_remote_rollout_endpoints?.includes(endpoint)||
+                !(machine.tinybrains_rollout_endpoint===endpoint||
+                    machine.tinybrains_rollout_slots?.some(s=>s.endpoint===endpoint))) {
+                finish('needs_review','Collector endpoint or HMAC identity differs from learner approval.');continue;
+            }
+            try {
+                const result=this.queueDistributedTinyBrains({
+                    confirm_queue:true,learner:p.learner,collectors:[p.collector],
+                },id);
+                finish('queued','Distributed jobs claimed; coordinate native Start in Train.',result.learner.id);
+            }catch(error) {
+                const reason='Waiting to queue: '+String(error.message||error).slice(0,180);
+                if(p.reason!==reason) {
+                    const next=copy(this.state),item=next.tinybrains_preparations.find(v=>v.id===id);
+                    if(item?.status==='pending'){item.reason=reason;this.commit(next);}
+                }
+            }
+        }
+    }
     // Queue and reserve an entire TinyBrains rollout group as one durable
     // transaction. The operator supplies resource budgets; physical worker
     // endpoints and identities come only from authenticated machine agents.
     // An incomplete set never leaves behind a stranded learner or sidecar.
-    queueDistributedTinyBrains(value) {
+    queueDistributedTinyBrains(value,preparationId=null) {
         if(!object(value)||value.confirm_queue!==true||
             Object.keys(value).some(key=>!['confirm_queue','learner','collectors','worker_machine_ids'].includes(key))||
             !object(value.learner)||
@@ -6632,6 +6771,7 @@ class ExperimentHub {
         // Only groups queued as one transaction opt into automatic sidecar
         // teardown after the learner has a verified terminal owner report.
         learner.distributed_rollout_managed=true;
+        if(preparationId)learner.distributed_preparation_id=preparationId;
         const learnerLease=this.claimJobIn(next,learner,learnerMachine.id,learnerMachine);
         const workers=[],leases=[learnerLease],seen=new Set([learnerMachine.id]);
         for(const [index,endpoint] of endpoints.entries()) {
