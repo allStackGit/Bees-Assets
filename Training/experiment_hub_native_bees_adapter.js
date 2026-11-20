@@ -727,6 +727,7 @@ function createNativeBeesAdapter({
     const trainingSources = [
         'native_mission_contract.py',
         'native_distributed_collection.py',
+        'transfer_policy_bundle.py',
         'train_policy_capture.py',
         'native_training_outcomes.py',
         'read_policy_capture.py',
@@ -775,8 +776,8 @@ function createNativeBeesAdapter({
         throw Error('Native curriculum applies only to physical collectors, not synchronized PPO ranks.');
     const bundleRound = Object.hasOwn(config, 'rollout_bundles');
     const inboxLearner = !collectOnly && Boolean(inbox);
-    if (distributedOptimizer !== undefined && !bundleRound)
-        throw Error('Multi-machine native PPO only consumes the same pinned physical capture bundles on every node.');
+    if (distributedOptimizer !== undefined && (!bundleRound || !inboxLearner))
+        throw Error('Multi-machine native PPO requires an empty imported-bundle template and an existing trusted bundle inbox on every node.');
     if (distributedOptimizer?.role === 'worker' &&
         (evaluationRoot !== undefined || evaluationSuites !== undefined ||
          gameLibrarySaveRoot !== undefined))
