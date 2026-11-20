@@ -277,6 +277,10 @@ def completed_uploaded_bundle(inbox, job, orders):
         "collector_id": job["id"],
         "archive_sha256": identity["archive_sha256"],
         "archive_bytes": identity["archive_bytes"],
+        # Bind the authenticated archive to the learner's accepted result,
+        # not just to its collection_id. A restarted collector must never
+        # substitute another receipt for the samples already delivered.
+        "bundle_sha256": file_sha256(receipt),
         "receipt": str(receipt),
     }
 
