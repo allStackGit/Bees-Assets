@@ -246,12 +246,13 @@ if($Command -eq 'install' -and $hasEnrollment -and $existing) {
     # Repair ONLY the updater code from an authenticated and SHA-256 verified
     # worker release, preserving the agent enrollment and native service.
     $storedUrl=[string]$saved['EXPERIMENT_HUB_URL']
+    $urlIdentity=[regex]::Match($storedUrl,'^http://(100\.[0-9.]+):7149$')
     if($saved['EXPERIMENT_HUB_MACHINE_ID'] -cnotmatch '^[a-z][a-z0-9_-]{0,47}$' -or
-        -not ($storedUrl -match '^http://(100\.[0-9.]+):7149$')){
+        -not $urlIdentity.Success){
         throw 'Existing worker enrollment has no valid Hub Tailscale endpoint.'
     }
     $MachineId=[string]$saved['EXPERIMENT_HUB_MACHINE_ID']
-    $HubTailnetIp=$Matches[1]
+    $HubTailnetIp=$urlIdentity.Groups[1].Value
     Assert-TailnetIP $HubTailnetIp
     $Enrollment=[pscustomobject]@{agent_token=[string]$saved['EXPERIMENT_HUB_AGENT_TOKEN']}
     $releaseName='Hub-Worker-Updater-Repair'
@@ -260,7 +261,7 @@ if($Command -eq 'install' -and $hasEnrollment -and $existing) {
         throw 'Previous repair source present; refusing to overwrite unexpected files.'
     }
     $replacement=Join-Path (Split-Path -Parent $updater) (
-        'experiment_hub_worker_updater.'+[guid]::NewGuid().ToString('N')+'.new')
+        'experiment_hub_worker_updater.'+[guid]::NewGuid().ToString('N')+'.new.js')
     $backup=Join-Path (Split-Path -Parent $updater) (
         'experiment_hub_worker_updater.'+[guid]::NewGuid().ToString('N')+'.backup')
     try {
