@@ -87,6 +87,9 @@ struct WireCounts {
     minimap_objective_markers: u64,
     minimap_camera_moves: u64,
     ship_type_multiselections: u64,
+    tactical_button_clicks: u64,
+    squad_tab_clicks: u64,
+    shooting_strategy_choices: u64,
     minimap_move_orders_submitted: u64,
     right_drag_move_orders_submitted: u64,
     /// Local and LAN share the exact fog circle raster; pixels outside the
@@ -1998,7 +2001,10 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     if key==Key::Enter {
                         match peer.order(&selected,"shooting",
                             json!({"strategy_id":shooting_focus})) {
-                            Ok(())=>{shooting_menu=false;shooting_press=None;},
+                            Ok(())=>{
+                                shooting_menu=false;shooting_press=None;
+                                peer.metrics.shooting_strategy_choices+=1;
+                            },
                             Err(error)=>peer.notice=error.to_string(),
                         }
                     } else if matches!(key,Key::Backspace|Key::S) {
@@ -2137,6 +2143,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                 if left&&!last_left&&window.is_active() {
                     shooting_press=mouse.and_then(|(x,y)|
                         shooting_hit(WIDTH,HEIGHT,x,y));
+                    if let Some(id)=shooting_press {shooting_focus=id;}
                 }
                 if !left&&last_left {
                     let hovered=mouse.and_then(|(x,y)|
@@ -2145,15 +2152,16 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                         .filter(|&id|Some(id)==hovered) {
                         match peer.order(&selected,"shooting",
                             json!({"strategy_id":id})) {
-                            Ok(())=>{shooting_menu=false;},
+                            Ok(())=>{
+                                shooting_menu=false;
+                                peer.metrics.shooting_strategy_choices+=1;
+                            },
                             Err(error)=>peer.notice=error.to_string(),
                         }
                     }
                 }
-                if let Some(id)=mouse.and_then(|(x,y)|
-                    shooting_hit(WIDTH,HEIGHT,x,y)) {
-                    shooting_focus=id;
-                }
+                // Hover never changes selection: keyboard arrows retain
+                // their position until a deliberate mouse press.
                 last_left=left;
                 last_right=window.get_mouse_down(MouseButton::Right);
                 hud_press=None;squad_tab_press=None;
@@ -2230,6 +2238,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                         mouse.and_then(|(x,y)|remote_squad_tab_hit(state,x,y)))
                         ==Some(id));
                 if let Some(id)=clicked_tab {
+                    peer.metrics.squad_tab_clicks+=1;
                     if control {
                         if let Some(index)=selected.iter().position(|&current|current==id) {
                             selected.remove(index);
@@ -2244,6 +2253,7 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                     last_selection_press=None;double_left_press=false;
                 }
                 if let Some(action)=clicked {
+                    peer.metrics.tactical_button_clicks+=1;
                     if let Err(error)=remote_tactical_action(
                         &mut peer,&mut selected,&mut mode,&mut patrol_start,
                         &mut held_fire_active,&mut held_fire_target,
@@ -2513,6 +2523,9 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
         "minimap_objective_markers":peer.metrics.minimap_objective_markers,
         "minimap_camera_moves":peer.metrics.minimap_camera_moves,
         "ship_type_multiselections":peer.metrics.ship_type_multiselections,
+        "tactical_button_clicks":peer.metrics.tactical_button_clicks,
+        "squad_tab_clicks":peer.metrics.squad_tab_clicks,
+        "shooting_strategy_choices":peer.metrics.shooting_strategy_choices,
         "minimap_move_orders_submitted":peer.metrics.minimap_move_orders_submitted,
         "right_drag_move_orders_submitted":peer.metrics.right_drag_move_orders_submitted,
         "fog_circle_stamps":peer.metrics.fog_circle_stamps,
