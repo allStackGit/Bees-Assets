@@ -2307,7 +2307,7 @@ fn reset_uncommitted_native_start(run: &Path) -> Result<(), Box<dyn Error>> {
     }
     let checkpoint = run.join("native-host-checkpoint.json");
     let marker = run.join("native-initial-world-committed.json");
-    let _lease = NativeHostCheckpointFile::open(&checkpoint)
+    let lease = NativeHostCheckpointFile::open(checkpoint.clone())
         .map_err(|error| contextual("original native start owner", error))?;
     if checkpoint.exists() || marker.exists() {
         return Err(invalid(
@@ -2319,6 +2319,10 @@ fn reset_uncommitted_native_start(run: &Path) -> Result<(), Box<dyn Error>> {
     if run.join("rollout-summary.json").exists() {
         return Err(invalid("original native battle has a terminal receipt without its World checkpoint").into());
     }
+    // The outer saved-game writer remains held through the next launch.
+    // Release this run's OS file lock before deleting its transient lease
+    // inode: Windows refuses to remove open locked files.
+    drop(lease);
     fs::remove_dir_all(run)?;
     Ok(())
 }
@@ -2626,11 +2630,6 @@ fn interrupted_campaign_world(
             ).into());
         }
     }
-    if let Some((run, _)) = &pending {
-        if !run.join("native-host-checkpoint.json").is_file() {
-            reset_uncommitted_native_start(run)?;
-        }
-    }
     Ok(pending)
 }
 
@@ -2731,6 +2730,9 @@ fn launch_catalog_battle(
             }
             if env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some() {
                 require_replayable_remote_host(&original_config)?;
+            }
+            if !output.join("native-host-checkpoint.json").is_file() {
+                reset_uncommitted_native_start(&output)?;
             }
             println!("{}", json!({
                 "kind": "native_campaign_battle_recovered",
