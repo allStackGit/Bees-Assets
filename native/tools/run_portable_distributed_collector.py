@@ -215,9 +215,10 @@ def main():
         if args.input_url and input_archive.parent == attempt and (
                 input_archive.name != "issued-inputs.tar"):
             canonical = attempt / "issued-inputs.tar"
+            # download_input_archive already synchronized the payload
+            # before publication; fsyncing a read-only handle is not valid
+            # on every supported Windows filesystem.
             os.replace(input_archive, canonical)
-            with canonical.open("rb") as archive_file:
-                os.fsync(archive_file.fileno())
             if os.name != "nt":
                 directory_fd = os.open(attempt, os.O_RDONLY)
                 try:
