@@ -712,6 +712,38 @@ impl NativePolicyInference for RolloutModel {
         self.resident.as_ref().map_or(0, ResidentPolicyProcess::model_generation)
     }
 
+    fn checkpoint_model_digest(&self) -> Option<[u8; 32]> {
+        // Playback and capture have external file cursors; their state must
+        // join the host transaction before either may resume mid-session.
+        if self.playback.is_some() || self.recorder.is_some() {
+            return None;
+        }
+        match &self.resident {
+            Some(resident) => resident.checkpoint_model_digest(),
+            None => Some([0_u8; 32]),
+        }
+    }
+
+    fn checkpoint_sampling_state(&mut self) -> Result<Option<Vec<u8>>, Self::Error> {
+        if self.playback.is_some() || self.recorder.is_some() {
+            return Ok(None);
+        }
+        match &mut self.resident {
+            Some(resident) => resident.checkpoint_sampling_state(),
+            None => Ok(Some(Vec::new())),
+        }
+    }
+
+    fn restore_sampling_state(&mut self, saved: &[u8]) -> Result<bool, Self::Error> {
+        if self.playback.is_some() || self.recorder.is_some() {
+            return Ok(false);
+        }
+        match &mut self.resident {
+            Some(resident) => resident.restore_sampling_state(saved),
+            None => Ok(saved.is_empty()),
+        }
+    }
+
     fn forward(
         &mut self, keys: &[PolicyAgentKey], routes: &[NativePolicyRoute],
         observations: &[f32], masks: &[PolicyActionMask],
