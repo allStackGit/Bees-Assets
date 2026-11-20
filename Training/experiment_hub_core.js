@@ -956,6 +956,8 @@ function nativeStartReadiness(snapshot, job) {
     const machine=snapshot.machines.find(m=>m.id===job.assigned_machine_id);
     if(!machine||machine.status!=='connected')
         return block('The assigned machine must have a fresh authenticated heartbeat.');
+    if(machine.software_update_blocked)
+        return block('Machine software update is activating; wait for version confirmation.');
     if(!['linux','win32'].includes(machine.agent_platform)||
         machine.local_executor_enabled!==true)
         return block('A supported locally installed native executor is required.');
@@ -1610,6 +1612,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
     following=[],futureMachinesFor=()=>machines,snapshot=null) {
     const eligibleOptions=(selected,hosts,preferred=null)=>{
         const eligible=hosts.filter(machine=>
+            machine.software_update_blocked!==true&&
             supportsEvaluation(machine.evaluation_suites,selected)&&
             supportsTinyBrainsProfile(machine,selected)&&
             supportsDesign(machine.design_catalog,selected.project_id,selected.frozen_parameters)&&
@@ -2019,6 +2022,9 @@ class ExperimentHub {
         const observedAt = Date.now();
         snapshot.machines = snapshot.machines.map(machine => {
             const report = this.agentReports.get(machine.id);
+            machine.software_update_blocked=Object.values(
+                snapshot.machine_software?.[machine.id]||{}).some(item=>
+                    item.status==='activating');
             const enrolled = typeof machine.agent_key_sha256 === 'string';
             const fresh = enrolled && report &&
                 observedAt >= report.received_ms &&
@@ -2892,6 +2898,8 @@ class ExperimentHub {
             throw Error('Ants-v2 Hub integration is retired; no new capacity claims.');
         if(!machine || machine.id!==machineId || machine.status!=='connected')
             throw Error('Machine must have a currently authenticated agent.');
+        if(machine.software_update_blocked)
+            throw Error('Machine software update is activating; new leases are blocked.');
         const place=resourcePlacements([machine],next.reservations,wanted)[0];
         if(!place.online || !place.capacity_fits)
             throw Error('Requested capacity is unavailable on this machine.');
