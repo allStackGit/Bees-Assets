@@ -5245,7 +5245,7 @@ fn run_battle(
     }
 
     if failed_window.is_none() && !user_closed && playback.as_ref().is_some_and(|trace|
-        rounds != trace.end_round || !trace.inputs.is_empty() ||
+        rounds != trace.end_round || !trace.actions.is_empty() ||
         !trace.checkpoints.is_empty()
     ) {
         failed_window = Some(format!("player trace ended at a different round than the battle ({rounds})"));
