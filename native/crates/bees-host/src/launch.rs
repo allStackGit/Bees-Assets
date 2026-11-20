@@ -21,7 +21,7 @@ use bees_host::socket_worker::NativeSocketWorker;
 use bees_host::socket::{SetupKind, SetupLevelIdentity};
 use bees_host::runtime::{NativeHostRuntime, NativeHostSocketEvent};
 use bees_host::checkpoint_file::NativeHostCheckpointFile;
-use bees_host::source_command_scheduler::NativeSourceCommandScheduler;
+use bees_host::source_command_scheduler::{NativeSourceCommandScheduler, NativeSourceCommandSchedulerCheckpoint};
 use bees_host::policy_only_metadata::NativePolicyOnlyMetadata;
 use bees_host::fleet_inventory::NativeFleetCombatStats;
 use bees_host::notification_file::{DurableDiagnosticNotifications, EpisodeEvaluationContext, NativeDiagnosticMeasurements, recover_command_outcomes};
@@ -377,6 +377,7 @@ struct NativeBattleRecoveryCursor {
     completed_episodes: Vec<u32>,
     counted_revisions: Vec<Option<u64>>,
     next_model_update: usize,
+    network_schedule: Option<NativeSourceCommandSchedulerCheckpoint>,
     segment_start_round: u64,
     segment_baseline: NativeDiagnosticMeasurements,
     segment_generation: u64,
@@ -4784,6 +4785,14 @@ fn run_battle(
         .map(|settings| RunNetwork::start(
             settings, &config.levels, &source_fixed_dt_by_level, host.connection_mut(),
         )).transpose()?;
+    if let Some(cursor) = &resume_cursor {
+        match (network.as_mut(), cursor.network_schedule.as_ref()) {
+            (Some(network), Some(saved)) => network.scheduler
+                .restore_recovery_checkpoint(saved.clone())?,
+            (None, None) => {},
+            _ => return Err(invalid("source HiveMind timer ownership differs from recovered native run").into()),
+        }
+    }
     if remote_step_interval.is_some() && (config.levels.len() != 1 || playback.is_some()) {
         return Err(invalid("remote co-op requires one live Level, not multi-world rollout or replay").into());
     }
@@ -4990,7 +4999,10 @@ fn run_battle(
                 rounds, next_squad_item_id: next_id.load(Ordering::Relaxed),
                 completed_episodes: completed_episodes.clone(),
                 counted_revisions: counted_revisions.clone(),
-                next_model_update, segment_start_round,
+                next_model_update,
+                network_schedule: network.as_ref().map(|network|
+                    network.scheduler.recovery_checkpoint()),
+                segment_start_round,
                 segment_baseline: segment_baseline.clone(),
                 segment_generation,
                 segment_manifest_sha256: segment_manifest_sha256.clone(),
