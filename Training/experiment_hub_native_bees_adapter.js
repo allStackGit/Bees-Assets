@@ -267,6 +267,48 @@ function learnerMeasurements(metrics) {
         add(name, 'count');
     add('reward_journal_payload_bytes', 'bytes');
     add('optimizer_steps_per_update_second', 'rate');
+    // The authoritative learner records sequential wall-clock phases.
+    // Capture parsing and trajectory ingestion are SUBDIVISIONS of
+    // trajectory processing, not additional time to add to the total.
+    const elapsed = metrics.total_wall_seconds;
+    const processing = metrics.trajectory_processing_wall_seconds;
+    const update = metrics.optimizer_update_wall_seconds;
+    const reading = metrics.capture_read_and_validation_wall_seconds;
+    const ingest = metrics.trajectory_assembly_and_ingest_wall_seconds;
+    if ([elapsed, processing, update, reading, ingest].every(
+        value=>Number.isFinite(value) && value>=0) && elapsed>0 &&
+        update>0 && processing+update<=elapsed+0.01 &&
+        reading+ingest<=processing+0.01) {
+        const other = Math.max(0, elapsed-processing-update);
+        for (const [name,value] of [
+            ['learner_total_wall_seconds',elapsed],
+            ['learner_trajectory_processing_wall_seconds',processing],
+            ['learner_capture_read_wall_seconds',reading],
+            ['learner_trajectory_ingest_wall_seconds',ingest],
+            ['learner_ppo_update_wall_seconds',update],
+            ['learner_initialization_publication_wall_seconds',other],
+        ]) report[name]={value,unit:'seconds'};
+        report.learner_trajectory_processing_wall_fraction={
+            value:processing/elapsed,unit:'ratio',
+        };
+        report.learner_ppo_update_wall_fraction={
+            value:update/elapsed,unit:'ratio',
+        };
+        report.learner_initialization_publication_wall_fraction={
+            value:other/elapsed,unit:'ratio',
+        };
+        report.learner_optimizer_input_rows_per_update_second={
+            value:metrics.optimizer_input_steps/update,unit:'rate',
+        };
+        report.learner_optimizer_input_rows_per_elapsed_second={
+            value:metrics.optimizer_input_steps/elapsed,unit:'rate',
+        };
+        if (Number.isFinite(metrics.total_cpu_seconds) &&
+            metrics.total_cpu_seconds>=0)
+            report.learner_process_cpu_core_equivalents={
+                value:metrics.total_cpu_seconds/elapsed,unit:'scalar',
+            };
+    }
     add('torch_cuda_process_peak_allocated_bytes', 'bytes');
     add('torch_cuda_process_peak_reserved_bytes', 'bytes');
     if (metrics.optimizer_gpu_workers != null) {
