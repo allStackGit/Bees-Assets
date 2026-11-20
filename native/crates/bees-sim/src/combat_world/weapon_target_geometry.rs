@@ -3,7 +3,7 @@
 
 use super::*;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NativeLevelGeometry {
     pub map_bounds: Aabb,
     pub has_obstacles: bool,

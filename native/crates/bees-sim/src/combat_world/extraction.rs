@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ExtractionZone {
     pub player_side: i32,
     pub center: Vec2,
@@ -17,12 +17,25 @@ impl ExtractionZone {
     }
 }
 
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct ExtractionState {
     zone: ExtractionZone,
     active: bool,
     last_mobile_extracted: bool,
     escort_ship_id: Option<i64>,
     escort_delivered: bool,
+}
+
+impl ExtractionState {
+    /// Authored trigger and escort objective are immutable for this Level.
+    /// Activation and delivery are actual source gameplay state.
+    pub(super) fn valid_recovery(&self, authored: &Self) -> bool {
+        self.zone == authored.zone &&
+        self.escort_ship_id == authored.escort_ship_id &&
+        (!self.escort_delivered || self.escort_ship_id.is_some()) &&
+        (!self.escort_delivered || self.active)
+    }
 }
 
 impl CombatWorld {

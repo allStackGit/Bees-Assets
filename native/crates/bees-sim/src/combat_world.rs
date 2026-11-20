@@ -905,6 +905,14 @@ pub struct CombatWorldRecoveryOwnersCheckpoint {
     policy: CombatWorldPolicyCheckpoint,
     weapons: BTreeMap<i64, ShipWeapons>,
     source_spawn_configuration: CombatWorldSpawnConfigurationCheckpoint,
+    level_geometry: Option<NativeLevelGeometry>,
+    extraction: Option<extraction::ExtractionState>,
+    shots_harmless: bool,
+    frozen_after_elimination: bool,
+    lethal_map_borders: bool,
+    constrain_map_borders: bool,
+    vision_live_enemy_sides: HashSet<i32>,
+    vision_measurements: VisionSweepCounts,
     special_weapons: BTreeMap<i64, special_weapon_contacts::SpecialWeaponContacts>,
     special_body_entries: Vec<(i64, i64)>,
     special_weapon_measurements: SpecialWeaponMeasurements,
@@ -1574,7 +1582,7 @@ impl CombatWorld {
 
     pub fn recovery_owners_checkpoint(&self) -> CombatWorldRecoveryOwnersCheckpoint {
         CombatWorldRecoveryOwnersCheckpoint {
-            schema_version: 14,
+            schema_version: 15,
             physics: self.physics.checkpoint(),
             next_entity_id: self.next_entity_id,
             ships: self.ships.clone(),
@@ -1592,6 +1600,14 @@ impl CombatWorld {
             queen_measurements: self.queen_spawn_measurements,
             weapons: self.ship_weapons.clone(),
             source_spawn_configuration: self.source_spawn_configuration_checkpoint(),
+            level_geometry: self.level_geometry,
+            extraction: self.extraction,
+            shots_harmless: self.shots_harmless,
+            frozen_after_elimination: self.frozen_after_elimination,
+            lethal_map_borders: self.lethal_map_borders,
+            constrain_map_borders: self.constrain_map_borders,
+            vision_live_enemy_sides: self.vision_live_enemy_sides.clone(),
+            vision_measurements: self.vision_measurements,
             special_weapons: self.special_weapons.clone(),
             special_body_entries: self.special_body_entries.clone(),
             special_weapon_measurements: self.special_weapon_measurements,
@@ -1686,7 +1702,16 @@ impl CombatWorld {
     pub fn restore_recovery_owners(
         &mut self, snapshot: CombatWorldRecoveryOwnersCheckpoint,
     ) -> Result<(), CombatWorldError> {
-        if snapshot.schema_version != 14 {
+        if snapshot.schema_version != 15 {
+            return Err(CombatWorldError::InvalidRecoveryCheckpoint);
+        }
+        if snapshot.level_geometry != self.level_geometry ||
+            snapshot.lethal_map_borders && snapshot.constrain_map_borders ||
+            snapshot.extraction.as_ref().zip(self.extraction.as_ref())
+                .is_some_and(|(saved, authored)| !saved.valid_recovery(authored)) ||
+            snapshot.extraction.is_some() != self.extraction.is_some() ||
+            snapshot.vision_live_enemy_sides.iter().any(|&side| side <= 0)
+        {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
         if snapshot.source_spawn_configuration != self.source_spawn_configuration_checkpoint() {
@@ -2193,6 +2218,14 @@ impl CombatWorld {
         self.queen_spawn_ids.clear();
         self.ship_weapons = snapshot.weapons;
         self.special_weapons = snapshot.special_weapons;
+        self.level_geometry = snapshot.level_geometry;
+        self.extraction = snapshot.extraction;
+        self.shots_harmless = snapshot.shots_harmless;
+        self.frozen_after_elimination = snapshot.frozen_after_elimination;
+        self.lethal_map_borders = snapshot.lethal_map_borders;
+        self.constrain_map_borders = snapshot.constrain_map_borders;
+        self.vision_live_enemy_sides = snapshot.vision_live_enemy_sides;
+        self.vision_measurements = snapshot.vision_measurements;
         self.special_body_entries = snapshot.special_body_entries;
         self.special_weapon_measurements = snapshot.special_weapon_measurements;
         self.pending_turret_shots = snapshot.pending_turret_shots;
