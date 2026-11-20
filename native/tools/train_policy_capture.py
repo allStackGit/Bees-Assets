@@ -88,6 +88,93 @@ class GroupRewardSeries:
         return self.ticks, cumulative
 
 
+
+def split_rebound_policy_lifetimes(
+    ticks, boundaries, terminal, retirements, admissions, rebindings, learning_agents,
+):
+    """Give each authenticated physical Agent lifetime a separate PPO trajectory.
+
+    The source group Agent keeps its ID and group rewards across ships. Only
+    these in-memory trajectory keys are distinct; no game Agent, model row,
+    reward, observation, or journal identity is fabricated. A rebind is valid
+    only after the previous physical binding's durable retirement and after
+    the new binding has appeared in a genuine captured policy observation.
+    """
+    source_teams = {
+        int(agent): int(team)
+        for team, members in terminal["evaluation_context"]["group_agents_by_team"].items()
+        for agent in members
+    }
+    teams = dict(source_teams)
+    next_lifetime = max(teams, default=0) + 1
+    observed = defaultdict(dict)
+    rebound_agents = {record[0] for record in rebindings}
+    for tick, frame in list(ticks.items()) + list(boundaries.items()):
+        for agent, row in frame.items():
+            if agent in rebound_agents:
+                binding = int(row["ship"]), int(row["binding_revision"])
+                observed[agent].setdefault(binding, tick)
+
+    logical_by_binding = {}
+    enrolled = dict(admissions)
+    learners = set(learning_agents)
+    events_by_agent = defaultdict(list)
+    for agent, ship, revision, side, joined in rebindings:
+        events_by_agent[agent].append((ship, revision, side, joined))
+
+    for agent, events in events_by_agent.items():
+        if agent not in source_teams:
+            raise ValueError("rebound policy Agent is not a registered group participant")
+        events.sort(key=lambda item: item[3])
+        if agent in admissions:
+            previous = admissions[agent][:2]
+            previous_start = admissions[agent][3]
+        else:
+            # The original source Agent's first binding was present at
+            # episode start, not in the late-admission journal. It must
+            # be proven by a captured decision or retirement boundary.
+            candidates = {
+                binding for binding, tick in observed[agent].items()
+                if tick < events[0][3]
+            }
+            if len(candidates) != 1:
+                raise ValueError("recycled source Agent lacks one authentic original binding")
+            previous = next(iter(candidates))
+            previous_start = 0
+        for ship, revision, side, joined in events:
+            current = ship, revision
+            if (current == previous or current not in observed[agent] or
+                    observed[agent][current] < joined or joined < previous_start or
+                    retirements.get(previous) is None or
+                    not previous_start <= retirements[previous] <= joined or
+                    current in (binding for _, binding in logical_by_binding
+                                if _ == agent)):
+                raise ValueError("policy rebind lacks a completed prior physical trajectory")
+            lifetime = next_lifetime
+            next_lifetime += 1
+            teams[lifetime] = source_teams[agent]
+            enrolled[lifetime] = (ship, revision, side, joined)
+            if agent in learning_agents:
+                learners.add(lifetime)
+            logical_by_binding[agent, current] = lifetime
+            previous, previous_start = current, joined
+
+    def split_frames(source):
+        remapped = {}
+        for tick, frame in source.items():
+            updated = {}
+            for agent, row in frame.items():
+                binding = int(row["ship"]), int(row["binding_revision"])
+                lifetime = logical_by_binding.get((agent, binding), agent)
+                if lifetime in updated:
+                    raise ValueError("two physical policy bindings share one trajectory slot")
+                updated[lifetime] = row
+            remapped[tick] = updated
+        return remapped
+
+    return split_frames(ticks), split_frames(boundaries), enrolled, teams, learners
+
+
 def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha, learner_slot=None, stats=None):
     models = {entry["slot"]: entry for entry in manifest["models"]}
     matching = {
@@ -109,6 +196,11 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
     ended_teams = defaultdict(dict)
     retirements = defaultdict(dict)
     admissions = defaultdict(dict)
+    # The same source ML-Agents Agent can complete a ship trajectory
+    # and later bind another physical ship. Distinct journal receipts
+    # authenticate each replacement; they are never inferred from an
+    # untrusted change in captured ship ID.
+    rebindings = defaultdict(list)
     # Separate O(1) binding-identity index; a long Queen wave must not
     # rescan every prior newborn for each new real admission.
     admitted_bindings = defaultdict(set)
@@ -171,9 +263,13 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 side = payload.get("side")
                 if (any(type(value) is not int or value <= 0
                         for value in (agent, ship, revision, side)) or
-                        tick == 0 or agent in admissions[key] or
-                        (ship, revision) in admitted_bindings[key]):                    raise ValueError("repeated or invalid native policy enrollment")
-                admissions[key][agent] = (ship, revision, side, tick)
+                        tick == 0 or
+                        (ship, revision) in admitted_bindings[key]):
+                    raise ValueError("repeated or invalid native policy enrollment")
+                if agent in admissions[key]:
+                    rebindings[key].append((agent, ship, revision, side, tick))
+                else:
+                    admissions[key][agent] = (ship, revision, side, tick)
                 admitted_bindings[key].add((ship, revision))
             elif row["kind"] == "policy_controller_retired":
                 payload = row["payload"]
@@ -205,15 +301,30 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         context = final["evaluation_context"]
         groups = context["group_agents_by_team"]
         original = {int(agent) for members in groups.values() for agent in members}
-        for agent, (ship, revision, side, joined) in entrants.items():
+        for agent, (ship, revision, side, joined) in list(entrants.items()):
             team = context["group_team_by_side"].get(str(side))
             if (team is None or str(team) not in groups or
-                    agent in original or joined > final["tick"] or
+                    joined > final["tick"] or
                     (ship, revision) in retirements[episode_key] and
                     retirements[episode_key][ship, revision] < joined):
                 raise ValueError("native policy admission violates episode group or physical time")
-            original.add(agent)
-            groups[str(team)].append(agent)
+            if agent in original:
+                # An existing source Agent is being recycled onto a new
+                # physical binding, not added to the group's membership.
+                rebindings[episode_key].insert(
+                    0, (agent, ship, revision, side, joined),
+                )
+                del entrants[agent]
+            else:
+                original.add(agent)
+                groups[str(team)].append(agent)
+        for agent, ship, revision, side, joined in rebindings[episode_key]:
+            team = context["group_team_by_side"].get(str(side))
+            if (team is None or str(team) not in groups or
+                    agent not in groups[str(team)] or joined > final["tick"] or
+                    (ship, revision) in retirements[episode_key] and
+                    retirements[episode_key][ship, revision] < joined):
+                raise ValueError("native rebound Agent changed its source group or physical time")
         for members in groups.values():
             members.sort()
     if not terminals:
@@ -268,11 +379,29 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             queued_decisions -= sum(len(frame) for frame in ticks.values())
             episode_boundaries = boundaries.pop(key, {})
             completed.add(key)
-            rollout = _validate_completed_episode(
-                key, ticks, episode_boundaries, terminals, ended_teams,
-                retirements, rewards, learner_agents_by_episode.pop(key), journal_id,
-                admissions.get(key, {}),
-            )
+            learning_agents = learner_agents_by_episode.pop(key)
+            enrolled = admissions.get(key, {})
+            if rebindings.get(key):
+                ticks, episode_boundaries, enrolled, effective_teams, learning_agents = (
+                    split_rebound_policy_lifetimes(
+                        ticks, episode_boundaries, terminals[key],
+                        retirements[key], enrolled, rebindings[key], learning_agents,
+                    )
+                )
+                rollout = _validate_dynamic_episode(
+                    key, ticks, episode_boundaries, terminals, ended_teams,
+                    retirements, rewards, learning_agents, journal_id,
+                    enrolled, effective_teams,
+                )
+                if stats is not None:
+                    stats["recycled_policy_bindings"] = (
+                        stats.get("recycled_policy_bindings", 0) + len(rebindings[key])
+                    )
+            else:
+                rollout = _validate_completed_episode(
+                    key, ticks, episode_boundaries, terminals, ended_teams,
+                    retirements, rewards, learning_agents, journal_id, enrolled,
+                )
             # The durable source terminal proves whether a physical
             # objective was active. Verify the actual optimizer-bound
             # learner rows *before* they can enter PPO, including when a
@@ -332,8 +461,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                     stats["episodes_without_learner_decisions"] = (
                         stats.get("episodes_without_learner_decisions", 0) + 1
                     )
-                if key in admissions:
-                    enrolled = admissions[key]
+                if enrolled:
                     decided = {agent for frame in ticks.values() for agent in frame}
                     stats["dynamic_policy_episodes"] = (
                         stats.get("dynamic_policy_episodes", 0) + 1
@@ -390,6 +518,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             # completed; release the per-episode admission index too.
             admitted_bindings.pop(key, None)
             admissions.pop(key, None)
+            rebindings.pop(key, None)
             for team in set(rollout[1].values()):
                 rewards.pop((key, team), None)
             yield rollout
@@ -689,6 +818,7 @@ def _validate_completed_episode(
 def _validate_dynamic_episode(
     key, episode_ticks, episode_boundaries, terminals, ended_teams,
     retirements, rewards, learning_agents, journal_id, admissions,
+    effective_teams=None,
 ):
     """Validate the *real* variable cohort and each controller's own clock.
 
@@ -701,7 +831,7 @@ def _validate_dynamic_episode(
     context = final["evaluation_context"]
     terminal_tick = final["tick"]
     period = context["decision_period"]
-    teams = {
+    teams = effective_teams if effective_teams is not None else {
         int(agent): int(team)
         for team, members in context["group_agents_by_team"].items()
         for agent in members
@@ -1794,6 +1924,7 @@ def main():
             capture_stats.get("episodes_without_learner_decisions", 0),
         "dynamic_policy_episodes": capture_stats.get("dynamic_policy_episodes", 0),
         "dynamic_policy_admissions": capture_stats.get("dynamic_policy_admissions", 0),
+        "recycled_policy_bindings": capture_stats.get("recycled_policy_bindings", 0),
         "dynamic_policy_admissions_without_decisions":
             capture_stats.get("dynamic_policy_admissions_without_decisions", 0),
         "dynamic_policy_decision_phases_max":
