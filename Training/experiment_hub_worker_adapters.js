@@ -34,11 +34,11 @@ function listenerPorts(prefix,defaults) {
         throw Error(prefix+' listeners must use unique ports.');
     return Object.fromEntries(values.map((value,index)=>[index,value]));
 }
-const projects=(process.env.EXPERIMENT_HUB_WORKER_PROJECTS||'').split(',');
-if(!projects.length||projects.length>2||
+const projects=(process.env.EXPERIMENT_HUB_WORKER_PROJECTS||'').split(',').filter(Boolean);
+if(projects.length>2||
     projects.some(p=>!['tinybrains','courier'].includes(p))||
     new Set(projects).size!==projects.length)
-    throw Error('Select tinybrains, courier, or tinybrains,courier for this host.');
+    throw Error('Installed simulation selection must contain only TinyBrains or Courier.');
 const adapters={};
 if(enabled('tinybrains')) {
     const slots=listenerPorts('EXPERIMENT_HUB_TINYBRAINS',[12134,12135]);
