@@ -18,6 +18,12 @@ const suiteFiles=['tinybrains_nano_tiny_v3.json','tinybrains_micro_tiny_v3.json'
     .map(name=>path.join(suiteRoot,name));
 const evaluationReady=fs.existsSync(evaluationRoot)&&
     suiteFiles.every(file=>fs.existsSync(file));
+// Remote identities are approved in Halifax's private agent environment,
+// never in an experiment draft. Without both settings, stay local-only.
+const remoteEndpoints=process.env.EXPERIMENT_HUB_TINYBRAINS_REMOTE_ENDPOINTS;
+const remoteKeyDirectory=process.env.EXPERIMENT_HUB_TINYBRAINS_KEY_DIRECTORY;
+if(Boolean(remoteEndpoints)!==Boolean(remoteKeyDirectory))
+    throw Error('Configure both remote TinyBrains endpoints and its private key directory.');
 module.exports={
     tinybrains:createTinyBrainsPersistentDockerAdapter({
         projectRoot:path.join(ai,'projects/tinybrains/Ants-MAPOCA'),
@@ -52,6 +58,10 @@ module.exports={
         // Diagnostic-only host-wall PPO stage timings. Does not change
         // checkpoint formats, optimizer settings or the frozen profile digest.
         profilePpo:true,
+        remoteCollectors:remoteEndpoints?{
+            endpoints:remoteEndpoints.split(','),
+            keyDirectory:remoteKeyDirectory,
+        }:null,
         // Dual GPU is OFF by default. Enable only after installing the
         // matching TinyBrains two-device runtime and verifying both physical
         // R9700 PCI identities in the Docker ROCm qualification.
