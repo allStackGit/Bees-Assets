@@ -1846,6 +1846,7 @@ class ExperimentHub {
         // Pause queue automation while the new OS owner re-authenticates;
         // unrelated unplanned disconnects still disarm for safety.
         this.updateRecovery=new Map();
+        this.softwareMaintenance=false;
         // Receipt freshness is process-local, never inferred after restart.
         // Persisted leases remain capacity-blocking until explicitly released.
         this.leaseReceipts = new Map();
@@ -2497,6 +2498,8 @@ class ExperimentHub {
     // remain the only admission, start and release authorities. Stop/failed
     // recovery is deliberately manual; this never retries an uncertain job.
     tickAutomation() {
+        if(this.softwareMaintenance)
+            return this.automationStatus();
         if(!this.automation.enabled&&this.state.automation_restart) {
             this.restoreOptedInAutomation();
             // Recovery only arms the session. Never dispatch a new Start in
@@ -2953,6 +2956,8 @@ class ExperimentHub {
     offerIn(next, projectId, machineId, wanted, jobId = null,
         machine=this.snapshot().machines.find(m=>m.id===machineId)) {
         const project=this.project(projectId);
+        if(this.softwareMaintenance)
+            throw Error('Local software release maintenance is in progress; new allocations are paused.');
         if(project.id==='ants')
             throw Error('Ants-v2 Hub integration is retired; no new capacity claims.');
         if(!machine || machine.id!==machineId || machine.status!=='connected')
@@ -3359,6 +3364,8 @@ class ExperimentHub {
     }
 
     authorizeStart(value,origin='operator') {
+        if(this.softwareMaintenance)
+            throw Error('Software release maintenance is in progress; no new native Start is authorized.');
         if(!['operator','automation','distributed'].includes(origin))
             throw Error('Unknown native Start authorization source.');
         if(!object(value)||value.confirm_start!==true||
