@@ -46,6 +46,51 @@ impl From<HiveMindProtocolError> for CheckpointFileError {
     fn from(error: HiveMindProtocolError) -> Self { Self::Protocol(error) }
 }
 
+/// One active checkpoint writer across native games and offline review.
+/// Mirrors the campaign-writer lease. A crash leaves an explicit lock
+/// requiring confirmation that the original process has stopped.
+pub struct ConnectionCheckpointWriterLease {
+    path: PathBuf,
+    file: Option<File>,
+}
+
+impl ConnectionCheckpointWriterLease {
+    pub fn acquire(checkpoint: &Path) -> Result<Self, CheckpointFileError> {
+        if checkpoint.file_name().is_none() {
+            return Err(CheckpointFileError::InvalidPath);
+        }
+        let mut name = OsString::from(checkpoint.as_os_str());
+        name.push(".writer.lock");
+        let path = PathBuf::from(name);
+        let mut file = match OpenOptions::new().write(true)
+            .create_new(true).open(&path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists =>
+                return Err(CheckpointFileError::Io(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    format!("HiveMind checkpoint is already owned ({}); verify the previous owner has stopped before removing a stale writer lock", path.display()),
+                ))),
+            Err(error) => return Err(error.into()),
+        };
+        if let Err(error) = writeln!(file, "pid={}", std::process::id())
+            .and_then(|_| file.sync_all())
+        {
+            drop(file);
+            let _ = fs::remove_file(&path);
+            return Err(error.into());
+        }
+        Ok(Self { path, file: Some(file) })
+    }
+}
+
+impl Drop for ConnectionCheckpointWriterLease {
+    fn drop(&mut self) {
+        drop(self.file.take());
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
 /// A disk location, not a second connection ledger or automatic retry loop.
 /// Use the same path for the full lifetime of one client identity.
 #[derive(Clone, Debug)]

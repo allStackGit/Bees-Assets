@@ -35,7 +35,7 @@ use bees_hivemind::session::SquadLifetime;
 use bees_sim::simulation::Simulation;
 
 use crate::checkpoint_file::{
-    CheckpointFileError, ConnectionCheckpointFile,
+    CheckpointFileError, ConnectionCheckpointFile, ConnectionCheckpointWriterLease,
 };
 
 #[derive(Debug)]
@@ -61,6 +61,8 @@ pub enum DurableConnectionError {
 pub struct DurableHiveMindConnection {
     connection: NativeHiveMindConnection,
     checkpoint: ConnectionCheckpointFile,
+    // Offline review cannot replace the active game's durable Hash ledger.
+    _writer_lease: ConnectionCheckpointWriterLease,
     unavailable: bool,
     active_journal_runs: std::collections::HashSet<String>,
 }
@@ -74,6 +76,7 @@ impl DurableHiveMindConnection {
         checkpoint_path: impl Into<PathBuf>,
     ) -> Result<Self, CheckpointFileError> {
         let checkpoint = ConnectionCheckpointFile::new(checkpoint_path);
+        let writer_lease = ConnectionCheckpointWriterLease::acquire(checkpoint.path())?;
         let connection = if let Some(restored) = checkpoint.load()? {
             restored
         } else {
@@ -87,7 +90,8 @@ impl DurableHiveMindConnection {
             checkpoint.persist(&fresh)?;
             fresh
         };
-        Ok(Self { connection, checkpoint, unavailable: false, active_journal_runs: Default::default() })
+        Ok(Self { connection, checkpoint, _writer_lease: writer_lease,
+            unavailable: false, active_journal_runs: Default::default() })
     }
 
     /// Recovery must never silently create a new connection identity when
@@ -97,11 +101,13 @@ impl DurableHiveMindConnection {
         checkpoint_path: impl Into<PathBuf>,
     ) -> Result<Self, CheckpointFileError> {
         let checkpoint = ConnectionCheckpointFile::new(checkpoint_path);
+        let writer_lease = ConnectionCheckpointWriterLease::acquire(checkpoint.path())?;
         let connection = checkpoint.load()?.ok_or_else(||
             CheckpointFileError::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound, "journal recovery requires its original connection checkpoint",
             )))?;
-        Ok(Self { connection, checkpoint, unavailable: false, active_journal_runs: Default::default() })
+        Ok(Self { connection, checkpoint, _writer_lease: writer_lease,
+            unavailable: false, active_journal_runs: Default::default() })
     }
 
     /// Read-only access for NativeLevelBatchDriver::runtime_status.
