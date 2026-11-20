@@ -2293,6 +2293,22 @@ fn launch_catalog_battle(
         return Err(invalid("the chosen campaign mission is no longer unlocked").into());
     }
     let config = resolve(catalog_root, entry.config_for(&progress));
+    if entry.mission.is_some() &&
+        env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some()
+    {
+        // The original career writer lock owns the selected mission route.
+        // A prior read of an unlocked/alternate campaign Level could
+        // preflight a different configuration than the one we actually
+        // launch after another player's persistent fleet edit.
+        let selected: RunConfig = serde_json::from_slice(&fs::read(&config)?)?;
+        if selected.levels.len() != 1 || selected.episodes_per_world != 1 ||
+            !selected.model_updates.is_empty()
+        {
+            return Err(invalid(
+                "campaign --serve requires one Level/episode with a fixed model manifest",
+            ).into());
+        }
+    }
     let quick_start = if entry.mission.is_none() {
         QuickBattleStart::capture(&config,
             env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some())?
@@ -3193,27 +3209,15 @@ fn run_campaign_mission(
     {
         return Err(invalid("campaign mission is still locked").into());
     }
-    if serve {
-        if env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_none() {
-            return Err(invalid(
-                "campaign --serve requires BEES_NATIVE_REMOTE_LISTEN and authentication tokens",
-            ).into());
-        }
-        // Live LAN campaign battles use the original Level, account writer,
-        // HiveMind socket owner and player-command dispatcher. The host
-        // already separates live network/navigation clocks from replayable
-        // input traces. Model manifest changes within one campaign episode
-        // remain unsupported.
-        let run_path = resolve(root, entry.config_for(&progress));
-        let config: RunConfig = serde_json::from_slice(&fs::read(run_path)?)?;
-        if config.levels.len() != 1 || config.episodes_per_world != 1 ||
-            !config.model_updates.is_empty()
-        {
-            return Err(invalid(
-                "campaign --serve requires one Level/episode with a fixed model manifest",
-            ).into());
-        }
+    if serve && env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_none() {
+        return Err(invalid(
+            "campaign --serve requires BEES_NATIVE_REMOTE_LISTEN and authentication tokens",
+        ).into());
     }
+    // The selected Level and episode/model requirements are checked under
+    // the career writer lease by launch_catalog_battle, not against this
+    // unlocked preflight's possibly stale campaign progression.
+
     let mut number = 0_u64;
     launch_catalog_battle(&catalog, entry, root,
         output_root, &mut number, false).map(|_| ())
