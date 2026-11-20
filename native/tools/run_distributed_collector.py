@@ -322,7 +322,10 @@ def main():
             previous = json.loads(
                 (output / "rollout-bundle.json").read_text(encoding="utf-8")
             )
-            deliver_bundle(output, inbox, previous, delivered_name)
+            deliver_bundle(
+                output, inbox, previous, delivered_name,
+                preserve_delivery=True,
+            )
             print(json.dumps({
                 "kind": "native_distributed_collector_republished",
                 "collector": job["id"], "round": orders["round"],
