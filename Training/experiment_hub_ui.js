@@ -7704,6 +7704,65 @@ document.addEventListener('DOMContentLoaded', () => {
     distributedMachineLabel.append('Learner machine ',distributedMachine);
     const distributedBudgetsLabel=document.createElement('label');
     distributedBudgetsLabel.append('Remote worker budgets (JSON array) ',distributedBudgets);
+    // Missing software is prepared from the Train workflow, not by copying
+    // repositories to Exeter. Queue intent is frozen until that machine's
+    // authenticated agent advertises the selected physical listener.
+    const preparePanel=document.createElement('div');
+    const prepareHost=document.createElement('select');
+    const prepareEndpoint=document.createElement('select');
+    const prepareCpus=document.createElement('input');
+    prepareCpus.type='number';prepareCpus.min='1';prepareCpus.step='1';prepareCpus.value='6';
+    prepareCpus.style.width='5em';
+    const prepareRam=document.createElement('input');
+    prepareRam.type='number';prepareRam.min='128';prepareRam.step='128';prepareRam.value='4096';
+    prepareRam.style.width='7em';
+    const prepareHostLabel=document.createElement('label');
+    prepareHostLabel.append('Collector machine ',prepareHost);
+    const prepareEndpointLabel=document.createElement('label');
+    prepareEndpointLabel.append('Approved listener ',prepareEndpoint);
+    const prepareCpusLabel=document.createElement('label');
+    prepareCpusLabel.append('CPUs ',prepareCpus);
+    const prepareRamLabel=document.createElement('label');
+    prepareRamLabel.append('RAM (MiB) ',prepareRam);
+    const prepareStatus=document.createElement('div');
+    const prepareQueue=button('Install collector and queue when ready',async()=>{
+        const selected=state?.configurations.find(c=>
+            c.project_id==='tinybrains'&&c.id===$('hub-job-configuration').value);
+        if(!selected||selected.parameters?.remote_rollouts!==true||
+            !distributedMachine.value||!prepareHost.value||!prepareEndpoint.value)return;
+        const cpus=Number(prepareCpus.value),ram_mb=Number(prepareRam.value);
+        if(!Number.isSafeInteger(cpus)||cpus<1||
+            !Number.isSafeInteger(ram_mb)||ram_mb<128) {
+            prepareStatus.textContent='Enter a positive integer CPU and RAM budget.';
+            return;
+        }
+        const ancestor=$('hub-job-predecessor').value;
+        const resource=JSON.parse($('hub-job-resources').value);
+        if(!confirm(newLineageWarning(ancestor,selected.parameters)+
+            'Approve automatic TinyBrains installation on '+prepareHost.value+
+            ', followed by queueing one distributed learner on '+distributedMachine.value+
+            ' with collector '+prepareEndpoint.value+'? '+
+            'The '+cpus+' collector CPUs and '+ram_mb+' MiB are requested only once '+
+            'the authenticated agent advertises the exact listener. '+
+            'NO training will start until you separately authorize the coordinated group.'))return;
+        try {
+            const result=await action('hub/distributed/tinybrains/prepare',{
+                confirm_prepare:true,
+                learner:{configuration_id:selected.id,expected_revision:selected.revision,
+                    machine_id:distributedMachine.value,resources:resource,
+                    metric_selection:hubDistributedMetricSelection(selectedJobMetrics(),1),
+                    ...(ancestor?{continuation_of_job_id:ancestor}:{})},
+                collector:{machine_id:prepareHost.value,endpoint:prepareEndpoint.value,
+                    resources:{cpus,ram_mb,gpu_count:0},threads:cpus},
+            });
+            await reload();
+            prepareStatus.textContent='Preparation '+result.preparation_id.slice(0,8)+
+                ' queued. The Hub will install the simulation and queue the group after native verification.';
+        }catch(error){prepareStatus.textContent=String(error.message||error);}
+    });
+    const preparationRows=document.createElement('div');
+    preparePanel.append(prepareHostLabel,prepareEndpointLabel,prepareCpusLabel,
+        prepareRamLabel,prepareQueue,prepareStatus,preparationRows);
     const distributedQueue=button('Queue and reserve entire group',async()=>{
         const selected=state?.configurations.find(c=>
             c.project_id==='tinybrains'&&c.id===$('hub-job-configuration').value);
@@ -7763,7 +7822,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await reload();
         }catch(error){distributedFeedback.textContent=String(error.message||error);}
     });
-    distributedPanel.append(distributedLegend,distributedMachineLabel,
+    distributedPanel.append(distributedLegend,distributedMachineLabel,preparePanel,
         distributedBudgetsLabel,distributedMatch.label,distributedDetails,distributedQueue,distributedFeedback);
     $('hub-job-queue').insertAdjacentElement('afterend',distributedPanel);
     // Courier reuses the same native group claims, but unlike TinyBrains
@@ -8025,6 +8084,46 @@ document.addEventListener('DOMContentLoaded', () => {
         const machine=machines.find(m=>m.id===distributedMachine.value);
         const endpoints=machine?.tinybrains_remote_rollout_endpoints||[];
         const subset=machine?.tinybrains_rollout_subset===true;
+        // A base-only worker is a candidate for installing a collector,
+        // never a ready collector. The exact listener is chosen only from
+        // this learner's approved remote endpoint list.
+        const pending=(state.tinybrains_preparations||[]).filter(p=>p.status==='pending');
+        const candidates=state.machines.filter(host=>
+            host.status==='connected'&&host.agent_enrolled&&
+            host.local_executor_enabled&&host.id!==machine?.id&&
+            !host.installed_projects?.includes('tinybrains_rollout'));
+        const oldHost=prepareHost.value,oldEndpoint=prepareEndpoint.value;
+        prepareHost.replaceChildren(...candidates.map(host=>
+            new Option(host.name+' ('+host.id+')',host.id)));
+        if(candidates.some(host=>host.id===oldHost))prepareHost.value=oldHost;
+        const used=new Set(pending.filter(p=>p.collector.machine_id===prepareHost.value)
+            .map(p=>p.collector.endpoint));
+        const permitted=endpoints.filter(endpoint=>!used.has(endpoint));
+        prepareEndpoint.replaceChildren(...permitted.map(endpoint=>
+            new Option(endpoint,endpoint)));
+        if(permitted.includes(oldEndpoint))prepareEndpoint.value=oldEndpoint;
+        preparePanel.hidden=!machine||!candidates.length||!permitted.length||
+            !machine.tinybrains_rollout_subset;
+        prepareQueue.disabled=preparePanel.hidden||!prepareHost.value||!prepareEndpoint.value;
+        preparationRows.replaceChildren();
+        for(const plan of (state.tinybrains_preparations||[]).slice(-12).reverse()) {
+            const line=document.createElement('div');
+            const job=plan.learner_job_id?' · learner '+plan.learner_job_id.slice(0,8):'';
+            line.append(document.createTextNode(
+                'TinyBrains '+plan.status+' · '+plan.collector.machine_id+
+                ' '+plan.collector.endpoint+job+
+                ' · '+plan.reason));
+            if(plan.status==='pending')
+                line.append(button('Cancel preparation',async()=>{
+                    if(!confirm('Cancel this unstarted TinyBrains queue request? Already installed software is retained.'))return;
+                    try {
+                        await action('hub/distributed/tinybrains/cancel-prepare',{
+                            preparation_id:plan.id,confirm_cancel:true,
+                        });await reload();
+                    }catch(error){prepareStatus.textContent=error.message;}
+                }));
+            preparationRows.append(line);
+        }
         const offers=endpoints.map(endpoint=>({endpoint,hosts:state.machines.filter(host=>
             host.status==='connected'&&host.id!==machine.id&&
             (host.tinybrains_rollout_endpoint===endpoint||
@@ -8092,6 +8191,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     $('hub-job-resources').addEventListener('change',renderJobMetricSelection);
     distributedMachine.addEventListener('change',renderDistributedGroup);
+    prepareHost.addEventListener('change',renderDistributedGroup);
     const curriculumChoiceLabel=document.createElement('label');
     const curriculumChoice=document.createElement('input');
     curriculumChoice.type='checkbox';
