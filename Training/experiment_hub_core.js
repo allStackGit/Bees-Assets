@@ -5342,6 +5342,31 @@ class ExperimentHub {
                         continue;
                     }
                     const nextCount=plan.completed_rounds+1;
+                    // Every GPU rank has finished and released its own Hub
+                    // lease. Retain the actual completed collective's
+                    // consensus separately from reserved CPU/GPU capacity;
+                    // a checkpoint hash alone does not prove remote learning.
+                    const optimizerConsensus=owner.optimizer_completion;
+                    const optimizerGroup={
+                        scope:'verified_native_synchronized_optimizer_group',
+                        group_id:bundleId,
+                        nodes:members.length,
+                        input_sha256:optimizerConsensus.input_sha256,
+                        model_consensus_sha256:
+                            optimizerConsensus.model_consensus_sha256,
+                        ranks:members.map((member,index)=>({
+                            job_id:member.id,
+                            machine_id:member.assigned_machine_id,
+                            node_rank:index,
+                            leased_gpu_count:member.resources.gpu_count,
+                            leased_cpus:member.resources.cpus,
+                            completed_and_released:true,
+                        })),
+                        total_leased_gpu_slots:members.reduce((sum,member)=>
+                            sum+member.resources.gpu_count,0),
+                        total_leased_cpus:members.reduce((sum,member)=>
+                            sum+member.resources.cpus,0),
+                    };
                     // The source and output checkpoints were verified by
                     // the exact collector/optimizer group owners above.
                     // Retain their identities before advancing the same
@@ -5367,6 +5392,7 @@ class ExperimentHub {
                         optimizer_job_ids:members.map(job=>job.id),
                         collector_bundle_id:plan.collectors_bundle_id,
                         optimizer_bundle_id:bundleId,
+                        optimizer_group:optimizerGroup,
                         checkpoint_job_id:owner.id,
                         checkpoint_sha256:owner.checkpoint_model_sha256,
                         ...(receipts.length?{
