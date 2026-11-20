@@ -2364,9 +2364,9 @@ fn recover_native_quick_battle(
         // any interrupted terminal replay footer without resimulating,
         // then skip that old run BEFORE comparing it to today's source.
         if terminal_recording::complete_committed_recording(&run)? { continue; }
-        if !checkpoint.is_file() {
+        if !checkpoint.is_file() && saved.schema_version < 2 {
             return Err(invalid(
-                "interrupted quick battle lacks its first durable World checkpoint; refusing a replacement battle",
+                "legacy interrupted quick battle lacks its first durable World checkpoint",
             ).into());
         }
         if saved.source_sha256 != start.source_sha256 {
@@ -2376,6 +2376,14 @@ fn recover_native_quick_battle(
         }
         if original.replace(run).is_some() {
             return Err(invalid("multiple interrupted Worlds claim one quick battle").into());
+        }
+    }
+    // A modern start with neither checkpoint nor commit marker predates
+    // every input and server setup; resume the SAME frozen battle number.
+    // Older starts have no such guarantee and fail closed above.
+    if let Some(run) = &original {
+        if !run.join("native-host-checkpoint.json").is_file() {
+            reset_uncommitted_native_start(run)?;
         }
     }
     Ok(original)
