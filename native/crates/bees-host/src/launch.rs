@@ -3866,9 +3866,9 @@ fn recover_generated_library_battle(
         let saved = saved.ok_or_else(|| invalid(
             "interrupted generated battle has no owned immutable start archive",
         ))?;
-        if !checkpoint.is_file() {
+        if !checkpoint.is_file() && saved.schema_version < 2 {
             return Err(invalid(
-                "interrupted generated battle lacks its first durable World checkpoint; refusing a replacement battle",
+                "legacy generated battle lacks its first durable World checkpoint",
             ).into());
         }
         if !source.is_file() {
@@ -3891,6 +3891,13 @@ fn recover_generated_library_battle(
             return Err(invalid(
                 "multiple interrupted generated games require explicit completion before a new match",
             ).into());
+        }
+    }
+    // Keep the original archived scene, fleet and source identity. Only
+    // its transient pre-checkpoint run output can be reconstructed.
+    if let Some((_, run)) = &pending {
+        if !run.join("native-host-checkpoint.json").is_file() {
+            reset_uncommitted_native_start(run)?;
         }
     }
     Ok(pending)
