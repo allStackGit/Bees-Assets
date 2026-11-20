@@ -3100,12 +3100,16 @@ file path or interpreter is transmitted by the dashboard. Remote approvals
 are durable one-use operations, dispatched at most once. Lost dispatch
 results require explicit service inspection and reconciliation, not replay.
 
-**Still required after a remote suite installation or reapproval:** the
-remote machine agent must safely restart before its trusted training adapter
-advertises the new suite identity. The central Hub does not yet restart
-remote agents. Trusted host enrollment, required worker keys, installed
-training backends, and Windows evaluator service installation likewise
-remain separately authorized host setup, not arbitrary remote shell commands.
+After a remote suite installation or reapproval, use **Restart remote agent**
+in Machines to advertise the new approved suite, provided that no active or
+unverified native owners remain on that machine. The agent confirms its own
+installed user-systemd service identity, reports the one-use restart approval,
+then asks systemd to restart the existing process. The coordinator records
+completion only after a fresh authenticated agent instance reconnects.
+Uncertain restarts require explicit review, never an automatic replay.
+Trusted host enrollment, required worker keys, installed training backends
+and initial Windows evaluator service installation remain separately
+authorized host setup, not arbitrary remote shell commands.
 
 Production installation and qualification of project-specific adapters,
 real-machine Windows CUDA and Linux systemd/ROCm qualification,
