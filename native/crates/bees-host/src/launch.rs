@@ -2798,6 +2798,7 @@ fn run_build_ship(
         serde_json::from_slice(&fs::read(&catalog_path)?)?;
     catalog.validate()?;
     let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
     let progress = catalog.load_progress(output_root)?;
     let shop = catalog.buildable_ships.iter().find(|shop|
         shop.player_side == player_side && shop.ship_type == ship_type &&
@@ -2848,6 +2849,7 @@ fn run_transfer_ship(
         serde_json::from_slice(&fs::read(&catalog_path)?)?;
     catalog.validate()?;
     let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
     let progress = catalog.load_progress(output_root)?;
     let (side, ship) = progress.purchased_ship(fleet_ship_id)
         .ok_or_else(|| invalid("only purchased FleetShips can be reassigned"))?;
@@ -2897,6 +2899,7 @@ fn run_reassign_authored_ship(
         serde_json::from_slice(&fs::read(&catalog_path)?)?;
     catalog.validate()?;
     let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
     let progress = catalog.load_progress(output_root)?;
     if progress.purchased_ship(fleet_ship_id).is_some() {
         return Err(invalid("use bees transfer for purchased FleetShips").into());
@@ -2985,6 +2988,7 @@ fn run_create_saved_squad(
         serde_json::from_slice(&fs::read(&catalog_path)?)?;
     catalog.validate()?;
     let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
     let progress = catalog.load_progress(output_root)?;
     if !matches!(side, 1 | 2) || template_id <= 0 {
         return Err(invalid("new squad requires a valid player side and saved template ID").into());
@@ -3070,6 +3074,7 @@ fn run_set_saved_squad_tactics(
         serde_json::from_slice(&fs::read(&catalog_path)?)?;
     catalog.validate()?;
     let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
     let progress = catalog.load_progress(output_root)?;
     let mut entry = entry;
     // Old CLI invocations and historical receipts do not contain this
