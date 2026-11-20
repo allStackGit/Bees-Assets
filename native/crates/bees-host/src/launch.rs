@@ -2682,57 +2682,90 @@ fn run_campaign_mission(
         output_root, &mut number, false).map(|_| ())
 }
 
-/// Offer original source FleetShips from the same authored scene source
-/// used by the game and edit preflight. A mixed/legacy catalog can still
-/// open its battle picker; only verified native campaign hulls are editable.
+/// Offer original editable FleetShips from the selected upcoming routes,
+/// but collect purchase, transfer, and squad-creation destinations from
+/// EVERY replayable authored route. A campaign edit is checked against all
+/// configurations, so the picker must not advertise a route-only squad.
+/// Invalid legacy scenes still leave the ordinary battle menu accessible;
+/// they contribute no unverified fleet-edit destinations.
 #[cfg(feature = "client")]
 fn authored_menu_fleet(
     catalog: &battle_catalog::BattleCatalog, root: &Path,
     progress: &battle_catalog::CampaignProgress<'_>,
-) -> (Vec<(i32, i64, i64)>, Vec<(i32, i64)>) {
+) -> (Vec<(i32, i64, i64)>, Vec<(i32, i64)>, Vec<(i32, i64)>) {
     let mut listed = Vec::new();
-    let mut squads = HashSet::new();
     let mut seen_fleet = HashSet::new();
+    let mut common_destinations = HashMap::<i32, HashSet<i64>>::new();
+    let mut common_templates = HashMap::<i32, HashSet<i64>>::new();
     let upcoming_sides = catalog.battles.iter().filter_map(|entry|
         entry.mission.as_ref().filter(|mission|
             !progress.completed(&mission.id)).map(|mission| mission.player_side))
         .collect::<HashSet<_>>();
     for entry in &catalog.battles {
         let Some(mission) = entry.mission.as_ref() else { continue };
-        if upcoming_sides.contains(&mission.player_side) &&
-            progress.completed(&mission.id) { continue; }
-        let path = resolve(root, entry.config_for(progress));
-        let Ok(path) = path.canonicalize() else { continue };
-        let Ok(scene) = load_native_fleet_edit_scene(&path) else { continue };
-        for squad in &scene.source_squads {
-            let Some(saved_squad_id) = squad.saved_squad_id else { continue };
-            if squad.side != mission.player_side ||
-                !squad.player_permissions.user_controlled
-            { continue; }
-            // Empty source squads still exist as persistent player-owned
-            // formation destinations. Their lack of an editable FleetShip
-            // must not hide them from between-mission fleet management.
-            squads.insert((mission.player_side, saved_squad_id));
-            for &entity_id in &squad.members {
-                let Some(ship) = scene.entities.iter().find_map(|entity| match entity {
-                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == entity_id =>
-                        Some(ship),
-                    _ => None,
-                }) else { continue };
-                let Some(fleet_id) = ship.fleet_ship_id else { continue };
-                if progress.original_fleet_is_editable(mission.player_side, fleet_id) &&
-                    scene.can_reassign_authored_ship(mission.player_side, entity_id) &&
-                    seen_fleet.insert((mission.player_side, fleet_id))
-                {
-                    listed.push((mission.player_side, fleet_id, saved_squad_id));
+        let side = mission.player_side;
+        let selected = entry.config_for(progress);
+        let active = !upcoming_sides.contains(&side) || !progress.completed(&mission.id);
+        let created = progress.created_squads_for_side(side);
+        for config in entry.configurations() {
+            let mut destinations = HashSet::new();
+            let mut templates = HashSet::new();
+            // Keep this read-only probe on the same source scene and
+            // installer used by campaign preflight and actual gameplay.
+            if let Ok(path) = resolve(root, config).canonicalize() {
+                if let Ok(mut scene) = load_native_fleet_edit_scene(&path) {
+                    if scene.install_created_squads(side, &created).is_ok() {
+                        for squad in &scene.source_squads {
+                            let Some(saved_id) = squad.saved_squad_id else { continue };
+                            if squad.side != side ||
+                                !squad.player_permissions.user_controlled
+                            { continue; }
+                            // Empty authored and user-created squads are
+                            // physical destinations even before a battle
+                            // contributes a career squad record.
+                            destinations.insert(saved_id);
+                            if squad.hivemind.is_none() {
+                                templates.insert(saved_id);
+                            }
+                            if !active || config != selected { continue; }
+                            for &entity_id in &squad.members {
+                                let Some(ship) = scene.entities.iter().find_map(|entity| match entity {
+                                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == entity_id =>
+                                        Some(ship),
+                                    _ => None,
+                                }) else { continue };
+                                let Some(fleet_id) = ship.fleet_ship_id else { continue };
+                                if progress.original_fleet_is_editable(side, fleet_id) &&
+                                    scene.can_reassign_authored_ship(side, entity_id) &&
+                                    seen_fleet.insert((side, fleet_id))
+                                {
+                                    listed.push((side, fleet_id, saved_id));
+                                }
+                            }
+                        }
+                    }
                 }
             }
+            // Intersection, not union: edits are durable across completed
+            // missions and both possible on-victory physical layouts.
+            common_destinations.entry(side)
+                .and_modify(|ids| ids.retain(|id| destinations.contains(id)))
+                .or_insert(destinations);
+            common_templates.entry(side)
+                .and_modify(|ids| ids.retain(|id| templates.contains(id)))
+                .or_insert(templates);
         }
     }
     listed.sort_unstable();
-    let mut squads = squads.into_iter().collect::<Vec<_>>();
-    squads.sort_unstable();
-    (listed, squads)
+    let mut destinations = common_destinations.into_iter()
+        .flat_map(|(side, ids)| ids.into_iter().map(move |id| (side, id)))
+        .collect::<Vec<_>>();
+    destinations.sort_unstable();
+    let mut templates = common_templates.into_iter()
+        .flat_map(|(side, ids)| ids.into_iter().map(move |id| (side, id)))
+        .collect::<Vec<_>>();
+    templates.sort_unstable();
+    (listed, destinations, templates)
 }
 
 #[cfg(feature = "client")]
@@ -3319,19 +3352,16 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
         let fleet_rows = progress.fleet_rows();
         let squad_rows = progress.squad_rows();
         let available = progress.unspent_minerals()?;
-        let (original_choices, authored_squads) =
+        let (original_choices, authored_squads, squad_templates) =
             authored_menu_fleet(&catalog, root, &progress);
-        // All authorized source SavedSquads, including empty ones, are
-        // legitimate physical fleet destinations before their first career
-        // receipt. Reuse this list for buying and both transfer workflows.
+        // The same set of persistent player SavedSquads must exist in
+        // every replayable physical mission configuration, not only the
+        // currently selected mission or the career history.
         let mut squad_destinations = HashMap::<i32, Vec<i64>>::new();
         for side in [1, 2] {
-            let mut ids = progress.saved_squad_ids_for_side(side);
-            ids.extend(authored_squads.iter().filter_map(|&(owner, id)|
-                (owner == side).then_some(id)));
-            ids.sort_unstable();
-            ids.dedup();
-            squad_destinations.insert(side, ids);
+            squad_destinations.insert(side, authored_squads.iter()
+                .filter_map(|&(owner, id)| (owner == side).then_some(id))
+                .collect());
         }
         let mut shop_rows = Vec::new();
         for ship in catalog.buildable_ships.iter().filter(|ship| ship.purchasable) {
@@ -3434,20 +3464,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                 });
             }
         }
-        let mut templates = HashSet::new();
-        for &(side, saved_squad_id) in &authored_squads {
-            templates.insert((side, saved_squad_id));
-        }
-        for entry in &catalog.battles {
-            if let Some(mission) = &entry.mission {
-                for saved_id in progress.saved_squad_ids_for_side(mission.player_side) {
-                    templates.insert((mission.player_side, saved_id));
-                }
-            }
-        }
-        let mut templates = templates.into_iter().collect::<Vec<_>>();
-        templates.sort_unstable();
-        let create_rows = templates.into_iter().map(|(side, template)| {
+        let create_rows = squad_templates.into_iter().map(|(side, template)| {
             NativeCreateSquadMenuRow {
                 title: format!("New player Squad (Side {}) from SavedSquad #{}",
                     side, template),
