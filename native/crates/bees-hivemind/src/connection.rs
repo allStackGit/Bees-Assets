@@ -247,6 +247,12 @@ impl NativeHiveMindConnection {
             setup.run_identity == run_identity).and_then(|setup| setup.game_id)
     }
 
+    pub fn has_ambiguous_initial_setup(&self, run_identity: &str) -> bool {
+        self.setup_binding.as_ref().is_some_and(|setup|
+            setup.run_identity == run_identity &&
+            setup.game_id.is_none() && setup.pending_hash.is_some())
+    }
+
     /// Persist this setup request before the socket can transmit it.
     /// If an earlier initial setup may have reached the server but its
     /// response was never committed, refuse to create a duplicate Game.
