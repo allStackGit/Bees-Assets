@@ -11,7 +11,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroU32;
 
 use bees_hivemind::session::SquadLifetime;
-use bees_sim::combat_world::{CombatEvent, CombatWorld, CombatWorldError, NativeAutomaticWeaponContext, NativeAutomaticWeaponInputs};
+use bees_sim::combat_world::{
+    CombatEvent, CombatWorld, CombatWorldError, CombatWorldRecoveryOwnersCheckpoint,
+    NativeAutomaticWeaponContext, NativeAutomaticWeaponInputs,
+};
 use bees_sim::combat_perception_bridge::CombatPerceptionError;
 use bees_sim::vision::{HiveMindObserver, VisionFirstSighting, VisionError};
 use bees_sim::rl_discovery::DiscoveryKind as RewardDiscoveryKind;
@@ -846,6 +849,25 @@ impl From<NativeLevelEventError> for NativeLevelVisionError {
     fn from(error: NativeLevelEventError) -> Self { Self::Reward(error) }
 }
 
+/// One shared fixed-step ownership bundle for the CombatWorld recoverable
+/// systems and exact policy decision clocks. This is NOT a complete Level
+/// checkpoint until the event/command ledger, metadata and model state are
+/// committed at the same host boundary.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeLevelRecoveryOwnersCheckpoint {
+    schema_version: u32,
+    combat: CombatWorldRecoveryOwnersCheckpoint,
+    decisions: NativeDecisionCadenceCheckpoint,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeLevelRecoveryError {
+    InvalidVersion,
+    DecisionClock(&'static str),
+    Combat(CombatWorldError),
+}
+
 pub struct NativeLevelState<M, A> {
     pub combat: CombatWorld,
     pub events: NativeLevelEventProcessor,
@@ -885,6 +907,39 @@ pub struct NativeLevelState<M, A> {
 }
 
 impl<M, A> NativeLevelState<M, A> {
+    /// One fixed-tick snapshot of the recoverable CombatWorld owners plus
+    /// the original agent decision clocks. The outer Level must still save
+    /// command/reward events, source metadata and model state to be resumable.
+    pub fn recovery_owners_checkpoint(&self) -> NativeLevelRecoveryOwnersCheckpoint {
+        NativeLevelRecoveryOwnersCheckpoint {
+            schema_version: 1,
+            combat: self.combat.recovery_owners_checkpoint(),
+            decisions: self.decisions.checkpoint(),
+        }
+    }
+
+    /// Validate policy clocks before changing any authoritative CombatWorld
+    /// owner. CombatWorld itself stages all five physical/gameplay ledgers;
+    /// after that transaction succeeds, committing the prepared decision
+    /// schedule is infallible. A rejected checkpoint leaves both unchanged.
+    pub fn restore_recovery_owners(
+        &mut self,
+        checkpoint: NativeLevelRecoveryOwnersCheckpoint,
+        completed_ticks: u64,
+    ) -> Result<(), NativeLevelRecoveryError> {
+        if checkpoint.schema_version != 1 {
+            return Err(NativeLevelRecoveryError::InvalidVersion);
+        }
+        let mut decisions = NativeDecisionCadence::new(self.decisions.period);
+        decisions.restore_checkpoint(
+            checkpoint.decisions, &self.combat, completed_ticks,
+        ).map_err(NativeLevelRecoveryError::DecisionClock)?;
+        self.combat.restore_recovery_owners(checkpoint.combat)
+            .map_err(NativeLevelRecoveryError::Combat)?;
+        self.decisions = decisions;
+        Ok(())
+    }
+
     /// Cumulative path jobs delivered in this episode, including genuine
     /// path-not-found completions. No histories or per-ship timers are stored.
     pub fn navigation_jobs_completed(&self) -> u64 {
