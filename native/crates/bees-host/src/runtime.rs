@@ -28,6 +28,7 @@ use bees_hivemind::protocol::{
 };
 use bees_hivemind::session::{SquadLifetime, TargetingReceipt};
 use bees_sim::simulation::{RandomStream, Simulation, World};
+use bees_sim::telemetry::Measurements;
 use crate::checkpoint_file::{CheckpointFileError, NativeHostCheckpointFile};
 use crate::durable_connection::{DurableConnectionError, DurableHiveMindConnection};
 use crate::status::{NativeHostStatusInterval, NativeStatusSampler};
@@ -194,6 +195,7 @@ pub struct NativeHostRecoveryCheckpoint {
     worlds: Vec<NativeLevelWorldRecoveryCheckpoint>,
     metadata: Vec<serde_json::Value>,
     driver: NativeLevelDriverRecoveryCheckpoint,
+    simulation_measurements: Measurements,
     model_generation: u64,
     model_sha256: [u8; 32],
     /// Exact resident policy RNG state, not just a weight/manifest hash.
@@ -228,6 +230,7 @@ pub enum HostRecoveryError {
     MissingCheckpoint,
     Metadata { index: usize, error: &'static str },
     WorldCountMismatch,
+    SimulationMeasurements(&'static str),
     World { index: usize, error: &'static str },
     Level { index: usize, error: NativeLevelRecoveryError },
     Driver(NativeLevelDriverError),
@@ -356,8 +359,9 @@ where
                 .map_err(|error| HostRecoveryError::Metadata { index, error })?);
         }
         Ok(NativeHostRecoveryCheckpoint {
-            schema_version: 4, worlds, metadata,
+            schema_version: 5, worlds, metadata,
             driver: self.driver.recovery_checkpoint(),
+            simulation_measurements: self.simulation.measurements(),
             model_generation: self.model.model_generation(),
             model_sha256, sampling_state,
             connection_sha256: self.connection_recovery_digest()?,
@@ -375,7 +379,7 @@ where
         M: NativeHostRecoverableMetadata,
         S: NativeHostRecoverableNotifications,
     {
-        if checkpoint.schema_version != 4 ||
+        if checkpoint.schema_version != 5 ||
             checkpoint.metadata.len() != checkpoint.worlds.len() ||
             checkpoint.worlds.len() != self.simulation.world_count() ||
             self.driver.registered_world_count() != self.simulation.world_count() {
@@ -393,6 +397,23 @@ where
         }
         if checkpoint.connection_sha256 != self.connection_recovery_digest()? {
             return Err(HostRecoveryError::ConnectionChanged);
+        }
+
+        // The cumulative Simulation counters span retired episodes; the
+        // current Worlds cannot have contributed more successful ticks
+        // than this aggregate. Preflight before installing any owner.
+        let active_ticks = checkpoint.worlds.iter().try_fold(0_u64, |sum, world|
+            sum.checked_add(world.measurements().ticks)
+        ).ok_or(HostRecoveryError::SimulationMeasurements(
+            "native World tick counters overflow"))?;
+        if active_ticks > checkpoint.simulation_measurements.ticks ||
+            checkpoint.simulation_measurements.sampled_ticks >
+                checkpoint.simulation_measurements.ticks ||
+            checkpoint.simulation_measurements.sampled_failed_steps >
+                checkpoint.simulation_measurements.failed_steps
+        {
+            return Err(HostRecoveryError::SimulationMeasurements(
+                "native simulation totals disagree with recovered Worlds"));
         }
 
         let mut staged = Vec::with_capacity(checkpoint.worlds.len());
@@ -442,6 +463,7 @@ where
             world.commit_owner_checkpoint(clock);
         }
         self.driver = driver;
+        self.simulation.commit_recovered_measurements(checkpoint.simulation_measurements);
         // Rebase the status delta against the newly installed counters;
         // failure to sample must not roll back a committed game owner.
         if let Ok(status) = self.driver.runtime_status(
