@@ -173,9 +173,9 @@ impl NativeGroupRewardDelivery {
             (checkpoint.completed && completed_ticks == 0) {
             return Err(Error::InvalidClock);
         }
-        if checkpoint.participants.iter()
-            .any(|group| group.contains(&0)) ||
-            !checkpoint.participants[0].is_disjoint(&checkpoint.participants[1]) {
+        // Source registration is scoped to a side, so the same external
+        // agent number is not inherently invalid on opposing teams.
+        if checkpoint.participants.iter().any(|group| group.contains(&0)) {
             return Err(Error::InvalidParticipants);
         }
         let active_count = checkpoint.participants.iter().map(|group|
