@@ -266,9 +266,9 @@ pub struct NativeRemotePlayRecoveryCheckpoint {
 
 fn credential_digest(tokens: &HashMap<i32, String>) -> [u8; 32] {
     let mut sorted = tokens.iter().collect::<Vec<_>>();
-    sorted.sort_unstable_by_key(|(&side, _)| side);
+    sorted.sort_unstable_by_key(|entry| *entry.0);
     let mut digest = Sha256::new();
-    for (&side, secret) in sorted {
+    for (side, secret) in sorted {
         digest.update(side.to_le_bytes());
         digest.update((secret.len() as u64).to_le_bytes());
         digest.update(secret.as_bytes());
