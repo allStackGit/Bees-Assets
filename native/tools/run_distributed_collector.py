@@ -19,7 +19,10 @@ from native_training_artifacts import (
     normalized_python_source_sha256, sync_directory,
 )
 from native_distributed_collection import verify_bundle
-from transfer_policy_bundle import export_bundle_archive, artifact_paths, checked_order
+from transfer_policy_bundle import (
+    export_bundle_archive, verified_existing_bundle_archive,
+    artifact_paths, checked_order,
+)
 from native_bundle_receiver import upload_bundle_archive
 
 
@@ -392,25 +395,20 @@ def main():
         # can therefore already exist. Acquire its same OS-owned writer
         # lease before making or reusing a portable artifact; never create a
         # second unlocked archive publisher under the same work order.
-        if attempt_lease is None and args.archive_output is None:
+        if attempt_lease is None:
             if parent.is_symlink():
                 raise ValueError("collector recovery directory is a symlink")
             parent.mkdir(exist_ok=True)
             attempt_lease = acquire_collector_lease(parent)
-        # Direct upload keeps its own immutable archive in the collector's
-        # existing work-order-owned scratch attempt.
+        # Direct upload and explicit archive publication share the same
+        # original collector writer lease, including after a lost upload
+        # acknowledgement. Never replace an archived file: only an exact
+        # source-and-capture-verified copy may be reused.
         archive_path = args.archive_output or (parent / (job["bundle_directory"] + ".tar"))
-        if (recovered is not None and args.upload_url and
-                archive_path.is_file() and not archive_path.is_symlink()):
-            # This exact archive may have reached the learner before the
-            # connection broke. The receiver still validates its bytes
-            # against the issued work order before acknowledging it.
-            archive = {
-                "archive": str(archive_path),
-                "archive_sha256": file_sha256(archive_path),
-                "archive_bytes": archive_path.stat().st_size,
-                "recovered_archive": True,
-            }
+        if archive_path.exists() or archive_path.is_symlink():
+            archive = verified_existing_bundle_archive(
+                receipt_path, job, orders, archive_path,
+            )
         else:
             archive = export_bundle_archive(receipt_path, job, orders, archive_path)
         print(json.dumps({
