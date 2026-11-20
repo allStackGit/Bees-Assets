@@ -83,6 +83,10 @@ def setup_config(source_path, manifest, output, physics_workers=None):
         source["physics_workers"] = physics_workers
     source["policy_capture"] = None
     source["model_updates"] = []
+    # Holdouts are fresh, completed episodes. Inheriting an interactive
+    # source's checkpoint path would add gameplay persistence costs and
+    # could attach evaluation to another live World.
+    source["host_recovery_checkpoint"] = None
     source["connection_checkpoint"] = str(output / "connection-checkpoint.json")
     source["notifications"] = str(output / "events.jsonl")
     source["rollout_summary"] = str(output / "rollout-summary.json")
@@ -277,6 +281,13 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     # model-placement override. Only the recorded --inference-device
     # may relocate PyTorch weights at evaluation time.
     env.pop("BEES_NATIVE_INFERENCE_DEVICE_OVERRIDE", None)
+    # The native runner enters authenticated LAN hosting from this process
+    # environment, not from the holdout's model-only run config. Never
+    # allow an inherited desktop/server launch to change evaluation pacing
+    # or accept multiplayer inputs while it measures a fixed scenario.
+    for key in ("BEES_NATIVE_REMOTE_LISTEN", "BEES_NATIVE_REMOTE_SIDE_TOKENS",
+                "BEES_NATIVE_REMOTE_TOKEN"):
+        env.pop(key, None)
     env["BEES_NATIVE_EVALUATION_SEED"] = str(policy_seed)
     # Device placement does not change the signed model manifest or its
     # checkpoint hash. It is explicit in the evaluation receipt because
