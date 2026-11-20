@@ -3088,6 +3088,14 @@ absence/timeout behavior on actual hosts.
 
 ## Not yet implemented
 
+The Machines service panel manages only the coordinator-local Linux
+systemd evaluators. Starting, stopping or refreshing evaluator services
+on a separately enrolled remote machine (including Windows SCM services)
+from the central Hub still needs an authenticated machine-local control
+protocol; read-only remote service health is implemented. Initial trusted
+host enrollment, worker keys and service installation also require local
+operator authorization rather than executing remote shell commands.
+
 Production installation and qualification of project-specific adapters,
 real-machine Windows CUDA and Linux systemd/ROCm qualification,
 enforceable OS GPU compute and VRAM quotas, production-qualified Linux cooperative shared-GPU execution,
