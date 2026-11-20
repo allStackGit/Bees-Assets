@@ -2140,9 +2140,13 @@ pub fn connect_remote(address: &str, token_file: &Path, expected_side: i32)
                 }
             }
         }
-        let awaiting_briefing=ack_required &&
-            peer.briefing_approved!=story_briefing;
-        peer.input_suppressed=terminal||briefing||awaiting_briefing;
+        // The owner and the opposing player remain unable to act until
+        // the host has advanced past the same introductory World tick.
+        // An acknowledged cue alone does not authorize early commands:
+        // its reliable reply may precede the next lossy World snapshot.
+        let host_briefing_paused=peer.state.as_ref()
+            .is_some_and(|state|state["briefing_paused"]==true);
+        peer.input_suppressed=terminal||briefing||host_briefing_paused;
         if peer.input_suppressed {
             // A completed battle has no further physical input boundary,
             // whereas a story briefing pauses only this commander's UI.
