@@ -145,11 +145,24 @@ async function scheduleRestart(kind,hub,res) {
     return {requested:true,service:kind,
         message:'Restart requested from the local user systemd manager.'};
 }
+const activeEvaluatorActions=new Set();
 async function evaluatorAction(hub,value) {
-    // Evaluator actions never stop or restart a native trainer or its owner.
-    if(value?.project==='courier')return courierEvaluators.action(hub,value);
-    if(value?.project===undefined||value.project==='tinybrains')
-        return localEvaluators.action(hub,value);
-    throw Error('Unknown local evaluator project.');
+    // All suites within a project share an approval manifest. Serialize only
+    // that project's local UI operations so overlapping requests cannot
+    // interleave timer replacement and immutable suite publication.
+    const project=value?.project??'tinybrains';
+    if(!['courier','tinybrains'].includes(project))
+        reject('Unknown local evaluator project.',400);
+    if(activeEvaluatorActions.has(project))
+        reject('An evaluator operation for this project is already in progress.',409);
+    activeEvaluatorActions.add(project);
+    try {
+        // Evaluator actions never stop or restart a native trainer or its owner.
+        return await (project==='courier'
+            ?courierEvaluators.action(hub,value)
+            :localEvaluators.action(hub,value));
+    }finally {
+        activeEvaluatorActions.delete(project);
+    }
 }
 module.exports={status,scheduleRestart,unitStatus,evaluatorAction};
