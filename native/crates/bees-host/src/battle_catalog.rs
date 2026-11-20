@@ -758,6 +758,14 @@ impl BattleCatalog {
         let record = |directory: &Path, progress: &mut CampaignProgress<'a>| -> io::Result<()> {
             #[derive(Deserialize)]
             struct Summary {
+                #[serde(default)]
+                kind: Option<String>,
+                #[serde(default)]
+                failed_window: Option<Value>,
+                #[serde(default)]
+                cleanup_errors: Option<Vec<Value>>,
+                #[serde(default)]
+                user_closed: Option<bool>,
                 campaign_outcome: Option<CampaignOutcome>,
                 #[serde(default)]
                 campaign_fleet: Option<Vec<CampaignFleetShipOutcome>>,
@@ -775,10 +783,23 @@ impl BattleCatalog {
             // Older interrupted runs may have a partial summary. Only a
             // complete, readable campaign outcome can grant progress.
             let Ok(Summary {
+                kind, failed_window, cleanup_errors, user_closed,
                 campaign_outcome: Some(outcome), campaign_fleet,
                 campaign_squads, campaign_banked_minerals,
             }) = serde_json::from_slice(&bytes) else { return Ok(()) };
             if outcome.campaign_id != *campaign { return Ok(()); }
+            // Source progress can only come from the immutable successful
+            // run_final transaction, not a failed/aborted multiplayer battle
+            // or a partial summary that happens to contain a winner. Keep
+            // older incomplete summaries inert, but never let a conflicting
+            // terminal record mint fleet rewards or banked career income.
+            if kind.as_deref() != Some("run_final") ||
+                failed_window.is_some() ||
+                cleanup_errors.as_ref().is_some_and(|errors| !errors.is_empty()) ||
+                user_closed == Some(true)
+            {
+                return Err(invalid("campaign result is not a successful committed native battle"));
+            }
             if let Some(mission) = self.battles.iter().filter_map(|entry| entry.mission.as_ref())
                 .find(|mission| mission.id == outcome.mission_id && mission.player_side == outcome.player_side)
             {
