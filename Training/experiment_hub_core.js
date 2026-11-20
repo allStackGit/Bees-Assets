@@ -1372,6 +1372,40 @@ function selectDistributedBudgets(snapshot,learner,selections,approved,capabilit
         snapshot,ordered.map(item=>hosts.get(item.machine_id)),selections,lookup)};
 }
 
+// One enrolled machine may own several fixed TinyBrains collector ports.
+// The job selects a machine-local listener ordinal; the endpoint is still
+// independently frozen into its learner's authenticated rollout plan.
+function tinybrainsWorkerListener(machine,job) {
+    if(!machine)return null;
+    const slot=job?.frozen_parameters?.listener_slot;
+    if(slot!==undefined)
+        return machine.tinybrains_rollout_slots?.find(item=>item.slot===slot)||null;
+    return machine.tinybrains_rollout_endpoint
+        ?{endpoint:machine.tinybrains_rollout_endpoint,slot:null}:null;
+}
+function tinybrainsEndpointOccupied(snapshot,machine,endpoint,exceptJobId=null) {
+    if(!machine||!endpoint)return true;
+    return snapshot.jobs.some(job=>{
+        if(job.id===exceptJobId||job.project_id!=='tinybrains_rollout'||
+            job.assigned_machine_id!==machine.id||
+            ['cancelled','finished','stopped'].includes(job.status))return false;
+        if(job.status==='failed'&&job.capacity_released_at&&
+            snapshot.reservations?.some(lease=>lease.id===job.lease_id&&
+                lease.job_id===job.id&&lease.machine_id===machine.id&&
+                lease.status==='released'&&lease.released_at))return false;
+        const parent=snapshot.jobs.find(item=>item.id===job.frozen_parameters?.learner_job_id);
+        const parentHost=snapshot.machines.find(item=>item.id===parent?.assigned_machine_id);
+        const approved=rolloutEndpointsFor(parent,parentHost);
+        const pinned=job.rollout_endpoint||
+            (approved?.includes(machine.tinybrains_rollout_endpoint)
+                ?machine.tinybrains_rollout_endpoint:null);
+        const installed=tinybrainsWorkerListener(machine,job)?.endpoint;
+        // Unknown previous ownership blocks every port: it may still be
+        // listening after agent replacement or an interrupted Stop.
+        if(!pinned||!installed||pinned!==installed)return true;
+        return pinned===endpoint;
+    });
+}
 function distributedRolloutHost(snapshot,job,machine) {
     if(job.project_id!=='tinybrains_rollout')return true;
     const parent=snapshot.jobs.find(j=>j.id===job.frozen_parameters?.learner_job_id);
@@ -1384,10 +1418,11 @@ function distributedRolloutHost(snapshot,job,machine) {
         machine.status!=='connected'||
         !machine.installed_projects?.includes('tinybrains_rollout'))return false;
     const learner=snapshot.machines.find(m=>m.id===parent.assigned_machine_id);
-    if(!learner||learner.status!=='connected'||
-        !rolloutEndpointsFor(parent,learner)?.includes(machine.tinybrains_rollout_endpoint)||
+    const selected=tinybrainsWorkerListener(machine,job)?.endpoint;
+    if(!learner||learner.status!=='connected'||!selected||
+        !rolloutEndpointsFor(parent,learner)?.includes(selected)||
         (job.rollout_endpoint!==undefined&&
-            job.rollout_endpoint!==machine.tinybrains_rollout_endpoint)||
+            job.rollout_endpoint!==selected)||
         learner.tinybrains_remote_key_fingerprint!==machine.tinybrains_rollout_key_fingerprint)
         return false;
     if(!Number.isSafeInteger(machine.tinybrains_rollout_thread_limit)||
@@ -1402,7 +1437,7 @@ function distributedRolloutHost(snapshot,job,machine) {
         other.status!=='cancelled'&&
         other.frozen_parameters?.learner_job_id===parent.id&&
         other.assigned_machine_id===machine.id))return false;
-    return true;
+    return !tinybrainsEndpointOccupied(snapshot,machine,selected,job.id);
 }
 // The same native Start gate is used for individual remote-lineage worker
 // claims, so a generic job cannot start a service for an unrelated learner.
@@ -6977,7 +7012,10 @@ class ExperimentHub {
         }
         if(project.id==='tinybrains_rollout') {
             const learner=next.jobs.find(j=>j.id===frozen.learner_job_id);
-            if(Object.keys(frozen).some(key=>!['learner_job_id','threads'].includes(key))||
+            if(Object.keys(frozen).some(key=>!['learner_job_id','threads','listener_slot'].includes(key))||
+                (frozen.listener_slot!==undefined&&
+                    (!Number.isSafeInteger(frozen.listener_slot)||
+                        frozen.listener_slot<0||frozen.listener_slot>7))||
                 (frozen.threads!==undefined&&
                     (!Number.isSafeInteger(frozen.threads)||frozen.threads<1||
                         frozen.threads>resources.cpus||frozen.threads>256))||
