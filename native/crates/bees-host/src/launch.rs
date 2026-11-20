@@ -4559,6 +4559,12 @@ fn run_battle(
         let path = output.map_or_else(
             || resolve(root, path), |dir| dir.join("native-host-checkpoint.json"),
         );
+        if path == checkpoint || path == notifications ||
+            policy_capture.as_ref().is_some_and(|capture| capture == &path) ||
+            summary.as_ref().is_some_and(|summary| summary == &path)
+        {
+            return Err(bees_host::checkpoint_file::CheckpointFileError::InvalidPath);
+        }
         NativeHostCheckpointFile::open(path)
     }).transpose().map_err(|error| contextual("native host checkpoint lease", error))?;
     let saved_host_checkpoint = host_checkpoint_file.as_ref()
@@ -4668,7 +4674,23 @@ fn run_battle(
         let active_sha256 = if resume_cursor.as_ref().is_some_and(|cursor|
             cursor.next_model_update > 0)
         {
-            format!("{:x}", Sha256::digest(fs::read(&active_manifest)?))
+            let bytes = fs::read(&active_manifest)?;
+            let data: Value = serde_json::from_slice(&bytes)?;
+            let mut active_slots = HashSet::new();
+            for item in data.get("models").and_then(Value::as_array)
+                .ok_or_else(|| invalid("restored policy manifest has no models array"))?
+            {
+                let slot = item.get("slot").and_then(Value::as_u64)
+                    .and_then(|slot| u32::try_from(slot).ok())
+                    .ok_or_else(|| invalid("restored policy model slot is not uint32"))?;
+                if !active_slots.insert(slot) {
+                    return Err(invalid("restored policy manifest repeats a model slot").into());
+                }
+            }
+            if active_slots != declared {
+                return Err(invalid("restored policy manifest changed the originally authorized model slots").into());
+            }
+            format!("{:x}", Sha256::digest(bytes))
         } else { expected_sha };
         let mut resident = ResidentPolicyProcess::python_worker(
             python, worker, &active_manifest, policy_capture.is_some(),
@@ -4951,7 +4973,8 @@ fn run_battle(
     // polling UI/network with no authoritative simulation progress.
     let mut checkpointed_round = resume_cursor.as_ref().map(|cursor| cursor.rounds);
     'battle: loop {
-        if checkpointed_round != Some(rounds) &&
+        if host_checkpoint_file.is_some() &&
+            checkpointed_round != Some(rounds) &&
             host.connection_mut().connection().pending_request_count() == 0
         {
             if let Some(file) = &host_checkpoint_file {
