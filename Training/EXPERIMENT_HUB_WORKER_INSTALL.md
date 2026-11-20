@@ -65,7 +65,7 @@ with the actual machine ID, Halifax Tailscale IP and pre-transferred private
 key file paths:
 
 ```powershell
-.\Training\experiment_hub_worker_install.ps1 -Command install `
+.\experiment_hub_worker_install.ps1 -Command install `
     -Projects 'tinybrains,courier' -InstallRoot 'B:\HubWorker' `
     -MachineId 'exeter' -HubSshTarget 'halifax@100.x.y.z' `
     -TinyBrainsKeyFile 'B:\Private\tinybrains-rollout.key' `
@@ -94,7 +94,7 @@ On Debian/Ubuntu, save `Training/experiment_hub_worker_install.sh`
 from this branch (or use the checked-out copy):
 
 ```bash
-bash Training/experiment_hub_worker_install.sh install \
+bash ./experiment_hub_worker_install.sh install \
   --projects tinybrains,courier --root "$HOME/ai/experiment-hub-worker" \
   --machine-id remote_machine --hub-ssh-target halifax@100.x.y.z \
   --tinybrains-key /private/tinybrains-rollout.key \
