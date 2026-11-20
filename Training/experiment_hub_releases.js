@@ -13,6 +13,16 @@ const SHA=/^[0-9a-f]{40}$/;
 const DIGEST=/^[0-9a-f]{64}$/;
 const MAX_BYTES=512*1024*1024;
 const BRANCH=/^[a-zA-Z0-9._/-]{1,128}$/;
+const TINYBRAINS_UPSTREAM=Object.freeze({
+    'ants-starter':'a9610c693c0559286e4f5a96efec511b024bd573',
+    ants:'54edfab12469b432041658ec80bcdf5931ae23e4',
+});
+const TINYBRAINS_CLI='v0.5.0';
+const CLI_ASSETS=[
+    'tinybrains-x86_64-unknown-linux-gnu.tar.gz',
+    'tinybrains-x86_64-pc-windows-msvc.zip',
+];
+const TINYBRAINS_PACKAGE_FORMAT='pinned-upstream-and-cli-v1';
 
 function git(args,cwd,timeout=120000) {
     return new Promise((resolve,reject)=>{
@@ -26,6 +36,61 @@ function git(args,cwd,timeout=120000) {
         function finish(value){if(complete)return;complete=true;clearTimeout(alarm);resolve(value);}
         function fail(error){if(complete)return;complete=true;clearTimeout(alarm);reject(error);}
     });
+}
+function command(program,args,cwd,timeout=120000) {
+    return new Promise((resolve,reject)=>{
+        const child=spawn(program,args,{cwd,stdio:['ignore','pipe','pipe'],windowsHide:true});
+        let stderr='',complete=false;
+        const alarm=setTimeout(()=>child.kill(),timeout);
+        child.stdout.resume();
+        child.stderr.on('data',data=>{stderr+=data;if(stderr.length>4096)child.kill();});
+        child.once('error',fail);
+        child.once('close',code=>code===0?finish():fail(Error(
+            program+' failed: '+stderr.slice(0,250)||'Exit '+code)));
+        function finish(){if(complete)return;complete=true;clearTimeout(alarm);resolve();}
+        function fail(error){if(complete)return;complete=true;clearTimeout(alarm);reject(error);}
+    });
+}
+async function pinTinyBrainsUpstream(root,archive) {
+    const vendorRoot=path.join(root,'pinned-upstream');
+    fs.mkdirSync(vendorRoot,{recursive:true,mode:0o700});
+    for(const [name,revision] of Object.entries(TINYBRAINS_UPSTREAM)) {
+        const checkout=path.join(vendorRoot,name);
+        if(!fs.existsSync(path.join(checkout,'.git')))
+            await git(['clone','--quiet','--no-checkout','--filter=blob:none',
+                'https://github.com/Tiny-Brains/'+name+'.git',checkout],vendorRoot,120000);
+        await git(['fetch','--quiet','--no-tags','--depth=1','origin',revision],checkout);
+        const resolved=await git(['rev-parse','FETCH_HEAD'],checkout);
+        if(resolved!==revision)throw Error('Pinned TinyBrains upstream revision changed: '+name);
+        const temporary=archive+'.'+name+'.tar';
+        try {
+            await git(['archive','--format=tar',
+                '--prefix=Ants-MAPOCA/upstream/'+name+'/',
+                '--output='+temporary,revision],checkout,120000);
+            await command('tar',['-Af',archive,temporary],root);
+        }finally{try{fs.unlinkSync(temporary);}catch{}}
+    }
+    const downloads=path.join(root,'pinned-cli');
+    fs.mkdirSync(downloads,{recursive:true,mode:0o700});
+    const source='https://github.com/Tiny-Brains/cli/releases/download/'+TINYBRAINS_CLI+'/';
+    const sums=path.join(downloads,'SHA256SUMS');
+    await command('curl',['--fail','--location','--silent','--show-error',
+        '--output',sums,source+'SHA256SUMS'],root);
+    const entries=fs.readFileSync(sums,'utf8').split(/\r?\n/);
+    for(const name of CLI_ASSETS) {
+        const matches=entries.filter(line=>line.trim().endsWith(' '+name));
+        if(matches.length!==1)throw Error('Missing TinyBrains checksum: '+name);
+        const expected=matches[0].trim().split(/\s+/)[0];
+        if(!DIGEST.test(expected))throw Error('Invalid TinyBrains checksum for '+name);
+        const asset=path.join(downloads,name);
+        if(!fs.existsSync(asset)||(await fileHash(asset)).sha256!==expected)
+            await command('curl',['--fail','--location','--silent','--show-error',
+                '--output',asset,source+name],root,240000);
+        if((await fileHash(asset)).sha256!==expected)
+            throw Error('TinyBrains CLI official release checksum mismatch: '+name);
+    }
+    await command('tar',['-rf',archive,'-C',downloads,
+        '--transform=s|^|Ants-MAPOCA/downloads/|','SHA256SUMS',...CLI_ASSETS],root,120000);
 }
 async function fileHash(file) {
     const hash=crypto.createHash('sha256');let bytes=0;
@@ -72,9 +137,16 @@ class ReleaseStore {
         await git(['fetch','--quiet','--no-tags','origin',source.branch],repo);
         const sha=await git(['rev-parse','FETCH_HEAD'],repo);
         if(!SHA.test(sha))throw Error('Invalid Git commit from '+name);
+        // A Git commit and its vendored dependencies together identify a
+        // TinyBrains runtime release; never change bytes under the old SHA.
+        const version=name==='tinybrains'
+            ?crypto.createHash('sha1').update(JSON.stringify({
+                source:sha,upstream:TINYBRAINS_UPSTREAM,cli:TINYBRAINS_CLI,
+                format:TINYBRAINS_PACKAGE_FORMAT,
+            })).digest('hex'):sha;
         const previous=this.latest[name];
-        if(previous?.version===sha)return;
-        const filename=path.join(this.root,name+'-'+sha+'.tar');
+        if(previous?.version===version)return;
+        const filename=path.join(this.root,name+'-'+version+'.tar');
         if(!fs.existsSync(filename)) {
             const temp=filename+'.'+process.pid+'.tmp';
             try {
@@ -99,6 +171,8 @@ class ReleaseStore {
                     ]:[];
                 await git(['archive','--format=tar','--output='+temp,sha,
                     ...archivePaths],repo,240000);
+                if(name==='tinybrains')
+                    await pinTinyBrainsUpstream(this.root,temp);
                 const info=await fileHash(temp);
                 if(info.bytes===0)throw Error('Empty release archive.');
                 fs.renameSync(temp,filename);
@@ -106,7 +180,8 @@ class ReleaseStore {
             }finally {try{fs.unlinkSync(temp);}catch{}}
         }
         const info=await fileHash(filename);
-        const record={component:name,version:sha,sha256:info.sha256,bytes:info.bytes};
+        const record={component:name,version,source_commit:sha,
+            sha256:info.sha256,bytes:info.bytes};
         this.files.set(name+':'+info.sha256,filename);
         this.latest[name]=record;
     }
@@ -132,7 +207,7 @@ class ReleaseStore {
                 ...entry,
                 // Remote activation waits until both the local checkout and
                 // coordinator generation were refreshed after a safe restart.
-                activation_ready:entry.version===this.bootVersions[name],
+                activation_ready:entry.source_commit===this.bootVersions[name],
             };
         return components;
     }
@@ -149,7 +224,7 @@ class ReleaseStore {
             if(active&&name!=='worker')continue;
             try {
                 const local=await git(['rev-parse','HEAD'],source.path);
-                const target=this.latest[name]?.version;
+                const target=this.latest[name]?.source_commit;
                 if(!target||local===target)continue;
                 const branch=await git(['branch','--show-current'],source.path);
                 if(branch!==source.branch)
