@@ -5,7 +5,7 @@
 
 use super::*;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub(super) struct WeaponRangeContacts {
     ships: Vec<i64>,
     membership: HashMap<i64, u64>,
@@ -14,6 +14,14 @@ pub(super) struct WeaponRangeContacts {
 }
 
 impl WeaponRangeContacts {
+    pub(super) fn valid_recovery(&self) -> bool {
+        self.ships.len() == self.membership.len() &&
+        self.ships.iter().enumerate().all(|(index, id)|
+            *id > 0 && self.ships[..index].iter().all(|old| old != id) &&
+            self.membership.contains_key(id)
+        )
+    }
+
     pub(super) fn remove(&mut self, ship_id: i64) -> bool {
         if self.membership.remove(&ship_id).is_none() { return false; }
         self.ships.retain(|&id| id != ship_id);

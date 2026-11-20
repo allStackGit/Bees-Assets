@@ -18,7 +18,7 @@ use crate::turret::TurretState;
 /// One ordinary shot, or the two exact DualCannon muzzle offsets from its
 /// authored Unity weapon instance. Never approximate the two barrels from
 /// ship hull geometry.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum NativeFirePattern {
     Single,
     DualCannon {
@@ -50,7 +50,7 @@ impl NativeFirePattern {
 
 /// Supplied from the REAL authored weapon and turret piece, not a collider
 /// guess, a training recipe, or an observation copied from another ship.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NativeTurretSpec {
     /// ConfigData.WeaponTypes: LightCannon=2, Turret=3,
     /// RocketTurret=5, Eye=7, QueenEye=8.
@@ -77,7 +77,7 @@ pub struct NativeTurretSpec {
 }
 
 /// The real authored child circle, relative to the turret piece origin and rotation.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NativeTurretRangeSpec {
     pub offset: Vec2,
     pub radius: f32,
@@ -188,7 +188,7 @@ impl NativeTurretSpec {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct MountedTurret {
     pub(super) spec: NativeTurretSpec,
     range_collider: Option<NativeTurretRangeSpec>,
@@ -211,7 +211,7 @@ pub(super) struct MountedTurret {
 /// Physical weapon state belongs to a ship, independently of the policy
 /// controller that supplies its current requests. Beam teardown and mounted
 /// rotation read this same owner through every projectile lifecycle path.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct ShipWeapons {
     pub(super) turrets: [Option<MountedTurret>; 5],
     pub(super) last_hull_rotation: f32,
@@ -220,6 +220,21 @@ pub(super) struct ShipWeapons {
 }
 
 impl ShipWeapons {
+    pub(super) fn valid_recovery(&self, catalog: &ProjectileAssetCatalog) -> bool {
+        self.last_hull_rotation.is_finite() &&
+        self.range_contacts.iter().all(|contacts| contacts.valid_recovery()) &&
+        self.turrets.iter().flatten().all(|mount|
+            mount.spec.valid(catalog).is_ok() &&
+            mount.state.valid_recovery() &&
+            mount.timer.valid_recovery() &&
+            mount.range_collider.is_none_or(|range| range.valid()) &&
+            mount.charge_elapsed_seconds.is_none_or(|v| v.is_finite() && v >= 0.0) &&
+            mount.active_beam_projectile_id.is_none_or(|id| id > 0) &&
+            mount.manual_target.is_none_or(|point| point.is_finite()) &&
+            mount.automatic.as_ref().is_none_or(|state| state.valid_recovery())
+        )
+    }
+
     pub(super) fn new(rotation: f32) -> Self {
         Self { turrets: std::array::from_fn(|_| None), last_hull_rotation: rotation, cease_fire: false,
             range_contacts: std::array::from_fn(|_| super::weapon_ranges::WeaponRangeContacts::default()) }
@@ -318,7 +333,7 @@ pub struct NativeWeaponCharge {
 /// A scheduled shot is snapshot before mutating projectile storage. This
 /// permits the turret timer to reuse its per-ship state while all projectiles
 /// are spawned in deterministic ship-ID and exact weapon-slot order.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct PendingTurretShot {
     ship_id: i64,
     slot: u8,
@@ -333,6 +348,16 @@ pub(super) struct PendingTurretShot {
     spec: NativeTurretSpec,
     policy_controlled: bool,
     command_outcome_id: i64,
+}
+
+impl PendingTurretShot {
+    pub(super) fn valid_recovery(&self, catalog: &ProjectileAssetCatalog) -> bool {
+        self.ship_id > 0 && self.slot < 5 && self.shooter_side > 0 &&
+        self.projectile_base_id > 0 &&
+        self.turret_position.is_finite() && self.ship_position.is_finite() &&
+        self.turret_rotation.is_finite() && self.target_world.is_finite() &&
+        self.spec.valid(catalog).is_ok()
+    }
 }
 
 impl CombatWorld {

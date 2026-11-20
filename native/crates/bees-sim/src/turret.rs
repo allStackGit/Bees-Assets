@@ -13,7 +13,7 @@ use crate::geometry::{heading_towards, timed_turret_rotation, Vec2};
 
 pub const TARGETING_PASSES_PER_SHOT: u8 = 3;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TurretState {
     pub rotation_degrees: f32,
     pub rotation_rate_degrees_per_second: f32,
@@ -26,6 +26,13 @@ pub struct TurretState {
 }
 
 impl TurretState {
+    pub fn valid_recovery(&self) -> bool {
+        self.rotation_degrees.is_finite() &&
+        self.rotation_rate_degrees_per_second.is_finite() &&
+        self.rotation_rate_degrees_per_second >= 0.0 &&
+        self.target_world.is_finite()
+    }
+
     pub fn new(rotation_degrees: f32, rotation_rate_degrees_per_second: f32) -> Self {
         Self {
             rotation_degrees,

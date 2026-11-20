@@ -39,7 +39,7 @@ pub struct NativeAutomaticTurretStatus<'a> {
     pub ready_to_fire: bool,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub(super) struct AutomaticTurret {
     pub(super) target: Option<i64>,
     target_asteroid: Option<i64>,
@@ -51,6 +51,12 @@ pub(super) struct AutomaticTurret {
 }
 
 impl AutomaticTurret {
+    pub(super) fn valid_recovery(&self) -> bool {
+        self.target.is_none_or(|id| id > 0) &&
+        self.target_asteroid.is_none_or(|id| id > 0) &&
+        self.queue.iter().all(|&id| id > 0)
+    }
+
     pub(super) fn command_changed(&mut self, key: Option<(u8, u64)>) {
         if self.command_key != key {
             if key.is_some() { // source Execute.ClearTargets, not command expiry
