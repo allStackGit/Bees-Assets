@@ -78,6 +78,10 @@ fi
 if [[ "$MODE" == update && ! -f "$ENVFILE" ]]; then
     echo "No installed agent environment exists at $ENVFILE." >&2; exit 1
 fi
+if [[ "$MODE" == update ]] && systemctl --user is-active --quiet "$SERVICE"; then
+    echo "Stop active Hub jobs through the dashboard, then stop the agent before updating." >&2
+    exit 1
+fi
 
 install_dependencies() {
     if ! command -v apt-get >/dev/null; then
@@ -85,19 +89,29 @@ install_dependencies() {
         return 1
     fi
     sudo apt-get update
-    sudo apt-get install -y git curl openssh-client python3 python3-venv python3-pip nodejs
+    sudo apt-get install -y git curl ca-certificates openssh-client python3 nodejs
     if ! command -v tailscale >/dev/null; then
         curl -fsSL https://tailscale.com/install.sh | sudo sh
     fi
 }
 if [[ "$MODE" == install ]]; then install_dependencies; fi
-for tool in git node python3 ssh ssh-keygen ssh-keyscan; do
+for tool in git node python3 ssh ssh-keygen ssh-keyscan ssh-copy-id tar sha256sum; do
     command -v "$tool" >/dev/null || { echo "Missing prerequisite: $tool" >&2; exit 1; }
 done
 node -e 'if(Number(process.versions.node.split(".")[0])<18)process.exit(1)' ||
     { echo "Node.js 18 or newer is required." >&2; exit 1; }
-python3 -c 'import sys; assert sys.version_info >= (3,11)' ||
-    { echo "Python 3.11 or newer is required." >&2; exit 1; }
+# TinyBrains pins Torch 2.6.0, which does not provide wheels for every
+# distro-default Python. Use a project-local Python 3.11.18 for both projects.
+if ! command -v uv >/dev/null; then
+    if [[ -x "$HOME/.local/bin/uv" ]]; then
+        export PATH="$HOME/.local/bin:$PATH"
+    else
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.local/bin:$PATH"
+    fi
+fi
+command -v uv >/dev/null || { echo "uv install was unsuccessful." >&2; exit 1; }
+uv python install 3.11.18
 umask 077
 mkdir -p "$PRIVATE" "$SRC" "$VENV" "$ROOT/cache/tinybrains" "$ROOT/cache/courier"
 chmod 700 "$PRIVATE"
@@ -130,20 +144,65 @@ if has_project courier && [[ -z "$COURIER_ROOT" ]]; then
     COURIER_ROOT="$SRC/Basic-Training"
 fi
 
-# Keep conflicting TinyBrains/Courier Torch versions in separate venvs.
+# Preserve the official TinyBrains simulator; never create a simplified
+# Python simulation for remote training. The official CLI release and
+# upstream baseline package are separate from the ants-mapoca wheel.
+install_tinybrains_runtime() {
+    local archive=tinybrains-x86_64-unknown-linux-gnu.tar.gz
+    local release=https://github.com/Tiny-Brains/cli/releases/download/v0.5.0
+    local downloads="$TB_ROOT/downloads"
+    local cli="$TB_ROOT/tools/tinybrains-0.5.0/tinybrains"
+    mkdir -p "$downloads" "$(dirname "$cli")" "$TB_ROOT/upstream"
+    if [[ ! -f "$downloads/$archive" ]]; then
+        curl -fLSs "$release/$archive" -o "$downloads/$archive"
+    fi
+    curl -fLSs "$release/SHA256SUMS" -o "$downloads/SHA256SUMS"
+    local expected actual
+    expected=$(awk -v file="$archive" '$2==file {print $1}' "$downloads/SHA256SUMS")
+    actual=$(sha256sum "$downloads/$archive" | cut -d' ' -f1)
+    [[ -n "$expected" && "$expected" == "$actual" ]] ||
+        { echo "Pinned official TinyBrains CLI archive checksum mismatch." >&2; exit 1; }
+    if [[ ! -x "$cli" ]]; then
+        mkdir -p "$(dirname "$cli")"
+        tar -xzf "$downloads/$archive" -C "$(dirname "$cli")"
+        [[ -x "$cli" ]] || { echo "Official TinyBrains CLI is not at the approved release path." >&2; exit 1; }
+    fi
+    # Preserve exact upstream simulation baselines; refuse drift.
+    local name commit dir
+    for name in ants-starter ants; do
+        case "$name" in
+            ants-starter) commit=a9610c693c0559286e4f5a96efec511b024bd573;;
+            ants) commit=54edfab12469b432041658ec80bcdf5931ae23e4;;
+        esac
+        dir="$TB_ROOT/upstream/$name"
+        if [[ ! -d "$dir/.git" ]]; then
+            git clone --filter=blob:none --depth=1 \
+                "https://github.com/Tiny-Brains/$name.git" "$dir"
+            git -C "$dir" fetch --depth=1 origin "$commit"
+            git -C "$dir" checkout --detach "$commit"
+        fi
+        [[ "$(git -C "$dir" rev-parse HEAD)" == "$commit" ]] ||
+            { echo "Refusing modified TinyBrains upstream $name engine dependency." >&2; exit 1; }
+    done
+}
+# Separate Python environments prevent Courier Torch 2.8.0+cpu from
+# replacing TinyBrains' pinned Torch 2.6.0 CPU collector.
 if has_project tinybrains; then
     [[ -f "$TB_ROOT/pyproject.toml" ]] || { echo "TinyBrains source is missing." >&2; exit 1; }
-    python3 -m venv "$VENV/tinybrains"
-    "$VENV/tinybrains/bin/python" -m pip install --disable-pip-version-check --index-url https://download.pytorch.org/whl/cpu 'torch==2.6.0'
-    "$VENV/tinybrains/bin/python" -m pip install --disable-pip-version-check -e "$TB_ROOT"
-    "$VENV/tinybrains/bin/python" -B -c 'import ants_mapoca.remote_rollout'
+    install_tinybrains_runtime
+    uv venv --python 3.11.18 "$VENV/tinybrains"
+    uv pip install --python "$VENV/tinybrains/bin/python" --index-url https://download.pytorch.org/whl/cpu 'torch==2.6.0'
+    uv pip install --python "$VENV/tinybrains/bin/python" \
+        -r "$TB_ROOT/requirements-lock.txt"
+    uv pip install --python "$VENV/tinybrains/bin/python" --no-deps \
+        -e "$TB_ROOT/upstream/ants/baselines" -e "$TB_ROOT"
+    (cd "$TB_ROOT" && "$VENV/tinybrains/bin/python" -B -c 'import ants_mapoca.remote_rollout; from ants_mapoca.env import Engine')
 fi
 if has_project courier; then
     [[ -f "$COURIER_ROOT/requirements.txt" ]] || { echo "Courier source is missing." >&2; exit 1; }
-    python3 -m venv "$VENV/courier"
-    "$VENV/courier/bin/python" -m pip install --disable-pip-version-check -r "$COURIER_ROOT/requirements.txt"
-    "$VENV/courier/bin/python" -B -c 'import courier_remote_lineage' 2>/dev/null ||
-        (cd "$COURIER_ROOT" && "$VENV/courier/bin/python" -B -c 'import courier_remote_lineage')
+    uv venv --python 3.11.18 "$VENV/courier"
+    uv pip install --python "$VENV/courier/bin/python" -r "$COURIER_ROOT/requirements.txt"
+    (cd "$COURIER_ROOT" && "$VENV/courier/bin/python" -B -c 'import courier_remote_lineage')
 fi
 
 if [[ "$MODE" == install ]]; then
