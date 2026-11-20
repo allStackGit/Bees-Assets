@@ -125,9 +125,14 @@ impl Peer {
         // before sending any other payload. Otherwise the next flush may
         // start with the oldest reliable frame, without mixing framing.
         if self.writing_state && self.written == 0 {
-            self.outgoing.clear();
+            // Keep the most recent unsent state for AFTER reliable replies.
+            // A later snapshot may still replace it without touching TCP
+            // framing or postponing a terminal receipt.
+            let preempted = std::mem::take(&mut self.outgoing);
+            if self.newest_state.is_none() {
+                self.newest_state = Some(preempted);
+            }
             self.writing_state = false;
-            self.newest_state = None;
         }
         Ok(())
     }
