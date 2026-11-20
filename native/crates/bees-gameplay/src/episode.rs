@@ -85,7 +85,7 @@ pub struct NativeTickReward<'a> {
     pub finalized: Option<NativeEpisodeFinal>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativeEpisodeRewardMeasurements {
     pub combat_damage: DamageShapingMeasurements,
     pub mining_economy: EconomicLedgerMeasurements,
@@ -93,6 +93,7 @@ pub struct NativeEpisodeRewardMeasurements {
     pub termination: EpisodeTerminalMeasurements,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct NativeEpisodeRewardCoordinator {
     bee_side: i32,
     human_side: i32,
@@ -102,11 +103,13 @@ pub struct NativeEpisodeRewardCoordinator {
     merged_emissions: Vec<RewardEmission>,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 enum EpisodeMode {
     Game(DiscoverySightings),
     Training(Box<TrainingRewards>),
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct TrainingRewards {
     bee_starting_tsv: i32,
     human_starting_tsv: i32,

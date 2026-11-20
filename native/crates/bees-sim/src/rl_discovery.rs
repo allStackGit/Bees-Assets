@@ -6,7 +6,7 @@ use std::collections::HashSet;
 
 use crate::rl_shaping::{EpisodeShaping, RewardEmission};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum DiscoveryKind {
     EnemyShip, MiningAsteroid, StaticObstacle, MapObject, CollisionAsteroid,
 }
@@ -37,7 +37,7 @@ pub enum DiscoveryError {
     InvalidSide, InvalidValue,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DiscoveryMeasurements {
     pub first: u64,
     pub duplicate: u64,
@@ -45,7 +45,7 @@ pub struct DiscoveryMeasurements {
 }
 
 /// Side-wide first-contact history shared by gameplay and training.
-#[derive(Default)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct DiscoverySightings {
     seen: [HashSet<(DiscoveryKind, i64)>; 2],
     measurements: DiscoveryMeasurements,
@@ -74,6 +74,7 @@ impl DiscoverySightings {
     }
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct EpisodeDiscoveryLedger {
     sides: [i32; 2],
     /// The four fixed-category starting value denominators, in

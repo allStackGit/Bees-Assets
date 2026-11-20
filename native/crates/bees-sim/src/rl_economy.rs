@@ -19,7 +19,7 @@ pub enum EconomicLedgerError {
     InvalidAuthoredMinedValue(i64),
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EconomicLedgerMeasurements {
     pub updates: u64,
     pub ship_exits: u64,
@@ -29,6 +29,7 @@ pub struct EconomicLedgerMeasurements {
 
 /// One Level/episode owns one ledger. Registered values survive ship
 /// retirement for final diagnostics, just like Unity's dictionaries.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct EpisodeEconomicLedger {
     sides: [i32; 2],
     starting_tsv: [i32; 2],

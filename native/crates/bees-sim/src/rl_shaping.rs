@@ -21,7 +21,7 @@ pub const RAW_NEAR_MISS_REWARD: f32 = 0.03;
 pub const MAX_POSITIVE_SHAPING: f32 = 0.2;
 pub const MAX_NEGATIVE_SHAPING: f32 = 0.2;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TacticalShaping {
     positive_raw: f64,
     negative_raw: f64,
@@ -87,7 +87,7 @@ pub enum DamageShapingError {
     InvalidTargetMetadata(i64),
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DamageShapingMeasurements {
     pub attributed_hits: u64,
     pub unattributed_damage: u64,
@@ -100,6 +100,7 @@ pub struct DamageShapingMeasurements {
 
 /// Per-episode shaping state, independent per faction. Both positive and
 /// negative effects for a faction share their own cap across source types.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct EpisodeShaping {
     sides: [i32; 2],
     combined_starting_tsv: i32,

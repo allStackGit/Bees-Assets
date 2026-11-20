@@ -56,7 +56,7 @@ pub enum EpisodeEconomicError {
     InvalidAuthoredEconomicValue,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EpisodeTerminalMeasurements {
     pub ticks_observed: u64,
     pub elimination_checks: u64,
@@ -74,6 +74,7 @@ pub struct EpisodeTerminalMeasurements {
 /// A same-side explosive can inherit an opposing original killer through
 /// up to 16 killer links, while a Yellow Jacket's own detonation is always
 /// a non-opponent loss even if its historical gameplay killer is an enemy.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct EpisodeDeathAttribution {
     sides: [i32; 2],
     /// Historical owner links for every dead ship this episode.
@@ -170,7 +171,7 @@ impl EpisodeDeathAttribution {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SurvivalObjective {
     pub defending_side: i32,
     pub protected_ship_id: i64,
@@ -186,6 +187,7 @@ pub struct SurvivalStatus {
     pub elapsed_seconds: f32,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct ArmedSurvival {
     objective: SurvivalObjective,
     deadline_tick: u64,
@@ -194,13 +196,14 @@ struct ArmedSurvival {
 /// An authored physical MapObject demolition contract. The attacker wins
 /// only when the canonical combat world retires the exact target object;
 /// the defender wins on the deadline or final attacker elimination.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct DemolitionObjective {
     pub attacking_side: i32,
     pub target_map_object_id: i64,
     pub seconds: f32,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct ArmedDemolition {
     objective: DemolitionObjective,
     deadline_tick: u64,
@@ -218,13 +221,14 @@ pub struct DemolitionStatus {
 
 /// Delivery requires one authored mobile ship to reach the canonical
 /// extraction collider, not the first member of its faction to escape.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct EscortObjective {
     pub escorting_side: i32,
     pub escorted_ship_id: i64,
     pub seconds: f32,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct ArmedEscort {
     objective: EscortObjective,
     deadline_tick: u64,
@@ -277,6 +281,7 @@ pub struct EpisodeMissionOutcome {
     pub completed: bool,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct NativeEpisodeTerminal {
     bee_side: i32,
     human_side: i32,
