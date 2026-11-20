@@ -415,6 +415,19 @@ def existing_rounds(root, initial_manifest, initial_checkpoint, learner_slot,
             if number != highest:
                 raise ValueError(f"missing committed round {number} before a later attempt")
             next_attempt = max((index for index, _ in candidates), default=0) + 1
+            # The optimizer has an independent final consensus boundary.
+            # A crash between writing its complete metrics and the outer
+            # round receipt can be finalized without reapplying gradients.
+            # Never salvage missing metrics, partial checkpoints, or node
+            # results: the entire distributed group must begin a NEW
+            # authorized attempt in those cases.
+            if candidates:
+                last_index, last_directory = candidates[-1]
+                if ((last_directory / "optimizer-attempt.json").is_file() and
+                        (last_directory / "learner" / "metrics.json").is_file() and
+                        (last_directory / "learner" / "checkpoint.pt").is_file() and
+                        (last_directory / "learner" / "manifest.json").is_file()):
+                    next_attempt = last_index
             break
         # Source identity is part of every optimizer round, not only
         # curriculum transitions. Reject a different native Level even
@@ -1124,8 +1137,13 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
     }
 
 
-def launch_round(command, log_path):
-    with log_path.open("x", encoding="utf-8") as stream:
+def launch_round(command, log_path, *, finish_optimizer=False):
+    if finish_optimizer and not log_path.is_file():
+        raise ValueError("completed native optimizer has no original round ownership log")
+    with log_path.open("a" if finish_optimizer else "x", encoding="utf-8") as stream:
+        if finish_optimizer:
+            stream.write('{"kind":"native_optimizer_finalization_recovered"}\n')
+            stream.flush()
         process = subprocess.Popen(command, stdout=stream, stderr=subprocess.STDOUT)
         try:
             code = process.wait()
@@ -1663,6 +1681,11 @@ def main():
             if attempt > 999:
                 raise ValueError(f"round {index} exhausted its attempt numbers")
             directory = root / f"round-{index:05d}-attempt-{attempt:03d}"
+            finish_optimizer = bool(
+                args.resume and args.learner_gpus > 1 and
+                (directory / "optimizer-attempt.json").is_file() and
+                (directory / "learner" / "metrics.json").is_file()
+            )
             log = root / (directory.name + ".log")
             seed_offset = args.seed_offset_start + (index - 1) * args.seed_offset_stride
             print(json.dumps({"kind": "native_training_session_round_started",
@@ -1911,7 +1934,9 @@ def main():
                     command.extend(["--rollout-binary", binary["path"]])
             if args.stage_diagnostics:
                 command.append("--stage-diagnostics")
-            launch_round(command, log)
+            if finish_optimizer:
+                command.append("--resume-optimizer")
+            launch_round(command, log, finish_optimizer=finish_optimizer)
             # The learner can finish successfully even if an operator edits
             # an authored scene during the rollout. Never accept such mixed
             # environment observations into a verified checkpoint lineage.
