@@ -128,7 +128,7 @@ async function readJson(req) {
     return JSON.parse(raw||'{}');
 }
 
-function createAdminServer(hub,{html,ui,dataRoot}={}) {
+function createAdminServer(hub,{html,ui,dataRoot,releases=null}={}) {
     const exporter=new JobExporter(dataRoot,hub);
     const servicesUi=fs.readFileSync(path.join(__dirname,'experiment_hub_local_services_ui.js'),'utf8');
     return http.createServer(async(req,res)=>{
@@ -148,6 +148,12 @@ function createAdminServer(hub,{html,ui,dataRoot}={}) {
                 return sendFile(res,ui,'text/javascript; charset=utf-8');
             if(req.method==='GET'&&route==='/experiment-hub-services.js')
                 return sendFile(res,servicesUi,'text/javascript; charset=utf-8');
+            if(req.method==='GET'&&route==='/api/hub/software/releases')
+                return json(res,200,{
+                    components:releases?.latest||{},
+                    errors:releases?.failures||{},
+                    machine_update_policies:hub.state.machine_update_policies||{},
+                });
             if(req.method==='GET'&&route==='/api/hub/local-services')
                 return json(res,200,await localServices.status(hub));
             if(req.method==='POST'&&route==='/api/hub/local-services/restart') {
@@ -222,8 +228,8 @@ async function main(argv=process.argv.slice(2)) {
     }
     const html=renderPage(fs.readFileSync(path.join(__dirname,'experiments.html'),'utf8'));
     const ui=fs.readFileSync(path.join(__dirname,'experiment_hub_ui.js'),'utf8');
-    const admin=createAdminServer(hub,{html,ui,dataRoot:root});
     const releases=new ReleaseStore(root);
+    const admin=createAdminServer(hub,{html,ui,dataRoot:root,releases});
     const worker=createAgentServer(()=>hub,AGENT_HOST,releases);
     const remoteWorker=tailnet?createAgentServer(()=>hub,tailnet,releases):null;
     async function listen(server,port,host) {
