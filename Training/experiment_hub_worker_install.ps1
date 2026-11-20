@@ -63,6 +63,63 @@ function Sync-Repo([string]$Name,[string]$Remote,[string]$Ref,[string]$SparseDir
     }
     return $dest
 }
+# Download immutable private software from Halifax after tailnet enrollment.
+# Initial installation never needs private-repository Git credentials.
+function Install-HubRelease([string]$Component,[string]$Name) {
+    if($null -eq $Enrollment){throw 'Worker bootstrap must complete before downloading software.'}
+    $destination=Join-Path $SourceRoot $Name
+    if(Test-Path -LiteralPath $destination){
+        throw "Refusing to overwrite existing worker source: $destination"
+    }
+    $headers=@{ 'x-hub-agent-token'=[string]$Enrollment.agent_token }
+    $base="http://$($HubTailnetIp):7149"
+    $manifest=Invoke-RestMethod -Uri "$base/api/hub/agent/releases?machine_id=$MachineId" -Headers $headers
+    $entry=$manifest.components.PSObject.Properties[$Component].Value
+    if($null -eq $entry -or $entry.activation_ready -ne $true){
+        throw "Hub has not published an active $Component release."
+    }
+    $hash=[string]$entry.sha256
+    $bytes=[long]$entry.bytes
+    if($hash -cnotmatch '^[0-9a-f]{64}$' -or $bytes -le 0 -or $bytes -gt 536870912){
+        throw 'Invalid approved software release manifest.'
+    }
+    $archive=Join-Path $Private "$Component-source.tar"
+    try {
+        $bundle="$base/api/hub/agent/releases/bundle?machine_id=$MachineId&component=$Component&sha256=$hash"
+        Invoke-WebRequest -UseBasicParsing -Uri $bundle -Headers $headers -OutFile $archive
+        if((Get-Item -LiteralPath $archive).Length -ne $bytes -or
+           (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hash){
+            throw "$Component release SHA-256 or length did not match Halifax."
+        }
+        $names=@(& tar.exe -tf $archive)
+        Assert-Exit 'Inspect downloaded release paths'
+        $details=@(& tar.exe -tvf $archive)
+        Assert-Exit 'Inspect downloaded release types'
+        if(-not $names.Count -or
+            @($names | Where-Object { $_ -match '(^/|(^|/)\.\.(/|$)|\\|:)' }).Count -ne 0 -or
+            @($details | Where-Object { $_ -match '^[lh]' }).Count -ne 0){
+            throw 'Unsafe software release archive.'
+        }
+        New-Item -ItemType Directory -Path $destination -Force | Out-Null
+        & tar.exe -xf $archive -C $destination
+        Assert-Exit "Extract $Component release"
+        if($Component -eq 'worker' -and
+            -not(Test-Path (Join-Path $destination 'Training\experiment_hub_agent.js'))){
+            throw 'Published Hub worker release has no agent entrypoint.'
+        }
+        if($Component -eq 'tinybrains' -and
+            -not(Test-Path (Join-Path $destination 'Ants-MAPOCA\pyproject.toml'))){
+            throw 'Published TinyBrains release has no simulation project.'
+        }
+        if($Component -eq 'courier' -and
+            -not(Test-Path (Join-Path $destination 'requirements.txt'))){
+            throw 'Published Courier release has no dependency contract.'
+        }
+    } finally {
+        if(Test-Path -LiteralPath $archive){Remove-Item -LiteralPath $archive -Force}
+    }
+    return $destination
+}
 # Pin the official simulator and baseline code; never substitute a Python
 # recreation of game mechanics for the published TinyBrains engine.
 function Install-TinyBrainsEngine([string]$Project) {
@@ -306,12 +363,14 @@ $managedCandidates=@(Get-ChildItem -LiteralPath $pythonRoot -Directory |
 if($managedCandidates.Count -ne 1){throw 'Expected exactly one pinned Python 3.11 runtime.'}
 $managedPython=Join-Path $managedCandidates[0].FullName 'python.exe'
 if(-not(Test-Path $managedPython)){throw 'Pinned machine-local Python is missing.'}
-$assets=Sync-Repo 'Bees-Assets' 'https://github.com/allStackGit/Bees-Assets.git' $Branch 'Training'
+$assets=if($Command -eq 'install'){Install-HubRelease 'worker' 'Bees-Assets'}
+    else {Join-Path $SourceRoot 'Bees-Assets'}
 $Training=Join-Path $assets 'Training'
 $selected=$Projects.Split(',')
 if('tinybrains' -in $selected){
     if(-not $TinyBrainsRoot){
-        $tiny=Sync-Repo 'TinyBrains' 'https://github.com/allStackGit/TinyBrains.git' $TinyBrainsBranch 'Ants-MAPOCA'
+        $tiny=if($Command -eq 'install'){Install-HubRelease 'tinybrains' 'TinyBrains'}
+            else {Join-Path $SourceRoot 'TinyBrains'}
         $TinyBrainsRoot=Join-Path $tiny 'Ants-MAPOCA'
     }
     if(-not(Test-Path (Join-Path $TinyBrainsRoot 'pyproject.toml'))){throw 'TinyBrains project root missing.'}
@@ -342,7 +401,8 @@ if('tinybrains' -in $selected){
 }
 if('courier' -in $selected){
     if(-not $CourierRoot){
-        $CourierRoot=Sync-Repo 'Basic-Training' 'https://github.com/allStackGit/Basic-Training.git' $CourierBranch
+        $CourierRoot=if($Command -eq 'install'){Install-HubRelease 'courier' 'Basic-Training'}
+            else {Join-Path $SourceRoot 'Basic-Training'}
     }
     if(-not(Test-Path (Join-Path $CourierRoot 'requirements.txt'))){throw 'Courier project root missing.'}
     $courierEnv=Join-Path $VenvRoot 'courier'
