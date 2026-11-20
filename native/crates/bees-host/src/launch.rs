@@ -5038,7 +5038,6 @@ fn run_battle(
             };
             serde_json::to_value(cursor)
                 .map_err(|error| contextual("native run cursor encoding", error))
-
         }};
     }
     'battle: loop {
@@ -5049,16 +5048,15 @@ fn run_battle(
             host.connection_mut().connection().pending_request_count() == 0
         {
             if let Some(file) = &host_checkpoint_file {
-            // One stable boundary after the previous round's episode
-            // accounting, model transition, journal ACK and reinforcements.
-            // This includes the first unstarted round of a new incarnation.
-            let saved = capture_native_progress!()?;
-            if let Err(error) = host.persist_recovery_checkpoint_with_launcher(file, saved) {
-                failed_window = Some(format!(
-                    "native host checkpoint could not be committed: {error:?}"
-                ));
-                break 'battle;
-            }
+                // A stable boundary follows the previous round's episode
+                // accounting, model transition and journal ACK.
+                let saved = capture_native_progress!()?;
+                if let Err(error) = host.persist_recovery_checkpoint_with_launcher(file, saved) {
+                    failed_window = Some(format!(
+                        "native host checkpoint could not be committed: {error:?}"
+                    ));
+                    break 'battle;
+                }
                 checkpointed_round = Some(rounds);
             }
         }
