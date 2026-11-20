@@ -58,6 +58,8 @@ struct NativeSetupBinding {
     game_id: Option<i64>,
 }
 
+fn setup_attempts_zero(value: &u64) -> bool { *value == 0 }
+
 /// Only state that remains meaningful after a process restart. Strategy
 /// and targeting replies still in flight cannot be reconstructed as valid
 /// live commands without their original, live Squad instances: they are
@@ -76,6 +78,11 @@ pub struct NativeConnectionCheckpoint {
     journal_progress: BTreeMap<String, BTreeMap<u64, JournalPosition>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     setup_binding: Option<NativeSetupBinding>,
+    /// Cumulative count of only setup request hashes issued by the original
+    /// allocator. Used with the allocator position to distinguish setup
+    /// advances from unrelated strategy, targeting and StoreCommands work.
+    #[serde(default, skip_serializing_if = "setup_attempts_zero")]
+    setup_attempts: u64,
 }
 
 /// Borrowed serialization view: large StoreCommands queues are streamed
@@ -89,6 +96,8 @@ struct NativeConnectionCheckpointView<'a> {
     journal_progress: &'a BTreeMap<String, BTreeMap<u64, JournalPosition>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     setup_binding: &'a Option<NativeSetupBinding>,
+    #[serde(skip_serializing_if = "setup_attempts_zero")]
+    setup_attempts: &'a u64,
 }
 
 impl NativeConnectionCheckpoint {
@@ -139,6 +148,7 @@ pub struct NativeHiveMindConnection {
     journal_cursors: HashMap<String, JournalCursor>,
     journal_progress: BTreeMap<String, BTreeMap<u64, JournalPosition>>,
     setup_binding: Option<NativeSetupBinding>,
+    setup_attempts: u64,
 }
 
 impl NativeHiveMindConnection {
@@ -153,6 +163,7 @@ impl NativeHiveMindConnection {
             journal_cursors: HashMap::new(),
             journal_progress: BTreeMap::new(),
             setup_binding: None,
+            setup_attempts: 0,
         })
     }
 
@@ -175,6 +186,11 @@ impl NativeHiveMindConnection {
             return Err(HiveMindProtocolError::InvalidRequest);
         }
         snapshot.stores.validate_checkpoint()?;
+        if snapshot.setup_attempts == 0 && snapshot.setup_binding.as_ref()
+            .is_some_and(|setup| setup.pending_hash.is_some())
+        {
+            return Err(HiveMindProtocolError::InvalidRequest);
+        }
         if snapshot.setup_binding.as_ref().is_some_and(|setup|
             setup.run_identity.trim().is_empty() ||
             setup.run_identity.len() > 1024 ||
@@ -196,6 +212,7 @@ impl NativeHiveMindConnection {
             journal_cursors: snapshot.journal_cursors,
             journal_progress: snapshot.journal_progress,
             setup_binding: snapshot.setup_binding,
+            setup_attempts: snapshot.setup_attempts,
         })
     }
 
@@ -211,6 +228,7 @@ impl NativeHiveMindConnection {
             journal_cursors: self.journal_cursors.clone(),
             journal_progress: self.journal_progress.clone(),
             setup_binding: self.setup_binding.clone(),
+            setup_attempts: self.setup_attempts,
         }
     }
 
@@ -229,6 +247,7 @@ impl NativeHiveMindConnection {
             journal_cursors: &self.journal_cursors,
             journal_progress: &self.journal_progress,
             setup_binding: &self.setup_binding,
+            setup_attempts: &self.setup_attempts,
         })
     }
 
@@ -245,6 +264,17 @@ impl NativeHiveMindConnection {
     pub fn setup_game_id(&self, run_identity: &str) -> Option<i64> {
         self.setup_binding.as_ref().filter(|setup|
             setup.run_identity == run_identity).and_then(|setup| setup.game_id)
+    }
+
+    /// Read-only recovery proof for the host checkpoint. The original
+    /// request allocator remains authoritative for all Hash issuance.
+    pub fn setup_checkpoint_position(&self) -> (u32, u32, u64, Option<&str>, Option<i64>) {
+        let (prefix, counter) = self.hashes.checkpoint_position();
+        (
+            prefix, counter, self.setup_attempts,
+            self.setup_binding.as_ref().map(|setup| setup.run_identity.as_str()),
+            self.setup_binding.as_ref().and_then(|setup| setup.game_id),
+        )
     }
 
     pub fn has_ambiguous_initial_setup(&self, run_identity: &str) -> bool {
@@ -274,7 +304,10 @@ impl NativeHiveMindConnection {
         }
         let known_game_id = previous.and_then(|setup| setup.game_id)
             .or_else(|| (requested_game_id > 0).then_some(requested_game_id));
+        let next_attempt = self.setup_attempts.checked_add(1)
+            .ok_or(HiveMindProtocolError::InvalidRequest)?;
         let hash = self.hashes.next_hash()?;
+        self.setup_attempts = next_attempt;
         self.setup_binding = Some(NativeSetupBinding {
             run_identity: run_identity.to_owned(),
             pending_hash: Some(hash),
