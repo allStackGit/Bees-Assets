@@ -137,6 +137,11 @@ pub struct NativeHostStatusInterval {
     /// Successfully validated model rows with authenticated MA-POCA
     /// participants; not inferred from live ship identities.
     pub grouped_actor_rows: u64,
+    /// Actual controller bindings, rebindings and retirements collected
+    /// from the one source decision roster in completed rollout windows.
+    pub controller_bindings: u64,
+    pub controller_rebindings: u64,
+    pub controller_retirements: u64,
     /// Current resident policy generation, or absent before the first
     /// successfully validated model batch. It is process/run-local.
     pub last_model_generation: Option<u64>,
@@ -223,6 +228,9 @@ struct PhaseSamples {
     rounds: u64,
     world_steps: u64,
     model_rows: u64,
+    controller_bindings: u64,
+    controller_rebindings: u64,
+    controller_retirements: u64,
     observation_nanos: u128,
     inference_nanos: u128,
     dispatch_nanos: u128,
@@ -256,6 +264,9 @@ impl NativeStatusSampler {
         pending.rounds += u64::from(counts.sampled_rounds);
         pending.world_steps += counts.sampled_world_steps as u64;
         pending.model_rows += counts.sampled_policy_rows as u64;
+        pending.controller_bindings += counts.controller_bindings;
+        pending.controller_rebindings += counts.controller_rebindings;
+        pending.controller_retirements += counts.controller_retirements;
         pending.observation_nanos += counts.sampled_observation_build_nanos;
         pending.inference_nanos += counts.sampled_inference_and_validation_nanos;
         pending.dispatch_nanos += counts.sampled_world_dispatch_and_step_nanos;
@@ -320,6 +331,9 @@ impl NativeStatusSampler {
                 grouped_actor_rows: diff(
                     m.grouped_actor_rows, q.grouped_actor_rows,
                 )?,
+                controller_bindings: phases.controller_bindings,
+                controller_rebindings: phases.controller_rebindings,
+                controller_retirements: phases.controller_retirements,
                 last_model_generation: m.last_model_generation,
                 model_calls: diff(m.model_calls, q.model_calls)?,
                 model_backend_failures: diff(
