@@ -9,7 +9,7 @@
 //! Owners are stable entity/weapon IDs, never pooled object pointers. A dead
 //! target's record remains while holders exist so delayed release stays safe.
 
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{hash_map::Entry, BTreeMap, HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReservationError {
@@ -22,7 +22,7 @@ pub enum ReservationError {
     TotalOverflow,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DamageStatus {
     pub health: i32,
     pub total_reserved: i32,
@@ -34,7 +34,7 @@ impl DamageStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Reservation {
     pub side: i32,
     pub target_id: i64,
@@ -43,10 +43,32 @@ pub struct Reservation {
 
 /// Cumulative per-world work for syncing target health after real hits.
 /// A caller can compare snapshots without retaining per-hit history.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DamageReservationMeasurements {
     pub target_health_changes: u64,
     pub status_rows_refreshed: u64,
+}
+
+/// Exact deferred damage-credit ownership at the same fixed-tick boundary
+/// as the physics and projectile lifecycle. JSON maps cannot safely use
+/// tuple keys, so status rows are encoded in canonical target/side order;
+/// the authoritative holder and side-insertion order are preserved.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DamageReservationsCheckpoint {
+    schema_version: u32,
+    statuses: Vec<DamageReservationStatusRow>,
+    status_sides_by_target: BTreeMap<i64, Vec<i32>>,
+    holders: BTreeMap<i64, Reservation>,
+    measurements: DamageReservationMeasurements,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DamageReservationStatusRow {
+    side: i32,
+    target_id: i64,
+    status: DamageStatus,
 }
 
 #[derive(Clone, Default)]
@@ -62,6 +84,82 @@ pub struct DamageReservations {
 impl DamageReservations {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Snapshot the one original outgoing-damage reservation ledger.
+    /// No physics, enemy selection, or holder registration is recreated.
+    pub fn checkpoint(&self) -> DamageReservationsCheckpoint {
+        let mut statuses = self.statuses.iter().map(|(&(side, target_id), &status)|
+            DamageReservationStatusRow { side, target_id, status }
+        ).collect::<Vec<_>>();
+        statuses.sort_unstable_by_key(|row| (row.target_id, row.side));
+        DamageReservationsCheckpoint {
+            schema_version: 1,
+            statuses,
+            status_sides_by_target: self.status_sides_by_target.iter()
+                .map(|(&target, sides)| (target, sides.clone())).collect(),
+            holders: self.holders.iter()
+                .map(|(&owner, &reservation)| (owner, reservation)).collect(),
+            measurements: self.measurements,
+        }
+    }
+
+    /// Restore source weapon/bomb ownership and health counters only if
+    /// every recorded lease contributes EXACTLY to one target-side total.
+    /// Validation is off the hot path and must not modify the live ledger.
+    pub fn restore_checkpoint(
+        &mut self, checkpoint: DamageReservationsCheckpoint,
+    ) -> Result<(), &'static str> {
+        if checkpoint.schema_version != 1 {
+            return Err("invalid native damage reservation checkpoint version");
+        }
+        let mut statuses = HashMap::with_capacity(checkpoint.statuses.len());
+        for row in checkpoint.statuses {
+            if row.side <= 0 || row.target_id <= 0 ||
+                row.status.total_reserved < 0 ||
+                statuses.insert((row.side, row.target_id), row.status).is_some()
+            {
+                return Err("invalid or duplicate native damage status");
+            }
+        }
+        let mut index = HashMap::with_capacity(checkpoint.status_sides_by_target.len());
+        let mut indexed = HashSet::new();
+        for (target, sides) in checkpoint.status_sides_by_target {
+            let mut unique = HashSet::new();
+            if target <= 0 || sides.is_empty() || sides.iter().any(|&side|
+                side <= 0 || !unique.insert(side) ||
+                !statuses.contains_key(&(side, target)) ||
+                !indexed.insert((side, target)))
+            {
+                return Err("invalid native damage target-side index");
+            }
+            index.insert(target, sides);
+        }
+        if indexed.len() != statuses.len() {
+            return Err("native damage status index omits reservations");
+        }
+        let mut held_totals = HashMap::<(i32, i64), i32>::new();
+        for (&owner, lease) in &checkpoint.holders {
+            if owner <= 0 || lease.side <= 0 || lease.target_id <= 0 ||
+                lease.amount < 0 ||
+                !statuses.contains_key(&(lease.side, lease.target_id))
+            {
+                return Err("invalid native damage reservation holder");
+            }
+            let total = held_totals.entry((lease.side, lease.target_id)).or_insert(0);
+            *total = total.checked_add(lease.amount)
+                .ok_or("native damage reservation total overflow")?;
+        }
+        if statuses.iter().any(|(key, status)|
+            held_totals.get(key).copied().unwrap_or(0) != status.total_reserved
+        ) {
+            return Err("native damage reservation totals disagree with active holders");
+        }
+        self.statuses = statuses;
+        self.status_sides_by_target = index;
+        self.holders = checkpoint.holders.into_iter().collect();
+        self.measurements = checkpoint.measurements;
+        Ok(())
     }
 
     /// The status is created lazily, as in GameState.GetShipDamageStatus.
