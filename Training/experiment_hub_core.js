@@ -5380,23 +5380,19 @@ class ExperimentHub {
         if(!Array.isArray(expectedPins)||!expectedPins.length||
             !SHA256.test(String(original.frozen_parameters.optimizer_inputs_sha256||'')))
             throw Error('Failed optimizer group lacks exact source gameplay and optimizer pins.');
-        const candidateIds=new Map();
-        for(const job of snapshot.jobs.filter(job=>
-            job.project_id==='bees_native_collect'&&job.status==='finished'&&
-            job.capacity_released_at)) {
-            let pin;
-            try { pin=verifiedNativeCollectorPin(this,job.id).pin; }
-            catch { continue; }
-            const key=JSON.stringify(pin);
-            if(!candidateIds.has(key))candidateIds.set(key,[]);
-            candidateIds.get(key).push(job.id);
-        }
+        // Exact pinned collector job IDs were already frozen in each
+        // optimizer input. Reverify their authenticated artifact mirror
+        // directly; do not scan unrelated jobs or choose a "similar" model.
         const collectorIds=expectedPins.map(pin=>{
-            const matches=candidateIds.get(JSON.stringify(pin))||[];
-            if(matches.length!==1)
-                throw Error('Original native optimizer collector pin cannot be recovered uniquely from authenticated artifacts.');
-            return matches[0];
+            if(!object(pin)||!UUID.test(String(pin.job_id||''))||
+                !SHA256.test(String(pin.sha256||''))||
+                JSON.stringify(verifiedNativeCollectorPin(this,pin.job_id).pin)!==
+                    JSON.stringify(pin))
+                throw Error('Original native optimizer collector input no longer matches its issued physical artifact.');
+            return pin.job_id;
         });
+        if(new Set(collectorIds).size!==collectorIds.length)
+            throw Error('Original distributed optimizer duplicates an issued collector artifact.');
         const members=previous.map(job=>({
             configuration_id:job.configuration_id,
             expected_revision:job.configuration_revision,
