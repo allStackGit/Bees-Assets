@@ -308,14 +308,36 @@ def main():
             command.extend(["--learner-slot", str(orders["learner_slot"])])
         if args.stage_diagnostics:
             command.append("--stage-diagnostics")
-        print(json.dumps({
-            "kind": "native_distributed_collector_started",
-            "collector": job["id"], "round": orders["round"],
-            "output": str(output), "worlds": job["world_count"],
-            "rollout_workers": job["rollout_workers"],
-            "resuming": resume,
-        }), flush=True)
-        subprocess.run(command, check=True)
+        # A replacement Hub owner may inherit a fully committed local
+        # capture from the failed service, but publish it under its NEW job
+        # identity. Re-run neither gameplay nor the GPU learner when the
+        # existing exact work-order receipt already verifies. This must
+        # happen under the same exclusive collector attempt lease.
+        local_complete = (reusable_collection(
+            output / "rollout-bundle.json", job, orders,
+            args.leased_gpu_inference, args.leased_gpu_count,
+        ) if resume and inbox is not None else None)
+        if local_complete is not None:
+            from train_policy_round import deliver_bundle
+            previous = json.loads(
+                (output / "rollout-bundle.json").read_text(encoding="utf-8")
+            )
+            deliver_bundle(output, inbox, previous, delivered_name)
+            print(json.dumps({
+                "kind": "native_distributed_collector_republished",
+                "collector": job["id"], "round": orders["round"],
+                "bundle": str(inbox / delivered_name),
+                "prior_receipt_sha256": local_complete["sha256"],
+            }), flush=True)
+        else:
+            print(json.dumps({
+                "kind": "native_distributed_collector_started",
+                "collector": job["id"], "round": orders["round"],
+                "output": str(output), "worlds": job["world_count"],
+                "rollout_workers": job["rollout_workers"],
+                "resuming": resume,
+            }), flush=True)
+            subprocess.run(command, check=True)
         receipt_path = (
             output / "rollout-bundle.json" if inbox is None
             else inbox / delivered_name / "rollout-bundle.json"
