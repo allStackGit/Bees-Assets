@@ -575,15 +575,23 @@ async function syncNativeModels(job,adapter,endpoint,machineId,token) {
         fs.realpathSync(inbox)!==inbox||!fs.lstatSync(inbox).isDirectory())
         fail('Native model inbox directory was redirected.');
     const destination=path.join(inbox,sourceId);
-    if(fs.existsSync(destination)) {
-        if(!await verifyLocalModelPackage(destination,job.expected_parent_model_sha256))
-            fail('Existing native model package differs from its original source checkpoint.');
-        return {models:1};
-    }
+    // Always fetch the small, authenticated source manifest before accepting
+    // a cached model package. Checkpoint SHA alone does not identify the
+    // frozen opponents or model routing in a previously staged manifest.
+    // This retains the expensive checkpoint bytes on the destination machine
+    // when the complete manifest and every dependency are unchanged.
     const stage=fs.mkdtempSync(path.join(inbox,'.native-model-'));
     try {
-        await downloadFile(endpoint,machineId,token,job.id,sourceId,
+        const manifestSha=await downloadFile(endpoint,machineId,token,job.id,sourceId,
             'learner/manifest.json',null,stage,'model');
+        if(fs.existsSync(destination)) {
+            const cached=path.join(destination,'learner','manifest.json');
+            if(!fs.existsSync(cached)||regular(cached).size>1024*1024||
+                await fileDigest(cached)!==manifestSha||
+                !await verifyLocalModelPackage(destination,job.expected_parent_model_sha256))
+                fail('Existing native model package differs from its authenticated source manifest.');
+            return {models:1};
+        }
         const document=JSON.parse(fs.readFileSync(
             path.join(stage,'learner','manifest.json'),'utf8'));
         const dependencies=modelDependencies(document,job.expected_parent_model_sha256);
