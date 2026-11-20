@@ -244,6 +244,13 @@ pub struct NativePolicyOnlyMetadata {
 pub struct NativePolicySourceLedgerCheckpoint {
     schema_version: u32,
     fleet: crate::fleet_inventory::NativeFleetInventoryCheckpoint,
+    authored_ships: HashMap<i64, AuthoredShipPerception>,
+    effective_vision: HashMap<i64, NativeSourceVision>,
+    agents: HashMap<i64, AuthoredPolicyAgent>,
+    policy_side_representative: HashMap<i32, i64>,
+    dynamic_policy_ships: HashSet<i64>,
+    retired_dynamic_pending: Vec<i64>,
+    next_dynamic_group_agent_id: u64,
     exploration: BTreeMap<i32, TeamExplorationGrid>,
     scripted_queues: Vec<scripted::NativeScriptedQueueState>,
     scripted_counts: NativeScriptedQueueMeasurements,
@@ -259,6 +266,7 @@ pub struct NativePolicySourceLedgerCheckpoint {
 pub enum NativePolicySourceLedgerRestoreError {
     InvalidVersion,
     InvalidSide,
+    InvalidPolicyAgents,
     InvalidScriptedState,
     InvalidTimer,
     Fleet(crate::fleet_inventory::NativeFleetRestoreError),
@@ -266,6 +274,13 @@ pub enum NativePolicySourceLedgerRestoreError {
 
 pub struct NativePolicySourceLedgerPrepared {
     fleet: NativeFleetInventory,
+    authored_ships: HashMap<i64, AuthoredShipPerception>,
+    effective_vision: HashMap<i64, NativeSourceVision>,
+    agents: HashMap<i64, AuthoredPolicyAgent>,
+    policy_side_representative: HashMap<i32, i64>,
+    dynamic_policy_ships: HashSet<i64>,
+    retired_dynamic_pending: Vec<i64>,
+    next_dynamic_group_agent_id: u64,
     exploration: BTreeMap<i32, TeamExplorationGrid>,
     scripted_queues: Vec<scripted::NativeScriptedQueueState>,
     scripted_counts: NativeScriptedQueueMeasurements,
@@ -284,6 +299,13 @@ impl NativePolicyOnlyMetadata {
         NativePolicySourceLedgerCheckpoint {
             schema_version: 1,
             fleet: self.fleet.checkpoint(),
+            authored_ships: self.authored_ships.clone(),
+            effective_vision: self.effective_vision.clone(),
+            agents: self.agents.clone(),
+            policy_side_representative: self.policy_side_representative.clone(),
+            dynamic_policy_ships: self.dynamic_policy_ships.clone(),
+            retired_dynamic_pending: self.retired_dynamic_pending.clone(),
+            next_dynamic_group_agent_id: self.next_dynamic_group_agent_id,
             exploration: self.sides.iter().map(|(&side, value)|
                 (side, value.exploration.clone())
             ).collect(),
@@ -312,6 +334,59 @@ impl NativePolicyOnlyMetadata {
             ) {
             return Err(Error::InvalidSide);
         }
+        if self.authored_ships.keys().any(|id|
+            !saved.authored_ships.contains_key(id)
+        ) || self.agents.keys().any(|id|
+            !saved.agents.contains_key(id)
+        ) || self.effective_vision.keys().any(|id|
+            !saved.effective_vision.contains_key(id)
+        ) || saved.authored_ships.iter().any(|(&id, source)|
+            id <= 0 || !source.valid()
+        ) || saved.effective_vision.len() != saved.authored_ships.len() ||
+            saved.effective_vision.iter().any(|(&id, vision)|
+                !saved.authored_ships.contains_key(&id) ||
+                vision.source_sight.is_some_and(|sight| sight < 0) ||
+                vision.effective_range < 0 || vision.trigger_range < 0 ||
+                vision.fog_radius.is_some_and(|radius|
+                    !radius.is_finite() || radius < 0.0
+                ) || vision.enabled && (!vision.registered || vision.trigger_range == 0)
+            ) {
+            return Err(Error::InvalidPolicyAgents);
+        }
+        let mut group_ids = HashSet::new();
+        if saved.next_dynamic_group_agent_id == 0 ||
+            saved.agents.iter().any(|(&id, agent)|
+                id != agent.ship_id || id <= 0 || agent.side <= 0 ||
+                !saved.authored_ships.contains_key(&id) ||
+                !self.sides.contains_key(&agent.side) ||
+                agent.route.team_id > 1 ||
+                !agent.controller.effective_vision_range.is_finite() ||
+                agent.controller.effective_vision_range < 0.0 ||
+                [
+                    agent.capability.special_resource_fraction,
+                    agent.capability.special_cooldown_fraction,
+                    agent.capability.special_phase,
+                ].iter().any(|v| !v.is_finite()) ||
+                agent.capability.ship_mined_tsv < 0 ||
+                agent.capability.team_retainable_mined_tsv < 0 ||
+                agent.capability.side_starting_tsv < 0 ||
+                agent.source_group_agent_id.is_some_and(|value|
+                    value == 0 || value >= saved.next_dynamic_group_agent_id ||
+                    !group_ids.insert(value)
+                ) ||
+                agent.parent_carrier_id.is_some_and(|value|
+                    !saved.authored_ships.contains_key(&value)
+                )
+            ) || saved.dynamic_policy_ships.iter().any(|id|
+                !saved.agents.contains_key(id)
+            ) || saved.retired_dynamic_pending.iter().any(|id|
+                !saved.dynamic_policy_ships.contains(id)
+            ) || saved.policy_side_representative.iter().any(|(&side, &id)|
+                !saved.agents.get(&id).is_some_and(|agent| agent.side == side)
+            )
+        {
+            return Err(Error::InvalidPolicyAgents);
+        }
         let known_queues = self.scripted_queues.iter().map(|queue|
             queue.owner
         ).collect::<HashSet<_>>();
@@ -331,8 +406,18 @@ impl NativePolicyOnlyMetadata {
             return Err(Error::InvalidTimer);
         }
         let fleet = self.fleet.prepare_restore(saved.fleet).map_err(Error::Fleet)?;
+        if saved.authored_ships.keys().any(|id| fleet.get(*id).is_none()) {
+            return Err(Error::InvalidPolicyAgents);
+        }
         Ok(NativePolicySourceLedgerPrepared {
             fleet,
+            authored_ships: saved.authored_ships,
+            effective_vision: saved.effective_vision,
+            agents: saved.agents,
+            policy_side_representative: saved.policy_side_representative,
+            dynamic_policy_ships: saved.dynamic_policy_ships,
+            retired_dynamic_pending: saved.retired_dynamic_pending,
+            next_dynamic_group_agent_id: saved.next_dynamic_group_agent_id,
             exploration: saved.exploration,
             scripted_queues: saved.scripted_queues,
             scripted_counts: saved.scripted_counts,
@@ -349,6 +434,13 @@ impl NativePolicyOnlyMetadata {
         &mut self, staged: NativePolicySourceLedgerPrepared,
     ) {
         self.fleet = staged.fleet;
+        self.authored_ships = staged.authored_ships;
+        self.effective_vision = staged.effective_vision;
+        self.agents = staged.agents;
+        self.policy_side_representative = staged.policy_side_representative;
+        self.dynamic_policy_ships = staged.dynamic_policy_ships;
+        self.retired_dynamic_pending = staged.retired_dynamic_pending;
+        self.next_dynamic_group_agent_id = staged.next_dynamic_group_agent_id;
         for (side, saved) in staged.exploration {
             self.sides.get_mut(&side)
                 .expect("validated authored side").exploration = saved;
