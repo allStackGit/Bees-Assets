@@ -256,6 +256,10 @@ if [[ "$MODE" == repair-updater ]]; then
     [[ -f "$BOOTSTRAP" ]] ||
         { echo "Authenticated worker release lacks its stable bootstrap." >&2; exit 1; }
     node --check "$BOOTSTRAP"
+    APPROVED_UPDATER="$RELEASE/Training/experiment_hub_worker_updater.js"
+    [[ -f "$APPROVED_UPDATER" ]] ||
+        { echo "Authenticated worker release lacks its infrastructure updater." >&2; exit 1; }
+    node --check "$APPROVED_UPDATER"
     UPDATER_DIR="$ROOT/Update"
     mkdir -p "$UPDATER_DIR"
     STABLE="$UPDATER_DIR/experiment_hub_worker_update_bootstrap.js"
@@ -265,6 +269,12 @@ if [[ "$MODE" == repair-updater ]]; then
     else
         install -m 600 "$BOOTSTRAP" "$STABLE"
     fi
+    # Replace the old fallback with already authenticated, syntax-checked
+    # worker code. Future releases are versioned by the immutable bootstrap.
+    FALLBACK="$UPDATER_DIR/experiment_hub_worker_updater.js"
+    TEMP="$UPDATER_DIR/.updater-fallback-$$.js"
+    install -m 600 "$APPROVED_UPDATER" "$TEMP"
+    mv -f -- "$TEMP" "$FALLBACK"
     UNIT="$HOME/.config/systemd/user/bees-experiment-hub-worker-update.service"
     [[ -f "$UNIT" ]] ||
         { echo "Existing update unit missing; no agent change." >&2; exit 1; }
