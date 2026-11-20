@@ -52,6 +52,15 @@ class NativeHubCollectionBarrier:
 
     def __init__(self, port, dispatched, orders):
         self.port = port
+        self.bundle_id = dispatched.get("bundle_id")
+        reported_ids = dispatched.get("member_job_ids")
+        if (not isinstance(self.bundle_id, str) or
+                re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
+                             self.bundle_id) is None or
+                not isinstance(reported_ids, list) or
+                len(reported_ids) != len(orders["jobs"]) or
+                len(set(reported_ids)) != len(reported_ids)):
+            raise ValueError("Hub dispatch did not identify one immutable native resource bundle")
         jobs = {job["id"]: job for job in orders["jobs"]}
         reported = dispatched.get("collectors")
         if not isinstance(reported, list) or len(reported) != len(jobs):
@@ -68,6 +77,8 @@ class NativeHubCollectionBarrier:
                                  hub_job) is None or
                     not isinstance(machine, str) or not machine):
                 raise ValueError("Hub returned a malformed or duplicate native collector")
+            if hub_job not in reported_ids:
+                raise ValueError("Hub collector is not a member of the issued resource bundle")
             self.members[name] = (hub_job, machine, jobs[name]["collection_id"])
         self.last_checked = float("-inf")
         self.checks = 0
@@ -131,20 +142,24 @@ class NativeHubCollectionBarrier:
                     f"native collector {collector} on {machine} ({job_id}) "
                     f"{detail}: {reason}"
                 )
-        # If the coordinated Start becomes review-required, no additional
-        # collector can safely be launched under this approval.
+        # Hub decisions are append-only. Use only the latest decision for
+        # this exact issued resource bundle: a later explicit reauthorization
+        # supersedes an older disarm, but a later cancellation cannot be
+        # overridden by finding an earlier authorized entry.
         plans = snapshot.get("bundle_start_plans") or []
-        active_ids = {self.members[name][0] for name in missing}
-        for plan in plans:
-            if not isinstance(plan, dict):
-                continue
-            ids = plan.get("member_job_ids")
-            if (isinstance(ids, list) and active_ids.intersection(ids) and
-                    plan.get("status") in (
-                        "needs_review", "disarmed", "expired", "cancelled")):
+        if not isinstance(plans, list):
+            raise ValueError("Hub returned an invalid native Start decision history")
+        relevant = [
+            plan for plan in plans
+            if isinstance(plan, dict) and plan.get("bundle_id") == self.bundle_id
+        ]
+        if relevant:
+            current = relevant[-1]
+            if current.get("status") in (
+                    "needs_review", "disarmed", "expired", "cancelled"):
                 raise RuntimeError(
                     f"native Hub collection Start requires review: "
-                    f"{str(plan.get('reason') or plan['status'])[:240]}"
+                    f"{str(current.get('reason') or current['status'])[:240]}"
                 )
 
 
