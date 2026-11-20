@@ -148,6 +148,7 @@ function journalActive(root) {
 }
 function validRelease(entry,name) {
     if(!entry||entry.component!==name||!SHA.test(entry.version||'')||
+        typeof entry.activation_ready!=='boolean'||
         !HASH.test(entry.sha256||'')||!Number.isSafeInteger(entry.bytes)||
         entry.bytes<1||entry.bytes>MAX)
         throw Error('Invalid approved release version for '+name);
@@ -487,12 +488,17 @@ async function main(argv=process.argv.slice(2)) {
                 continue;
             }
             const directory=await stage(base,env,root,name,entry);
-            plan[name]={directory,entry};
             dirty=true;
             await status(base,env,entry,'staged');
+            if(!entry.activation_ready) {
+                await status(base,env,entry,'waiting',
+                    'Coordinator has not yet activated matching learner/worker source.');
+                continue;
+            }
+            plan[name]={directory,entry};
         }
         if(baselineSaved)save(activeFile,JSON.stringify(active,null,2)+'\n');
-        if(!dirty)return;
+        if(!dirty||!Object.keys(plan).length)return;
         let busy;
         try{busy=journalActive(root)||manifest.pending_native_jobs.length>0;}catch(error) {
             for(const item of Object.values(plan))
