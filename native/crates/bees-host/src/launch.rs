@@ -378,6 +378,7 @@ struct NativeBattleRecoveryCursor {
     counted_revisions: Vec<Option<u64>>,
     next_model_update: usize,
     network_schedule: Option<NativeSourceCommandSchedulerCheckpoint>,
+    network_game_id: Option<i64>,
     segment_start_round: u64,
     segment_baseline: NativeDiagnosticMeasurements,
     segment_generation: u64,
@@ -943,6 +944,7 @@ struct RunNetwork {
     worker: NativeSocketWorker,
     levels: Vec<i32>,
     next_level: usize,
+    server_game_id: Option<i64>,
     user_id: u64,
     version: f32,
     auth_ticket: Option<String>,
@@ -956,9 +958,15 @@ struct RunNetwork {
 
 impl RunNetwork {
     fn start(config: &HiveMindConfig, levels: &[LevelConfig], fixed_dt_by_level: &[f32],
-        connection: &mut DurableHiveMindConnection)
-        -> io::Result<Self>
+        connection: &mut DurableHiveMindConnection, recovered_game_id: Option<i64>,
+    ) -> io::Result<Self>
     {
+        if config.reconnect_game_id.is_some() && recovered_game_id.is_some() &&
+            config.reconnect_game_id != recovered_game_id
+        {
+            return Err(invalid("recovered HiveMind Game ID conflicts with configured reconnection"));
+        }
+        let game_id = recovered_game_id.or(config.reconnect_game_id);
         let auth_ticket = config.auth_ticket_env.as_ref().map(|name|
             env::var(name).map_err(|_| invalid("configured HiveMind auth ticket environment variable is unavailable")))
             .transpose()?;
@@ -971,14 +979,15 @@ impl RunNetwork {
         let mut network = Self {
             worker: NativeSocketWorker::start(config.endpoint.clone(), config.allow_insecure_loopback)
                 .map_err(|error| contextual("HiveMind network startup", error))?,
-            levels, next_level: 0, user_id: config.user_id, version: config.version,
+            levels, next_level: 0, server_game_id: game_id,
+            user_id: config.user_id, version: config.version,
             auth_ticket, flush_seconds: config.shutdown_flush_seconds,
             issue_source_commands: config.issue_source_commands,
             scheduler, recorded_network_events: 0,
             recorded_network_syncs: 0,
             recorded_network_sync_wall_seconds: 0.0,
         };
-        let (kind, server_game_id) = config.reconnect_game_id
+        let (kind, server_game_id) = game_id
             .map_or((SetupKind::Initial, 0), |game| (SetupKind::Reconnect, game));
         network.setup_next(connection, kind, server_game_id)?;
         Ok(network)
@@ -1043,6 +1052,10 @@ impl RunNetwork {
             } else { None };
             match event {
                 NativeHostSocketEvent::SetupAccepted { request_hash, server_game_id } => {
+                    if self.server_game_id.is_some_and(|old| old != server_game_id) {
+                        return Err(invalid("HiveMind reconnect acknowledged a different server Game"));
+                    }
+                    self.server_game_id = Some(server_game_id);
                     println!("{}", json!({"kind": "hivemind_setup", "request_hash": request_hash,
                         "game_id": server_game_id, "level_id": self.levels[self.next_level]}));
                     self.next_level += 1;
@@ -4589,7 +4602,11 @@ fn run_battle(
             cursor.counted_revisions.len() != config.levels.len() ||
             cursor.completed_episodes.iter().any(|&count| count > config.episodes_per_world) ||
             cursor.next_squad_item_id < next_id.load(Ordering::Relaxed) ||
-            config.hivemind.as_ref().is_some_and(|net| net.reconnect_game_id.is_none())
+            cursor.network_schedule.is_some() != config.hivemind.is_some() ||
+            cursor.network_game_id.is_some() != config.hivemind.is_some() ||
+            config.hivemind.as_ref().is_some_and(|net|
+                net.reconnect_game_id.is_some() &&
+                net.reconnect_game_id != cursor.network_game_id)
         {
             return Err(invalid("native launcher cursor does not match the authored run or recoverable network ownership").into());
         }
@@ -4784,6 +4801,7 @@ fn run_battle(
         .filter(|_| playback.is_none())
         .map(|settings| RunNetwork::start(
             settings, &config.levels, &source_fixed_dt_by_level, host.connection_mut(),
+            resume_cursor.as_ref().and_then(|cursor| cursor.network_game_id),
         )).transpose()?;
     if let Some(cursor) = &resume_cursor {
         match (network.as_mut(), cursor.network_schedule.as_ref()) {
@@ -4984,6 +5002,8 @@ fn run_battle(
     'battle: loop {
         if host_checkpoint_file.is_some() &&
             checkpointed_round != Some(rounds) &&
+            network.as_ref().is_none_or(|session| session.server_game_id.is_some() &&
+                session.next_level == session.levels.len()) &&
             host.connection_mut().connection().pending_request_count() == 0
         {
             if let Some(file) = &host_checkpoint_file {
@@ -5002,6 +5022,7 @@ fn run_battle(
                 next_model_update,
                 network_schedule: network.as_ref().map(|network|
                     network.scheduler.recovery_checkpoint()),
+                network_game_id: network.as_ref().and_then(|network| network.server_game_id),
                 segment_start_round,
                 segment_baseline: segment_baseline.clone(),
                 segment_generation,
