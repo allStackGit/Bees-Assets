@@ -890,17 +890,33 @@ def main():
         token = remote_token(args.side)
     except ValueError as error:
         parser.error(str(error))
-    connection = socket.create_connection((args.host, args.port), timeout=10)
-    connection.settimeout(None)
+    def connect(expected_session_id=None):
+        # The new TCP peer is always freshly authenticated; only the
+        # original checkpointed host session may resume the old battle.
+        connection = socket.create_connection((args.host, args.port), timeout=10)
+        connection.settimeout(None)
+        try:
+            console = RemoteConsole(
+                connection, silent=True, expected_side=args.side,
+                expected_session_id=expected_session_id,
+            )
+            connection.sendall(
+                (json.dumps({"kind": "hello", "token": token}) + "\n").encode("utf-8")
+            )
+            threading.Thread(target=console.receive, daemon=True).start()
+            return connection, console
+        except BaseException:
+            connection.close()
+            raise
+
+    connection, console = connect()
+    window = None
     try:
-        console = RemoteConsole(connection, silent=True, expected_side=args.side)
-        connection.sendall((json.dumps({"kind": "hello", "token": token}) + "\n").encode("utf-8"))
-        threading.Thread(target=console.receive, daemon=True).start()
         root = tk.Tk()
-        RemoteBattleWindow(root, console, connection)
+        window = RemoteBattleWindow(root, console, connection, reconnect=connect)
         root.mainloop()
     finally:
-        connection.close()
+        (window.connection if window is not None else connection).close()
 
 
 if __name__ == "__main__":
