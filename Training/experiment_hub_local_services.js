@@ -2,6 +2,8 @@
 
 // Local-only administrative actions. User systemd owns both processes; the
 // coordinator may request a restart but must never be its own relauncher.
+const fs=require('node:fs');
+const os=require('node:os');
 const path=require('node:path');
 const {execFile,spawn}=require('node:child_process');
 const {promisify}=require('node:util');
@@ -25,6 +27,42 @@ function reject(message,status=409) {
 }
 function activeJobs(hub) {
     return hub.snapshot().jobs.filter(job=>BUSY.has(job.status));
+}
+const MACHINE_ID=/^[a-z][a-z0-9_-]{0,47}$/;
+// Only narrow the restart barrier to local jobs when the installed agent's
+// actual EnvironmentFile matches its private enrollment. Unknown or unusual
+// service configurations retain the conservative all-machine barrier.
+async function enrolledLocalAgentMachine(hub) {
+    if(process.platform!=='linux')return null;
+    const file=path.join(os.homedir(),'.config/experiment-hub/agent.env');
+    try {
+        const {stdout}=await run(SYSTEMCTL,['--user','show',UNITS.agent,
+            '--property=EnvironmentFiles'],{timeout:5000,maxBuffer:4096});
+        if(stdout.trim()!=='EnvironmentFiles='+file+' (ignore_errors=no)')
+            return null;
+        const stat=fs.lstatSync(file);
+        if(!stat.isFile()||stat.isSymbolicLink()||
+            stat.uid!==process.getuid()||(stat.mode&0o077)!==0)
+            return null;
+        const ids=fs.readFileSync(file,'utf8').split(/\r?\n/)
+            .filter(line=>line.startsWith('EXPERIMENT_HUB_MACHINE_ID='));
+        if(ids.length!==1)return null;
+        const id=ids[0].slice('EXPERIMENT_HUB_MACHINE_ID='.length)
+            .trim().replace(/^['"]|['"]$/g,'');
+        if(!MACHINE_ID.test(id)||
+            !hub.snapshot().machines.some(machine=>machine.id===id))
+            return null;
+        return id;
+    }catch {return null;}
+}
+async function restartActivity(hub,kind) {
+    const jobs=activeJobs(hub);
+    if(kind!=='agent')return {count:jobs.length,scope:'all'};
+    const machine=await enrolledLocalAgentMachine(hub);
+    return machine
+        ?{count:jobs.filter(job=>job.assigned_machine_id===machine).length,
+            scope:'local'}
+        :{count:jobs.length,scope:'all'};
 }
 async function unitStatus(kind,{runCommand=run,platform=process.platform,
     pid=process.pid}={}) {
@@ -72,7 +110,10 @@ async function status(hub) {
     const [coordinator,agent]=await Promise.all([
         unitStatus('coordinator'),unitStatus('agent'),
     ]);
+    const agentActivity=await restartActivity(hub,'agent');
     return {coordinator,agent,active_jobs:activeJobs(hub).length,
+        agent_active_jobs:agentActivity.count,
+        agent_restart_scope:agentActivity.scope,
         evaluators:{available:tinybrains.available||courier.available,
             tinybrains_available:tinybrains.available,
             tinybrains_reason:tinybrains.reason||null,
@@ -83,8 +124,11 @@ async function status(hub) {
 }
 async function scheduleRestart(kind,hub,res) {
     if(!Object.hasOwn(UNITS,kind))reject('Unknown local service.',400);
-    if(activeJobs(hub).length)
-        reject('Restart refused: native jobs are active or unverified. Stop or reconcile them first.');
+    const activity=await restartActivity(hub,kind);
+    if(activity.count)
+        reject(kind==='agent'&&activity.scope==='local'
+            ?'Restart refused: local native jobs are active or unverified. Stop or reconcile them first.'
+            :'Restart refused: native jobs are active or unverified. Stop or reconcile them first.');
     const service=await unitStatus(kind);
     if(!service.managed)reject(service.reason||'Service is not managed by user systemd.');
     // Deliver the acknowledgement before stopping the HTTP server itself.
