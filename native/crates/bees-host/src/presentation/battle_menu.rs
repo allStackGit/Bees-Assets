@@ -445,11 +445,11 @@ fn select_battle_inner(
                         NativeSquadColorSetting::Custom(rgb) =>
                             format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]),
                     };
-                    format!("{} | {} | Chase {} | Fire {} | Speed {} | RGB {} | Form {}:{}",
+                    format!("Form {}:{} | {} | {} | Chase {} | Fire {} | Speed {} | RGB {}",
+                        formation.label(), formation.max_width,
                         row.title, name, if chase { "on" } else { "off" },
                         if cease { "hold" } else { "auto" },
-                        if match_speed { "matched" } else { "normal" }, color,
-                        formation.label(), formation.max_width)
+                        if match_speed { "matched" } else { "normal" }, color)
                 } else { String::new() };
                 let title = text::fit(if show_tactics { &tactical_label } else { label }, 560);
                 text::draw_centered(&mut pixels, WIDTH, top + 8, &title, 1,
