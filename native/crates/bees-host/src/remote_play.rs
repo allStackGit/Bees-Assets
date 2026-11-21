@@ -49,6 +49,9 @@ const MAX_PENDING_AUDIO_EVENTS: usize = 32;
 enum WireInput {
     Hello { token: String, #[serde(default)] resume_session_id: Option<String> },
     Input { request_id: u64, action: NativePlayerInput },
+    /// Replaceable presentation interest, not a physical World input.
+    WeaponOverlay { request_id: u64, world_id: u64,
+        episode_revision: u64, squads: Vec<SquadLifetime> },
     /// UI acknowledgment only, without an alternative gameplay clock.
     BriefingReady { request_id: u64, world_id: u64,
         episode_revision: u64, sequence: u8 },
@@ -99,6 +102,7 @@ struct Peer {
     socket: TcpStream,
     side: Option<i32>,
     last_request_id: u64,
+    weapon_overlay: Option<(u64, u64, Vec<SquadLifetime>)>,
     incoming: Vec<u8>,
     // At most one frame is on the socket. Reliable replies queue separately
     // and are never discarded, while stale unsent state is replaceable.
@@ -282,6 +286,14 @@ pub struct RemotePlayMeasurements {
     pub snapshot_projection_wall_seconds: f64,
     #[serde(default)]
     pub weapon_status_slots_projected: u64,
+    #[serde(default)]
+    pub weapon_overlay_requests: u64,
+    #[serde(default)]
+    pub weapon_overlay_geometry_queries: u64,
+    #[serde(default)]
+    pub weapon_overlay_visible_contacts: u64,
+    #[serde(default)]
+    pub weapon_overlay_obstructed_contacts: u64,
     #[serde(default)]
     pub command_target_markers_projected: u64,
     /// Includes only enqueue and nonblocking write attempts made during
@@ -693,6 +705,7 @@ impl NativeRemotePlay {
             self.measurements.connections_accepted += 1;
             self.peers.push(Peer {
                 id, socket, side: None, last_request_id: 0, incoming: Vec::new(),
+                weapon_overlay: None,
                 outgoing: Vec::new(), written: 0, writing_state: false,
                 reliable: VecDeque::new(), reliable_bytes: 0,
                 newest_state: None, input_replies: VecDeque::new(),
@@ -855,6 +868,22 @@ impl NativeRemotePlay {
                                 "Campaign briefing acknowledged"
                             } else { "Stale or unauthorized campaign briefing" },
                         }));
+                    }
+                    Ok(WireInput::WeaponOverlay { request_id, world_id: claimed_world,
+                        episode_revision: claimed_revision, squads }) if peer.side.is_some() => {
+                        if request_id <= peer.last_request_id ||
+                            peer_orders >= MAX_ORDERS_PER_PEER_POLL {
+                            peer.closed = true;
+                            break;
+                        }
+                        peer.last_request_id = request_id;
+                        peer_orders += 1;
+                        if claimed_world == world_id.0 && claimed_revision == revision {
+                            // Ownership is checked against the live roster at
+                            // projection, not against client assertions.
+                            peer.weapon_overlay = Some((claimed_world, claimed_revision, squads));
+                            self.measurements.weapon_overlay_requests += 1;
+                        }
                     }
                     Ok(WireInput::Input { request_id, mut action }) if peer.side.is_some() => {
                         // No delayed/doubled request may reissue a movement
@@ -1149,6 +1178,19 @@ impl NativeRemotePlay {
         let briefing_paused=view.tick==0 && view.terminal_result.is_none() &&
             view.campaign_dialogue.is_some_and(|(_,cue)|cue.is_briefing());
         let requires_briefing_ack=self.dedicated_briefing_gate && briefing_paused;
+        // Cooperative peers share one encoded side snapshot. Union only
+        // currently requested, authorized squad lifetimes; no per-peer
+        // collision pass and no retained gameplay state.
+        let mut overlay_by_side = HashMap::<i32, HashSet<SquadLifetime>>::new();
+        for peer in self.peers.iter().filter(|peer| !peer.closed) {
+            let Some(side) = peer.side else { continue };
+            let Some((world, revision, squads)) = &peer.weapon_overlay else { continue };
+            if (*world, *revision) != episode { continue; }
+            overlay_by_side.entry(side).or_default().extend(squads.iter().copied()
+                .filter(|&owner| owns_player_side(view, owner, side) &&
+                    view.player_authority.player_permissions(owner)
+                        .is_some_and(|permission| permission.can_accept_input)));
+        }
         let mut snapshots = HashMap::<i32, Vec<u8>>::new();
         let measurements = &mut self.measurements;
         for peer in &mut self.peers {
@@ -1161,7 +1203,7 @@ impl NativeRemotePlay {
                     vision.get(&side).expect("authenticated side has sight"),
                     briefing_paused,
                     requires_briefing_ack && view.campaign_dialogue_side==Some(side),
-                    measurements,
+                    overlay_by_side.get(&side), measurements,
                 )).unwrap_or_default();
                 measurements.snapshot_projection_wall_seconds +=
                     started.elapsed().as_secs_f64();
@@ -1679,18 +1721,25 @@ fn current_state(
     view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32,
     music_location: Option<NativeMusicLocation>, audio_events: &[Value],
     sources: &RemoteFogSources, briefing_paused: bool,
-    requires_briefing_ack: bool, measurements: &mut RemotePlayMeasurements,
+    requires_briefing_ack: bool, overlay_squads: Option<&HashSet<SquadLifetime>>,
+    measurements: &mut RemotePlayMeasurements,
 ) -> Value {
     let viewer = Some(side);
     let fog = view.player_authority.player_fog_of_war_enabled();
-    let mut visible_ids = HashSet::<i64>::new();
+    // Build visibility once, before projecting weapon contacts. The
+    // contact cache may reference a ship later in render order.
+    let visible_ids: HashSet<i64> = view.combat.render_ships()
+        .filter(|(ship, body)| !fog ||
+            view.roster.owning_squad(ship.entity_id)
+                .is_some_and(|owner| owns_player_side(view, owner, side)) ||
+            sources.covers(body.motion.position, measurements))
+        .map(|(ship, _)| ship.entity_id).collect();
     let ships: Vec<_> = view.combat.render_ships().filter_map(|(ship, body)| {
-        let owned = view.roster.owning_squad(ship.entity_id)
-            .is_some_and(|owner| owns_player_side(view, owner, side));
-        let visible = owned || !fog ||
-            sources.covers(body.motion.position, measurements);
-        if !visible { return None; }
-        visible_ids.insert(ship.entity_id);
+        if !visible_ids.contains(&ship.entity_id) { return None; }
+        let owner = view.roster.owning_squad(ship.entity_id);
+        let owned = owner.is_some_and(|owner| owns_player_side(view, owner, side));
+        let overlay = owned && owner.is_some_and(|owner|
+            overlay_squads.is_some_and(|squads| squads.contains(&owner)));
         let discovered = viewer.is_some_and(|side|
             view.combat.discovery().has(side, DiscoveryKind::Ship, ship.entity_id));
         // Presentation status is emitted only for already-visible ships;
@@ -1718,6 +1767,33 @@ fn current_state(
                 let aim = view.combat.weapon_automatic_status(ship.entity_id, slot)
                     .ok().flatten().and_then(|status| status.asteroid_aim_point)
                     .filter(|&point| !fog || sources.covers(point, measurements));
+                // Use the post-physics indexed contacts, exactly as the
+                // local overlay. Do not query hidden targets or scan fleets.
+                let mut lines = Vec::new();
+                if overlay && range.is_some_and(|range| range.enabled) {
+                    if let (Some(has_obstacles), Ok(Some(contacts))) =
+                        (view.player_authority.weapon_obstacles_enabled(),
+                            view.combat.weapon_range_contacts(ship.entity_id, slot))
+                    {
+                        for &target_id in contacts.ship_ids {
+                            if !visible_ids.contains(&target_id) { continue; }
+                            measurements.weapon_overlay_geometry_queries += 1;
+                            let Ok(Some(geometry)) = view.combat.query_weapon_target_geometry(
+                                ship.entity_id, slot, target_id, view.collision_matrix, has_obstacles)
+                            else { continue };
+                            if !geometry.enemy_hull_overlaps_range { continue; }
+                            let point = geometry.closest_hull_point;
+                            if fog && !sources.covers(point, measurements) { continue; }
+                            let target_aim = view.combat.weapon_target_point(ship.entity_id, slot, target_id)
+                                .ok().filter(|&point| !fog || sources.covers(point, measurements));
+                            lines.push(json!([point.x, point.y, geometry.line_obstructed,
+                                target_aim.map(|aim| [aim.x, aim.y])]));
+                            measurements.weapon_overlay_visible_contacts += 1;
+                            measurements.weapon_overlay_obstructed_contacts +=
+                                u64::from(geometry.line_obstructed);
+                        }
+                    }
+                }
                 measurements.weapon_status_slots_projected += 1;
                 Some(json!({
                     "slot": slot,
@@ -1729,6 +1805,9 @@ fn current_state(
                         json!(charge.elapsed_seconds), json!(charge.event_seconds), json!(charge.paused),
                     ]),
                     "aim": aim.map(|point| [point.x, point.y]),
+                    "origin": range.filter(|_| !lines.is_empty())
+                        .map(|range| [range.origin.x, range.origin.y]),
+                    "contacts": lines,
                 }))
             }).collect()
         } else { Vec::new() };

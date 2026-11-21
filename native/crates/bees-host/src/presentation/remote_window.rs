@@ -96,6 +96,8 @@ struct WireCounts {
     weapon_range_draws: u64,
     weapon_charge_draws: u64,
     weapon_aim_draws: u64,
+    weapon_contact_draws: u64,
+    weapon_obstructed_contact_draws: u64,
     command_target_draws: u64,
     striker_bomb_indicator_draws: u64,
     tactical_button_clicks: u64,
@@ -1455,7 +1457,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     held_fire_active: bool, shooting_menu: bool, shooting_focus: u8,
     visual: &RemoteVisual, fraction: f32,
     artwork: &RemoteArtwork, show_art: bool, show_weapon_ranges: bool,
-    combat_hud_draws: &mut [u64; 5], obstacle_hull_draws: &mut u64,
+    combat_hud_draws: &mut [u64; 7], obstacle_hull_draws: &mut u64,
     minimap_ship_markers: &mut u64, minimap_objective_markers: &mut u64,
     fog_masked_pixels: &mut u64) {
     // F6 avoids allocating or clearing a second per-frame art layer,
@@ -1606,6 +1608,27 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                                 RemotePrimaryHull::Circle {center:range_center,radius}
                                     .draw(pixels,camera,if enabled {0x355b80} else {0x555555});
                                 combat_hud_draws[0]+=1;
+                            }
+                        }
+                    }
+                    if let Some(origin)=point_from_wire(&weapon["origin"]) {
+                        let origin=screen(camera,origin);
+                        for contact in weapon["contacts"].as_array().into_iter().flatten() {
+                            let Some(fields)=contact.as_array().filter(|fields|fields.len()==4) else {continue};
+                            let (Some(x),Some(y),Some(blocked))=
+                                (fields[0].as_f64(),fields[1].as_f64(),fields[2].as_bool())
+                            else {continue};
+                            let endpoint=Vec2::new(x as f32,y as f32);
+                            if !endpoint.is_finite() {continue;}
+                            line(pixels,origin,screen(camera,endpoint),
+                                if blocked {0xe1a34b} else {0x62b9ff});
+                            combat_hud_draws[5]+=1;
+                            combat_hud_draws[6]+=u64::from(blocked);
+                            if let Some(aim)=point_from_wire(&fields[3]) {
+                                let (x,y)=screen(camera,aim);
+                                line(pixels,(x-4,y),(x+4,y),0xf6df85);
+                                line(pixels,(x,y-4),(x,y+4),0xf6df85);
+                                combat_hud_draws[2]+=1;
                             }
                         }
                     }
@@ -2143,6 +2166,7 @@ pub fn connect_remote(
     let mut held_fire_target:Option<Vec2>=None;
     let mut show_art=true;
     let mut show_weapon_ranges=false;
+    let mut sent_weapon_overlay: Option<(u64,u64,Vec<Value>)>=None;
     let mut shooting_menu=false;
     let mut shooting_focus=1_u8;
     let mut hud_press:Option<HudAction>=None;
@@ -2246,6 +2270,7 @@ pub fn connect_remote(
             // authority. No previous snapshot, camera selection, or
             // manual-fire gesture can cross that authentication boundary.
             peer.state=None;
+            sent_weapon_overlay=None;
             peer.visual=RemoteVisual::default();
             selected.clear();
             mode=None;patrol_start=None;drag_start=None;
@@ -2908,6 +2933,34 @@ pub fn connect_remote(
             camera=Some(cam);
             }
         }
+        // Interest changes only with the selected live lifetimes, toggle,
+        // or episode. It never enters the authoritative input trace.
+        if peer.connected && peer.authenticated {
+            if let Some(state)=peer.state.as_ref() {
+                let request=(
+                    state["world_id"].as_u64().unwrap_or(0),
+                    state["episode_revision"].as_u64().unwrap_or(0),
+                    if show_weapon_ranges && !peer.input_suppressed {
+                        PeerClient::selected_owners(state,&selected)
+                    } else { Vec::new() },
+                );
+                if sent_weapon_overlay.as_ref()!=Some(&request) {
+                    if request.2.is_empty() &&
+                        sent_weapon_overlay.as_ref().is_none_or(|previous|previous.2.is_empty())
+                    {
+                        sent_weapon_overlay=Some(request);
+                    } else {
+                        let frame=json!({"kind":"weapon_overlay","world_id":request.0,
+                            "episode_revision":request.1,"squads":&request.2});
+                        let notice=peer.notice.clone();
+                        match peer.enqueue_request(frame,notice) {
+                            Ok(())=>sent_weapon_overlay=Some(request),
+                            Err(error)=>peer.notice=error.to_string(),
+                        }
+                    }
+                }
+            }
+        }
         let visual_fraction = peer.visual.fraction();
         if visual_fraction < 1.0 && !peer.visual.previous.is_empty() {
             peer.metrics.interpolated_draw_frames += 1;
@@ -2920,7 +2973,7 @@ pub fn connect_remote(
         let mut map_ships = 0_u64;
         let mut map_objectives = 0_u64;
         let mut fog_masked = 0_u64;
-        let mut combat_hud_draws = [0_u64; 5];
+        let mut combat_hud_draws = [0_u64; 7];
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
             held_fire_active,shooting_menu,shooting_focus,
@@ -2931,6 +2984,8 @@ pub fn connect_remote(
         peer.metrics.weapon_aim_draws += combat_hud_draws[2];
         peer.metrics.command_target_draws += combat_hud_draws[3];
         peer.metrics.striker_bomb_indicator_draws += combat_hud_draws[4];
+        peer.metrics.weapon_contact_draws += combat_hud_draws[5];
+        peer.metrics.weapon_obstructed_contact_draws += combat_hud_draws[6];
         // The local client shows the selection box while dragging. Draw
         // only the current screen-space intent; the real ship collisions
         // are evaluated from the host-supplied hulls on release.
@@ -3010,6 +3065,8 @@ pub fn connect_remote(
         "weapon_range_draws":peer.metrics.weapon_range_draws,
         "weapon_charge_draws":peer.metrics.weapon_charge_draws,
         "weapon_aim_draws":peer.metrics.weapon_aim_draws,
+        "weapon_contact_draws":peer.metrics.weapon_contact_draws,
+        "weapon_obstructed_contact_draws":peer.metrics.weapon_obstructed_contact_draws,
         "command_target_draws":peer.metrics.command_target_draws,
         "striker_bomb_indicator_draws":peer.metrics.striker_bomb_indicator_draws,
         "tactical_button_clicks":peer.metrics.tactical_button_clicks,
