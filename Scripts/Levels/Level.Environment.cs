@@ -110,6 +110,13 @@ namespace Assets.Scripts.Levels
         private List<Ship> _clearance_Ships = new List<Ship>();
         private float _clearance_width, _clearance_height;
         private int _f_clearance;
+        internal static int CalculateShipClearanceForSize(float halfWidth, float halfHeight)
+        {
+            int clearance = Mathf.CeilToInt(Mathf.Max(halfWidth, halfHeight));
+            while (clearance % Pathfinder.Scale > 0) clearance++;
+            return Math.Max(clearance / Pathfinder.Scale, ConfigData.MinimumClearance);
+        }
+
         public void CalculateShipClearances()
         {
             _clearance_Ships = State.GetShips();
@@ -119,14 +126,7 @@ namespace Assets.Scripts.Levels
                 {
                     _clearance_width = _clearance_Ships[0].GetHalfWidth();
                     _clearance_height = _clearance_Ships[0].GetHalfHeight();
-                    _f_clearance = (_clearance_width > _clearance_height ? Mathf.CeilToInt(_clearance_width) : Mathf.CeilToInt(_clearance_height));
-
-                    while (_f_clearance % Pathfinder.Scale > 0)
-                    {
-                        _f_clearance++;
-                    }
-                    _f_clearance /= Pathfinder.Scale;
-                    _f_clearance = Math.Max(_f_clearance, ConfigData.MinimumClearance);
+                    _f_clearance = CalculateShipClearanceForSize(_clearance_width, _clearance_height);
 
                     Stage.ShipClearances.Add(_clearance_Ships[0].ShipType, _f_clearance);
                     _clearance_Ships.ForEach((s) =>

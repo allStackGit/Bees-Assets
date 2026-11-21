@@ -40,8 +40,11 @@ namespace Assets.Scripts.Entities.Ships
             float maxRate = weapons.Count > 0 ? weapons[0].RateOfFire : 2f;
             for (int i = 0; i < weapons.Count; i++)
                 if (weapons[i].RateOfFire > maxRate) maxRate = weapons[i].RateOfFire;
-            return Mathf.Clamp(5f, maxRate + 1f, maxRate + 2f);
+            return CalculateCombatActivityWindowFromMaxRate(maxRate);
         }
+
+        internal static float CalculateCombatActivityWindowFromMaxRate(float maxRate)
+            => Mathf.Clamp(5f, maxRate + 1f, maxRate + 2f);
 
         private void CombatTimer()
         {

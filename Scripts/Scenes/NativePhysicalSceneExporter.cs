@@ -9,6 +9,7 @@ using Assets.Scripts.Entities.Ships;
 using Assets.Scripts.Entities.Ships.Weapons;
 using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Levels;
+using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -450,6 +451,7 @@ internal static class NativePhysicalSceneExporter
             throw new InvalidOperationException(
                 "Native scene must retain the original Stage identity.");
 
+        var queenSpawns = new Dictionary<long, JObject>();
         foreach (Ship ship in level.State.Ships)
         {
             if (ship == null || ship.IsDead) continue;
@@ -500,6 +502,8 @@ internal static class NativePhysicalSceneExporter
                 !IsFinite(halfHeight) || halfHeight <= 0f)
                 throw new InvalidOperationException(
                     "Cannot export source game steering profile for ship: " + ship.Id);
+            if (ship is Queen queen)
+                queenSpawns.Add(ship.Id, ExportQueenSpawn(queen));
             snapshot.ships.Add(new SourceShip {
                 combat_activity = new SourceCombatActivity {
                     enabled = ship.Stage.ActivateHiveMind, active = ship.InCombat,
@@ -814,8 +818,20 @@ internal static class NativePhysicalSceneExporter
         string dir = Path.Combine(Application.dataPath, "native", "assets");
         Directory.CreateDirectory(dir);
         string path = Path.Combine(dir, "unity-physical-" + safe + ".json");
-        File.WriteAllText(path, JsonUtility.ToJson(snapshot, true) + "\n",
-            new UTF8Encoding(false));
+        string json = JsonUtility.ToJson(snapshot, true);
+        if (queenSpawns.Count != 0)
+        {
+            // The shared native Queen template has optional fields, unlike
+            // Unity's field serializer. Preserve that exact schema here.
+            var document = JObject.Parse(json);
+            foreach (JObject source in (JArray)document["ships"])
+            {
+                if (queenSpawns.TryGetValue(source.Value<long>("entity_id"), out JObject spawn))
+                    ((JObject)source["special"])["queen_spawn"] = spawn;
+            }
+            json = document.ToString(Newtonsoft.Json.Formatting.Indented);
+        }
+        File.WriteAllText(path, json + "\n", new UTF8Encoding(false));
         AssetDatabase.Refresh();
         Debug.Log("Exported native physical Level source: " + path);
     }
@@ -1110,13 +1126,8 @@ internal static class NativePhysicalSceneExporter
         }
         else if (ship is Queen)
         {
-            // The prefab is not a live, initialized YellowJacket weapon or
-            // trigger. Exporting only its Queen hull would silently omit
-            // timed combatants from native gameplay and MA-POCA rewards.
-            throw new InvalidOperationException(
-                "Native Queen export needs a fully authored YellowJacket spawn template; " +
-                "use the standalone native Queen scene format until source prefab export is supported: " +
-                ship.Id);
+            result.kind = "queen";
+            return result;
         }
         else if (ship is Scout scout)
         {
@@ -1135,6 +1146,114 @@ internal static class NativePhysicalSceneExporter
             throw new InvalidOperationException("Missing real ship-special weapon power: " + ship.Id);
         result.power = weapon.Power;
         return result;
+    }
+
+    private static JObject ExportQueenSpawn(Queen queen)
+    {
+        // This is initial-world migration, not restoration of a running
+        // coroutine. Never silently restart a partially consumed wave.
+        if (queen.HasStartedMinionWave || queen.MinionSquadsCount != 0 ||
+            queen.CurrentMinionSquad != null ||
+            queen.MinionType != ConfigData.ShipTypes.YellowJacket ||
+            queen.MinionCount < 0 || queen.MinionCount > 16 ||
+            queen.SpawnFrequency < 0 || queen.TimeBetweenMinions < 0)
+            throw new InvalidOperationException("Cannot export active or invalid Queen waves: " + queen.Id);
+
+        GameObject prefab = queen.Stage.Prefabs.YellowJacketPrefab;
+        YellowJacket child = prefab != null ? prefab.GetComponent<YellowJacket>() : null;
+        var type = ConfigData.ShipTypes.YellowJacket;
+        var stats = ConfigData.GetShipInfo(type);
+        if (child == null || child.Side != queen.Side ||
+            AssetDatabase.GetAssetPath(prefab) != "Assets/Prefabs/Entities/Ships/Yellow Jacket.prefab" ||
+            child.Transform != prefab.transform || !child.HasProximityCollider ||
+            child.ProximityCollider == null || child.ProximityCollider.Collider == null ||
+            stats.Health <= 0 || stats.WeaponTypes.Count != 1 ||
+            stats.WeaponTypes[0] != ConfigData.WeaponTypes.Bomb ||
+            stats.Ranges.Count != 1 || stats.Powers.Count != 1 ||
+            stats.RatesOfFire.Count != 1 || stats.ProjectileValues.Count != 1 ||
+            stats.ProjectileTypes.Count != 1 || stats.Powers[0] < 0)
+            throw new InvalidOperationException("Missing authentic YellowJacket spawn inputs: " + queen.Id);
+
+        // Ship.Create, Weapon.Create, ProximityCollider.Create and
+        // Ship.Setup are the source of these values, not guessed stats.
+        Vector2 size = ConfigData.ShipSizes[type] / ConfigData.PixelsPerUnit;
+        int range = stats.Ranges[0];
+        int visionRange = stats.Sight != 0 ? stats.Sight : range;
+        float rate = stats.RatesOfFire[0];
+        float projectileValue = stats.ProjectileValues[0];
+        float firepower = Utilities.CalculateFirepower(stats.Powers[0], range, rate,
+            0f, projectileValue, Ship.CalculateYellowJacketSpecialFirepower(stats.Powers[0]));
+        bool training = RlOneVsOneTrainingBootstrap.IsActiveFor(queen.Stage);
+        bool user = child.Side == ConfigData.Configuration.UserSide && queen.Stage.DoesUserHaveController;
+        bool registered = queen.Stage.IsTrainingNueralNetwork || !user;
+        int clearance = queen.Stage.ShipClearances.TryGetValue(type, out int cachedClearance)
+            ? cachedClearance : Level.CalculateShipClearanceForSize(size.x * 0.5f, size.y * 0.5f);
+
+        // A future child does not yet exist in Level.State. Read the
+        // prefab's actual trigger transform at its source Create radius,
+        // in hull-local phase, without acquiring an ID or a pool item.
+        CircleCollider2D trigger = child.ProximityCollider.Collider;
+        Quaternion unrotate = Quaternion.Inverse(child.Transform.rotation);
+        Vector2 x = unrotate * trigger.transform.TransformVector(Vector3.right * visionRange);
+        Vector2 y = unrotate * trigger.transform.TransformVector(Vector3.up * visionRange);
+        Vector2 offset = unrotate * (trigger.transform.TransformPoint(trigger.offset) - child.Transform.position);
+        float radius = x.magnitude;
+        float tolerance = Mathf.Max(0.0001f, radius * 0.0001f);
+        if (!IsFinite(radius) || radius <= 0f ||
+            !IsFinite(y.magnitude) || Mathf.Abs(y.magnitude - radius) > tolerance ||
+            Mathf.Abs(Vector2.Dot(x, y)) > tolerance * radius ||
+            !IsFinite(offset.x) || !IsFinite(offset.y))
+            throw new InvalidOperationException("YellowJacket proximity trigger is not an exact source circle");
+
+        GameObject projectilePrefab = FindProjectilePrefab(queen.Stage.Prefabs, stats.ProjectileTypes[0]);
+        Projectile projectile = projectilePrefab != null ? projectilePrefab.GetComponent<Projectile>() : null;
+        return JObject.FromObject(new {
+            minions_per_wave = queen.MinionCount,
+            spawn_frequency_seconds = queen.SpawnFrequency,
+            seconds_between_minions = queen.TimeBetweenMinions,
+            spawn_point = new[] { queen.SpawnPoint.x, queen.SpawnPoint.y },
+            minion = new {
+                health = training ? RlOneVsOneTrainingDurabilityGuard.CalculateTrainingHealth(stats.Health) : stats.Health,
+                original_health = stats.Health,
+                max_tsv = Utilities.GetMaxTsv(type),
+                size_class = child.SizeClass,
+                base_speed = stats.Speed,
+                rotation_speed = stats.Speed * ConfigData.Configuration.RotationMultiplier,
+                height = size.y,
+                spawn_rotation_degrees = child.Transform.eulerAngles.z,
+                path_clearance = clearance,
+                turning_radius = ConfigData.ShipTurningRadius,
+                sight = new {
+                    source_sight = stats.Sight,
+                    effective_range = visionRange,
+                    trigger_range = registered ? visionRange : 0,
+                    fog_radius = user && !queen.Stage.IsTrainingNueralNetwork ? (float?)visionRange : null,
+                    enabled = registered,
+                },
+                vision_registered = registered,
+                front_offset = size.y * 0.5f - ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(type),
+                ship_type_letter = (int)Utilities.ConvertShipTypeToShipTypeLetter[type],
+                max_weapon_range = range,
+                firepower,
+                combat_window_seconds = Ship.CalculateCombatActivityWindowFromMaxRate(rate),
+                combat_activity_enabled = queen.Stage.ActivateHiveMind,
+                observed_weapon_type = (int)stats.WeaponTypes[0],
+                max_living_ships_per_side = training ? (int?)RlOneVsOneTrainingBootstrap.CurrentShipsPerSide : null,
+                special_weapon = new {
+                    weapon_id = 0, slot = 0, power = stats.Powers[0],
+                    mount_offset = new[] { 0f, 0f },
+                    proximity = new {
+                        offset = new[] { offset.x, offset.y },
+                        radius, layer = trigger.gameObject.layer, enabled = true,
+                    },
+                    observation = new {
+                        range, rate_of_fire = rate, rotation_rate = 0f, projectile_value = projectileValue,
+                        projectile_speed = projectile != null ? (double?)projectile.Speed : null,
+                        has_target_ship = false,
+                    },
+                },
+            },
+        });
     }
 
     private static SourceBeaconTemplate ExportBeaconTemplate(Ship scout)

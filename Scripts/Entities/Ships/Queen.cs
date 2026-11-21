@@ -20,6 +20,7 @@ namespace Assets.Scripts.Entities.Ships
         public int SpawnFrequency;
         public int TimeBetweenMinions;
         public int MinionSquadsCount = 0;
+        public bool HasStartedMinionWave { get; private set; }
         public Squad CurrentMinionSquad;
         public List<Squad> MinionSquads = new List<Squad>();
         public QueenExplosionAnimation QueenExplosionAnimation;
@@ -62,6 +63,7 @@ namespace Assets.Scripts.Entities.Ships
             StopAllCoroutines();
             base.ClearData();
             MinionSquadsCount = 0;
+            HasStartedMinionWave = false;
             CurrentMinionSquad = null;
             MinionSquads.Clear();
             _isDeathAnimationPending = false;
@@ -106,6 +108,7 @@ namespace Assets.Scripts.Entities.Ships
             // A wave owns one coroutine rather than one coroutine per minion. Newly spawned
             // minions receive no scripted movement orders; the RL policy owns them immediately.
             CurrentMinionSquad = null;
+            HasStartedMinionWave = true;
             int waveMinionCount = MinionCount;
             StartCoroutine(SpawnMinionWave(waveMinionCount));
         }

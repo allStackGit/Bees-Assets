@@ -132,7 +132,7 @@ namespace Assets.Scripts.Entities.Ships
             else if (ShipType == ConfigData.ShipTypes.FireBarge)
                 SpecialFirePower = shipStats.Powers[0] * shipStats.ProjectileValues[0];
             else if (ShipType == ConfigData.ShipTypes.YellowJacket)
-                SpecialFirePower = shipStats.Powers[0] / 5;
+                SpecialFirePower = CalculateYellowJacketSpecialFirepower(shipStats.Powers[0]);
             else if (ShipType == ConfigData.ShipTypes.CarpenterBee || ShipType == ConfigData.ShipTypes.Factory)
                 IsMiningShip = true;
             else if (ShipType == ConfigData.ShipTypes.WarpGate)
@@ -140,6 +140,8 @@ namespace Assets.Scripts.Entities.Ships
             else if (ShipType == ConfigData.ShipTypes.Beehive)
                 IsBeehive = true;
         }
+
+        internal static float CalculateYellowJacketSpecialFirepower(int power) => power / 5;
 
         private void CreateWeapons(ShipStatBlock shipStats)
         {

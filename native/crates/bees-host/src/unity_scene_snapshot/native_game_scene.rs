@@ -312,7 +312,7 @@ enum GameShipSpecial {
 /// CombatWorld assigns distinct live identities at each actual spawn.
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct GameQueenSpawn {
+pub(super) struct GameQueenSpawn {
     minions_per_wave: u8,
     spawn_frequency_seconds: f32,
     seconds_between_minions: f32,
@@ -339,6 +339,10 @@ struct GameQueenMinion {
     max_weapon_range: f32,
     firepower: f32,
     combat_window_seconds: f32,
+    #[serde(default = "enabled")]
+    combat_activity_enabled: bool,
+    #[serde(default = "enabled")]
+    vision_registered: bool,
     #[serde(default)]
     observed_weapon_type: Option<u8>,
     special_weapon: GameSpecialWeapon,
@@ -347,7 +351,7 @@ struct GameQueenMinion {
 }
 
 impl GameQueenSpawn {
-    fn into_native(self, catalog: &ShipAssetCatalog, require_observation: bool)
+    pub(super) fn into_native(self, catalog: &ShipAssetCatalog, require_observation: bool)
         -> Result<NativeAuthoredShipSpecial, NativeSnapshotError>
     {
         // Dynamic YellowJacket controllers use the real team frame and
@@ -427,7 +431,7 @@ impl GameQueenSpawn {
                 spawn_rotation_degrees: minion.spawn_rotation_degrees,
                 path_clearance: minion.path_clearance,
                 combat_activity: Some(bees_sim::combat_world::NativeCombatActivity {
-                    enabled: true, window_seconds: minion.combat_window_seconds,
+                    enabled: minion.combat_activity_enabled, window_seconds: minion.combat_window_seconds,
                     elapsed_seconds: None,
                 }),
                 front_offset: minion.front_offset,
@@ -463,7 +467,7 @@ impl GameQueenSpawn {
                     effective_range: sight.effective_range,
                     trigger_range: sight.trigger_range,
                     fog_radius: sight.fog_radius,
-                    registered: true, enabled: sight.enabled,
+                    registered: minion.vision_registered, enabled: sight.enabled,
                 },
             }),
         })
