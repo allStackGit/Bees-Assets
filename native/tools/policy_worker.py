@@ -785,6 +785,8 @@ def main() -> None:
         "gpu_forward_calls": 0, "gpu_forward_rows": 0,
         "action_only_batches": 0, "action_only_rows": 0,
         "behavior_bytes_avoided": 0,
+        "direct_buffer_output_frames": 0,
+        "direct_buffer_output_bytes": 0,
     }
     output_buffers = InferenceOutputBuffers()
     forward_timings = {} if os.environ.get("BEES_NATIVE_EVALUATION_SEED") is not None else None
@@ -991,6 +993,13 @@ def main() -> None:
         if behavior is not None:
             writer.write(memoryview(behavior).cast("B"))
         writer.flush()
+        # Count successfully flushed protocol payload bytes, rather
+        # than assuming every forward saves a fixed-size CPU copy.
+        measurements["direct_buffer_output_frames"] += 1
+        measurements["direct_buffer_output_bytes"] += (
+            continuous.nbytes + discrete.nbytes +
+            (behavior.nbytes if behavior is not None else 0)
+        )
         # Release NumPy/memoryview references before expanding the next
         # batch's storage; smaller/equal batches reuse the same allocation.
         del observation, payload, meta, slots, fire, special, allowed
