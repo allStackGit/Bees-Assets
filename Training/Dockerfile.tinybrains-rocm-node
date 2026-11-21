@@ -1,0 +1,12 @@
+# Reproducible extension of the operator-qualified Halifax ROCm/PyTorch image.
+# The pinned TinyBrains replay analytics invokes the official WASM cartridge
+# through scripts/ReplayMetrics.mjs; Python and ROCm alone are insufficient.
+# Build explicitly on Halifax:
+#   sudo -n /usr/bin/docker build -f Training/Dockerfile.tinybrains-rocm-node \
+#     -t tinybrains-rocm:halifax-node .
+FROM tinybrains-rocm:halifax
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && node -e "if (Number(process.versions.node.split('.')[0]) < 18) process.exit(1)"

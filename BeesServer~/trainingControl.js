@@ -223,6 +223,7 @@ class TrainingControlStore {
             compatibility_key: "",
             pending_release: null,
             known_dedicated_trainers: [],
+            worker_env_overrides: {},
             builds: {},
             full_game_builds: {},
         };
@@ -498,6 +499,16 @@ class TrainingControlStore {
                 }
                 quarantinedTrainerIds.add(trainerId);
             }
+        }
+        if (parsed.worker_env_overrides === undefined) parsed.worker_env_overrides = {};
+        if (!parsed.worker_env_overrides || typeof parsed.worker_env_overrides !== 'object' ||
+            Array.isArray(parsed.worker_env_overrides) ||
+            Object.keys(parsed.worker_env_overrides).length > 64 ||
+            Object.entries(parsed.worker_env_overrides).some(([id, count]) =>
+                !/^[A-Za-z0-9._-]+$/.test(id) ||
+                ['__proto__', 'constructor', 'prototype'].includes(id) ||
+                !Number.isInteger(count) || count < 1 || count > 64)) {
+            throw new Error('training-control worker environment overrides are invalid');
         }
         if (!Array.isArray(parsed.known_dedicated_trainers)) {
             throw new Error('training-control known trainer registry is invalid');
@@ -1529,6 +1540,66 @@ class TrainingControlStore {
         return this.desiredState();
     }
 
+    setWorkerEnvOverride(request) {
+        if (!request || typeof request !== 'object' || Array.isArray(request)) {
+            throw Object.assign(new Error('invalid worker environment request'), { statusCode: 400 });
+        }
+        const trainerId = requireString(request.trainer_id, 'trainer_id', 128);
+        if (!/^[A-Za-z0-9._-]+$/.test(trainerId) ||
+            ['central-learner', '__proto__', 'constructor', 'prototype'].includes(trainerId)) {
+            throw Object.assign(new Error('select a dedicated remote worker'), { statusCode: 400 });
+        }
+        const count = request.envs;
+        if (count !== null && (!Number.isInteger(count) || count < 1 || count > 64)) {
+            throw Object.assign(new Error('worker environments must be 1–64 or null to restore automatic/local settings'), { statusCode: 400 });
+        }
+        if (!Number.isInteger(request.expected_revision) ||
+            request.expected_revision !== this.state.revision ||
+            request.expected_run_id !== this.state.run_id) {
+            throw Object.assign(new Error('training control revision/run changed; refresh worker status'), { statusCode: 409 });
+        }
+        if (this.state.pending_release) {
+            throw Object.assign(new Error('worker resizing is unavailable during release rollout'), { statusCode: 409 });
+        }
+        if (this.state.training_enabled && request.allow_during_training !== true) {
+            throw Object.assign(new Error('active training resize requires explicit confirmation'), { statusCode: 409 });
+        }
+        const record = this.trainers.get(trainerId);
+        if (!record || record.role !== 'dedicated' ||
+            this.now() - record.last_seen_ms > this.leaseSeconds * 1000) {
+            throw Object.assign(new Error('remote worker must have a current control lease'), { statusCode: 409 });
+        }
+        if (record.metrics?.worker_env_override_supported !== true) {
+            throw Object.assign(new Error('worker runtime does not support dashboard environment overrides'), { statusCode: 409 });
+        }
+        const capacity = normalizeCapacity(record.worker_capacity);
+        if (!capacity || (count !== null &&
+            (count < capacity.min_envs || count > capacity.max_envs))) {
+            throw Object.assign(new Error('requested environments exceed the worker advertised capacity'), { statusCode: 409 });
+        }
+        const previous = Object.prototype.hasOwnProperty.call(
+            this.state.worker_env_overrides, trainerId)
+            ? this.state.worker_env_overrides[trainerId] : null;
+        if (previous !== count) {
+            if (count !== null && previous === null &&
+                Object.keys(this.state.worker_env_overrides).length >= 64) {
+                throw Object.assign(new Error('too many worker environment overrides'), { statusCode: 409 });
+            }
+            const snapshot = this._snapshotState();
+            if (count === null) delete this.state.worker_env_overrides[trainerId];
+            else this.state.worker_env_overrides[trainerId] = count;
+            this.state.revision++;
+            this._persistWithRollback(snapshot);
+        }
+        return {
+            trainer_id: trainerId, envs: count,
+            previous_envs: previous,
+            revision: this.state.revision,
+            run_id: this.state.run_id,
+            training_enabled: this.state.training_enabled,
+        };
+    }
+
     publishArtifact({ role, platform, buildId, archivePath, entrypoint }) {
         role = role == null ? 'dedicated' : requireRole(role);
         platform = requireString(platform, 'platform', 64);
@@ -1726,6 +1797,9 @@ class TrainingControlStore {
         const workerEnvCount = envOptimizer && Number.isInteger(envOptimizer.desired_envs)
             ? envOptimizer.desired_envs
             : null;
+        const workerOverride = role === 'dedicated' &&
+            Object.prototype.hasOwnProperty.call(this.state.worker_env_overrides, trainerId)
+            ? this.state.worker_env_overrides[trainerId] : null;
         return {
             schema_version: CONTROL_SCHEMA_VERSION,
             trainer_id: trainerId,
@@ -1736,6 +1810,7 @@ class TrainingControlStore {
             desired_mode: desiredMode,
             environment_args: [...desiredEnvironmentArgs],
             worker_env_count: workerEnvCount,
+            worker_env_override: workerOverride,
             env_optimizer: envOptimizer,
             canonical_build_id: this.state.canonical_build_id,
             desired_build_id: desiredBuildId,
@@ -1849,7 +1924,9 @@ class TrainingControlStore {
             buildId: this.state.canonical_build_id,
             enabled: this.state.training_enabled &&
                 !this.state.pending_release &&
-                Boolean(canonicalBuild),
+                Boolean(canonicalBuild) &&
+                !Object.prototype.hasOwnProperty.call(
+                    this.state.worker_env_overrides, trainerId),
         });
         const measuredProvenEnvCount = (
             record.worker_capacity?.auto === true &&
@@ -1897,6 +1974,10 @@ class TrainingControlStore {
         const trainers = [...this.trainers.values()]
             .map(record => ({
                 ...record,
+                worker_env_override: record.role === 'dedicated' &&
+                    Object.prototype.hasOwnProperty.call(
+                        this.state.worker_env_overrides, record.trainer_id)
+                    ? this.state.worker_env_overrides[record.trainer_id] : null,
                 stale: now - record.last_seen_ms > staleAfter,
                 age_seconds: Math.max(0, (now - record.last_seen_ms) / 1000),
             }))
@@ -2157,6 +2238,10 @@ function createTrainingControlHandler(store, token, adminToken = null) {
             }
             if (request.method === 'POST' && url.pathname === '/v1/admin/state') {
                 sendJson(response, 200, store.setDesiredState(await readJsonBody(request)));
+                return;
+            }
+            if (request.method === 'POST' && url.pathname === '/v1/admin/worker-envs') {
+                sendJson(response, 200, store.setWorkerEnvOverride(await readJsonBody(request)));
                 return;
             }
             if (request.method === 'POST' && url.pathname === '/v1/admin/release') {

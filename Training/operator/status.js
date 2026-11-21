@@ -70,6 +70,7 @@ function parseLearnerLogFiles(files) {
     let elo = null;
     let step = null;
     let reward = null;
+    let groupReward = null;
     let averageStepsPerSecond = null;
     let liveStepsPerSecond = null;
     let restartAverageStepsPerSecond = null;
@@ -102,8 +103,13 @@ function parseLearnerLogFiles(files) {
             lastSummaryElapsedSeconds = lineElapsed;
 
             let match;
-            if ((match = line.match(/Mean Reward\s*[:=]\s*(-?\d+(?:\.\d+)?)/i))) {
+            const rewardNumber = '([-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?)';
+            if ((match = line.match(new RegExp('Mean Reward\\s*[:=]\\s*' + rewardNumber, 'i')))) {
                 reward = Number(match[1]);
+            }
+            groupReward = null; // Do not carry a previous summary's group reward forward.
+            if ((match = line.match(new RegExp('Mean Group Reward\\s*[:=]\\s*' + rewardNumber, 'i')))) {
+                groupReward = Number(match[1]);
             }
             if ((match = line.match(/\bELO\b[^-0-9]*(-?\d+(?:\.\d+)?)/i))) {
                 elo = Number(match[1]);
@@ -149,6 +155,7 @@ function parseLearnerLogFiles(files) {
         ELO: elo,
         Step: step,
         MeanReward: reward,
+        MeanGroupReward: groupReward,
         AverageStepsPerSecond: averageStepsPerSecond,
         LiveStepsPerSecond: liveStepsPerSecond,
         RestartAverageStepsPerSecond: restartAverageStepsPerSecond,
@@ -204,6 +211,21 @@ function getLocalLearnerStats(runId = '') {
     return parseLearnerLogFiles(selected);
 }
 
+
+// Unlike the interactive status command, experiments must never use an older
+// run's fallback logs as evidence that a newly started learner has advanced.
+function getAuthoritativeLearnerStats(runId) {
+    if (!runId || !/^[A-Za-z0-9._-]+$/.test(runId)) return null;
+    const file = path.join(
+        paths.centralAgentInstallRoot, 'logs', runId, 'learner-live.log'
+    );
+    if (!exists(file)) return null;
+    const result = parseLearnerLogFiles([{
+        full: file,
+        mtimeMs: fs.statSync(file).mtimeMs,
+    }]);
+    return result.Step === null ? null : result;
+}
 
 function restartWallClockRate(learner, runId, running) {
     if (!runId || !/^[a-zA-Z0-9_.-]+$/.test(runId)) {
@@ -942,6 +964,7 @@ async function showStatus(config, adminToken, single, refreshSeconds = 2) {
 
 module.exports = {
     getLocalLearnerStats,
+    getAuthoritativeLearnerStats,
     getLatestPpoUpdate,
     getStatusFrameLines,
     rolloutBlockers,

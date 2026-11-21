@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "name": "Bees gradual combat curriculum",
+  "first_steps": 20000000,
+  "stage_name": "1 · Stationary firing · 24×24",
+  "target_timeout_pct": null,
+  "env_args": [
+    "--rl-ships-per-side=1",
+    "--rl-bee-ship-types=Wasp",
+    "--rl-human-ship-types=Gunship",
+    "--rl-map-size-min=24",
+    "--rl-map-size-max=24",
+    "--rl-episode-timeout=5",
+    "--rl-matchup-mode=sampled",
+    "--rl-health-ratio=.00001",
+    "--rl-collision-asteroid-spawn-seconds=0",
+    "--rl-static-obstacles=false",
+    "--rl-mining-asteroids=false",
+    "--rl-log-communications=false",
+    "--rl-disable-movement=true",
+    "--rl-disable-agent-movement=true",
+    "--rl-disable-opponent-movement=true"
+  ],
+  "stages": [
+    {
+      "name": "2 · Stationary aiming · 32×32",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-map-size-min=32",
+        "--rl-map-size-max=32"
+      ]
+    },
+    {
+      "name": "3 · Agent movement",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-disable-movement=false",
+        "--rl-disable-agent-movement=false"
+      ]
+    },
+    {
+      "name": "4 · Opponent movement",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-disable-opponent-movement=false"
+      ]
+    },
+    {
+      "name": "5 · Hornet and Dreadnought",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-bee-ship-types=Wasp,Hornet",
+        "--rl-human-ship-types=Gunship,Dreadnought"
+      ]
+    },
+    {
+      "name": "6 · Maps 32–48",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-map-size-max=48"
+      ]
+    },
+    {
+      "name": "7 · Maps 48–64",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-map-size-min=48",
+        "--rl-map-size-max=64",
+        "--rl-episode-timeout=10"
+      ]
+    },
+    {
+      "name": "8 · Turret ship roster",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-bee-ship-types=Wasp,Hornet,Leafcutter,Bumblebee",
+        "--rl-human-ship-types=Gunship,Dreadnought,Frigate,Flagship,Cruiser"
+      ]
+    },
+    {
+      "name": "9 · Maps 64–80",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-map-size-min=64",
+        "--rl-map-size-max=80"
+      ]
+    },
+    {
+      "name": "10 · Maps 80–96",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-map-size-min=80",
+        "--rl-map-size-max=96",
+        "--rl-episode-timeout=15"
+      ]
+    },
+    {
+      "name": "11 · Maps 96–112",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-map-size-min=96",
+        "--rl-map-size-max=112"
+      ]
+    },
+    {
+      "name": "12 · Maps 112–128",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-map-size-min=112",
+        "--rl-map-size-max=128",
+        "--rl-episode-timeout=20"
+      ]
+    },
+    {
+      "name": "13 · Maps 128–160",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-map-size-min=128",
+        "--rl-map-size-max=160"
+      ]
+    },
+    {
+      "name": "14 · Maps 160–192",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-map-size-min=160",
+        "--rl-map-size-max=192",
+        "--rl-episode-timeout=25"
+      ]
+    },
+    {
+      "name": "15 · Maps 192–224",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-map-size-min=192",
+        "--rl-map-size-max=224"
+      ]
+    },
+    {
+      "name": "16 · Maps 224–256",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-map-size-min=224",
+        "--rl-map-size-max=256",
+        "--rl-episode-timeout=30"
+      ]
+    },
+    {
+      "name": "17 · Two ships per side",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-ships-per-side=2"
+      ]
+    },
+    {
+      "name": "18 · Three ships per side",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-ships-per-side=3"
+      ]
+    },
+    {
+      "name": "19 · Additional ship roles",
+      "steps": 20000000,
+      "target_timeout_pct": null,
+      "env_args": [
+        "--rl-bee-ship-types=Wasp,Hornet,Leafcutter,Bumblebee,Yellow Jacket,Beehive,Honeybee",
+        "--rl-human-ship-types=Gunship,Dreadnought,Frigate,Flagship,Cruiser,Scout,Barge,Warp Gate"
+      ]
+    }
+  ]
+}

@@ -36,6 +36,7 @@ internal sealed class RlOneVsOneTrainingOptions
     internal const string MapSizeMinimumFlag = "--rl-map-size-min";
     internal const string MapSizeMaximumFlag = "--rl-map-size-max";
     internal const string EpisodeTimeoutFlag = "--rl-episode-timeout";
+    internal const string ScenarioSeedFlag = "--rl-scenario-seed";
     internal const string ShipsPerSideFlag = "--rl-ships-per-side";
     internal const string DecisionPeriodFlag = "--rl-decision-period";
     internal const string DisableMovementFlag = "--rl-disable-movement";
@@ -118,6 +119,7 @@ internal sealed class RlOneVsOneTrainingOptions
     internal int EpisodeTimeoutSeconds { get; private set; }
     internal int ShipsPerSide { get; private set; }
     internal int DecisionPeriod { get; private set; }
+    internal int? ScenarioSeed { get; private set; }
     internal bool MovementDisabled { get; private set; }
     internal bool AgentMovementDisabled { get; private set; }
     internal bool OpponentMovementDisabled { get; private set; }
@@ -203,6 +205,14 @@ internal sealed class RlOneVsOneTrainingOptions
             else if (TryReadOption(argument, EpisodeTimeoutFlag, args, ref i, out value))
             {
                 options.EpisodeTimeoutSeconds = ParseInt(value, EpisodeTimeoutFlag);
+            }
+            else if (TryReadOption(argument, ScenarioSeedFlag, args, ref i, out value))
+            {
+                options.ScenarioSeed = ParseInt(value, ScenarioSeedFlag);
+                if (options.ScenarioSeed < 0)
+                {
+                    throw new ArgumentException(ScenarioSeedFlag + " must be nonnegative.");
+                }
             }
             else if (TryReadOption(argument, ShipsPerSideFlag, args, ref i, out value))
             {
@@ -325,6 +335,7 @@ internal sealed class RlOneVsOneTrainingOptions
                $"agent_movement={(MovementDisabledForTeam(0) ? "disabled" : "enabled")} " +
                $"opponent_movement={(MovementDisabledForTeam(1) ? "disabled" : "enabled")} " +
                $"matchup_mode={MatchupMode.ToString().ToLowerInvariant()} " +
+               $"scenario_seed={(ScenarioSeed.HasValue ? ScenarioSeed.Value.ToString() : "random")} " +
                $"collision_asteroid_spawn={collisionAsteroidDescription} " +
                $"static_obstacles={(StaticObstaclesEnabled ? "on" : "off")} " +
                $"mining_asteroids={(MiningAsteroidsEnabled ? "on" : "off")} " +

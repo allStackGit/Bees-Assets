@@ -152,6 +152,35 @@ namespace Assets.Scripts.Levels
             _hasEliminationSnapshot = true;
         }
 
+        /// <summary>
+        /// Freeze the actual elimination state at the first fatal squad loss in a
+        /// dedicated RL match. Campaign CaptureEliminationState may instead use
+        /// an authored WinningSide; that value is not authoritative for RL.
+        /// </summary>
+        public void CaptureEliminationStateFromShips()
+        {
+            if (_hasEliminationSnapshot)
+            {
+                return;
+            }
+
+            for (int sideIndex = 0; sideIndex < ShipsBySide.Length; sideIndex++)
+            {
+                List<Ship> sideShips = ShipsBySide[sideIndex];
+                bool hasMobileShip = false;
+                for (int shipIndex = 0; shipIndex < sideShips.Count; shipIndex++)
+                {
+                    if (sideShips[shipIndex].IsMobile)
+                    {
+                        hasMobileShip = true;
+                        break;
+                    }
+                }
+                _eliminationSnapshot[sideIndex] = !hasMobileShip;
+            }
+            _hasEliminationSnapshot = true;
+        }
+
         public bool TryGetCapturedEliminationState(int side, out bool isKilled)
         {
             if (_hasEliminationSnapshot && side >= 1 && side <= _eliminationSnapshot.Length)

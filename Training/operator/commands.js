@@ -23,6 +23,7 @@ const {
     resolveUnityEditor,
     runChecked,
     saveRuntimeTrainingOptions,
+    sha256File,
     sleep,
     stopManagedProcessTree,
     testControl,
@@ -48,6 +49,7 @@ const {
     installReleaseTrainingRuntime,
     newReleaseTrainingRuntime,
     newTrainingRunPlan,
+    resolveReleaseTrainingRuntime,
     saveLatestRelease,
 } = require('./runtime');
 const {
@@ -55,6 +57,7 @@ const {
     getRunningCentralAgentPid,
     prepareCentralReleaseRuntime,
     startCentralAgentIfNeeded,
+    stopCentralAgentGracefully,
 } = require('./central');
 const { startBeesServerIfNeeded } = require('./server');
 const {
@@ -155,6 +158,68 @@ async function reconcilePersistedTrainingAfterServerStart(config, admin) {
             ),
         },
     );
+}
+
+// Publish only remote supervisor and worker-agent changes while an existing
+// experiment is maintenance-paused. Never reconfigure, checkpoint or restart
+// the central learner. Existing remote supervisors will stage this authenticated
+// bundle through their normal updater, retaining the canonical Unity build.
+async function invokeWorkerRuntime(options = {}) {
+    const config = loadConfig();
+    const release = getLatestRelease();
+    const python = resolvePython(config);
+    const admin = ensureTokenFile(paths.adminTokenPath);
+    if (!exists(paths.tailnetAddressPath)) {
+        throw new Error('Tailnet bootstrap is not configured; cannot update remote workers.');
+    }
+    const status = await getStatus(config, admin);
+    const desired = status.desired || {};
+    if (desired.training_enabled || desired.pending_release ||
+        String(desired.run_id || '') !== String(release.run_id || '') ||
+        String(desired.canonical_build_id || '') !== String(release.build_id || '') ||
+        String(desired.compatibility_key || '').toLowerCase() !==
+            String(release.compatibility_key || '').toLowerCase()) {
+        throw new Error('Worker update requires a confirmed stopped current run with its original build and no pending release.');
+    }
+    if (options.expectedRunId && options.expectedRunId !== release.run_id) {
+        throw new Error('The paused experiment changed identity before the worker update.');
+    }
+    ensureRunLifecycleMatchesRelease(python, release);
+    const fingerprint = getTrainingCompatibilityFingerprint(python);
+    if (String(fingerprint.compatibility_key || '').toLowerCase() !==
+        String(release.compatibility_key || '').toLowerCase()) {
+        throw new Error('Source is incompatible with the current Unity training contract. Worker-only update refused.');
+    }
+    const pinned = resolveReleaseTrainingRuntime(python, release);
+    const outputDir = path.join(paths.buildsRoot, 'Packages', release.build_id);
+    ensureDir(outputDir);
+    const output = path.join(outputDir, 'worker-overlay-' + getGitShortSha() + '.zip');
+    const overlay = invokePythonJson(python, [
+        path.join(paths.assetsRoot, 'Training', 'bees_worker_runtime_overlay.py'),
+        '--pinned', pinned.archive,
+        '--pinned-sha256', pinned.archive_sha256,
+        '--pinned-version', pinned.runtime_version,
+        '--training-root', path.join(paths.assetsRoot, 'Training'),
+        '--output', output,
+        '--build-id', release.build_id,
+        '--source-commit', getGitShortSha(),
+    ]);
+    const workerOverride = {
+        run_id: release.run_id,
+        build_id: release.build_id,
+        compatibility_key: release.compatibility_key,
+        training_runtime: overlay,
+    };
+    // This updates only Remote bootstrap artifacts; it does not change
+    // latest-training-release.json or the central learner runtime pointer.
+    prepareRemoteBootstrap(config, python, release, { workerOverride });
+    await startTailnetGatewayIfNeeded(config);
+    return {
+        run_id: release.run_id, build_id: release.build_id,
+        worker_runtime_version: overlay.runtime_version,
+        learner_runtime_version: pinned.runtime_version,
+        changed: overlay.runtime_version !== pinned.runtime_version,
+    };
 }
 
 async function invokeRuntime(options = {}) {
@@ -456,6 +521,11 @@ async function invokeServer() {
 
 async function invokeStart(options = {}) {
     const config = loadConfig();
+    if (options.experimentConfig && !options.newRun)
+        throw Error('Experiment configuration requires a fresh run.');
+    if (options.experimentConfig &&
+        sha256File(options.experimentConfig.path) !== options.experimentConfig.sha256)
+        throw Error('Frozen experiment trainer configuration changed.');
     const worker = ensureTokenFile(paths.workerTokenPath);
     const admin = ensureTokenFile(paths.adminTokenPath);
     ensureTokenFile(paths.wanTokenPath);
@@ -527,6 +597,10 @@ async function invokeStart(options = {}) {
 
     let forcedPlan = getPendingForcedNewRunPlan();
     const resumeForcedNewRun = Boolean(forcedPlan);
+    if (forcedPlan && options.experimentConfig &&
+        (!forcedPlan.trainer_config || forcedPlan.trainer_config.sha256 !== options.experimentConfig.sha256)) {
+        throw Error('Pending new-run operation belongs to another experiment configuration.');
+    }
     const initialStatus = await getStatus(config, admin);
 
     if (options.resumeRunId) {
@@ -821,6 +895,7 @@ async function invokeStart(options = {}) {
             forceNew: true,
             buildId: String(release.build_id),
             environmentArgs: envArgs,
+            trainerConfig: options.experimentConfig && options.experimentConfig.path,
         });
         if (
             forcedPlan.previous_run_id &&
@@ -942,6 +1017,12 @@ async function invokeStart(options = {}) {
     let staged;
     let desired;
     if (performForcedNewRun) {
+        // A live supervisor still owns the outgoing launch command. Stop it
+        // before enabling the new run, or it can create that run's immutable
+        // generation directory with the outgoing trainer configuration.
+        await invokeStop({});
+        const outgoingSupervisor = getRunningCentralAgentPid();
+        if (outgoingSupervisor > 0) await stopCentralAgentGracefully(outgoingSupervisor);
         staged = await stageRelease(
             config, admin, release, envArgs, environmentValidationKey
         );
@@ -1268,6 +1349,7 @@ module.exports = {
     invokeQualify,
     invokeRepairV24,
     invokeRuntime,
+    invokeWorkerRuntime,
     invokeServer,
     invokeStart,
     invokeStatus,

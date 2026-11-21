@@ -562,6 +562,11 @@ class EpisodeLogMetrics:
                 human_hits / human_shots, 3) if human_shots else 0.0,
             "bee_shots_per_episode": round(bee_shots / count, 2),
             "human_shots_per_episode": round(human_shots / count, 2),
+            # Exact rolling denominators for aggregation across workers.
+            "bee_shots": bee_shots,
+            "human_shots": human_shots,
+            "bee_completed_shots": bee_completed,
+            "human_completed_shots": human_completed,
             "bee_missed_shots": bee_missed,
             "human_missed_shots": human_missed,
             "bee_near_missed_shots": bee_near,
@@ -2865,7 +2870,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.worker_envs is None:
             return {}
         current = managed.worker_env_count if managed.worker_env_count is not None else args.worker_envs
-        if (args.auto_worker_envs or manual_env_request_file is not None) and managed.alive():
+        if managed.worker_env_target_file is not None and managed.alive():
             throughput = read_throughput_metrics(
                 managed.throughput_metrics_file,
                 expected_pid=managed.throughput_expected_pid(),
@@ -2889,6 +2894,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     def current_metrics(run_id: str) -> dict[str, object]:
         snapshot = episode_metrics.snapshot(run_id)
+        # Capability acknowledgment: an older deployed worker must not silently
+        # ignore a dashboard env override that the control plane accepted.
+        snapshot["worker_env_override_supported"] = True
         # Read actor settings first: a runtime-wide diagnostics toggle must also
         # suppress the supervisor's optional host CPU sampling.
         process = managed.process
@@ -2897,7 +2905,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 managed.throughput_metrics_file,
                 expected_pid=managed.throughput_expected_pid(),
                 expected_env_count=(
-                    None if (args.auto_worker_envs or manual_env_request_file is not None)
+                    None if managed.worker_env_target_file is not None
                     else managed.worker_env_count
                 ),
             )
@@ -3134,6 +3142,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 "server requested worker env count outside advertised capacity"
                             )
                         worker_env_count = requested_worker_envs
+                # An authenticated, centrally persisted operator override takes
+                # precedence over local manual files and automatic tuning.
+                # Both modes retain their live-resize path; rollout ownership,
+                # policy and optimizer state are unchanged.
+                dashboard_env_target = desired.get("worker_env_override")
+                if dashboard_env_target is not None:
+                    if (
+                        not isinstance(dashboard_env_target, int)
+                        or isinstance(dashboard_env_target, bool)
+                        or not args.worker_envs_min <= dashboard_env_target <= args.worker_envs_max
+                    ):
+                        raise RuntimeError(
+                            "server requested manual worker env count outside advertised capacity"
+                        )
+                    worker_env_count = dashboard_env_target
                 descriptor = desired.get("build")
                 preparer.request(desired.get("prepare_build"))
                 if args.role == "dedicated":
@@ -3146,7 +3169,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         environment_args=environment_args,
                         worker_env_count=worker_env_count,
                         allow_live_worker_env_resize=bool(
-                            args.auto_worker_envs or manual_env_request_file is not None
+                            args.role == "dedicated"
+                            and args.trainer_id != "central-learner"
+                            and managed.worker_env_target_file is not None
                         ),
                     )
 
@@ -3281,8 +3306,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         )
                         launch_worker_env_count = worker_env_count
                         if (
-                            (args.auto_worker_envs or manual_env_request_file is not None)
+                            args.role == "dedicated"
+                            and args.trainer_id != "central-learner"
                             and managed.alive()
+                            and managed.worker_env_target_file is not None
                             and managed.worker_env_count is not None
                         ):
                             launch_worker_env_count = managed.worker_env_count
@@ -3303,7 +3330,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             run_id,
                             launch_worker_env_count,
                         )
-                        if (args.auto_worker_envs or manual_env_request_file is not None) and managed.alive() and not rollout_stalled:
+                        if (
+                            args.role == "dedicated"
+                            and args.trainer_id != "central-learner"
+                            and managed.alive()
+                            and managed.worker_env_target_file is not None
+                            and not rollout_stalled
+                        ):
                             managed.set_worker_env_target(worker_env_count)
                         needs_restart = (
                             not managed.alive()
@@ -3379,7 +3412,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 environment_args=environment_args,
                                 worker_env_count=worker_env_count,
                                 allow_live_worker_env_resize=bool(
-                                    args.auto_worker_envs or manual_env_request_file is not None
+                                    args.role == "dedicated"
+                                    and args.trainer_id != "central-learner"
+                                    and managed.worker_env_target_file is not None
                                 ),
                             )
                         _write_runtime_state(
