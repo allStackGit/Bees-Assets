@@ -514,6 +514,7 @@ impl NativeGameAudio {
         // Projectiles can collide and retire within one fixed tick. The
         // canonical fire event and installed turret survive that short
         // lifetime, while the original simulation remains unchanged.
+        let mut previous_launch: Option<(i64, u8, i64)> = None;
         for event in view.combat.events() {
             let (ship_id, slot, projectile_id) = match event {
                 CombatEvent::GameWeaponFired { ship_id, slot, projectile_id } |
@@ -521,8 +522,16 @@ impl NativeGameAudio {
                     (*ship_id, *slot, *projectile_id),
                 _ => continue,
             };
+            // The canonical DualCannon launches two contiguous shot IDs
+            // from the SAME source turret on a single SendProjectile.
+            // Source PlaySoundEffect runs once, not once per barrel.
+            let second_barrel = previous_launch.is_some_and(|(prior_ship, prior_slot, prior_id)|
+                prior_ship == ship_id && prior_slot == slot &&
+                prior_id.checked_add(1) == Some(projectile_id) &&
+                view.combat.weapon_is_dual_cannon(ship_id, slot));
+            previous_launch = Some((ship_id, slot, projectile_id));
             if self.seen_projectiles.insert(projectile_id, view.tick).is_some() ||
-                first_snapshot { continue; }
+                first_snapshot || second_barrel { continue; }
             let Some(kind) = view.combat.weapon_projectile_type(ship_id, slot)
                 else { continue };
             let Some(effect) = Effect::projectile(kind) else { continue };
