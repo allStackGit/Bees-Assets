@@ -3200,6 +3200,8 @@ fn preflight_native_fleet_edit_with_squads(
                 .map_err(|error| contextual("shop purchased FleetShip placement", error))?;
             source.omit_killed_fleet_ships(side, casualties)
                 .map_err(|error| contextual("shop saved-fleet casualties", error))?;
+            source.validate_campaign_deployment(side)
+                .map_err(|error| contextual("shop final campaign deployment", error))?;
             source.apply_saved_squad_matching_speeds(
                 side, &progress.tactics_for_side(side),
             ).map_err(|error| contextual("shop saved matching speed", error))?;
@@ -3566,6 +3568,8 @@ fn run_set_saved_squad_tactics(
                 .map_err(|error| contextual("tactics purchased fleet preflight", error))?;
             scene.omit_killed_fleet_ships(entry.side, &lost)
                 .map_err(|error| contextual("tactics saved casualties preflight", error))?;
+            scene.validate_campaign_deployment(entry.side)
+                .map_err(|error| contextual("tactics final campaign deployment", error))?;
             scene.apply_saved_squad_matching_speeds(entry.side, &effective)
                 .map_err(|error| contextual("tactics matching-speed preflight", error))?;
             checked += 1;
@@ -5450,11 +5454,9 @@ fn run_battle(
         {
             return Err(invalid("Reinforcements reference an unknown source squad item ID").into());
         }
-        if mission.is_some_and(|mission| !source.source_squads.iter().any(|squad|
-            squad.side == mission.player_side && squad.player_permissions.user_controlled &&
-            !squad.members.is_empty()))
-        {
-            return Err(invalid("The campaign player side has no authored player squad").into());
+        if let Some(mission) = mission {
+            source.validate_campaign_deployment(mission.player_side)
+                .map_err(|error| contextual("final campaign deployment", error))?;
         }
         // A mission side needs real command authority in either runtime:
         // human player squads during ordinary play and authenticated group

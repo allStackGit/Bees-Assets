@@ -1677,15 +1677,27 @@ impl NativePhysicalScene {
             // a single-world-body operation.
             changes += family.len();
         }
-        // Preserve emptied SavedSquad identities for future deployment or
-        // purchases. Only the live roster excludes vacant squads.
-        if !self.source_squads.iter().any(|squad|
-            squad.side == side && squad.player_permissions.user_controlled &&
-            !squad.members.is_empty())
-        {
-            return Err(invalid("roster changes would leave no playable player SavedSquad"));
-        }
+        // Preserve emptied SavedSquad identities for subsequent purchases.
+        // The original roster is only one part of career restoration; it
+        // can be entirely reserved while purchased/earned ships deploy.
         Ok(changes)
+    }
+
+    /// Validate the final deployed campaign fleet, not an intermediate
+    /// original-roster edit before purchases and casualties are applied.
+    pub fn validate_campaign_deployment(&self, player_side: i32)
+        -> Result<(), NativeSnapshotError>
+    {
+        if !matches!(player_side, 1 | 2) ||
+            !self.source_squads.iter().any(|squad|
+                squad.side == player_side && squad.player_permissions.user_controlled &&
+                !squad.members.is_empty())
+        {
+            return Err(NativeSnapshotError::InvalidNativeLayout(
+                "the saved campaign fleet has no surviving player-controlled squad",
+            ));
+        }
+        Ok(())
     }
 
     /// Apply previously saved campaign casualties to the actual authored
