@@ -2893,6 +2893,7 @@ pub fn connect_remote(
                         ==Some(id));
                 if let Some(id)=clicked_tab.filter(|_| battlefield_input) {
                     peer.metrics.squad_tab_clicks+=1;
+                    audio.click_ui();
                     if control {
                         if let Some(index)=selected.iter().position(|&current|current==id) {
                             selected.remove(index);
@@ -2908,6 +2909,7 @@ pub fn connect_remote(
                 }
                 if let Some(action)=clicked {
                     peer.metrics.tactical_button_clicks+=1;
+                    audio.click_ui();
                     if let Err(error)=remote_tactical_action(
                         &mut peer,&mut selected,&mut mode,&mut patrol_start,
                         &mut held_fire_active,&mut held_fire_target,
