@@ -1565,9 +1565,12 @@ resolved against the next living squad rather than a baked target list.
 Specialist formations include multiple genuine Bee Scouts and their
 physical Beacons, Human Barges with Charge, Fire Barges with source-authored
 explosive weapons, and Yellow Jackets with their real detonations. Human
-Carriers bring both their original free armed Drones and bomb-carrying
-Strikers into battle; these independent squads share their real Carrier's
-persistent fleet ownership and deploy with it during reinforcement waves.
+Carriers can carry one, two or four free armed Drones and the same number
+of bomb-carrying Strikers per Carrier. Each physically independent squad
+shares its real Carrier's persistent fleet ownership and deploys with it
+during reinforcement waves. Deck counts are selected explicitly when
+building a fleet; all children remain real units in saved battles,
+multiplayer games and native training.
 Carrier deaths retain the shared native child's original rehoming lifecycle.
 Beehives, WarpGates and Queens retain their own game abilities.
 Mixed fleets use original source hulls; physical metadata, weapons,
