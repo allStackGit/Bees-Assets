@@ -2073,11 +2073,18 @@ fn current_state(
                 "duration_seconds": objective.duration_seconds,
                 "seconds_remaining": objective.seconds_remaining,
             }))
-        } else if let Some((exiting_side, _, escort)) = view.combat.extraction_objective() {
-            (!escort).then(|| json!({
-                "kind": "extraction",
-                "exiting_side": exiting_side,
-                "retreat_on_exit": view.combat.extraction_is_withdrawal(),
+        } else if let Some(barges) = view.rescue_barges {
+            // Original rescue squad identities are private to the
+            // authenticated campaign owner; the opponent sees only
+            // the public mission objective, not hidden hull casualties.
+            let own = view.campaign_dialogue_side == Some(side);
+            Some(json!({
+                "kind": "barge_rescue",
+                "rescuer_side": view.campaign_dialogue_side,
+                "barges_remaining": if own {
+                    Some(barges.iter().filter(|id| view.combat.ship(**id)
+                        .is_some_and(|ship| !ship.vitals.is_dead())).count())
+                } else { None },
             }))
         } else { None },
         // An authored exit is also public to both opponents in the local

@@ -98,6 +98,8 @@ pub struct NativeRenderWorldView<'a> {
     /// The original CampaignDialogue player's side, not a mutable local
     /// viewer. Dedicated multiplayer hosts can have no local viewer.
     pub campaign_dialogue_side: Option<i32>,
+    /// Source Uranus III rescue identity; never a second ship lifecycle.
+    pub rescue_barges: Option<[i64; 3]>,
     pub survival: Option<bees_sim::episode_terminal::SurvivalStatus>,
     pub demolition: Option<bees_sim::episode_terminal::DemolitionStatus>,
     pub escort: Option<bees_sim::episode_terminal::EscortStatus>,

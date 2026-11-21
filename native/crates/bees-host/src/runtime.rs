@@ -1793,6 +1793,8 @@ where
             terminal_result: world.state.events.latest_finalized_episode().map(|episode| episode.result),
             campaign_dialogue: world.state.campaign_dialogue.as_ref().map(|dialogue| dialogue.current()),
             campaign_dialogue_side: world.state.campaign_dialogue.as_ref().map(|dialogue| dialogue.player_side()),
+            rescue_barges: world.state.campaign_dialogue.as_ref()
+                .and_then(|dialogue| dialogue.rescue_barges()),
             survival: world.state.events.survival_status(),
             demolition: world.state.events.demolition_status(),
             escort: world.state.events.escort_status(),

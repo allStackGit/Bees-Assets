@@ -2099,6 +2099,17 @@ impl NativeSoftwareRenderer {
                 };
                 text::draw_centered(&mut self.pixels, self.width, 8, label, 1, [239, 247, 255]);
             }
+        } else if let Some(barges) = view.rescue_barges {
+            let surviving = barges.iter().filter(|id| view.combat.ship(**id)
+                .is_some_and(|ship| !ship.vitals.is_dead())).count();
+            let viewer = view.player_authority.player_viewer_side();
+            let label = if viewer == view.campaign_dialogue_side {
+                format!("Rescue the Barges  {surviving}/3 alive  |  Destroy all Bees")
+            } else {
+                "Prevent the Barge rescue  |  Destroy the opposing fleet".to_owned()
+            };
+            text::draw_centered(&mut self.pixels, self.width, 8,
+                &label, 1, [239, 247, 255]);
         }
         // The durable Level notification records arrivals exactly once.
         // A short visual acknowledgement survives an outbox ACK, but
@@ -2106,7 +2117,8 @@ impl NativeSoftwareRenderer {
         // games do not consume its time and no frame timer is allocated.
         if view.terminal_result.is_none() {
             let y = if view.survival.is_some() || view.demolition.is_some() ||
-                view.escort.is_some() || view.combat.extraction_objective().is_some() {
+                view.escort.is_some() || view.combat.extraction_objective().is_some() ||
+                view.rescue_barges.is_some() {
                 8 + text::HEIGHT + 4
             } else { 8 };
             let recently_arrived = view.last_reinforcement_tick

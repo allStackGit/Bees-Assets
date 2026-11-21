@@ -1837,6 +1837,19 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             text::draw_at(pixels,WIDTH,16,20,
                 text::fit(&label,FIELD-32),2,[255,210,129]);
         } else if let Some(objective)=state["campaign_objective"].as_object() {
+            if objective.get("kind").and_then(Value::as_str) == Some("barge_rescue") {
+                let rescue = objective.get("rescuer_side").and_then(Value::as_i64)
+                    == Some(i64::from(side));
+                let text_label = if rescue {
+                    objective.get("barges_remaining").and_then(Value::as_u64)
+                        .map(|count| format!("Rescue the Barges  {count}/3 alive  |  Destroy all Bees"))
+                        .unwrap_or_else(|| "Rescue the Barges  |  Destroy all Bees".to_owned())
+                } else {
+                    "Prevent the Barge rescue  |  Destroy the opposing fleet".to_owned()
+                };
+                text::draw_at(pixels,WIDTH,16,23,
+                    text::fit(&text_label,FIELD-32),1,[255,211,130]);
+            }
             if objective.get("kind").and_then(Value::as_str) == Some("extraction") {
                 let escaping = objective.get("exiting_side")
                     .and_then(Value::as_i64) == Some(i64::from(side));

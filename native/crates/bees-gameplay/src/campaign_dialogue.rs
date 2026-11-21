@@ -294,6 +294,16 @@ impl CampaignDialogue {
     /// any authenticated remote commander's temporary input scope.
     pub fn player_side(&self) -> i32 { self.player_side }
 
+    /// Read-only objective identity for local and authenticated LAN HUDs.
+    /// The three source FleetShip hulls are still owned by CombatWorld.
+    pub fn rescue_barges(&self) -> Option<[i64; 3]> {
+        if let DialogueMode::UranusNewThreat { barges, .. } = self.mode {
+            Some(barges)
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn set_cue(&mut self, cue: CampaignCue) {
         self.sequence += 1;
         self.cue = cue;
