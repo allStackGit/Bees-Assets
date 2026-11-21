@@ -1492,7 +1492,7 @@ pub(super) fn archive(
         for (index, &squad_item_id) in squad_ids[side].iter().take(10).enumerate() {
             cloned.number_squads.push(NativeSquadShortcut {
                 squad_item_id, side: side as i32 + 1,
-                number: (index as u32 + 1) % 10,
+                number: index as u32 + 1,
                 original_squad_count: count,
             });
         }
