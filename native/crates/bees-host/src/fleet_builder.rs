@@ -1389,45 +1389,56 @@ pub(super) fn archive(
                     squad_ids[side].push(new_squad);
                     miner_squads.push(new_squad);
                 } else {
-                    // Every Barge and Yellow Jacket has a physically
-                    // registered Bomb/Charge weapon identity. Generic
-                    // NativeSquadClone correctly refuses those actors:
-                    // materialize independent source-authored FleetShips
-                    // with distinct weapons and ordinary command squads.
-                    if side != 1 || !matches!(selected.mix[side],
-                        FleetMix::Chargers | FleetMix::FireBarges | FleetMix::Detonators)
+                    // Scout Beacons and special Bomb/Charge weapons each
+                    // own authentic source-defined spawn and weapon
+                    // contracts. Generic single-hull cloning is not safe:
+                    // create independent FleetShip and command identities
+                    // while keeping the SAME physical gameplay engine.
+                    if !((side == 0 && matches!(selected.mix[side], FleetMix::Scouts)) ||
+                        (side == 1 && matches!(selected.mix[side],
+                            FleetMix::Chargers | FleetMix::FireBarges | FleetMix::Detonators)))
                     {
                         return Err(invalid("source specialist replication is unsupported").into());
                     }
+                    let side_id = side as i64 + 1;
                     let ship_type = selected.mix[side].specialist_type(side);
                     let template = available.iter().find(|ship|
-                        ship["side"] == 2 && ship["ship_type"] == ship_type
+                        ship["side"].as_i64() == Some(side_id) &&
+                        ship["ship_type"] == ship_type
                     ).ok_or_else(|| invalid("multi-specialist fleet lacks physical source class"))?;
                     let expected_special = match selected.mix[side] {
+                        FleetMix::Scouts => "scout",
                         FleetMix::Chargers => "barge",
                         FleetMix::FireBarges => "fire_barge",
                         FleetMix::Detonators => "yellow_jacket",
                         _ => unreachable!("validated native special fleet mix"),
                     };
+                    let scout = side == 0;
                     if template["special"]["kind"] != expected_special ||
-                        !template["special_weapon"].is_object()
+                        (scout && !template["special"]["beacon"].is_object()) ||
+                        (!scout && !template["special_weapon"].is_object())
                     {
-                        return Err(invalid("native specialist lacks its source Bomb weapon contract").into());
+                        return Err(invalid("native specialist lacks its source ability contract").into());
                     }
-                    // Under 10,000 so native clone IDs remain above all
-                    // original entities. Weapon IDs are globally distinct
-                    // from the source special mounts and Carrier decks.
-                    let ship_id = 600_i64 + index as i64;
-                    let squad_id = 700_i64 + index as i64;
+                    // Allocate below the 10,000+ cloned-ship space, with
+                    // disjoint per-side entity/squad identities and unique
+                    // physical Bomb weapon IDs. Scout Beacons allocate
+                    // their own runtime identities through CombatWorld.
+                    let ship_id = 600_i64 + side as i64 * 200 + index as i64;
+                    let squad_id = 700_i64 + side as i64 * 200 + index as i64;
                     let weapon_id = 7_000_i64 + index as i64;
                     let offset = offsets[side][index];
                     let controlled = !selected.ai_both &&
-                        selected.player_side.is_none_or(|player| player == 2);
+                        selected.player_side.is_none_or(|player| player == side as i32 + 1);
                     let mut ship = template.clone();
                     ship["entity_id"] = json!(ship_id);
                     ship["fleet_ship_id"] = json!(ship_id);
-                    ship["special_weapon"]["weapon_id"] = json!(weapon_id);
-                    ship["position"] = json!([75.0 + offset[0], offset[1]]);
+                    if !scout {
+                        ship["special_weapon"]["weapon_id"] = json!(weapon_id);
+                    }
+                    ship["position"] = json!([
+                        (if side == 0 { -75.0 } else { 75.0 }) + offset[0], offset[1],
+                    ]);
                     ship["formation_offset"] = json!([0.0, 0.0]);
                     ship["user_controlled"] = json!(controlled);
                     scene["ships"].as_array_mut()
@@ -1436,14 +1447,19 @@ pub(super) fn archive(
                     scene["squads"].as_array_mut()
                         .ok_or_else(|| invalid("native specialist scene lost squad roster"))?
                         .push(json!({
-                            "item_id": squad_id, "side": 2, "members": [ship_id],
+                            "item_id": squad_id, "side": side_id, "members": [ship_id],
                             "shooting_strategy_id": 1,
                             "user_controlled": controlled,
                             "can_accept_input": controlled,
                             "command_bans": [],
                         }));
                     squad_ids[side].push(squad_id);
-                    if matches!(selected.mix[side], FleetMix::Chargers) {
+                    if scout {
+                        let sight = template["sight"]["source_sight"].as_f64()
+                            .filter(|v| v.is_finite() && *v > 0.0)
+                            .ok_or_else(|| invalid("source Scout has no authenticated sight"))?;
+                        scout_squads.insert(squad_id, sight);
+                    } else if matches!(selected.mix[side], FleetMix::Chargers) {
                         charger_squads.push(squad_id);
                     } else {
                         bombing_squads.push(squad_id);
