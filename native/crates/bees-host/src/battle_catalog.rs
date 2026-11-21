@@ -1204,6 +1204,47 @@ impl BattleCatalog {
                     // not invent fleet statistics for unavailable history.
                     progress.battles_without_fleet_data += 1;
                 }
+                // Neptune's source ending can permanently sacrifice all
+                // Factories even when some were in reserve and never
+                // appeared in the physical World. Read the exact retired
+                // FleetShip IDs from this battle's committed terminal
+                // outcome, not its current combat casualties or mutable
+                // player menu. Retired ships cannot be redeployed.
+                if !outcome.retired_fleet_ids.is_empty() {
+                    if state.latest_victory ||
+                        mission.retire_on_defeat_types.is_empty() ||
+                        !mission.persist_fleet_losses ||
+                        outcome.retired_fleet_ids.len() > 32768
+                    {
+                        return Err(invalid(
+                            "unauthorized native campaign defeat FleetShip retirement",
+                        ));
+                    }
+                    let mut seen = HashSet::new();
+                    for &id in &outcome.retired_fleet_ids {
+                        if id <= 0 || !seen.insert(id) {
+                            return Err(invalid(
+                                "invalid duplicate permanent campaign FleetShip loss",
+                            ));
+                        }
+                        let fleet = progress.fleet.entry(id).or_insert_with(||
+                            FleetProgress {
+                                side: mission.player_side,
+                                loss_history_complete: true,
+                                combat_history_complete: true,
+                                special_history_complete: true,
+                                ..FleetProgress::default()
+                            }
+                        );
+                        if fleet.side != mission.player_side {
+                            return Err(invalid(
+                                "campaign defeat attempted to retire another faction's FleetShip",
+                            ));
+                        }
+                        fleet.is_dead = true;
+                        fleet.loss_history_complete = true;
+                    }
+                }
             }
             Ok(())
         };
