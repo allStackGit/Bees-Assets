@@ -19,7 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from package_policy_manifest import (
     export_model, verify_package as verify_policy_package,
@@ -247,14 +247,17 @@ def package_game_library(
             for game in data["games"]:
                 if game["kind"] not in ("campaign", "battle"):
                     raise ValueError("Unknown native game library item")
-                pending.append((str(path.parent / game["config"]),
+                pending.append(((PurePosixPath(path.parent.as_posix()) /
+                                 game["config"]).as_posix(),
                                 game["kind"] if game["kind"] == "campaign" else "run"))
         elif kind == "campaign":
             for battle in data["battles"]:
-                pending.append((str(path.parent / battle["config"]), "run"))
+                pending.append(((PurePosixPath(path.parent.as_posix()) /
+                                 battle["config"]).as_posix(), "run"))
                 route = (battle.get("mission") or {}).get("on_victory")
                 if route is not None:
-                    pending.append((str(path.parent / route["config"]), "run"))
+                    pending.append(((PurePosixPath(path.parent.as_posix()) /
+                                     route["config"]).as_posix(), "run"))
         elif kind == "run":
             if data.get("hivemind") or data.get("model_updates") or (
                     data.get("recover_notifications") or
