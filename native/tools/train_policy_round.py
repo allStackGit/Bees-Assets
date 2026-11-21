@@ -29,6 +29,7 @@ from native_training_artifacts import (
     file_sha256, check_learner, sync_directory, normalized_python_source_sha256,
     native_source_contract_sha256,
     verified_source_scene_cache, combined_source_scene_cache,
+    native_manifest_model_dependencies, check_native_model_dependencies,
 )
 from native_distributed_collection import verify_bundle, aggregate_collection_metrics
 from transfer_policy_bundle import artifact_paths
@@ -1459,6 +1460,14 @@ def main() -> None:
         ]
 
     config = source_config(run_path, manifest, output)
+    # Check the actual bytes selected by the resident policy worker, not
+    # only the manifest or learner checkpoint. Physical collectors can
+    # otherwise publish valid-looking experience after a model file
+    # changes during the rollout. This cost occurs at launch/finalization,
+    # never in the authoritative simulation's fixed-step hot path.
+    model_dependencies = native_manifest_model_dependencies(
+        manifest, os.environ.get("BEES_NATIVE_MODEL_STORE"),
+    )
     # One-shot build evidence for a collector. Native runners naturally
     # differ between Windows and Linux, but every collector in one update
     # must use identical policy-worker implementation bytes.
@@ -1576,6 +1585,7 @@ def main() -> None:
         rollout_gpus, gpu_mask, args.leased_gpu_inference,
         args.leased_gpu_count, resume=args.resume_rollout,
     )
+    check_native_model_dependencies(model_dependencies)
     if args.collect_only:
         captures = []
         for shard, _ in shards:
