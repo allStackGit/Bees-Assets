@@ -106,6 +106,102 @@ fn uranus_defensive_mining_matches_source(
     physical_count == 6 && seen.into_iter().all(|found| found)
 }
 
+/// Physical source wave membership at the native scene boundary.
+/// The same source SavedSquad selection rules apply to Uranus II and III:
+/// GetSquadByComposition can omit unavailable types or use differently
+/// sized homogeneous squads, but may not substitute a different ship type.
+fn authored_reinforcement_types(
+    wave: &crate::reinforcements::NativeReinforcementPlan,
+    bee_side: i32,
+    squads: &HashMap<i64, &NativeSourceSquad>,
+    ships: &HashMap<i64, &NativeAuthoredShip>,
+) -> Option<Vec<Option<u8>>> {
+    let mut actual = Vec::with_capacity(wave.squad_item_ids.len());
+    let mut seen = HashSet::new();
+    for squad_id in &wave.squad_item_ids {
+        let squad = squads.get(squad_id)?;
+        if squad.side != bee_side || squad.members.is_empty() {
+            return None;
+        }
+        let mut uniform = None;
+        let mut mixed = false;
+        for id in &squad.members {
+            if !seen.insert(*id) { return None; }
+            let ship = ships.get(id)?;
+            if ship.side != bee_side { return None; }
+            if uniform.is_some_and(|kind| kind != ship.ship_type) {
+                mixed = true;
+            }
+            uniform = Some(ship.ship_type);
+        }
+        actual.push(if mixed { None } else { uniform });
+    }
+    Some(actual)
+}
+
+fn authored_reinforcement_matches(
+    wave: &crate::reinforcements::NativeReinforcementPlan,
+    bee_side: i32,
+    squads: &HashMap<i64, &NativeSourceSquad>,
+    ships: &HashMap<i64, &NativeAuthoredShip>,
+    required: &[u8],
+    veterans: bool,
+) -> bool {
+    let Some(actual) = authored_reinforcement_types(
+        wave, bee_side, squads, ships,
+    ) else { return false };
+    let in_source_order = |actual: &[Option<u8>]| {
+        let mut next = 0;
+        for kind in actual {
+            let Some(kind) = kind else { return false };
+            let Some(offset) = required[next..].iter()
+                .position(|expected| expected == kind) else {
+                return false;
+            };
+            next += offset + 1;
+        }
+        true
+    };
+    if veterans {
+        actual.is_empty() ||
+            (0..actual.len()).any(|start| in_source_order(&actual[start..]))
+    } else {
+        in_source_order(&actual)
+    }
+}
+
+/// The Uranus III 60-second follow-up timer introduces the exact original
+/// Bee classes from AIStartingPosition + (100,0), with an approach to the
+/// original AI home. The real source can omit depleted squad types.
+fn uranus_new_threat_wave_matches_source(
+    waves: &[crate::reinforcements::NativeReinforcementPlan],
+    ai_home: Vec2,
+    bee_side: i32,
+    squads: &[NativeSourceSquad],
+    entities: &[NativeAuthoredEntity],
+) -> bool {
+    use crate::reinforcements::NativeReinforcementActivation::AfterSeconds;
+    let [wave] = waves else { return false };
+    if !matches!(wave.activation, AfterSeconds(seconds)
+        if (seconds - 60.0).abs() <= 0.0001) ||
+        !wave.spawn.is_some_and(|start|
+            start.unity_equal(ai_home + Vec2::new(100.0, 0.0))) ||
+        !wave.entry.is_some_and(|entry| entry.unity_equal(ai_home))
+    {
+        return false;
+    }
+    let by_squad = squads.iter().map(|squad|
+        (squad.item_id, squad)).collect::<HashMap<_, _>>();
+    let by_ship = entities.iter().filter_map(|entity| match entity {
+        NativeAuthoredEntity::Ship(ship) => Some((ship.entity_id, ship)),
+        _ => None,
+    }).collect::<HashMap<_, _>>();
+    authored_reinforcement_matches(
+        wave, bee_side, &by_squad, &by_ship,
+        &[14, 21, 15, 22, 22], false,
+    )
+}
+
 /// Validate Uranus II's six timers against all nine *physical* source
 /// AddReinforcementSquads calls. Three later timers each launch one
 /// upper-lane and one lower-lane formation. Reusing a timer with all
@@ -135,51 +231,6 @@ fn uranus_defensive_waves_match_source(
         NativeAuthoredEntity::Ship(ship) => Some((ship.entity_id, ship)),
         _ => None,
     }).collect();
-    let composition = |wave: &crate::reinforcements::NativeReinforcementPlan,
-                       required: &[u8], veterans: bool| -> bool {
-        let mut actual = Vec::with_capacity(wave.squad_item_ids.len());
-        let mut seen = HashSet::new();
-        for squad_id in &wave.squad_item_ids {
-            let Some(squad) = by_squad.get(squad_id) else { return false };
-            if squad.side != bee_side || squad.members.is_empty() {
-                return false;
-            }
-            let mut uniform = None;
-            let mut mixed = false;
-            for id in &squad.members {
-                if !seen.insert(*id) { return false; }
-                let Some(ship) = by_ship.get(id) else { return false };
-                if ship.side != bee_side { return false; }
-                if uniform.is_some_and(|kind| kind != ship.ship_type) { mixed = true; }
-                uniform = Some(ship.ship_type);
-            }
-            actual.push(if mixed { None } else { uniform });
-        }
-        // The source can omit an unavailable SavedSquad rather than
-        // fabricate the requested ship count. Present squads must still
-        // follow their original ordered types, including repeated types.
-        let matches_order = |actual: &[Option<u8>]| {
-            let mut next = 0;
-            for kind in actual {
-                let Some(kind) = kind else { return false };
-                let Some(offset) = required[next..].iter()
-                    .position(|expected| expected == kind) else {
-                    return false;
-                };
-                next += offset + 1;
-            }
-            true
-        };
-        if veterans {
-            // Source may run the timer with no available Bee squads at
-            // all; otherwise historic mixed squads prefix the surviving
-            // newly selected formations in their original order.
-            actual.is_empty() ||
-                (0..actual.len()).any(|start| matches_order(&actual[start..]))
-        } else {
-            matches_order(&actual)
-        }
-    };
     let Some(initial) = waves.iter().find(|wave| timed(wave, 120.0)) else {
         return false;
     };
@@ -217,7 +268,9 @@ fn uranus_defensive_waves_match_source(
                 (600, false, true) => (&[14, 21, 15, 22, 22, 3, 16][..], false),
                 _ => return false,
             };
-            if !composition(wave, required, veterans) { return false; }
+            if !authored_reinforcement_matches(
+                wave, bee_side, &by_squad, &by_ship, required, veterans,
+            ) { return false; }
             if route_upper { upper += 1; } else { lower += 1; }
         }
         if (upper, lower) != (upper_count, lower_count) { return false; }
@@ -2942,10 +2995,13 @@ impl NativePhysicalScene {
                 // The warning is authored for the 60-second wave only.
                 // A scene without that genuine wave cannot advertise the
                 // full rescue story.
-                !setup.reinforcements.iter().any(|wave|
-                    matches!(wave.activation,
-                        crate::reinforcements::NativeReinforcementActivation::AfterSeconds(seconds)
-                        if (seconds - 60.0).abs() <= 0.0001)) ||
+                !self.starting_positions.is_some_and(|home|
+                    usize::try_from(bee_side - 1).ok()
+                        .and_then(|index| home.get(index))
+                        .is_some_and(|ai|
+                            uranus_new_threat_wave_matches_source(
+                                &setup.reinforcements, *ai, bee_side,
+                                &self.source_squads, &self.entities))) ||
                 setup.survival.is_some() || setup.demolition.is_some() ||
                 setup.escort.is_some() || setup.extraction.is_some() ||
                 barges.iter().any(|id| *id <= 0) ||
