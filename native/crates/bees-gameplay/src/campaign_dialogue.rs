@@ -607,12 +607,15 @@ impl CampaignDialogue {
             if !*discovered || !both_sides_fighting {
                 return None;
             }
-            *hit_seen |= world.events().iter().any(|event| match event {
-                bees_sim::combat_world::CombatEvent::Hit(hit) =>
-                    hit.attacker_id == *bumblebee_id &&
-                    hit.target_side == self.player_side && hit.delta.applied_damage > 0,
-                _ => false,
-            });
+            // Unity Ship.ApplyDamage adds the living target to
+            // attacker.ShipsHit *before* subtracting health, even when
+            // MakeShotsHarmless reduces the applied power to zero. The
+            // Bumblebee's encounter trigger reads ShipsHit.Count > 0,
+            // not accumulated damage or the victim's faction.
+            *hit_seen |= world.events().iter().any(|event| matches!(event,
+                bees_sim::combat_world::CombatEvent::Hit(hit)
+                    if hit.attacker_id == *bumblebee_id
+            ));
             if *hit_seen && !*hit_reported {
                 *hit_reported = true;
                 return Some(CampaignCue::UranusOffensiveBumblebeeHit);
