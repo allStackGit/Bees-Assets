@@ -94,40 +94,47 @@ impl CombatWorld {
     {
         let mut counts = StepCounts { weapon_range_exits: std::mem::take(&mut self.pending_weapon_range_exits), ..StepCounts::default() };
         self.range_visible_map_objects.clear();
-        // Active-obstacle physics ticks leave the shared grid bound to
-        // obstacles; clear arenas keep its already-built ship population.
-        // Resolve the faction-wide MapObject union first, allowing the
-        // obstacle query to rebind lazily when necessary, before ship
-        // contact queries reuse the one ship grid. This avoids scanning
-        // every MapObject for every turret in obstacle-rich battles.
+        // Reuse per-side sets rather than reallocating them at every tick.
+        self.range_visible_map_objects_by_side.values_mut()
+            .for_each(HashSet::clear);
+        // One physical obstacle query serves both the authored global
+        // MapObject union and remote commanders' faction-specific visibility.
+        // A side that sees every object can skip its remaining range queries,
+        // without stopping another side from discovering the same objects.
         if !self.map_objects.is_empty() {
             for (&ship_id, weapons) in &self.ship_weapons {
-                if self.range_visible_map_objects.len() == self.map_objects.len() { break; }
                 let owner_index = self.ship_by_id[&ship_id];
                 let body = &self.physics.ships()[owner_index];
                 if !body.active || self.ships[owner_index].vitals.is_dead() { continue; }
+                let side = self.ships[owner_index].side;
+                let visible = self.range_visible_map_objects_by_side
+                    .entry(side).or_default();
+                if visible.len() == self.map_objects.len() { continue; }
                 let position = body.motion.position;
                 let rotation = body.motion.rotation_degrees;
                 for mount in weapons.turrets.iter().flatten() {
-                    if self.range_visible_map_objects.len() == self.map_objects.len() { break; }
-                    let Ok(range) = mount.world_range(position, rotation, weapons.last_hull_rotation)
-                        else { continue };
+                    if visible.len() == self.map_objects.len() { break; }
+                    let Ok(range) = mount.world_range(
+                        position, rotation, weapons.last_hull_rotation,
+                    ) else { continue };
                     if !range.enabled { continue; }
                     counts.weapon_range_map_object_grid_rebuilds += u64::from(
                         self.physics.circle_obstacle_contact_candidates(
                             range.center, range.radius, &mut self.weapon_range_candidates,
                         ),
                     );
-                    counts.weapon_range_map_object_candidates += self.weapon_range_candidates.len() as u64;
+                    counts.weapon_range_map_object_candidates +=
+                        self.weapon_range_candidates.len() as u64;
                     for &index in &self.weapon_range_candidates {
                         let obstacle = &self.physics.obstacles()[index];
                         let id = obstacle.id;
                         if self.map_objects.contains_key(&id) &&
-                            !self.range_visible_map_objects.contains(&id) &&
+                            !visible.contains(&id) &&
                             collisions.allows(range.layer, obstacle.layer)
                         {
                             counts.weapon_range_map_object_exact_tests += 1;
                             if obstacle.primary_overlaps_circle(range.center, range.radius) {
+                                visible.insert(id);
                                 self.range_visible_map_objects.insert(id);
                             }
                         }
