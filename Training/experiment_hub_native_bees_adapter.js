@@ -560,6 +560,30 @@ function rolloutGpuMeasurements(rollout) {
             };
         }
     }
+    const staging=proof.accelerator_input_staging;
+    if (staging !== undefined) {
+        const fields=['device_buffer_growths','device_input_reused_forwards',
+                      'device_rows_staged','workers_observed'];
+        if (!staging || typeof staging!=='object' || Array.isArray(staging) ||
+            fields.some(key=>!Number.isSafeInteger(staging[key]) || staging[key]<0) ||
+            staging.workers_observed<1 ||
+            staging.workers_observed>proof.verified_workers ||
+            staging.device_buffer_growths+staging.device_input_reused_forwards>
+                proof.model_forwards ||
+            staging.device_rows_staged>proof.agent_rows)
+            throw Error('Invalid native GPU resident input staging observations.');
+        for (const key of fields)
+            metrics['rollout_gpu_'+key]={value:staging[key],unit:'count'};
+        if (staging.collectors_observed!==undefined) {
+            if (!Number.isSafeInteger(staging.collectors_observed) ||
+                staging.collectors_observed<1 ||
+                staging.collectors_observed>proof.collector_count)
+                throw Error('Invalid distributed GPU input staging coverage.');
+            metrics.rollout_gpu_staging_collectors_observed={
+                value:staging.collectors_observed,unit:'count',
+            };
+        }
+    }
     if (proof.per_device !== undefined) {
         if (!Array.isArray(proof.per_device) ||
             ![1, 2].includes(proof.per_device.length) ||
