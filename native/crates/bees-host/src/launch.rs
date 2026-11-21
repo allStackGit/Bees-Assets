@@ -4334,7 +4334,7 @@ fn new_library_battle_output(save_root: &Path, game_id: &str)
     }
 }
 
-/// Project original per-mode match wins from already committed physical
+/// Project original human/bee per-mode match wins from already committed
 /// battle summaries. Each numbered battle is counted at most once; a
 /// closed, failed, interrupted or nonterminal run never creates a win.
 /// The immutable archive is the only durable owner: no parallel scoreboard
@@ -4352,9 +4352,9 @@ fn archived_library_battle_wins(
         let name = entry.file_name();
         let Some(number) = name.to_str().and_then(|value|
             value.strip_prefix("battle-")).filter(|value|
-                value.len() == 6 && value.bytes().all(|ch| ch.is_ascii_digit()))
+                value.len() >= 6 && value.bytes().all(|ch| ch.is_ascii_digit()))
         else { continue };
-        if number.parse::<u32>().is_err() { continue; }
+        if number.parse::<u64>().is_err() { continue; }
         let run = entry.path().join("run");
         let receipt = run.join("rollout-summary.json");
         if run.is_symlink() || receipt.is_symlink() || !receipt.is_file() {
@@ -4373,9 +4373,17 @@ fn archived_library_battle_wins(
             continue;
         }
         let Some(side) = result["winner_side"].as_u64() else { continue };
-        if (1..=2).contains(&side) {
-            side_wins[side as usize - 1] =
-                side_wins[side as usize - 1].saturating_add(1);
+        let Some(bee) = summary["battle_factions"]["bee_side"].as_u64() else {
+            continue;
+        };
+        let Some(human) = summary["battle_factions"]["human_side"].as_u64() else {
+            continue;
+        };
+        if !matches!((bee, human), (1, 2) | (2, 1)) { continue; }
+        if side == human {
+            side_wins[0] = side_wins[0].saturating_add(1);
+        } else if side == bee {
+            side_wins[1] = side_wins[1].saturating_add(1);
         }
     }
     Ok((side_wins[0], side_wins[1]))
@@ -4897,11 +4905,11 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let mut completed_by_campaign = HashMap::<String, HashSet<String>>::new();
         let status = library.games.iter().zip(&games).map(|(item, config)| {
             if item.kind != "campaign" {
-                let (side_one, side_two) = archived_library_battle_wins(save_root, &item.id)?;
-                return Ok(if side_one + side_two == 0 {
+                let (human, bees) = archived_library_battle_wins(save_root, &item.id)?;
+                return Ok(if human == 0 && bees == 0 {
                     "  [Battle]".to_string()
                 } else {
-                    format!("  [Completed wins: Side 1 {side_one} / Side 2 {side_two}]")
+                    format!("  [Completed wins: Humans {human} / Bees {bees}]")
                 });
             }
             let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(&fs::read(config)?)?;
@@ -8749,6 +8757,10 @@ fn run_battle(
         // local score projections. Match history is derived from these
         // immutable numbered battle archives, never a separate counter.
         "battle_terminal_receipt": battle_terminal_receipt,
+        "battle_factions": (source_sides.len() == 1).then(|| json!({
+            "bee_side": source_sides[0][0],
+            "human_side": source_sides[0][1],
+        })),
         "source_scene_template_cache": {
             "distinct_source_documents": unique_source_documents,
             "distinct_parsed_layouts": unique_source_templates,
