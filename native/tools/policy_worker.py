@@ -813,6 +813,24 @@ def main() -> None:
                 measurements["actual_model_forwards"],
             "model_slots": len(policy_map),
             "distinct_loaded_models": len(resident_models),
+            # These are directly counted resident-actor device staging
+            # operations, not inferred GPU utilization or aggregate SPS.
+            # Shared slots point to ONE resident model and count once.
+            "pytorch_input_staging_by_resident_actor": [
+                {
+                    "model_slots": [str(slot) for slot, loaded in policy_map.items()
+                                    if loaded is model],
+                    "device": str(model.device),
+                    "capacity_rows": model.input_staging.capacity,
+                    "logical_capacity_bytes":
+                        model.input_staging.capacity * (OBS_FLOATS + MASK_WIDTH) * 4,
+                    "device_buffer_growths": model.input_staging.allocations,
+                    "device_input_reused_forwards": model.input_staging.reused_forwards,
+                    "device_rows_staged": model.input_staging.staged_rows,
+                }
+                for model in resident_models.values()
+                if isinstance(model, (TorchScriptPolicy, MlagentsPolicy))
+            ],
             # Actual loaded actor device / ONNX providers, distinct from
             # the operator's requested GPU visibility allocation.
             "model_execution": {
