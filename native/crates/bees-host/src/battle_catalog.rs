@@ -123,6 +123,11 @@ pub struct Mission {
     /// opposing authored forces remain owned by their scenario.
     #[serde(default)]
     pub persist_fleet_losses: bool,
+    /// Opt-in original Bee career continuity. Only real source FleetShip
+    /// IDs already retired in committed campaign encounters are omitted;
+    /// fresh generated reinforcement hulls remain unrelated.
+    #[serde(default)]
+    pub persist_enemy_fleet_losses: bool,
     /// Source mission-ending action that permanently sacrifices every
     /// currently owned FleetShip of the listed classes on defeat,
     /// including ships in reserve rather than deployed in the last Level.
@@ -679,6 +684,8 @@ impl BattleCatalog {
                 !matches!(mission.player_side, 1 | 2) ||
                 ((mission.persist_fleet_losses || mission.bank_player_minerals) &&
                     !mission.record_fleet_stats) ||
+                (mission.persist_enemy_fleet_losses &&
+                    (!mission.persist_fleet_losses || !mission.record_fleet_stats)) ||
                 (mission.grants_on_finished() &&
                     !matches!(mission.advance_on, AdvanceOn::Finished)) ||
                 earlier.contains(mission.id.as_str()) ||
@@ -1579,6 +1586,9 @@ impl BattleCatalog {
                 "bank_player_minerals": mission.bank_player_minerals,
                 "persist_fleet_losses": mission.persist_fleet_losses,
             });
+            if mission.persist_enemy_fleet_losses {
+                row["persist_enemy_fleet_losses"] = json!(true);
+            }
             if !mission.retire_on_defeat_types.is_empty() {
                 row["retire_on_defeat_types"] = json!(mission.retire_on_defeat_types);
             }
