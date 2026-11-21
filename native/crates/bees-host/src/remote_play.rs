@@ -1571,10 +1571,10 @@ fn collect_remote_audio(
                     .map(|body| body.pose.position))
             },
             CombatEvent::ShipDied { victim_id, end_kill: false, .. } => (
-                if view.combat.ship(*victim_id)
-                    .is_some_and(|ship| matches!(ship.ship_type, 7 | 10 | 11 | 17)) {
-                    "huge_explosion"
-                } else { "explosion" },
+                view.combat.ship(*victim_id)
+                    .map(|ship| crate::presentation::NativeShipExplosionSound::
+                        for_ship_type(ship.ship_type).wire_name())
+                    .unwrap_or("explosion"),
                 view.combat.ship_body(*victim_id)
                     .map(|body| body.motion.position),
             ),
