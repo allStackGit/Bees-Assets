@@ -166,25 +166,31 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
     if any(not set(squad["members"]).issubset(ships) or
             not squad["members"] for squad in squads):
         raise ValueError("player squads reference unknown physical ships")
-    # Source's SavedSquad ID must persist across every mission, unlike the
-    # Level's transient ItemId. For authored standalone battles with none,
-    # assign that authored squad's stable ItemId once in the packaged scene.
+    # SavedSquad and FleetShip are career identities, not the transient
+    # physical roster. Free Carrier complements and any other transient
+    # mission squads still deploy in the real scene, but must never become
+    # independently owned, awarded, or permanently lost account ships.
+    persistent_squads = []
     for squad in squads:
+        members = tuple(ship_id for ship_id in squad["members"]
+                        if ships[ship_id].get("persistent_fleet"))
+        if not members:
+            if squad.get("saved_squad_id") is not None:
+                raise ValueError("transient player squad cannot own a SavedSquad identity")
+            continue
         saved = squad.setdefault("saved_squad_id", squad["item_id"])
         if type(saved) is not int or saved <= 0:
             raise ValueError("campaign SavedSquad identities must be positive")
-    if len({squad["saved_squad_id"] for squad in squads}) != len(squads):
+        persistent_squads.append((saved, members))
+    if len({saved for saved, _ in persistent_squads}) != len(persistent_squads):
         raise ValueError("duplicate player SavedSquad identities")
     canonical = {
         "ships": sorted((
             ship["entity_id"], ship["ship_type"],
             ship.get("fleet_ship_id"), ship.get("persistent_fleet", False),
             ship["max_tsv"], ship["max_health"],
-        ) for ship in ships.values()),
-        "squads": sorted((
-            squad["saved_squad_id"],
-            tuple(squad["members"]),
-        ) for squad in squads),
+        ) for ship in ships.values() if ship.get("persistent_fleet")),
+        "squads": sorted(persistent_squads),
     }
     return scene, run, {
         "source_run": str(run_path),
@@ -350,7 +356,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             mission_advances.get(grant_mission, "victory") == "victory"
         }
         authored_squads = {squad["saved_squad_id"] for squad in scene["squads"]
-                           if squad["side"] == args.player_side}
+                           if squad["side"] == args.player_side and
+                           squad.get("saved_squad_id") is not None}
         squad_grants = [grant for grant in args.victory_squad if grant[0] == index]
         if len(squad_grants) > 64:
             raise ValueError(f"mission {index} awards too many new SavedSquads")

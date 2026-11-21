@@ -5617,15 +5617,23 @@ fn run_battle(
                         invalid("saved squad has a missing authored member"))?;
                     let fleet = source.fleet.get(id).ok_or_else(||
                         invalid("saved squad has no FleetShip metadata"))?;
+                    if ship.side != squad.side {
+                        return Err(invalid("saved squad contains a ship from another faction").into());
+                    }
+                    // Source physical squads can include free carrier
+                    // complements. Their actual damage and movement still
+                    // belong to CombatWorld, while career receipts count
+                    // only persistent fleet members (including parent-
+                    // attributed carrier damage).
+                    if !fleet.has_persistent_fleet_value { continue; }
                     let fleet_id = ship.fleet_ship_id.ok_or_else(||
                         invalid("saved squad member has no persistent FleetShip identity"))?;
-                    if !fleet.has_persistent_fleet_value || ship.side != squad.side ||
-                        !saved_members.insert(fleet_id)
-                    {
-                        return Err(invalid("saved squad reuses a FleetShip or a transient minion").into());
+                    if !saved_members.insert(fleet_id) {
+                        return Err(invalid("saved squad reuses a persistent FleetShip").into());
                     }
                     fleet_ship_ids.push(fleet_id);
                 }
+                if fleet_ship_ids.is_empty() { continue; }
                 saved_squad_sources.push(CampaignSquadSource {
                     saved_squad_id, side: squad.side, fleet_ship_ids,
                 });
