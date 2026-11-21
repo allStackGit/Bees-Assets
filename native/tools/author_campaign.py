@@ -924,6 +924,14 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         sources.append({"mission_id": ident, **provenance, **variant_provenance})
     fleet_classes = []
     classes = [*args.shop_types, *args.grant_only_types]
+    # Uranus3Ending unlocks these original player hull classes on mission
+    # completion even if the fleet loses the battle. The source campaign
+    # route, not an arbitrary first-mission shop default, owns the gate.
+    uranus_finales = [index for index, story in mission_stories.items()
+                      if story == "uranus_new_threat"]
+    if len(uranus_finales) > 1:
+        raise ValueError("the original Uranus III finale may occur only once per campaign")
+    uranus_unlock_types = {0, 5, 10, 11, 20}
     for ship_type in classes:
         prices = shop_catalog.get(ship_type)
         specs = [items.get(ship_type) for items in per_mission_class_contracts]
@@ -944,7 +952,11 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             "purchasable": purchasable,
             "unlocked_after": [
                 f"mission-{required:03d}" for required in
-                shop_unlocks.get(ship_type, [1] if purchasable else [])
+                shop_unlocks.get(
+                    ship_type,
+                    (uranus_finales if ship_type in uranus_unlock_types
+                     and uranus_finales else [1]) if purchasable else [],
+                )
             ],
         })
     catalog = {
