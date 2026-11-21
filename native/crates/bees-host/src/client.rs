@@ -996,6 +996,19 @@ impl NativeClient {
                 self.input_feedback = "Select squads first";
                 None
             } else {
+                // The source Fire Barge action has a distinct click for
+                // every selected real Fire Barge. Check the same live
+                // CombatWorld roster as the eventual user command: never
+                // sound an unavailable special for an unrelated squad.
+                if kind == NativePlayerShipSpecialKind::Detonate {
+                    let barges = self.renderer.selection.squads().iter()
+                        .filter_map(|&owner| view.roster.get(owner))
+                        .flat_map(|squad| squad.members.iter())
+                        .filter(|&&id| view.combat.ship(id).is_some_and(|ship|
+                            ship.ship_type == 10 && !ship.vitals.is_dead()))
+                        .count();
+                    self.audio.click_fire_barge_detonation(barges);
+                }
                 self.support_mode = None;
                 self.selection_drag = None;
                 self.renderer.selection_box = None;
