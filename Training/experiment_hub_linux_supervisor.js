@@ -565,13 +565,14 @@ class LinuxSupervisor {
             runtimeProof.ram_mb<128||runtimeProof.ram_mb>1000000))
             throw Error('Invalid trusted Linux GPU runtime qualification request.');
         const plan=resolveRocmDevices(bindings,{fsApi:this.fs});
-        // A proof of denial requires a second GPU render node that the same
-        // unconfined account can open. Do not mistake a UNIX ACL failure for
-        // a working eBPF device filter.
+        // With an excluded render node, the restricted service proves both
+        // allowed and denied access directly. On a physical one-GPU host
+        // there is no excluded device; run the separate deny-selected
+        // control below after proving the device is openable unconfined.
+        // A two-card union still requires its exact HIP identity proof.
         if(![1,2].includes(plan.selected.length)||
-            (plan.selected.length===1&&!plan.unselected.length)||
             (plan.selected.length===2&&runtimeProof===null))
-            throw Error('GPU access qualification needs excluded-device evidence or a dual-GPU HIP attestation.');
+            throw Error('GPU access qualification needs one trusted physical GPU proof or a dual-GPU HIP attestation.');
         const denied=plan.unselected.map(device=>device.node).sort();
         verifyUnconfinedDeviceAccess(plan,this.fs);
         if(!plan.unselected.length)
@@ -991,8 +992,7 @@ class LinuxSupervisor {
             ?resolveRocmDevices(invocation.gpu.bindings,{fsApi:this.fs}):null;
         const selectedPci=gpuPlan?.selected.map(device=>device.pci_address)||[];
         if(gpuPlan&&(
-            (gpuPlan.selected.length===1&&!gpuPlan.unselected.length)||
-            this.fs.existsSync(this.gpuProbePending)||
+            this.gpuProbeCleanupPending()||
             this.state.records.some(record=>{
                 if(['finished','stopped','failed'].includes(record.state))return false;
                 const claimed=record.gpu_pci_addresses||
@@ -1002,6 +1002,16 @@ class LinuxSupervisor {
         ))
             throw Error('GPU launch requires exclusive PCI ownership and verified device containment.');
         if(gpuPlan)verifyUnconfinedDeviceAccess(gpuPlan,this.fs);
+        if(gpuPlan?.selected.length===1&&!gpuPlan.unselected.length) {
+            // No other GPU exists to serve as the denied-device control.
+            // Prove that the same systemd device filter rejects even the
+            // selected render node before recording a physical owner.
+            await this.runGpuDeviceProbe(
+                gpuPlan,invocation.gpu.bindings[0],null,{denySelected:true});
+            if(deviceIdentity(gpuPlan)!==deviceIdentity(
+                resolveRocmDevices(invocation.gpu.bindings,{fsApi:this.fs})))
+                throw Error('Single-GPU topology changed after device isolation proof.');
+        }
         if(gpuPlan) {
             const physical=discoverAmdGpus({fsApi:this.fs});
             for(const selected of gpuPlan.selected) {
