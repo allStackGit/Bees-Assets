@@ -6,6 +6,10 @@ use std::collections::{HashMap, HashSet};
 use bees_gameplay::player_inputs::NativeLevelPlayerContext;
 use bees_gameplay::campaign_dialogue::TITANIA_II_CENTER;
 use bees_sim::geometry::Vec2;
+use bees_sim::physics::ObstacleBody;
+use bees_sim::obstacle::ObstacleKind;
+use bees_sim::box_obstacle_assets::BoxObstacleCatalog;
+use bees_sim::polygon_obstacle_assets::PolygonObstacleCatalog;
 use bees_sim::ship_assets::HUMAN_TARGET_TYPE;
 use bees_sim::squad_movement::authored_placement_offset;
 
@@ -36,7 +40,7 @@ fn geometry(slots: &[Placement]) -> (Vec2, f32, f32) {
 }
 
 fn place_at_center(radius: f32, occupied: &[(Vec2, f32)],
-                   min: Vec2, max: Vec2) -> Vec2 {
+                   obstacles: &[ObstacleBody], min: Vec2, max: Vec2) -> Option<Vec2> {
     // Titania2Beenoculars.FindTitania2HumanSquadPlacement: ring-first,
     // x-major/y-minor, preserving Unity's first clear candidate tie-break.
     for ring in 1i32..=12 {
@@ -52,15 +56,19 @@ fn place_at_center(radius: f32, occupied: &[(Vec2, f32)],
                 if distance < 22.0 + radius { continue; }
                 if occupied.iter().any(|&(center, prior_radius)|
                     (candidate - center).length_squared().sqrt() < radius + prior_radius
+                ) || obstacles.iter().any(|body|
+                    body.navigation_closest_point(candidate).is_some_and(|point|
+                        (candidate - point).length_squared() < radius * radius)
                 ) {
                     continue;
                 }
-                return candidate;
+                return Some(candidate);
             }
         }
     }
-    // Unity's authored fallback when the map cannot fit another full ring.
-    TITANIA_II_CENTER + Vec2::new(0.0, -(22.0 + radius))
+    // Never stage a physical fleet outside the map or inside an authored
+    // collider when no candidate fits; the caller keeps its original scene.
+    None
 }
 
 impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
@@ -69,9 +77,8 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
     /// only when the source snapshot has not already staged them (the source
     /// StartingPositions entry is the authoritative signal).
     ///
-    /// This reproduces the obstacle-free current mission. An obstacle map
-    /// needs the source's collider-aware placement; reject an unstaged
-    /// snapshot instead of silently choosing an unsafe position.
+    /// Search original source ring positions against the same physical
+    /// static colliders used by the native Level and its pathfinder.
     pub(crate) fn stage_titania2_player_fleet(
         &mut self, player_side: i32,
     ) -> Result<(), &'static str> {
@@ -85,8 +92,51 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             // Already positioned in a captured live Unity campaign scene.
             return Ok(());
         }
-        if self.metadata.player_formation_options().has_obstacles {
-            return Err("Obstacle-bearing Titania II needs a source-staged player fleet");
+        // Materialize only the immutable source obstacle hulls for the
+        // one-time staging decision. This neither builds a second CombatWorld
+        // nor creates a campaign-specific movement or collision engine.
+        let has_obstacles = self.metadata.player_formation_options().has_obstacles;
+        let boxes = has_obstacles.then(BoxObstacleCatalog::embedded)
+            .transpose().map_err(|_| "Titania II needs valid source box assets")?;
+        let polygons = has_obstacles.then(PolygonObstacleCatalog::embedded)
+            .transpose().map_err(|_| "Titania II needs valid source polygon assets")?;
+        let mut obstacles = Vec::new();
+        if has_obstacles {
+            for entity in &self.entities {
+                let body = match entity {
+                    NativeAuthoredEntity::BoxObstacle {
+                        entity_id, prefab_name, pose, live_corners,
+                    } => {
+                        let asset = boxes.as_ref().expect("loaded source boxes")
+                            .by_name(prefab_name)
+                            .ok_or("Titania II obstacle lacks its source prefab")?;
+                        if asset.kind != ObstacleKind::StaticObstacle { continue; }
+                        let (_, body) = if let Some(corners) = live_corners {
+                            asset.prepare_spawn_live_box(*entity_id,
+                                pose.ok_or("Titania II live box has no pose")?, *corners)
+                        } else { asset.prepare_spawn(*entity_id, *pose) }
+                            .map_err(|_| "Titania II box obstacle has invalid geometry")?;
+                        body
+                    }
+                    NativeAuthoredEntity::PolygonObstacle {
+                        entity_id, pose, live_vertices,
+                    } => {
+                        let catalog = polygons.as_ref().expect("loaded source polygons");
+                        let (_, body) = if let Some(vertices) = live_vertices {
+                            catalog.prepare_spawn_live_polygon(*entity_id,
+                                pose.ok_or("Titania II live polygon has no pose")?, vertices.clone())
+                        } else { catalog.prepare_spawn(*entity_id, *pose) }
+                            .map_err(|_| "Titania II polygon obstacle has invalid geometry")?;
+                        body
+                    }
+                    NativeAuthoredEntity::MapObject { body, .. } |
+                    NativeAuthoredEntity::MiningAsteroid { body, .. } => body.clone(),
+                    NativeAuthoredEntity::FullCollisionAsteroid { .. } =>
+                        return Err("Titania II requires source-staged fleet with moving asteroids"),
+                    NativeAuthoredEntity::Ship(_) => continue,
+                };
+                if body.active { obstacles.push(body); }
+            }
         }
 
         let mut index_by_id = HashMap::new();
@@ -140,7 +190,9 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             let (_, width, height) = geometry(&slots);
             let radius = width.max(height) * 0.5 + 8.0;
             if !radius.is_finite() { return Err("Titania II fleet size is nonfinite"); }
-            let chosen = place_at_center(radius, &occupied, bounds.min, bounds.max);
+            let chosen = place_at_center(radius, &occupied, &obstacles,
+                bounds.min, bounds.max)
+                .ok_or("Titania II cannot place player fleet inside the physical map")?;
             let member_count = slots.len();
             for slot in &mut slots {
                 slot.position = chosen + authored_placement_offset(
