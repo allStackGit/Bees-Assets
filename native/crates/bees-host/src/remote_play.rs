@@ -1979,12 +1979,22 @@ fn current_state(
             "asteroid_prefab": if object.kind == ObstacleKind::CollisionAsteroid {
                 body.source_asteroid_prefab_number
             } else { None },
-            "health": object.vitals.map(|v| v.health)
-                .or_else(|| map.map(|v| v.health)),
-            // Only center-visible objects reach this projection, and
-            // health bars follow the source weapon-range visibility union.
+            // The source art exposes one of four smoke/damage stages.
+            // Exact MapObject HP is private until the viewing faction's
+            // real weapon trigger discovers it; renderer and objectives
+            // still receive the authentic visible damage-stage sprite.
+            "fire_tank_stage": map
+                .filter(|object| object.kind == bees_sim::map_object::MapObjectKind::FireTank)
+                .and_then(|object| crate::presentation::fire_tank_sprite_stage(
+                    object.health, object.max_health,
+                )),
+            "health": if map.is_some() && !range_visible {
+                None
+            } else {
+                object.vitals.map(|v| v.health).or_else(|| map.map(|v| v.health))
+            },
             "map_object_kind": map.map(|object| object.kind as u8),
-            "max_health": map.map(|object| object.max_health),
+            "max_health": map.filter(|_| range_visible).map(|object| object.max_health),
             "range_visible": range_visible,
         }))
     }).collect();
