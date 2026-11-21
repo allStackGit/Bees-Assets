@@ -589,6 +589,20 @@ impl CampaignDialogue {
     /// Caller consumes the shared World RNG only for the source waves
     /// which actually choose dialogue. Fixed waves need no random draw.
     pub(crate) fn reinforcement_choice_count(&self, elapsed_seconds: f64) -> Option<u64> {
+        if let DialogueMode::NeptuneProduction { waves_reported } = self.mode {
+            let due = if waves_reported < 4 {
+                f64::from(waves_reported + 1) * 120.0
+            } else {
+                480.0 + f64::from(waves_reported - 3) * 60.0
+            };
+            if elapsed_seconds + 0.0001 < due ||
+                matches!(waves_reported, 0 | 2) {
+                return None;
+            }
+            // The first and third Neptune II wave lines are fixed.
+            // Every other arrival uses Utilities.RandomInt(5) + 10.
+            return Some(5);
+        }
         let DialogueMode::UranusDefensive {
             has_cruiser, met_scientists, waves_reported,
         } = self.mode else { return None };
@@ -608,6 +622,28 @@ impl CampaignDialogue {
     pub(crate) fn reinforcement_arrived(
         &mut self, elapsed_seconds: f64, random_choice: Option<u64>,
     ) -> Option<CampaignCue> {
+        if let DialogueMode::NeptuneProduction { waves_reported } = &mut self.mode {
+            let due = if *waves_reported < 4 {
+                f64::from(*waves_reported + 1) * 120.0
+            } else {
+                480.0 + f64::from(*waves_reported - 3) * 60.0
+            };
+            if elapsed_seconds + 0.0001 < due {
+                return None;
+            }
+            let number = waves_reported.checked_add(1)?;
+            let line = match number {
+                1 => 8,
+                3 => 9,
+                _ => {
+                    let choice = random_choice?;
+                    if choice >= 5 { return None; }
+                    10 + choice as u8
+                }
+            };
+            *waves_reported = number;
+            return Some(CampaignCue::NeptuneProductionWave { number, line });
+        }
         if let DialogueMode::UranusDefensive {
             has_cruiser, met_scientists, waves_reported,
         } = &mut self.mode {
