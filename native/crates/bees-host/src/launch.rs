@@ -6075,6 +6075,39 @@ fn run_battle(
             )?;
         }
         use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
+        if let Some(CampaignDialogueSpec::PlutoPushback { player_side, .. }) =
+            level.campaign_dialogue
+        {
+            // Pluto III's original briefing includes the four
+            // Lieutenants only if their ship types are actually in play.
+            // Re-evaluate AFTER lost FleetShips, player purchases and
+            // previous mission casualties have altered the deployed roster.
+            // Do not use the publisher's frozen template or dormant reserves.
+            let deployed = source.source_squads.iter()
+                .filter(|squad| squad.side == player_side &&
+                    squad.player_permissions.user_controlled)
+                .flat_map(|squad| squad.members.iter().copied())
+                .collect::<HashSet<_>>();
+            let mut speaker_mask = 0_u8;
+            for entity in &source.entities {
+                if let NativeAuthoredEntity::Ship(ship) = entity {
+                    if ship.side == player_side &&
+                        !ship.vitals.is_dead() && deployed.contains(&ship.entity_id)
+                    {
+                        speaker_mask |= match ship.ship_type {
+                            18 => 1, // Oviya: Scout
+                            12 => 2, // Joey: Frigate
+                            13 => 4, // Marco: Gunship
+                            7 => 8,  // Yoshiko: Dreadnought
+                            _ => 0,
+                        };
+                    }
+                }
+            }
+            level.campaign_dialogue = Some(CampaignDialogueSpec::PlutoPushback {
+                player_side, speaker_mask,
+            });
+        }
         let factory_story_side = match level.campaign_dialogue {
             Some(CampaignDialogueSpec::NeptunePressingForward { player_side, .. }) |
             Some(CampaignDialogueSpec::UranusOffensive { player_side, .. }) =>
