@@ -533,6 +533,31 @@ function rolloutGpuMeasurements(rollout) {
             value:Number(proof.resumed_collection),unit:'count',
         };
     }
+    if (Array.isArray(rollout.collectors)) {
+        // Collector PCI addresses can overlap on different hosts. Report
+        // measured cross-collector batch spread without pretending that
+        // those identically numbered devices are one physical GPU.
+        const batchSizes=[];
+        for (const collector of rollout.collectors) {
+            const local=collector.gpu_inference;
+            if (local==null) continue;
+            if (!Number.isSafeInteger(local.model_forwards) ||
+                local.model_forwards < 1 ||
+                !Number.isSafeInteger(local.agent_rows) ||
+                local.agent_rows < local.model_forwards ||
+                local.agent_rows > collector.policy_rows)
+                throw Error('Invalid per-collector GPU policy batch evidence.');
+            batchSizes.push(local.agent_rows / local.model_forwards);
+        }
+        if (batchSizes.length) {
+            metrics.rollout_gpu_collector_rows_per_model_forward_min = {
+                value: Math.min(...batchSizes), unit:'scalar',
+            };
+            metrics.rollout_gpu_collector_rows_per_model_forward_max = {
+                value: Math.max(...batchSizes), unit:'scalar',
+            };
+        }
+    }
     if (proof.per_device !== undefined) {
         if (!Array.isArray(proof.per_device) ||
             ![1, 2].includes(proof.per_device.length) ||
