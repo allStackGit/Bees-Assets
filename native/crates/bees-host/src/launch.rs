@@ -5775,6 +5775,34 @@ fn run_battle(
                 level, template.as_ref(), &source, mission.player_side,
             )?;
         }
+        if let Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::NeptunePressingForward {
+            player_side, ..
+        }) = level.campaign_dialogue {
+            if mission.is_some() {
+                // Neptune 3's defeat dialogue reads CurrentShips.HasShipsOfType
+                // after the player's persistent roster has been restored.
+                // Source run files predate purchases and casualties, so a
+                // fixed authored flag would select the wrong story branch.
+                // Read the *actual* surviving FleetShip owners, including
+                // newly bought Factory hulls, after the same canonical
+                // campaign deployment transaction used by the battle.
+                let has_factory = source.entities.iter().any(|entity| match entity {
+                    NativeAuthoredEntity::Ship(ship) =>
+                        ship.side == player_side &&
+                        ship.ship_type == bees_sim::combat_world::MINING_FACTORY_TYPE &&
+                        !ship.vitals.is_dead() &&
+                        source.fleet.get(ship.entity_id).is_some_and(|value|
+                            value.has_persistent_fleet_value) &&
+                        !source.fleet.was_killed(ship.entity_id),
+                    _ => false,
+                });
+                level.campaign_dialogue = Some(
+                    bees_gameplay::campaign_dialogue::CampaignDialogueSpec::NeptunePressingForward {
+                        player_side, has_factory,
+                    }
+                );
+            }
+        }
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
         }
