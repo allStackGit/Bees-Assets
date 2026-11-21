@@ -514,6 +514,11 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         run["levels"][0]["scene"] = scene_file
         run["run_id"] = f"{slug}-{ident}"
         run["connection_checkpoint"] = f"{ident}-connection.json"
+        # Every published campaign mission is a resumable physical World,
+        # including after a crash before the first successful episode.
+        # Reuse the native host's existing atomic checkpoint and original
+        # replay/career owner; do not introduce another campaign save format.
+        run["host_recovery_checkpoint"] = "native-host-checkpoint.json"
         run["notifications"] = f"{ident}-notifications.jsonl"
         run["rollout_summary"] = f"{ident}-summary.json"
         run["policy_capture"] = None
@@ -643,6 +648,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             variant_run["levels"][0]["scene"] = variant_scene_file
             variant_run["run_id"] = f"{slug}-{ident}-{outcome}"
             variant_run["connection_checkpoint"] = f"{ident}-{outcome}-connection.json"
+            variant_run["host_recovery_checkpoint"] = "native-host-checkpoint.json"
             variant_run["notifications"] = f"{ident}-{outcome}-notifications.jsonl"
             variant_run["rollout_summary"] = f"{ident}-{outcome}-summary.json"
             variant_run["policy_capture"] = None
