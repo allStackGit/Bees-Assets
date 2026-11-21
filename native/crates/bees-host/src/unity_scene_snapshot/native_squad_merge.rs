@@ -81,7 +81,10 @@ impl NativePhysicalScene {
                         Some(ship),
                     _ => None,
                 }).ok_or(invalid("grouped squad lacks a real physical ship"))?;
-                if ship.side != leader.side || ship.policy.is_some() ||
+                if ship.side != leader.side || ship.ship_type == 5 ||
+                    !ship.motion.base_speed.is_finite() ||
+                    ship.motion.base_speed <= 0.0 ||
+                    ship.policy.is_some() ||
                     ship.motion.is_policy_controlled ||
                     ship.special.is_some() || ship.special_weapon.is_some() ||
                     ship.drone_carrier_id.is_some() ||
