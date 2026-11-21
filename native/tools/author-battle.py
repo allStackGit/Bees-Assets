@@ -420,12 +420,10 @@ def author(args) -> tuple[dict, dict, dict]:
                     "reinforcements must have nondecreasing times strictly before battle end"
                 )
             prior_time = when
-        if kind in (8, 19) or (
-                kind == 5 and any(child in dict(requested[side])
-                                  for child in (8, 19))):
+        if kind in (8, 19):
             raise ValueError(
-                "carrier children and linked carriers cannot deploy in "
-                "separate waves; use ordinary initial Carrier squads"
+                "free Carrier children deploy with their parent; "
+                "defer the owning Carrier instead"
             )
         deferred_counts[key] = deferred_counts.get(key, 0) + count
         if deferred_counts[key] > requested_counts.get(key, 0):
@@ -435,7 +433,8 @@ def author(args) -> tuple[dict, dict, dict]:
             )
     if any(
         sum(count - deferred_counts.get((side, kind), 0)
-            for kind, count in requested[side]) == 0 for side in (1, 2)
+            for kind, count in requested[side] if kind not in (8, 19)) == 0
+        for side in (1, 2)
     ):
         raise ValueError(
             "both factions need an initially deployed squad; "
@@ -510,7 +509,10 @@ def author(args) -> tuple[dict, dict, dict]:
             side, sum(count for _, count in units), args.spacing,
         )
         pos_index = 0
-        for kind, count in units:
+        # Allocate ordinary persistent hulls first. Free child counts
+        # can change independently without renumbering the career fleet,
+        # and each parent exists before its children's shared rank alias.
+        for kind, count in sorted(units, key=lambda unit: unit[0] in (8, 19)):
             for _ in range(count):
                 ship = copy.deepcopy(blueprints[(side, kind)])
                 ship["entity_id"] = ship_id
@@ -528,20 +530,25 @@ def author(args) -> tuple[dict, dict, dict]:
                 pos_index += 1
                 ship_id += 1
 
-    # Carrier children refer to a real same-side generated Carrier, never
-    # to the old example's entity ID or a nonexistent placeholder.
-    for side, entries in by_side.items():
-        carriers = [ship["entity_id"] for ship in entries
-                    if ship["ship_type"] == 5]
-        child_index = 0
-        for ship in entries:
-            if ship["ship_type"] in (8, 19):
-                carrier = carriers[child_index % len(carriers)]
-                if ship["ship_type"] == 19:
-                    ship["special"]["carrier_id"] = carrier
+    # Free CarrierShip instances share the parent's durable FleetShip,
+    # but are individually authored physical entities. Distribute each
+    # type independently so equivalent carriers receive equivalent decks.
+    carrier_of: dict[int, int] = {}
+    for entries in by_side.values():
+        carriers = [ship for ship in entries if ship["ship_type"] == 5]
+        for kind in (8, 19):
+            children = [ship for ship in entries if ship["ship_type"] == kind]
+            for index, ship in enumerate(children):
+                carrier = carriers[index % len(carriers)]
+                parent_id = carrier["entity_id"]
+                carrier_of[ship["entity_id"]] = parent_id
+                ship["fleet_ship_id"] = carrier["fleet_ship_id"]
+                ship["persistent_fleet"] = False
+                ship["is_carrier_ship"] = True
+                if kind == 19:
+                    ship["special"]["carrier_id"] = parent_id
                 else:
-                    ship["drone_carrier_id"] = carrier
-                child_index += 1
+                    ship["drone_carrier_id"] = parent_id
 
     # The source scene owns every future reinforcement ship up front.
     # Partition those real hulls into disjoint deferred squads, so the
@@ -563,33 +570,75 @@ def author(args) -> tuple[dict, dict, dict]:
         start = wave_cursor[key]
         wave_members[index].update(by_kind[key][start:start + count])
         wave_cursor[key] += count
+        if kind == 5:
+            parents = wave_members[index]
+            parents.update(child for child, parent in carrier_of.items()
+                           if parent in parents)
     deferred_owner = {
         ship_id: index for index, members in enumerate(wave_members)
         for ship_id in members
     }
     by_side_squads: dict[int, list[dict]] = {1: [], 2: []}
     wave_squads: list[list[int]] = [[] for _ in waves]
+    carrier_child_squads: dict[int, list[int]] = {}
+    ship_by_id = {ship["entity_id"]: ship for ship in new_ships}
     for side, units in requested.items():
         squad_id = squad_base + (side - 1) * side_span
+
+        def add_group(members: list[int], wave: int | None,
+                      parent: int | None = None) -> int:
+            nonlocal squad_id
+            group = {
+                "item_id": squad_id, "side": side,
+                "members": members, "shooting_strategy_id": 1,
+                "user_controlled": side in controlled,
+                "can_accept_input": side in controlled, "command_bans": [],
+            }
+            if parent is not None:
+                group["is_carrier_squad"] = True
+                carrier_child_squads.setdefault(parent, []).append(squad_id)
+            # These explicitly authored native grid positions are the
+            # actual formation, not identical copies of one prefab offset.
+            # Store squad-relative offsets for the common Move command.
+            center = [sum(ship_by_id[id]["position"][axis] for id in members)
+                      / len(members) for axis in range(2)]
+            for id in members:
+                ship = ship_by_id[id]
+                ship["formation_offset"] = [
+                    ship["position"][axis] - center[axis] for axis in range(2)
+                ]
+            by_side_squads[side].append(group)
+            new_squads.append(group)
+            if wave is not None:
+                wave_squads[wave].append(squad_id)
+            squad_id += 1
+            return group["item_id"]
+
+        # Source LevelConstructor registers persistent squads first,
+        # then each Carrier's own type-specific child squads.
         for kind, _ in units:
+            if kind in (8, 19):
+                continue
             matching = by_kind[(side, kind)]
             for wave in [None, *range(len(waves))]:
-                members = [ship_id for ship_id in matching
-                           if deferred_owner.get(ship_id) == wave]
+                members = [id for id in matching if deferred_owner.get(id) == wave]
                 for start in range(0, len(members), MAX_SQUAD_MEMBERS):
-                    group = {
-                        "item_id": squad_id, "side": side,
-                        "members": members[start:start + MAX_SQUAD_MEMBERS],
-                        "shooting_strategy_id": 1,
-                        "user_controlled": side in controlled,
-                        "can_accept_input": side in controlled,
-                        "command_bans": [],
-                    }
-                    by_side_squads[side].append(group)
-                    new_squads.append(group)
-                    if wave is not None:
-                        wave_squads[wave].append(squad_id)
-                    squad_id += 1
+                    add_group(members[start:start + MAX_SQUAD_MEMBERS], wave)
+        for parent in by_kind.get((side, 5), []):
+            wave = deferred_owner.get(parent)
+            # Preserve Drone-then-Striker pair order across multiple
+            # complement squads on one parent.
+            per_type = {
+                kind: [id for id in by_kind.get((side, kind), [])
+                       if carrier_of[id] == parent]
+                for kind in (8, 19)
+            }
+            for start in range(0, max(map(len, per_type.values()), default=0),
+                               MAX_SQUAD_MEMBERS):
+                for kind in (8, 19):
+                    members = per_type[kind][start:start + MAX_SQUAD_MEMBERS]
+                    if members:
+                        add_group(members, wave, parent)
     deferred_squad_ids = {id for groups in wave_squads for id in groups}
     for side in controlled:
         total = len(by_side_squads[side])
@@ -816,9 +865,17 @@ def author(args) -> tuple[dict, dict, dict]:
                         f"type {trigger_kind} has no initially deployed hull"
                     )
                 activation = {"on_ship_destroyed": eligible[0]}
+            squads_by_id = {squad["item_id"]: squad for squad in new_squads}
             for squad_id in wave_squads[index]:
+                squad = squads_by_id[squad_id]
+                if squad.get("is_carrier_squad"):
+                    continue  # emitted together with its persistent parent
+                complement = [
+                    child for parent in squad["members"]
+                    for child in carrier_child_squads.get(parent, ())
+                ]
                 deployments.append({
-                    **activation, "squad_item_ids": [squad_id],
+                    **activation, "squad_item_ids": [squad_id, *complement],
                 })
         run["levels"][0]["reinforcements"] = deployments
     # These are the native Level's real survival/extraction/demolition contracts,
