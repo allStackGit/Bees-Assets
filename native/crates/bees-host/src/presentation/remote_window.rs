@@ -1876,6 +1876,17 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 text::draw_at(pixels,WIDTH,16,23,
                     text::fit(&text_label,FIELD-32),1,[255,211,130]);
             }
+            if objective.get("kind").and_then(Value::as_str) == Some("pluto_pushback") {
+                let owner = objective.get("player_side").and_then(Value::as_i64)
+                    == Some(i64::from(side));
+                let label = if owner {
+                    "Push back the enemy!"
+                } else {
+                    "Defend the Bee fleet from the attacking human ships"
+                };
+                text::draw_at(pixels,WIDTH,16,23,
+                    text::fit(label,FIELD-32),1,[255,211,130]);
+            }
             if objective.get("kind").and_then(Value::as_str) == Some("campaign_elimination") {
                 let attacking = objective.get("attacking_side")
                     .and_then(Value::as_i64) == Some(i64::from(side));
