@@ -143,9 +143,20 @@ impl CombatWorld {
         let zone = state.zone;
         if !state.active {
             let radius_squared = zone.activation_radius * zone.activation_radius;
-            let activated = self.ships.iter().zip(self.physics.ships()).any(|(ship, body)|
-                body.active && ship.side == zone.player_side &&
-                (body.motion.position - zone.center).length_squared() < radius_squared);
+            let bounds = zone.bounds();
+            // Activate against the whole physical rectangle, not only its
+            // center. Uranus II's source retreat trigger spans most of the
+            // map height; ships crossing its upper/lower edge must receive
+            // exactly the same exit contacts as ships near the center.
+            let activated = self.ships.iter().zip(self.physics.ships()).any(|(ship, body)| {
+                if !body.active || ship.side != zone.player_side { return false; }
+                let point = body.motion.position;
+                let nearest = Vec2::new(
+                    point.x.clamp(bounds.min.x, bounds.max.x),
+                    point.y.clamp(bounds.min.y, bounds.max.y),
+                );
+                (point - nearest).length_squared() < radius_squared
+            });
             if activated {
                 self.extraction.as_mut().expect("configured zone").active = true;
             }
