@@ -6626,13 +6626,53 @@ document.addEventListener('DOMContentLoaded', () => {
                 sum+j.live_execution.memory_current_mb,0);
             const overClaimed=m.capacity_overcommitted===true;
             cell(tr,m.name+' ('+m.id+')');
-            const components=Object.values(state.machine_software?.[m.id]||{});
-            const updateState=components.map(item=>
-                item.component+' '+item.status+' ('+String(item.version).slice(0,8)+')')
-                .join(', ');
+            const reports=state.machine_software?.[m.id]||{};
+            const active=state.machine_active_software?.[m.id]||{};
+            const releases=state.software_release_catalog;
             const status=cell(tr,m.status+
-                (overClaimed?' · Claims exceed reported capacity':'')+
-                (updateState?' · Software: '+updateState:''));
+                (overClaimed?' · Claims exceed reported capacity':''));
+            const names=[...new Set([...Object.keys(active),...Object.keys(reports)])];
+            for(const name of names) {
+                const report=reports[name];
+                const installed=active[name]||(report?.status==='active'?report:null);
+                const latest=releases?.components?.[name];
+                const problem=releases?.errors?.[name];
+                const matches=installed&&latest&&installed.version===latest.version&&
+                    installed.sha256===latest.sha256;
+                const short=entry=>entry?.version?.slice(0,8)||'unknown';
+                const line=document.createElement('div');
+                const heading=document.createElement('strong');
+                heading.textContent=name+': ';
+                let summary;
+                if(!latest)summary='Latest release unavailable';
+                else if(!installed)summary='Active version unverified';
+                else if(matches)summary='Up to date';
+                else summary='Update available';
+                if(m.status!=='connected')summary='Last reported: '+summary;
+                if(problem)summary+=' · Release check issue';
+                line.append(heading,summary);
+                const versions=document.createElement('div');
+                versions.textContent='Active '+short(installed)+' · Latest '+short(latest);
+                line.append(versions);
+                if(report&&report.status!=='active') {
+                    const pending=document.createElement('div');
+                    pending.textContent='Update '+report.status+' ('+short(report)+')';
+                    line.append(pending);
+                }
+                line.title=[
+                    'Active release: '+(installed?.version||'not reported'),
+                    'Latest published release: '+(latest?.version||'not available'),
+                    ...(latest?.source_commit?['Latest source commit: '+latest.source_commit]:[]),
+                    ...(report?.message?[report.message]:[]),
+                    ...(problem?[problem]:[]),
+                ].join('\n');
+                status.append(line);
+            }
+            if(!names.length&&m.agent_enrolled) {
+                const line=document.createElement('div');
+                line.textContent='No worker software version reported';
+                status.append(line);
+            }
             const lastConnection=(state.machine_connection_events||[])
                 .filter(event=>event.machine_id===m.id).slice(-1)[0];
             if(lastConnection)status.title=
@@ -6896,9 +6936,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     async function reload() {
         try {
-            const r=await fetch('/api/hub/state',{cache:'no-store'});
+            const [r,catalog]=await Promise.all([
+                fetch('/api/hub/state',{cache:'no-store'}),
+                fetch('/api/hub/software/releases',{cache:'no-store'})
+                    .then(response=>response.ok?response.json():null)
+                    .catch(()=>null),
+            ]);
             const data=await r.json();
             if(!r.ok)throw Error(data.error||'Hub state unavailable');
+            data.software_release_catalog=catalog;
             const apply=()=>{
                 state=data;
                 if(!initialDesignLoaded) {
