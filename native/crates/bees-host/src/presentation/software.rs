@@ -2092,8 +2092,9 @@ impl NativeSoftwareRenderer {
                 let own_side = view.player_authority.player_viewer_side()
                     == Some(exiting_side);
                 let label = match (own_side, withdrawing) {
-                    (true, true) if view.campaign_objective == Some(
-                        bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusDefensive,
+                    (true, true) if matches!(view.campaign_objective,
+                        Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusDefensive |
+                             bees_gameplay::campaign_dialogue::CampaignObjectiveKind::NeptuneProduction)
                     ) => "Survive and mine minerals  |  Retreat through the marked zone",
                     (true, true) => "Withdraw surviving fleet through the marked retreat zone",
                     (false, true) => "Intercept enemy fleet before it withdraws",
