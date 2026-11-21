@@ -3013,7 +3013,16 @@ impl NativePhysicalScene {
                         ship.ship_type == 0 && !ship.vitals.is_dead()
                 ))) ||
                 !self.source_squads.iter().any(|squad| squad.side == player_side &&
-                    barges.iter().all(|id| squad.members.contains(id))) =>
+                    squad.members.len() == 3 &&
+                    barges.iter().all(|id| squad.members.contains(id)) &&
+                    setup.scripted_queues.iter().any(|plan|
+                        plan.squad_item_id == squad.item_id && !plan.repeat &&
+                        matches!(plan.activation,
+                            crate::policy_only_metadata::NativeScriptedActivation::Immediate) &&
+                        matches!(plan.orders.as_slice(),
+                            [crate::policy_only_metadata::NativeScriptedOrder::MoveToPoint {
+                                destination
+                            }] if destination.unity_equal(Vec2::ZERO)))) =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::PlutoEvacuation {
                 player_side, protected_ship_id,
