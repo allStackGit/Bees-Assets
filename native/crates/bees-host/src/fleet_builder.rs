@@ -967,7 +967,10 @@ pub(super) fn archive(
             .as_array().and_then(|ores| ores.first())
             .ok_or_else(|| invalid("native source has no mineable asteroid archetype"))?
             .clone();
-        mine["entity_id"] = json!(40_001_i64);
+        // Keep source entities below the native layout's cloned ship ID
+        // range (10_000+). Layout validation requires every clone identity
+        // to be higher than all authored scene entities.
+        mine["entity_id"] = json!(31_i64);
         scene["activate_mining"] = json!(true);
         scene["mining_asteroids"] = json!([mine]);
     }
