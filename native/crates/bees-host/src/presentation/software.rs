@@ -1556,7 +1556,18 @@ impl NativeSoftwareRenderer {
             let object = if obstacle.kind == bees_sim::obstacle::ObstacleKind::MapObject {
                 view.combat.map_object(obstacle.entity_id)
             } else { None };
-            let visible = view.combat.range_visible_map_object_ids().contains(&obstacle.entity_id);
+            let visible = if view.player_authority.player_fog_of_war_enabled() {
+                // A fog-enabled local commander shares the same physical
+                // faction visibility as authenticated remote commanders.
+                // Opposing squads' range triggers cannot reveal a hidden
+                // map-object health bar or objective marker.
+                view.player_authority.player_viewer_side()
+                    .and_then(|side| view.combat.range_visible_map_objects_for_side(side))
+                    .is_some_and(|ids| ids.contains(&obstacle.entity_id))
+            } else {
+                // Preserve source GameState's global union in no-fog modes.
+                view.combat.range_visible_map_object_ids().contains(&obstacle.entity_id)
+            };
             let is_fire_tank = object.is_some_and(|object| object.kind == bees_sim::map_object::MapObjectKind::FireTank);
             if let Some(tank) = object.filter(|_| is_fire_tank) {
                 self.draw_fire_tank(tank.entity_id, tank.health, tank.max_health,
