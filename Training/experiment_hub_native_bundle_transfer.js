@@ -609,6 +609,35 @@ async function verifyLocalModelPackage(directory,expectedCheckpoint) {
     return true;
 }
 
+// Hub reservations may start several collectors on the same machine
+// against one immutable predecessor model. A single complete directory
+// owns the cache. A simultaneous publisher must reuse only its exact
+// verified bytes; neither process may overwrite another package.
+function publishedPathExists(destination) {
+    try { fs.lstatSync(destination); return true; }
+    catch(error) {
+        if(error.code==='ENOENT')return false;
+        throw error;
+    }
+}
+
+async function publishOrReusePackage(stage,destination,verifyExisting) {
+    if(publishedPathExists(destination)) {
+        if(!await verifyExisting())
+            fail('Existing native source package differs from its authenticated input.');
+        return false;
+    }
+    try {
+        fs.renameSync(stage,destination);
+        return true;
+    }catch(error) {
+        if(['EEXIST','ENOTEMPTY','EACCES','EPERM'].includes(error.code)&&
+            publishedPathExists(destination)&&await verifyExisting())
+            return false;
+        throw error;
+    }
+}
+
 async function syncNativeModels(job,adapter,endpoint,machineId,token) {
     const sourceId=job?.model_source_job_id;
     if(sourceId==null)return {models:0};
@@ -641,11 +670,14 @@ async function syncNativeModels(job,adapter,endpoint,machineId,token) {
     try {
         const manifestSha=await downloadFile(endpoint,machineId,token,job.id,sourceId,
             'learner/manifest.json',null,stage,'model');
-        if(fs.existsSync(destination)) {
+        const matchingModel=async()=>{
             const cached=path.join(destination,'learner','manifest.json');
-            if(!fs.existsSync(cached)||regular(cached).size>1024*1024||
-                await fileDigest(cached)!==manifestSha||
-                !await verifyLocalModelPackage(destination,job.expected_parent_model_sha256))
+            return publishedPathExists(cached)&&regular(cached).size<=1024*1024&&
+                await fileDigest(cached)===manifestSha&&
+                await verifyLocalModelPackage(destination,job.expected_parent_model_sha256);
+        };
+        if(publishedPathExists(destination)) {
+            if(!await matchingModel())
                 fail('Existing native model package differs from its authenticated source manifest.');
             return {models:1};
         }
@@ -657,9 +689,7 @@ async function syncNativeModels(job,adapter,endpoint,machineId,token) {
                 relative,digest,stage,'model');
         if(!await verifyLocalModelPackage(stage,job.expected_parent_model_sha256))
             fail('Transferred native model package is incomplete or differs from its SHA-256 manifest.');
-        if(fs.existsSync(destination))
-            fail('Native model package was published concurrently; refusing overwrite.');
-        fs.renameSync(stage,destination);
+        await publishOrReusePackage(stage,destination,matchingModel);
     }finally {
         if(fs.existsSync(stage))fs.rmSync(stage,{recursive:true,force:true});
     }
@@ -685,8 +715,9 @@ async function syncNativeBundles(job,adapter,endpoint,machineId,token) {
             fail('Invalid or repeated native collector receipt pin.');
         seen.add(pin.job_id);
         const destination=path.join(inbox,pin.job_id);
-        if(fs.existsSync(destination)) {
-            if(!await verifyLocalBundle(destination,pin.sha256))
+        const matchingBundle=()=>verifyLocalBundle(destination,pin.sha256);
+        if(publishedPathExists(destination)) {
+            if(!await matchingBundle())
                 fail('Existing native collector bundle differs from its pinned artifacts.');
             delivered++;continue;
         }
@@ -701,9 +732,7 @@ async function syncNativeBundles(job,adapter,endpoint,machineId,token) {
                     relative,digest,stage);
             if(!await verifyLocalBundle(stage,pin.sha256))
                 fail('Staged native collector bundle failed final verification.');
-            if(fs.existsSync(destination))
-                fail('A native bundle was published concurrently; do not overwrite it.');
-            fs.renameSync(stage,destination);
+            await publishOrReusePackage(stage,destination,matchingBundle);
             delivered++;
         }finally {
             if(fs.existsSync(stage))fs.rmSync(stage,{recursive:true,force:true});
