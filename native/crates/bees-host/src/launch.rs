@@ -5900,6 +5900,11 @@ fn run_battle(
                  (level.groups.is_some() && squad.members.iter().any(|id|
                      source.source_policy_bindings.contains_key(id))) ||
                  (!deferred_squads.contains(&squad.item_id) &&
+                  source.activate_hivemind == Some(true) &&
+                  config.hivemind.as_ref()
+                      .is_some_and(|network| network.issue_source_commands) &&
+                  squad.hivemind.is_some_and(|owner| owner.hivemind_controlled)) ||
+                 (!deferred_squads.contains(&squad.item_id) &&
                   level.scripted_queues.iter().any(|queue|
                      queue.squad_item_id == squad.item_id &&
                      !queue.orders.is_empty() &&
