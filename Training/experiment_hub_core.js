@@ -8692,16 +8692,6 @@ class ExperimentHub {
                 !ID.test(String(selection.machine_id||'')))
                 throw Error('Each bundle member requires a saved configuration, machine ID and fixed resource budget.');
             const machine=machines.find(host=>host.id===selection.machine_id);
-            const preparing=canPrepareSimulation(machine,job);
-            if(!machine||machine.status!=='connected'||
-                machine.local_executor_enabled!==true||
-                (!preparing&&machine.native_preflight_passed!==true)||
-                !['win32','linux'].includes(machine.agent_platform)||
-                (machine.agent_platform==='linux'&&
-                    (machine.execution_capabilities?.cgroup_v2_detected!==true||
-                     !['cpu','memory'].every(controller=>
-                         machine.execution_capabilities?.cgroup_controllers?.includes(controller)))))
-                throw Error('Bundle member '+(index+1)+' requires a connected, qualified native machine.');
             const modelSourceId=value.model_source_job_id;
             const job=this.queueIn(next,{
                 ...selection,
@@ -8712,6 +8702,16 @@ class ExperimentHub {
                         ?{continuation_of_job_id:modelSourceId}:{}),
                 }:{}),
             },{modelPin,optimizerRestartFrom:restartGroup?.[index]??null});
+            const preparing=canPrepareSimulation(machine,job);
+            if(!machine||machine.status!=='connected'||
+                machine.local_executor_enabled!==true||
+                (!preparing&&machine.native_preflight_passed!==true)||
+                !['win32','linux'].includes(machine.agent_platform)||
+                (machine.agent_platform==='linux'&&
+                    (machine.execution_capabilities?.cgroup_v2_detected!==true||
+                     !['cpu','memory'].every(controller=>
+                         machine.execution_capabilities?.cgroup_controllers?.includes(controller)))))
+                throw Error('Bundle member '+(index+1)+' requires a connected, qualified native machine.');
             if(nativeCollectionId!==null) {
                 // The native run configuration, not the Hub, knows how
                 // many authored Levels must be preserved and how much
@@ -9483,8 +9483,9 @@ class ExperimentHub {
         if(rolloutProject?.adapter!=='unconfigured')
             throw Error('TinyBrains internal collector role is unavailable; verify the Hub project registry.');
         const next=copy(this.state);
-        const learner=this.queueIn(next,value.learner,
-            byMachine?{rollout_endpoints:endpoints}:undefined);
+        const learner=this.queueIn(next,value.learner,{
+            placementParameters:byMachine?{rollout_endpoints:endpoints}:undefined,
+        });
         if(learner.status!=='waiting_adapter')
             throw Error('Distributed group claims require an immediately eligible, released predecessor.');
         // Only groups queued as one transaction opt into automatic sidecar
@@ -9696,10 +9697,11 @@ class ExperimentHub {
         if(sidecarProject?.adapter!=='unconfigured')
             throw Error('Courier internal execution role is unavailable; verify the Hub project registry.');
         const next=copy(this.state);
-        const learner=this.queueIn(next,value.learner,
-            shared?{remote_lineage_plan:remotePlan,
+        const learner=this.queueIn(next,value.learner,{
+            placementParameters:shared?{remote_lineage_plan:remotePlan,
                 shared_policy_cpus:selections.map(selection=>sidecarBudget(selection).cpus)}
-                :byMachine?{remote_lineage_plan:remotePlan}:undefined);
+                :byMachine?{remote_lineage_plan:remotePlan}:undefined,
+        });
         if(learner.status!=='waiting_adapter')
             throw Error('The learner predecessor must be released before distributed reservation.');
         learner.distributed_courier_managed=true;
@@ -10162,7 +10164,7 @@ class ExperimentHub {
         return {jobs,executable:false,
             note:'Frozen pipeline only; native execution remains subject to separate authorization.'};
     }
-    queueIn(next,value,{optimizerRestartFrom=null,modelPin=null}={}) {
+    queueIn(next,value,{optimizerRestartFrom=null,modelPin=null,placementParameters}={}) {
         if (!object(value) || typeof value.configuration_id !== 'string')
             throw Error('Select a saved configuration to queue.');
         const selected = next.configurations.find(x=>x.id===value.configuration_id);
@@ -10376,6 +10378,10 @@ class ExperimentHub {
             }
         }
         if(parent) {
+            if(project.id==='courier'&&(
+                (parent.frozen_parameters?.shared_policy===true)!==(frozen.shared_policy===true)||
+                frozen.shared_policy===true&&parent.frozen_parameters?.seed!==frozen.seed))
+                throw Error('Courier continuation must preserve predecessor training mode and shared-policy seed.');
             const digestField=project.id==='tinybrains'?'profile_sha256':'config_sha256';
             const digest=parent.frozen_parameters?.[digestField];
             // A physically trained native Bees checkpoint may enter its
