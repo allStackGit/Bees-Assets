@@ -98,6 +98,33 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
             ("Emilia", "Sorry..."),
             ("Alejandra", "We'll join your formation shortly, commander."),
         ],
+        CampaignCue::PlutoEvacuationBriefing => &[
+            ("Samuel", "Scouts are reporting overwhelming reinforcements from the enemy. We can't outlast them, but we have to buy enough time for those on the planet to evacuate."),
+            ("Samuel", "This is a full emergency order, so personnel have to be on space-ready vessels within 5 minutes."),
+            ("Marco", "Destroy enemy ships where we can safely. That's the only way we'll get through this."),
+        ],
+        CampaignCue::PlutoEvacuationComplete { shield_health: 0, .. } => &[
+            ("Samuel", "Comms with the surface went down, commander."),
+            ("Marco", "They're a lost cause. Get out of here, now."),
+            ("Samuel", "But-"),
+            ("Yoshiko", "He's right, Sam. We can't lose everyone."),
+        ],
+        CampaignCue::PlutoEvacuationComplete { shield_health, shield_max, .. }
+            if shield_health == shield_max => &[
+            ("Samuel", "Incredible work, commander! We didn't lose anyone in the evacuation."),
+            ("Marco", "Impressive."),
+        ],
+        CampaignCue::PlutoEvacuationComplete { personnel_saved, .. }
+            if personnel_saved > 0 => &[
+            ("Samuel", "All personnel are ready to leave."),
+            ("Oviya", "Go quickly! They're closing in on our escape route!"),
+            ("Samuel", "Right!"),
+            ("Marco", "Get moving, people!"),
+        ],
+        CampaignCue::PlutoEvacuationComplete { .. } => &[
+            ("Samuel", "Comms with the surface went down, commander."),
+            ("Marco", "They're a lost cause. Get out of here, now."),
+        ],
         CampaignCue::NeptunePressingForwardBriefing => &[
             ("Samuel", "It's time to break through this blockade, commander. Use everything at your disposal."),
         ],
