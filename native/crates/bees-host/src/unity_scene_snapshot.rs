@@ -678,6 +678,10 @@ pub struct NativeLevelLayout {
     /// one real command owner for game input, scripted AI and simulation.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub merge_squads: Vec<NativeSquadMerge>,
+    /// Source keyboard shortcuts for authoritative user-owned squads
+    /// after the full native physical roster has been grouped.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub number_squads: Vec<NativeSquadShortcut>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub remove_squads: Vec<i64>,
 }
@@ -743,6 +747,18 @@ pub struct NativeSquadClone {
 pub struct NativeSquadMerge {
     pub primary_squad_item_id: i64,
     pub merged_squad_item_ids: Vec<i64>,
+}
+
+/// Initial squad keyboard ownership, matching Unity's Side-specific
+/// original squad count and 1..9,0 hotkeys. This is UI input metadata:
+/// only a real player-owned native game squad may claim a shortcut.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeSquadShortcut {
+    pub squad_item_id: i64,
+    pub side: i32,
+    pub number: u32,
+    pub original_squad_count: u32,
 }
 
 /// Source MapData.Location is cosmetic soundtrack metadata. It never
@@ -2181,7 +2197,7 @@ impl NativePhysicalScene {
             layout.add_map_borders.is_empty() &&
             layout.add_static_polygons.is_empty() && layout.translate_squads.is_empty() &&
             layout.clone_squads.is_empty() && layout.merge_squads.is_empty() &&
-            layout.remove_squads.is_empty()
+            layout.number_squads.is_empty() && layout.remove_squads.is_empty()
         {
             return Ok(());
         }
@@ -2201,6 +2217,7 @@ impl NativePhysicalScene {
             !layout.translate_squads.is_empty() ||
             !layout.clone_squads.is_empty() ||
             !layout.merge_squads.is_empty() ||
+            !layout.number_squads.is_empty() ||
             !layout.remove_squads.is_empty()
         ) {
             return Err(invalid(
@@ -2564,6 +2581,7 @@ impl NativePhysicalScene {
             self.source_squads.push(squad);
         }
         self.merge_native_layout_squads(&layout.merge_squads)?;
+        self.install_native_squad_shortcuts(&layout.number_squads)?;
         Ok(())
     }
 
