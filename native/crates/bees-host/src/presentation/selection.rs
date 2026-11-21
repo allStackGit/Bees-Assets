@@ -59,11 +59,10 @@ impl NativeSquadSelection {
     }
 
     pub fn select_ship(&mut self, view: &NativeRenderWorldView<'_>, ship: i64, additive: bool) {
-        self.synchronize(view);
         let Some(owner) = view.roster.owning_squad(ship) else { return };
-        if !selectable(view, owner) { return; }
-        if !additive { self.clear(); }
-        if !self.squads.contains(&owner) { self.squads.push(owner); }
+        // Clicking a physical ship and clicking its squad tab must use the
+        // same lifetime/permission checks and Ctrl-click toggle semantics.
+        self.select_squad(view, owner, additive);
     }
 
     /// Source Selector deduplicates squads touched by the actual selection

@@ -1172,6 +1172,12 @@ impl NativeClient {
                                 }
                             } else {
                                 self.renderer.selection.select_ship(&view, ship, additive);
+                                if additive {
+                                    // Ctrl-click can remove the clicked squad.
+                                    // Do not keep its unselected ship highlighted.
+                                    self.renderer.selected_ship = self.renderer.selection
+                                        .representative_ships(&view).next();
+                                }
                             }
                         } else { self.renderer.selection.clear(); }
                     }
