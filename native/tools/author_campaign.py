@@ -827,6 +827,16 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                                      else None)
                     return fleet
 
+                def source_order(actual, required):
+                    # GetSquadByComposition returns None when an authored
+                    # type is unavailable; AddReinforcementSquads filters
+                    # those missing squads. Present types retain their
+                    # original order, but may skip unavailable formations.
+                    remaining = iter(required)
+                    return all(kind is not None and
+                               any(expected == kind for expected in remaining)
+                               for kind in actual)
+
                 for wave in waves:
                     when = next((int(due) for due, _ in expected
                                  if abs(wave["after_seconds"] - due) <= 0.0001), None)
@@ -838,12 +848,15 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                         valid_waves = False
                         break
                     # Only the original fifth upper wave can prepend
-                    # surviving veteran SavedSquads from earlier battles.
+                    # previously fought SavedSquads. Require at least
+                    # one surviving newly selected formation so a wholly
+                    # arbitrary fleet cannot masquerade as this wave.
                     if (when, lane) == (540, "upper"):
-                        if len(actual) < len(required) or actual[-len(required):] != required:
+                        if not any(source_order(actual[start:], required)
+                                   for start in range(len(actual))):
                             valid_waves = False
                             break
-                    elif actual != required:
+                    elif not source_order(actual, required):
                         valid_waves = False
                         break
             if (scene.get("human_side") != args.player_side or
