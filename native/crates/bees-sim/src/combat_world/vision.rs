@@ -283,6 +283,7 @@ impl CombatWorld {
             let eligible_enemies = self.total_living_ships()
                 .saturating_sub(self.living_ships_on_side(side)) as u64;
             if eligible_enemies == 0 {
+                counts.ship_queries_skipped_no_enemies += 1;
                 // No hostile living collider can contribute a sighting.
                 // Skip the broadphase entirely while preserving obstacle
                 // discovery emission and the per-observer counters below.
