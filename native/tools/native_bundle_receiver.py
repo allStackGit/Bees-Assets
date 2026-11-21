@@ -31,6 +31,7 @@ from transfer_policy_bundle import import_bundle_archive, completed_uploaded_bun
 CHUNK = 1024 * 1024
 MAX_ARCHIVE_BYTES = 8 * 1024 ** 3
 MAX_CLIENTS = 4
+MAX_DOWNLOAD_ATTEMPTS = 4
 TOKEN_ENV = "BEES_NATIVE_BUNDLE_TOKEN"
 DIGEST_RE = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -162,7 +163,12 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
 
 
 def download_input_archive(base_url, collector_id, destination, token=None):
-    """Fetch one issued worker's immutable inputs with bounded memory."""
+    """Fetch immutable collector inputs with bounded memory and ranged resume.
+
+    Partial bytes stay private until the whole SHA-pinned archive is verified.
+    A resumed response must match the first response's exact byte identity,
+    so changing issued rounds cannot silently combine unrelated archives.
+    """
     if not BUNDLE_NAME.fullmatch(collector_id):
         raise ValueError("invalid native collector identity")
     parts = urlsplit(base_url)
@@ -179,38 +185,65 @@ def download_input_archive(base_url, collector_id, destination, token=None):
     auth = bundle_token() if token is None else token
     started = time.perf_counter()
     temporary = None
-    connection = connection_class(parts.hostname, parts.port, timeout=60)
+    size = None
+    digest = None
+    hasher = hashlib.sha256()
+    received = 0
     try:
-        connection.request("GET", endpoint, headers={"Authorization": "Bearer " + auth})
-        response = connection.getresponse()
-        if response.status != 200:
-            reason = response.read(4096)
-            raise ValueError(f"collector input download rejected: HTTP {response.status}: {reason!r}")
-        size = int(response.getheader("Content-Length", "0"))
-        digest = response.getheader("X-Archive-SHA256", "")
-        if not 0 < size <= MAX_ARCHIVE_BYTES or not DIGEST_RE.fullmatch(digest):
-            raise ValueError("learner returned an invalid collector archive identity")
-        hasher = hashlib.sha256()
-        count = 0
         with tempfile.NamedTemporaryFile(mode="w+b", dir=parent,
                 prefix=".native-input-download-", suffix=".partial",
                 delete=False) as output:
             temporary = Path(output.name)
-            while count < size:
-                block = response.read(min(CHUNK, size - count))
-                if not block:
-                    raise ValueError("learner returned truncated collector inputs")
-                hasher.update(block)
-                output.write(block)
-                count += len(block)
+            for attempt in range(MAX_DOWNLOAD_ATTEMPTS):
+                connection = None
+                try:
+                    connection = connection_class(parts.hostname, parts.port, timeout=60)
+                    headers = {"Authorization": "Bearer " + auth}
+                    if received:
+                        headers["Range"] = f"bytes={received}-"
+                    connection.request("GET", endpoint, headers=headers)
+                    response = connection.getresponse()
+                    expected_status = 206 if received else 200
+                    if response.status != expected_status:
+                        reason = response.read(4096)
+                        raise ValueError(
+                            f"collector input download rejected: HTTP {response.status}: {reason!r}"
+                        )
+                    length = int(response.getheader("Content-Length", "0"))
+                    response_digest = response.getheader("X-Archive-SHA256", "")
+                    if size is None:
+                        if not 0 < length <= MAX_ARCHIVE_BYTES or not DIGEST_RE.fullmatch(response_digest):
+                            raise ValueError("learner returned an invalid collector archive identity")
+                        size, digest = length, response_digest
+                    elif (response_digest != digest or
+                            length != size - received or
+                            (received and response.getheader("Content-Range") !=
+                             f"bytes {received}-{size - 1}/{size}")):
+                        raise ValueError("learner changed collector inputs during resumed download")
+                    while received < size:
+                        block = response.read(min(CHUNK, size - received))
+                        if not block:
+                            break
+                        output.write(block)
+                        hasher.update(block)
+                        received += len(block)
+                    if received == size:
+                        break
+                except (OSError, http.client.HTTPException):
+                    if attempt + 1 == MAX_DOWNLOAD_ATTEMPTS:
+                        raise
+                finally:
+                    if connection is not None:
+                        connection.close()
+            if size is None or received != size:
+                raise ValueError("learner returned truncated collector inputs after bounded retries")
+            if hasher.hexdigest() != digest:
+                raise ValueError("collector input archive checksum differs from learner receipt")
             output.flush()
             os.fsync(output.fileno())
-        if count != size or hasher.hexdigest() != digest:
-            raise ValueError("collector input archive checksum differs from learner receipt")
         os.link(temporary, target)
         sync_directory(parent)
     finally:
-        connection.close()
         if temporary is not None:
             temporary.unlink(missing_ok=True)
     return {
@@ -424,28 +457,49 @@ def _receiver_handler(owner):
                         not 0 < expected_size <= MAX_ARCHIVE_BYTES or
                         not DIGEST_RE.fullmatch(digest)):
                     raise ValueError("published collector input archive was redirected or changed")
-                with file.open("rb") as stream:
-                    self.connection.settimeout(60)
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/x-native-collector-inputs-tar")
-                    self.send_header("Content-Length", str(expected_size))
-                    self.send_header("X-Archive-SHA256", digest)
-                    self.send_header("Connection", "close")
-                    self.end_headers()
-                    self.close_connection = True
-                    remaining = expected_size
-                    while remaining:
-                        data = stream.read(min(CHUNK, remaining))
-                        if not data:
-                            break
-                        self.wfile.write(data)
-                        remaining -= len(data)
-                if remaining == 0:
-                    owner.record_transfer(input_bytes=expected_size)
-                    if owner.on_event:
-                        owner.on_event("native_collector_inputs_served", {
-                            "collector_id": collector_id, "archive_bytes": expected_size,
-                        })
+                offset = 0
+                requested = self.headers.get("Range")
+                if requested is not None:
+                    match = re.fullmatch(r"bytes=([0-9]+)-", requested)
+                    if match is None or match.group(1) != str(int(match.group(1))):
+                        self.respond(416, {"error": "invalid collector byte range"})
+                        return
+                    offset = int(match.group(1))
+                    if not 0 < offset < expected_size:
+                        self.respond(416, {"error": "collector byte range outside archive"})
+                        return
+                sent = 0
+                remaining = expected_size - offset
+                try:
+                    with file.open("rb") as stream:
+                        stream.seek(offset)
+                        self.connection.settimeout(60)
+                        self.send_response(206 if offset else 200)
+                        self.send_header("Content-Type", "application/x-native-collector-inputs-tar")
+                        self.send_header("Content-Length", str(remaining))
+                        self.send_header("X-Archive-SHA256", digest)
+                        if offset:
+                            self.send_header("Content-Range",
+                                             f"bytes {offset}-{expected_size - 1}/{expected_size}")
+                        self.send_header("Connection", "close")
+                        self.end_headers()
+                        self.close_connection = True
+                        while remaining:
+                            data = stream.read(min(CHUNK, remaining))
+                            if not data:
+                                break
+                            self.wfile.write(data)
+                            sent += len(data)
+                            remaining -= len(data)
+                finally:
+                    # Count actual transmitted bytes, including partial retries;
+                    # not hypothetical full archives or overlapping worker time.
+                    owner.record_transfer(input_bytes=sent)
+                if remaining == 0 and owner.on_event:
+                    owner.on_event("native_collector_inputs_served", {
+                        "collector_id": collector_id, "archive_bytes": sent,
+                        "range_offset": offset,
+                    })
             except LookupError as error:
                 self.respond(404, {"error": str(error)})
             except ValueError as error:
