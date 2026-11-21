@@ -240,6 +240,52 @@ function roundThroughputMeasurements(receipt, rollout, learner) {
     return result;
 }
 
+// Optional observational rank counters. Use explicit units and bounded,
+// known names; missing physical driver counters are never reported as zero.
+// Physical busy/VRAM is whole-device usage, not exclusively the learner.
+function optimizerResourceMeasurements(report, prefix, resources) {
+    if (resources == null) return;
+    if (resources.scope !== 'optimizer_rank_process_and_shared_physical_device' ||
+        !Number.isFinite(resources.sample_interval_seconds) ||
+        resources.sample_interval_seconds <= 0 ||
+        !resources.samples || typeof resources.samples !== 'object' ||
+        Array.isArray(resources.samples))
+        throw Error('Invalid native optimizer resource sampling scope.');
+    const emit = (name, value, unit) => {
+        if (value == null) return;
+        if (!Number.isFinite(value) || value < 0 || value > 1e12 ||
+            (unit === 'count' && !Number.isSafeInteger(value)))
+            throw Error('Invalid native optimizer resource measurement: '+name);
+        report[prefix+name] = {value,unit};
+    };
+    emit('update_cpu_cores',resources.update_process_cpu_core_equivalents,'scalar');
+    for (const [source,name,unit] of [
+        ['process_resident_bytes','rss','mb'],
+        ['physical_gpu_busy_pct','physical_gpu_busy_pct','scalar'],
+        ['physical_gpu_used_vram_bytes','physical_gpu_vram','mb'],
+    ]) {
+        const sample = resources.samples[source];
+        if (sample == null) continue;
+        const {sample_count: count, sample_mean: mean, sample_peak: peak}=sample;
+        if (!Number.isSafeInteger(count) || count < 1 ||
+            !Number.isFinite(mean) || mean < 0 ||
+            !Number.isFinite(peak) || peak < mean ||
+            (source === 'physical_gpu_busy_pct' && peak > 100))
+            throw Error('Invalid native optimizer resource sample aggregate: '+source);
+        const divisor = unit === 'mb' ? 1048576 : 1;
+        emit(name+(unit==='mb'?'_mean_mb':'_mean'),mean/divisor,unit);
+        emit(name+(unit==='mb'?'_peak_mb':'_peak'),peak/divisor,unit);
+        emit(name+'_samples',count,'count');
+    }
+    const highWater=resources.samples.process_peak_resident_bytes;
+    if (highWater != null) {
+        if (!Number.isSafeInteger(highWater.sample_count) || highWater.sample_count < 1 ||
+            !Number.isFinite(highWater.observed_high_water) || highWater.observed_high_water < 0)
+            throw Error('Invalid native optimizer peak resident memory.');
+        emit('process_peak_rss_mb',highWater.observed_high_water/1048576,'mb');
+    }
+}
+
 function learnerMeasurements(metrics) {
     const report = {};
     const add = (name, unit, value = metrics[name]) => {
@@ -311,6 +357,7 @@ function learnerMeasurements(metrics) {
     }
     add('torch_cuda_process_peak_allocated_bytes', 'bytes');
     add('torch_cuda_process_peak_reserved_bytes', 'bytes');
+    optimizerResourceMeasurements(report,'learner_',metrics.optimizer_update_resource_measurements);
     if (metrics.optimizer_gpu_workers != null) {
         const count=metrics.optimizer_gpu_workers;
         if (!Number.isSafeInteger(count) || count<0 || count>16)
@@ -337,6 +384,8 @@ function learnerMeasurements(metrics) {
                     ['peak_allocated_bytes',worker.torch_cuda_process_peak_allocated_bytes,'bytes'],
                     ['peak_reserved_bytes',worker.torch_cuda_process_peak_reserved_bytes,'bytes'],
                 ]) report['optimizer_gpu_'+index+'_'+name]={value,unit};
+                optimizerResourceMeasurements(report,'optimizer_gpu_'+index+'_',
+                    worker.update_resource_measurements);
             });
         }
     }
@@ -1813,6 +1862,8 @@ function createNativeBeesAdapter({
                     metrics['optimizer_gpu_'+index+'_peak_reserved_bytes']={
                         value:row.torch_cuda_process_peak_reserved_bytes,unit:'bytes',
                     };
+                    optimizerResourceMeasurements(metrics,'optimizer_gpu_'+index+'_',
+                        row.update_resource_measurements);
                 });
                 return validateProgress({
                     schema_version:1,source:'hub-metrics-v1',

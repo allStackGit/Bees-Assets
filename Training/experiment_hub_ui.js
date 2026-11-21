@@ -3046,6 +3046,25 @@ document.addEventListener('DOMContentLoaded', () => {
             'ant_decisions_per_second','engine_steps_per_second',
             'job_cpu_cores','host_cpu_busy_pct',
         ],
+        bees_native:[
+            'training_head_to_head_win_rate','training_mean_episode_seconds',
+            'rollout_world_steps_per_second','rollout_world_steps_per_collector_wall_second',
+            'learner_optimizer_input_rows_per_update_second',
+            'learner_ppo_update_wall_seconds','learner_trajectory_processing_wall_seconds',
+            'learner_update_cpu_cores','learner_process_peak_rss_mb',
+            'learner_physical_gpu_busy_pct_mean','learner_physical_gpu_vram_peak_mb',
+        ],
+        bees_native_collect:[
+            'rollout_world_steps_per_second','rollout_policy_rows_per_second',
+            'rollout_world_steps','rollout_policy_rows',
+            'job_cpu_cores','job_memory_mb','host_gpu_busy_pct',
+        ],
+        bees_native_optimizer_worker:[
+            'optimizer_synchronized_minibatches','optimizer_gpu_0_update_wall_seconds',
+            'optimizer_gpu_0_gradient_submission_seconds',
+            'optimizer_gpu_0_update_cpu_cores','optimizer_gpu_0_process_peak_rss_mb',
+            'optimizer_gpu_0_physical_gpu_busy_pct_mean','optimizer_gpu_0_physical_gpu_vram_peak_mb',
+        ],
         other:['active_training_time','job_cpu_cores','job_memory_mb',
             'host_cpu_busy_pct'],
     };
@@ -3078,6 +3097,8 @@ document.addEventListener('DOMContentLoaded', () => {
         'benchmark_mean_deliveries','benchmark_pickup_rate',
         'benchmark_mean_steps_per_delivery','benchmark_gross_energy_per_step',
         'benchmark_mean_feedings','benchmark_mean_births',
+        'training_head_to_head_win_rate','training_mean_episode_seconds',
+        'training_head_to_head_episodes','training_bee_wins','training_human_wins',
         'terminal_rewards','episodes_ended','loss','policy_loss',
         'value_loss','baseline_loss','entropy','local_elo','mean_reward'];
     const knownPerformanceMetrics=[
@@ -3122,6 +3143,22 @@ document.addEventListener('DOMContentLoaded', () => {
         'ppo_minibatches','ppo_board_pixel_samples',
         'ppo_max_board_cells','ppo_unique_board_shapes',
         'evaluation_seconds','collector_count',
+        'rollout_world_steps','rollout_policy_rows','rollout_world_steps_per_second',
+        'rollout_policy_rows_per_second','rollout_world_steps_per_collector_wall_second',
+        'rollout_policy_rows_per_collector_wall_second',
+        'learner_optimizer_input_rows_per_update_second',
+        'learner_ppo_update_wall_seconds','learner_trajectory_processing_wall_seconds',
+        'optimizer_synchronized_minibatches',
+        ...['learner_',...Array.from({length:16},(_,i)=>'optimizer_gpu_'+i+'_')]
+            .flatMap(prefix=>[
+                'update_cpu_cores','rss_mean_mb','rss_peak_mb','process_peak_rss_mb',
+                'physical_gpu_busy_pct_mean','physical_gpu_busy_pct_peak',
+                'physical_gpu_vram_mean_mb','physical_gpu_vram_peak_mb',
+            ].map(name=>prefix+name)),
+        ...Array.from({length:16},(_,i)=>[
+            'optimizer_gpu_'+i+'_update_wall_seconds',
+            'optimizer_gpu_'+i+'_gradient_submission_seconds',
+        ]).flat(),
         // The TinyBrains learner contributes slot 0; up to eight remote
         // workers contribute slots 1–8. Let the operator select every slot.
         ...Array.from({length:9},(_,i)=>[
