@@ -562,13 +562,6 @@ def author(args) -> tuple[dict, dict, dict]:
                 "HiveMind requires environment-held credentials or explicit "
                 "insecure-loopback authorization in its existing run"
             )
-        if any(ship["base_speed"] <= 0
-               for side, entries in by_side.items() if side not in controlled
-               for ship in entries):
-            raise ValueError(
-                "generated HiveMind opponent only supports mobile authentic "
-                "squads; stationary authority must be separately authored"
-            )
     if host is None and controlled:
         host = 1 if 1 in controlled else 2
     if host is not None and host not in controlled:
