@@ -77,6 +77,39 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
             ("Oviya", "Let’s get within scouting distance as soon as possible. If it’s as bad as we think, we need to stop this as soon as possible."),
             ("Yoshiko", "Oh, this is gonna be a big fight. I can tell!"),
         ],
+        CampaignCue::UranusDefensiveBriefing => &[
+            ("Samuel", "Our success has bought us some time to collect resources around Uranus. There will likely be reinforcements called on from the bees we just fought, though. Take care."),
+        ],
+        CampaignCue::UranusDefensiveWave { line, .. } => match line {
+            1 => &[("Oviya", "Reinforcements from the remnants of the blockade are incoming.")],
+            2 => &[("Yoshiko", "More bees! Let’s give ‘em hell!")],
+            3 => &[("Marco", "Even more ships. Commander, I trust you’ll know when to exit.")],
+            4 => &[("Joey", "More bees? What in tarnation? Where are they coming from?")],
+            5 => &[("Oviya", "We've found more bee ships, inbound to our location.")],
+            6 => &[("Samuel", "Another wave of ships!")],
+            7 => &[("Wesley", "More of those… bees? Don’t risk our profit margins. You’ll receive a bill from Jensen if you lose any Factories.")],
+            8 => &[("Oviya", "We're seeing more reinforcements from a different direction, now. It could be their main fleet. Things are going to get tough from here.")],
+            9 => &[("Fritz", "Ahaha! We have more bees come to meet the light! That’s right, Dee, this one’s for you!")],
+            10 => &[("Alejandra", "More wrinkles in our plans approaching. I trust you can sort them out, commander.")],
+            11 => &[("Emilia", "Oh! Uh- is this thing on? Commander! There’s more bees! Get 'em!")],
+            _ => &[],
+        },
+        CampaignCue::UranusDefensiveEnding { last_ship_retreated, player_victory } => {
+            const RETREATED: &[(&str, &str)] = &[
+                ("Samuel", "That was close! Let's get out of here."),
+                ("Oviya", "Hold on, we have more bees on our radar! They’re… not coming towards us?"),
+                ("Marco", "No rest for the weary…"),
+                ("Samuel", "Alright, commander, gather your squads and let's investigate."),
+            ];
+            const DEFEATED: &[(&str, &str)] = &[
+                ("Samuel", "We've lost the last ship we sent out, commander. It’s time to regroup."),
+                ("Oviya", "Hold on, we have more bees on our radar! They’re… not coming towards us?"),
+                ("Marco", "No rest for the weary…"),
+                ("Samuel", "Alright, commander, gather your squads and let's investigate."),
+            ];
+            if player_victory { RETREATED } else if last_ship_retreated { RETREATED }
+            else { DEFEATED }
+        },
         CampaignCue::MinesweeperBriefing => &[
             ("Samuel", "We need to clear out the debris surrounding Titania to give our new friends an exit path. Bee patrols have also been spotted around the area, trying to make sure nothing gets in or out."),
         ],

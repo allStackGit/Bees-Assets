@@ -2713,6 +2713,19 @@ impl NativePhysicalScene {
                     setup.survival.is_some() || setup.demolition.is_some() ||
                     setup.escort.is_some() || setup.extraction.is_some() =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
+            Some(CampaignDialogueSpec::UranusDefensive { player_side, .. })
+                if ![bee_side, human_side].contains(&player_side) ||
+                !setup.extraction.is_some_and(|zone|
+                    zone.player_side == player_side && zone.retreat_on_exit) ||
+                setup.groups.is_some() || setup.survival.is_some() ||
+                setup.demolition.is_some() || setup.escort.is_some() ||
+                setup.reinforcements.len() != 6 ||
+                [120.0, 240.0, 360.0, 480.0, 540.0, 600.0].iter().any(|due|
+                    !setup.reinforcements.iter().any(|wave|
+                        matches!(wave.activation,
+                            crate::reinforcements::NativeReinforcementActivation::AfterSeconds(seconds)
+                            if (seconds - due).abs() <= 0.0001))) =>
+                return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::UranusNewThreat {
                 player_side, barges, ..
             }) if ![bee_side, human_side].contains(&player_side) ||

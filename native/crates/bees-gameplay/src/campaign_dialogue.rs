@@ -26,6 +26,11 @@ pub enum CampaignDialogueSpec {
     PlutoEvacuation { player_side: i32, protected_ship_id: i64 },
     /// Source Uranus III protects exactly three real Barge hulls.
     UranusNewThreat { player_side: i32, barges: [i64; 3], has_cruiser: bool },
+    /// Source Uranus II: survive six timed Bee waves, mine and withdraw
+    /// the fleet at any point using the genuine physical retreat zone.
+    UranusDefensive {
+        player_side: i32, has_cruiser: bool, met_scientists: bool,
+    },
 }
 
 impl CampaignDialogueSpec {
@@ -35,7 +40,8 @@ impl CampaignDialogueSpec {
             Self::TitaniaBeenoculars { player_side, .. } |
             Self::NeptunePressingForward { player_side, .. } |
             Self::PlutoEvacuation { player_side, .. } |
-            Self::UranusNewThreat { player_side, .. } => player_side,
+            Self::UranusNewThreat { player_side, .. } |
+            Self::UranusDefensive { player_side, .. } => player_side,
         }
     }
 }
@@ -84,13 +90,17 @@ pub enum CampaignCue {
     UranusNewThreatBargeCharged,
     UranusNewThreatReinforcements,
     UranusNewThreatEnding { barges_survived: bool, has_cruiser: bool },
+    UranusDefensiveBriefing,
+    /// Source six physical reinforcement announcements, in arrival order.
+    UranusDefensiveWave { number: u8, line: u8 },
+    UranusDefensiveEnding { last_ship_retreated: bool, player_victory: bool },
 }
 
 impl CampaignCue {
     pub fn is_briefing(self) -> bool {
         matches!(self, Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. } |
             Self::NeptunePressingForwardBriefing | Self::PlutoEvacuationBriefing |
-            Self::UranusNewThreatBriefing)
+            Self::UranusNewThreatBriefing | Self::UranusDefensiveBriefing)
     }
 }
 
@@ -105,6 +115,10 @@ enum DialogueMode {
         barges: [i64; 3], has_cruiser: bool,
         loss_reported: bool, charge_observed: bool, charge_reported: bool,
         reinforcement_reported: bool,
+    },
+    UranusDefensive {
+        has_cruiser: bool, met_scientists: bool,
+        waves_reported: u8,
     },
 }
 
@@ -162,6 +176,14 @@ impl CampaignDialogue {
                 },
                 CampaignCue::UranusNewThreatBriefing,
             ),
+            CampaignDialogueSpec::UranusDefensive {
+                has_cruiser, met_scientists, ..
+            } => (
+                DialogueMode::UranusDefensive {
+                    has_cruiser, met_scientists, waves_reported: 0,
+                },
+                CampaignCue::UranusDefensiveBriefing,
+            ),
         };
         Self { player_side: spec.player_side(), mode, cue, sequence: 0 }
     }
@@ -207,6 +229,11 @@ impl CampaignDialogue {
             }, DialogueMode::UranusNewThreat {
                 barges: authored, has_cruiser: authored_cruiser, ..
             }) => saved == authored && saved_cruiser == authored_cruiser,
+            (DialogueMode::UranusDefensive {
+                has_cruiser: old_cruiser, met_scientists: old_scientists, ..
+            }, DialogueMode::UranusDefensive {
+                has_cruiser: new_cruiser, met_scientists: new_scientists, ..
+            }) => old_cruiser == new_cruiser && old_scientists == new_scientists,
             _ => false,
         };
         if player_side != self.player_side || !same_authored_story {
@@ -254,6 +281,18 @@ impl CampaignDialogue {
                     personnel_saved, shield_health, shield_max,
                 }) => sequence == 1 && personnel_saved <= 60 &&
                     shield_max > 0 && (0..=shield_max).contains(&shield_health),
+            (DialogueMode::UranusDefensive {
+                waves_reported: 0, ..
+            }, CampaignCue::UranusDefensiveBriefing) => sequence == 0,
+            (DialogueMode::UranusDefensive {
+                has_cruiser, met_scientists, waves_reported,
+            }, CampaignCue::UranusDefensiveWave { number, line }) =>
+                number > 0 && number <= 6 && number == *waves_reported &&
+                sequence == number &&
+                Self::uranus_defensive_line_valid(number, line, *has_cruiser, *met_scientists),
+            (DialogueMode::UranusDefensive { waves_reported, .. },
+                CampaignCue::UranusDefensiveEnding { .. }) =>
+                *waves_reported <= 6 && sequence == *waves_reported + 1,
             (DialogueMode::UranusNewThreat {
                 loss_reported: false, charge_observed: false,
                 charge_reported: false, reinforcement_reported: false, ..
@@ -322,6 +361,11 @@ impl CampaignDialogue {
                 CampaignCue::NeptunePressingForwardVictory,
             (DialogueMode::NeptunePressingForward { has_factory }, false) =>
                 CampaignCue::NeptunePressingForwardDefeat { has_factory: *has_factory },
+            (DialogueMode::UranusDefensive { .. }, player_victory) =>
+                CampaignCue::UranusDefensiveEnding {
+                    last_ship_retreated: world.extraction_retreat_completed(),
+                    player_victory,
+                },
             (DialogueMode::UranusNewThreat { barges, has_cruiser, .. }, _) =>
                 CampaignCue::UranusNewThreatEnding {
                     barges_survived: barges.iter().any(|id|
@@ -360,11 +404,69 @@ impl CampaignDialogue {
         Some(CampaignCue::BeenocularsUpload(milestone))
     }
 
+    fn uranus_defensive_line_valid(
+        wave: u8, line: u8, has_cruiser: bool, met_scientists: bool,
+    ) -> bool {
+        match wave {
+            1 => line == 1,
+            4 => line == 8,
+            2 | 3 | 5 | 6 => (2..=7).contains(&line) ||
+                (has_cruiser && line == 9) ||
+                (met_scientists && matches!(line, 10 | 11)),
+            _ => false,
+        }
+    }
+
+    /// Caller consumes the shared World RNG only for the source waves
+    /// which actually choose dialogue. Fixed waves need no random draw.
+    pub(crate) fn reinforcement_choice_count(&self, elapsed_seconds: f64) -> Option<u64> {
+        let DialogueMode::UranusDefensive {
+            has_cruiser, met_scientists, waves_reported,
+        } = self.mode else { return None };
+        let next = usize::from(waves_reported);
+        let due = [120.0, 240.0, 360.0, 480.0, 540.0, 600.0];
+        if next >= due.len() || elapsed_seconds + 0.0001 < due[next] ||
+            matches!(next, 0 | 3) {
+            return None;
+        }
+        Some(6 + u64::from(has_cruiser) + 2 * u64::from(met_scientists))
+    }
+
     /// Source Uranus III announces the timed follow-up wave when its
     /// physical squads actually arrive, not merely when the timer elapses.
     /// The shared Level event owner provides the arrival receipt exactly
     /// once, even for multiple squads admitted in the same fixed tick.
-    pub(crate) fn reinforcement_arrived(&mut self, elapsed_seconds: f64) -> Option<CampaignCue> {
+    pub(crate) fn reinforcement_arrived(
+        &mut self, elapsed_seconds: f64, random_choice: Option<u64>,
+    ) -> Option<CampaignCue> {
+        if let DialogueMode::UranusDefensive {
+            has_cruiser, met_scientists, waves_reported,
+        } = &mut self.mode {
+            const DUE: [f64; 6] = [120.0, 240.0, 360.0, 480.0, 540.0, 600.0];
+            let next = usize::from(*waves_reported);
+            if next >= DUE.len() || elapsed_seconds + 0.0001 < DUE[next] {
+                return None;
+            }
+            let number = *waves_reported + 1;
+            // Unity Utilities.RandomInt(dialogueLines.Count) samples only
+            // waves 2, 3, 5 and 6. Optional Cruiser/scientist lines expand
+            // the source pool without changing the default six messages.
+            let line = match number {
+                1 => 1,
+                4 => 8,
+                _ => {
+                    let choice = random_choice?;
+                    let available = 6 + u64::from(*has_cruiser) +
+                        2 * u64::from(*met_scientists);
+                    if choice >= available { return None; }
+                    if choice < 6 { 2 + choice as u8 }
+                    else if *has_cruiser && choice == 6 { 9 }
+                    else { 10 + (choice - 6 - u64::from(*has_cruiser)) as u8 }
+                }
+            };
+            *waves_reported = number;
+            return Some(CampaignCue::UranusDefensiveWave { number, line });
+        }
         let DialogueMode::UranusNewThreat { reinforcement_reported, .. } =
             &mut self.mode else { return None };
         // The original mission plays this cue for the 60-second follow-up

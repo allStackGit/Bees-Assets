@@ -51,7 +51,8 @@ impl NativeMissionCue {
                 matches!(self, Self::UranusBargeLost | Self::UranusBargeCharged |
                     Self::UranusReinforcements),
             Some(CampaignDialogueSpec::NeptunePressingForward { .. }) |
-            Some(CampaignDialogueSpec::PlutoEvacuation { .. }) | None => false,
+            Some(CampaignDialogueSpec::PlutoEvacuation { .. }) |
+            Some(CampaignDialogueSpec::UranusDefensive { .. }) | None => false,
         }
     }
 }
