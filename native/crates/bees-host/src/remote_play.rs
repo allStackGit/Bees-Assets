@@ -1085,8 +1085,12 @@ impl NativeRemotePlay {
             return false;
         }
         let sources = if fog {
-            Some(self.fog_by_side.entry(side).or_default()
-                .sources(view, side, &mut self.measurements))
+            let sight = self.fog_by_side.entry(side).or_default();
+            // Command admission may run before the next presentation
+            // broadcast. It must independently refresh authoritative
+            // source sight rather than trusting a stale query index.
+            sight.advance(view, side, &mut self.measurements);
+            Some(sight.sources(view, &mut self.measurements))
         } else { None };
         let mut ship_visible = |id: i64, friendly: bool, ship_type: Option<u8>| {
             let Some(ship) = view.combat.ship(id) else { return false };
