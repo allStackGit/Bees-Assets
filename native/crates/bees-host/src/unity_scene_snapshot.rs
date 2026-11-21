@@ -796,6 +796,8 @@ pub struct NativePhysicalScene {
     // Native authored reserve classes: complete physical source prototypes,
     // deliberately excluded from the gameplay and training World.
     fleet_templates: Vec<NativeFleetTemplate>,
+    // Inert source Carrier child formations, never live Stage squads.
+    fleet_template_squads: Vec<NativeSourceSquad>,
     source_episode: Option<NativeSourceEpisode>,
     /// Explicit native gameplay with an authenticated model-controlled
     /// opponent and a mutable player career, not an RL training episode.
@@ -1372,9 +1374,10 @@ impl NativePhysicalScene {
             }).or_else(|| source_archetypes.fleet_templates.iter().find(|entry|
                 entry.ship.side == player_side &&
                 entry.ship.ship_type == purchase.ship_type &&
-                // A reserved Carrier hull alone is insufficient: its
-                // actual free-child construction must also be authored.
-                entry.ship.ship_type != 5 &&
+                // A reserved Carrier hull must include its complete
+                // source-authored free child formations.
+                (entry.ship.ship_type != 5 || source_archetypes
+                    .campaign_carrier_groups(entry.ship.entity_id, player_side).is_some()) &&
                 entry.ship.policy.is_none() &&
                 entry.ship.drone_carrier_id.is_none() &&
                 !entry.ship.motion.is_policy_controlled &&
@@ -1506,11 +1509,18 @@ impl NativePhysicalScene {
                 squad.original_squad_count = None;
                 squad.is_carrier_squad = Some(true);
                 squad.hivemind = None;
+                // Inactive templates carry no live input authority.
+                // Admit each free child with its persistent parent's
+                // actual campaign player permission.
+                squad.player_permissions = self.source_squads[owner].player_permissions;
                 let child_owner = self.source_squads.len();
                 self.source_squads.push(squad);
                 for child in children {
                     let child_offset = source_archetypes.source_formation
-                        .get(&child.entity_id)
+                        .get(&child.entity_id).copied().or_else(||
+                            source_archetypes.fleet_templates.iter().find(|entry|
+                                entry.ship.entity_id == child.entity_id
+                            ).map(|entry| entry.formation))
                         .ok_or(invalid("Carrier complement lacks source formation"))?.offset;
                     let child_position = position +
                         (child.motion.position - template.motion.position);
@@ -1581,18 +1591,22 @@ impl NativePhysicalScene {
     fn campaign_carrier_groups(&self, parent: i64, side: i32)
         -> Option<Vec<(NativeSourceSquad, Vec<NativeAuthoredShip>)>>
     {
-        let mut children = self.entities.iter().filter_map(|entity| match entity {
-            NativeAuthoredEntity::Ship(ship)
-                if Self::authored_carrier_parent(ship) == Some(parent) =>
-                    Some((ship.entity_id, ship)),
+        let reserved = self.fleet_templates.iter()
+            .any(|entry| entry.ship.entity_id == parent);
+        let live = self.entities.iter().filter_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) => Some(ship),
             _ => None,
-        }).collect::<HashMap<_, _>>();
+        });
+        let mut children = live.chain(self.fleet_templates.iter().map(|entry| &entry.ship))
+            .filter(|ship| Self::authored_carrier_parent(ship) == Some(parent))
+            .map(|ship| (ship.entity_id, ship)).collect::<HashMap<_, _>>();
         if children.is_empty() { return None; }
         let mut groups = Vec::new();
-        for squad in &self.source_squads {
+        let source_squads = if reserved { &self.fleet_template_squads } else { &self.source_squads };
+        for squad in source_squads {
             if !squad.members.iter().any(|id| children.contains_key(id)) { continue; }
             if squad.side != side || squad.saved_squad_id.is_some() ||
-                !squad.player_permissions.user_controlled ||
+                squad.player_permissions.user_controlled == reserved ||
                 squad.is_carrier_squad != Some(true)
             {
                 return None;
@@ -1601,8 +1615,10 @@ impl NativePhysicalScene {
             for id in &squad.members {
                 let ship = children.remove(id)?;
                 if ship.side != side ||
-                    !self.fleet.get(*id)
-                        .is_some_and(|value| !value.has_persistent_fleet_value) ||
+                    (!reserved && !self.fleet.get(*id)
+                        .is_some_and(|value| !value.has_persistent_fleet_value)) ||
+                    (reserved && !self.fleet_templates.iter()
+                        .any(|entry| entry.ship.entity_id == *id)) ||
                     ship.policy.is_some() || ship.motion.is_policy_controlled ||
                     ship.motion.is_moving || ship.motion.has_target_coordinates ||
                     ship.motion.body_velocity.length_squared() != 0.0 ||
@@ -4135,6 +4151,7 @@ impl NativePhysicalScene {
             command_settings,
             entities,
             fleet_templates: Vec::new(),
+            fleet_template_squads: Vec::new(),
             source_episode,
             campaign_policy_opponent_side: None,
             policy_game_timeout_seconds: None,

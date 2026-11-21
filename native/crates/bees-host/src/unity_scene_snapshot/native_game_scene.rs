@@ -32,6 +32,10 @@ struct GameScene {
     /// removed before any gameplay, perception or learner World is created.
     #[serde(default)]
     fleet_templates: Vec<GameShip>,
+    /// Actual type-specific free Carrier formations belonging entirely
+    /// to an inert FleetShip template, not registered Level squads.
+    #[serde(default)]
+    fleet_template_squads: Vec<GameSquad>,
     squads: Vec<GameSquad>,
     /// Native-authored physical resources and destructible level objects.
     #[serde(default)]
@@ -656,10 +660,9 @@ impl NativePhysicalScene {
         if raw.fleet_templates.iter().any(|ship|
             ship.persistent_fleet || ship.fleet_ship_id.is_some() ||
             ship.user_controlled || ship.policy.is_some() ||
-            ship.drone_carrier_id.is_some() || ship.mined_cargo != 0 ||
-            ship.health != ship.max_health
+            ship.mined_cargo != 0 || ship.health != ship.max_health
         ) {
-            return Err(invalid("inert native FleetShip templates cannot own live progress, policy or carrier state"));
+            return Err(invalid("inert native FleetShip templates cannot own live progress or policy state"));
         }
         // The policy scenario has no campaign economy or player fleet
         // installer. Reserve templates do not contribute to physics,
@@ -1255,9 +1258,10 @@ impl NativePhysicalScene {
         }
 
         if special_weapon_ids.iter().any(|id| ship_sides.contains_key(id)) ||
-            carrier_children.iter().any(|&(_, side, carrier_id)|
+            carrier_children.iter().any(|&(child, side, carrier_id)|
                 ship_types.get(&carrier_id) != Some(&5) ||
-                ship_sides.get(&carrier_id) != Some(&side)
+                ship_sides.get(&carrier_id) != Some(&side) ||
+                template_ids.contains(&child) != template_ids.contains(&carrier_id)
             )
         {
             return Err(invalid("native Bomb weapon identity collision or an invalid same-side Carrier child link"));
@@ -1352,12 +1356,24 @@ impl NativePhysicalScene {
         }
 
         let mut source_squads = Vec::with_capacity(raw.squads.len());
+        let mut fleet_template_squads = Vec::new();
         let mut assigned = HashSet::new();
+        let mut assigned_templates = HashSet::new();
+        let reserved_children = carrier_children.iter()
+            .filter(|(child, _, _)| template_ids.contains(child))
+            .map(|&(child, _, parent)| (child, parent))
+            .collect::<HashMap<_, _>>();
+        let inert_squads = if policy_episode.is_none() || raw.policy_gameplay {
+            raw.fleet_template_squads
+        } else { Vec::new() };
         let mut squad_ids = HashSet::new();
         let mut saved_squad_ids = HashSet::new();
         let mut has_player = false;
         let mut player_sides = HashSet::new();
-        for squad in raw.squads {
+        for (inert, squad) in raw.squads.into_iter().map(|squad| (false, squad))
+            .chain(inert_squads.into_iter().map(|squad| (true, squad)))
+        {
+            let assigned_set = if inert { &mut assigned_templates } else { &mut assigned };
             if squad.item_id <= 0 || squad.item_id == i64::MAX ||
                 squad.saved_squad_id.is_some_and(|id|
                     id <= 0 || !saved_squad_ids.insert(id)) ||
@@ -1368,11 +1384,27 @@ impl NativePhysicalScene {
                 squad.hotkey_number.is_some() != squad.original_squad_count.is_some() ||
                 squad.matching_speed.is_some_and(|value| !value.is_finite() || value < 0.0) ||
                 squad.members.iter().any(|id|
-                    !assigned.insert(*id) || ship_sides.get(id) != Some(&squad.side) ||
+                    !assigned_set.insert(*id) || ship_sides.get(id) != Some(&squad.side) ||
+                    template_ids.contains(id) != inert ||
                     ship_player_control.get(id) != Some(&squad.user_controlled)
-                ) || raw.activate_hivemind && squad.hivemind.is_none()
+                ) || (!inert && raw.activate_hivemind && squad.hivemind.is_none()) ||
+                (inert && (squad.saved_squad_id.is_some() ||
+                    squad.user_controlled || squad.can_accept_input || squad.locked_on ||
+                    squad.hotkey_number.is_some() || squad.hivemind.is_some() ||
+                    !squad.is_carrier_squad))
             {
                 return Err(invalid("invalid native squad identity, membership or authority"));
+            }
+            if inert {
+                let first = squad.members[0];
+                let parent = reserved_children.get(&first)
+                    .ok_or(invalid("inactive Carrier squad must own a linked template child"))?;
+                if squad.members.iter().any(|id|
+                    reserved_children.get(id) != Some(parent) ||
+                    ship_types.get(id) != ship_types.get(&first))
+                {
+                    return Err(invalid("inactive Carrier squad must have one parent and one child class"));
+                }
             }
             let bans = squad.command_bans.into_iter()
                 .map(bees_hivemind::dispatch::LocalCommandKind::from_server_strategy_id)
@@ -1391,7 +1423,8 @@ impl NativePhysicalScene {
             }
             has_player |= squad.user_controlled;
             if squad.user_controlled { player_sides.insert(squad.side); }
-            source_squads.push(NativeSourceSquad {
+            let destination = if inert { &mut fleet_template_squads } else { &mut source_squads };
+            destination.push(NativeSourceSquad {
                 saved_squad_id: squad.saved_squad_id,
                 custom_color_rgb: squad.custom_color_rgb,
                 item_id: squad.item_id, side: squad.side,
@@ -1418,9 +1451,10 @@ impl NativePhysicalScene {
             });
         }
         if assigned.len() + template_ids.len() != ship_sides.len() ||
-            assigned.iter().any(|id| template_ids.contains(id))
+            assigned.iter().any(|id| template_ids.contains(id)) ||
+            assigned_templates.len() != reserved_children.len()
         {
-            return Err(invalid("every live native ship must belong to one squad; reserve templates cannot deploy"));
+            return Err(invalid("live ships and inactive Carrier children each need exactly one appropriate source squad"));
         }
         // The complete native source parser above constructs the exact
         // same collision, ship, vision and weapon definitions for reserves.
@@ -1505,6 +1539,7 @@ impl NativePhysicalScene {
             command_settings: settings,
             entities,
             fleet_templates,
+            fleet_template_squads,
             // Apply explicitly authored initial static layout before
             // installing immutable reward baselines and PPO membership.
             source_episode: None,
