@@ -2979,7 +2979,14 @@ impl NativePhysicalScene {
                 setup.demolition.is_some() || setup.escort.is_some() ||
                 !setup.extraction.is_some_and(|zone|
                     (zone.center - Vec2::new(-512.0, 0.0)).length_squared()
-                        <= 0.000001) ||
+                        <= 0.000001 &&
+                    // Source Exit Zone prefab has a 1x1 trigger on layer
+                    // 20; CreateCampaignRetreatZone sets scale 50x256.
+                    // Wrong bounds would extract a larger/smaller fleet
+                    // area and change the actual mission's risk.
+                    (zone.half_extents - Vec2::new(25.0, 128.0))
+                        .length_squared() <= 0.000001 &&
+                    zone.layer == 20) ||
                 !uranus_defensive_mining_matches_source(&self.entities) ||
                 !self.starting_positions.is_some_and(|home|
                     usize::try_from(bee_side - 1).ok()
