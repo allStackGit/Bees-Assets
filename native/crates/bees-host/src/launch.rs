@@ -6035,7 +6035,20 @@ fn run_battle(
                 for wave in &mut level.reinforcements {
                     wave.squad_item_ids.retain(|id| active.contains(id));
                 }
-                level.reinforcements.retain(|wave| !wave.squad_item_ids.is_empty());
+                // Uranus II/III timers also own story announcements.
+                // The original AddReinforcementSquads filters unavailable
+                // SavedSquads, but the timer still fires even if every
+                // reserved enemy ship has died in an earlier mission.
+                // Keep those authored timed admissions; other gameplay
+                // should not carry a meaningless empty deployment.
+                let preserve_timed_story = matches!(level.campaign_dialogue,
+                    Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusDefensive { .. } |
+                         bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusNewThreat { .. })
+                );
+                level.reinforcements.retain(|wave|
+                    !wave.squad_item_ids.is_empty() ||
+                    (preserve_timed_story && wave.after_seconds.is_some())
+                );
                 let queues_before = level.scripted_queues.len();
                 level.scripted_queues.retain(|queue|
                     active.contains(&queue.squad_item_id));
