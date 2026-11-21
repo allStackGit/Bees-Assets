@@ -558,6 +558,12 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         for new_id in awarded_this_mission:
             granted_squad_origin[new_id] = index
         variant_provenance = {}
+        if (index in variants["victory"] and index in variants["defeat"] and
+                variants["victory"][index][0] != variants["defeat"][index][0]):
+            raise ValueError(
+                f"mission {index} victory and defeat variants must branch "
+                "from the same previous mission"
+            )
         for outcome, configured in variants.items():
             if index not in configured:
                 continue
