@@ -174,6 +174,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'simulation_layout_matches','simulation_layout_changing',
         'local_lease_ram_admission_denials',
         'local_lease_admission_denials_delta',
+        'local_lease_task_admission_denials',
+        'local_lease_task_denials_delta',
         'local_lease_native_engines_admitted',
         'local_lease_engines_admitted_delta',
         'local_lease_active_native_pools',
