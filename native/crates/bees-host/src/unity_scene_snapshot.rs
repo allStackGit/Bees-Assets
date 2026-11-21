@@ -3190,10 +3190,17 @@ impl NativePhysicalScene {
         // must not end before that final physical callback. The shared
         // terminal checks the real roster one tick after wave admission.
         if matches!(setup.campaign_dialogue,
-            Some(CampaignDialogueSpec::UranusDefensive { .. }))
+            Some(CampaignDialogueSpec::UranusDefensive { .. } |
+                 CampaignDialogueSpec::NeptuneProduction { .. }))
         {
+            // Neptune II similarly installs its Bee-elimination victory
+            // trigger only when the 480-second wave starts. Until then,
+            // temporary gaps between genuine arrivals are not victories.
+            let final_gate_seconds = if matches!(setup.campaign_dialogue,
+                Some(CampaignDialogueSpec::NeptuneProduction { .. }))
+            { 480.0 } else { 600.0 };
             episode.defer_side_elimination_until_after(
-                bee_side, 600.0, self.fixed_dt_seconds,
+                bee_side, final_gate_seconds, self.fixed_dt_seconds,
             ).map_err(NativeSnapshotError::Episode)
              .map_err(NativePolicyOnlyLevelError::Snapshot)?;
         }
