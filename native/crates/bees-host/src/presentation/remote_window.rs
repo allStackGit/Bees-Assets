@@ -1521,13 +1521,13 @@ fn draw_campaign_dialogue(pixels: &mut [u32], state: &Value, line_index: usize) 
     let Ok(cue)=serde_json::from_value::<CampaignCue>(
         state["campaign_dialogue"]["cue"].clone(),
     ) else {return;};
-    let lines=super::campaign_dialogue::lines(cue);
-    let Some(&(speaker,message))=lines.get(line_index) else{return;};
+    let count=super::campaign_dialogue::line_count(cue);
+    let Some((speaker,message))=super::campaign_dialogue::visible_line(cue,line_index) else{return;};
     for scanline in pixels.chunks_exact_mut(WIDTH).skip(HEIGHT-160).take(96) {
         scanline[..FIELD].fill(0x1c3045);
     }
     let heading=format!("{}   Dialogue {}/{}",
-        speaker,line_index+1,lines.len());
+        speaker,line_index+1,count);
     text::draw_at(pixels,WIDTH,15,HEIGHT-152,
         text::fit(&heading,FIELD-30),1,[251,217,146]);
     let mut rest=message;
