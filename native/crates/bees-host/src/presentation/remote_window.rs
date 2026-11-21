@@ -2345,6 +2345,7 @@ pub fn connect_remote(
     let mut last_middle:Option<(f32,f32)>=None;
     let mut dialogue_key:Option<(u64,u64,u64)>=None;
     let mut dialogue_line=0usize;
+    let mut dialogue_pause_started:Option<((u64,u64,u64),usize,Instant)>=None;
     let mut held_fire_active=false;
     let mut held_fire_target:Option<Vec2>=None;
     let mut show_art=true;
@@ -2465,7 +2466,7 @@ pub fn connect_remote(
             last_middle=None;minimap_dragging=false;
             camera=None;
             current_episode=(0,0);
-            dialogue_key=None;dialogue_line=0;
+            dialogue_key=None;dialogue_line=0;dialogue_pause_started=None;
             last_audio_snapshot=None;
             held_fire_active=false;held_fire_target=None;
             peer.held_fire_begin_request=None;
@@ -2496,7 +2497,9 @@ pub fn connect_remote(
                 state["episode_revision"].as_u64().unwrap_or(0),sequence,
             ));
             let first_presentation=cue.is_some()&&cue!=dialogue_key;
-            if cue!=dialogue_key {dialogue_key=cue;dialogue_line=0;}
+            if cue!=dialogue_key {
+                dialogue_key=cue;dialogue_line=0;dialogue_pause_started=None;
+            }
             let count=state["campaign_dialogue"]["line_count"]
                 .as_u64().unwrap_or(0).min(100) as usize;
             if count>0 {
@@ -2512,6 +2515,24 @@ pub fn connect_remote(
                 }
                 if window.is_key_pressed(Key::Backspace,KeyRepeat::No) {
                     dialogue_line=dialogue_line.saturating_sub(1);
+                }
+                let pause = serde_json::from_value::<CampaignCue>(
+                    state["campaign_dialogue"]["cue"].clone(),
+                ).ok().and_then(|cue|
+                    super::campaign_dialogue::pause_seconds(cue, dialogue_line));
+                if let (Some(key),Some(seconds))=(dialogue_key,pause) {
+                    match dialogue_pause_started {
+                        Some((prior,index,started))
+                            if prior==key && index==dialogue_line => {
+                            if now.duration_since(started).as_secs_f32()>=seconds {
+                                dialogue_line+=1;
+                                dialogue_pause_started=None;
+                            }
+                        }
+                        _ => dialogue_pause_started=Some((key,dialogue_line,now)),
+                    }
+                } else {
+                    dialogue_pause_started=None;
                 }
                 // The remote viewer hears only the first visible line
                 // of a new host-owned dialogue section. No cue leaks to
