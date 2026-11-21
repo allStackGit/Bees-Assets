@@ -384,7 +384,6 @@ async function main() {
         active=true;
         try{
             const restartAwaitingReceipt=pendingRemoteRestart;
-            const restartAwaitingReceipt=pendingRemoteRestart;
             const response=await sendHeartbeat(url,id,token,receipts,
                 pendingReports,advertisement,pendingGpuReports,
                 !restartAwaitingReceipt,false,pendingEvaluatorReports,pendingEvaluatorReport);
