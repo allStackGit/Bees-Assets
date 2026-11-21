@@ -804,10 +804,9 @@ impl NativeGameAudio {
                     // Use the actual source-spawned blast even without a
                     // linked wall. If that short-lived projectile retired,
                     // the same-tick wall breakup still provides its origin.
-                    view.combat.render_projectiles().find_map(|(shot, body)|
-                        (shot.entity_id == *explosion_projectile_id)
-                            .then_some(body.motion.position)
-                    ).or_else(|| view.combat.events().iter().find_map(|event|
+                    view.combat.render_projectile(*explosion_projectile_id)
+                        .map(|(_, body)| body.motion.position)
+                        .or_else(|| view.combat.events().iter().find_map(|event|
                         match event {
                             CombatEvent::FireTankObstacleBrokenApart {
                                 object_id: broken_id, origin, ..
