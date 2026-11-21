@@ -410,3 +410,12 @@ pub(crate) fn visible_line(cue: CampaignCue, index: usize) ->
 {
     displayed_lines(cue).nth(index)
 }
+
+/// Source PlutoLines_Pushback uses a one-second Pause DialogueLine before
+/// the closing decision, not a selectable blank spoken line. This is a
+/// presentation clock only; it never advances the physical Level.
+pub(crate) fn pause_seconds(cue: CampaignCue, visible_index: usize) -> Option<f32> {
+    (matches!(cue,
+        CampaignCue::PlutoPushbackVictory | CampaignCue::PlutoPushbackDefeat
+    ) && visible_index == 7).then_some(1.0)
+}
