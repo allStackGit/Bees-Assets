@@ -501,34 +501,38 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 return Err("Policy reinforcement participant is absent from the authored group");
             }
         }
-        // One wave represents one source AddReinforcementSquads call.
-        // Uranus II and other authored encounters pass several independent
-        // SavedSquads to that call; Carrier descendants are only a subset.
-        // Validate the actual child links without confusing independent
-        // squads with children or assuming the Carrier squad comes first.
+        // Source AddReinforcementSquads invokes the constructor once per
+        // independent SavedSquad. Generated Carrier child squads must
+        // follow their actual parent, belong entirely to that parent and
+        // share its side, even when the spawn is inherited from a capture.
         for ids in &planned_squad_order {
             let root_side = source_squads[&ids[0]].side;
-            let carrier_ids: HashSet<i64> = ids.iter()
-                .flat_map(|id| source_squads[id].members.iter().copied())
-                .filter(|id| source_ships.get(id)
-                    .is_some_and(|ship| ship.ship_type == 5))
-                .collect();
+            let mut seen_carriers = HashSet::new();
             for id in ids {
                 let squad = source_squads[id];
                 if squad.side != root_side {
                     return Err("Reinforcement squads in one source deployment must share a side");
                 }
                 let mut child_parent = None;
+                let mut child_count = 0;
                 for ship_id in &squad.members {
                     let ship = source_ships[ship_id];
-                    let parent = reinforcement_carrier_parent(ship);
-                    if let Some(parent) = parent {
-                        if !carrier_ids.contains(&parent) ||
+                    if let Some(parent) = reinforcement_carrier_parent(ship) {
+                        if !seen_carriers.contains(&parent) ||
                             child_parent.is_some_and(|prior| prior != parent)
                         {
-                            return Err("Reinforcement Carrier descendants need one parent in their deployment");
+                            return Err("Reinforcement Carrier child squad lacks its preceding parent");
                         }
+                        child_count += 1;
                         child_parent = Some(parent);
+                    }
+                }
+                if child_count != 0 && child_count != squad.members.len() {
+                    return Err("Reinforcement Carrier child squad mixes unrelated ships");
+                }
+                for ship_id in &squad.members {
+                    if source_ships[ship_id].ship_type == 5 {
+                        seen_carriers.insert(*ship_id);
                     }
                 }
             }
