@@ -1779,7 +1779,7 @@ def main():
     parser.add_argument("--hub-dispatch-port", type=int, default=7148,
                         help="loopback Experiment Hub operator API port (default: 7148)")
     parser.add_argument("--hub-auto-worlds", type=int,
-                        help="derive the native collector plan and fixed total World budget from the approved Hub machine CPU allocations")
+                        help="explicit fixed World budget for a Hub dispatch plan (default: up to 32 Worlds per reserved machine CPU allocation)")
     parser.add_argument("--auto-balance-collectors", action="store_true",
                         help="redistribute contiguous native arena windows conservatively between verified distributed rounds")
     parser.add_argument("--collector-timeout-seconds", type=int, default=0,
@@ -1869,6 +1869,28 @@ def main():
         parser.error("rollout world start must be nonnegative")
     if args.torch_threads is not None and not 1 <= args.torch_threads <= 256:
         parser.error("torch threads must be between 1 and 256")
+    if (args.hub_dispatch_plan is not None and args.distributed_plan is None and
+            args.hub_auto_worlds is None):
+        # The approved Hub source already states how many physical CPU
+        # slots each collector owns. Derive a conservative native World
+        # budget once, before freezing the session recipe; the existing
+        # immutable work-order allocator retains ownership of the exact
+        # partition, GPU ranks, dispatch and cross-round balancing.
+        # An explicit --hub-auto-worlds always takes precedence.
+        approved = read_json(args.hub_dispatch_plan.resolve(strict=True))
+        entries = approved.get("collectors")
+        if (approved.get("kind") != "native_hub_round_dispatch" or
+                approved.get("schema_version") != 1 or
+                not isinstance(entries, list) or not 1 <= len(entries) <= 16):
+            parser.error("automatic Hub World allocation requires an approved native dispatch plan")
+        world_budget = 0
+        for entry in entries:
+            resources = entry.get("resources") if isinstance(entry, dict) else None
+            cpus = resources.get("cpus") if isinstance(resources, dict) else None
+            if type(cpus) is not int or not 1 <= cpus <= 32768:
+                parser.error("Hub World allocation needs positive CPU reservations on every machine")
+            world_budget += min(32, cpus)
+        args.hub_auto_worlds = world_budget
     if args.hub_auto_worlds is not None and (
             args.hub_dispatch_plan is None or args.distributed_plan is not None or
             not 1 <= args.hub_auto_worlds <= 16384):
