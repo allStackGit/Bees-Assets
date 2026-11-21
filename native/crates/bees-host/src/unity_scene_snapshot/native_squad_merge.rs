@@ -102,6 +102,7 @@ impl NativePhysicalScene {
                     donor.player_permissions.locked_on !=
                         leader.player_permissions.locked_on ||
                     donor.shooting != leader.shooting ||
+                    donor.command_bans != leader.command_bans ||
                     donor.cease_fire != leader.cease_fire ||
                     donor.should_chase != leader.should_chase ||
                     donor.matching_speed != leader.matching_speed ||
