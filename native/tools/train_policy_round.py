@@ -29,10 +29,10 @@ from native_training_artifacts import (
     file_sha256, check_learner, sync_directory, normalized_python_source_sha256,
     native_source_contract_sha256,
     verified_source_scene_cache, combined_source_scene_cache,
-    native_manifest_model_dependencies,
+    native_manifest_model_dependencies, combined_rollout_lifecycle_metrics,
 )
 from native_distributed_collection import verify_bundle, aggregate_collection_metrics
-from transfer_policy_bundle import artifact_paths
+from transfer_policy_bundle import artifact_paths, verify_bundle_files
 from native_gpu_allocation import (
     parse_rollout_gpus, validate_gpu_allocation, validate_leased_gpu_inference,
     rollout_worker_environment,
@@ -562,38 +562,7 @@ def combined_rollout_metrics(shards, wall_seconds):
         }
         for index, shard in enumerate(shards)
     ]
-    if all("reinforcement_arrivals" in shard for shard in shards):
-        metrics["reinforcement_arrivals"] = {
-            key: sum(shard["reinforcement_arrivals"][key] for shard in shards)
-            for key in ("waves", "squads", "ships", "policy_agents")
-        }
-        if all("group_agents" in shard["reinforcement_arrivals"] for shard in shards):
-            metrics["reinforcement_arrivals"]["group_agents"] = sum(
-                shard["reinforcement_arrivals"]["group_agents"] for shard in shards
-            )
-    if all("reinforcement_wakeup_work" in shard for shard in shards):
-        metrics["reinforcement_wakeup_work"] = {
-            key: sum(shard["reinforcement_wakeup_work"][key] for shard in shards)
-            for key in ("idle_ticks_skipped", "wakeup_scans")
-        }
-    if all("queen_minion_controllers" in shard for shard in shards):
-        metrics["queen_minion_controllers"] = {
-            key: sum(shard["queen_minion_controllers"][key] for shard in shards)
-            for key in ("policy_minions_bound", "ungrouped_policy_minions_bound",
-                        "ordinary_minions_preserved")
-        }
-        if all("retired_policy_routes_reclaimed" in shard["queen_minion_controllers"]
-               for shard in shards):
-            metrics["queen_minion_controllers"]["retired_policy_routes_reclaimed"] = sum(
-                shard["queen_minion_controllers"]["retired_policy_routes_reclaimed"]
-                for shard in shards
-            )
-        if all("recycled_group_agent_bindings" in shard["queen_minion_controllers"]
-               for shard in shards):
-            metrics["queen_minion_controllers"]["recycled_group_agent_bindings"] = sum(
-                shard["queen_minion_controllers"]["recycled_group_agent_bindings"]
-                for shard in shards
-            )
+    metrics.update(combined_rollout_lifecycle_metrics(shards))
     samples = [shard["sampled_model_timing"] for shard in shards if "sampled_model_timing" in shard]
     metrics["shards_with_sampled_model_timing"] = len(samples)
     # Sum inference timing only when every owned rollout process supplied
@@ -1102,6 +1071,11 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
                 "native optimizer did not commit its complete rank output; "
                 "restart the synchronized group as a new attempt"
             )
+        # The normal capture learner verifies files when loading and again
+        # before committing its update. Recovery skips that subprocess, so
+        # recheck the original completed collector inputs before finalizing.
+        for bundle in result.get("rollout_bundles", []):
+            verify_bundle_files(Path(bundle["path"]))
     else:
         run_stage(train_command, output / "optimizer.log" if args.stage_diagnostics else None)
     # A successful optimizer subprocess is not enough if source weights or

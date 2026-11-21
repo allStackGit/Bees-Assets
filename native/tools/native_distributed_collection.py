@@ -16,6 +16,7 @@ import time
 from native_training_artifacts import (
     atomic_json, file_sha256, native_source_contract_sha256,
     verified_source_scene_cache, combined_source_scene_cache,
+    combined_rollout_lifecycle_metrics,
 )
 from native_gpu_allocation import GPU_MASK_ENVIRONMENTS
 from native_mission_contract import (
@@ -733,9 +734,13 @@ def aggregate_collection_metrics(bundles):
                 "physics_workers_per_process": bundle["physics_workers_per_process"],
                 **({key: row[key] for key in (
                     "parallel_physics_rounds",
+                    "parallel_physics_direct_rounds",
+                    "parallel_physics_queued_rounds",
+                    "parallel_stage_id_serialized_rounds",
                     "parallel_stage_id_serialized_arenas",
+                    "peak_parallel_physics_workers",
                     "parallel_worker_cpu_wall_seconds_sum",
-                )} if "parallel_physics_rounds" in row else {}),
+                ) if key in row} if "parallel_physics_rounds" in row else {}),
                 "worker_shards": row.get("worker_shards", []),
                 "sampled_model_timing": row.get("sampled_model_timing"),
                 "gpu_inference": row.get("gpu_inference"),
@@ -762,28 +767,7 @@ def aggregate_collection_metrics(bundles):
     scene_cache = combined_source_scene_cache(rows)
     if scene_cache is not None:
         result["source_scene_template_cache"] = scene_cache
-    if all("reinforcement_arrivals" in row for row in rows):
-        result["reinforcement_arrivals"] = {
-            key: sum(row["reinforcement_arrivals"][key] for row in rows)
-            for key in ("waves", "squads", "ships", "policy_agents")
-        }
-    if all("reinforcement_wakeup_work" in row for row in rows):
-        result["reinforcement_wakeup_work"] = {
-            key: sum(row["reinforcement_wakeup_work"][key] for row in rows)
-            for key in ("idle_ticks_skipped", "wakeup_scans")
-        }
-    if all("queen_minion_controllers" in row for row in rows):
-        result["queen_minion_controllers"] = {
-            key: sum(row["queen_minion_controllers"][key] for row in rows)
-            for key in ("policy_minions_bound", "ungrouped_policy_minions_bound",
-                        "ordinary_minions_preserved")
-        }
-        if all("retired_policy_routes_reclaimed" in row["queen_minion_controllers"]
-               for row in rows):
-            result["queen_minion_controllers"]["retired_policy_routes_reclaimed"] = sum(
-                row["queen_minion_controllers"]["retired_policy_routes_reclaimed"]
-                for row in rows
-            )
+    result.update(combined_rollout_lifecycle_metrics(rows))
     # A distributed learner may mix old and new native collectors. Keep
     # physical border evidence only when every signed input has it, and
     # preserve per-collector totals for meaningful fault localization.
@@ -858,4 +842,7 @@ def aggregate_collection_metrics(bundles):
             "parallel_worker_cpu_wall_seconds_sum":
                 sum(row["parallel_worker_cpu_wall_seconds_sum"] for row in rows),
         })
+    dispatch_keys = ("parallel_physics_direct_rounds", "parallel_physics_queued_rounds")
+    if all(all(key in row for key in dispatch_keys) for row in rows):
+        result.update({key: sum(row[key] for row in rows) for key in dispatch_keys})
     return result

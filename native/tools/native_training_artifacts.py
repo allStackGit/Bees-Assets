@@ -298,6 +298,36 @@ def combined_source_scene_cache(rows):
     }
 
 
+def combined_rollout_lifecycle_metrics(rows):
+    """Preserve source lifecycle counters across process and machine boundaries.
+
+    Optional counters are emitted only when every contributor measured them.
+    In particular old collectors cannot silently turn absent group-lifetime
+    evidence into zero admissions or reused group agents.
+    """
+    result = {}
+    for group, required, optional in (
+        ("reinforcement_arrivals",
+         ("waves", "squads", "ships", "policy_agents"), ("group_agents",)),
+        ("reinforcement_wakeup_work",
+         ("idle_ticks_skipped", "wakeup_scans"), ()),
+        ("queen_minion_controllers",
+         ("policy_minions_bound", "ungrouped_policy_minions_bound",
+          "ordinary_minions_preserved"),
+         ("retired_policy_routes_reclaimed", "recycled_group_agent_bindings")),
+    ):
+        if all(group in row for row in rows):
+            values = [row[group] for row in rows]
+            result[group] = {
+                key: sum(value[key] for value in values)
+                for key in required
+            }
+            for key in optional:
+                if all(key in value for value in values):
+                    result[group][key] = sum(value[key] for value in values)
+    return result
+
+
 def sync_directory(path: Path) -> None:
     if os.name == "posix":
         directory = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
