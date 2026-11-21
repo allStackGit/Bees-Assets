@@ -1720,9 +1720,13 @@ document.addEventListener('DOMContentLoaded', () => {
         return slot;
     }
     function saveComparisonRuns() {
-        savedCompareRuns.set(project,compareSlots
-            .map(slot=>$('hub-compare-'+slot)?.value||''));
-        saveView();
+        const selected=compareSlots.map(slot=>$('hub-compare-'+slot)?.value||'');
+        // An empty project with no selectable jobs must not become an
+        // explicit 'select nothing' preference, masking future new runs.
+        if(selected.some(Boolean)||savedCompareRuns.has(project)) {
+            savedCompareRuns.set(project,selected);
+            saveView();
+        }
     }
     // Keep the native multi-select as the single source of selected IDs.
     // This searchable panel changes only its options, not the job/export API.
@@ -6588,7 +6592,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const groupForDeletion=state.jobs.filter(worker=>
                 ['tinybrains_rollout','courier_lineage'].includes(worker.project_id)&&
                 worker.frozen_parameters?.learner_job_id===j.id);
-            if(!['tinybrains_rollout','courier_lineage'].includes(j.project_id)&&
+            if(j.adapter==='unconfigured'&&
+                !['tinybrains_rollout','courier_lineage'].includes(j.project_id)&&
                 [j,...groupForDeletion].every(item=>
                     ['cancelled','finished','failed','stopped'].includes(item.status)&&
                     (!item.dispatch_id||Boolean(item.capacity_released_at)))) {
