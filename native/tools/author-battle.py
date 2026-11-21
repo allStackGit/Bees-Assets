@@ -1053,6 +1053,7 @@ def author(args) -> tuple[dict, dict, dict]:
             "player_side": owner, "center": center,
             "half_extents": [5.0, 5.0],
             "activation_radius": args.extraction_radius, "layer": 19,
+            **({"retreat_on_exit": True} if args.retreat_on_exit else {}),
         }
         if args.objective == "escort":
             budget = args.minutes * 60 - (10 * dt if args.trainable else 0)
@@ -1584,6 +1585,8 @@ def main() -> None:
                         help="extraction or escort: world X Y (default: enemy home)")
     parser.add_argument("--extraction-radius", type=float, default=15,
                         help="extraction or escort: activation distance before exit trigger appears")
+    parser.add_argument("--retreat-on-exit", action="store_true",
+                        help="extraction only: withdraw surviving fleet ships without military victory, as in Uranus II")
     parser.add_argument("--escort-type", type=int,
                         help="escort only: mobile ship type to deliver (otherwise prefers Scout)")
     parser.add_argument("--escort-seconds", type=float,
@@ -1655,6 +1658,8 @@ def main() -> None:
     if args.objective not in ("extraction", "escort") and (
             args.extraction_center is not None or args.extraction_radius != 15):
         parser.error("--extraction-center and --extraction-radius require --objective extraction or escort")
+    if args.retreat_on_exit and (args.objective != "extraction" or args.trainable):
+        parser.error("--retreat-on-exit requires a non-training extraction battle")
     if args.objective != "escort" and (
             args.escort_type is not None or args.escort_seconds is not None):
         parser.error("--escort-type and --escort-seconds require --objective escort")
