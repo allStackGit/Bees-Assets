@@ -255,20 +255,36 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
         if len(members) > 1024 or len(set(members)) != len(members):
             raise ValueError("native merged squad duplicates a ship or exceeds game member cap")
         center = [0.0, 0.0]
+        special_types = set()
+        ordinary_members = 0
         for ship_id in members:
             ship = ship_by_id.get(ship_id)
             if (ship is None or ship["side"] != primary["side"] or
                     ship["ship_type"] == 5 or
                     not isinstance(ship.get("base_speed"), (int, float)) or
                     not math.isfinite(ship["base_speed"]) or
-                    ship["base_speed"] <= 0 or any(
-                    ship.get(key) is not None for key in (
-                        "policy", "special", "special_weapon", "drone_carrier_id")
-            ) or ship.get("is_moving", False) or ship.get(
-                    "has_target_coordinates", False)):
-                raise ValueError("native grouped squad must contain stationary ordinary ships")
+                    ship["base_speed"] <= 0 or
+                    ship.get("policy") is not None or
+                    ship.get("drone_carrier_id") is not None or
+                    ship.get("is_moving", False) or
+                    ship.get("has_target_coordinates", False)):
+                raise ValueError("native grouped squad needs a stationary real command owner")
+            # Preserve exactly the same independent special identities as
+            # the playable native Level. Original Scouts, Barges, Fire
+            # Barges and Yellow Jackets may merge only with their own
+            # kind, never with other command roles or Carrier children.
+            special = ship.get("special") is not None or (
+                ship.get("special_weapon") is not None)
+            if special:
+                if ship["ship_type"] not in (0, 10, 18, 22):
+                    raise ValueError("native specialist group has no compatible source role")
+                special_types.add(ship["ship_type"])
+            else:
+                ordinary_members += 1
             center[0] += ship["position"][0]
             center[1] += ship["position"][1]
+        if len(special_types) > 1 or (special_types and ordinary_members):
+            raise ValueError("native specialist group mixes incompatible physical commands")
         center = [axis / len(members) for axis in center]
         plans.append((primary_id, donor_ids, members, center))
 
