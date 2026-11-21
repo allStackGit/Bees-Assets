@@ -1779,6 +1779,9 @@ function createNativeBeesAdapter({
         }:{}),
         args(parameters, context) {
             const output = jobRoot(context);
+            if(context.native_collector_resume===true&&
+                (!collectOnly||!SHA256.test(String(parameters.collection_id||''))))
+                throw Error('Native collector recovery requires its original pinned work order.');
             const {config_sha256, seed_offset, rollout_bundles, optimizer_threads, rollout_workers,
                 optimizer_group, optimizer_inputs_sha256,
                 physics_workers, collection_id, rollout_world_start, rollout_worlds,
@@ -2000,6 +2003,7 @@ function createNativeBeesAdapter({
                     ? ['--leased-gpu-inference',
                         ...(dualGpu?['--leased-gpu-count','2']:[])] : []),
                 ...(collectOnly ? ['--collect-only'] : []),
+                ...(context.native_collector_resume===true?['--resume-rollout']:[]),
                 ...(collectOnly && inbox ? ['--bundle-inbox', inbox] : []),
                 ...(collection_id === undefined ? [] : [
                     '--collection-id', collection_id,

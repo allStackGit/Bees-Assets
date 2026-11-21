@@ -8,6 +8,7 @@ const http=require('node:http');
 const crypto=require('node:crypto');
 const {safeLogPath,safeNativeCollectorPath,safeNativeModelPath,MAX_CHUNK,MAX_FILE}=
     require('./experiment_hub_artifact_sync');
+const {recoveryRecordJobId}=require('./experiment_hub_native_release_recovery');
 const TERMINAL=new Set(['finished','failed','stopped']);
 const MAX_CYCLE=32*1024*1024;
 function filesForJob(folder,projectId,nativeTrainingOnly=false) {
@@ -139,7 +140,11 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
     let sent=0,completed=0;
     // Native ownership is local and durable. The coordinator cannot give
     // the agent a filename or a new file root through a heartbeat.
-    for(const record of executor.supervisor.snapshot()) {
+    const records=executor.supervisor.snapshot();
+    // The latest physical attempt owns its logical output. Never mirror a
+    // running capture through an older, historical failed owner.
+    const latest=new Map(records.map(record=>[recoveryRecordJobId(record),record]));
+    for(const record of latest.values()) {
         if(!TERMINAL.has(record.state))continue;
         const project=record.project_id,adapter=executor.supervisor.adapters?.[project];
         // Failed physical collectors may own recoverable journals and
@@ -161,7 +166,7 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
             ?128*1024*1024:MAX_CYCLE;
         if(typeof adapter?.artifact_export_dir!=='function')continue;
         if(!executor.projects.includes(project))continue;
-        const jobId=record.native_release_recovery_of_job_id||record.job_id;
+        const jobId=recoveryRecordJobId(record);
         const root=adapter.artifact_export_dir(jobId);
         if(typeof root!=='string'||!path.isAbsolute(root))continue;
         if(!fs.existsSync(root))continue;
@@ -170,6 +175,9 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
             // Only the explicit model-package paths are completion-only.
             if(project==='bees_native'&&record.state!=='finished'&&
                 safeNativeModelPath(relative))continue;
+            if(project==='bees_native_collect'&&record.state!=='finished'&&
+                (relative==='rollout-bundle.json'||
+                 /(?:^|\/)(?:decisions\.bin|events\.jsonl)$/.test(relative)))continue;
             const file=path.join(root,...relative.split('/'));
             let st;
             try{st=fs.lstatSync(file);}catch{continue;}

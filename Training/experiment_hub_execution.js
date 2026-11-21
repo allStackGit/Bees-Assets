@@ -13,7 +13,7 @@ const {WindowsSupervisor}=require('./experiment_hub_windows_supervisor');
 const {inspectHost}=require('./experiment_hub_host');
 const {matchingLeaseBudget}=require('./experiment_hub_resources');
 const {validateProgress}=require('./experiment_hub_progress');
-const {physicalExecution}=require('./experiment_hub_native_release_recovery');
+const {physicalExecution,recoveryRecordJobId}=require('./experiment_hub_native_release_recovery');
 const {evaluationEvidence,evaluationRules,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -285,7 +285,11 @@ class LocalExecution {
         const ownsArtifacts=owned&&owned.lease_id===lease.id&&owned.project_id===job.project_id&&
             (owned.artifact_lineage_root_id||owned.job_id)===
                 (job.artifact_lineage_root_id||job.id)&&
-            (owned.native_release_recovery_of_job_id||owned.job_id)===job.id;
+            recoveryRecordJobId(owned)===job.id;
+        if(ownsArtifacts&&state==='failed'&&observed.active===false&&
+            job.project_id==='bees_native_collect'&&
+            /^[a-f0-9]{64}$/.test(String(job.frozen_parameters?.collection_id||'')))
+            report.native_collector_recovery_ready=true;
         if(ownsArtifacts&&state==='failed'&&observed.active===false&&
             job.frozen_parameters?.continual_release===true&&
             typeof localAdapter?.release_recovery_ready==='function') {

@@ -145,9 +145,9 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         throw Error('Invalid Windows continuation ancestry.');
     const context=Object.freeze({
         job_id:logicalId,project_id:job.project_id,
-        ...(logicalId!==job.id?{
-            native_release_checkpoint_sha256:job.native_release_checkpoint_sha256,
-        }:{}),
+        ...(logicalId!==job.id?
+            job.native_collector_resume?{native_collector_resume:true}:
+                {native_release_checkpoint_sha256:job.native_release_checkpoint_sha256}:{}),
         ...(job.resource_bundle?{resource_bundle:Object.freeze({...job.resource_bundle})}:{}),
         ...(job.model_source_job_id?{model_source_job_id:job.model_source_job_id}:{}),
         cpu_quota:r.cpus,
@@ -551,7 +551,7 @@ class WindowsSupervisor {
             continuation_of_job_id:invocation.predecessor,
             collector_replacement_of_job_id:job.collector_replacement_of_job_id||null,
             optimizer_restart_of_job_id:job.optimizer_restart_of_job_id||null,
-            ...(releasePrior?{native_release_recovery_of_job_id:logicalJobId(job)}:{}),
+            ...(releasePrior?{native_recovery_of_job_id:logicalJobId(job)}:{}),
             artifact_lineage_root_id:invocation.root,
             ...(invocation.stopFile?{checkpoint_stop_file:invocation.stopFile}:{}),
             token,cpus:invocation.cpus,host_cpus:invocation.hostCpus,

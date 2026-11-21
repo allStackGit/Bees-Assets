@@ -127,9 +127,15 @@ class ArtifactMirror {
         if(!job||job.assigned_machine_id!==machineId||
             job.project_id==='bees'||!job.lease_id||
             (job.start_first_offered_at==null&&
-             !job.native_release_attempts?.[0]?.previous_start_first_offered_at))
+             !job.native_release_attempts?.[0]?.previous_start_first_offered_at&&
+             !job.native_collector_attempts?.[0]?.previous_start_first_offered_at))
             fail('Artifact job is not owned by this machine.',409);
         const modelArtifact=job.project_id==='bees_native'&&safeNativeModelPath(relative);
+        const collectionArtifact=job.project_id==='bees_native_collect'&&
+            (relative==='rollout-bundle.json'||
+             /(?:^|\/)(?:decisions\.bin|events\.jsonl)$/.test(relative));
+        if(collectionArtifact&&job.status!=='finished')
+            fail('Collector captures are transferable only after verified completion.',409);
         if(!(modelArtifact
             ?job.status==='finished'&&job.checkpoint_ready_verified===true
             :job.project_id==='bees_native_collect'
