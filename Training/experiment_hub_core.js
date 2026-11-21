@@ -6800,7 +6800,7 @@ class ExperimentHub {
             const source=jobs[0]?.frozen_parameters;
             const pins=JSON.stringify(source?.rollout_bundles??null);
             const inputIdentity=source?.optimizer_inputs_sha256;
-            if(jobs.length>8||jobs[0].project_id!=='bees_native'||
+            if(jobs.length<2||jobs.length>8||jobs[0].project_id!=='bees_native'||
                 source?.optimizer_group!==true||
                 (value.model_source_job_id!==undefined&&
                     jobs[0].assigned_machine_id!==next.jobs.find(item=>

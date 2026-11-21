@@ -1019,6 +1019,7 @@ document.addEventListener('DOMContentLoaded', () => {
         nativeCollectorChoice();
         $('hub-resource-bundle-add').disabled=rows.length>=16;
         $('hub-resource-bundle-queue').disabled=rows.length<1||
+            (synchronized&&rows.length<2)||
             !rows.every(row=>row.querySelector('.hub-bundle-machine').value);
         const container=$('hub-resource-bundle-existing');
         container.replaceChildren();
@@ -5178,6 +5179,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 c.id===members[0].configuration_id);
             const optimizer=firstConfig?.project_id==='bees_native'&&
                 firstConfig.parameters?.optimizer_group===true;
+            if(optimizer&&members.length<2)
+                throw Error('A synchronized native optimizer requires at least two machines.');
             const collectorIds=optimizer
                 ?[...$('hub-native-bundle-collectors').selectedOptions]
                     .map(option=>option.value):[];
