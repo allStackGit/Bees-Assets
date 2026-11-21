@@ -87,8 +87,12 @@ node Training/experiment_hub_standalone.js \
 
 The explicit data root must be an absolute private directory (mode 0700)
 outside the checkout. The coordinator binds the administrator dashboard
-only to `127.0.0.1:7148` and the authenticated, machine-scoped agent listener
-only to `127.0.0.1:7149`. It serves the existing Hub Design, Train,
+only to `127.0.0.1:7148` and the authenticated machine-agent listener by
+default to `127.0.0.1:7149`. Setting
+`EXPERIMENT_HUB_AGENT_TAILNET_IP=100.97.43.98` in this standalone
+coordinator's environment adds a listener **only** on Halifax's verified
+Tailscale interface at `100.97.43.98:7149`. The admin listener and local
+Halifax agents retain their original loopback ports. It serves the existing Hub Design, Train,
 Monitor, Compare and Machines controls but **does not import Bees training,
 Unity or the Bees manager**, and Bees operator actions are unavailable. A
 fresh registry starts with inert TinyBrains and Courier project definitions;
@@ -663,19 +667,17 @@ per-device measurement and platform-level isolation are implemented.
    system, and read-only native resource-control discovery.
    Set `EXPERIMENT_HUB_AGENT_TOKEN` from the enrollment output. Do not
    commit it or include it in logs or an unprotected shell history.
-4. The Hub administrator dashboard listens at `127.0.0.1:7148` but
-   **machine agents connect only to the separate `127.0.0.1:7149` listener**.
-   This agent-only port accepts authenticated heartbeat/lease-receipt POSTs
-   plus a machine-scoped, read-only independent-evaluation worklist GET.
-   It cannot access any administrator or training route. A remote worker
-   needs a trusted SSH local forwarding tunnel, for example mapping its
-   local port 17149 to the coordinator's `127.0.0.1:7149`. Set
-   `EXPERIMENT_HUB_URL=http://127.0.0.1:17149` on the worker. The agent
-   defaults to `127.0.0.1:7149` when running alongside the coordinator.
-   **Never forward port 7148 to worker machines**: it controls Bees
-   training and the Hub's registration/credentials. The agent accepts
-   only loopback HTTP destinations, and neither port should be exposed
-   directly on the LAN or Internet.
+4. The administrator dashboard listens only at `127.0.0.1:7148`.
+   Machines use the separate token-authenticated agent listener at
+   `127.0.0.1:7149` (on Halifax) or, when the standalone coordinator
+   is explicitly configured with `EXPERIMENT_HUB_AGENT_TAILNET_IP`, at
+   `100.97.43.98:7149` (remote Tailscale workers). Set
+   `EXPERIMENT_HUB_URL=http://100.97.43.98:7149` for remote workers.
+   No SSH tunnel or public port-forwarding is required. Only machine-scoped
+   heartbeats, leases, evaluation worklists and artifact sync are accepted;
+   no privileged administration routes are available. Keep TCP 7149
+   restricted to authorized peers by tailnet policy and host firewall,
+   and never publish or forward dashboard port 7148.
 5. **Connected** means a correctly authenticated process reported recently,
    not that the process has exclusive control of the host. After 45 seconds
    without a heartbeat, it is **offline**. Last-seen time is retained in
@@ -772,6 +774,47 @@ restoring any previously opted-in unattended CPU scheduling. No GPU
 re-arming is authorized by this service setup. This source-only Linux
 integration is **not yet qualified on Halifax**.
 
+The standalone Hub also exposes local evaluator lifecycle controls under
+**Machines → Local service control**, alongside coordinator and agent restart.
+For the approved Halifax Nano/Micro TinyBrains suites, **Set up and start**
+creates any missing initial v3 frozen suites using the trusted local generator
+inside the existing read-only Docker runtime, then installs separate fixed-budget
+user-systemd evaluation timers and private receipt/scratch directories.
+Existing suite files and versioned approvals are never overwritten.
+**Start**, **Restart** and **Stop** manage each timer; **Run now** requests
+one immediate one-shot evaluation without interrupting an ongoing run.
+Stopping a schedule never stops its training job. Arbitrary executable paths,
+Docker arguments and unit names cannot be submitted from the dashboard.
+Setup requires a trusted TinyBrains installation, local agent enrollment,
+the approved local image, installed game/opponents and existing noninteractive
+Docker authorization. It creates missing initial suites without CLI commands. Actual
+evaluation results still require the frozen evaluator runtime fingerprint to
+match; a timer being active alone does not qualify any checkpoint. **Refresh
+suite** creates a new immutable Nano/Micro suite ID pinned to the installed
+runtime while preserving prior suites/receipts; it replaces only the approved
+idle local schedule. Restart the local agent from this panel when safe to
+advertise the newly approved suite ID. The new frozen suite must be selected
+on future training configurations. The runtime now fingerprints **both** Nano
+and Micro opponent model/manifest files. After updating an earlier Hub checkout,
+refresh each installed Nano/Micro suite from this panel before relying on its
+evaluation schedule: the previous suite remains immutable and its older runtime
+pin is intentionally not silently reused. Because the shared runtime describer
+is itself fingerprinted, the same Hub source update also changes Courier's
+runtime identity. Use **Set up / refresh Courier evaluation** to approve its
+new immutable suite before expecting new Courier evaluation receipts.
+
+The same Machines service panel provides **Set up / refresh Courier evaluation**.
+When a local trusted Courier adapter is installed, this action creates a private
+fixed-survival suite (100 trials, 1,024-step horizon) versioned by the
+installed environment and evaluator-runtime SHA-256, plus its own CPU/RAM-bounded
+user systemd timer. The installed Courier adapter recognizes the explicit local
+approval on its next agent restart; changing the environment or evaluator
+runtime creates a new immutable suite without mutating earlier evidence.
+This installs no new trainer or remote worker. A disconnected/unprovisioned
+host cannot be made into a trusted execution agent by a dashboard command:
+native host enrollment, service authorization, dependency installation and
+private worker keys must be established on the host first.
+
 The same generator can install a separately budgeted **periodic independent
 evaluator** on a trusted Linux host, without adding any native
 training authority. Use `evaluator --project courier|tinybrains --machine
@@ -785,15 +828,20 @@ to a 180-second interval after the previous invocation finishes and a
 two-hour timeout; optional `--interval` and `--timeout` are seconds.
 Inspect generated service/timer units before using `--install`, then
 explicitly start the generated `...-evaluator.timer` for this machine session. Units are
-exclusive-create and not automatically enabled. systemd prevents overlapping
+exclusive-create and not automatically enabled. For separately scheduled
+monitoring-only suites, generate one single-suite evaluator per frequency and
+provide a unique `--evaluator-id nano` / `--evaluator-id micro` (or other
+explicit identifier). This preserves the legacy timer name for existing
+evaluators and avoids collisions. Same-checkpoint success-gated batches
+must continue using one coordinated multi-suite evaluator. systemd prevents overlapping
 runs of the same one-shot service and enforces the specified CPU and RAM caps.
 The evaluator still needs its approved project dependencies and access to
 the model/receipt directories. On a coordinator-local machine the generator
 defaults to the historical dashboard loopback port 7148; this must **never**
-be forwarded to a remote worker. For a remote worker, add
-`--env-file /absolute/private/hub-agent.env --port 17149` (the port of
-the already established, trusted SSH forward to the coordinator's agent
-listener at 7149). The file must be owned by the service user, mode 0600,
+be forwarded to a remote worker. For a remote worker, use
+`--env-file /absolute/private/hub-agent.env --hub-host 100.97.43.98
+--port 7149` to reach Halifax's authenticated Tailscale agent listener.
+The file must be owned by the service user, mode 0600,
 and contain that worker's enrolled `EXPERIMENT_HUB_AGENT_TOKEN`. The
 generator passes the file through the systemd `EnvironmentFile` directive;
 the Python evaluator sends the token only as an HTTP request header to the
@@ -912,19 +960,13 @@ EXPERIMENT_HUB_EVALUATOR_CONFIG=C:\Hub\Private\tinybrains-evaluator.json
 All paths must already exist. The artifact, scratch and receipt directories
 must be separate. For Courier, use `"project":"courier"` and add
 `project_root` and `snapshot_root`, also separate; omit `engine_path`.
-The optional loopback `port` defaults to 7148 **only for a trusted
-evaluator running beside the coordinator**. For a Windows worker on a
-separate machine, set `"port":17149` (or the worker's actual local SSH
-forward to the coordinator's restricted agent listener on 7149), and
-include `EXPERIMENT_HUB_AGENT_TOKEN=<that worker's enrolled token>` in
-the private service environment file. An `EXPERIMENT_HUB_MACHINE_ID`
-entry, if present, must match the evaluator JSON's `machine`. The
-Windows evaluator checks the token's format and machine identity
-before beginning its polling loop; the coordinator independently
-authenticates every worklist query and returns only that worker's
-eligible jobs. Never forward the privileged 7148 dashboard listener to
-ordinary worker hosts. The service account needs access to its private
-environment file and the existing SSH forward, not the dashboard.
+The optional `port` defaults to 7148 only for a trusted evaluator running
+beside the coordinator. A Windows evaluator on a remote machine instead sets
+`"hub_host":"100.97.43.98"` and `"port":7149`, and has its own enrolled
+`EXPERIMENT_HUB_AGENT_TOKEN` in its private service environment file.
+The evaluator checks the token's format and machine identity; the coordinator
+independently authenticates each worklist query. Remote evaluators never
+receive administrator credentials or access to dashboard port 7148.
 
 Supply 1–8 distinct suite paths; multiple suites run in one
 same-checkpoint batch. Intervals and timeouts accept 60–86,400 seconds.
@@ -941,8 +983,18 @@ in Services and explicitly start it. The account needs its approved Python,
 project dependencies, engine and cache, read access to checkpoints/suites and
 write access to evaluator scratch, receipts and service state. Use distinct
 service names for different evaluation profiles. No boot or logon startup
-is enabled by this setup. Before installation, the compiled launcher's
-`--run-once` command with an evaluator service configuration performs exactly
+is enabled by this setup. To show Windows evaluator health in the native
+Hub, give the **machine agent** read-only access to the same private service
+state directory and set
+`EXPERIMENT_HUB_EVALUATOR_STATUS_ROOT=C:\Hub\Private`
+in its local agent environment. Without this optional setting, the agent
+reports that Windows evaluator service status is unavailable rather than
+assuming a timer or service is running. Linux agents inspect only the
+machine's local systemd user evaluator timers and services. These
+observations and failures are read-only diagnostics, not proof that a
+specific frozen suite ran or produced a valid checkpoint receipt.
+
+Before installation, the compiled launcher's `--run-once` command with an evaluator service configuration performs exactly
 one constrained poll without registering a service.
 
 The Windows Job Object applies CPU and committed-memory caps to the Node
@@ -1310,6 +1362,19 @@ service then applies DevicePolicy=closed and DeviceAllow entries for only
 /dev/kfd and the selected render node. The in-cgroup probe requires
 the selected device and /dev/kfd to remain accessible while every
 baseline-openable excluded GPU is inaccessible.
+
+On a host with only one AMD GPU, a separate control unit allows /dev/kfd
+and withholds that GPU's render node. Qualification requires the control
+to fail to open the node and the regular probe to open it and attest its
+HIP PCI identity. Native Start repeats the denial control before recording
+ownership and checks the allowed node and HIP identity inside the job unit.
+Updated native Linux agents advertise support for this path.
+
+On a single-GPU Docker host, the control mounts the render node without
+granting device access. It verifies the character device's major/minor
+numbers and requires the kernel to reject opening it. The regular probe
+verifies the leased HIP device using the same pinned image, which the
+learner uses at Start. Both probes run without network access.
 
 For a native job, the agent constructs `runtimeProof` solely from the
 installed trusted adapter and the frozen job/lease. The same short-lived
@@ -2271,7 +2336,7 @@ Set `EXPERIMENT_HUB_SYNC_ARTIFACTS=1` on a machine already configured with
 TinyBrains or native Bees collector adapter. The adapter—not the Hub or a saved configuration—selects
 the job's private artifact directory. After the local native owner reaches a
 terminal state, the agent sends approved log snapshots to the existing
-loopback/SSH-forwarded machine endpoint on port 7149. Heartbeats and native
+localhost or Tailscale-bound authenticated machine endpoint on port 7149. Heartbeats and native
 Stop/Inspect commands are independent of this lower-priority transfer.
 Each HTTP chunk is limited to 1 MiB, a single file snapshot to 500 MB,
 and the receiving Hub to 256 files / 5 GB per ordinary job, or
@@ -2836,10 +2901,11 @@ evaluates one explicit checkpoint. For scheduled evaluation, run
 For a multi-suite gate, pass `--suite short.json --suite long.json`
 in one invocation instead of launching independent pollers. The poller
 queries the local coordinator (port 7148 by default when running beside
-the coordinator). On a remote worker, use `--port 17149` and provide
-`EXPERIMENT_HUB_AGENT_TOKEN` from the private agent environment through
-the scheduled evaluator's `--env-file`; only the restricted 7149 agent
-port should be forwarded. It selects a completed numbered checkpoint for
+the coordinator). On a remote worker, use `--hub-host 100.97.43.98 --port 7149`, with the
+machine's `EXPERIMENT_HUB_AGENT_TOKEN` supplied by the scheduled evaluator's
+private `--env-file`. The Tailscale listener is authenticated and remote
+workers never use the dashboard port.
+It selects a completed numbered checkpoint for
 an eligible running dispatch, and evaluates at most
 one checkpoint batch per invocation. Set the profile's `training.checkpoint_every` so a
 numbered checkpoint appears while the job is still running. The poller
@@ -2848,8 +2914,8 @@ checkpoint watermarks across temporary worker disconnects (up to
 1,000 dispatches), and retry publication independently of coordinator availability
 once a completed evaluation is recorded. The trusted adapter and Hub
 accept the receipt only for the exact running dispatch and suite.
-A separate host needs a trusted loopback forward and read access to the
-training artifacts.
+A separate host needs Tailscale access and read access to the training
+artifacts; SSH forwarding is not required.
 
 For reproducible comparisons, pin the evaluation runtime as well as the
 scenario. Run the following with the evaluator's Python environment and its
@@ -3120,17 +3186,29 @@ whole bundle. For a bundle that has already begun execution, use
 has terminated. Unresolved bundles are prioritized in the Train panel over
 older completed history.
 
+## Automated remote Experiment Hub worker installation
+
+For a new Windows or Linux worker supporting TinyBrains collectors and
+Courier lineages together, see
+[`EXPERIMENT_HUB_WORKER_INSTALL.md`](EXPERIMENT_HUB_WORKER_INSTALL.md).
+The installer provisions direct private Tailscale access, pinned native owners,
+official TinyBrains simulation binaries, separate project Python runtimes and
+one authenticated Hub agent. It never takes over the original Bees worker
+launcher or starts an experiment without an explicit Hub reservation.
+
 ## Trusted distributed TinyBrains rollout group (opt-in)
 
 The `feat/hub-resource-experiments-20261110` Hub branch and matching
 `feat/linux-tinybrains-runtime` TinyBrains branch have an **unqualified**
-multi-machine rollout path. A single Halifax trainer owns the PPO optimizer,
-checkpoint, evaluation and STOP marker. Each remote machine owns an independent
-`tinybrains_rollout` native job under its own acknowledged CPU/RAM lease,
+multi-machine rollout path. One approved Linux learner owns the PPO optimizer,
+checkpoint, evaluation and STOP marker. It can use a CPU/RAM-only lease
+when its Docker adapter advertises CPU learner support. Each remote machine
+owns a `tinybrains_rollout` native job under its own acknowledged CPU/RAM lease,
 optionally with **one exclusive Windows CUDA GPU**. The learner sends a frozen
 behavior policy and collects the returned on-policy shards before optimizing.
-By default, each collector receives an equal action target. For heterogeneous
-fixed machines, Design can freeze an optional `rollout_action_weights` array,
+The current backend starts from matching checkpoint measurements when
+available, or equal shares, and tests changes against completed PPO cadence.
+Design can freeze an optional `rollout_action_weights` array,
 for example `[2,8,4]` for the learner and two ordered remote collectors.
 This divides the configured total action target proportionally, assigning at
 least one action to each collector and preserving the total. The chosen
@@ -3146,11 +3224,35 @@ latest uninterrupted chart segment, **Compare** displays advisory
 median delivered decisions/s, reduced to bounded integer weights; they are
 a starting estimate, not a guarantee of faster PPO updates. Rates from
 different action targets may change when their work shares change.
-**Use proposed weights in Design** only fills the input for an approved
-matching profile: review the full draft and save explicitly. Nothing
-rebalances a running job, changes its resource lease, or starts training.
+**Use proposed weights in Design** fills the input for an approved
+matching profile for a future job. Review the draft and save it explicitly.
 Re-measure when worker machines, assigned CPUs/GPUs, network or model change.
 Remote workers never publish or advance learner checkpoints.
+
+**Two Halifax learners sharing Exeter CPU capacity:** install Exeter's
+`Training/experiment_hub_tinybrains_exeter_rollout_adapter.example.js` as its
+locally trusted adapter map (after setting its machine-local project/Python,
+cache, Tailscale IP and private key paths). Its `slotPorts` bind two separate
+CPU-only listeners, ports 12134 and 12135, on **one** enrolled Exeter machine.
+Pin both Tailscale endpoints in Halifax's approved learner
+`remoteCollectors.endpoints`; the two machines must trust the same HMAC key.
+Do not enroll Exeter twice or give both learners the same listener.
+
+Create two saved Halifax TinyBrains configurations with
+`remote_rollouts:true`, independent best70 checkpoint imports, and identical
+frozen Nano/Micro monitoring suites, differing only in their approved learning
+rate. Queue the first distributed group with 16 Halifax CPU slots, one
+exclusive GPU, 16 GiB RAM, and a six-CPU/eight-GiB Exeter collector assigned
+to the first free endpoint. Queue the second group with the other exclusive
+Halifax GPU, another 16 CPU slots/16 GiB, and six Exeter CPUs/eight GiB on
+the *other* endpoint. The Train form offers only one free listener per
+machine to each group and excludes endpoints already reserved by another
+unresolved native job; explicit endpoint IDs are validated against Exeter's
+authenticated agent advertisement. Two independent groups can therefore
+reserve 32 Halifax plus 12 Exeter logical CPU slots with separate native
+owner processes, resource leases, policies and checkpoints. This allocation
+does not imply all slots are productive: use the recorded learner and
+collector throughput to assess CPU/GPU bottlenecks.
 
 Install the *same* randomly generated 32+-byte HMAC key on each trusted host
 in a private local file; on Linux use mode 0600. Never put the key in the Hub
@@ -3174,13 +3276,17 @@ service to the public Internet.
    and enroll their native agents. Save a TinyBrains configuration with
    `remote_rollouts:true` and the approved profile/checkpoint import.
    In **Train**, choose the saved learner configuration, enter its local
-   CPU/RAM and one- or two-GPU budget, then use **Queue and reserve entire
-   group**. Select Halifax and provide one CPU/RAM resource budget per
-   approved endpoint in the shown order. Each collector may set an independent
+   CPU/RAM and optional GPU budget, then use **Queue and reserve entire
+   group**. Select the learner and keep one CPU/RAM budget for each machine you
+   want to allocate. The Hub resolves the machine IDs through authenticated
+   agent reports and freezes the selected endpoints in the learner's
+   approved order. Optional fixed action weights use that same order.
+   Older learner adapters require all approved endpoints.
+   Each collector may set an independent
    `threads` count no greater than its leased CPUs or its locally approved
    thread limit. A worker budget may also request one exclusive Windows CUDA
    GPU; no shared remote GPU is admitted. Collector slot 0 is the learner's
-   local rollout; slots 1–8 correspond to approved remote endpoints.
+   local rollout. Slots 1–8 follow the frozen selection.
    Updated remote workers report `collector_N_model_prepare_seconds`
    (policy/critic weight loading plus first-use allocation) so that model
    reuse can be measured separately from end-to-end collection time.
@@ -3220,6 +3326,19 @@ service to the public Internet.
    The Hub creates each worker configuration, all jobs and all machine
    reservations atomically; if any physical worker or capacity is missing,
    no job or claim is committed. No process is started by this action.
+   **Match budgets across the selected machines** lets the Hub fit the
+   worker budgets to that machine set. The API accepts
+   `worker_machine_ids` alongside collector or Courier lineage budgets
+   without individual `machine_id` fields. The Hub checks current lease
+   capacity and keeps the learner's approved endpoint order, including
+   any fixed rollout weights or Courier lineage slots.
+   For independent remote Courier lineages, the same frozen
+   `training.*` PPO Design overrides now apply to both learner-local and
+   remote policies. Install the companion Basic-Training branch
+   `feat/hub-independent-courier-ppo-20261119` on every participating
+   Courier host and restart its approved agent. Each remote worker
+   acknowledges a SHA-256 fingerprint of the settings after policy
+   initialization; an older worker cannot silently ignore the overrides.
 4. Allow each host's authenticated agent to acknowledge its offered claim,
    and qualify the learner's GPU access before launch. In **Train**, use
    **Start collectors only** to authorize all remote native Starts atomically
@@ -3331,13 +3450,36 @@ absence/timeout behavior on actual hosts.
 
 ## Not yet implemented
 
+The Machines service panel now also controls independently enrolled remote
+evaluator services through authenticated agent heartbeats. The operator can
+Start/Stop installed Linux timers, Restart a Linux timer, Run now on a Linux
+service, and Start/Stop an already installed Windows evaluator SCM service.
+Approved Linux hosts with a trusted TinyBrains or Courier adapter can use
+Set up to create missing frozen local suites and evaluator units using the
+same fixed local paths as the coordinator; TinyBrains Nano/Micro suites can
+be refreshed without changing historical evidence. No arbitrary command,
+file path or interpreter is transmitted by the dashboard. Remote approvals
+are durable one-use operations, dispatched at most once. Lost dispatch
+results require explicit service inspection and reconciliation, not replay.
+
+After a remote suite installation or reapproval, use **Restart remote agent**
+in Machines to advertise the new approved suite, provided that no active or
+unverified native owners remain on that machine. The agent confirms its own
+installed user-systemd service identity, reports the one-use restart approval,
+then asks systemd to restart the existing process. The coordinator records
+completion only after a fresh authenticated agent instance reconnects.
+Uncertain restarts require explicit review, never an automatic replay.
+Trusted host enrollment, required worker keys, installed training backends
+and initial Windows evaluator service installation remain separately
+authorized host setup, not arbitrary remote shell commands.
+
 Production installation and qualification of project-specific adapters,
 real-machine Windows CUDA and Linux systemd/ROCm qualification,
 enforceable OS GPU compute and VRAM quotas, production-qualified Linux cooperative shared-GPU execution,
 independent non-PyTorch shared GPU adapters, seamless adoption of
 independently running trainers,
 production coexistence qualification of the
-CPU-only scheduler, production independent evaluators for non-Bees adapters,
+CPU-only scheduler, production qualification of the implemented TinyBrains and Courier independent evaluators,
 trusted production-source metrics adapters for additional
 projects, safe live rebalancing, and comprehensive
 CLI parity for all runtime configuration controls remain future work.
@@ -3348,6 +3490,6 @@ must not create a second owner of the Bees training lifecycle or treat
 reporting a worker as proof of exclusive host ownership.
 
 No arbitrary commands from saved project configurations are executed. The
-dashboard remains loopback-only; remote access requires a separate trusted
-transport. Production multi-machine / Unity behavior has not been validated
+dashboard remains loopback-only; remote machine agents communicate through
+the explicitly enabled Tailscale agent listener. Production multi-machine / Unity behavior has not been validated
 by the development environment.
