@@ -1072,6 +1072,10 @@ impl BattleCatalog {
             if let Some(mission) = self.battles.iter().filter_map(|entry| entry.mission.as_ref())
                 .find(|mission| mission.id == outcome.mission_id && mission.player_side == outcome.player_side)
             {
+                if mission.evacuation_rewards != outcome.evacuated_personnel.is_some() ||
+                    outcome.evacuated_personnel.is_some_and(|count| count > 60) {
+                    return Err(invalid("campaign evacuation needs an authentic bounded personnel count"));
+                }
                 let state = progress.missions.entry(&mission.id).or_default();
                 state.attempted = true;
                 state.latest_victory = outcome.mission_victory();
@@ -1100,11 +1104,21 @@ impl BattleCatalog {
                             return Err(invalid("invalid, repeated or stale campaign SavedSquad reward"));
                         }
                     }
+                    let mut selected = HashMap::<u8, u32>::new();
                     let expected: Vec<_> = mission.victory_grants.iter()
                         .flat_map(|grant| std::iter::repeat((
                             grant.ship_type, grant.saved_squad_id,
                         )).take(grant.count as usize))
-                        .collect();
+                        .filter(|(kind, _)| {
+                            if let Some(evacuated) = outcome.evacuated_personnel {
+                                let count = selected.entry(*kind).or_default();
+                                if *count >= pluto_evacuation_reward_count(*kind, evacuated) {
+                                    return false;
+                                }
+                                *count += 1;
+                            }
+                            true
+                        }).collect();
                     if expected.len() != outcome.awarded_ships.len() {
                         return Err(invalid("campaign victory ship count differs from authored reward"));
                     }
