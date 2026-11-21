@@ -468,6 +468,55 @@ def verify_same_battle(scene: dict, run: dict,
         entry for entry in expected["levels"][0].get("scripted_queues", [])
         if entry["squad_item_id"] not in owned
     ]
+    # The sole permitted new policy-scene commands belong to exact source
+    # specialist combatants with no compatible v26 model: ordinary game
+    # Barge Charge and Yellow Jacket BombingRun. These are real physical
+    # game commands, not an alternative simulator or a fabricated learner.
+    # Validate the additional instructions independently of their author,
+    # so publisher changes cannot silently broaden the training contract.
+    original_queues = expected["levels"][0]["scripted_queues"]
+    original_squads = {squad["item_id"]: squad for squad in scene["squads"]}
+    source_ships = {ship["entity_id"]: ship for ship in scene["ships"]}
+    deferred = {
+        squad_id for wave in expected["levels"][0].get("reinforcements", [])
+        for squad_id in wave["squad_item_ids"]
+    }
+    extra_owners = set()
+    for row in trained["levels"][0].get("scripted_queues", []):
+        if row in original_queues:
+            continue
+        squad_id = row.get("squad_item_id")
+        squad = original_squads.get(squad_id)
+        if (squad is None or not squad.get("user_controlled") or
+                squad_id in extra_owners or squad_id in owned):
+            raise ValueError("policy added an unauthorized game command owner")
+        extra_owners.add(squad_id)
+        members = [source_ships[ship_id] for ship_id in squad["members"]]
+        kinds = {ship["ship_type"] for ship in members}
+        action = None
+        if kinds == {0} and all(
+                isinstance(ship.get("special"), dict) and
+                ship["special"].get("kind") == "barge" and
+                isinstance(ship.get("special_weapon"), dict) and
+                isinstance(ship["special_weapon"].get("charge_range"), dict)
+                for ship in members):
+            action = "charge_nearest"
+        elif kinds == {22} and all(
+                isinstance(ship.get("special"), dict) and
+                ship["special"].get("kind") == "yellow_jacket" and
+                isinstance(ship.get("special_weapon"), dict) and
+                isinstance(ship["special_weapon"].get("proximity"), dict)
+                for ship in members):
+            action = "bombing_nearest"
+        allowed = {
+            "squad_item_id": squad_id, "repeat": True,
+            "orders": [{"kind": action}],
+        }
+        if squad_id in deferred:
+            allowed["activation"] = {"kind": "on_deployment"}
+        if action is None or row != allowed:
+            raise ValueError("native policy specialist fallback changed a source game command")
+        original_queues.append(row)
     if expected != trained:
         raise ValueError("native policy author changed the simulation run beyond policy-owned commands")
     return source_id
