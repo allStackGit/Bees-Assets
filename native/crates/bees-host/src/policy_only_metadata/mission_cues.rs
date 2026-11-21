@@ -82,7 +82,7 @@ impl NativeMissionEvent {
             Self::ShipDestroyed(id) => world.events().iter().any(|event|
                 matches!(event,
                     bees_sim::combat_world::CombatEvent::ShipDied {
-                        victim_id, ..
+                        victim_id, end_kill: false, ..
                     } if *victim_id == id
                 )
             ),
