@@ -12,6 +12,27 @@ const SQUAD_COLORS: [[u8; 3]; 6] = [
     [0xc2, 0x9b, 0xe8], [0xeb, 0x78, 0x85], [0xed, 0xe1, 0x94],
 ];
 
+fn squad_name_key(key: Key, shift: bool) -> Option<char> {
+    let letters = [
+        Key::A, Key::B, Key::C, Key::D, Key::E, Key::F, Key::G,
+        Key::H, Key::I, Key::J, Key::K, Key::L, Key::M, Key::N,
+        Key::O, Key::P, Key::Q, Key::R, Key::S, Key::T, Key::U,
+        Key::V, Key::W, Key::X, Key::Y, Key::Z,
+    ];
+    if let Some(index) = letters.iter().position(|&entry| entry == key) {
+        let ascii = if shift { b'A' } else { b'a' };
+        return Some((ascii + index as u8) as char);
+    }
+    match key {
+        Key::Key0 => Some('0'), Key::Key1 => Some('1'), Key::Key2 => Some('2'),
+        Key::Key3 => Some('3'), Key::Key4 => Some('4'), Key::Key5 => Some('5'),
+        Key::Key6 => Some('6'), Key::Key7 => Some('7'), Key::Key8 => Some('8'),
+        Key::Key9 => Some('9'),
+        Key::Space => Some(' '), Key::Minus => Some(if shift { '_' } else { '-' }),
+        _ => None,
+    }
+}
+
 fn cycle_squad_color(value: NativeSquadColorSetting) -> NativeSquadColorSetting {
     match value {
         NativeSquadColorSetting::Inherit => NativeSquadColorSetting::Clear,
@@ -75,6 +96,13 @@ pub struct NativeDeleteSquadMenuRow {
     pub saved_squad_id: i64,
 }
 
+pub struct NativeNameMenuRow {
+    pub title: String,
+    pub side: i32,
+    pub saved_squad_id: i64,
+    pub name: String,
+}
+
 pub struct NativeTacticsMenuRow {
     pub title: String,
     pub side: i32,
@@ -91,6 +119,7 @@ pub enum NativeBattleMenuAction {
     Play(usize),
     CreateSquad { side: i32, template_saved_squad_id: i64 },
     DeleteSquad { side: i32, saved_squad_id: i64 },
+    NameSquad { side: i32, saved_squad_id: i64, name: String },
     Tactics { side: i32, saved_squad_id: i64,
         shooting_strategy_id: u8, should_chase: bool, cease_fire: bool,
         match_speed: bool, color_setting: NativeSquadColorSetting,
@@ -111,10 +140,11 @@ pub fn select_battle(
     create_rows: &[NativeCreateSquadMenuRow],
     tactics_rows: &[NativeTacticsMenuRow],
     delete_rows: &[NativeDeleteSquadMenuRow],
+    name_rows: &[NativeNameMenuRow],
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     select_battle_inner(rows, selected, launch_failed, fleet_rows, squad_rows,
         shop_rows, banked_tsv, transfer_rows, create_rows, tactics_rows,
-        delete_rows, false)
+        delete_rows, name_rows, false)
 }
 
 /// The packaged-game launcher uses the same list renderer without exposing
@@ -123,7 +153,7 @@ pub fn select_library(
     rows: &[BattleMenuRow<'_>], selected: &mut usize, launch_failed: bool,
 ) -> Result<Option<usize>, minifb::Error> {
     match select_battle_inner(rows, selected, launch_failed,
-        &[], &[], &[], 0, &[], &[], &[], &[], true)? {
+        &[], &[], &[], 0, &[], &[], &[], &[], &[], true)? {
         Some(NativeBattleMenuAction::Play(index)) => Ok(Some(index)),
         _ => Ok(None),
     }
@@ -137,6 +167,7 @@ fn select_battle_inner(
     create_rows: &[NativeCreateSquadMenuRow],
     tactics_rows: &[NativeTacticsMenuRow],
     delete_rows: &[NativeDeleteSquadMenuRow],
+    name_rows: &[NativeNameMenuRow],
     library_mode: bool,
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     if rows.is_empty() { return Ok(None); }
@@ -166,11 +197,112 @@ fn select_battle_inner(
     let mut tactic_match_speed = false;
     let mut tactic_color = NativeSquadColorSetting::Inherit;
     let mut tactic_formation = NativeSavedSquadFormation::authored();
+    let mut show_names = false;
+    let mut name_selected = 0_usize;
+    let mut name_first = 0_usize;
+    let mut name_input = String::new();
     let mut shop_selected = 0_usize;
     let mut shop_first = 0_usize;
     let mut fleet_selected = 0_usize;
     let mut fleet_first = 0_usize;
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        if !library_mode && !show_tactics && !show_names &&
+            window.is_key_pressed(Key::R, KeyRepeat::No)
+        {
+            show_names = true;
+            show_shop = false;
+            show_transfer = false;
+            show_create = false;
+            show_delete = false;
+            show_tactics = false;
+            career_view = None;
+            name_selected = 0;
+            name_first = 0;
+            name_input = name_rows.first().map_or(String::new(), |row| row.name.clone());
+            // The opening R must not itself insert a literal 'r'.
+            pixels.fill(0x080e19);
+            text::draw_centered(&mut pixels, WIDTH, 40,
+                "Name saved squads", 2, TEXT);
+            window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
+            continue;
+        }
+        if show_names {
+            for key in window.get_keys_pressed(KeyRepeat::Yes) {
+                match key {
+                    Key::Tab => { show_names = false; break; },
+                    Key::Up | Key::Down => {
+                        let next = if key == Key::Up {
+                            name_selected.saturating_sub(1)
+                        } else {
+                            (name_selected + 1).min(name_rows.len().saturating_sub(1))
+                        };
+                        if next != name_selected {
+                            name_selected = next;
+                            name_input = name_rows.get(next)
+                                .map_or(String::new(), |row| row.name.clone());
+                        }
+                    }
+                    Key::Enter => {
+                        if let Some(row) = name_rows.get(name_selected) {
+                            let name = name_input.trim().to_owned();
+                            if !name.is_empty() && name.len() <= 32 &&
+                                name != row.name
+                            {
+                                return Ok(Some(NativeBattleMenuAction::NameSquad {
+                                    side: row.side, saved_squad_id: row.saved_squad_id, name,
+                                }));
+                            }
+                        }
+                    }
+                    Key::Backspace => { name_input.pop(); },
+                    key => {
+                        let shift = window.is_key_down(Key::LeftShift) ||
+                            window.is_key_down(Key::RightShift);
+                        if let Some(ch) = squad_name_key(key, shift) {
+                            if name_input.len() < 32 { name_input.push(ch); }
+                        }
+                    }
+                }
+            }
+            if show_names {
+                if name_selected < name_first { name_first = name_selected; }
+                if name_selected >= name_first + PAGE_SIZE {
+                    name_first = name_selected + 1 - PAGE_SIZE;
+                }
+                pixels.fill(0x080e19);
+                text::draw_centered(&mut pixels, WIDTH, 24,
+                    "Name saved squads", 2, TEXT);
+                text::draw_centered(&mut pixels, WIDTH, 73,
+                    "Type a name (32 chars max). Enter save, Tab return to missions",
+                    1, MUTED);
+                text::draw_centered(&mut pixels, WIDTH, 96,
+                    &format!("Current name: {}", if name_input.is_empty() {
+                        "(unnamed)"
+                    } else { name_input.as_str() }), 1, TEXT);
+                if name_rows.is_empty() {
+                    text::draw_centered(&mut pixels, WIDTH, 220,
+                        "No editable SavedSquads", 1, MUTED);
+                }
+                for index in name_first..(name_first + PAGE_SIZE).min(name_rows.len()) {
+                    let y = LIST_TOP + (index - name_first) * ROW_HEIGHT;
+                    let background = if index == name_selected { 0x294a66 }
+                        else { 0x142235 };
+                    for line in y..y + ROW_HEIGHT - 4 {
+                        pixels[line * WIDTH + 100..line * WIDTH + 700].fill(background);
+                    }
+                    let row = &name_rows[index];
+                    let label = format!("{}  [{}]", row.title,
+                        if row.name.is_empty() { "Unnamed" } else { &row.name });
+                    text::draw_centered(&mut pixels, WIDTH, y + 8,
+                        &text::fit(&label, 560), 1, TEXT);
+                }
+                text::draw_centered(&mut pixels, WIDTH, 441,
+                    "Up/Down squad   Letters, numbers, space, - and _   Backspace erase   Tab close",
+                    1, MUTED);
+                window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
+                continue;
+            }
+        }
         if !library_mode && !show_tactics &&
             window.is_key_pressed(Key::F, KeyRepeat::No) {
             career_view = if career_view == Some(false) && !show_shop && !show_transfer && !show_create {
