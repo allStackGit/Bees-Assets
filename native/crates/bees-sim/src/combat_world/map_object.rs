@@ -161,6 +161,7 @@ impl CombatWorld {
             object_id: tank_id,
             triggering_projectile_id: source_id,
             explosion_projectile_id: explosion_id,
+            origin: Some(tank_position),
         });
         Ok(())
     }
@@ -395,6 +396,7 @@ mod tests {
                 object_id: 2,
                 triggering_projectile_id: 4,
                 explosion_projectile_id: 5,
+                ..
             }
         )));
         assert!(world.events().iter().any(|event| matches!(
