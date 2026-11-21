@@ -1139,18 +1139,28 @@ impl NativeRemotePlay {
         }
         self.fog_by_side.retain(|side,_|sides.contains(side));
         self.pending_audio.retain(|side,_|sides.contains(side));
-        // Build the same side-scoped sight masks for audio and world-state
-        // snapshots. Track changes every physics tick, not every fifth
-        // network frame, so a death starts its fade at the true source tick.
+        // Source sight and death fades advance every physical tick. The
+        // temporary spatial index is only built when an event or snapshot
+        // needs a visibility lookup; quiet interpolation ticks allocate none.
+        for &side in &sides {
+            self.fog_by_side.entry(side).or_default().advance(
+                view, side, &mut self.measurements,
+            );
+        }
+        let has_events = !view.combat.events().is_empty();
+        let publish_frame = self.last_state != Some(episode) ||
+            view.tick % STATE_EVERY_TICKS == 0 ||
+            view.terminal_result.is_some() || self.force_initial_state;
+        if !has_events && !publish_frame { return; }
         let mut vision = HashMap::<i32, RemoteFogSources>::new();
         for &side in &sides {
-            let source = self.fog_by_side.entry(side).or_default()
-                .sources(view, side, &mut self.measurements);
+            let source = self.fog_by_side.get(&side)
+                .expect("authenticated side has live sight")
+                .sources(view, &mut self.measurements);
             vision.insert(side, source);
         }
-        // This runs at each physical tick, including the four ticks with no
-        // state frame. Carry short-lived sounds to the next presentation frame.
-        if !view.combat.events().is_empty() {
+        // Carry short-lived sounds to the next presentation frame.
+        if has_events {
             // Audio events already carry exact projectile IDs. Look up
             // only those physical shots in CombatWorld's existing live
             // identity index; do not allocate and hash every active shot
@@ -1162,10 +1172,7 @@ impl NativeRemotePlay {
                     &mut self.measurements);
             }
         }
-        if self.last_state == Some(episode) &&
-            view.tick % STATE_EVERY_TICKS != 0 &&
-            view.terminal_result.is_none() &&
-            !self.force_initial_state { return; }
+        if !publish_frame { return; }
         self.last_state = Some(episode);
         self.force_initial_state = false;
         // Audio is lossy presentation; authoritative orders and replies keep
@@ -1379,12 +1386,15 @@ struct RemoteFogSight {
 }
 
 impl RemoteFogSight {
-    fn sources(&mut self, view: &NativeRenderWorldView<'_>, side: i32,
-               measurements: &mut RemotePlayMeasurements) -> RemoteFogSources {
+    /// Advance source sight and death fades on EVERY physics tick, including
+    /// ticks which have no network/audio output. Building query indexes is
+    /// independent and only necessary when a caller will actually query.
+    fn advance(&mut self, view: &NativeRenderWorldView<'_>, side: i32,
+               measurements: &mut RemotePlayMeasurements) {
         if !view.player_authority.player_fog_of_war_enabled() {
             self.live.clear();
             self.fades.clear();
-            return RemoteFogSources::new(Vec::new(), measurements);
+            return;
         }
         for (ship, body) in view.combat.render_ships() {
             let Some(owner) = view.roster.owning_squad(ship.entity_id) else { continue };
@@ -1413,6 +1423,12 @@ impl RemoteFogSight {
         measurements.fog_fading_source_ticks += self.fades.len() as u64;
         measurements.fog_fading_sources_peak =
             measurements.fog_fading_sources_peak.max(self.fades.len());
+    }
+
+    /// Build one exact indexed view after the current tick's lifecycle
+    /// reconciliation. It is shared by audio and snapshots on that tick.
+    fn sources(&self, view: &NativeRenderWorldView<'_>,
+               measurements: &mut RemotePlayMeasurements) -> RemoteFogSources {
         let mut circles = Vec::with_capacity(self.live.len() + self.fades.len());
         circles.extend(self.live.values().map(|s| (s.position, s.radius)));
         circles.extend(self.fades.iter().map(|s|
