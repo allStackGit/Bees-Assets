@@ -540,6 +540,7 @@ def verify_native_package(directory: Path) -> dict:
             "native/tools/native_bundle_receiver.py",
             "native/tools/native_training_artifacts.py",
             "native/tools/author-battle.py",
+            "native/tools/carrier_family.py",
             "native/examples/native-skirmish.policy.scene.json",
             "native/assets/box-obstacle-colliders.json",
             "native/assets/polygon-obstacle-colliders.json",

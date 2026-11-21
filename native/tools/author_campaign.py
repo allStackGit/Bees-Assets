@@ -173,7 +173,8 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
     # independently owned, awarded, or permanently lost account ships.
     persistent_squads = []
     for squad in squads:
-        members = tuple(ship_id for ship_id in squad["members"]
+        members = tuple(ships[ship_id]["fleet_ship_id"]
+                        for ship_id in squad["members"]
                         if ships[ship_id].get("persistent_fleet"))
         if not members:
             if squad.get("saved_squad_id") is not None:
@@ -185,12 +186,19 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
         persistent_squads.append((saved, members))
     if len({saved for saved, _ in persistent_squads}) != len(persistent_squads):
         raise ValueError("duplicate player SavedSquad identities")
+    persistent_hulls = [
+        ship for ship in ships.values() if ship.get("persistent_fleet")
+    ]
+    if len({ship["fleet_ship_id"] for ship in persistent_hulls}) != len(persistent_hulls):
+        raise ValueError("duplicate durable player FleetShip identity")
+    # Separate physical entities may legitimately use different IDs in
+    # different Levels. Only the durable FleetShip/SavedSquad identities
+    # and their source class/value contract persist across missions.
     canonical = {
         "ships": sorted((
-            ship["entity_id"], ship["ship_type"],
-            ship.get("fleet_ship_id"), ship.get("persistent_fleet", False),
+            ship["fleet_ship_id"], ship["ship_type"],
             ship["max_tsv"], ship["max_health"],
-        ) for ship in ships.values() if ship.get("persistent_fleet")),
+        ) for ship in persistent_hulls),
         "squads": sorted(persistent_squads),
     }
     return scene, run, {

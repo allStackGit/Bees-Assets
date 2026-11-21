@@ -3269,7 +3269,7 @@ fn preflight_native_fleet_edit_with_squads(
             ).map_err(|error| contextual("shop created SavedSquads", error))?;
             source.apply_saved_squad_tactics(side, &progress.tactics_for_side(side))
                 .map_err(|error| contextual("shop saved squad tactics", error))?;
-            source.apply_authored_fleet_roster(side, roster)
+            source.apply_authored_fleet_roster(&source_archetypes, side, roster, casualties)
                 .map_err(|error| contextual("shop original FleetShip reassignment", error))?;
             source.install_purchased_ships(&source_archetypes, side, deployed, casualties)
                 .map_err(|error| contextual("shop purchased FleetShip placement", error))?;
@@ -3645,7 +3645,9 @@ fn run_set_saved_squad_tactics(
                 .map_err(|error| contextual("tactics created squad preflight", error))?;
             scene.apply_saved_squad_tactics(entry.side, &effective)
                 .map_err(|error| contextual("tactics native scene preflight", error))?;
-            scene.apply_authored_fleet_roster(entry.side, &surviving_authored)
+            scene.apply_authored_fleet_roster(
+                &source_archetypes, entry.side, &surviving_authored, &lost,
+            )
                 .map_err(|error| contextual("tactics authored fleet preflight", error))?;
             scene.install_purchased_ships(&source_archetypes, entry.side, &deployed, &lost)
                 .map_err(|error| contextual("tactics purchased fleet preflight", error))?;
@@ -5393,8 +5395,11 @@ fn run_battle(
             ).map_err(|error| contextual("restored SavedSquad tactics", error))?;
         }
         if let Some(assignments) = mission.and_then(|mission| mission.authored_roster) {
+            let empty_casualties = HashSet::new();
             let reassigned = source.apply_authored_fleet_roster(
-                mission.expect("authored campaign owner").player_side, assignments,
+                template.as_ref(), mission.expect("authored campaign owner").player_side,
+                assignments, mission.and_then(|mission| mission.lost_fleet_ids)
+                    .unwrap_or(&empty_casualties),
             ).map_err(|error| contextual("saved authored FleetShip roster", error))?;
             if reassigned != 0 {
                 println!("{}", json!({

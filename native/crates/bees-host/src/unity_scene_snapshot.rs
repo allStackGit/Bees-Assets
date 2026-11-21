@@ -1279,6 +1279,52 @@ impl NativePhysicalScene {
         Ok(updates.len())
     }
 
+    /// Resolve a destination's current physical anchor, or its immutable
+    /// route-specific source anchor if the SavedSquad has become vacant.
+    /// Only a genuinely new squad falls back to the faction's Stage home.
+    fn campaign_squad_anchor(&self, source: &Self, index: usize, side: i32)
+        -> Result<(Vec2, Vec2), NativeSnapshotError>
+    {
+        let invalid = NativeSnapshotError::InvalidNativeLayout;
+        let anchor = |scene: &Self, squad: &NativeSourceSquad|
+            -> Result<Option<(Vec2, Vec2)>, NativeSnapshotError>
+        {
+            let Some(&id) = squad.members.first() else { return Ok(None) };
+            let ship = scene.entities.iter().find_map(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship) if ship.entity_id == id => Some(ship),
+                _ => None,
+            }).ok_or(invalid("campaign destination anchor ship is missing"))?;
+            let offset = scene.source_formation.get(&id)
+                .ok_or(invalid("campaign destination anchor lacks formation"))?.offset;
+            Ok(Some((ship.motion.position, offset)))
+        };
+        let squad = &self.source_squads[index];
+        if let Some(anchor) = anchor(self, squad)? { return Ok(anchor); }
+        if let Some(saved) = squad.saved_squad_id {
+            if let Some(original) = source.source_squads.iter().find(|squad|
+                squad.side == side && squad.saved_squad_id == Some(saved))
+            {
+                if let Some(anchor) = anchor(source, original)? { return Ok(anchor); }
+            }
+        }
+        let home = self.starting_positions
+            .ok_or(invalid("vacant new SavedSquad lacks authored Stage home"))?;
+        Ok((home[(side - 1) as usize], Vec2::ZERO))
+    }
+
+    fn campaign_position_allowed(&self, anchor: Vec2, position: Vec2, radius: f32) -> bool {
+        // Captured reinforcement waves may deliberately begin outside the
+        // playable bounds, with their actual entry route owned by Level.
+        // Do not silently move such a squad back to the faction home.
+        let off_map = anchor.x < self.bounds.min.x || anchor.x > self.bounds.max.x ||
+            anchor.y < self.bounds.min.y || anchor.y > self.bounds.max.y;
+        position.is_finite() && radius.is_finite() &&
+            (off_map || (position.x - radius >= self.bounds.min.x &&
+                position.x + radius <= self.bounds.max.x &&
+                position.y - radius >= self.bounds.min.y &&
+                position.y + radius <= self.bounds.max.y))
+    }
+
     /// Instantiate purchased persistent hulls from a genuine native game
     /// scene template before constructing the common physics/game Level.
     /// A source type provides its collider, turret mounts, sight, movement
@@ -1331,23 +1377,7 @@ impl NativePhysicalScene {
                 squad.side == player_side && squad.player_permissions.user_controlled
             ).ok_or(invalid("purchased FleetShip requires its authored player SavedSquad"))?;
             let (anchor_position, anchor_offset) =
-                if let Some(&anchor_id) = self.source_squads[owner].members.first() {
-                    let anchor = self.entities.iter().find_map(|entity| match entity {
-                        NativeAuthoredEntity::Ship(ship) if ship.entity_id == anchor_id =>
-                            Some(ship),
-                        _ => None,
-                    }).ok_or(invalid("saved squad anchor ship is missing"))?;
-                    (anchor.motion.position, self.source_formation.get(&anchor_id)
-                        .ok_or(invalid("saved squad anchor formation is missing"))?.offset)
-                } else {
-                    // SavedSquad.StartingPosition has a faction-level
-                    // fallback in the original game. Restore an empty
-                    // squad at that exact authored Stage home coordinate
-                    // rather than losing its ID or inventing a collider.
-                    let home = self.starting_positions
-                        .ok_or(invalid("vacant saved squad has no authored Stage home"))?;
-                    (home[(player_side - 1) as usize], Vec2::ZERO)
-                };
+                self.campaign_squad_anchor(source_archetypes, owner, player_side)?;
             // Purchase definitions belong to the immutable authored
             // scene. A valid previously purchased class remains available
             // when its entire original fleet is now in reserve.
@@ -1436,11 +1466,7 @@ impl NativePhysicalScene {
             }).collect::<HashSet<_>>();
             let clear = |candidate: Vec2| family.iter().all(|&(relative, half)| {
                 let position = candidate + relative;
-                position.is_finite() &&
-                    position.x - half >= self.bounds.min.x &&
-                    position.x + half <= self.bounds.max.x &&
-                    position.y - half >= self.bounds.min.y &&
-                    position.y + half <= self.bounds.max.y &&
+                self.campaign_position_allowed(anchor_position, position, half) &&
                     !self.entities.iter().any(|entity| match entity {
                         NativeAuthoredEntity::Ship(other)
                             if !lost_parents.contains(&other.entity_id) &&
@@ -1810,7 +1836,8 @@ impl NativePhysicalScene {
     /// placement, formation and squad command ownership change together;
     /// original carrier IDs and special-weapon source inputs do not.
     pub fn apply_authored_fleet_roster(
-        &mut self, side: i32, assignments: &[(i64, i64, i64)],
+        &mut self, source_archetypes: &Self, side: i32,
+        assignments: &[(i64, i64, i64)], permanently_lost: &HashSet<i64>,
     ) -> Result<usize, NativeSnapshotError> {
         if assignments.is_empty() { return Ok(0); }
         let invalid = NativeSnapshotError::InvalidNativeLayout;
@@ -1819,6 +1846,14 @@ impl NativePhysicalScene {
         {
             return Err(invalid("saved roster reassignment requires a native gameplay Level"));
         }
+        let lost_parents = self.entities.iter().filter_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship)
+                if self.fleet.get(ship.entity_id)
+                    .is_some_and(|value| value.has_persistent_fleet_value) &&
+                    ship.fleet_ship_id.is_some_and(|id| permanently_lost.contains(&id)) =>
+                Some(ship.entity_id),
+            _ => None,
+        }).collect::<HashSet<_>>();
         let mut seen_fleet = HashSet::new();
         let mut touched_entities = HashSet::new();
         let mut changes = 0_usize;
@@ -1894,19 +1929,7 @@ impl NativePhysicalScene {
             };
             if let Some(index) = destination {
                 let (anchor_position, anchor_offset) =
-                    if let Some(&anchor_id) = self.source_squads[index].members.first() {
-                        let position = self.entities.iter().find_map(|entity| match entity {
-                            NativeAuthoredEntity::Ship(ship) if ship.entity_id == anchor_id =>
-                                Some(ship.motion.position),
-                            _ => None,
-                        }).ok_or(invalid("destination squad anchor ship is missing"))?;
-                        (position, self.source_formation.get(&anchor_id)
-                            .ok_or(invalid("destination squad formation is missing"))?.offset)
-                    } else {
-                        let home = self.starting_positions
-                            .ok_or(invalid("vacant destination squad has no authored Stage home"))?;
-                        (home[(side - 1) as usize], Vec2::ZERO)
-                    };
+                    self.campaign_squad_anchor(source_archetypes, index, side)?;
                 let cease_fire = self.source_squads[index].cease_fire;
                 let spacing = family_positions.iter().map(|(_, _, radius)| *radius)
                     .fold(1.0_f32, f32::max) * 3.0;
@@ -1920,14 +1943,13 @@ impl NativePhysicalScene {
                                 parent_position;
                             let clear = family_positions.iter().all(|&(_, old_pos, radius)| {
                                 let pos = old_pos + delta;
-                                pos.is_finite() &&
-                                pos.x - radius >= self.bounds.min.x &&
-                                pos.x + radius <= self.bounds.max.x &&
-                                pos.y - radius >= self.bounds.min.y &&
-                                pos.y + radius <= self.bounds.max.y &&
+                                self.campaign_position_allowed(anchor_position, pos, radius) &&
                                 !self.entities.iter().any(|entity| match entity {
                                     NativeAuthoredEntity::Ship(ship)
-                                        if !family.contains(&ship.entity_id) =>
+                                        if !family.contains(&ship.entity_id) &&
+                                            !lost_parents.contains(&ship.entity_id) &&
+                                            !Self::authored_carrier_parent(ship)
+                                                .is_some_and(|id| lost_parents.contains(&id)) =>
                                     {
                                         let other_radius = ship.game_movement.half_width.max(
                                             ship.game_movement.half_height);
