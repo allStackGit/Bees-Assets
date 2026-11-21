@@ -143,7 +143,7 @@ pub struct NativeClient {
     input_feedback: &'static str,
     result_controls: Option<NativeResultControls>,
     playback: bool,
-    dialogue_sequence: Option<u8>,
+    dialogue_sequence: Option<u32>,
     dialogue_line: usize,
     dialogue_visible: bool,
     held_fire_target: Option<Vec2>,
