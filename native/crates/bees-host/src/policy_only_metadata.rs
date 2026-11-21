@@ -234,6 +234,10 @@ pub struct NativePolicyOnlyMetadata {
     /// Reused only when an authored AI script actually requests a nearest
     /// enemy; no extra presentation or policy simulation cache.
     scripted_centers: Vec<(SquadLifetime, i32, Vec2)>,
+    /// This is a lookup index for the exact same tick-local centers, not a
+    /// second movement or targeting owner. It avoids rescanning all
+    /// squad centers once for each simultaneous scripted AI command.
+    scripted_center_by_owner: HashMap<SquadLifetime, Vec2>,
     scripted_counts: NativeScriptedQueueMeasurements,
     /// Fixed-step interval for retrying an unavailable auto-mining target.
     /// Set by the actual native Level on script installation.
@@ -918,6 +922,7 @@ impl NativePolicyOnlyMetadata {
             scripted_members: Vec::new(),
             scripted_friendlies: Vec::new(),
             scripted_centers: Vec::new(),
+            scripted_center_by_owner: HashMap::new(),
             scripted_counts: NativeScriptedQueueMeasurements::default(),
             scripted_retry_ticks: 1,
             chase_elapsed_seconds: 0.0,
