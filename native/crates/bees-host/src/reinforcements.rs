@@ -549,7 +549,10 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         // follow their actual parent, belong entirely to that parent and
         // share its side, even when the spawn is inherited from a capture.
         for ids in &planned_squad_order {
-            let root_side = source_squads[&ids[0]].side;
+            // An authentic depleted Uranus II timer may have no physical
+            // squad to validate; it still publishes its scheduled cue.
+            let Some(first) = ids.first() else { continue };
+            let root_side = source_squads[first].side;
             let mut seen_carriers = HashSet::new();
             for id in ids {
                 let squad = source_squads[id];
