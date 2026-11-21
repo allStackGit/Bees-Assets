@@ -127,6 +127,7 @@ pub struct Measurements {
     pub weapon_range_grid_rebuilds: u64,
     /// Physical ship-range spatial queries skipped once a faction has no
     /// living enemies. Contact exits still reconcile on these passes.
+    #[serde(default)]
     pub weapon_range_queries_skipped_no_enemies: u64,
     pub weapon_range_candidates: u64,
     pub weapon_range_exact_tests: u64,
