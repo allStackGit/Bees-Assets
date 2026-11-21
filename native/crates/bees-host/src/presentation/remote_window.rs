@@ -2495,6 +2495,7 @@ pub fn connect_remote(
                 state["world_id"].as_u64().unwrap_or(0),
                 state["episode_revision"].as_u64().unwrap_or(0),sequence,
             ));
+            let first_presentation=cue.is_some()&&cue!=dialogue_key;
             if cue!=dialogue_key {dialogue_key=cue;dialogue_line=0;}
             let count=state["campaign_dialogue"]["line_count"]
                 .as_u64().unwrap_or(0).min(100) as usize;
@@ -2511,6 +2512,12 @@ pub fn connect_remote(
                 }
                 if window.is_key_pressed(Key::Backspace,KeyRepeat::No) {
                     dialogue_line=dialogue_line.saturating_sub(1);
+                }
+                // The remote viewer hears only the first visible line
+                // of a new host-owned dialogue section. No cue leaks to
+                // an opposing viewer or plays when the section is skipped.
+                if first_presentation&&dialogue_line<count {
+                    audio.campaign_dialogue_presented();
                 }
             }
             let episode=(state["world_id"].as_u64().unwrap_or(0),
