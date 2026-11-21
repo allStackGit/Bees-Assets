@@ -123,6 +123,7 @@ class OptimizerResourceSampler:
         self.gpu_path = None
         self.gpu_power_sensor = None
         self.gpu_temperature_sensor = None
+        self.gpu_junction_sensor = None
         self.nvidia = False
         if device.type == "cuda":
             index = device.index
@@ -143,6 +144,18 @@ class OptimizerResourceSampler:
                                 self.gpu_power_sensor = hwmon / "power1_average"
                             if (hwmon / "temp1_input").is_file():
                                 self.gpu_temperature_sensor = hwmon / "temp1_input"
+                            # AMD cards may expose a separate junction/hotspot
+                            # sensor. Identify it by driver label rather than
+                            # assuming that sensor number 2 means junction.
+                            for sensor_index in range(1, 7):
+                                label = hwmon / f"temp{sensor_index}_label"
+                                reading = hwmon / f"temp{sensor_index}_input"
+                                if not label.is_file() or not reading.is_file():
+                                    continue
+                                if label.read_text().strip().lower() in (
+                                        "junction", "hotspot", "hot spot"):
+                                    self.gpu_junction_sensor = reading
+                                    break
                             break
                         except OSError:
                             continue
@@ -201,6 +214,12 @@ class OptimizerResourceSampler:
                                   int(self.gpu_temperature_sensor.read_text()) / 1_000)
                 except (OSError, ValueError):
                     pass
+            if self.gpu_junction_sensor is not None:
+                try:
+                    self._observe("physical_gpu_hwmon_junction_celsius",
+                                  int(self.gpu_junction_sensor.read_text()) / 1_000)
+                except (OSError, ValueError):
+                    pass
         elif self.nvidia:
             # Torch's NVML helpers resolve the device visibility mask.
             # Older PyTorch/NVML installations may lack these optional APIs.
@@ -240,6 +259,8 @@ class OptimizerResourceSampler:
                if self.gpu_power_sensor is not None else {}),
             **({"gpu_temperature_source": "amdgpu hwmon temp1_input (sensor 1)"}
                if self.gpu_temperature_sensor is not None else {}),
+            **({"gpu_junction_source": "amdgpu hwmon labeled junction/hotspot sensor"}
+               if self.gpu_junction_sensor is not None else {}),
             "samples": {
                 key: ({"sample_count": count, "observed_high_water": peak}
                       if key == "process_peak_resident_bytes" else
