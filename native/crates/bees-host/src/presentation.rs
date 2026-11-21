@@ -94,7 +94,7 @@ pub struct NativeRenderWorldView<'a> {
     pub tick: u64,
     pub fixed_step_seconds: f32,
     pub terminal_result: Option<bees_sim::episode_terminal::EpisodeTerminalResult>,
-    pub campaign_dialogue: Option<(u8, bees_gameplay::campaign_dialogue::CampaignCue)>,
+    pub campaign_dialogue: Option<(u32, bees_gameplay::campaign_dialogue::CampaignCue)>,
     /// The original CampaignDialogue player's side, not a mutable local
     /// viewer. Dedicated multiplayer hosts can have no local viewer.
     pub campaign_dialogue_side: Option<i32>,

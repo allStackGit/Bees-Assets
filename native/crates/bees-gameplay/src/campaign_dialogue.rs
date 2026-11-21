@@ -155,7 +155,7 @@ pub struct CampaignDialogueCheckpoint {
     player_side: i32,
     mode: DialogueMode,
     cue: CampaignCue,
-    sequence: u8,
+    sequence: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -169,7 +169,7 @@ pub struct CampaignDialogue {
     player_side: i32,
     mode: DialogueMode,
     cue: CampaignCue,
-    sequence: u8,
+    sequence: u32,
 }
 
 /// Read-only public mission identity, derived from the one campaign
@@ -242,7 +242,7 @@ impl CampaignDialogue {
         Self { player_side: spec.player_side(), mode, cue, sequence: 0 }
     }
 
-    pub fn current(&self) -> (u8, CampaignCue) { (self.sequence, self.cue) }
+    pub fn current(&self) -> (u32, CampaignCue) { (self.sequence, self.cue) }
 
     pub fn checkpoint(&self) -> CampaignDialogueCheckpoint {
         CampaignDialogueCheckpoint {
@@ -357,17 +357,17 @@ impl CampaignDialogue {
             (DialogueMode::UranusOffensive { discovered: true, hit_seen: true,
                 hit_reported: true, destroyed_reported, .. },
                 CampaignCue::UranusOffensiveBumblebeeHit) =>
-                sequence == 2 + u8::from(*destroyed_reported),
+                sequence == 2 + u32::from(*destroyed_reported),
             (DialogueMode::UranusOffensive { discovered: true, hit_reported,
                 destroyed_reported: true, .. },
                 CampaignCue::UranusOffensiveBumblebeeDestroyed) =>
-                sequence == 2 + u8::from(*hit_reported),
+                sequence == 2 + u32::from(*hit_reported),
             (DialogueMode::UranusOffensive { discovered, hit_reported,
                 destroyed_reported, has_factory: original, .. },
                 CampaignCue::UranusOffensiveEnding { has_factory, .. }) =>
                 *original == has_factory && sequence ==
-                    1 + u8::from(*discovered) + u8::from(*hit_reported) +
-                        u8::from(*destroyed_reported),
+                    1 + u32::from(*discovered) + u32::from(*hit_reported) +
+                        u32::from(*destroyed_reported),
             (DialogueMode::UranusDefensive {
                 waves_reported: 0, ..
             }, CampaignCue::UranusDefensiveBriefing) => sequence == 0,
@@ -375,11 +375,11 @@ impl CampaignDialogue {
                 has_cruiser, met_scientists, waves_reported,
             }, CampaignCue::UranusDefensiveWave { number, line }) =>
                 number > 0 && number <= 6 && number == *waves_reported &&
-                sequence == number &&
+                sequence == u32::from(number) &&
                 Self::uranus_defensive_line_valid(number, line, *has_cruiser, *met_scientists),
             (DialogueMode::UranusDefensive { waves_reported, .. },
                 CampaignCue::UranusDefensiveEnding { .. }) =>
-                *waves_reported <= 6 && sequence == *waves_reported + 1,
+                *waves_reported <= 6 && sequence == u32::from(*waves_reported) + 1,
             (DialogueMode::UranusNewThreat {
                 loss_reported: false, charge_observed: false,
                 charge_reported: false, reinforcement_reported: false, ..
@@ -387,27 +387,27 @@ impl CampaignDialogue {
             (DialogueMode::UranusNewThreat {
                 loss_reported: true, charge_reported, reinforcement_reported, ..
             }, CampaignCue::UranusNewThreatBargeLost) =>
-                sequence == 1 + u8::from(*charge_reported) +
-                    u8::from(*reinforcement_reported),
+                sequence == 1 + u32::from(*charge_reported) +
+                    u32::from(*reinforcement_reported),
             (DialogueMode::UranusNewThreat {
                 loss_reported, charge_observed: true,
                 charge_reported: true, reinforcement_reported, ..
             }, CampaignCue::UranusNewThreatBargeCharged) =>
-                sequence == 1 + u8::from(*loss_reported) +
-                    u8::from(*reinforcement_reported),
+                sequence == 1 + u32::from(*loss_reported) +
+                    u32::from(*reinforcement_reported),
             (DialogueMode::UranusNewThreat {
                 loss_reported, charge_reported, reinforcement_reported: true, ..
             }, CampaignCue::UranusNewThreatReinforcements) =>
-                sequence == 1 + u8::from(*loss_reported) +
-                    u8::from(*charge_reported),
+                sequence == 1 + u32::from(*loss_reported) +
+                    u32::from(*charge_reported),
             (DialogueMode::UranusNewThreat {
                 loss_reported, charge_observed, charge_reported,
                 reinforcement_reported, has_cruiser: authored, ..
             }, CampaignCue::UranusNewThreatEnding { has_cruiser, .. }) =>
                 *authored == has_cruiser &&
                 (!*charge_reported || *charge_observed) &&
-                sequence == 1 + u8::from(*loss_reported) +
-                    u8::from(*charge_reported) + u8::from(*reinforcement_reported),
+                sequence == 1 + u32::from(*loss_reported) +
+                    u32::from(*charge_reported) + u32::from(*reinforcement_reported),
             _ => false,
         };
         if !valid {
@@ -440,6 +440,10 @@ impl CampaignDialogue {
     }
 
     pub(crate) fn set_cue(&mut self, cue: CampaignCue) {
+        // Long source survival battles can legitimately announce hundreds
+        // of physical reinforcement arrivals. u32 keeps the same on-wire
+        // integer and old JSON checkpoints readable without wrapping
+        // the cue revision and causing replay/multiplayer duplicates.
         self.sequence += 1;
         self.cue = cue;
     }
