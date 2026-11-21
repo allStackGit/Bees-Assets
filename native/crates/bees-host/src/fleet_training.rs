@@ -333,6 +333,20 @@ fn append_training_arguments(
     let device = recipe["optimizer_device"].as_str()
         .filter(|value| valid_torch_device(value))
         .ok_or_else(|| invalid("invalid native optimizer device"))?;
+    // Native PPO already supports synchronized two-GPU gradient updates
+    // through the same Python trainer and the same CombatWorld rollouts.
+    // Pin the allocation in this job's immutable invocation so resuming
+    // cannot silently switch between one and two optimizer processes.
+    let learner_gpus = recipe["learner_gpus"].as_u64().unwrap_or(1);
+    if ![1, 2].contains(&learner_gpus) ||
+        (learner_gpus == 2 && device != "cuda:0") {
+        return Err(invalid(
+            "two-GPU native PPO requires the local CUDA/ROCm device group starting at cuda:0",
+        ).into());
+    }
+    if learner_gpus == 2 {
+        command.arg("--learner-gpus").arg("2");
+    }
     let inference = recipe["inference_device"].as_str().unwrap_or("cpu");
     if !valid_torch_device(inference) ||
         (inference != "cpu" &&
@@ -713,6 +727,26 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     let Some(device) = select_library(&device_rows, &mut device_selection, false)?
         else { return Ok(()); };
     let optimizer_device = ["cpu", "cuda:0", "cuda:1", "cuda:2", "cuda:3"][device];
+    let learner_gpus = if device == 1 {
+        // The learner's DDP worker already accepts two synchronized GPU
+        // ranks on one machine. Do not claim two GPUs for a single-device
+        // choice, or infer a second card just because the OS exposes CUDA.
+        let rows = [
+            BattleMenuRow {
+                title: "One GPU for PPO updates",
+                status: "  [One synchronized optimizer rank]", unlocked: true,
+            },
+            BattleMenuRow {
+                title: "Two GPUs for PPO updates",
+                status: "  [Distributed gradients; CUDA/ROCm GPUs 0 and 1]", unlocked: true,
+            },
+        ];
+        let mut selected = 0;
+        let Some(choice) = select_library(&rows, &mut selected, false)? else {
+            return Ok(());
+        };
+        if choice == 1 { 2_u32 } else { 1_u32 }
+    } else { 1_u32 };
     let inference_device = if device != 0 && !use_hub {
         let rows = [
             BattleMenuRow {
@@ -786,6 +820,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "hub_port": if use_hub { hub.as_ref().map(|h| h.2) } else { None },
         "hub_plan_sha256": if use_hub { hub.as_ref().map(|h| h.3.clone()) } else { None },
         "optimizer_device": optimizer_device,
+        "learner_gpus": learner_gpus,
         "inference_device": inference_device,
         "holdout_worlds": 8,
         "evaluation_side": learner_side,
@@ -828,6 +863,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "hub_worlds": hub_worlds,
         "allocation": if use_hub { "experiment_hub" } else { "local" },
         "optimizer_device": optimizer_device,
+        "learner_gpus": learner_gpus,
         "inference_device": inference_device,
         "rounds": rounds,
         "episodes_per_world": episodes_per_world,
@@ -1191,6 +1227,24 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
                 format!("Self-play opponent promotions: {count}"),
                 "  [Completed model generations]".to_string(), false,
             ));
+        }
+        if let Some(gpu) = measurement["multi_gpu_optimizer"].as_object() {
+            let rounds = gpu.get("completed_synchronized_gpu_rounds")
+                .and_then(Value::as_u64);
+            let minibatches = gpu.get("total_synchronized_minibatches")
+                .and_then(Value::as_u64);
+            let seconds = gpu.get("sum_largest_gpu_update_wall_seconds")
+                .and_then(Value::as_f64)
+                .filter(|value| value.is_finite() && *value >= 0.0);
+            if let (Some(rounds), Some(minibatches), Some(seconds)) =
+                (rounds, minibatches, seconds)
+            {
+                details.push((
+                    format!("Two-GPU PPO: {rounds} synced rounds  |  {minibatches} minibatches  |  {seconds:.1}s updates"),
+                    "  [Measured synchronized gradient updates; not simulation SPS]".to_string(),
+                    false,
+                ));
+            }
         }
         if let Some(distributed) = measurement["distributed_collection_wall_time"]
             .as_object()
