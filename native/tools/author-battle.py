@@ -1451,6 +1451,55 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
         order for order in run["levels"][0].get("scripted_queues", [])
         if order["squad_item_id"] not in policy_squads
     ]
+    # A player's authentic Barge and Yellow Jacket can be playable
+    # without having a v26 policy archetype. In a trainable battle they
+    # still need real combat commands. Give ONLY verified special-weapon
+    # squads the native game's exact Charge/BombingRun scripted fallback;
+    # neither invent a policy nor turn nonlearners into frozen obstacles.
+    # The same commands are used by ordinary native AI skirmishes.
+    ships_by_id = {ship["entity_id"]: ship for ship in scene["ships"]}
+    already_scripted = {
+        queue["squad_item_id"] for queue in run["levels"][0]["scripted_queues"]
+        if queue.get("orders")
+    }
+    for squad in scene["squads"]:
+        squad_id = squad["item_id"]
+        if squad_id in already_scripted or squad_id in policy_squads:
+            continue
+        members = [ships_by_id[id] for id in squad["members"]]
+        if not members or any("policy" in ship for ship in members):
+            continue
+        kinds = {ship["ship_type"] for ship in members}
+        command = None
+        if kinds == {0} and all(
+                isinstance(ship.get("special"), dict) and
+                ship["special"].get("kind") == "barge" and
+                isinstance(ship.get("special_weapon"), dict) and
+                isinstance(ship["special_weapon"].get("charge_range"), dict)
+                for ship in members):
+            command = "charge_nearest"
+        elif kinds == {22} and all(
+                isinstance(ship.get("special"), dict) and
+                ship["special"].get("kind") == "yellow_jacket" and
+                isinstance(ship.get("special_weapon"), dict) and
+                isinstance(ship["special_weapon"].get("proximity"), dict)
+                for ship in members):
+            command = "bombing_nearest"
+        if command is None:
+            continue
+        queue = {
+            "squad_item_id": squad_id,
+            "repeat": True,
+            "orders": [{"kind": command}],
+        }
+        if any(ship["entity_id"] in deferred_reinforcement_ships
+               for ship in members):
+            if not all(ship["entity_id"] in deferred_reinforcement_ships
+                       for ship in members):
+                raise ValueError("specialist squad cannot mix deployed and deferred hulls")
+            queue["activation"] = {"kind": "on_deployment"}
+        run["levels"][0]["scripted_queues"].append(queue)
+
     # An initially deployed mobile, armed ship which the source scene
     # assigns to a human cannot lose its command owner merely because
     # no source-compatible policy archetype exists. Reject that hidden
