@@ -67,8 +67,8 @@ pub struct NativeCreateSquadMenuRow {
     pub template_saved_squad_id: i64,
 }
 
-/// Only vacant, user-created SavedSquads are removable. The ledger
-/// validates again under the exclusive campaign writer lease.
+/// Only generated SavedSquads can be retired. Their FleetShips return
+/// to reserve through the ordinary persistent career transfer ledger.
 pub struct NativeDeleteSquadMenuRow {
     pub title: String,
     pub side: i32,
@@ -378,7 +378,7 @@ fn select_battle_inner(
             text::draw_centered(&mut pixels, WIDTH, 78,
                 if show_transfer { "Move owned ships between saved squads (no TSV cost)" }
                 else if show_create { "Choose a player squad to copy its command settings" }
-                else if show_delete { "Only empty created squads; select a row, then Enter to delete" }
+                else if show_delete { "Created squads only; assigned ships return to fleet reserve" }
                 else if show_tactics { "Left/Right strategy, C chase, V fire, M speed, R color, Enter save" }
                 else { "Buy a source-authored ship" }, 1, MUTED);
             if show_shop {
@@ -389,7 +389,7 @@ fn select_battle_inner(
                 text::draw_centered(&mut pixels, WIDTH, 218,
                     if show_transfer { "No transferable owned ships" }
                     else if show_create { "No native player squad templates" }
-                    else if show_delete { "Move squad ships to reserve before deleting" }
+                    else if show_delete { "No deletable created SavedSquads" }
                     else if show_tactics { "No editable authored player squads" }
                     else { "Finish a campaign battle to register saved squads" }, 1, MUTED);
             }
