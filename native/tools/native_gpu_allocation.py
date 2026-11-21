@@ -9,6 +9,7 @@ No manifest, checkpoint or physical game configuration is rewritten.
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 from native_training_artifacts import native_headless_environment
@@ -117,6 +118,7 @@ class OptimizerResourceSampler:
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.samples = {}
+        self.last_cpu_sample = None
         self.pci = None
         self.gpu_path = None
         self.nvidia = False
@@ -141,6 +143,19 @@ class OptimizerResourceSampler:
         sample[2] = max(sample[2], value)
 
     def _sample(self):
+        # Process CPU time includes all PyTorch/BLAS worker threads.
+        # Wall normalization reports busy-core equivalents even with quotas.
+        now = (time.monotonic_ns(), time.process_time_ns())
+        if self.last_cpu_sample is None:
+            self.last_cpu_sample = now
+        else:
+            wall = now[0] - self.last_cpu_sample[0]
+            cpu = now[1] - self.last_cpu_sample[1]
+            # Ignore noisy sub-100ms startup/exit intervals.
+            if wall >= 100_000_000:
+                if cpu >= 0:
+                    self._observe("process_cpu_core_equivalents", cpu / wall)
+                self.last_cpu_sample = now
         for key, value in process_memory_bytes().items():
             self._observe(key, value)
         if self.gpu_path is not None:
