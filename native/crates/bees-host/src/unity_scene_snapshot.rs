@@ -2716,6 +2716,13 @@ impl NativePhysicalScene {
             Some(CampaignDialogueSpec::UranusNewThreat {
                 player_side, barges, ..
             }) if ![bee_side, human_side].contains(&player_side) ||
+                // The warning is authored for the 60-second wave only.
+                // A scene without that genuine wave cannot advertise the
+                // full rescue story.
+                !setup.reinforcements.iter().any(|wave|
+                    matches!(wave.activation,
+                        crate::reinforcements::NativeReinforcementActivation::AfterSeconds(seconds)
+                        if (seconds - 60.0).abs() <= 0.0001)) ||
                 setup.survival.is_some() || setup.demolition.is_some() ||
                 setup.escort.is_some() || setup.extraction.is_some() ||
                 barges.iter().any(|id| *id <= 0) ||

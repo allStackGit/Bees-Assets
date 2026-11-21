@@ -354,10 +354,14 @@ impl CampaignDialogue {
     /// physical squads actually arrive, not merely when the timer elapses.
     /// The shared Level event owner provides the arrival receipt exactly
     /// once, even for multiple squads admitted in the same fixed tick.
-    pub(crate) fn reinforcement_arrived(&mut self) -> Option<CampaignCue> {
+    pub(crate) fn reinforcement_arrived(&mut self, elapsed_seconds: f64) -> Option<CampaignCue> {
         let DialogueMode::UranusNewThreat { reinforcement_reported, .. } =
             &mut self.mode else { return None };
-        if *reinforcement_reported { return None; }
+        // The original mission plays this cue for the 60-second follow-up
+        // wave, not initial deployments or an unrelated scripted arrival.
+        if *reinforcement_reported || elapsed_seconds + 0.0001 < 60.0 {
+            return None;
+        }
         *reinforcement_reported = true;
         Some(CampaignCue::UranusNewThreatReinforcements)
     }

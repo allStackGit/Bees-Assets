@@ -1513,7 +1513,9 @@ where
             state.metadata.deploy_reinforcements(&mut state.combat, &mut state.events, completed_tick)?;
             if state.events.last_reinforcement_tick() == Some(completed_tick) {
                 if let Some(dialogue) = &mut state.campaign_dialogue {
-                    if let Some(cue) = dialogue.reinforcement_arrived() {
+                    if let Some(cue) = dialogue.reinforcement_arrived(
+                        f64::from(dt_seconds) * completed_tick as f64,
+                    ) {
                         dialogue.set_cue(cue);
                         state.events.queue_campaign_dialogue(completed_tick, cue)?;
                     }
