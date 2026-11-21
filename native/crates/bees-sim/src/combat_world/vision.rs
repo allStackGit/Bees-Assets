@@ -174,18 +174,25 @@ impl CombatWorld {
                         // roster order is cheaper than sorting almost all
                         // candidate IDs. It also avoids a second allocation.
                         // Both paths use identical source hull narrowphase.
+                        // Active obstacle indices are kept in original
+                        // source slot order by the physics registry. Dead
+                        // historical debris must not bias dense-query
+                        // selection or impose an unbounded linear scan.
                         let dense = self.vision_obstacle_candidates.len()
-                            .saturating_mul(2) >= self.obstacles.len();
+                            .saturating_mul(2) >=
+                            self.physics.active_obstacle_indices().len();
                         if dense { counts.obstacle_dense_scans += 1; }
                         else { self.vision_obstacle_candidates.sort_unstable(); }
                         counts.unlearned_obstacle_pairs += pending;
                         let mut considered = 0_u64;
                         let mut first_seen = 0_u64;
-                        let candidate_len = if dense { self.obstacles.len() }
-                            else { self.vision_obstacle_candidates.len() };
+                        let candidate_len = if dense {
+                            self.physics.active_obstacle_indices().len()
+                        } else { self.vision_obstacle_candidates.len() };
                         for position in 0..candidate_len {
-                            let target = if dense { position }
-                                else { self.vision_obstacle_candidates[position] };
+                            let target = if dense {
+                                self.physics.active_obstacle_indices()[position]
+                            } else { self.vision_obstacle_candidates[position] };
                             let obstacle = &self.obstacles[target];
                             if !obstacle.live() ||
                                 !self.physics.obstacles()[target].active {
