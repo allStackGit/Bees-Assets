@@ -1076,10 +1076,62 @@ function createNativeBeesAdapter({
         return {receipt: JSON.parse(fs.readFileSync(file, 'utf8')), stat};
     }
 
+    // The native optimizer publishes its attempt before executing any
+    // synchronized learner rank. The final model/worker receipt must name
+    // that same immutable attempt; a checkpoint alone does not authorize
+    // Hub resource-group completion or successor model handoff.
+    function verifiedOptimizerAttempt(output, receipt, {
+        required=false, group=null, nodeRank=null, nodeCount=null,
+        inputCheckpoint=null, inputManifest=null,
+    }={}) {
+        const digest=receipt.optimizer_attempt_sha256;
+        if(digest==null) {
+            if(required)throw Error('Native optimizer completion has no immutable attempt identity.');
+            return null; // Previously committed single-machine rounds.
+        }
+        if(!SHA256.test(String(digest)))
+            throw Error('Invalid native optimizer attempt fingerprint.');
+        const file=path.join(output,'optimizer-attempt.json');
+        const owner=completionReceipt(output,'optimizer-attempt.json');
+        if(!owner||sha256(fs.readFileSync(file))!==digest)
+            throw Error('Native optimizer attempt changed after rank completion.');
+        const attempt=owner.receipt;
+        const bundles=receipt.rollout_bundles;
+        if(!attempt||attempt.schema_version!==1||
+            attempt.kind!=='native_optimizer_attempt'||
+            attempt.run_id!==receipt.run_id||
+            attempt.run_config_sha256!==receipt.run_config_sha256||
+            attempt.source_run_config_sha256!==receipt.source_run_config_sha256||
+            attempt.input_checkpoint_sha256!==receipt.input_checkpoint_sha256||
+            attempt.input_manifest_sha256!==receipt.input_manifest_sha256||
+            attempt.collection_orders_sha256!==(receipt.collection_orders_sha256??null)||
+            attempt.learner_group_id!==(receipt.optimizer_group_id??null)||
+            (group!=null&&attempt.learner_group_id!==group)||
+            (nodeRank!=null&&attempt.learner_node_rank!==nodeRank)||
+            (nodeCount!=null&&attempt.learner_nodes!==nodeCount)||
+            (inputCheckpoint!=null&&attempt.input_checkpoint_sha256!==inputCheckpoint)||
+            (inputManifest!=null&&attempt.input_manifest_sha256!==inputManifest)||
+            !Array.isArray(bundles)||
+            !Array.isArray(attempt.rollout_receipts)||
+            attempt.rollout_receipts.length!==bundles.length||
+            bundles.some((bundle,index)=>
+                !bundle||!SHA256.test(String(bundle.sha256||''))||
+                typeof bundle.path!=='string'||
+                !Array.isArray(attempt.rollout_receipts[index])||
+                attempt.rollout_receipts[index].length!==2||
+                attempt.rollout_receipts[index][0]!==bundle.sha256||
+                attempt.rollout_receipts[index][1]!==path.basename(path.dirname(bundle.path))))
+            throw Error('Native optimizer completion does not belong to its original rank, group and inputs.');
+        return attempt;
+    }
+
     function completedRound(output) {
         const result = completionReceipt(output, 'round-result.json');
         if (!result) return null;
         const {receipt, stat} = result;
+        // Also authenticate predecessor rounds loaded for Hub model
+        // continuation; their attempt evidence must survive relocation.
+        verifiedOptimizerAttempt(output,receipt);
         const metrics = receipt.learner_metrics;
         if (receipt.schema_version !== 1 || receipt.kind !== 'native_training_round_complete' ||
             metrics?.schema_version !== 1 || metrics.source !== 'bees-native-ma-poca-v1' ||
@@ -1233,6 +1285,10 @@ function createNativeBeesAdapter({
                  round.receipt.optimizer_group_id!==bundle.id ||
                  round.metrics.optimizer_group_id!==bundle.id))
                 throw Error('Native checkpoint publisher does not own the first rank of an authorized Hub bundle.');
+            if(distributedOptimizer!==undefined)
+                verifiedOptimizerAttempt(output,round.receipt,{
+                    required:true,group:bundle.id,nodeRank:0,nodeCount:nodes,
+                });
             if (round.metrics.optimizer_gpu_workers!==localGpuCount*nodes ||
                 round.metrics.optimizer_gpu_nodes!==(localGpuCount?nodes:0) ||
                 round.metrics.optimizer_gpu_local_workers!==localGpuCount)
@@ -1280,6 +1336,12 @@ function createNativeBeesAdapter({
         const local=gpuLeaseCount(context);
         const rows=receipt.gpu_per_device;
         const inputs=roundInputs(context);
+        if(bundle&&UUID.test(String(bundle.id||'')))
+            verifiedOptimizerAttempt(output,receipt,{
+                required:true,group:bundle.id,nodeRank:node,nodeCount:nodes,
+                inputCheckpoint:inputs.checkpointDigest,
+                inputManifest:inputs.manifestDigest,
+            });
         if (!bundle || !UUID.test(String(bundle.id||'')) ||
             !Number.isSafeInteger(node) || node<1 ||
             !Number.isSafeInteger(nodes) || nodes<2 || nodes>8 ||
