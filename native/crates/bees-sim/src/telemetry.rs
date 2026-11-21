@@ -61,6 +61,9 @@ pub struct StepCounts {
     pub automatic_weapon_shots: u64,
     /// Authored RangeCollider work; separate from projectile collision pairs.
     pub weapon_range_grid_rebuilds: u64,
+    /// Physical ship-range spatial queries skipped once a faction has no
+    /// living enemies. Contact exits still reconcile on these passes.
+    pub weapon_range_queries_skipped_no_enemies: u64,
     pub weapon_range_candidates: u64,
     pub weapon_range_exact_tests: u64,
     /// MapObject checks use the existing obstacle broadphase, not a second index.
@@ -122,6 +125,9 @@ pub struct Measurements {
     pub automatic_weapon_shots: u64,
     /// Authored RangeCollider work; separate from projectile collision pairs.
     pub weapon_range_grid_rebuilds: u64,
+    /// Physical ship-range spatial queries skipped once a faction has no
+    /// living enemies. Contact exits still reconcile on these passes.
+    pub weapon_range_queries_skipped_no_enemies: u64,
     pub weapon_range_candidates: u64,
     pub weapon_range_exact_tests: u64,
     /// MapObject checks use the existing obstacle broadphase, not a second index.
@@ -194,6 +200,7 @@ impl Default for Measurements {
             special_weapon_body_entries: 0,
             automatic_weapon_shots: 0,
             weapon_range_grid_rebuilds: 0,
+            weapon_range_queries_skipped_no_enemies: 0,
             weapon_range_candidates: 0,
             weapon_range_exact_tests: 0,
             weapon_range_map_object_grid_rebuilds: 0,
@@ -277,6 +284,7 @@ impl Measurements {
         self.special_weapon_body_entries += counts.special_weapon_body_entries;
         self.automatic_weapon_shots += counts.automatic_weapon_shots;
         self.weapon_range_grid_rebuilds += counts.weapon_range_grid_rebuilds;
+        self.weapon_range_queries_skipped_no_enemies += counts.weapon_range_queries_skipped_no_enemies;
         self.weapon_range_candidates += counts.weapon_range_candidates;
         self.weapon_range_exact_tests += counts.weapon_range_exact_tests;
         self.weapon_range_map_object_grid_rebuilds += counts.weapon_range_map_object_grid_rebuilds;
@@ -355,6 +363,7 @@ impl Measurements {
         self.special_weapon_body_entries += other.special_weapon_body_entries;
         self.automatic_weapon_shots += other.automatic_weapon_shots;
         self.weapon_range_grid_rebuilds += other.weapon_range_grid_rebuilds;
+        self.weapon_range_queries_skipped_no_enemies += other.weapon_range_queries_skipped_no_enemies;
         self.weapon_range_candidates += other.weapon_range_candidates;
         self.weapon_range_exact_tests += other.weapon_range_exact_tests;
         self.weapon_range_map_object_grid_rebuilds += other.weapon_range_map_object_grid_rebuilds;
