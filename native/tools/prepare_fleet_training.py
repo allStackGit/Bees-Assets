@@ -298,7 +298,8 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
         if (squad is None or squad["side"] != side or
                 not squad.get("user_controlled") or
                 not squad.get("can_accept_input") or
-                squad.get("hivemind") is not None or
+                (squad.get("hivemind") is not None and
+                 squad["hivemind"].get("hivemind_controlled") is not False) or
                 squad.get("is_carrier_squad", False) or
                 squad.get("hotkey_number") is not None or
                 squad.get("original_squad_count") is not None):
