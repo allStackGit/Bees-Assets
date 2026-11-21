@@ -205,7 +205,9 @@ impl FleetMix {
             Self::Miners => 4,
             Self::ReconMiners => if slot % 2 == 0 { 18 } else { 4 },
             Self::Chargers => 0,
-            Self::Siege => if slot % 2 == 0 { 0 } else { 10 },
+            Self::Siege => match slot % 3 {
+                0 => 0, 1 => 10, _ => 22,
+            },
             Self::Detonators => 22,
             _ if side == 0 => 18,
             _ => 10,
@@ -653,11 +655,13 @@ fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool, arena_size: Option<u3
                     "{} fighters, {} Carpenter Bees  |  Source mineral mining",
                     total - miners, miners,
                 )));
-                let mixed = FleetMix::ReconMiners.specialist_count(total);
-                options.push((FleetMix::ReconMiners, format!(
-                    "{} fighters, {} Scouts and {} Carpenter Bees  |  Beacon recon + mining",
-                    total - mixed, mixed.div_ceil(2), mixed / 2,
-                )));
+                if total >= 3 {
+                    let mixed = FleetMix::ReconMiners.specialist_count(total);
+                    options.push((FleetMix::ReconMiners, format!(
+                        "{} fighters, {} Scouts and {} Carpenter Bees  |  Beacon recon + mining",
+                        total - mixed, mixed.div_ceil(2), mixed / 2,
+                    )));
+                }
             }
             options.push((FleetMix::Gate, format!(
                 "{} fighters, 1 WarpGate  |  Source FullRetreat evacuation",
@@ -679,11 +683,13 @@ fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool, arena_size: Option<u3
                 "{} fighters, {} Yellow Jackets  |  Source physical detonations",
                 total - detonators, detonators,
             )));
-            let siege = FleetMix::Siege.specialist_count(total);
-            options.push((FleetMix::Siege, format!(
-                "{} fighters, {} Charge Barges and {} Fire Barges  |  Combined assault",
-                total - siege, siege.div_ceil(2), siege / 2,
-            )));
+            if total >= 3 {
+                let siege = FleetMix::Siege.specialist_count(total);
+                options.push((FleetMix::Siege, format!(
+                    "{} fighters, {} Barges, {} Fire Barges, {} Yellow Jackets  |  Combined assault",
+                    total - siege, (siege + 2) / 3, (siege + 1) / 3, siege / 3,
+                )));
+            }
             if arena_size.is_some_and(|size| size >= 1024) {
                 options.push((FleetMix::Queen, format!(
                     "{} fighters, 1 Queen  |  Source Yellow Jacket waves",
