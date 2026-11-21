@@ -2106,6 +2106,32 @@ impl NativePhysicalScene {
     pub fn omit_killed_fleet_ships(
         &mut self, player_side: i32, lost_fleet_ids: &HashSet<i64>,
     ) -> Result<usize, NativeSnapshotError> {
+        self.omit_killed_campaign_fleet_ships(player_side, lost_fleet_ids, true)
+    }
+
+    /// Restore historical enemy FleetShip casualties before building the
+    /// exact same native gameplay/learning World. This is opt-in for
+    /// source campaigns with durable enemy FleetShip identities, never
+    /// applied to policy episodes or temporary generated reinforcements.
+    /// Unlike the player fleet, a faction may legitimately have no
+    /// surviving historical squads while new reinforcements still exist.
+    pub fn omit_killed_campaign_enemy_ships(
+        &mut self, enemy_side: i32, lost_fleet_ids: &HashSet<i64>,
+    ) -> Result<usize, NativeSnapshotError> {
+        if self.source_episode.is_some() || self.source_policy_group.is_some() ||
+            !self.source_policy_bindings.is_empty() || !self.active_policy_ship_ids.is_empty()
+        {
+            return Err(NativeSnapshotError::InvalidNativeLayout(
+                "native campaign enemy attrition requires a source-owned non-policy game",
+            ));
+        }
+        self.omit_killed_campaign_fleet_ships(enemy_side, lost_fleet_ids, false)
+    }
+
+    fn omit_killed_campaign_fleet_ships(
+        &mut self, player_side: i32, lost_fleet_ids: &HashSet<i64>,
+        requires_player_survivors: bool,
+    ) -> Result<usize, NativeSnapshotError> {
         if lost_fleet_ids.is_empty() {
             return Ok(0);
         }
@@ -2124,7 +2150,7 @@ impl NativePhysicalScene {
         if removed.is_empty() { return Ok(0); }
         // Imported training denominators are immutable. Explicit native
         // gameplay can retire only the authenticated human-owned fleet.
-        if !self.allows_campaign_fleet_edit(player_side) {
+        if requires_player_survivors && !self.allows_campaign_fleet_edit(player_side) {
             return Err(invalid("saved campaign casualties cannot alter an authored policy episode"));
         }
         for &ship_id in &removed {
@@ -2158,7 +2184,7 @@ impl NativePhysicalScene {
             children.push(ship.entity_id);
         }
         removed.extend(children);
-        if !self.source_squads.iter().any(|squad| {
+        if requires_player_survivors && !self.source_squads.iter().any(|squad| {
             squad.side == player_side && squad.player_permissions.user_controlled &&
             squad.members.iter().any(|id| !removed.contains(id))
         }) {
