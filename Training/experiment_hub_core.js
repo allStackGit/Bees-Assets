@@ -5315,11 +5315,20 @@ class ExperimentHub {
         const optimizerReplacement=plan?.status==='needs_review'&&
             plan.reason==='Failed synchronized PPO group replaced with new machine-owned GPU claims; reauthorize the native round before any Start.'&&
             plan.restart_phase==='awaiting_optimizer';
-        if(!coordinatorRestart&&!optimizerReplacement)
-            throw Error('Only a disarmed native round or an explicitly reviewed replacement optimizer bundle may resume.');
+        const releaseOwner=this.state.jobs.find(job=>
+            job.id===plan?.optimizer_job_ids?.[0]);
+        const releaseReview=plan?.status==='needs_review'&&
+            releaseOwner?.native_release_pending&&
+            releaseOwner.resource_bundle?.id===plan.optimizer_bundle_id&&
+            (['failed','waiting_adapter'].includes(releaseOwner.status)||
+                releaseOwner.status==='start_requested'&&
+                releaseOwner.start_first_offered_at===null&&
+                releaseOwner.native_release_recovery?.start_origin==='native_round_release');
+        if(!coordinatorRestart&&!optimizerReplacement&&!releaseReview)
+            throw Error('Only a disarmed native round, reviewed release recovery or explicitly reviewed replacement optimizer bundle may resume.');
         // Older persisted plans did not retain the suspended stage. Their
         // durable bundle/job identities identify it without inventing work.
-        let phase=plan.restart_phase;
+        let phase=releaseReview?'awaiting_optimizer':plan.restart_phase;
         if(!phase) {
             if(plan.optimizer_bundle_id&&plan.optimizer_job_ids)
                 phase='awaiting_optimizer';
@@ -5419,7 +5428,10 @@ class ExperimentHub {
                     item.project_id===job.project_id&&
                     item.machine_id===job.assigned_machine_id&&
                     item.issued_by==='experiment-hub');
-                const terminal=job.status==='finished'&&job.capacity_released_at;
+                const terminal=(job.status==='finished'||
+                    stage==='optimizer'&&job.id===jobs[0].id&&
+                    job.status==='failed'&&job.native_release_pending)&&
+                    job.capacity_released_at;
                 if(!lease||(terminal
                     ?lease.status!=='released'||!lease.released_at
                     :!['offered','acknowledged'].includes(lease.status)))
@@ -5442,8 +5454,22 @@ class ExperimentHub {
                     .includes(job.status)&&UUID.test(String(job.dispatch_id||'')));
             if(!allWaiting&&!owned)
                 throw Error('Mixed or uncertain native resource owners require manual review.');
-            if(!allFinished&&jobs.some(job=>
-                plan.agent_instances[job.assigned_machine_id]!==instances[job.assigned_machine_id]))
+            if(!allFinished&&jobs.some(job=>{
+                if(plan.agent_instances[job.assigned_machine_id]===instances[job.assigned_machine_id])
+                    return false;
+                // Completed workers have no remaining native execution
+                // owner. A failed release or an unoffered recovery can be
+                // explicitly rearmed on its same machine; the supervisor
+                // must still verify the original failed physical process.
+                if(stage==='optimizer'&&jobs[0].native_release_pending) {
+                    if(job.status==='finished'&&job.capacity_released_at)return false;
+                    if(job.id===jobs[0].id&&
+                        (job.status==='failed'||job.status==='waiting_adapter'||
+                         job.status==='start_requested'&&job.start_first_offered_at===null))
+                        return false;
+                }
+                return true;
+            }))
                 throw Error('An original reserved native machine agent restarted; its outstanding lease requires manual review.');
             const plans=(this.state.bundle_start_plans||[])
                 .filter(item=>item.bundle_id===bundleId);
@@ -5466,6 +5492,7 @@ class ExperimentHub {
         resumed.updated_at=now();
         resumed.reason=optimizerReplacement
             ?'Replacement synchronized optimizer group explicitly reauthorized; new GPU owners retain the original verified physical inputs.'
+            :releaseReview?'Native generation release recovery reauthorized; original PPO checkpoint and machine ownership retained.'
             :'Native training reauthorized after coordinator restart; original jobs and claims retained.';
         this.commit(next);
         // The normal heartbeat workflow owns all further resource decisions.
@@ -7532,13 +7559,12 @@ class ExperimentHub {
                     throw Error('Wait for native GPU probe cleanup before cancelling release recovery.');
                 if(job.gpu_qualification?.status==='requested')
                     job.gpu_qualification.status='cancelled';
-                // Only this unoffered recovery is cancelled. The original
-                // failed training dispatch and artifact ownership survive.
-                job.status='failed';
-                job.dispatch_id=job.native_release_recovery.previous_dispatch_id;
-                job.start_first_offered_at=
-                    job.native_release_recovery.previous_start_first_offered_at;
+                // Cancel the logical job's future work, not its immutable
+                // previous physical journals. Never put an old dispatch ID
+                // back on a replacement lease merely to preserve history.
                 job.native_release_recovery.cancelled_at=cancelledAt;
+                delete job.native_release_recovery.round_plan_id;
+                delete job.native_release_recovery.start_origin;
             }
             this.releaseIn(next,lease);
         }
