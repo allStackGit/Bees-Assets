@@ -5158,8 +5158,8 @@ fn run_campaign_game_menu(
                 let unlocked = progress.is_ship_unlocked(ship);
                 shop_rows.push(NativeShopMenuRow {
                     title: format!(
-                        "Type {}  ->  Squad #{}   TSV {}{}",
-                        ship.ship_type, squad_id, ship.price_tsv,
+                        "Type {}  ->  {}   TSV {}{}",
+                        ship.ship_type, progress.squad_label(squad_id), ship.price_tsv,
                         if !unlocked { "  [Locked]" }
                         else if available < ship.price_tsv { "  [Insufficient]" }
                         else { "" },
@@ -5187,9 +5187,9 @@ fn run_campaign_game_menu(
                 if purchased.saved_squad_id != 0 {
                     transfer_rows.push(NativeTransferMenuRow {
                         title: format!(
-                            "Fleet #{} (Type {})  Squad #{} -> Reserve",
+                            "Fleet #{} (Type {})  {} -> Reserve",
                             purchased.fleet_ship_id, purchased.ship_type,
-                            purchased.saved_squad_id,
+                            progress.squad_label(purchased.saved_squad_id),
                         ),
                         fleet_ship_id: purchased.fleet_ship_id,
                         to_saved_squad_id: 0,
@@ -5200,14 +5200,14 @@ fn run_campaign_game_menu(
                     if purchased.saved_squad_id == destination { continue; }
                     transfer_rows.push(NativeTransferMenuRow {
                         title: format!(
-                            "Fleet #{} (Type {})  {} -> Squad #{}",
+                            "Fleet #{} (Type {})  {} -> {}",
                             purchased.fleet_ship_id, purchased.ship_type,
                             if purchased.saved_squad_id == 0 {
                                 "Reserve".to_string()
                             } else {
-                                format!("Squad #{}", purchased.saved_squad_id)
+                                progress.squad_label(purchased.saved_squad_id)
                             },
-                            destination,
+                            progress.squad_label(destination),
                         ),
                         fleet_ship_id: purchased.fleet_ship_id,
                         to_saved_squad_id: destination,
@@ -5222,8 +5222,8 @@ fn run_campaign_game_menu(
             if current_squad != 0 {
                 transfer_rows.push(NativeTransferMenuRow {
                     title: format!(
-                        "Original Fleet #{}  Squad #{} -> Reserve",
-                        fleet_id, current_squad,
+                        "Original Fleet #{}  {} -> Reserve",
+                        fleet_id, progress.squad_label(current_squad),
                     ),
                     fleet_ship_id: fleet_id,
                     to_saved_squad_id: 0,
@@ -5236,14 +5236,14 @@ fn run_campaign_game_menu(
                 if current_squad == destination { continue; }
                 transfer_rows.push(NativeTransferMenuRow {
                     title: format!(
-                        "Original Fleet #{}  {} -> Squad #{}",
+                        "Original Fleet #{}  {} -> {}",
                         fleet_id,
                         if current_squad == 0 {
                             "Reserve".to_string()
                         } else {
-                            format!("Squad #{}", current_squad)
+                            progress.squad_label(current_squad)
                         },
-                        destination,
+                        progress.squad_label(destination),
                     ),
                     fleet_ship_id: fleet_id,
                     to_saved_squad_id: destination,
@@ -5263,8 +5263,8 @@ fn run_campaign_game_menu(
                                 grant.saved_squad_id == squad.saved_squad_id))
                 {
                     delete_rows.push(NativeDeleteSquadMenuRow {
-                        title: format!("Side {}  SavedSquad #{}  [Return fleet to reserve]",
-                            side, squad.saved_squad_id),
+                        title: format!("Side {}  {}  [Return fleet to reserve]",
+                            side, progress.squad_label(squad.saved_squad_id)),
                         side, saved_squad_id: squad.saved_squad_id,
                     });
                 }
@@ -5272,8 +5272,8 @@ fn run_campaign_game_menu(
         }
         let create_rows = squad_templates.into_iter().map(|(side, template)| {
             NativeCreateSquadMenuRow {
-                title: format!("New player Squad (Side {}) from SavedSquad #{}",
-                    side, template),
+                title: format!("New player Squad (Side {}) from {}",
+                    side, progress.squad_label(template)),
                 side,
                 template_saved_squad_id: template,
             }
@@ -5330,7 +5330,7 @@ fn run_campaign_game_menu(
         }
         let name_rows = editable_tactics.iter().filter_map(|&(side, id)| {
             (!progress.is_retired_saved_squad(id)).then(|| NativeNameMenuRow {
-                title: format!("Side {}  SavedSquad #{}", side, id),
+                title: format!("Side {}  {}", side, progress.squad_label(id)),
                 side, saved_squad_id: id,
                 name: progress.squad_name(id).unwrap_or("").to_owned(),
             })
@@ -5344,7 +5344,8 @@ fn run_campaign_game_menu(
             let tactics = progress.tactics_for_squad(original.side, original.saved_squad_id)
                 .unwrap_or(original);
             NativeTacticsMenuRow {
-                title: format!("Side {} Squad #{}", tactics.side, tactics.saved_squad_id),
+                title: format!("Side {} {}", tactics.side,
+                    progress.squad_label(tactics.saved_squad_id)),
                 side: tactics.side,
                 saved_squad_id: tactics.saved_squad_id,
                 shooting_strategy_id: tactics.shooting_strategy_id,
