@@ -798,22 +798,12 @@ impl NativeGameAudio {
                 // Fire Barge death is already represented by ShipDied;
                 // sounding both would double the same physical explosion.
                 CombatEvent::FireTankExploded {
-                    object_id, explosion_projectile_id, ..
+                    origin, explosion_projectile_id, ..
                 } => (
                     Effect::HugeExplosion,
-                    // Use the actual source-spawned blast even without a
-                    // linked wall. If that short-lived projectile retired,
-                    // the same-tick wall breakup still provides its origin.
-                    view.combat.render_projectile(*explosion_projectile_id)
-                        .map(|(_, body)| body.motion.position)
-                        .or_else(|| view.combat.events().iter().find_map(|event|
-                        match event {
-                            CombatEvent::FireTankObstacleBrokenApart {
-                                object_id: broken_id, origin, ..
-                            } if broken_id == object_id => Some(*origin),
-                            _ => None,
-                        }
-                    )),
+                    (*origin).or_else(|| view.combat.render_projectile(
+                        *explosion_projectile_id,
+                    ).map(|(_, body)| body.motion.position)),
                 ),
                 CombatEvent::BombDetonated { target_id, .. } => (
                     Effect::HugeExplosion,
