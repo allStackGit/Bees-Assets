@@ -1464,13 +1464,16 @@ where
         // consumer has received pre-death mining values. No allocation,
         // scan of the full fleet, or duplicate gameplay implementation.
         for event in state.combat.events() {
-            if let CombatEvent::ShipDied { victim_id, .. } = event {
+            if let CombatEvent::ShipDied { victim_id, end_kill, .. } = event {
+                // Combat deaths can never be safe departures. Only the
+                // rare EndKill path needs to inspect preceding same-tick
+                // extraction/warp receipts (which excludes cascade victims).
                 // Both extraction and a completed WarpGate departure end
                 // the physical ship's episode, but they are not a lethal
                 // fleet loss. The matching departure event is emitted in
                 // the very same fixed tick before ShipDied. Deaths are
                 // rare; avoid maintaining a second per-step death registry.
-                let returned_safely = state.combat.events().iter().any(|event| match event {
+                let returned_safely = *end_kill && state.combat.events().iter().any(|event| match event {
                     CombatEvent::ShipExtracted { ship_id, .. } |
                     CombatEvent::ShipWarped { ship_id, .. } => ship_id == victim_id,
                     _ => false,
