@@ -323,6 +323,7 @@ pub(super) struct FleetChoice {
     player_side: Option<i32>,
     fleet_sizes: [usize; 2],
     squad_sizes: [usize; 2],
+    specialist_squad_sizes: [usize; 2],
     mix: [FleetMix; 2],
     carrier_deck: usize,
     terrain: Terrain,
@@ -380,6 +381,8 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
     let Some(mix) = choose_mix(fleet_sizes, mining_field, arena_size)? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
+    let Some(specialist_squad_sizes) =
+        choose_specialist_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     // A single local window cannot present two opposing, independently
     // fog-filtered viewpoints. LAN commanders have separate viewers and
     // may enable authentic fog independently.
@@ -433,7 +436,7 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side, fleet_sizes, squad_sizes, mix, carrier_deck, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
+        player_side, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
         ai_both: mode == 3, benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
@@ -477,6 +480,8 @@ pub(super) fn choose_multiplayer(
     let Some(mix) = choose_mix(fleet_sizes, mining_field, arena_size)? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
+    let Some(specialist_squad_sizes) =
+        choose_specialist_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
     let Some(objective) = choose_objective()? else { return Ok(None); };
     let objective_side = match objective {
@@ -496,7 +501,7 @@ pub(super) fn choose_multiplayer(
     };
     Ok(Some(FleetChoice {
         player_side: if use_hivemind { authenticated_side } else { None },
-        fleet_sizes, squad_sizes, mix, carrier_deck, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
+        fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
         ai_both: false,
         benchmark: false,
         spectator_episodes: 1,
@@ -516,6 +521,8 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(mix) = choose_mix(fleet_sizes, mining_field, arena_size)? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
+    let Some(specialist_squad_sizes) =
+        choose_specialist_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
     let Some(ai_tactics) = choose_ai_tactics()? else { return Ok(None); };
     let Some(objective) = choose_objective()? else { return Ok(None); };
@@ -543,7 +550,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(threads) = choose_resource("CPU physics workers", &workers)?
         else { return Ok(None); };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, squad_sizes, mix, carrier_deck, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
+        player_side: None, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
         ai_both: true,
         benchmark: true,
         spectator_episodes: 1,
@@ -730,6 +737,33 @@ fn choose_carrier_deck(
     }).collect::<Vec<_>>();
     let mut selected = 0_usize;
     Ok(select_library(&rows, &mut selected, false)?.map(|index| choices[index]))
+}
+
+/// Each original special ship keeps its individual physical weapon and
+/// ability; one command SquadLifetime can own several compatible ships.
+fn choose_specialist_squad_sizes(
+    fleet_sizes: [usize; 2], mix: [FleetMix; 2],
+) -> Result<Option<[usize; 2]>, Box<dyn Error>> {
+    let mut widths = [1_usize; 2];
+    for side in 0..2_usize {
+        let count = mix[side].specialist_count(fleet_sizes[side]);
+        if count < 2 { continue; }
+        let options = [1_usize, 2, 4].into_iter()
+            .filter(|&size| size <= count).collect::<Vec<_>>();
+        let titles = options.iter().map(|&width| format!(
+            "{width} same-class specialist{} per squad  |  {} total physical specialists",
+            if width == 1 { "" } else { "s" }, count,
+        )).collect::<Vec<_>>();
+        let rows = titles.iter().map(|title| BattleMenuRow {
+            title, status: "  [Shared native squad command]", unlocked: true,
+        }).collect::<Vec<_>>();
+        let mut selected = 0_usize;
+        let Some(index) = select_library(&rows, &mut selected, false)? else {
+            return Ok(None);
+        };
+        widths[side] = options[index];
+    }
+    Ok(Some(widths))
 }
 
 /// One physical squad may contain several original ships. This reduces
