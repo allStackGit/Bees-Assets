@@ -711,7 +711,13 @@ impl BattleCatalog {
                         condition.mission == route.mission)) ||
                 route.config.as_os_str().is_empty()
             ) || mission.on_defeat.as_ref().is_some_and(|route|
-                !advances_on_finish.contains(route.mission.as_str())) ||
+                !((mission.requires.contains(&route.mission) &&
+                    advances_on_finish.contains(route.mission.as_str())) ||
+                    mission.unlock_if_any.iter().any(|condition|
+                        condition.mission == route.mission &&
+                        (condition.result == RequiredOutcome::Defeat ||
+                            condition.result == RequiredOutcome::Finished &&
+                            advances_on_finish.contains(route.mission.as_str()))))) ||
                 mission.on_victory.as_ref().zip(mission.on_defeat.as_ref())
                     .is_some_and(|(win, defeat)| win.mission != defeat.mission) {
                 return Err(invalid(format!(
@@ -1466,14 +1472,6 @@ impl BattleCatalog {
                 })),
                 
                 "requires": mission.requires,
-                "unlock_if_any": mission.unlock_if_any.iter().map(|condition| json!({
-                    "mission": condition.mission,
-                    "result": match condition.result {
-                        RequiredOutcome::Finished => "finished",
-                        RequiredOutcome::Victory => "victory",
-                        RequiredOutcome::Defeat => "defeat",
-                    },
-                })).collect::<Vec<_>>(),
                 "waiting_for": mission.requires.iter().filter(|id|
                     !progress.completed(id)).collect::<Vec<_>>(),
                 "advance_on": if matches!(mission.advance_on, AdvanceOn::Finished) {
@@ -1498,6 +1496,17 @@ impl BattleCatalog {
                 "bank_player_minerals": mission.bank_player_minerals,
                 "persist_fleet_losses": mission.persist_fleet_losses,
             });
+            if !mission.unlock_if_any.is_empty() {
+                row["unlock_if_any"] = json!(mission.unlock_if_any.iter()
+                    .map(|condition| json!({
+                        "mission": condition.mission,
+                        "result": match condition.result {
+                            RequiredOutcome::Finished => "finished",
+                            RequiredOutcome::Victory => "victory",
+                            RequiredOutcome::Defeat => "defeat",
+                        },
+                    })).collect::<Vec<_>>());
+            }
             if let Some(route) = &mission.on_defeat {
                 row["defeat_route"] = json!({
                     "previous_mission": route.mission,
