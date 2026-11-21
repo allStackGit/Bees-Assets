@@ -18,6 +18,7 @@ import sys
 from evaluate_native_champion import document, gate, pinned_model
 from native_training_artifacts import atomic_json, file_sha256, native_input_dependencies, sync_directory
 from package_policy_manifest import export_model, verify_package
+from native_deployed_game import verify_deployment
 from train_policy_session import session_lock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "Training"))
@@ -337,19 +338,15 @@ def publish_champion(store):
         finally:
             if staging.exists():
                 shutil.rmtree(staging)
-    record = document(package / "deployment.json")
-    verified = verify_package(package / "policy", 0)
-    if (record != {"identity": identity, "identity_sha256": digest,
-                   "deployment_id": deployment_id,
-                   "policy_manifest_sha256": verified["manifest_sha256"]} or
-            file_sha256(Path(verified["learner_checkpoint"])) != identity["checkpoint_sha256"]):
-        raise ValueError("native champion deployment is inconsistent with approved checkpoint")
     pointer = root / "current-native-deployment.json"
     value = {
         "schema_version": 1, "deployment_id": deployment_id,
         "model_id": champion_id,
         "deployment_sha256": file_sha256(package / "deployment.json"),
     }
+    record, verified = verify_deployment(package, value)
+    if record["identity"] != identity:
+        raise ValueError("native champion deployment is inconsistent with approved checkpoint")
     # Recheck under the registry's write transaction, so a concurrent
     # promotion cannot publish an obsolete champion as the current one.
     with store._connect() as db:
@@ -364,36 +361,6 @@ def publish_champion(store):
         "checkpoint": verified["learner_checkpoint"],
         "pointer": str(pointer),
     }
-
-
-def resolve_deployment(root):
-    """Resolve a locally installed/copied deployment without a registry.
-    The pointer names an immutable package; verify its portable weights.
-    """
-    root = Path(root).resolve(strict=True)
-    pointer = document(root / "current-native-deployment.json")
-    deployment_id = pointer.get("deployment_id")
-    if (pointer.get("schema_version") != 1 or not isinstance(deployment_id, str) or
-            len(deployment_id) != 31 or not deployment_id.startswith("native-") or
-            any(c not in "0123456789abcdef" for c in deployment_id[7:])):
-        raise ValueError("invalid native deployment pointer")
-    package = root / "packages" / deployment_id
-    metadata_path = package / "deployment.json"
-    if file_sha256(metadata_path) != pointer.get("deployment_sha256"):
-        raise ValueError("native deployment pointer does not match its package")
-    record = document(metadata_path)
-    identity = record["identity"]
-    digest = hashlib.sha256(canonical_json(identity).encode("utf-8")).hexdigest()
-    verified = verify_package(package / "policy", 0)
-    if (record["identity_sha256"] != digest or
-            deployment_id != "native-" + digest[:24] or
-            record["deployment_id"] != deployment_id or
-            identity["kind"] != "native_continual_deployment" or
-            identity["model_id"] != pointer.get("model_id") or
-            record["policy_manifest_sha256"] != verified["manifest_sha256"] or
-            file_sha256(Path(verified["learner_checkpoint"])) != identity["checkpoint_sha256"]):
-        raise ValueError("native deployment package identity differs from its pointer")
-    return record, verified
 
 
 def main():

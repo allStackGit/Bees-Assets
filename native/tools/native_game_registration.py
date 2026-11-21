@@ -22,11 +22,14 @@ def register_playable(save_root: Path, game_id: str, title: str, receipt: Path):
         raise ValueError("native player save root must already exist")
     receipt = Path(receipt).resolve(strict=True)
     data = json.loads(receipt.read_text(encoding="utf-8"))
+    kind = data.get("kind")
+    counter = ("training_step" if kind == "native_continual_champion_playable"
+               else "completed_rounds")
     if (data.get("schema_version") != 1 or
-            data.get("kind") not in ("native_training_latest_playable",
-                                     "native_training_best_evaluated") or
-            not isinstance(data.get("completed_rounds"), int) or
-            data["completed_rounds"] < 0):
+            kind not in ("native_training_latest_playable",
+                         "native_training_best_evaluated",
+                         "native_continual_champion_playable") or
+            type(data.get(counter)) is not int or data[counter] < 0):
         raise ValueError("only a completed native playable checkpoint receipt can be registered")
 
     # Only the game's private registration directory is mutated. Training

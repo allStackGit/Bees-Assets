@@ -177,7 +177,8 @@ impl TrainedGame {
         let receipt: Value = serde_json::from_slice(&fs::read(&self.receipt)?)?;
         if receipt["schema_version"].as_u64() != Some(1) ||
             !matches!(receipt["kind"].as_str(),
-                Some("native_training_latest_playable" | "native_training_best_evaluated")) {
+                Some("native_training_latest_playable" | "native_training_best_evaluated" |
+                     "native_continual_champion_playable")) {
             return Err(invalid("unsupported native trained checkpoint receipt").into());
         }
         Ok(receipt)
@@ -186,7 +187,7 @@ impl TrainedGame {
     pub fn verified_run(&self) -> Result<PathBuf, Box<dyn Error>> {
         let receipt = self.published_receipt()?;
         let record = match receipt["kind"].as_str() {
-            Some("native_training_latest_playable") => &receipt,
+            Some("native_training_latest_playable" | "native_continual_champion_playable") => &receipt,
             Some("native_training_best_evaluated") => &receipt["selected"],
             _ => return Err(invalid("unknown native checkpoint selection").into()),
         };
@@ -541,17 +542,18 @@ pub(super) fn load(save_root: &Path) -> Result<Vec<TrainedGame>, Box<dyn Error>>
                 return Err(invalid("native trained-model receipt is not a file").into());
             }
             let kind: Value = serde_json::from_slice(&fs::read(&receipt)?)?;
-            let label = match (kind["schema_version"].as_u64(), kind["kind"].as_str()) {
-                (Some(1), Some("native_training_latest_playable")) => "[Latest checkpoint]",
-                (Some(1), Some("native_training_best_evaluated")) => "[Best holdout]",
-                _ => return Err(invalid("gallery requires latest-playable or best-evaluated native receipts").into()),
+            let (label, counter, unit) = match (kind["schema_version"].as_u64(), kind["kind"].as_str()) {
+                (Some(1), Some("native_training_latest_playable")) => ("[Latest checkpoint]", "completed_rounds", "rounds"),
+                (Some(1), Some("native_training_best_evaluated")) => ("[Best holdout]", "completed_rounds", "rounds"),
+                (Some(1), Some("native_continual_champion_playable")) => ("[Approved champion]", "training_step", "learner rows"),
+                _ => return Err(invalid("gallery requires a verified native playable checkpoint receipt").into()),
             };
-            let rounds = kind["completed_rounds"].as_u64()
-                .ok_or_else(|| invalid("trained-model receipt omits completed round count"))?;
+            let count = kind[counter].as_u64()
+                .ok_or_else(|| invalid("trained-model receipt omits completed training count"))?;
             Ok(TrainedGame {
                 id: format!("trained-{}", model.id),
                 title: model.title.clone(),
-                status: format!("  {label}  {rounds} rounds"),
+                status: format!("  {label}  {count} {unit}"),
                 receipt,
             })
         })();

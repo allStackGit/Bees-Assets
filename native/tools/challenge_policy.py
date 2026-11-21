@@ -40,10 +40,10 @@ def selected_run(receipt_path: Path) -> tuple[dict, dict, int, Path]:
     kind = receipt.get("kind")
     if kind == "native_training_best_evaluated":
         selected = receipt.get("selected")
-    elif kind == "native_training_latest_playable":
+    elif kind in ("native_training_latest_playable", "native_continual_champion_playable"):
         selected = receipt
     else:
-        raise ValueError("select a native best-evaluated.json or latest-playable.json receipt")
+        raise ValueError("select a verified native playable checkpoint or champion receipt")
     if not isinstance(selected, dict):
         raise ValueError("native training selection has no verified checkpoint")
     run_path = existing_path(receipt_path, receipt.get("playable_run"))

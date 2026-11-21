@@ -143,8 +143,19 @@ def package_native_training_runtime(
         shutil.copy2(manifest_binary, destination / target_name)
 
 
+# Game-only releases can consume a deployed champion without needing
+# the registry, evaluator or optimizer controller.
+DEPLOYED_GAME_SOURCES = (
+    "native/tools/native_deployed_game.py",
+    "native/tools/native_game_registration.py",
+    "native/tools/native_session_selection.py",
+    "native/tools/native_curriculum.py",
+    "native/tools/package_policy_manifest.py",
+)
+
+
 def package_policy_runtime(destination: Path) -> None:
-    for name in POLICY_WORKER_SOURCES + MLAGENTS_ACTOR_SOURCES:
+    for name in POLICY_WORKER_SOURCES + MLAGENTS_ACTOR_SOURCES + DEPLOYED_GAME_SOURCES:
         target = destination / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / name, target)
@@ -612,7 +623,7 @@ def verify_native_package(directory: Path) -> dict:
                 if worker != directory / "native/tools/policy_worker.py":
                     raise ValueError("packaged run names an external policy worker")
                 if any(name not in expected for name in
-                       POLICY_WORKER_SOURCES + MLAGENTS_ACTOR_SOURCES):
+                       POLICY_WORKER_SOURCES + MLAGENTS_ACTOR_SOURCES + DEPLOYED_GAME_SOURCES):
                     raise ValueError("native policy release lacks required inference modules")
                 model = owned_link(file, data["model_manifest"], "policy manifest")
                 if model.name != "manifest.json" or not model.parent.is_relative_to(
