@@ -1439,17 +1439,17 @@ pub(super) fn archive(
                 "user_controlled": controlled, "can_accept_input": controlled,
                 "command_bans": [],
             }));
-        if matches!(selected.mix[side], FleetMix::Miners) {
-            miner_squads.push(squad_id);
-        } else if matches!(selected.mix[side], FleetMix::Chargers) {
-            charger_squads.push(squad_id);
-        } else if side == 0 {
-            let sight = template["sight"]["source_sight"].as_f64()
-                .filter(|v| v.is_finite() && *v > 0.0)
-                .ok_or_else(|| invalid("authored Scout has no source sight range"))?;
-            scout_squads.insert(squad_id, sight);
-        } else {
-            bombing_squads.push(squad_id);
+        match specialist_type {
+            4 => miner_squads.push(squad_id),
+            0 => charger_squads.push(squad_id),
+            18 => {
+                let sight = template["sight"]["source_sight"].as_f64()
+                    .filter(|v| v.is_finite() && *v > 0.0)
+                    .ok_or_else(|| invalid("authored Scout has no source sight range"))?;
+                scout_squads.insert(squad_id, sight);
+            }
+            10 | 22 => bombing_squads.push(squad_id),
+            _ => return Err(invalid("unowned native specialist combat role").into()),
         }
     }
     for side in 0..2_usize {
@@ -1482,34 +1482,33 @@ pub(super) fn archive(
                     squad_ids[side].push(new_squad);
                     miner_squads.push(new_squad);
                 } else {
-                    // Scout Beacons and special Bomb/Charge weapons each
-                    // own authentic source-defined spawn and weapon
-                    // contracts. Generic single-hull cloning is not safe:
-                    // create independent FleetShip and command identities
-                    // while keeping the SAME physical gameplay engine.
-                    if !((side == 0 && matches!(selected.mix[side], FleetMix::Scouts)) ||
-                        (side == 1 && matches!(selected.mix[side],
-                            FleetMix::Chargers | FleetMix::FireBarges | FleetMix::Detonators)))
-                    {
-                        return Err(invalid("source specialist replication is unsupported").into());
-                    }
+                    // Independent Scouts, Carpenter Bees, Barges, Fire
+                    // Barges and Yellow Jackets all use their ORIGINAL
+                    // hulls. Only ordinary homogeneous Carpenter squads
+                    // may clone a source body. Mixed formations must
+                    // preserve per-unit abilities and weapon identities.
                     let side_id = side as i64 + 1;
-                    let ship_type = selected.mix[side].specialist_type(side);
+                    let specialist_index = index - fighter_count[side];
+                    let ship_type = selected.mix[side]
+                        .specialist_type_at(side, specialist_index);
                     let template = available.iter().find(|ship|
                         ship["side"].as_i64() == Some(side_id) &&
                         ship["ship_type"] == ship_type
                     ).ok_or_else(|| invalid("multi-specialist fleet lacks physical source class"))?;
-                    let expected_special = match selected.mix[side] {
-                        FleetMix::Scouts => "scout",
-                        FleetMix::Chargers => "barge",
-                        FleetMix::FireBarges => "fire_barge",
-                        FleetMix::Detonators => "yellow_jacket",
-                        _ => unreachable!("validated native special fleet mix"),
+                    let expected_special = match ship_type {
+                        4 if side == 0 => None,
+                        18 if side == 0 => Some("scout"),
+                        0 if side == 1 => Some("barge"),
+                        10 if side == 1 => Some("fire_barge"),
+                        22 if side == 1 => Some("yellow_jacket"),
+                        _ => return Err(invalid("source specialist class conflicts with faction").into()),
                     };
-                    let scout = side == 0;
-                    if template["special"]["kind"] != expected_special ||
+                    let scout = ship_type == 18;
+                    let miner = ship_type == 4;
+                    if expected_special.is_some_and(|kind| template["special"]["kind"] != kind) ||
+                        (miner && template.get("special").is_some()) ||
                         (scout && !template["special"]["beacon"].is_object()) ||
-                        (!scout && !template["special_weapon"].is_object())
+                        (!scout && !miner && !template["special_weapon"].is_object())
                     {
                         return Err(invalid("native specialist lacks its source ability contract").into());
                     }
@@ -1526,7 +1525,7 @@ pub(super) fn archive(
                     let mut ship = template.clone();
                     ship["entity_id"] = json!(ship_id);
                     ship["fleet_ship_id"] = json!(ship_id);
-                    if !scout {
+                    if !scout && !miner {
                         ship["special_weapon"]["weapon_id"] = json!(weapon_id);
                     }
                     ship["position"] = json!([
@@ -1547,15 +1546,17 @@ pub(super) fn archive(
                             "command_bans": [],
                         }));
                     squad_ids[side].push(squad_id);
-                    if scout {
-                        let sight = template["sight"]["source_sight"].as_f64()
-                            .filter(|v| v.is_finite() && *v > 0.0)
-                            .ok_or_else(|| invalid("source Scout has no authenticated sight"))?;
-                        scout_squads.insert(squad_id, sight);
-                    } else if matches!(selected.mix[side], FleetMix::Chargers) {
-                        charger_squads.push(squad_id);
-                    } else {
-                        bombing_squads.push(squad_id);
+                    match ship_type {
+                        4 => miner_squads.push(squad_id),
+                        18 => {
+                            let sight = template["sight"]["source_sight"].as_f64()
+                                .filter(|v| v.is_finite() && *v > 0.0)
+                                .ok_or_else(|| invalid("source Scout has no authenticated sight"))?;
+                            scout_squads.insert(squad_id, sight);
+                        }
+                        0 => charger_squads.push(squad_id),
+                        10 | 22 => bombing_squads.push(squad_id),
+                        _ => unreachable!("validated source specialist role"),
                     }
                 }
                 continue;
@@ -1667,7 +1668,9 @@ pub(super) fn archive(
                 let kind = if index >= fighter_count[side] + specialist_count[side] {
                     selected.mix[side].support_type(side)
                 } else if index >= fighter_count[side] {
-                    selected.mix[side].specialist_type(side)
+                    selected.mix[side].specialist_type_at(
+                        side, index - fighter_count[side],
+                    )
                 } else if side == 0 { 21 } else { 13 };
                 let extents = catalog.sprite_size(kind)
                     .ok_or_else(|| invalid("native Carrier fleet has no source sprite extents"))?;
