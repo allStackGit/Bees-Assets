@@ -417,19 +417,16 @@ impl CampaignProgress<'_> {
         self.authored_roster.get(&fleet_id).map(|owner| owner.current_saved_squad_id)
     }
 
-    /// Deletion affects only vacant generated SavedSquads, never original
-    /// authored squads or the identities of their career records.
+    /// Original authored squads cannot be deleted. A generated squad may
+    /// be retired after its real owned FleetShips have returned to reserve,
+    /// preserving their identities and all historical career statistics.
     pub fn can_retire_saved_squad(&self, side: i32, id: i64) -> bool {
         matches!(side, 1 | 2) && id > 0 &&
         self.created_squads.iter().any(|squad|
             squad.side == side && squad.saved_squad_id == id) &&
         !self.retired_squad_ids.contains(&id) &&
         !self.created_squads.iter().any(|squad|
-            squad.template_saved_squad_id == id) &&
-        !self.purchases.iter().any(|(_, ship)|
-            ship.saved_squad_id == id) &&
-        !self.authored_roster.values().any(|owner|
-            owner.current_saved_squad_id == id)
+            squad.template_saved_squad_id == id)
     }
 
     pub fn created_squads_for_side(&self, side: i32) -> Vec<NativeCreatedSquad> {
@@ -675,7 +672,8 @@ impl BattleCatalog {
             .ok_or_else(|| invalid("only previously purchased hulls can be transferred"))?;
         if to_saved_squad_id < 0 || to_saved_squad_id == ship.saved_squad_id ||
             progress.fleet.get(&fleet_ship_id)
-                .is_none_or(|fleet| fleet.is_dead || fleet.side != side)
+                .is_none_or(|fleet| fleet.side != side ||
+                    (fleet.is_dead && to_saved_squad_id != 0))
         {
             return Err(invalid("transfer needs a live purchased hull and a different owned SavedSquad"));
         }
@@ -728,8 +726,13 @@ impl BattleCatalog {
     ) -> io::Result<()> {
         let campaign_id = self.campaign_id.as_deref()
             .ok_or_else(|| invalid("SavedSquad deletion requires a native campaign"))?;
-        if !progress.can_retire_saved_squad(side, saved_squad_id) {
-            return Err(invalid("delete only an empty created SavedSquad not needed by another squad"));
+        if !progress.can_retire_saved_squad(side, saved_squad_id) ||
+            progress.purchases.iter().any(|(_, ship)|
+                ship.saved_squad_id == saved_squad_id) ||
+            progress.authored_roster.values().any(|owner|
+                owner.current_saved_squad_id == saved_squad_id)
+        {
+            return Err(invalid("retired SavedSquad must be created, unreferenced and have all ships in reserve"));
         }
         commit_campaign_edit(output, "squad-retire-", "retirement.json",
             &CampaignSquadRetirement {
@@ -777,7 +780,8 @@ impl BattleCatalog {
             progress.authored_current_squad(fleet_ship_id)
                 .is_some_and(|saved| saved != from_squad) ||
             progress.fleet.get(&fleet_ship_id)
-                .is_some_and(|fleet| fleet.is_dead || fleet.side != side) ||
+                .is_some_and(|fleet| fleet.side != side ||
+                    (fleet.is_dead && to_squad != 0)) ||
             (to_squad != 0 &&
                 progress.squads.get(&to_squad).is_some_and(|squad| squad.side != side))
         {
