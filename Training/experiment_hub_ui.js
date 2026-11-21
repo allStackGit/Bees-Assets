@@ -60,14 +60,134 @@ function hubFinalEvaluationCohort(job) {
     return job.checkpoint_model_sha256?job.evaluation_candidates?.find(cohort=>
         cohort.checkpoint_sha256===job.checkpoint_model_sha256)?.receipts:null;
 }
+// Observational lookup only. Use the highest *evaluated checkpoint update*
+// for each exact configured suite, not the last heartbeat or append order.
+// A cached candidate can supply a temporary fallback, but never an
+// authorization to stop, rank or continue a model.
+function hubLatestEvaluatedReceipt(job,rule,rows) {
+    if(!rule)return null;
+    const pinned=rule.suite_sha256||
+        job.evaluation_suite_definitions?.[rule.suite_id];
+    let latest=null;
+    for(const row of rows||[]) {
+        if(!row||row.suite_id!==rule.suite_id||
+            pinned&&row.suite_sha256!==pinned||
+            !Number.isSafeInteger(row.trials)||row.trials<1||
+            !Number.isSafeInteger(row.successes)||row.successes<0||
+            row.successes>row.trials)continue;
+        const update=Number.isSafeInteger(row.steps_completed)
+            ?row.steps_completed:-1;
+        const previous=Number.isSafeInteger(latest?.steps_completed)
+            ?latest.steps_completed:-1;
+        if(!latest||update>previous||
+            (update===previous&&
+             String(row.evaluated_at||row.observed_at||'')>
+             String(latest.evaluated_at||latest.observed_at||'')))
+            latest=row;
+    }
+    return latest;
+}
+// Both suite and runtime fingerprints are part of one independently
+// comparable measurement. Do not combine a changed evaluation engine with
+// an older result merely because the suite ID remained the same. Reserve
+// 25 characters for a full project metric suffix within the 64-char limit.
+function hubEvaluationMetricPrefix(row) {
+    return 'eval_'+String(row.suite_id||'').replace(/-/g,'_').slice(0,12)+
+        '_'+String(row.suite_sha256||'').slice(0,12)+
+        '_'+String(row.runtime_sha256||'unverified').slice(0,8);
+}
 function hubComparisonPoints(run) {
-    return run.points.length?run.points:
+    const training=run.points.length?run.points:
         [run.job.live_execution?.progress||run.job.final_progress].filter(Boolean);
+    // Native chart payloads retain one verified definition per immutable
+    // suite/runtime instead of repeating it on every checkpoint. Keep the
+    // inspector available for all points in the same identity cohort.
+    const definitions=new Map();
+    for(const receipt of run.evaluation_points||[])
+        if(typeof receipt.suite_definition_canonical==='string')
+            definitions.set(JSON.stringify([
+                receipt.suite_id,receipt.suite_sha256,
+                receipt.runtime_sha256||null,
+            ]),receipt.suite_definition_canonical);
+    const evaluated=(run.evaluation_points||[]).filter(row=>
+        Number.isSafeInteger(row.steps_completed)&&row.steps_completed>=0&&
+        typeof row.suite_id==='string'&&
+        /^[a-f0-9]{64}$/.test(row.suite_sha256||'')&&
+        Number.isSafeInteger(row.successes)&&Number.isSafeInteger(row.trials)&&
+        row.trials>0&&row.successes>=0&&row.successes<=row.trials)
+        .map(row=>{
+            const prefix=hubEvaluationMetricPrefix(row);
+            const details=Object.entries(row.metrics||{})
+                .filter(([name,item])=>/^[a-z][a-z0-9_]{0,23}$/.test(name)&&
+                    item&&Number.isFinite(item.value)&&
+                    ['count','ratio','scalar','seconds'].includes(item.unit))
+                .map(([name,item])=>[prefix+'_'+name,item]);
+            return {
+                steps_completed:row.steps_completed,
+                segment_id:'independent-evaluation',
+                source_modified_at:row.evaluated_at||row.observed_at,
+                observed_at:row.observed_at,break_before:false,
+                evaluation_identity:{
+                    suite_id:row.suite_id,suite_sha256:row.suite_sha256,
+                    suite_definition_canonical:
+                        row.suite_definition_canonical||
+                        definitions.get(JSON.stringify([
+                            row.suite_id,row.suite_sha256,
+                            row.runtime_sha256||null,
+                        ]))||null,
+                    checkpoint_sha256:row.checkpoint_sha256,
+                    dispatch_id:row.dispatch_id,
+                    runtime_sha256:row.runtime_sha256||null,
+                    evaluated_at:row.evaluated_at||row.observed_at,
+                    source_kind:row.source_kind||null,
+                    source_report_sha256:row.source_report_sha256||null,
+                    source_checkpoint_name:row.source_checkpoint_name||null,
+                    trials:row.trials,successes:row.successes,
+                    comparison_status:row.comparison_status||'complete',
+                    superseded_by_checkpoint_sha256:
+                        row.superseded_by_checkpoint_sha256||null,
+                    superseded_by_steps_completed:
+                        row.superseded_by_steps_completed??null,
+                },
+                metrics:{[prefix]:{value:row.successes/row.trials,unit:'ratio'},
+                    ...Object.fromEntries(details)},
+            };
+        });
+    // Independent evaluations never synthesize trainer timing metrics.
+    return evaluated.length?[...training,...evaluated].sort((a,b)=>
+        (a.steps_completed??0)-(b.steps_completed??0)):training;
+}
+function hubJobLabel(job) {
+    const configuration=job?.configuration_name||job?.configuration_id||'Unnamed run';
+    const base=job?.run_name?job.run_name+' · '+configuration:configuration;
+    return base+(job?.frozen_parameters?.training_stage
+        ?' · '+job.frozen_parameters.training_stage.replaceAll('_',' '):'');
+}
+// Chart keys abbreviate full frozen suite and runtime fingerprints.
+// Abbreviation collisions, or an unknown runtime in a multi-run view,
+// must not create a synthetic comparison between unrelated evaluators.
+// Preserve full original receipts in the archive and complete exports.
+function hubEvaluationPrefixConflicts(runs) {
+    const seen=new Map(),conflicts=new Set();
+    for(const run of runs)for(const row of run.evaluation_points||[]) {
+        const prefix=hubEvaluationMetricPrefix(row);
+        const identity=JSON.stringify([
+            row.suite_id,row.suite_sha256,row.runtime_sha256||null,
+        ]);
+        if(seen.has(prefix)&&seen.get(prefix)!==identity||
+            runs.length>1&&!/^[a-f0-9]{64}$/.test(
+                String(row.runtime_sha256||'')))
+            conflicts.add(prefix);
+        else seen.set(prefix,identity);
+    }
+    return conflicts;
 }
 function hubGenericMetricCatalog(runs) {
-    const types=new Map();
+    const types=new Map(),conflicts=hubEvaluationPrefixConflicts(runs);
     for(const run of runs)for(const point of hubComparisonPoints(run))
         for(const [key,metric] of Object.entries(point.metrics||{})) {
+            if([...conflicts].some(prefix=>
+                key===prefix||key.startsWith(prefix+'_')))continue;
             if(!types.has(key))types.set(key,new Set());
             types.get(key).add(metric.unit);
         }
@@ -75,81 +195,323 @@ function hubGenericMetricCatalog(runs) {
         .map(([key,units])=>({key,units:[...units]}));
 }
 
+const HUB_METRIC_DESCRIPTIONS=Object.freeze({
+    training_score_rate: "Wins plus half-weighted draws divided by completed matches. Tracks training outcomes, but opponent rotation can change difficulty.",
+    training_win_rate: "Wins divided by wins, losses and draws. Use with match count and opponent difficulty; unlike score rate, draws earn no credit.",
+    training_completed_matches: "Wins + losses + draws reported by the trainer. The denominator for win/score rates; small samples make rates unstable.",
+    training_mean_score_margin: "Learner score minus the mean opponent score, averaged over matches with valid scores for both sides. Above zero indicates a scoring edge.",
+    training_wins: "Won matches in the reported training update. Compare as a fraction of all completed matches, not as a standalone success count.",
+    training_losses: "Lost matches in the reported update. A rise may reflect harder opponents or more matches, not necessarily worse play.",
+    training_draws: "Tied matches in the reported update. They contribute half a point to score rate but none to win rate.",
+    training_mean_score: "Learner points averaged over matches with valid recorded scores. Raw points are comparable only under the same scoring rules.",
+    food_gathered_exact: "Total food collected in matches with authoritative game accounting. Compare with verified-match count; do not treat as food per match.",
+    combat_kills_exact: "Total confirmed opponent kills in matches with authoritative combat records. Pair with verified-match count and match outcomes.",
+    ant_decisions_per_second: "Ant actions generated divided by the whole training-update duration. Measures useful action throughput, not policy strength.",
+    engine_steps_per_second: "Simulator steps divided by the whole training-update duration. A step can advance multiple ants; compare alongside ant decisions/s.",
+    total_ppo_updates: "Number of optimizer updates completed. Indicates training progress, not how much learning each update achieved.",
+    update_wall_time: "Elapsed seconds for the completed update, including collection and optimization. Rising time lowers updates/s unless more work is processed.",
+    active_training_time: "Trainer-reported active execution time; use to compare work excluding any pauses the trainer does not count.",
+    elapsed_training_seconds: "Trainer's elapsed clock since training began. Distinct from active time and Hub observation timestamps.",
+    training_recent_mean_completed_lifespan: "Mean age at death/extinction among recently finished lives; ongoing lives are excluded, so survivors bias this downward.",
+    training_recent_deaths: "Finished courier/colony lives supplying the recent lifespan average. Indicates sample size; not all-time deaths.",
+    training_mean_active_age: "Mean age of couriers still alive at the checkpoint. Complements completed lifespans, which omit survivors.",
+    training_oldest_active_age: "Age of the longest-surviving active courier/colony. Helps detect outliers; not typical survival.",
+    training_active_couriers: "Couriers alive when checkpoint status was recorded. Population alone can rise without successful food delivery.",
+    training_mean_active_colony_age: "Mean age of colonies still alive. Complements extinction counts and excludes extinct colonies.",
+    training_active_colonies: "Colonies still alive at the checkpoint. Use with birth/death and food-supply measures to assess sustainability.",
+    selection_candidate_survival_score: "Candidate's score in the rotating-seed selection matchup. Compare with incumbent score from the same round, not fixed benchmarks.",
+    selection_incumbent_survival_score: "Current champion's score in the same selection matchup. The candidate must beat this moving baseline to warrant promotion.",
+    selection_champion_promoted: "1 if the candidate replaced the champion at this selection decision, otherwise 0. A decision outcome, not a quality score.",
+    selection_evaluation_round: "Training round that produced the latest selection comparison; distinguishes an older selection result from the current checkpoint.",
+    selection_candidate_mean_deliveries: "Completed nest deliveries per evaluated life/colony for the selected candidate. Unlike pickups, these actually return food.",
+    selection_candidate_pickup_rate: "Share of candidate evaluation lives with at least one pickup. Use deliveries too: carrying food without returning it is incomplete.",
+    selection_candidate_mean_steps_per_delivery: "Total evaluation steps divided by returned-food deliveries; lower means fewer steps per successful return. Undefined with no returns.",
+    selection_candidate_survival_rate: "Share of evaluated lives alive at the test horizon. Measures bounded survival, not unlimited lifespan.",
+    selection_candidate_mean_lifespan: "Average age observed during selection; lives still alive at the horizon are censored, so long survival may be understated.",
+    selection_candidate_gross_energy_per_step: "Delivery energy minus survival/movement costs, per evaluated step. Positive values suggest a sustainable food-foraging loop.",
+    selection_candidate_mean_feedings: "Feedings per evaluated colony. Indicates whether gathered food supports existing members, not just whether it was collected.",
+    selection_candidate_mean_births: "New members per evaluated colony. Interpret together with feeding and deaths; growth alone may be unsustainable.",
+    benchmark_round: "Checkpoint round of the last fixed reporting benchmark, which may lag the current model. Check this before interpreting benchmark curves.",
+    benchmark_survival_rate: "Fraction surviving a fixed-horizon reporting test. More comparable over time than rotating selection matchups if test rules match.",
+    benchmark_mean_lifespan: "Mean observed age in the fixed test. Survivors reaching its horizon are censored, so it can understate eventual lifespan.",
+    benchmark_mean_deliveries: "Returned-food deliveries per fixed-scenario evaluation. Tracks task success without relying on changing selection opponents.",
+    benchmark_pickup_rate: "Share of fixed-test lives that collect any food. High pickup with low delivery reveals a return-to-nest problem.",
+    benchmark_mean_steps_per_delivery: "Test steps divided by completed food deliveries. Falling values imply more efficient returns under unchanged test rules.",
+    benchmark_gross_energy_per_step: "Net delivery energy after task costs, averaged per benchmark step. Tracks whether the policy can sustain itself.",
+    benchmark_mean_feedings: "Mean feedings per test colony. Pair with food deliveries and population to see whether food reaches dependents.",
+    benchmark_mean_births: "Mean offspring per test colony. Combine with survival and food supply rather than treating births alone as success.",
+    job_cpu_cores: "CPU-time increase divided by sample elapsed time, expressed as fully busy core equivalents. Useful for checking whether allocated CPUs are used.",
+    job_cpu_lease_utilization_pct: "Observed core equivalents ÷ CPUs leased to this job × 100. Low utilization suggests unused quota, blocking or non-CPU bottlenecks.",
+    job_memory_mb: "Current memory charged to the supervised job's native process group. Excludes unrelated host use; compare against its RAM lease.",
+    job_memory_lease_utilization_pct: "Supervised-job memory divided by its RAM limit × 100. Near 100% means little headroom for batches or worker spikes.",
+    job_cpu_throttled_seconds: "Cumulative time the job's CPU cgroup was held back by its quota. Rising quickly can cap simulation throughput.",
+    job_cpu_throttle_events: "Cumulative CPU quota-throttling periods/events. Rising with low throughput suggests CPU entitlement limits.",
+    host_cpu_busy_pct: "Share of whole-machine CPU capacity busy, including other work. Helps distinguish job underuse from a generally saturated host.",
+    host_gpu_busy_pct: "Physical GPU's reported busy percentage, not exclusive utilization by this job. Compare with PPO time to find learner bottlenecks.",
+    host_gpu_vram_mb: "Memory occupied on the physical GPU by all processes. Check available headroom; it is not this job's VRAM allocation.",
+    host_gpu_temperature_c: "Reported GPU device temperature. Watch trends with workload and power; thresholds depend on the exact GPU.",
+    host_gpu_hotspot_temperature_c: "Hottest reported on-die/junction point, often above the general GPU temperature. Sudden rises can warrant cooling inspection.",
+    host_gpu_power_w: "Current board power measured by the GPU, including other processes. Use with busy rate to understand device load, not per-job energy.",
+    collection_seconds: "Time spent gathering experience for the reported update. A large share relative to optimization indicates collection-bound training.",
+    optimization_seconds: "Time updating network weights from collected experience. If this dominates update time, PPO is learner-bound.",
+    ppo_metric_readback_seconds: "Time transferring PPO diagnostics back from the device to host code. Large values can expose synchronization overhead.",
+    loss: "Trainer's aggregate optimization objective for the update. Its scale mixes components; decreasing loss does not demonstrate better game play.",
+    policy_loss: "Policy component of the PPO objective. Indicates optimizer behavior, not win rate or food-delivery success.",
+    value_loss: "Error in the estimated future return/value function. High values may mean poor value predictions or noisy rewards.",
+    entropy: "Uncertainty of the learned action distribution. Falling entropy usually means less exploration; inspect with outcomes to detect premature convergence.",
+    mean_reward: "Reward averaged over training experience under the configured reward shaping. Compare only with the same task and rewards.",
+
+    training_scored_matches: "Matches with a valid learner score; denominator for mean score. May differ from completed matches when scores are missing.",
+    training_opponent_margin_matches: "Scored matches with at least one opponent to compare against. The denominator for mean score margin.",
+    training_mean_match_turns: "Mean duration in turns for matches reporting a turn count. Long games may signal survival or stalemate, not necessarily better play.",
+    food_gathered_verified_matches: "Matches providing authoritative food totals. Use to normalize food_gathered_exact, which is a sum across these matches.",
+    food_disappearances_near_own_ant: "Food vanishing near a friendly ant in observed states. Proxy for possible collection, not proof that this ant picked it up.",
+    visible_food_mean: "Food visible in sampled board observations (food count ÷ observation samples). Helps separate scarce maps from weak foraging.",
+    combat_kills_verified_matches: "Matches providing authoritative kill totals. Use to normalize combat_kills_exact before comparing runs.",
+    births_observed: "Birth events seen in gameplay observations. Rising births can indicate growth but should be paired with deaths and food availability.",
+    deaths_observed: "Ant deaths seen in gameplay observations. Compare with births and population; total rises with longer or larger matches.",
+    population_mean: "Average population reported during gameplay sampling. An occupancy measure that can hide colony collapse in individual matches.",
+    population_peak: "Maximum simultaneous population observed in the reporting update. Reveals peaks that mean population smooths away.",
+    combat_exposure_fraction: "Combat-exposed ant-turns divided by all observed ant-turns. Separates combat-heavy experience from peaceful foraging.",
+    colony_window_rounds: "Number of recently completed training rounds sampled (1–20). Check this before comparing raw event counts across checkpoints.",
+    colony_window_pickups: "Food items taken from the map in the sampled training rounds. Pickup without later delivery may not help the nest.",
+    colony_window_deliveries: "Food items returned to the nest in the sampled rounds. Direct measure of completed foraging, unlike pickups.",
+    colony_window_feedings: "Times stored food was used to feed colony members. Low feeding despite deliveries may expose poor food use.",
+    colony_window_births: "New colony members produced in the sampled rounds. Sustainable growth also requires enough feeding and survival.",
+    colony_window_courier_deaths: "Courier losses from any cause in the sampled rounds. Compare with births and population to assess colony viability.",
+    colony_window_energy_deaths: "Courier deaths caused by depleted energy. High counts can indicate an unsustainable travel/feeding balance.",
+    colony_window_combat_deaths: "Courier deaths caused by fighting. Separates combat losses from starvation or energy exhaustion.",
+    colony_window_combat_encounters: "Interactions that entered combat in the sampled rounds. Higher exposure can explain deaths unrelated to foraging skill.",
+    colony_window_combat_rounds_won: "Individual combat rounds won in the sampled window. Pair with rounds lost and deaths, not just encounter counts.",
+    colony_window_combat_rounds_lost: "Individual combat rounds lost in the sampled window. Useful with wins to distinguish exposure from combat success.",
+    colony_window_colony_extinctions: "Times the trained colony lost all members in sampled rounds. A strong failure signal; compare under equal mode and horizon.",
+    colony_window_opponent_extinctions: "Opposing colonies eliminated in sampled rounds. Measures competitive elimination, not delivery efficiency.",
+    colony_window_contested_pickup_attempts: "Food pickup attempts made while resources were contested. Shows how often foraging runs into competitors.",
+    colony_window_opponent_contests_won: "Food contests won against opponents. Interpret against contested attempts to assess competitive pickup success.",
+    colony_window_feeding_opportunities: "Moments when couriers could choose to stay for feeding. Denominator for feeding-stay behavior.",
+    colony_window_feeding_stay_choices: "Feeding opportunities when a courier chose to stay. Compare with opportunities to see if it uses feeding options.",
+    colony_window_messages_written: "Messages sent by couriers with learned communication enabled. Measures usage, not whether messages improve teamwork.",
+    colony_window_stat_mutations: "Inherited trait changes during colony evolution. Measures variation being generated, not whether new traits are fitter.",
+    colony_window_speed_tiles_travelled: "Tiles moved while speed specialization was enabled. Compare with energy costs and food returns to assess its value.",
+    colony_window_patch_food_offered: "Food the patch spawner attempted to supply. The demand-side baseline for whether patches are replenished.",
+    colony_window_patch_food_placed: "Food actually deposited by the patch spawner. Can fall below offered supply if map placement is constrained.",
+    colony_patch_supply_fraction: "Placed patch food divided by attempted supply. Below 1 means the environment did not place all requested food.",
+    colony_mean_population: "Average number of couriers in active training colonies over the recent window. Pair with births/deaths to assess growth.",
+    colony_feedings_per_1000_courier_ticks: "Feedings divided by living-courier time, scaled to 1,000 ticks. Normalizes feeding for colony size and duration.",
+    colony_births_per_1000_colony_ticks: "Births divided by colony time, scaled to 1,000 ticks. Compares reproduction across different run lengths.",
+    colony_feeding_stay_fraction: "Feeding-stay choices divided by opportunities. Tracks whether couriers remain to eat when they have the chance.",
+    colony_mean_energy_gained: "Average energy gain measured in recent colony behavior. Compare with travel and maintenance costs to assess sustainability.",
+    colony_mean_food_storage_ticks: "Average time food remains stored at the nest. Long storage can mean reserves or slow consumption, not necessarily better policy.",
+    colony_teammate_food_fraction: "Fraction of observed food interaction attributed to teammates. Useful for cooperation, but not a substitute for delivered totals.",
+    colony_mean_colony_age_at_birth: "Colony age when new members are born, averaged over births. Shows when reproduction occurs relative to colony maturity.",
+    colony_mean_courier_age_at_death: "Courier age when death occurs, averaged over deaths. Survivors are omitted, so compare with active ages as well.",
+    colony_mean_requested_distance: "Distance requested by speed-enabled movement actions on average; not the distance actually traveled or their energy cost.",
+    terminal_rewards: "Number of terminal-reward observations reported at episode ends, not the sum or average of reward amounts.",
+    episodes_ended: "Episodes completed or terminated in the update. Pair with decision count to distinguish short and long episodes.",
+    baseline_loss: "Error of the multi-agent baseline/value estimator. A diagnostic for critic fitting, not evidence of better coordination.",
+    local_elo: "Relative training-pool rating that depends on which opponents were sampled. Gains are not a fixed-opponent evaluation.",
+    engine_steps: "Simulator ticks advanced in the update. A tick may involve multiple ant decisions; use with ant_decisions to assess throughput.",
+    ant_decisions: "Policy actions produced across all ants in the update. Direct unit of experience production; not identical to engine ticks.",
+    group_states: "Joint multi-agent states collected for group-based learning. Indicates the optimizer's group-experience volume.",
+    group_states_per_second: "Group states processed per full update second. Useful for throughput scaling when group-size distributions are comparable.",
+    rollout_model_refresh_seconds: "Time spent updating rollout workers with the latest policy weights. Large overhead can offset adding collectors.",
+    rollout_engine_step_seconds: "Time spent executing game simulation during collection. If dominant, increase simulation parallelism or reduce engine overhead.",
+    rollout_learner_inference_seconds: "Time to compute learner actions during rollouts. High share suggests inference, batching or device limits.",
+    overlap_seconds: "Measured time in which simulation collection and optimization run concurrently. Do not add it as a separate serial stage.",
+    remote_policy_snapshot_seconds: "Time to acquire or load remote learner-policy snapshots. Large values can limit distributed collection efficiency.",
+    remote_opponent_snapshot_seconds: "Time to acquire or load remote opponent snapshots. A snapshot bottleneck is separate from game-step time.",
+    ppo_microbatches: "Number of subdivisions of PPO batches actually processed. More microbatches can reduce memory pressure but add overhead.",
+    states_per_microbatch: "Training states per PPO microbatch. Larger batches improve amortization but can require more device memory.",
+    actor_grad_norm: "Magnitude of gradients updating the action policy. Spikes may signal unstable updates; judge alongside losses and clipping.",
+    group_grad_norm: "Magnitude of gradients for the group-policy component. Shows whether joint-policy parameters are receiving updates.",
+    baseline_grad_norm: "Magnitude of gradients for the baseline/value component. Very large values can flag critic optimization instability.",
+    policy_lag: "Difference in policy versions between collected experience and the current learner. High lag means increasingly stale on-policy data.",
+    rss_mb: "Resident memory used by the trainer process, not all worker or GPU memory. Compare with job-level cgroup memory.",
+    job_peak_memory_mb: "Highest recorded memory charged to the supervised job. Captures brief peaks missed by current-usage samples.",
+    job_process_tasks: "Processes/threads counted in the supervised job. An unexpectedly high count can indicate oversubscription or worker churn.",
+    job_cpu_quota_periods: "Cumulative CPU scheduling intervals counted by the job cgroup. Denominator for assessing how often quotas throttle.",
+    job_cpu_quota_throttled_periods_pct: "Throttled quota periods divided by total periods × 100. Sustained high values suggest allocated CPUs are constraining work.",
+    data_preparation_seconds: "Time converting collected experience to learner-ready tensors/batches. A high share suggests a CPU/data-pipeline bottleneck.",
+    inference_seconds: "Time evaluating the policy network for actions. High time with low batch occupancy may indicate inefficient inference.",
+    forward_seconds: "Time doing neural-network forward computation in training. Compare with backward to locate which part dominates GPU work.",
+    backward_seconds: "Time computing gradients through the network. A high fraction suggests backpropagation dominates update costs.",
+    optimizer_step_seconds: "Time applying gradients to update neural-network weights. Compare with backward and preparation to target optimization.",
+    cpu_wait_seconds: "Time awaiting CPU-side input or synchronization. Large waits can leave the accelerator idle even when compute is available.",
+    gpu_transfer_seconds: "Time moving training inputs/results between CPU and GPU. High share can indicate excess copies or small transfers.",
+    network_transfer_seconds: "Time moving rollout experience or model data across machines. Compare with remote collector compute to assess overhead.",
+    broker_queue_seconds: "Time experience spends queued between collectors and learner. High delays can increase policy lag or waste worker capacity.",
+    serialization_seconds: "Time encoding/decoding experience or model data. High overhead can reduce benefits of remote collection.",
+    checkpoint_seconds: "Elapsed time writing or saving model state. Spikes may indicate storage contention and disrupt update pacing.",
+    checkpoint_write_time: "Seconds spent writing the committed Courier checkpoint. Spikes can indicate storage stalls rather than slower learning.",
+    generation: "Training generation/round attached to the Courier checkpoint. Locates the measurement; is not an outcome metric.",
+    ppo_profile_host_seconds: "Wall time of a profiled PPO update as observed by the host. Compare phase totals to expose unattributed overhead.",
+    ppo_advantages_seconds: "Time computing advantage/return targets before PPO learning. Expensive advantage construction delays every update.",
+    ppo_ordering_seconds: "Time ordering or shuffling PPO training examples. Large overhead suggests inefficient sample layout.",
+    ppo_zero_grad_seconds: "Time clearing previous optimizer gradients. Unexpectedly high values may expose tensor/device overhead.",
+    ppo_grouping_seconds: "Time forming grouped multi-agent PPO samples. High cost may indicate expensive grouping or varying sequence shapes.",
+    ppo_data_preparation_seconds: "Time converting PPO minibatch inputs to tensors on the training device. A large share limits GPU utilization.",
+    ppo_forward_loss_seconds: "Time running PPO networks and constructing policy/value losses. Compare with backward to pinpoint update cost.",
+    ppo_loss_finite_check_seconds: "Time verifying computed losses contain no NaN or infinity. Significant time may indicate synchronization overhead.",
+    ppo_backward_seconds: "Time backpropagating PPO losses into gradients. Often a major compute cost; compare across batch sizes.",
+    ppo_gradient_processing_seconds: "Time modifying or clipping gradients before optimizer steps. Excessive cost reduces useful update throughput.",
+    ppo_optimizer_step_seconds: "Time applying the PPO optimizer's weight updates. Contrast with backward to find parameter-update overhead.",
+    ppo_parameter_finite_check_seconds: "Time checking parameters for NaN/infinity after PPO updates. Large values can expose safety-check synchronization cost.",
+    ppo_gpu_stream_sync_seconds: "Time waiting for asynchronous GPU kernels/streams to complete. High values may expose poor overlap or hidden work.",
+    ppo_minibatches: "Number of PPO minibatches processed per update. A count of optimization subdivisions, not a learning-quality score.",
+    ppo_board_pixel_samples: "Volume of sampled board-image pixels processed by PPO. Larger values raise training compute and memory demand.",
+    ppo_max_board_cells: "Largest board size (in cells) encountered in the PPO update. Helps explain outlier memory or processing costs.",
+    ppo_unique_board_shapes: "Distinct board dimensions encountered in the PPO update. High variety can reduce the efficiency of fixed-shape batching.",
+    evaluation_seconds: "Time spent assessing a policy outside rollout collection. This overhead should not be mistaken for optimizer or simulation time.",
+    collector_count: "Number of collectors contributing measurements in the update. Pair with throughput to see whether adding collectors helped.",
+    action_target: "Number of ant actions requested for the next rollout. Compare with actual ant_decisions to detect underfilled collection.",
+    actor_max_weight_change: "Largest actor-policy parameter change during the reported optimizer update. Spikes can indicate abrupt policy shifts.",
+    automatic_collector_allocation: "Indicates whether workload shares were assigned automatically among collectors; compare throughput before and after tuning.",
+    births: "Birth events emitted by the trainer in the current update. Compare with deaths to assess net population change.",
+    carried_matches: "Matches that remained in progress across update boundaries. Persistent matches reduce reset work but delay completed outcomes.",
+    checkpoint_write_seconds: "Time saving the TinyBrains learner's durable checkpoint. Storage overhead can interrupt otherwise steady update throughput.",
+    combat_exposed_ant_turns: "Ant-turn observations marked as exposed to combat. Numerator of combat_exposure_fraction; count rises with population and time.",
+    collector_allocation_rebalanced: "Reports a collector workload-share adjustment. Compare subsequent throughput to see whether rebalancing was useful.",
+    collector_critical_path_seconds: "Time taken by the slowest collector path in an update. Often constrains when the learner can use the batch.",
+    collector_elapsed_spread_seconds: "Difference between fastest and slowest collector elapsed times. Large spread points to imbalance between workers.",
+    collector_wait_seconds: "Time the learner waits for experience to become ready. Large waits indicate collector or transfer bottlenecks.",
+    critic_max_weight_change: "Largest value-network parameter change during the update. Spikes can flag unstable critic training.",
+    deaths: "Death events emitted by the trainer in this update. Compare with births and survival, not as a raw quality score.",
+    gae_lambda: "Generalized Advantage Estimation decay used for this update. Values closer to 1 retain longer-horizon reward information.",
+    learning_rate: "Actual optimizer step-size parameter in this update. Higher values change weights faster but may destabilize learning.",
+    local_engine_actions_per_second: "Actions returned by local persistent simulation engines divided by the local collection wall time; useful CPU scaling signal.",
+    local_engine_active_count: "Local engine slots actively collecting at this sample. Compare with requested slots to detect underutilized concurrency.",
+    local_engine_count: "Local engine slots present in the pool, including slots not actively collecting. Not equivalent to simultaneous throughput.",
+    local_engine_max_count: "Highest number of local engine slots observed in the reporting window. Helps explain memory peaks during tuning.",
+    local_engine_retiring_count: "Local engines finishing work before retirement. Tuning down capacity may temporarily keep these slots alive.",
+    local_engine_retired: "Local engine slots retired during the reporting window. Frequent retirements can mean unstable concurrency tuning.",
+    local_engine_wall_seconds: "Elapsed wall-clock collection window for the local engine pool. Use with total actions for pool throughput.",
+    local_engine_critical_seconds: "Duration of the longest/critical local engine contribution. Helps reveal the worker holding back batch completion.",
+    local_engine_elapsed_spread_seconds: "Spread between local engine completion times. Large differences indicate load imbalance or variable simulation cost.",
+    local_engine_cpu_seconds_total: "CPU seconds summed across all local simulation engines. Can exceed wall time because engines run in parallel.",
+    local_engine_engine_step_seconds_sum: "Simulation-step times summed across overlapping local engines, not sequential update wall time.",
+    local_engine_learner_inference_seconds_sum: "Learner action-inference time summed across local engines. Can exceed wall time when work overlaps.",
+    local_engine_observation_encode_seconds_sum: "Observation-construction time summed across local engines. Useful for spotting expensive board encoding.",
+    local_engine_opponent_inference_seconds_sum: "Opponent-action inference time summed across local engines. Distinguishes opponents from learner inference.",
+    local_engine_result_processing_seconds_sum: "Post-step result-processing time summed across local engines. Large values can limit simulation scaling.",
+    local_engine_rss_mb_total: "Sum of resident RAM used by local simulation engines. Compare with job RAM lease before increasing concurrency.",
+    local_engine_tune_probing: "One when the local engine tuner is probing a different concurrency level. Evaluate sustained throughput before accepting it.",
+    local_engine_tune_accepted: "One when the tuner accepted a concurrency adjustment. Compare throughput and memory before/after.",
+    local_engine_tune_draining: "One when engines are being drained for resizing. Temporary throughput drops may be part of controlled retirement.",
+    local_engine_tune_retired: "One when tuning completed an engine retirement. Repeated retirements may cause avoidable churn.",
+    multi_ant_states: "State records containing multiple ant participants. Indicates how much group interaction the update exercised.",
+    open_matches: "Matches still active at the reporting boundary. A backlog can delay outcome measurements despite ongoing experience collection.",
+    peak_live_matches: "Maximum number of simultaneously active matches during the update. Relates concurrency to memory and CPU demand.",
+    remote_collect_seconds: "Time spent executing remote rollout collection, separate from transfer and connection overhead.",
+    remote_record_encode_seconds: "Time encoding remote experience records before transfer. High cost reduces effective remote throughput.",
+    rollout_engine_cpu_cores: "Estimated busy CPU-core equivalents consumed by rollout simulation. Compare with allocated CPU slots.",
+    rollout_engine_cpu_seconds: "CPU time consumed by rollout simulation. Multiple engines may accumulate more CPU seconds than wall time.",
+    rollout_engine_cpu_seconds_total: "CPU seconds summed across all reported rollout engines. Useful to judge actual core use versus reserved capacity.",
+    rollout_engine_rss_mb: "Resident RAM used by the simulation engine process. This is not total learner, worker or GPU memory.",
+    rollout_inference_batches: "Number of policy-inference batches issued during collection. Many tiny batches can waste accelerator overhead.",
+    rollout_inference_boards: "Total board observations submitted for inference. Compare with batches to evaluate effective batching.",
+    rollout_inference_max_batch: "Largest number of boards in a single inference call. Shows realized batch size, not the configured maximum.",
+    rollout_inference_mean_batch: "Average boards processed per inference batch. Small means may signal poor batching despite many concurrent ants.",
+    rollout_observation_encode_seconds: "Time transforming game state into policy observations. High share indicates costly observation generation.",
+    rollout_opponent_inference_seconds: "Time evaluating opponent policies during simulation. Can dominate in self-play against complex opponents.",
+    rollout_result_processing_seconds: "Time assembling and storing results after engine steps. High share indicates post-simulation overhead.",
+    terminal_groups: "Group trajectories ending naturally or terminally in the update. Helps distinguish completed experience from truncated groups.",
+    transitions_without_final_observation: "Transitions lacking a final observation at termination. High counts may reduce reliability of bootstrapping.",
+    transport_connect_seconds: "Time establishing a connection to a remote collector. Frequent setup costs can overwhelm short rollout requests.",
+    transport_record_decode_seconds: "Time decoding returned remote experience records. Large values indicate parsing overhead on the learner.",
+    transport_request_send_seconds: "Time sending rollout requests to remote workers. Separates upload overhead from remote computation.",
+    transport_response_receive_seconds: "Time receiving responses from remote workers. High values can indicate large payloads or transfer limits.",
+    truncated_groups: "Group trajectories cut short by a rollout boundary rather than normal termination. Need bootstrapping for valid PPO targets.",
+});
+const HUB_COLLECTOR_METRIC_SUFFIXES=Object.freeze({
+    ant_decisions: "Ant actions this worker returned. A high count matters only if it was delivered within acceptable elapsed time.",
+    engine_steps: "Simulator steps this worker completed. Compare with decisions to see how many actions each step produces.",
+    action_target: "Actions assigned to this collector for the request. A large gap to actual decisions suggests underfilled work.",
+    action_weight: "Current relative allocation weight for this collector; it sets requested work share, not measured throughput.",
+    next_action_weight: "Workload weight planned for the next request after resource tuning. Compare subsequent decisions/s to assess it.",
+    elapsed_seconds: "Worker's measured rollout duration. Denominator for its delivered decisions/s and engine steps/s when present.",
+    rollout_engine_step_seconds: "Time this collector spent advancing simulated worlds. High share means simulation is its bottleneck.",
+    learner_inference_seconds: "Time spent computing learner-policy actions. High share suggests model inference or batching limits.",
+    roundtrip_seconds: "Request-to-response duration, including transmission AND worker computation. Not a network-only latency.",
+    model_prepare_seconds: "Time preparing the policy snapshot for rollout. Frequent or slow preparation can waste collection capacity.",
+    snapshot_cache_files: "Number of model snapshot files cached by the collector. Helps spot buildup or repeated model reloads.",
+    snapshot_cache_bytes: "Size of cached model snapshots in bytes. Compare with worker RAM and storage headroom.",
+    decisions_per_second: "Delivered ant decisions ÷ elapsed collection seconds (or roundtrip if elapsed is absent); collector throughput.",
+    engine_steps_per_second: "Delivered simulation steps ÷ elapsed collection seconds (or roundtrip if absent); compare across workers.",
+    rollout_inference_batches: "Number of inference calls submitted by this collector. Many small calls can make inference overhead dominant.",
+    rollout_inference_boards: "Board observations processed by this collector's inference calls. Divide by batches to inspect batching.",
+    rollout_inference_max_batch: "Largest number of boards passed in one inference call. Shows realized peak batching.",
+    rollout_inference_mean_batch: "Average boards per inference call. Low values may explain poor device throughput despite high utilization.",
+    rollout_engine_cpu_seconds: "CPU time used by this collector's game simulator. May exceed elapsed wall time when using several cores.",
+    rollout_engine_cpu_cores: "Estimated CPU core equivalents busy in the collector's game engine; compare with its CPU lease.",
+    rollout_engine_rss_mb: "Resident memory of this collector's simulation engine, excluding unrelated worker processes.",
+    rollout_observation_encode_seconds: "Time building neural-network input observations from simulated boards. High share suggests encoding cost.",
+    rollout_opponent_inference_seconds: "Time predicting opponent actions during self-play, separate from learner inference.",
+    rollout_result_processing_seconds: "Time handling and packaging simulation results after game steps. High share limits experience throughput.",
+    remote_collect_seconds: "Time the remote worker spent actually collecting experience. Contrast with transport overhead.",
+    remote_record_encode_seconds: "Time converting collected experience into records before sending. High values suggest serialization cost.",
+    transport_connect_seconds: "Time opening the remote-worker connection. Repeated setup can dominate very small requests.",
+    transport_request_send_seconds: "Time transmitting rollout requests to this collector. Helps isolate upload overhead.",
+    transport_response_receive_seconds: "Time receiving completed experience from this collector. Large responses can bottleneck throughput.",
+    transport_record_decode_seconds: "Time decoding received experience for the learner. Measures post-transfer parsing cost.",
+});
+const HUB_LOCAL_ENGINE_METRIC_SUFFIXES=Object.freeze({
+    actions: "Ant decisions generated by this persistent local engine slot. Compare with elapsed seconds for slot throughput.",
+    elapsed_seconds: "Wall time spent on this engine slot's rollout work; denominator for its decisions/s.",
+    retiring: "Indicates that this slot is finishing work before retirement; it should not be reused for a new episode.",
+    cpu_seconds: "CPU time consumed by this local engine slot, which can exceed wall time with multithreading.",
+    rss_mb: "Resident memory used by this engine slot. Adding slots multiplies memory demand.",
+    inference_batches: "Policy-inference batches executed in this slot. Many tiny batches can waste inference overhead.",
+    inference_mean_batch: "Average number of boards per inference call for this slot. Compare across slots for batching imbalance.",
+    decisions_per_second: "Actions completed ÷ this slot's elapsed seconds; direct slot throughput for concurrency tuning.",
+});
+const HUB_GPU_METRIC_SUFFIXES=Object.freeze({
+    busy_pct: "Sensor-reported fraction of time this physical GPU was busy. Includes other processes; high busy alone is not high training SPS.",
+    used_vram_mb: "Total physical VRAM occupied by all processes. Use to assess headroom, not the managed job's allocated share.",
+    temperature_c: "GPU-reported device temperature. Trends matter with power and load; limits depend on the device.",
+    hotspot_temperature_c: "Hottest reported on-chip sensor. Can exceed average GPU temperature; compare with device-specific limits.",
+    power_w: "Current physical GPU power draw. Indicates load, not energy attributable to this particular job.",
+});
 function hubMetricDescription(name,units=[]) {
-    const known={
-        training_score_rate:'Training score per completed match, counting wins as one and draws as one-half. Opponent changes can affect this rate.',
-        training_win_rate:'Fraction of completed training matches won. It is not a fixed-opponent benchmark.',
-        training_completed_matches:'Count of completed matches contributing training outcomes. Sample count is not learning quality.',
-        training_mean_score_margin:'Average score advantage over the opponent in observed matches. Positive values favor the trained team.',
-        training_wins:'Count of training matches won. Interpret alongside the number and difficulty of opponents.',
-        training_losses:'Count of training matches lost. Changing opponents can change this count.',
-        training_draws:'Count of drawn training matches. Draws contribute half a point to the training score rate.',
-        training_mean_score:'Average score obtained in observed matches. Comparability depends on game rules and opponents.',
-        food_gathered_exact:'Food gathered according to the simulation’s direct accounting. Consider game duration and available food.',
-        combat_kills_exact:'Combat kills directly recorded by the simulation. This alone does not establish match success.',
-        ant_decisions_per_second:'Ant policy decisions per second. This measures training throughput rather than model quality.',
-        engine_steps_per_second:'Simulation engine steps per second. One step can include multiple ant decisions.',
-        total_ppo_updates:'Completed PPO optimization updates. Update count is not evidence of improving policy strength.',
-        update_wall_time:'Wall-clock duration of a PPO update. Lower sustained times indicate faster updates.',
-        active_training_time:'Trainer-reported active training time, which can exclude pauses. It is not derived from Hub heartbeat time.',
-        elapsed_training_seconds:'Trainer-reported elapsed training seconds. This is not inferred from Hub observation timestamps.',
-        training_recent_mean_completed_lifespan:'Average lifespan of recently completed courier or colony lives. Still-living subjects do not yet contribute to this average.',
-        training_recent_deaths:'Number of deaths or extinctions in the recent training lifespan window. This indicates the lifespan sample size.',
-        training_mean_active_age:'Average age of currently living training couriers. A living episode may span several policy updates.',
-        training_oldest_active_age:'Oldest currently living courier or colony age. Extreme lifespans do not represent the average.',
-        training_active_couriers:'Number of currently active training couriers. Population alone is not a quality score.',
-        training_mean_active_colony_age:'Mean age of living training colonies. Compare under similar task settings.',
-        training_active_colonies:'Count of currently active colonies. It does not indicate how well they are performing.',
-        selection_candidate_survival_score:'Survival-based qualification score for a screened candidate. Selection scenarios can differ across rounds.',
-        selection_incumbent_survival_score:'Qualification score for the existing champion. Compare against candidates evaluated under matching conditions.',
-        selection_champion_promoted:'Whether the newly evaluated candidate replaced the incumbent champion. Promotion is not an independent measure of generalization.',
-        selection_evaluation_round:'Training round at which the candidate was evaluated. This locates the evaluation rather than measuring quality.',
-        selection_candidate_mean_deliveries:'Average food deliveries per evaluated courier life or colony. More completed deliveries generally indicate better food-return behavior.',
-        selection_candidate_pickup_rate:'Fraction of evaluated lives that pick up food. Picking up food does not guarantee delivery.',
-        selection_candidate_mean_steps_per_delivery:'Evaluated steps divided by completed food deliveries. Lower values indicate more efficient delivery; undefined if there were no deliveries.',
-        selection_candidate_survival_rate:'Fraction of evaluation lives still alive at the selection horizon. This is bounded survival, not indefinite survival.',
-        selection_candidate_mean_lifespan:'Mean observed lifespan in selection evaluation. Lives surviving the horizon are right-censored.',
-        selection_candidate_gross_energy_per_step:'Net delivery energy minus energy costs per evaluated step. Positive values suggest more sustainable behavior under the configured rules.',
-        selection_candidate_mean_feedings:'Average feeding events per evaluated colony. Track with food collection, births, and survival.',
-        selection_candidate_mean_births:'Average births per evaluated colony. Track alongside food supply and colony survival.',
-        benchmark_round:'Training round of the last fixed reporting benchmark. These results may be older than the current training checkpoint.',
-        benchmark_survival_rate:'Survival fraction in a fixed reporting evaluation. Compare results only under matching benchmark conditions.',
-        benchmark_mean_lifespan:'Mean observed lifespan in a fixed reporting benchmark. Survivors at the horizon are right-censored.',
-        benchmark_mean_deliveries:'Average completed food deliveries per fixed reporting evaluation. This better controls scenario variation than rotating selection evaluations.',
-        benchmark_pickup_rate:'Fraction of benchmark lives that collected food. Food collection is separate from successful delivery.',
-        benchmark_mean_steps_per_delivery:'Steps per completed food delivery in the reporting benchmark. Lower is generally more efficient.',
-        benchmark_gross_energy_per_step:'Net energy per step in the reporting benchmark. Interpret using the benchmark’s energy rules.',
-        benchmark_mean_feedings:'Average colony feedings in the reporting benchmark. This reflects food consumption at home.',
-        benchmark_mean_births:'Average colony births in the reporting benchmark. Interpret with survival and food availability.',
-        job_cpu_cores:'Observed CPU core-equivalents consumed by the managed job. This may be less than its leased CPU capacity.',
-        job_cpu_lease_utilization_pct:'CPU utilization relative to the job’s allocated quota. High utilization alone does not establish useful training progress.',
-        job_memory_mb:'Memory used by the supervised job, in MiB. This is not total machine memory.',
-        job_memory_lease_utilization_pct:'Memory used as a percentage of the job’s configured limit. High values can indicate limited headroom.',
-        job_cpu_throttled_seconds:'Accumulated CPU quota throttling time. Heavy throttling may limit training throughput.',
-        job_cpu_throttle_events:'Count of CPU quota throttling events. Interpret together with CPU allocation and timing.',
-        host_cpu_busy_pct:'Overall host CPU busy percentage, including other workloads. It is not isolated job utilization.',
-        host_gpu_busy_pct:'Utilization of the physical GPU. This is host-wide, not isolated to a job.',
-        host_gpu_vram_mb:'Used VRAM on the physical GPU, including other processes. This is not the job’s exclusive memory usage.',
-        host_gpu_temperature_c:'GPU temperature reported by the hardware sensor. Temperature alone cannot establish throttling.',
-        host_gpu_hotspot_temperature_c:'GPU hotspot or junction temperature. Interpretation requires device-specific limits.',
-        host_gpu_power_w:'Power consumption of the physical GPU. It is not isolated job energy use.',
-        collection_seconds:'Time spent collecting training experience. Compare with optimization time to identify bottlenecks.',
-        optimization_seconds:'Time spent optimizing the model. A high share may indicate learner-bound throughput.',
-        ppo_metric_readback_seconds:'Time spent reading PPO metrics back from the device. GPU synchronization may contribute.',
-        loss:'Model training loss reported by the optimizer. A lower loss does not necessarily mean better gameplay.',
-        policy_loss:'Policy optimization objective reported by the trainer. It is not a direct measure of game performance.',
-        value_loss:'Value-function training loss. Interpret alongside reward and independent evaluations.',
-        entropy:'Entropy of the policy’s action distribution. Lower entropy can indicate less exploration, not necessarily stronger play.',
-        mean_reward:'Average training reward. The interpretation depends on the task and reward definition.',
-    };
-    if(Object.hasOwn(known,name))return known[name];
+    if(/^eval_[a-z][a-z0-9_]{0,11}_[a-f0-9]{12}_(?:[a-f0-9]{8}|unverifi)$/.test(name)||
+        /^eval_[a-z][a-z0-9_]{0,20}_[a-f0-9]{12}$/.test(name))
+        return 'Independent fixed-suite success rate measured at an identified checkpoint. Compare only the same frozen suite definition and evaluator runtime.';
+    if(name.startsWith('eval_')) {
+        const meanings={
+            win_count:'Number of controlled evaluation games won by the candidate.',
+            loss_count:'Number of controlled evaluation games lost by the candidate.',
+            draw_count:'Number of controlled evaluation games ending in a draw.',
+            score_rate:'Draw-adjusted controlled evaluation score: (wins + 0.5 × draws) divided by all evaluated games.',
+            survival_rate:'Fraction of frozen Courier evaluation trials in which the candidate survives.',
+            mean_lifespan:'Mean lifespan across independent Courier evaluation trials, measured in simulation steps.',
+            mean_survival_score:'Mean project-defined survival score on the frozen Courier evaluation scenarios, not a survival rate.',
+            mean_deliveries:'Mean deliveries per independent Courier evaluation trial.',
+            total_deliveries:'Total deliveries in the independent Courier evaluation trials.',
+            pickup_rate:'Fraction of eligible pickups completed in frozen Courier evaluation scenarios.',
+            mean_steps_per_delivery:'Mean simulation steps per delivery in independent Courier evaluation trials.',
+            gross_energy_per_step:'Mean gross energy expenditure per simulation step during Courier evaluation.',
+            mean_reward:'Mean environment reward during the fixed Courier evaluation, not a substitute for independent survival.',
+            mean_feedings:'Mean feeding events per independent Courier evaluation trial.',
+            mean_births:'Mean births per independent Courier evaluation trial.',
+        };
+        for(const [suffix,description] of Object.entries(meanings))
+            if(name.endsWith('_'+suffix))return description;
+        return 'Project-reported independent evaluation measurement at a verified checkpoint. Compare only matching frozen suites and units.';
+    }
+    if(Object.hasOwn(HUB_METRIC_DESCRIPTIONS,name))return HUB_METRIC_DESCRIPTIONS[name];
     const gpu=/^host_gpu_(\d+)_(busy_pct|used_vram_mb|temperature_c|hotspot_temperature_c|power_w)$/.exec(name);
-    if(gpu)return 'Reports '+gpu[2].replace(/_/g,' ')+' of physical GPU '+gpu[1]+'. This is host-wide hardware telemetry, not isolated job usage.';
+    if(gpu)return 'Physical GPU '+gpu[1]+': '+HUB_GPU_METRIC_SUFFIXES[gpu[2]];
     const collector=/^collector_(\d+)_(.+)$/.exec(name);
-    if(collector)return 'Reports '+collector[2].replace(/_/g,' ')+' for rollout collector '+collector[1]+'. Use this to inspect collector throughput or overhead, not policy strength.';
+    if(collector&&Object.hasOwn(HUB_COLLECTOR_METRIC_SUFFIXES,collector[2]))
+        return 'Rollout collector '+collector[1]+': '+
+            HUB_COLLECTOR_METRIC_SUFFIXES[collector[2]];
+    const local=/^local_engine_(\d+)_(.+)$/.exec(name);
+    if(local&&Object.hasOwn(HUB_LOCAL_ENGINE_METRIC_SUFFIXES,local[2]))
+        return 'Local engine '+local[1]+': '+
+            HUB_LOCAL_ENGINE_METRIC_SUFFIXES[local[2]];
     const display=name.replace(/_/g,' ');
     const unit=units.length?' (units: '+units.join('/')+')':'';
-    return 'Reports '+display+unit+' as published by the trainer or machine agent. This diagnostic value alone does not establish learning quality.';
+    return 'Uncatalogued '+display+unit+
+        '. No definition is published for this metric; verify its meaning before comparing runs.';
 }
 
 function hubMetricValue(point,key) {
@@ -186,12 +548,14 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
     // group. Read the separately reserved remote jobs; never infer resources
     // from collector counts, measured rates or machine CPU capacity.
     const allocation=job=>{
-        const distributed=job.distributed_rollout_managed===true;
+        const courierGroup=job.project_id==='courier'&&
+            job.distributed_courier_managed===true;
+        const distributed=job.distributed_rollout_managed===true||courierGroup;
         const workers=distributed?allJobs.filter(other=>
-            other.project_id==='tinybrains_rollout'&&
+            other.project_id===(courierGroup?'courier_lineage':'tinybrains_rollout')&&
             other.frozen_parameters?.learner_job_id===job.id):[];
-        if(distributed&&(workers.length<1||workers.length>8))return null;
-        const pinnedThreads=distributed&&workers.every(worker=>
+        if(distributed&&(workers.length<1||workers.length>(courierGroup?16:8)))return null;
+        const pinnedThreads=distributed&&!courierGroup&&workers.every(worker=>
             Number.isSafeInteger(worker.frozen_parameters?.threads)&&
             worker.frozen_parameters.threads>=1&&
             Number.isSafeInteger(worker.resources?.cpus)&&
@@ -230,6 +594,7 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             return {
                 host:member.assigned_machine_id,
                 role:index===0?'learner':'collector',
+                shared_policy:member.frozen_parameters?.shared_policy===true,
                 cpus:member.resources?.cpus,
                 ram_mb:member.resources?.ram_mb,
                 gpus:gpuCount,
@@ -243,10 +608,28 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
         if(members.some(member=>!member.host||
             !Number.isSafeInteger(member.cpus)||member.cpus<1||
             !Number.isSafeInteger(member.ram_mb)||member.ram_mb<1||
-            !Number.isSafeInteger(member.gpus)||member.gpus<0)||
-            new Set(members.map(member=>member.host)).size!==members.length)
+            !Number.isSafeInteger(member.gpus)||member.gpus<0))
             return null;
-        members.sort((a,b)=>a.host.localeCompare(b.host));
+        // The learner and its slot-pinned shared-policy collectors may
+        // share a host, but only with separate acknowledged exclusive
+        // GPU leases. Other distributed members require distinct hosts.
+        const ownersByHost=new Map();
+        for(const member of members) {
+            if(!ownersByHost.has(member.host))ownersByHost.set(member.host,[]);
+            ownersByHost.get(member.host).push(member);
+        }
+        if([...ownersByHost].some(([host,owners])=>owners.length>1&&
+            (!courierGroup||job.frozen_parameters?.shared_policy!==true||
+                owners.filter(owner=>owner.role==='learner').length!==
+                    (host===job.assigned_machine_id?1:0)||
+                owners.some(owner=>owner.shared_policy!==true||
+                    owner.mode!=='exclusive'||owner.gpus!==1||
+                    owner.gpu_ids?.length!==1)||
+                new Set(owners.map(owner=>owner.gpu_ids[0])).size!==owners.length)))
+            return null;
+        members.sort((a,b)=>a.host.localeCompare(b.host)||
+            a.role.localeCompare(b.role)||
+            (a.gpu_ids?.[0]||'').localeCompare(b.gpu_ids?.[0]||''));
         return {
             members,
             cpus:members.reduce((total,m)=>total+m.cpus,0),
@@ -256,7 +639,9 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             gpu_mode:members.map(m=>m.mode).join('|'),
             claims_verified:members.every(m=>m.gpu_ids!==null),
             collector_threads:pinnedThreads?.threads??null,
-            collector_cpus:pinnedThreads?.cpus??null,
+            collector_cpus:courierGroup
+                ?workers.reduce((sum,worker)=>sum+worker.resources.cpus,0)
+                :pinnedThreads?.cpus??null,
         };
     };
     const rows=runs.map(run=>{
@@ -281,7 +666,9 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             members:resources?.members||null,
             lineage:run.job.artifact_lineage_root_id||run.job.id,
             status:run.job.status,
-            distributed:run.job.distributed_rollout_managed===true,
+            distributed:run.job.distributed_rollout_managed===true||
+                run.job.project_id==='courier'&&
+                run.job.distributed_courier_managed===true,
             cpus:resources?.cpus??null,
             gpus:resources?.gpus??null,
             gpu_mode:resources?.gpu_mode||null,
@@ -468,12 +855,17 @@ function hubDistributedMetricSelection(selected,remoteCount) {
         const missing=[first,second].filter(name=>!names.includes(name));
         if(names.length+missing.length<=96)names.push(...missing);
     };
-    for(let i=0;i<total;i++)
+    for(let i=0;i<total;i++) {
         includePair('collector_'+i+'_rollout_engine_step_seconds',
             'collector_'+i+'_learner_inference_seconds');
+        includePair('collector_'+i+'_observation_prepare_seconds',
+            'collector_'+i+'_opponent_processing_seconds');
+    }
     for(let i=0;i<total;i++) {
         const model='collector_'+i+'_model_prepare_seconds';
         if(!names.includes(model)&&names.length<96)names.push(model);
+        const matchRate='collector_'+i+'_match_steps_per_second';
+        if(!names.includes(matchRate)&&names.length<96)names.push(matchRate);
         if(i>0) {
             const roundtrip='collector_'+i+'_roundtrip_seconds';
             if(!names.includes(roundtrip)&&names.length<96)names.push(roundtrip);
@@ -523,6 +915,9 @@ function hubCollectorStageProfile(run) {
             if(engine===null||inference===null||rate===null)continue;
             samples.push({
                 engine,inference,rate,
+                matchRate:value(metrics,slot,'match_steps_per_second','rate'),
+                observation:value(metrics,slot,'observation_prepare_seconds','seconds'),
+                opponent:value(metrics,slot,'opponent_processing_seconds','seconds'),
                 model:value(metrics,slot,'model_prepare_seconds','seconds'),
                 roundtrip:value(metrics,slot,'roundtrip_seconds','seconds'),
             });
@@ -536,7 +931,9 @@ function hubCollectorStageProfile(run) {
         slots.push({
             slot,samples:latest.length,
             engine:observed('engine'),inference:observed('inference'),
-            rate:observed('rate'),model:observed('model'),
+            observation:observed('observation'),opponent:observed('opponent'),
+            rate:observed('rate'),matchRate:observed('matchRate'),
+            model:observed('model'),
             roundtrip:observed('roundtrip'),
         });
     }
@@ -548,13 +945,21 @@ function trialBatchLabel(job) {
 }
 function hubComparisonCsv(exported) {
     const fields=[
-        'slot','job_id','project_id','configuration_name','configuration_sha256',
+        'slot','job_id','project_id','configuration_name','run_name','configuration_sha256',
         'selected_x_axis','selected_metric','selected_metrics','assigned_machine_id',
-        'artifact_lineage_root_id','continuation_of_job_id','status',
+        'artifact_lineage_root_id','continuation_of_job_id','continuation_mode',
+        'environment_overrides_json','training_stage','status',
         'observed_at','source_modified_at','experiment_id','segment_id',
         'break_before','steps_completed','x_value',
         'trial_batch_id','trial_batch_index','trial_batch_size',
         'resource_bundle_id','resource_bundle_index','resource_bundle_size',
+        'evaluation_suite_id','evaluation_suite_sha256',
+        'evaluation_runtime_sha256','evaluation_checkpoint_sha256',
+        'evaluation_dispatch_id','evaluation_timestamp',
+        'evaluation_trials','evaluation_successes',
+        'evaluation_status','evaluation_source_kind',
+        'evaluation_source_checkpoint_name','evaluation_source_report_sha256',
+        'evaluation_archive_total_records','evaluation_export_is_sampled',
     ];
     const metrics=new Set(exported.metrics||[]);
     for(const key of [...metrics].sort())
@@ -575,6 +980,7 @@ function hubComparisonCsv(exported) {
     const rows=exported.runs.flatMap(run=>run.points.map(point=>({
         slot:run.slot,job_id:run.job_id,project_id:exported.project_id,
         configuration_name:run.configuration_name,
+        run_name:run.run_name||'',
         configuration_sha256:run.configuration_sha256,
         selected_x_axis:exported.x_axis,
         selected_metric:exported.metric,
@@ -582,6 +988,9 @@ function hubComparisonCsv(exported) {
         assigned_machine_id:run.assigned_machine_id,
         artifact_lineage_root_id:run.artifact_lineage_root_id,
         continuation_of_job_id:run.continuation_of_job_id,
+        continuation_mode:run.continuation_mode,
+        environment_overrides_json:JSON.stringify(run.environment_overrides||{}),
+        training_stage:run.training_stage,
         trial_batch_id:run.trial_batch?.id,
         trial_batch_index:run.trial_batch?.index,
         trial_batch_size:run.trial_batch?.size,
@@ -589,6 +998,22 @@ function hubComparisonCsv(exported) {
         resource_bundle_index:run.resource_bundle?.index,
         resource_bundle_size:run.resource_bundle?.size,
         status:run.status,...point,
+        evaluation_suite_id:point.evaluation_identity?.suite_id,
+        evaluation_suite_sha256:point.evaluation_identity?.suite_sha256,
+        evaluation_runtime_sha256:point.evaluation_identity?.runtime_sha256,
+        evaluation_checkpoint_sha256:point.evaluation_identity?.checkpoint_sha256,
+        evaluation_dispatch_id:point.evaluation_identity?.dispatch_id,
+        evaluation_timestamp:point.evaluation_identity?.evaluated_at,
+        evaluation_trials:point.evaluation_identity?.trials,
+        evaluation_successes:point.evaluation_identity?.successes,
+        evaluation_status:point.evaluation_identity?.comparison_status,
+        evaluation_source_kind:point.evaluation_identity?.source_kind,
+        evaluation_source_checkpoint_name:
+            point.evaluation_identity?.source_checkpoint_name,
+        evaluation_source_report_sha256:
+            point.evaluation_identity?.source_report_sha256,
+        evaluation_archive_total_records:run.evaluation_history_total_records,
+        evaluation_export_is_sampled:run.evaluation_history_export_is_sampled,
         ...Object.fromEntries(Object.entries(point.metrics||{}).flatMap(
             ([key,metric])=>[
                 ['metric_'+key,metric.value],
@@ -690,6 +1115,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const $ = id => document.getElementById(id);
     let project = document.documentElement.dataset.hubDefaultProject || 'bees';
     let tab = 'monitor', state = null, editing = null;
+    let initialDesignLoaded=false;
     let comparisonData = null,comparisonProject = null,comparisonError = null;
     let comparisonRequest = 0,selectionProject = null,previewCandidateKey = null;
     let comparisonDefaultsApplied = false;
@@ -792,12 +1218,21 @@ document.addEventListener('DOMContentLoaded', () => {
             resources.value='{"cpus":2,"ram_mb":2048,"gpu_count":0}';
         }
         resourceLabel.append(resources);
+        const curriculumLabel=document.createElement('label');
+        curriculumLabel.className='hub-pipeline-curriculum-label';
+        const curriculum=document.createElement('input');
+        curriculum.type='checkbox';
+        curriculum.className='hub-pipeline-curriculum';
+        curriculumLabel.append(curriculum,
+            document.createTextNode(' Curriculum stage (world size, food supply, energy or other policy-compatible conditions)'));
         const remove=button('Remove',()=>{
             if(container.children.length<=2)return;
             row.remove();
             renderPipelineStages();
         });
-        row.append(configLabel,resourceLabel,remove);
+        const resourceGroup=document.createElement('div');
+        resourceGroup.append(resourceLabel,curriculumLabel);
+        row.append(configLabel,resourceGroup,remove);
         container.append(row);
     }
     function renderPipelineStages() {
@@ -823,6 +1258,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if(sameSelection&&configs.some(c=>c.id===old))
                 select.value=old;
             else if(suggested)select.value=suggested.id;
+            const curriculum=row.querySelector('.hub-pipeline-curriculum');
+            const curriculumLabel=row.querySelector('.hub-pipeline-curriculum-label');
+            curriculumLabel.hidden=!(checkpointPipeline&&project==='courier'&&
+                (i>0||Boolean($('hub-pipeline-predecessor').value)));
+            if(curriculumLabel.hidden)curriculum.checked=false;
             row.querySelector('button').disabled=rows.length<=2;
         }
         pipelineStageProject=project;
@@ -1006,8 +1446,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     selected.parameters?.optimizer_group===true;
             const eligible=machines.filter(m=>
                 m.status==='connected'&&m.local_executor_enabled===true&&
-                m.native_preflight_passed===true&&
-                m.installed_projects?.includes(selected?.project_id)&&
+                (m.native_preflight_passed===true&&
+                    m.installed_projects?.includes(selected?.project_id)||
+                    ['courier','tinybrains'].includes(selected?.project_id)&&
+                    !m.installed_projects?.includes(selected.project_id)&&
+                    (m.agent_platform==='win32'||m.agent_platform==='linux'&&
+                        m.execution_capabilities?.cgroup_v2_detected===true&&
+                        ['cpu','memory'].every(c=>
+                            m.execution_capabilities?.cgroup_controllers?.includes(c))))&&
                 (!source||(i===0
                     ?m.id===source.assigned_machine_id
                     :m.id!==source.assigned_machine_id)));
@@ -1569,9 +2015,10 @@ document.addEventListener('DOMContentLoaded', () => {
         tab=next;
         for(const section of document.querySelectorAll('section[data-hub-tab]')) {
             const scope=section.dataset.project;
-            section.hidden=section.dataset.hubTab!==tab ||
+            const shouldHide=section.dataset.hubTab!==tab ||
                 (scope==='bees' && project!=='bees') ||
                 (scope==='other' && project==='bees');
+            if(section.hidden!==shouldHide)section.hidden=shouldHide;
         }
         for(const b of document.querySelectorAll('[data-hub-go]')) {
             b.setAttribute('aria-selected',String(b.dataset.hubGo===tab));
@@ -1596,6 +2043,72 @@ document.addEventListener('DOMContentLoaded', () => {
     const comparisonMetricOverrides=new Map();
     const comparisonChartAverages=new Map();
     const comparisonChartRolling=new Map();
+    const comparisonChartRollingSizes=new Map();
+    const comparisonChartRunVisibility=new Map();
+    const comparisonChartGlobalSettings=new Map();
+    const globalChartMean=$('hub-compare-all-mean');
+    const globalChartRolling=$('hub-compare-all-rolling');
+    const globalChartSamples=$('hub-compare-all-samples');
+    function globalChartSettings() {
+        if(!comparisonChartGlobalSettings.has(project))
+            comparisonChartGlobalSettings.set(project,{
+                mean:false,rolling:false,samples:50,
+            });
+        return comparisonChartGlobalSettings.get(project);
+    }
+    function syncGlobalChartControls() {
+        const settings=globalChartSettings();
+        const charts=[...$('hub-compare-plots').children]
+            .filter(element=>element.dataset.project===project)
+            .map(element=>element._hubChart).filter(Boolean);
+        globalChartMean.checked=settings.mean;
+        globalChartMean.indeterminate=charts.some(chart=>
+            chart.average.checked!==settings.mean);
+        globalChartRolling.checked=settings.rolling;
+        globalChartRolling.indeterminate=charts.some(chart=>
+            chart.rolling.checked!==settings.rolling);
+        const mixedSamples=charts.some(chart=>
+            Number(chart.rollingSize.value)!==settings.samples);
+        // Do not interrupt someone entering a window size during a refresh.
+        if(document.activeElement!==globalChartSamples) {
+            globalChartSamples.value=mixedSamples?'':String(settings.samples);
+            globalChartSamples.placeholder=mixedSamples?'Mixed':'';
+        }
+    }
+    function setGlobalChartSetting(setting,value) {
+        const settings=globalChartSettings();
+        settings[setting]=value;
+        // A global choice resets older per-chart overrides, including
+        // temporarily hidden charts, so newly selected plots inherit it.
+        const overrides=setting==='mean'?comparisonChartAverages:
+            setting==='rolling'?comparisonChartRolling:comparisonChartRollingSizes;
+        for(const key of overrides.keys())
+            if(key.startsWith(project+'|'))overrides.delete(key);
+        for(const section of $('hub-compare-plots').children) {
+            if(section.dataset.project!==project||!section._hubChart)continue;
+            const chart=section._hubChart;
+            if(setting==='mean')chart.average.checked=value;
+            else if(setting==='rolling')chart.rolling.checked=value;
+            else chart.rollingSize.value=String(value);
+            chart.signature=null;
+        }
+        if(lastComparisonChart)
+            drawComparisonCharts(lastComparisonChart.runs,
+                lastComparisonChart.keys,lastComparisonChart.xKey);
+        else syncGlobalChartControls();
+    }
+    globalChartMean.addEventListener('change',()=>
+        setGlobalChartSetting('mean',globalChartMean.checked));
+    globalChartRolling.addEventListener('change',()=>
+        setGlobalChartSetting('rolling',globalChartRolling.checked));
+    globalChartSamples.addEventListener('change',()=>{
+        const requested=Number(globalChartSamples.value);
+        const count=globalChartSamples.value.trim()&&Number.isFinite(requested)
+            ?Math.min(256,Math.max(2,Math.trunc(requested)))
+            :globalChartSettings().samples;
+        globalChartSamples.value=String(count);
+        setGlobalChartSetting('samples',count);
+    });
     let lastComparisonChart=null,lastComparisonChartWidth=0;
     let compareSerial=0;
     const compareColor=i=>'hsl('+((i*137.508+211)%360).toFixed(2)+' 65% 38%)';
@@ -1690,9 +2203,44 @@ document.addEventListener('DOMContentLoaded', () => {
                 const priority={'Learning outcomes':0,'Performance and resources':1};
                 for(const [group,options] of [...groups].sort(([a],[b])=>
                     (priority[a]??2)-(priority[b]??2)||a.localeCompare(b))) {
-                    const heading=document.createElement('div');
+                    // Operate on the complete category, even while a search
+                    // shows only some of its members. Train selection is
+                    // capped at 96; Compare has no artificial chart limit.
+                    const categoryOptions=[...source.options].filter(option=>
+                        (option.dataset.category||'Other metrics')===group);
+                    const selectedCount=categoryOptions.filter(option=>option.selected).length;
+                    const allSelected=selectedCount===categoryOptions.length;
+                    const heading=document.createElement('button');
+                    heading.type='button';
                     heading.className='hub-metric-group-title';
-                    heading.textContent=group+' · '+options.length;
+                    heading.setAttribute('aria-pressed',String(allSelected));
+                    const actionText=allSelected?'Deselect all':'Select all';
+                    heading.textContent=group+' · '+selectedCount+'/'+
+                        categoryOptions.length+' selected · '+actionText+
+                        (options.length!==categoryOptions.length
+                            ?' ('+options.length+' shown)':'');
+                    heading.setAttribute('aria-label',actionText+' metrics in '+group+
+                        ' ('+selectedCount+' of '+categoryOptions.length+' selected)');
+                    heading.title=allSelected?'Remove every metric in this category.'
+                        :'Select every metric in this category (up to the 96-metric Train limit).';
+                    heading.addEventListener('click',()=>{
+                        if(allSelected)for(const option of categoryOptions)option.selected=false;
+                        else {
+                            let slots=selectionLimit===null?Infinity:
+                                Math.max(0,selectionLimit-source.selectedOptions.length);
+                            for(const option of categoryOptions)
+                                if(!option.selected&&slots>0) {
+                                    option.selected=true;
+                                    slots--;
+                                }
+                        }
+                        const limited=!allSelected&&
+                            categoryOptions.some(option=>!option.selected);
+                        source.dispatchEvent(new Event('change',{bubbles:true}));
+                        draw();
+                        if(limited)
+                            count.textContent+=' · 96-metric limit: deselect other metrics to add the rest';
+                    });
                     nodes.push(heading);
                     for(const option of options) {
                         const label=document.createElement('label');
@@ -1812,7 +2360,9 @@ document.addEventListener('DOMContentLoaded', () => {
             refreshComparisonKeepingViewport();
         }catch(error){
             if(serial!==comparisonRequest||requested!==project)return;
-            comparisonData=null;
+            // A transient progress-request failure must not erase already
+            // verified chart observations or the selected metrics.
+            if(comparisonProject!==requested)comparisonData=null;
             comparisonProject=requested;
             comparisonError=String(error.message||error);
             refreshComparisonKeepingViewport();
@@ -1821,7 +2371,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Automatic comparison updates replace several panels and charts. Keep
     // the currently visible metric at the same viewport position rather than
     // allowing browser scroll anchoring to jump back to the first chart.
-    function refreshComparisonKeepingViewport() {
+    function withCompareViewport(update) {
         const plots=$('hub-compare-plots');
         const sections=[...plots.querySelectorAll('.hub-progress-plot')];
         const visible=sections.find(section=>{
@@ -1831,12 +2381,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const anchorKey=visible?.dataset.metric;
         const anchorTop=visible?.getBoundingClientRect().top;
         const beforeScroll=window.scrollY;
-        renderComparison();
+        update();
         const replacement=anchorKey?[...plots.querySelectorAll('.hub-progress-plot')]
             .find(section=>section.dataset.metric===anchorKey):null;
         if(replacement&&Number.isFinite(anchorTop)) {
             window.scrollBy(0,replacement.getBoundingClientRect().top-anchorTop);
         }else if(window.scrollY!==beforeScroll)window.scrollTo(0,beforeScroll);
+    }
+    function refreshComparisonKeepingViewport() {
+        withCompareViewport(renderComparison);
     }
     function comparisonAxisLabel(key) {
         return key==='steps_completed'&&project==='tinybrains'
@@ -1845,11 +2398,24 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderComparison() {
         if(!state)return;
         const jobs=project==='bees'?(state.bees?.runs||[]):
-            state.jobs.filter(j=>j.project_id===project);
+            [...state.jobs,...(state.historical_evaluation_jobs||[])]
+                .filter(j=>j.project_id===project);
         const samples=comparisonProject===project&&comparisonData?.samples||[];
+        const evalSamples=comparisonProject===project&&comparisonData?.evaluations||[];
         $('hub-compare-selection-panel').hidden=project==='bees';
+        $('hub-historical-import').hidden=project!=='tinybrains';
         const history=new Map(samples.map(s=>[s.job_id,s.points||[]]));
-        const hasSamples=j=>j.live_execution?.progress||j.final_progress||history.get(j.id)?.length;
+        const evalHistory=new Map(evalSamples.map(s=>[s.job_id,s.points||[]]));
+        const evalTotals=new Map(evalSamples.map(s=>
+            [s.job_id,s.total_records??(s.points||[]).length]));
+        const evalDiagnostics=new Map((comparisonProject===project
+            ?comparisonData?.evaluation_diagnostics||[]:[])
+            .map(s=>[s.job_id,s.events||[]]));
+        const evalOpen=new Map((comparisonProject===project
+            ?comparisonData?.evaluation_open_diagnostics||[]:[])
+            .map(item=>[item.job_id,item]));
+        const hasSamples=j=>j.live_execution?.progress||j.final_progress||
+            history.get(j.id)?.length||evalHistory.get(j.id)?.length;
         const selectable=jobs.filter(j=>hasSamples(j)||hubComparisonEvaluation(j)||
             hubComparisonTerminal(j)||['waiting_adapter','waiting_predecessor',
                 'start_requested','launch_requested','running','stop_requested']
@@ -1866,10 +2432,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const select=$('hub-compare-'+compareSlots[i]);
             select.replaceChildren(new Option('No run',''),
                 ...selectable.map(j=>new Option(
-                    j.configuration_name+
+                    hubJobLabel(j)+
                     trialBatchLabel(j)+
                     ' · job '+(jobs.indexOf(j)+1)+
-                    (j.continuation_of_job_id?' · continuation':' · initial run')+
+                    (j.evaluation_history_only
+                        ?' · historical checkpoint audit'
+                        :j.continuation_of_job_id
+                            ?j.continuation_mode==='curriculum'
+                                ?' · curriculum stage':' · continuation'
+                            :' · initial run')+
                     ' · '+j.status+
                     ' · '+new Date(j.created_at).toLocaleDateString(),j.id)));
             const desired=chooseDefaults&&i<2
@@ -1905,7 +2476,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-compare-selection-queue').textContent=readyForRanking
             ?'Queue best evaluated continuation':'Schedule candidate selection';
         $('hub-compare-selection-queue').disabled=chosenIds.length<2||
-            new Set(chosenIds).size!==chosenIds.length||!configs.length;
+            new Set(chosenIds).size!==chosenIds.length||!configs.length||
+            chosenIds.some(id=>jobs.find(j=>j.id===id)?.evaluation_history_only);
         const allPlans=(state.candidate_selections||[])
             .filter(p=>p.project_id===project);
         const plans=allPlans.slice(-5).reverse();
@@ -1934,24 +2506,38 @@ document.addEventListener('DOMContentLoaded', () => {
             const id=$('hub-compare-'+slot).value;
             const job=jobs.find(j=>j.id===id);
             return job?{job,color:compareColor(i),slot:String(i+1),
-                points:history.get(id)||[]}:null;
+                points:history.get(id)||[],evaluation_points:evalHistory.get(id)||[],
+                evaluation_total_records:evalTotals.get(id)??0,
+                evaluation_diagnostics:evalDiagnostics.get(id)||[],
+                evaluation_open_diagnostics:evalOpen.get(id)?.events||[],
+                evaluation_open_count:evalOpen.get(id)?.total_open||0}:null;
         }).filter(Boolean);
         const metricSelect=$('hub-compare-metric');
         const oldMetrics=metricSelect.dataset.metricProject===project
             ?selectedComparisonMetrics():[];
-        const metricOptions=hubGenericMetricCatalog(chartable.map(job=>({
-            job,points:history.get(job.id)||[],
-        }))).map(metric=>({
-            key:'metric:'+metric.key,
-            label:metric.key+' ('+metric.units.join('/')+')',
-            units:metric.units,
-        }));
+        // Compare only what the selected runs actually published. Other
+        // runs' metrics, saved requests and speculative capabilities are not data.
+        const metricOptions=hubGenericMetricCatalog(runs).map(metric=>{
+            const details=runs.flatMap(run=>run.evaluation_points||[]).find(row=>{
+                const prefix=hubEvaluationMetricPrefix(row);
+                return metric.key===prefix||metric.key.startsWith(prefix+'_');
+            });
+            const prefix=details?hubEvaluationMetricPrefix(details):null;
+            const measurement=details?(metric.key===prefix
+                ?'success rate':metric.key.slice(prefix.length+1).replace(/_/g,' ')):null;
+            return {key:'metric:'+metric.key,
+                label:details?'Evaluation '+details.suite_id+' · '+measurement+
+                    ' (suite '+details.suite_sha256.slice(0,12)+
+                    ' · runtime '+(details.runtime_sha256?.slice(0,12)||'unverified')+')':
+                    metric.key+' ('+metric.units.join('/')+')',
+                units:metric.units};
+        });
         metricSelect.replaceChildren(...metricOptions.map(m=>{
             const option=new Option(m.label,m.key);
             const key=m.key.slice(7);
             option.dataset.description=hubMetricDescription(key,m.units);
             option.title=option.dataset.description;
-            option.dataset.category=knownLearningMetrics.includes(key)
+            option.dataset.category=key.startsWith('eval_')||knownLearningMetrics.includes(key)
                 ?'Learning outcomes':knownPerformanceMetrics.includes(key)
                     ?'Performance and resources':'Other recorded metrics';
             return option;
@@ -1962,15 +2548,72 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(key=>metricOptions.some(m=>m.key===key));
         // On a new project view, show actual learning outcomes before the
         // alphabetically first resource counter. Explicit user choices win.
-        const learningDefaults=['selection_candidate_survival_score',
+        // On first view choose one meaningful outcome per frozen evaluation
+        // suite/runtime, not the first five alphabetically sorted counters
+        // (which can all belong to Micro while Nano is never plotted).
+        // Preserve explicit viewer selections and saved run preferences.
+        const availableKeys=new Set(metricOptions.map(item=>item.key));
+        // Only complete, reported metrics can be charted. A frozen Design
+        // preference orders the series; it cannot invent measurements. Give
+        // every frozen suite/runtime cohort its first curve before assigning
+        // additional curves, so a multi-suite experiment remains visible.
+        const evaluationPreferences=new Map();
+        for(const run of runs)for(const receipt of run.evaluation_points||[]) {
+            const prefix=hubEvaluationMetricPrefix(receipt);
+            if(!evaluationPreferences.has(prefix))
+                evaluationPreferences.set(prefix,new Set());
+            for(const name of run.job.evaluation_monitor?.preferred_metrics||[])
+                evaluationPreferences.get(prefix).add(name);
+        }
+        const evaluationChoices=[...evaluationPreferences].sort(([a],[b])=>
+            a.localeCompare(b)).map(([prefix,preferred])=>{
+            const requested=[...preferred].map(name=>'metric:'+prefix+'_'+name)
+                .filter(key=>availableKeys.has(key));
+            const fallback=[
+                'metric:'+prefix+'_score_rate',
+                'metric:'+prefix+'_survival_rate',
+                'metric:'+prefix,
+            ].filter(key=>availableKeys.has(key)&&!requested.includes(key));
+            return requested.concat(fallback);
+        });
+        const evaluationDefaults=[];
+        for(let index=0;evaluationDefaults.length<8;index++) {
+            let added=false;
+            for(const choices of evaluationChoices) {
+                if(evaluationDefaults.length>=8)break;
+                if(choices[index]) {
+                    evaluationDefaults.push(choices[index]);
+                    added=true;
+                }
+            }
+            if(!added)break;
+        }
+        const learningDefaults=[...evaluationDefaults,
+            ...['selection_candidate_survival_score',
             'selection_incumbent_survival_score','training_win_rate','training_score_rate',
             'training_mean_score','loss','entropy',
+            'colony_window_deliveries','colony_window_feedings',
+            'colony_window_births','colony_window_combat_deaths',
+            'colony_mean_population',
             'ant_decisions_per_second'].map(name=>'metric:'+name)
-            .filter(key=>metricOptions.some(option=>option.key===key));
-        const metricChoices=comparisonMetricOverrides.get(project) ??
-            (keep.length?keep:preferred.length?preferred:
-                learningDefaults.length?learningDefaults.slice(0,5):
-                    [metricOptions[0]?.key]);
+            .filter(key=>metricOptions.some(option=>option.key===key))];
+        const override=comparisonMetricOverrides.get(project);
+        const matchingOverride=override?.filter(key=>
+            metricOptions.some(metric=>metric.key===key));
+        const metricChoices=override?.length===0?[]:
+            matchingOverride?.length?matchingOverride:
+                // Newly completed independent evaluations become visible
+                // even if Compare was opened before the first receipt.
+                // Only a deliberate viewer choice (override) suppresses
+                // them; an automatically retained training selection does not.
+                evaluationDefaults.length
+                    ?[...evaluationDefaults.slice(0,8),
+                        ...(keep.length?keep:preferred)
+                            .filter(key=>!evaluationDefaults.includes(key))
+                            .slice(0,Math.max(0,5-evaluationDefaults.length))]
+                    :keep.length?keep:preferred.length?preferred:
+                    learningDefaults.length?learningDefaults.slice(0,5):
+                        [metricOptions[0]?.key];
         for(const option of metricSelect.options)
             option.selected=metricChoices.includes(option.value);
         metricSelect.dataset.metricProject=project;
@@ -2006,10 +2649,151 @@ document.addEventListener('DOMContentLoaded', () => {
         feedback('hub-compare-notice',
             (state?.hub_observation_archive_issue
                 ?state.hub_observation_archive_issue+' '
-                :'')+note);
+                :'')+(comparisonData?.evaluation_storage_warning||'')+' '+note);
         const knownRoots=new Set(runs.map(r=>
             r.job.artifact_lineage_root_id||r.job.id));
         const warnings=[];
+        const chartIdentityConflicts=hubEvaluationPrefixConflicts(runs);
+        if(chartIdentityConflicts.size)
+            warnings.push('Some evaluation chart series were withheld because frozen suite/runtime keys collide or the evaluator runtime is unverified in a multi-run comparison. They cannot be compared as identical controlled evaluations; original receipts remain in complete exports.');
+        const regressionSignals=comparisonProject===project
+            ?comparisonData?.evaluation_regressions||[]:[];
+        for(const observation of regressionSignals) {
+            const run=runs.find(run=>run.job.id===observation.job_id);
+            if(!run)continue;
+            if(observation.status==='regressed')
+                warnings.push('Independent evaluation regression: Run '+run.slot+
+                    ' suite '+observation.suite_id+' declined '+(100*observation.drop).toFixed(1)+
+                    ' percentage points across '+observation.window_checkpoints+
+                    '-checkpoint windows (early '+(100*observation.baseline.rate).toFixed(1)+
+                    '%, latest '+(100*observation.latest.rate).toFixed(1)+
+                    '%). This is an observational warning, not a Stop decision.');
+            else if(observation.status==='inconclusive'||
+                observation.status==='incompatible')
+                warnings.push('Run '+run.slot+' suite '+observation.suite_id+
+                    ' regression analysis '+observation.status+': '+observation.reason);
+        }
+        for(const run of runs) {
+            const requested=run.job.evaluation_monitor?.preferred_metrics||[];
+            if(requested.length&&run.evaluation_points.length) {
+                const published=new Set(run.evaluation_points.flatMap(row=>
+                    Object.keys(row.metrics||{})));
+                const missing=requested.filter(name=>!published.has(name));
+                if(missing.length)
+                    warnings.push('Run '+run.slot+
+                        ' requested independent evaluation chart measurements '+
+                        missing.join(', ')+
+                        ', but none appear in its current chart receipts'+
+                        (run.evaluation_total_records>run.evaluation_points.length
+                            ?' (history is sampled)':'')+
+                        '. This is missing measurement evidence, not zero performance.');
+            }
+            if(run.evaluation_total_records>run.evaluation_points.length)
+                warnings.push('Run '+run.slot+' displays '+
+                    run.evaluation_points.length+' of '+
+                    run.evaluation_total_records+
+                    ' archived independent evaluation observations. The chart is sampled by frozen suite and runtime; Export complete job diagnostics to retrieve the original unsampled native-job history.');
+            // All unresolved issues come from the complete immutable archive,
+            // not the newest of the last 32 events or sampled chart receipts.
+            for(const issue of run.evaluation_open_diagnostics) {
+                warnings.push('Run '+run.slot+
+                    (issue.evaluation_status==='failed'
+                        ?' independent checkpoint '+issue.checkpoint_sha256+
+                            ' evaluation failed for '+issue.suite_id+
+                            (Number.isSafeInteger(issue.steps_completed)
+                                ?' at update '+issue.steps_completed:'')+
+                            ' ('+issue.attempted_at+'): '+issue.reason
+                        :' has an unresolved independent evaluation receipt issue'+
+                            (issue.suite_id?' for '+issue.suite_id:'')+
+                            ' at '+issue.observed_at+': '+issue.issue)+
+                    '. Missing evaluation evidence is not a model score; inspect evaluator health.');
+            }
+            if(run.evaluation_open_count>run.evaluation_open_diagnostics.length)
+                warnings.push('Run '+run.slot+' has '+
+                    (run.evaluation_open_count-run.evaluation_open_diagnostics.length)+
+                    ' additional unresolved evaluator issues in the complete diagnostic archive.');
+            const job=run.job;
+            if(job.evaluation_history_only||!(job.evaluation_monitor||job.evaluation_stop)||
+                !['running','stop_requested','stopped','finished','failed'].includes(job.status))
+                continue;
+            const machine=state.machines.find(item=>item.id===job.assigned_machine_id);
+            if(machine?.status!=='connected')
+                warnings.push('Run '+run.slot+' has no connected evaluator agent; missing results are not zero performance.');
+            else {
+                const services=(machine.evaluator_services||[])
+                    .filter(item=>item.project===job.project_id);
+                const failed=services.filter(item=>
+                    item.last_result==='failed'||item.service_state==='failed'||
+                    item.scheduler_state==='inactive');
+                if(failed.length)
+                    warnings.push('Run '+run.slot+' evaluator service requires attention: '+
+                        failed.map(item=>item.unit+
+                            (item.diagnostic?' ('+item.diagnostic+')':'')).join('; ')+'.');
+                else if(!services.some(item=>item.scheduler_state==='active'||
+                    item.service_state==='running'))
+                    warnings.push('Run '+run.slot+' has no confirmed active evaluator scheduler'+
+                        (machine.evaluator_service_issue
+                            ?': '+machine.evaluator_service_issue:'')+
+                        '; independent evaluation availability is unverified.');
+            }
+            if(!run.evaluation_points?.length)
+                warnings.push('Run '+run.slot+' has no archived independent evaluation results. Training measurements are not substitutes for missing benchmark evidence.');
+        }
+        if(runs.some(run=>run.job.evaluation_history_only))
+            warnings.push('Historical checkpoint audits are operator-imported, read-only observations. The Hub did not authorize or supervise their evaluation; verify the source report and frozen suite definitions. They cannot be promoted or resumed.');
+        const definitions=new Map(),runtimes=new Map(),unidentifiedRuntimes=new Set();
+        const suiteManifests=new Map();
+        for(const run of runs)for(const row of run.evaluation_points||[]) {
+            if(!definitions.has(row.suite_id))definitions.set(row.suite_id,new Set());
+            definitions.get(row.suite_id).add(row.suite_sha256);
+            // Compare immutable manifest field names only. The worker and
+            // historical importer already verified each definition's hash;
+            // never fabricate differences from guessed suite names.
+            const archived=run.job.source_suites?.find(source=>
+                source.suite_id===row.suite_id&&
+                source.suite_sha256===row.suite_sha256);
+            const canonical=row.suite_definition_canonical||archived?.definition;
+            if(typeof canonical==='string')try {
+                const manifest=JSON.parse(canonical);
+                if(manifest&&typeof manifest==='object'&&!Array.isArray(manifest)) {
+                    if(!suiteManifests.has(row.suite_id))
+                        suiteManifests.set(row.suite_id,new Map());
+                    suiteManifests.get(row.suite_id).set(row.suite_sha256,manifest);
+                }
+            }catch {}
+            if(!runtimes.has(row.suite_id))runtimes.set(row.suite_id,new Set());
+            if(/^[a-f0-9]{64}$/.test(row.runtime_sha256||''))
+                runtimes.get(row.suite_id).add(row.runtime_sha256);
+            else unidentifiedRuntimes.add(row.suite_id);
+        }
+        for(const [suite,digests] of definitions) {
+            if(digests.size>1) {
+                const manifests=[...(suiteManifests.get(suite)?.values()||[])];
+                const changed=new Set();
+                if(manifests.length>1) {
+                    const fields=new Set(manifests.flatMap(Object.keys));
+                    for(const name of fields) {
+                        const baseline=JSON.stringify(manifests[0][name]);
+                        if(manifests.slice(1).some(source=>
+                            JSON.stringify(source[name])!==baseline))
+                            changed.add(name);
+                    }
+                }
+                warnings.push('Evaluation suite '+suite+
+                    ' has different frozen definitions across these runs'+
+                    (changed.size?'; differing verified fields: '+
+                        [...changed].sort().slice(0,8).join(', ')+
+                        (changed.size>8?' and '+(changed.size-8)+' more':'')
+                        :' (not all full definitions were available for inspection)')+
+                    '. Its curves are separate; do not combine them.');
+            }
+            if((runtimes.get(suite)?.size||0)>1)
+                warnings.push('Evaluation suite '+suite+
+                    ' used multiple evaluator runtime fingerprints. Inspect the checkpoint tooltips before comparing scores.');
+            if(runs.length>1&&unidentifiedRuntimes.has(suite))
+                warnings.push('Evaluation suite '+suite+
+                    ' has results without a verified evaluator runtime identity; cross-run runtime comparability is unproven.');
+        }
         if(knownRoots.size<runs.length)
             warnings.push('Some selected jobs share checkpoint/artifact lineage, so they are not independent replicates.');
         if(runs.length>1) {
@@ -2037,8 +2821,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if(new Set(hostIds).size>1)
                 warnings.push('Runs used different assigned machines; performance measurements may not be comparable.');
         }
+        const selectedAxis=$('hub-compare-x-axis').value;
+        const clockWithoutSamples=selectedAxis==='steps_completed'?[]:
+            runs.filter(run=>!hubComparisonPoints(run).some(point=>
+                hubComparisonAxisValue(point,selectedAxis)!==null));
         feedback('hub-compare-chart-note',
             warnings.join(' ')+(warnings.length?' ':'')+
+            (clockWithoutSamples.length
+                ?'No recorded '+comparisonAxisLabel(selectedAxis)+
+                    ' for '+clockWithoutSamples.map(run=>
+                        'Run '+run.slot+' ('+hubJobLabel(run.job)+')').join(', ')+
+                    '. These runs remain visible when using project updates. '
+                :'')+
             'Horizontal axis: '+(comparisonAxisLabel($('hub-compare-x-axis').value)||
                 chartAxes.steps_completed.label)+'. '+
             ($('hub-compare-x-axis').value==='elapsed_training_seconds'
@@ -2054,18 +2848,48 @@ document.addEventListener('DOMContentLoaded', () => {
             'Reported metrics','Segment','Latest summary'];
         labels.forEach((label,i)=>{if(headings[i])headings[i].textContent=label;});
         for(const run of runs) {
-            const j=run.job,p=j.live_execution?.progress||j.final_progress||
-                run.points[run.points.length-1]||null;
+            const j=run.job;
+            const recorded=hubComparisonPoints(run);
+            const latestTraining=j.live_execution?.progress||j.final_progress||null;
+            const p=latestTraining||run.points.at(-1)||recorded.at(-1)||null;
+            // The summary must show the last actually measured value for
+            // each selected metric. Evaluation samples are checkpoint-bound,
+            // so the latest training heartbeat cannot stand in for them.
+            const observations=[...recorded,...(latestTraining?[latestTraining]:[])];
+            const latestMetric=key=>{
+                let found=null;
+                for(const point of observations) {
+                    const measurement=point.metrics?.[key.slice(7)];
+                    if(!measurement||!Number.isFinite(measurement.value)||
+                        !Number.isSafeInteger(point.steps_completed))continue;
+                    if(!found||point.steps_completed>=found.point.steps_completed)
+                        found={measurement,point};
+                }
+                return found;
+            };
             const tr=document.createElement('tr');
-            cell(tr,run.slot+' · '+j.configuration_name+
+            cell(tr,run.slot+' · '+hubJobLabel(j)+
                 trialBatchLabel(j)+
-                (j.continuation_of_job_id?' (continuation)':''));
+                (j.continuation_of_job_id
+                    ?j.continuation_mode==='curriculum'
+                        ?' (curriculum stage)':' (continuation)'
+                    :''));
             cell(tr,j.status+' · '+(j.assigned_machine_id||'unassigned')+
                 (j.execution_diagnostic?' · '+j.execution_diagnostic:''));
             cell(tr,p?.steps_completed?.toLocaleString()||'—');
             cell(tr,selectedMetrics.map(key=>{
-                const metric=p?.metrics?.[key.slice(7)];
-                return metric?key.slice(7)+': '+metric.value.toLocaleString()+' '+metric.unit:null;
+                const found=latestMetric(key);
+                if(!found)return null;
+                const {measurement,point}=found;
+                const display=measurement.unit==='ratio'
+                    ?(measurement.value*100).toLocaleString(undefined,{
+                        maximumFractionDigits:2})+'%'
+                    :measurement.value.toLocaleString(undefined,{
+                        maximumFractionDigits:2})+
+                        (measurement.unit==='count'?'':' '+measurement.unit);
+                return key.slice(7)+': '+display+
+                    (point.evaluation_identity
+                        ?' (evaluated update '+point.steps_completed+')':'');
             }).filter(Boolean).join(' · ')||'—');
             cell(tr,Object.keys(p?.metrics||{}).join(', ')||'—');
             cell(tr,p?.segment_id||'—');
@@ -2102,7 +2926,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state?.reservations||[]);
         feedback('hub-compare-scaling-note',key
             ?'Showing '+key.slice(7)+'. Medians use bounded chart samples from each run’s latest segment, not complete histories. '+
-              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains groups sum only their explicitly reserved learner and remote worker resources; the remote threads/CPU column shows frozen collector concurrency, not actual CPU occupancy. Marginal comparisons require five samples per job, completed jobs, verified matching resource leases, identical per-host RAM and shared GPU budgets, fixed machine group/configuration, physical GPU identity, and one increased CPU or GPU dimension. '+
+              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains and Courier groups sum only their explicitly reserved learner and collector resources; the remote threads/CPU column shows frozen TinyBrains thread limits or Courier collector CPU leases, not actual CPU occupancy. Same-host Courier collectors are counted only with distinct, verified exclusive GPU leases. Marginal comparisons require five samples per job, completed jobs, verified matching resource leases, identical per-host RAM and shared GPU budgets, fixed machine group/configuration, physical GPU identity, and one increased CPU or GPU dimension. '+
               'They remain observational, not guaranteed improvements or independent learning evaluations.'
             :'Select a recorded throughput metric (unit: rate) above to inspect resource scaling. No CPU/GPU efficiency can be inferred from utilization alone.');
         for(const row of rows) {
@@ -2113,8 +2937,9 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,row.gpus===null?'Unknown':row.gpus.toLocaleString());
             cell(tr,row.host||'Unknown');
             cell(tr,!row.distributed?'—':
-                row.collector_threads===null?'Unknown':
-                    row.collector_threads+' / '+row.collector_cpus);
+                row.collector_threads===null
+                    ?row.collector_cpus===null?'Unknown':'— / '+row.collector_cpus
+                    :row.collector_threads+' / '+row.collector_cpus);
             cell(tr,String(row.sample_count));
             cell(tr,row.median_rate===null?'—':
                 row.median_rate.toLocaleString(undefined,{maximumFractionDigits:2}));
@@ -2161,9 +2986,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' collectors with at least five complete recent samples';
             collectorStageProfiles.append(heading);
             const table=document.createElement('table');
-            const headers=['Collector','Samples','Decisions/s',
-                'Engine step (s)','Inference (s)','Model prepare (s)',
-                'Roundtrip (s)'];
+            const headers=['Collector','Samples','Decisions/s','Match steps/s',
+                'Engine step/join (s)','Observation preparation (s)',
+                'Inference (s)','Opponent processing (s)',
+                'Model prepare (s)','Roundtrip (s)'];
             const tr=document.createElement('tr');
             for(const title of headers) {
                 const th=document.createElement('th');
@@ -2177,8 +3003,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const row=document.createElement('tr');
                 for(const value of [
                     slot.slot===0?'0 · learner':' '+slot.slot+' · remote',
-                    String(slot.samples),format(slot.rate),format(slot.engine),
-                    format(slot.inference),format(slot.model),
+                    String(slot.samples),format(slot.rate),format(slot.matchRate),
+                    format(slot.engine),format(slot.observation),format(slot.inference),
+                    format(slot.opponent),format(slot.model),
                     slot.slot===0?'—':format(slot.roundtrip),
                 ])cell(row,value);
                 tbody.append(row);
@@ -2187,7 +3014,7 @@ document.addEventListener('DOMContentLoaded', () => {
             collectorStageProfiles.append(table);
         }
         const note=document.createElement('p');
-        note.textContent='Medians use up to 32 paired observations from the latest chart segment. Engine and inference timings are host-wall stage observations, not exclusive CPU or GPU time; stages may overlap. Remote roundtrip includes transfer and worker computation, not network latency alone. Missing columns mean the recorded samples did not contain the metric consistently; no values are inferred.';
+        note.textContent='Medians use up to 32 paired observations from the latest chart segment. Engine and inference timings are host-wall observations, not exclusive CPU or GPU time. When native steps are prefetched, the engine figure is remaining join wait and may overlap opponent preparation; full native batch wall is recorded separately. Remote roundtrip includes transfer and worker computation, not network latency alone. Missing columns are not inferred.';
         collectorStageProfiles.append(note);
     }
     function renderMeasuredSeconds(runs) {
@@ -2283,19 +3110,78 @@ document.addEventListener('DOMContentLoaded', () => {
             metricBySuite=new Map();
         let missingDigest=false,differentDigests=false,differentTrialCounts=false,
             differentScoring=false;
-        for(const {job,slot} of runs) {
-            const rules=job.evaluation_stop?.all_of||[job.evaluation_stop].filter(Boolean);
+        for(const {job,slot,evaluation_points=[]} of runs) {
+            if(job.evaluation_history_only) {
+                const latest=new Map();
+                for(const sample of evaluation_points) {
+                    const previous=latest.get(sample.suite_id);
+                    if(!previous||sample.steps_completed>previous.steps_completed)
+                        latest.set(sample.suite_id,sample);
+                }
+                for(const receipt of latest.values()) {
+                    const row=document.createElement('tr');
+                    cell(row,slot+' · '+hubJobLabel(job)+' · historical audit');
+                    cell(row,receipt.suite_id);
+                    cell(row,receipt.suite_sha256).classList.add('hub-checkpoint-digest');
+                    cell(row,receipt.successes.toLocaleString()+' / '+receipt.trials.toLocaleString());
+                    cell(row,(receipt.successes/receipt.trials).toLocaleString(
+                        undefined,{style:'percent',maximumFractionDigits:2}));
+                    cell(row,receipt.checkpoint_sha256).classList.add('hub-checkpoint-digest');
+                    const detailsCell=cell(row,'');
+                    const summary=document.createElement('details');
+                    const heading=document.createElement('summary');
+                    heading.textContent='Latest independent audit at update '+
+                        receipt.steps_completed+' · inspect frozen definition';
+                    const definition=job.source_suites?.find(item=>
+                        item.suite_id===receipt.suite_id&&
+                        item.suite_sha256===receipt.suite_sha256);
+                    const body=document.createElement('pre');
+                    body.textContent=definition?.definition||
+                        'Frozen suite definition unavailable; use the original source report.';
+                    const source=document.createElement('p');
+                    source.textContent='Source report SHA-256: '+
+                        (job.source_report_sha256||'unknown')+
+                        ' · Operator-imported observation, not Hub native execution proof.';
+                    summary.append(heading,source,body);
+                    detailsCell.append(summary);
+                    table.append(row);
+                    suites.add(receipt.suite_id);
+                    if(trialsBySuite.has(receipt.suite_id)&&
+                        trialsBySuite.get(receipt.suite_id)!==receipt.trials)
+                        differentTrialCounts=true;
+                    trialsBySuite.set(receipt.suite_id,receipt.trials);
+                    if(digestBySuite.has(receipt.suite_id)&&
+                        digestBySuite.get(receipt.suite_id)!==receipt.suite_sha256)
+                        differentDigests=true;
+                    digestBySuite.set(receipt.suite_id,receipt.suite_sha256);
+                }
+                continue;
+            }
+            const policy=job.evaluation_monitor||job.evaluation_stop;
+            const rules=policy?.all_of||[policy].filter(Boolean);
             const passed=job.evaluation_stop_evidence?.all_of||null;
             const cohort=job.evaluation_candidates?.[0]?.receipts||{};
             const finalCohort=hubFinalEvaluationCohort(job);
             const entries=rules.length?rules:[null];
             for(const [index,rule] of entries.entries()) {
+                // A bounded candidate cache is not a historical evaluator
+                // archive. Prefer the newest *accepted* checkpoint receipt
+                // for this exact suite, even after older candidates expire.
+                // Never fill a missing suite with another suite's last result.
+                const pinned=rule&&(rule.suite_sha256||
+                    job.evaluation_suite_definitions?.[rule.suite_id]);
+                const matches=receipt=>Boolean(receipt&&rule&&
+                    receipt.suite_id===rule.suite_id&&
+                    (!pinned||receipt.suite_sha256===pinned));
+                const latestArchived=hubLatestEvaluatedReceipt(
+                    job,rule,evaluation_points);
                 const finalReceipt=rule&&finalCohort?.[rule.suite_id];
-                const evidence=finalReceipt||(passed?passed[index]:
-                    rule?cohort[rule.suite_id]||
-                        (!job.evaluation_stop?.all_of?job.evaluation_stop_evidence:null)||
-                        job.last_evaluation:
-                        job.evaluation_stop_evidence||job.last_evaluation);
+                const evidence=rule
+                    ?[finalReceipt,latestArchived,passed?.[index],
+                        cohort[rule.suite_id],
+                        !policy?.all_of?job.evaluation_stop_evidence:null,
+                        job.last_evaluation].find(matches)||null
+                    :job.evaluation_stop_evidence||job.last_evaluation;
                 const row=document.createElement('tr');
                 cell(row,slot+' · '+job.configuration_name);
                 cell(row,evidence?.suite_id||rule?.suite_id||'—');
@@ -2311,15 +3197,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     .toLocaleString(undefined,{style:'percent',maximumFractionDigits:2}):'—');
                 cell(row,evidence?.checkpoint_sha256||'—')
                     .classList.add('hub-checkpoint-digest');
-                const meets=Boolean(evidence&&rule&&
+                const meets=Boolean(evidence&&rule&&!job.evaluation_monitor&&
                     evidence.trials>=rule.min_trials&&
                     evidence.successes/evidence.trials>=rule.min_success_rate);
                 const final=Boolean(evidence&&evidence.checkpoint_sha256===job.checkpoint_model_sha256);
-                const outcome=final?(meets?'Final checkpoint · suite target met':'Final checkpoint · below target'):
-                    job.evaluation_stop_evidence?'All stop targets met':
-                    evidence?(meets?'This suite passed; awaiting remaining gates':
-                        'Target not met') :
-                    rule?'Awaiting receipt':'No evaluation configured';
+                const outcome=job.evaluation_monitor
+                    ?evidence?(final?'Final checkpoint · monitoring result':
+                        'Monitoring · evaluated checkpoint'):'Awaiting monitoring receipt'
+                    :final?(meets?'Final checkpoint · suite target met':'Final checkpoint · below target'):
+                        job.evaluation_stop_evidence?'All stop targets met':
+                        evidence?(meets?'This suite passed; awaiting remaining gates':
+                            'Target not met'):
+                        rule?'Awaiting receipt':'No evaluation configured';
                 cell(row,!final&&evidence&&job.checkpoint_model_sha256?'Earlier checkpoint · '+outcome:outcome);
                 table.append(row);
                 if(evidence) {
@@ -2360,7 +3249,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const container=$('hub-compare-plots');
         lastComparisonChart={runs,keys,xKey};
         lastComparisonChartWidth=container.clientWidth;
-        container.replaceChildren();
         if(!runs.length||!keys.length) {
             const notice=document.createElement('p');
             notice.className='hub-notice';
@@ -2369,13 +3257,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 :$('hub-compare-metric').options.length
                     ?'No chart metrics are selected. Check one or more metrics above to display a graph.'
                     :'No recorded chart metrics are available for this project yet.';
-            container.append(notice);
+            container.replaceChildren(notice);
+            syncGlobalChartControls();
             return;
         }
-        for(const key of keys) {
-            const section=document.createElement('div');
+        const existing=new Map([...container.children].filter(element=>
+            element.classList.contains('hub-progress-plot')&&
+            element.dataset.project===project&&element.dataset.metric)
+            .map(element=>[element.dataset.metric,element]));
+        const sections=keys.map(key=>{
+            let section=existing.get(key);
+            if(section)return section;
+            section=document.createElement('div');
             section.className='hub-progress-plot';
             section.dataset.metric=key;
+            section.dataset.project=project;
             const title=document.createElement('h3');
             title.textContent=key.slice(7);
             const header=document.createElement('div');
@@ -2388,19 +3284,37 @@ document.addEventListener('DOMContentLoaded', () => {
             const average=document.createElement('input');
             average.type='checkbox';
             const averageId=project+'|'+key;
-            average.checked=comparisonChartAverages.get(averageId)===true;
+            average.checked=comparisonChartAverages.get(averageId)??
+                globalChartSettings().mean;
             averageLabel.append(average,document.createTextNode(' Show sample mean'));
             const rollingLabel=document.createElement('label');
             rollingLabel.className='hub-plot-average-toggle';
-            rollingLabel.title='Mean of available retained chart samples within the preceding 50 project updates/rounds. Chart downsampling means this is not a mean of every raw update.';
+            rollingLabel.title='Mean of up to N observations containing this metric. Other metrics may be reported between observations; explicit segment breaks and progress resets restart the window.';
             const rolling=document.createElement('input');
             rolling.type='checkbox';
             const rollingId=project+'|'+key;
-            rolling.checked=comparisonChartRolling.get(rollingId)===true;
-            rollingLabel.append(rolling,document.createTextNode(
-                project==='tinybrains'?' Rolling 50-update mean':
-                project==='courier'?' Rolling 50-round mean':' Rolling 50-step mean'));
-            toggles.append(averageLabel,rollingLabel);
+            rolling.checked=comparisonChartRolling.get(rollingId)??
+                globalChartSettings().rolling;
+            rollingLabel.append(rolling,document.createTextNode(' Rolling mean'));
+            const rollingSizeLabel=document.createElement('label');
+            rollingSizeLabel.className='hub-plot-rolling-size-label';
+            rollingSizeLabel.textContent='Samples';
+            const rollingSize=document.createElement('input');
+            rollingSize.className='hub-plot-rolling-size';
+            rollingSize.type='number';
+            rollingSize.min='2';
+            rollingSize.max='256';
+            rollingSize.step='1';
+            rollingSize.value=String(comparisonChartRollingSizes.get(rollingId)??
+                globalChartSettings().samples);
+            rollingSize.setAttribute('aria-label',
+                'Rolling mean sample count for '+key.slice(7));
+            rollingSize.title='Use the latest 2–256 consecutive retained samples. Early windows use fewer samples; older history may cover more updates because it is downsampled.';
+            rollingSizeLabel.append(rollingSize);
+            const rollingControls=document.createElement('div');
+            rollingControls.className='hub-plot-rolling-controls';
+            rollingControls.append(rollingLabel,rollingSizeLabel);
+            toggles.append(averageLabel,rollingControls);
             header.append(title,toggles);
             const description=document.createElement('p');
             description.className='hub-plot-description';
@@ -2416,30 +3330,92 @@ document.addEventListener('DOMContentLoaded', () => {
             tooltip.className='hub-plot-tooltip';
             tooltip.hidden=true;
             section.append(header,description,svg,tooltip,legend);
-            container.append(section);
-            const redraw=()=>drawComparisonChart(runs,key,xKey,svg,
-                legend,tooltip,average.checked,rolling.checked);
+            const chart={key,runs,xKey,svg,legend,tooltip,average,rolling,
+                rollingSize,averageId,rollingId,signature:null,width:0};
+            section._hubChart=chart;
+            const redraw=()=>{
+                chart.signature=null;
+                drawComparisonChart(chart.runs,chart.key,chart.xKey,svg,
+                    legend,tooltip,average.checked,rolling.checked,
+                    Number(rollingSize.value));
+            };
             average.addEventListener('change',()=>{
                 comparisonChartAverages.set(averageId,average.checked);
                 redraw();
+                syncGlobalChartControls();
             });
             rolling.addEventListener('change',()=>{
                 comparisonChartRolling.set(rollingId,rolling.checked);
                 redraw();
+                syncGlobalChartControls();
             });
-            redraw();
+            rollingSize.addEventListener('change',()=>{
+                const requested=Number(rollingSize.value);
+                const count=Number.isFinite(requested)
+                    ?Math.min(256,Math.max(2,Math.trunc(requested))):50;
+                rollingSize.value=String(count);
+                comparisonChartRollingSizes.set(rollingId,count);
+                redraw();
+                syncGlobalChartControls();
+            });
+            return section;
+        });
+        // Keep existing DOM nodes, event handlers and chart scroll/hover state
+        // through the ten-second Hub heartbeat. Replace only if chart choices
+        // or their order actually changed.
+        if(sections.length!==container.children.length||
+            sections.some((element,i)=>container.children[i]!==element))
+            container.replaceChildren(...sections);
+        for(const section of sections) {
+            const chart=section._hubChart;
+            chart.runs=runs;chart.xKey=xKey;
+            const metricKey=chart.key.slice(7);
+            const signature=JSON.stringify({
+                project,xKey,metricKey,
+                runs:runs.map(run=>({
+                    id:run.job.id,label:hubJobLabel(run.job),
+                    slot:run.slot,color:run.color,
+                    points:hubComparisonPoints(run).map(p=>({
+                        source:p.source_modified_at,segment:p.segment_id,
+                        breakBefore:p.break_before,steps:p.steps_completed,
+                        axis:hubComparisonAxisValue(p,xKey),
+                        measurement:p.metrics?.[metricKey]||null,
+                        evaluation:p.evaluation_identity||null,
+                    })),
+                })),
+            });
+            const width=Math.round(chart.svg.getBoundingClientRect().width||
+                chart.svg.clientWidth||900);
+            if(chart.signature===signature&&chart.width===width)continue;
+            drawComparisonChart(runs,chart.key,xKey,chart.svg,chart.legend,
+                chart.tooltip,chart.average.checked,chart.rolling.checked,
+                Number(chart.rollingSize.value));
+            chart.signature=signature;chart.width=width;
         }
+        syncGlobalChartControls();
     }
-    function drawComparisonChart(runs,key,xKey,svg,legend,tooltip,showAverage,showRolling) {
+    function drawComparisonChart(runs,key,xKey,svg,legend,tooltip,showAverage,showRolling,rollingSamples=50) {
+        rollingSamples=Number.isSafeInteger(rollingSamples)
+            ?Math.min(256,Math.max(2,rollingSamples)):50;
         const width=Math.max(320,Math.round(svg.getBoundingClientRect().width||
             svg.clientWidth||svg.parentElement?.clientWidth||900));
         svg.setAttribute('viewBox','0 0 '+width+' 330');
         legend.replaceChildren();
-        tooltip.hidden=true;
+        const wasPinned=tooltip.dataset.pinned==='true';
+        const previousScroll=tooltip.scrollTop;
+        if(!wasPinned)tooltip.hidden=true;
         svg.onpointermove=null;
         svg.onpointerleave=null;
         const axisLabel=comparisonAxisLabel(xKey);
         const genericKey=key.startsWith('metric:')?key.slice(7):null;
+        // Independent evaluations are discrete checkpoint observations,
+        // not a continuous trainer measurement. Never draw an interpolated
+        // strength curve through checkpoints that were never evaluated.
+        const discreteEvaluation=Boolean(genericKey)&&runs.some(run=>
+            (run.evaluation_points||[]).some(row=>{
+                const prefix=hubEvaluationMetricPrefix(row);
+                return genericKey===prefix||genericKey.startsWith(prefix+'_');
+            }));
         const units=genericKey?[...new Set(runs.flatMap(run=>
             hubComparisonPoints(run).map(point=>
                 point.metrics?.[genericKey]?.unit).filter(Boolean)))]:[];
@@ -2464,18 +3440,62 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         svg.setAttribute('aria-label',metric.label+
-            ' by '+axisLabel.toLowerCase()+' for selected runs');
+            ' by '+axisLabel.toLowerCase()+' for selected runs'+
+            (discreteEvaluation?'; measured checkpoints only, gaps are not interpolated':''));
         const usable=p=>hubComparisonAxisValue(p,xKey)!==null&&
-            Number.isFinite(hubMetricValue(p,key));
-        const series=runs.map(run=>({
+            Number.isFinite(hubMetricValue(p,key))&&
+            (!discreteEvaluation||Boolean(p.evaluation_identity));
+        const allSeries=runs.map(run=>({
             ...run,valid:hubComparisonPoints(run),
         }));
+        const visible=run=>comparisonChartRunVisibility.get(
+            project+'|'+key+'|'+run.job.id)!==false;
+        const series=allSeries.filter(visible);
+        for(const run of allSeries) {
+            const checkbox=document.createElement('input');
+            checkbox.type='checkbox';
+            checkbox.checked=visible(run);
+            checkbox.setAttribute('aria-label',
+                'Show '+hubJobLabel(run.job)+' in '+genericKey+' chart');
+            checkbox.title='Show or hide this run in this chart';
+            const legendItem=document.createElement('label');
+            legendItem.className='hub-plot-legend-entry';
+            const swatch=document.createElement('span');
+            swatch.className='hub-plot-legend-swatch';
+            swatch.style.borderColor=run.color;
+            const unit=units[0]||'';
+            const samples=run.valid.filter(usable).map(p=>hubMetricValue(p,key));
+            const mean=samples.length
+                ?samples.reduce((sum,value)=>sum+value,0)/samples.length:null;
+            const formatted=value=>unit==='ratio'
+                ?(value*100).toFixed(2)+'%'
+                :Number(value).toLocaleString(undefined,{maximumFractionDigits:2})+
+                    (unit==='seconds'?' s':unit==='rate'?' /s':
+                        unit==='mb'?' MiB':unit==='watts'?' W':
+                        unit==='scalar'||unit==='count'?'':' '+unit);
+            legendItem.append(checkbox,swatch,document.createTextNode(
+                run.slot+' · '+hubJobLabel(run.job)+
+                (showAverage&&mean!==null?' · mean '+formatted(mean):'')+
+                (showRolling?' · rolling up to '+rollingSamples+' samples':'')));
+            checkbox.addEventListener('change',()=>{
+                comparisonChartRunVisibility.set(
+                    project+'|'+key+'|'+run.job.id,checkbox.checked);
+                delete tooltip.dataset.pinned;
+                delete tooltip.dataset.pinnedFraction;
+                tooltip.classList.remove('hub-plot-tooltip-pinned');
+                drawComparisonChart(runs,key,xKey,svg,legend,tooltip,
+                    showAverage,showRolling,rollingSamples);
+            });
+            legend.append(legendItem);
+        }
         const values=series.flatMap(r=>r.valid
             .filter(usable)
             .map(p=>({x:hubComparisonAxisValue(p,xKey),y:hubMetricValue(p,key)})));
         if(!values.length) {
             node('text',{x:width/2,y:160,'text-anchor':'middle'},
-                'No recorded samples for the selected runs and metric');
+                series.length
+                    ?'No recorded samples for the selected runs and metric'
+                    :'All runs hidden. Check a run in the legend to display it.');
             return;
         }
         const bounds={left:85,right:width-24,top:20,bottom:270};
@@ -2510,62 +3530,102 @@ document.addEventListener('DOMContentLoaded', () => {
         node('text',{x:width/2,y:320,'text-anchor':'middle'},
             axisLabel);
         const showPoints=series.reduce((n,run)=>n+run.valid.length,0)<=300;
+        const stats=new Map();
+        // Draw statistical overlays after the raw traces, so spikes and
+        // individual samples cannot obscure selected means.
+        const overlays=[];
         for(const run of series) {
             const sampled=run.valid.filter(usable).map(p=>hubMetricValue(p,key));
             const mean=sampled.length
                 ?sampled.reduce((sum,value)=>sum+value,0)/sampled.length:null;
             if(showAverage&&mean!==null)
-                node('line',{x1:bounds.left,y1:y(mean),x2:bounds.right,y2:y(mean),
-                    stroke:run.color,'stroke-dasharray':'7 5',class:'plot-average'});
+                overlays.push({tag:'line',attrs:{
+                    x1:bounds.left,y1:y(mean),x2:bounds.right,y2:y(mean),
+                    stroke:run.color,'stroke-dasharray':'8 5',
+                    class:'plot-average'}});
+            const rollingByPoint=new Map();
+            stats.set(run,{mean,rollingByPoint});
             if(showRolling) {
-                let window=[],part=[],lastStep=null,lastAxis=null;
+                let samples=[],sum=0,part=[],lastStep=null,lastAxis=null;
                 const flush=()=>{
-                    if(part.length>1)
-                        node('path',{d:part.map((sample,i)=>
-                            (i?'L':'M')+x(sample.axis).toFixed(1)+' '+
-                            y(sample.mean).toFixed(1)).join(' '),
-                            stroke:run.color,class:'plot-rolling'});
+                    if(discreteEvaluation&&part.length) {
+                        // Evaluation rolling values exist only at measured
+                        // checkpoints. Show each mean as a ring rather than
+                        // drawing a line through unevaluated checkpoints.
+                        // Batch rings into one path to keep SVG work bounded.
+                        const d=part.map(sample=>{
+                            const cx=x(sample.axis),cy=y(sample.mean);
+                            return 'M'+(cx-5.5).toFixed(1)+' '+cy.toFixed(1)+
+                                ' a5.5 5.5 0 1 0 11 0 a5.5 5.5 0 1 0 -11 0';
+                        }).join(' ');
+                        overlays.push({tag:'path',attrs:{d,fill:'none',
+                            stroke:run.color,'stroke-width':2.5,
+                            class:'plot-evaluation-rolling-points'}});
+                    }else if(part.length>1)
+                        overlays.push({tag:'path',attrs:{
+                            d:part.map((sample,i)=>
+                                (i?'L':'M')+x(sample.axis).toFixed(1)+' '+
+                                y(sample.mean).toFixed(1)).join(' '),
+                            stroke:run.color,class:'plot-rolling'}});
                     else if(part.length===1)
-                        node('circle',{cx:x(part[0].axis),cy:y(part[0].mean),
-                            r:3,fill:run.color,class:'plot-rolling-point'});
+                        overlays.push({tag:'circle',attrs:{
+                            cx:x(part[0].axis),cy:y(part[0].mean),
+                            r:4,fill:run.color,class:'plot-rolling-point'}});
                     part=[];
+                };
+                const reset=()=>{
+                    flush();samples=[];sum=0;lastStep=null;
+                    lastAxis=null;
                 };
                 for(const point of run.valid) {
                     const step=point.steps_completed;
                     const axis=hubComparisonAxisValue(point,xKey);
-                    if(point.break_before||!usable(point)||
-                        !Number.isSafeInteger(step)||step<0||
-                        lastStep!==null&&step<lastStep||
-                        lastAxis!==null&&axis<lastAxis) {
-                        flush();window=[];lastStep=null;lastAxis=null;
+                    const valid=usable(point)&&Number.isSafeInteger(step)&&step>=0;
+                    if(point.break_before)reset();
+                    // Metrics can be published less often than CPU/host telemetry.
+                    // An unrelated observation is not a discontinuity for this series.
+                    if(!valid)continue;
+                    if(lastStep!==null&&
+                        (step<=lastStep||!Number.isFinite(axis)||
+                         axis<=lastAxis))
+                        reset();
+                    // Historical chart decimation deliberately varies the
+                    // spacing between retained observations. A rolling
+                    // N-sample mean must not restart at those boundaries:
+                    // only invalid metrics, explicit segment breaks and
+                    // non-increasing progress are discontinuities.
+                    const value=hubMetricValue(point,key);
+                    samples.push(value);
+                    sum+=value;
+                    if(samples.length>rollingSamples)
+                        sum-=samples.shift();
+                    // The first valid pair starts the rolling curve.
+                    // While fewer than N samples exist, use the available
+                    // consecutive samples and display their actual count.
+                    if(samples.length>=2) {
+                        const rollingValue=sum/samples.length;
+                        rollingByPoint.set(point,{
+                            value:rollingValue,count:samples.length,
+                        });
+                        part.push({axis,mean:rollingValue});
                     }
-                    if(!usable(point)||!Number.isSafeInteger(step)||step<0)
-                        continue;
-                    window=window.filter(item=>item.step>step-50);
-                    window.push({step,value:hubMetricValue(point,key)});
-                    part.push({axis,mean:window.reduce((sum,item)=>
-                        sum+item.value,0)/window.length});
                     lastStep=step;lastAxis=axis;
                 }
                 flush();
             }
-            const legendItem=document.createElement('span');
-            legendItem.className='hub-plot-legend-entry';
-            const swatch=document.createElement('span');
-            swatch.className='hub-plot-legend-swatch';
-            swatch.style.borderColor=run.color;
-            const unit=units[0]||'';
-            const formatted=value=>unit==='ratio'
-                ?(value*100).toFixed(2)+'%'
-                :Number(value.toPrecision(6)).toLocaleString()+
-                    (unit==='seconds'?' s':unit==='rate'?' /s':
-                        unit==='mb'?' MiB':unit==='watts'?' W':
-                        unit==='scalar'||unit==='count'?'':' '+unit);
-            legendItem.append(swatch,document.createTextNode(
-                run.slot+' · '+run.job.configuration_name+
-                (showAverage&&mean!==null?' · mean '+formatted(mean):'')+
-                (showRolling?' · rolling 50-step sample mean':'')));
-            legend.append(legendItem);
+            if(discreteEvaluation) {
+                // One SVG path per run avoids thousands of individual DOM
+                // circles when many archived checkpoints are selected.
+                const dots=run.valid.filter(usable).map(point=>{
+                    const cx=x(hubComparisonAxisValue(point,xKey));
+                    const cy=y(hubMetricValue(point,key));
+                    return 'M'+(cx-3.5).toFixed(1)+' '+cy.toFixed(1)+
+                        ' a3.5 3.5 0 1 0 7 0 a3.5 3.5 0 1 0 -7 0';
+                }).join(' ');
+                if(dots)node('path',{d:dots,fill:run.color,
+                    class:'plot-evaluation-points'});
+                continue;
+            }
             let part=[],previousX=null;
             const flush=()=>{
                 if(part.length>1)
@@ -2581,13 +3641,12 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             for(const point of run.valid) {
                 const currentX=hubComparisonAxisValue(point,xKey);
-                if(point.break_before||!usable(point)||
-                    previousX!==null&&currentX!==null&&currentX<previousX)
-                    flush();
-                if(!usable(point)) {
-                    previousX=null;
-                    continue;
-                }
+                if(point.break_before)flush();
+                // Connect consecutive *recorded values for this metric*, not
+                // adjacent multi-metric Hub observations. Missing values are
+                // not interpolated; explicit segment breaks remain separate.
+                if(!usable(point))continue;
+                if(previousX!==null&&currentX<=previousX)flush();
                 previousX=currentX;
                 part.push(point);
                 if(showPoints)
@@ -2596,6 +3655,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         r:3.5,fill:run.color,class:'plot-point'});
             }
             flush();
+        }
+        for(const overlay of overlays) {
+            if(overlay.tag!=='circle'&&
+                overlay.attrs.class!=='plot-evaluation-rolling-points')
+                node(overlay.tag,{...overlay.attrs,
+                    stroke:'white',class:overlay.attrs.class+'-halo'});
+            node(overlay.tag,overlay.attrs);
         }
         const perRun=series.map(run=>({
             run,
@@ -2620,17 +3686,32 @@ document.addEventListener('DOMContentLoaded', () => {
             visibility:'hidden','pointer-events':'none',
         }));
         const hide=()=>{
+            if(tooltip.dataset.pinned==='true')return;
             tooltip.hidden=true;
             guide.setAttribute('visibility','hidden');
             for(const marker of markers)marker.setAttribute('visibility','hidden');
         };
-        svg.onpointerleave=hide;
-        svg.onpointermove=event=>{
-            const rect=svg.getBoundingClientRect();
-            const mouseX=(event.clientX-rect.left)*width/rect.width;
-            const mouseY=(event.clientY-rect.top)*330/rect.height;
-            if(mouseX<bounds.left||mouseX>bounds.right||
-                mouseY<bounds.top||mouseY>bounds.bottom)return hide();
+        const clearPin=()=>{
+            delete tooltip.dataset.pinned;
+            delete tooltip.dataset.pinnedFraction;
+            tooltip.classList.remove('hub-plot-tooltip-pinned');
+            tooltip.hidden=true;
+            guide.setAttribute('visibility','hidden');
+            for(const marker of markers)marker.setAttribute('visibility','hidden');
+        };
+        let lastMouseX=null,lastClientX=null,lastClientY=null;
+        const format=value=>Number(value).toLocaleString(undefined,{
+            maximumFractionDigits:2,
+        });
+        const formattedValue=value=>{
+            const unit=units[0]||'';
+            return unit==='ratio'
+                ?format(value*100)+'% ('+format(value)+')'
+                :format(value)+(unit==='seconds'?' s':unit==='rate'?' /s':
+                    unit==='mb'?' MiB':unit==='watts'?' W':
+                    unit==='scalar'||unit==='count'?'':' '+unit);
+        };
+        const inspectAt=(mouseX,clientX,clientY,preservePinnedContent=false)=>{
             const chosen=perRun.map(({run,points})=>{
                 let closest=null,distance=Infinity;
                 for(const point of points) {
@@ -2651,12 +3732,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 markers[i].setAttribute('visibility',point?'visible':'hidden');
             }
-            const format=value=>Number(value).toLocaleString(undefined,{
-                maximumSignificantDigits:15,
-            });
+            // Keep the inspected samples and scrollbar exactly where the
+            // user pinned them; the underlying chart can keep refreshing.
+            if(preservePinnedContent)return;
+            const pinned=tooltip.dataset.pinned==='true';
             const heading=document.createElement('div');
             heading.className='hub-plot-tooltip-heading';
-            heading.textContent='Nearest recorded sample for each run';
+            const headingText=document.createElement('strong');
+            headingText.textContent='Nearest recorded sample for each run';
+            heading.append(headingText);
+            if(pinned) {
+                const close=document.createElement('button');
+                close.type='button';
+                close.className='hub-plot-tooltip-unpin';
+                close.textContent='Unpin';
+                close.title='Close the pinned inspector (Escape)';
+                close.addEventListener('click',clearPin);
+                heading.append(close);
+            }
             const rows=chosen.map(({run,closest})=>{
                 const item=document.createElement('div');
                 item.className='hub-plot-tooltip-run';
@@ -2666,40 +3759,135 @@ document.addEventListener('DOMContentLoaded', () => {
                 swatch.className='hub-plot-legend-swatch';
                 swatch.style.borderColor=run.color;
                 title.append(swatch,document.createTextNode(
-                    'Run '+run.slot+' · '+run.job.configuration_name));
+                    'Run '+run.slot+' · '+hubJobLabel(run.job)));
                 item.append(title);
-                const line=text=>{
+                const line=value=>{
                     const detail=document.createElement('div');
                     detail.className='hub-plot-tooltip-detail';
-                    detail.textContent=text;
+                    detail.textContent=value;
                     item.append(detail);
                 };
-                if(!closest){line('No recorded metric samples');return item;}
-                const unit=units[0]||'';
-                const value=unit==='ratio'
-                    ?format(closest.value*100)+'% ('+format(closest.value)+')'
-                    :format(closest.value)+(unit==='seconds'?' s':
-                        unit==='rate'?' /s':unit==='mb'?' MiB':
-                        unit==='watts'?' W':unit==='scalar'||unit==='count'?'':' '+unit);
-                line(genericKey+': '+value);
+                if(!closest) {
+                    line('No recorded metric samples for this run');
+                    return item;
+                }
+                line(genericKey+': '+formattedValue(closest.value));
                 line(axisLabel+': '+format(closest.axis));
                 const timestamp=closest.point.source_modified_at;
                 line('Published: '+(timestamp&&!Number.isNaN(Date.parse(timestamp))
                     ?new Date(timestamp).toLocaleString():'unknown'));
-                line('Segment: '+(closest.point.segment_id||'unknown'));
+                const evaluated=closest.point.evaluation_identity;
+                if(evaluated) {
+                    line('Independent suite: '+evaluated.suite_id);
+                    line('Frozen suite SHA-256: '+evaluated.suite_sha256);
+                    line('Checkpoint SHA-256: '+evaluated.checkpoint_sha256);
+                    line('Evaluator runtime SHA-256: '+(evaluated.runtime_sha256||'unreported'));
+                    line('Evaluation dispatch: '+(evaluated.dispatch_id||'unreported'));
+                    if(evaluated.source_kind==='historical_checkpoint_audit') {
+                        line('Source: operator-imported historical checkpoint audit (not Hub native proof)');
+                        line('Source report SHA-256: '+evaluated.source_report_sha256);
+                        line('Source checkpoint: '+evaluated.source_checkpoint_name);
+                    }
+                    const historical=run.job.source_suites?.find(suite=>
+                        suite.suite_id===evaluated.suite_id&&
+                        suite.suite_sha256===evaluated.suite_sha256);
+                    const canonical=evaluated.suite_definition_canonical||
+                        historical?.definition;
+                    if(typeof canonical==='string') {
+                        // This native receipt or historical source passed
+                        // exact suite-fingerprint validation on archive load.
+                        const inspector=document.createElement('details');
+                        const summary=document.createElement('summary');
+                        summary.textContent='Inspect exact frozen suite definition';
+                        const definition=document.createElement('pre');
+                        try {definition.textContent=JSON.stringify(JSON.parse(canonical),null,2);}
+                        catch {definition.textContent=canonical;}
+                        definition.style.whiteSpace='pre-wrap';
+                        definition.style.wordBreak='break-word';
+                        definition.style.maxHeight='240px';
+                        definition.style.overflow='auto';
+                        inspector.append(summary,definition);
+                        item.append(inspector);
+                    }else {
+                        line('Full frozen suite definition not archived in this receipt; check the evaluator manifest against its SHA-256.');
+                    }
+                    line('Successes / trials: '+evaluated.successes+' / '+evaluated.trials);
+                    line('Archive status: '+(evaluated.comparison_status==='superseded'
+                        ?'Superseded by a newer checkpoint under the same frozen suite and runtime'
+                        :'Complete measured evaluation'));
+                    if(evaluated.superseded_by_checkpoint_sha256) {
+                        line('Newer checkpoint SHA-256: '+evaluated.superseded_by_checkpoint_sha256);
+                        line('Newer checkpoint update: '+
+                            evaluated.superseded_by_steps_completed);
+                    }
+                    line('Evaluated at: '+(evaluated.evaluated_at||'unreported'));
+                }else line('Segment: '+(closest.point.segment_id||'unknown'));
+                const summary=stats.get(run);
+                if(showAverage&&summary?.mean!==null&&summary?.mean!==undefined)
+                    line('Sample mean: '+formattedValue(summary.mean));
+                if(showRolling) {
+                    const rolling=summary?.rollingByPoint.get(closest.point);
+                    line('Rolling mean ('+
+                        (rolling?.count||0)+' / '+rollingSamples+' samples): '+
+                        (rolling===undefined
+                            ?'Unavailable (needs 2 consecutive recorded samples)'
+                            :formattedValue(rolling.value)));
+                }
                 return item;
             });
+            const originalScroll=tooltip.scrollTop;
             tooltip.replaceChildren(heading,...rows);
             tooltip.hidden=false;
-            const parent=svg.parentElement;
-            const box=parent.getBoundingClientRect();
-            const tipWidth=tooltip.offsetWidth||460;
-            const tipHeight=tooltip.offsetHeight||150;
-            tooltip.style.left=Math.max(8,Math.min(
-                parent.clientWidth-tipWidth-8,event.clientX-box.left+14))+'px';
-            tooltip.style.top=Math.max(8,Math.min(
-                parent.clientHeight-tipHeight-8,event.clientY-box.top+14))+'px';
+            tooltip.classList.toggle('hub-plot-tooltip-pinned',pinned);
+            tooltip.tabIndex=0;
+            tooltip.scrollTop=pinned?originalScroll:0;
+            if(!pinned) {
+                const parent=svg.parentElement;
+                const box=parent.getBoundingClientRect();
+                const tipWidth=tooltip.offsetWidth||460;
+                const tipHeight=tooltip.offsetHeight||230;
+                tooltip.style.left=Math.max(8,Math.min(
+                    parent.clientWidth-tipWidth-8,clientX-box.left+14))+'px';
+                tooltip.style.top=Math.max(8,Math.min(
+                    parent.clientHeight-tipHeight-8,clientY-box.top+14))+'px';
+            }
         };
+        svg.onpointerleave=hide;
+        svg.onpointermove=event=>{
+            if(tooltip.dataset.pinned==='true')return;
+            const rect=svg.getBoundingClientRect();
+            const mouseX=(event.clientX-rect.left)*width/rect.width;
+            const mouseY=(event.clientY-rect.top)*330/rect.height;
+            if(mouseX<bounds.left||mouseX>bounds.right||
+                mouseY<bounds.top||mouseY>bounds.bottom)return hide();
+            lastMouseX=mouseX;lastClientX=event.clientX;
+            lastClientY=event.clientY;
+            inspectAt(mouseX,event.clientX,event.clientY);
+        };
+        svg.onclick=()=>{
+            if(tooltip.dataset.pinned==='true')return clearPin();
+            if(tooltip.hidden||!Number.isFinite(lastMouseX))return;
+            tooltip.dataset.pinned='true';
+            tooltip.dataset.pinnedFraction=String(
+                (lastMouseX-bounds.left)/(bounds.right-bounds.left));
+            inspectAt(lastMouseX,lastClientX,lastClientY);
+        };
+        svg.onkeydown=event=>{
+            if(event.key==='Escape')clearPin();
+        };
+        tooltip.onkeydown=event=>{
+            if(event.key==='Escape')clearPin();
+        };
+        if(wasPinned) {
+            const fraction=Number(tooltip.dataset.pinnedFraction);
+            if(Number.isFinite(fraction)&&fraction>=0&&fraction<=1) {
+                const mouseX=bounds.left+fraction*(bounds.right-bounds.left);
+                const rect=svg.getBoundingClientRect();
+                inspectAt(mouseX,rect.left+mouseX*rect.width/width,
+                    rect.top+100,true);
+                tooltip.scrollTop=previousScroll;
+            }else clearPin();
+        }
     }
     function exportComparison(format) {
         if(!state)
@@ -2709,10 +3897,20 @@ document.addEventListener('DOMContentLoaded', () => {
             throw Error('Select at least one recorded metric for CSV export.');
         const chosen=new Set(metrics);
         const jobs=project==='bees'?(state.bees?.runs||[]):
-            state.jobs.filter(job=>job.project_id===project);
+            [...state.jobs,...(state.historical_evaluation_jobs||[])]
+                .filter(job=>job.project_id===project);
         const samples=comparisonProject===project&&comparisonData?.samples||[];
         const byJob=new Map(samples.map(sample=>
             [sample.job_id,sample.points||[]]));
+        const evalByJob=new Map((comparisonProject===project&&
+            comparisonData?.evaluations||[]).map(sample=>
+            [sample.job_id,sample.points||[]]));
+        const evalTotalsByJob=new Map((comparisonProject===project&&
+            comparisonData?.evaluations||[]).map(sample=>
+            [sample.job_id,sample.total_records??(sample.points||[]).length]));
+        const issuesByJob=new Map((comparisonProject===project&&
+            comparisonData?.evaluation_diagnostics||[]).map(sample=>
+            [sample.job_id,sample.events||[]]));
         const runs=compareSlots.map(slot=>{
             const id=$('hub-compare-'+slot).value;
             const job=jobs.find(item=>item.id===id);
@@ -2720,26 +3918,52 @@ document.addEventListener('DOMContentLoaded', () => {
             return {
                 slot:slot.toUpperCase(),job_id:job.id,
                 configuration_name:job.configuration_name,
+                run_name:job.run_name||null,
                 configuration_sha256:job.configuration_sha256||null,
                 assigned_machine_id:job.assigned_machine_id||null,
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 continuation_of_job_id:job.continuation_of_job_id||null,
+                continuation_mode:job.continuation_of_job_id
+                    ?job.continuation_mode||'exact':null,
+                // Export only explicitly frozen environment overrides;
+                // fields omitted here use the adapter's pinned base defaults.
+                environment_overrides:Object.fromEntries(
+                    Object.entries(job.frozen_parameters?.design_overrides||{})
+                        .filter(([key])=>!key.startsWith('training.'))),
                 trial_batch:job.trial_batch||null,
                 resource_bundle:job.resource_bundle||null,
                 status:job.status,
                 execution_diagnostic:job.execution_diagnostic||null,
-                ...(project==='tinybrains'?{profile_sha256:job.frozen_parameters?.profile_sha256||null}:{}),
+                ...(project==='tinybrains'?{
+                    profile_sha256:job.frozen_parameters?.profile_sha256||null,
+                    training_stage:job.frozen_parameters?.training_stage||null,
+                }:{}),
                 final_resource_usage:job.final_resource_usage||null,
                 evaluation_stop:job.evaluation_stop||null,
+                evaluation_monitor:job.evaluation_monitor||null,
                 evaluation_suite_definitions:job.evaluation_suite_definitions||null,
                 checkpoint_model_sha256:job.checkpoint_model_sha256||null,
                 expected_parent_model_sha256:job.expected_parent_model_sha256||null,
                 candidate_selection:job.candidate_selection||null,
                 last_evaluation:job.last_evaluation||null,
                 evaluation_stop_evidence:job.evaluation_stop_evidence||null,
+                evaluation_regression_stop_evidence:
+                    job.evaluation_regression_stop_evidence||null,
                 evaluation_candidates:job.evaluation_candidates||null,
                 stop_requested_at:job.stop_requested_at||null,
-                points:hubComparisonPoints({job,points:byJob.get(id)||[]})
+                evaluation_history:evalByJob.get(id)||[],
+                evaluation_history_total_records:evalTotalsByJob.get(id)??0,
+                evaluation_history_export_is_sampled:
+                    (evalTotalsByJob.get(id)??0)>(evalByJob.get(id)||[]).length,
+                evaluation_diagnostics:issuesByJob.get(id)||[],
+                evaluation_open_diagnostics:(comparisonProject===project
+                    ?comparisonData?.evaluation_open_diagnostics||[]:[])
+                    .find(item=>item.job_id===id)?.events||[],
+                historical_evaluation_only:job.evaluation_history_only===true,
+                historical_source_report_sha256:job.source_report_sha256||null,
+                historical_suite_definitions:job.source_suites||null,
+                points:hubComparisonPoints({job,points:byJob.get(id)||[],
+                    evaluation_points:evalByJob.get(id)||[]})
                     .map(point=>({...point,
                         x_value:hubComparisonAxisValue(
                             point,$('hub-compare-x-axis').value),
@@ -2749,16 +3973,17 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         }).filter(Boolean);
         if(!runs.some(run=>run.points.length||(format==='json'&&
-            (hubComparisonTerminal(run)||hubComparisonEvaluation(run)))))
+            (run.evaluation_diagnostics.length||hubComparisonTerminal(run)||
+                hubComparisonEvaluation(run)))))
             throw Error(format==='csv'?'No recorded samples for the selected runs.':
-                'Select a job with recorded samples, an evaluation receipt or a terminal outcome.');
+                'Select a job with recorded samples, evaluation receipts, evaluator diagnostics or a terminal outcome.');
         const exported={
             schema_version:1,project_id:project,
             exported_at:new Date().toISOString(),
             x_axis:$('hub-compare-x-axis').value,
             metric:selectedComparisonMetrics()[0]||null,metrics,
             source:'Experiment Hub validated project metrics',
-            interpretation:'Training curves are observational. Their selected horizontal axis is a recorded counter or trainer time measurement, never Hub heartbeat time. Compare independent evaluation receipts only across matched suite definitions and scenarios.',
+            interpretation:'Training curves and independent evaluation records are observational. Their horizontal axis is a recorded counter or trainer time measurement, never Hub heartbeat time. Evaluation curves are checkpoint-bound and only directly comparable across matching frozen suite definitions. This comparison export contains bounded chart observations, not necessarily the complete durable independent evaluation archive; see each run evaluation_history_total_records and use the complete job diagnostics export for all native-job observations. Failed attempts have verified checkpoint identities but no score; unavailable receipt diagnostics have neither score nor checkpoint identity. Neither diagnostic can authorize Stop or promotion.',
             runs,
             candidate_selection_plans:(state.candidate_selections||[]).filter(p=>
                 p.candidate_job_ids?.some(id=>runs.some(r=>r.job_id===id))),
@@ -2770,8 +3995,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const url=URL.createObjectURL(blob);
         const link=document.createElement('a');
         link.href=url;
-        link.download=project+'-comparison-'+
-            exported.exported_at.replace(/[:.]/g,'-')+'.'+format;
+        const slug=value=>String(value||'run').normalize('NFKD')
+            .toLowerCase().replace(/[^a-z0-9]+/g,'-')
+            .replace(/^-+|-+$/g,'').slice(0,32).replace(/-+$/g,'')||'run';
+        const labels=runs.slice(0,2).map(run=>
+            slug(run.run_name||run.configuration_name));
+        link.download=project+'-'+labels.join('-vs-')+
+            (runs.length>2?'-plus-'+(runs.length-2)+'-more':'')+
+            '-'+exported.exported_at.replace(/[-:.]/g,'')
+                .replace('Z','z').toLowerCase()+
+            '-comparison.'+format;
         document.body.append(link);
         try{link.click();}finally{
             link.remove();
@@ -2779,7 +4012,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         feedback('hub-compare-export-message','Exported '+runs.length+
             ' selected runs as '+format.toUpperCase()+
-            '. This is observational progress, not independent evaluation.');
+            '. Training metrics and checkpoint-bound independent evaluations are observational; neither grants model promotion authority.');
     }
     // The coordinator invokes only an installed trusted exporter. No browser
     // request can choose a filesystem path, executable or checkpoint filename.
@@ -2853,6 +4086,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }finally { button.disabled=false; }
     }
     const tinyBrainsPicker=document.createElement('fieldset');
+    tinyBrainsPicker.className='hub-tinybrains-picker';
     tinyBrainsPicker.hidden=true;
     const tinyBrainsLegend=document.createElement('legend');
     tinyBrainsLegend.textContent='TinyBrains CPU / GPU job';
@@ -2861,14 +4095,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsUpdates=document.createElement('input');
     const tinyBrainsThreads=document.createElement('input');
     const tinyBrainsDevice=document.createElement('select');
+    const tinyBrainsStage=document.createElement('select');
+    tinyBrainsStage.append(
+        new Option('Existing maps (no stage change)',''),
+        new Option('Stage 1 — Basic tiny, two players','basic_tiny'),
+        new Option('Stage 2 — Tiny two-player maps','tiny_two_player'),
+        new Option('Stage 3 — Small two-player maps','small_two_player'),
+        new Option('Stage 4 — All two-player maps','all_two_player'),
+        new Option('Stage 5 — Full multiplayer maps','full_multiplayer'));
     const tinyBrainsRemote=document.createElement('input');
     const tinyBrainsWeights=document.createElement('input');
     tinyBrainsRemote.type='checkbox';
     tinyBrainsWeights.type='text';
     tinyBrainsWeights.placeholder='Optional: 2,8,4 (local, then each remote)';
-    tinyBrainsDevice.append(new Option('Profile default',''),
-        new Option('CPU-only fallback (no GPU)','cpu'),
-        new Option('Dedicated two-GPU split PPO (ROCm)','dual'));
+    tinyBrainsDevice.append(new Option('From resource allocation',''),
+        new Option('CPU only','cpu'),
+        new Option('Dedicated two-GPU split PPO (CUDA/ROCm)','dual'),
+        new Option('Multi-GPU PPO + local collectors (3–8 exclusive)','multi'));
     tinyBrainsThreads.type='number';
     tinyBrainsThreads.min='1';
     tinyBrainsThreads.max='256';
@@ -2886,6 +4129,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const threads=hasThreads?tinyBrainsThreads.valueAsNumber:null;
         const cpuFallback=tinyBrainsDevice.value==='cpu';
         const dualGpu=tinyBrainsDevice.value==='dual';
+        const stage=tinyBrainsStage.value;
+        const multiGpu=tinyBrainsDevice.value==='multi';
         const remoteRollouts=tinyBrainsRemote.checked;
         const weightText=tinyBrainsWeights.value.trim();
         const weights=weightText?weightText.split(',').map(s=>Number(s.trim())):[];
@@ -2894,9 +4139,11 @@ document.addEventListener('DOMContentLoaded', () => {
             !(state?.machines||[]).some(machine=>
                 machine.status==='connected'&&
                 machine.tinybrains_profiles?.[profile]===digest&&
-                machine.tinybrains_remote_rollout_endpoints?.length===weights.length-1))) {
+                (machine.tinybrains_remote_rollout_endpoints?.length===weights.length-1||
+                    machine.tinybrains_rollout_subset===true&&
+                    machine.tinybrains_remote_rollout_endpoints?.length>=weights.length-1)))) {
             feedback('hub-config-message',
-                'Fixed action weights require one integer from 1–1024 for the learner and each approved remote endpoint.');
+                'Fixed action weights require one integer from 1–1024 for the learner and each selected remote collector.');
             return;
         }
         if(hasThreads&&(!Number.isSafeInteger(threads)||threads<1||threads>256)) {
@@ -2918,14 +4165,31 @@ document.addEventListener('DOMContentLoaded', () => {
         if(dualGpu&&!(state?.machines||[]).some(machine=>
             machine.status==='connected'&&machine.tinybrains_profiles?.[profile]===digest&&
             machine.tinybrains_dual_gpu_profiles?.includes(profile))) {
-            feedback('hub-config-message','No connected ROCm worker approves two-GPU split PPO for this profile.');
+            feedback('hub-config-message','No connected CUDA/ROCm worker approves two-GPU split PPO for this profile.');
             return;
         }
-        if(remoteRollouts&&(cpuFallback||!(state?.machines||[]).some(machine=>
+        if(stage&&!(state?.machines||[]).some(machine=>
             machine.status==='connected'&&machine.agent_platform==='linux'&&
             machine.tinybrains_profiles?.[profile]===digest&&
-            machine.tinybrains_remote_rollout_profiles?.includes(profile)))) {
-            feedback('hub-config-message','Remote CPU rollouts require an approved Linux GPU learner and a locally installed tailnet worker configuration.');
+            machine.tinybrains_curriculum_stages?.includes(stage))) {
+            feedback('hub-config-message',
+                'No connected worker with this approved profile advertises the selected curriculum stage. Install the stage-capable runtime or select existing maps.');
+            return;
+        }
+        if(multiGpu&&!(state?.machines||[]).some(machine=>
+            machine.status==='connected'&&machine.tinybrains_profiles?.[profile]===digest&&
+            machine.tinybrains_multi_gpu_profiles?.includes(profile))) {
+            feedback('hub-config-message','No connected CUDA/ROCm worker approves 3–8 GPU split PPO collectors for this profile.');
+            return;
+        }
+        if(remoteRollouts&&!(state?.machines||[]).some(machine=>
+            machine.status==='connected'&&
+            ['linux','win32'].includes(machine.agent_platform)&&
+            machine.tinybrains_profiles?.[profile]===digest&&
+            machine.tinybrains_remote_rollout_profiles?.includes(profile)&&
+            (!cpuFallback||machine.tinybrains_remote_cpu_learner===true&&
+                machine.tinybrains_cpu_fallback_profiles?.includes(profile)))) {
+            feedback('hub-config-message','Remote rollouts require an approved native learner for this device mode and locally installed private-network worker configuration.');
             return;
         }
         if(!profile||!digest||!Number.isSafeInteger(updates)||updates<1||updates>10000000) {
@@ -2933,45 +4197,63 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const [sourceId,sourceDigest]=tinyBrainsImport.value.split(':');
+        const current=JSON.parse($('hub-config-json').value);
         $('hub-config-json').value=JSON.stringify({
             profile,profile_sha256:digest,updates,
             ...(hasThreads?{threads}:{}),
-            ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:{}),
+            ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:
+                multiGpu?{device:'multi'}:{}),
             ...(remoteRollouts?{remote_rollouts:true}:{}),
             ...(weights.length?{rollout_action_weights:weights}:{}),
+            ...(stage?{training_stage:stage}:{}),
+            ...(current.profile===profile&&current.profile_sha256===digest&&
+                current.design_overrides?{design_overrides:current.design_overrides,
+                    design_source_sha256:current.design_source_sha256}:{}),
             ...(sourceId&&sourceDigest?{
                 import_checkpoint:sourceId,
                 import_checkpoint_sha256:sourceDigest,
             }:{}),
         },null,2);
+        renderDesignEditor();
         const selected=approvedTinyBrainsProfiles(state?.machines||[])
             .find(([key])=>key===tinyBrainsSelect.value)?.[1];
         feedback('hub-config-message','Profile and update count copied to the draft. '+
             (cpuFallback||!selected?.cudaWorkers
                 ?'When queueing, request CPU/RAM without GPUs. '
                 :dualGpu
-                    ?'When queueing, request two EXCLUSIVE GPUs and sufficient CPU/RAM; a single PPO optimizer runs on one GPU while collection runs on the other. '
-                    :'When queueing, request one GPU (exclusive, or an approved cooperative share) and sufficient CPU/RAM. ')+
+                    ?'When queueing, request two EXCLUSIVE GPUs and sufficient CPU/RAM; one PPO optimizer runs on one GPU, with collection on the other. '
+                    :multiGpu
+                        ?'When queueing, request 3–8 EXCLUSIVE GPUs and sufficient CPU/RAM; one GPU owns PPO optimization and the remaining GPUs collect in parallel. '
+                        :'When queueing, request one GPU (exclusive, or an approved cooperative share) and sufficient CPU/RAM. ')+
             (sourceId
                 ?'The source checkpoint SHA-256 is frozen; this draft can initialize a new lineage, not a continuation stage. '
                 :'Use a configuration without an import for checkpoint-continuation stages. ')+
+            (stage?'The map stage and turn limit are pinned at launch by the trusted runtime; advance only after independent held-out evaluation. ':'')+
             (hasThreads?'The CPU thread override does not change the job CPU quota. ':'')+
             (remoteRollouts?'In Train, use Queue and reserve entire group to atomically assign learner and approved remote collector CPU/GPU budgets before any Start. ':'')+
             (weights.length?'Fixed action weights change rollout work shares, not hardware reservations. ':'')+
             'Save the draft to retain these settings.');
     });
+    const tinyBrainsFields=document.createElement('div');
+    tinyBrainsFields.className='hub-tinybrains-fields';
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
         ['Updates ',tinyBrainsUpdates],['CPU threads (optional) ',tinyBrainsThreads],
         ['Execution device ',tinyBrainsDevice],
-        ['Use approved remote CPU rollout collectors ',tinyBrainsRemote],
+        ['Learning curriculum map stage ',tinyBrainsStage],
+        ['Use approved remote rollout collectors ',tinyBrainsRemote],
         ['Fixed rollout action weights (optional; local then remotes) ',tinyBrainsWeights],
         ['Approved checkpoint import (optional) ',tinyBrainsImport]]) {
         const label=document.createElement('label');
-        label.append(caption,control);
-        tinyBrainsPicker.append(label);
+        if(control===tinyBrainsRemote) {
+            label.className='hub-toggle-row hub-tinybrains-remote';
+            label.append(control,document.createTextNode(caption.trim()));
+        }else label.append(caption,control);
+        tinyBrainsFields.append(label);
     }
-    tinyBrainsPicker.prepend(tinyBrainsLegend);
-    tinyBrainsPicker.append(tinyBrainsUse);
+    const tinyBrainsActions=document.createElement('div');
+    tinyBrainsActions.className='hub-controls';
+    tinyBrainsActions.append(tinyBrainsUse);
+    tinyBrainsPicker.append(tinyBrainsLegend,tinyBrainsFields,tinyBrainsActions);
     $('hub-config-form').prepend(tinyBrainsPicker);
     function displayTinyBrainsImports() {
         const [profile,digest]=tinyBrainsSelect.value.split(':');
@@ -3006,14 +4288,335 @@ document.addEventListener('DOMContentLoaded', () => {
         tinyBrainsSelect.disabled=tinyBrainsUse.disabled=!options.length;
         displayTinyBrainsImports();
     }
+    // A worker supplies the defaults from its actual installed trainer;
+    // the dashboard never invents hyperparameter values or environment rules.
+    function designDefinition(parameters={}) {
+        const machines=(state?.machines||[]).filter(machine=>
+            machine.status==='connected'&&machine.local_executor_enabled===true&&
+            machine.installed_projects?.includes(project));
+        for(const machine of machines) {
+            if(project==='courier') {
+                const entry=machine.design_catalog?.courier;
+                if(entry&&(!parameters.config_sha256||
+                    entry.config_sha256===parameters.config_sha256))
+                    return {entry,machine};
+            }else if(project==='tinybrains') {
+                const profiles=machine.design_catalog?.tinybrains?.profiles||{};
+                for(const [profile,pin] of Object.entries(profiles))
+                    if((!parameters.profile||parameters.profile===profile)&&
+                        (!parameters.profile_sha256||
+                            parameters.profile_sha256===pin.profile_sha256))
+                        return {entry:{...machine.design_catalog.tinybrains,
+                            profile_sha256:pin.profile_sha256},machine,profile};
+            }
+        }
+        return null;
+    }
+    function projectDefaultParameters() {
+        const choice=designDefinition();
+        if(!choice)return {};
+        if(project==='courier')return {
+            config_sha256:choice.entry.config_sha256,
+            seed:42,max_rounds:1000,checkpoint_rounds:250,
+        };
+        if(project==='tinybrains') {
+            const {profile,entry,machine}=choice;
+            const found=Object.entries(machine.tinybrains_imports||{}).find(
+                ([,item])=>item.profile===profile&&item.sha256);
+            return {
+                profile,profile_sha256:entry.profile_sha256,updates:1000,
+                ...(found?{import_checkpoint:found[0],
+                    import_checkpoint_sha256:found[1].sha256}:{}),
+            };
+        }
+        return {};
+    }
+    function syncTinyBrainsEditor(parameters) {
+        if(project!=='tinybrains')return;
+        const selection=parameters.profile&&parameters.profile_sha256
+            ?parameters.profile+':'+parameters.profile_sha256:null;
+        if(selection&&[...tinyBrainsSelect.options].some(option=>option.value===selection))
+            tinyBrainsSelect.value=selection;
+        tinyBrainsUpdates.value=parameters.updates??1000;
+        tinyBrainsThreads.value=parameters.threads??'';
+        tinyBrainsDevice.value=parameters.device||'';
+        tinyBrainsStage.value=parameters.training_stage||'';
+        tinyBrainsRemote.checked=parameters.remote_rollouts===true;
+        tinyBrainsWeights.value=(parameters.rollout_action_weights||[]).join(',');
+        displayTinyBrainsImports();
+        const key=parameters.import_checkpoint&&parameters.import_checkpoint_sha256
+            ?parameters.import_checkpoint+':'+parameters.import_checkpoint_sha256:null;
+        if(key&&[...tinyBrainsImport.options].some(option=>option.value===key))
+            tinyBrainsImport.value=key;
+    }
+    function readDesignControls() {
+        const controls=[...$('hub-design-editor').querySelectorAll('[data-design-key]')];
+        const runControls=[...$('hub-design-run').querySelectorAll('[data-design-run]')];
+        if(!controls.length&&!runControls.length)
+            return JSON.parse($('hub-config-json').value);
+        const parameters=JSON.parse($('hub-config-json').value);
+        const choice=designDefinition(parameters);
+        if(!choice)throw Error('Matching approved project defaults are unavailable. Reconnect the worker or edit Advanced JSON.');
+        // Older, empty native drafts can be upgraded without discarding their
+        // saved unknown fields or altering any explicit trusted identities.
+        if(project==='courier'&&!parameters.config_sha256)
+            parameters.config_sha256=choice.entry.config_sha256;
+        if(project==='tinybrains'&&!parameters.profile&&!parameters.profile_sha256) {
+            parameters.profile=choice.profile;
+            parameters.profile_sha256=choice.entry.profile_sha256;
+            parameters.updates??=1000;
+        }
+        const overrides={...parameters.design_overrides};
+        for(const field of choice.entry.fields) {
+            const input=controls.find(el=>el.dataset.designKey===field.key);
+            if(!input)throw Error('Reload Design: a project parameter field is missing.');
+            let value;
+            if(field.type==='boolean')value=input.checked;
+            else if(field.type==='enum') {
+                value=input.value;
+                if(!field.options.includes(value))
+                    throw Error(field.label+' must use an approved option.');
+            }else {
+                if(!input.value.trim())throw Error(field.label+' requires a number.');
+                value=Number(input.value);
+                if(!Number.isFinite(value)||value<field.min||value>field.max||
+                    field.type==='integer'&&!Number.isSafeInteger(value))
+                    throw Error(field.label+' must be within the approved range.');
+            }
+            if(value===field.default)delete overrides[field.key];
+            else overrides[field.key]=value;
+        }
+        if(project==='courier') {
+            const effective=Object.fromEntries(choice.entry.fields.map(field=>[
+                field.key,Object.hasOwn(overrides,field.key)
+                    ?overrides[field.key]:field.default,
+            ]));
+            if(effective.colony&&effective.competitive)
+                throw Error('Choose individual competition or colony mode, not both.');
+            if(effective.evolution&&!effective.colony)
+                throw Error('Trait evolution requires colony mode.');
+            if(effective.communication&&!effective.colony)
+                throw Error('Communication requires colony mode.');
+            if(effective.speed_enabled&&!(
+                effective.colony&&effective.evolution&&effective.communication))
+                throw Error('Speed requires colony, evolution and communication.');
+            if(effective.food_spawn_mode==='patches'&&!effective.colony)
+                throw Error('Food patches require colony mode.');
+            if(!effective.evolution&&effective.food_tile_capacity!==1)
+                throw Error('Multiple food items per tile require evolution.');
+            if(effective.initial_energy>effective.max_energy)
+                throw Error('Initial energy cannot exceed maximum energy.');
+        }
+        for(const input of runControls) {
+            const key=input.dataset.designRun;
+            if(input.type==='checkbox') {
+                if(input.checked)parameters[key]=true;
+                else delete parameters[key];
+                continue;
+            }
+            if(!input.value.trim()) {
+                if(key==='workers')delete parameters.workers;
+                else throw Error(key.replace(/_/g,' ')+' requires a whole number.');
+                continue;
+            }
+            const value=Number(input.value);
+            if(!Number.isSafeInteger(value)||value<Number(input.min)||
+                value>Number(input.max))
+                throw Error(key.replace(/_/g,' ')+' is outside its approved limits.');
+            parameters[key]=value;
+        }
+        if(Object.keys(overrides).length) {
+            parameters.design_overrides=overrides;
+            if(project==='tinybrains')
+                parameters.design_source_sha256=choice.machine.design_catalog.tinybrains.source_sha256;
+            if(project==='courier'&&Object.keys(overrides).some(key=>key.startsWith('training.')))
+                parameters.training_schema_sha256=choice.entry.training_schema_sha256;
+            else delete parameters.training_schema_sha256;
+        }else {
+            delete parameters.design_overrides;
+            delete parameters.design_source_sha256;
+            delete parameters.training_schema_sha256;
+        }
+        $('hub-config-json').value=JSON.stringify(parameters,null,2);
+        return parameters;
+    }
+    let renderedDesignSignature=null;
+    function renderDesignEditor(force=false) {
+        let parameters;
+        try {parameters=JSON.parse($('hub-config-json').value);}
+        catch {return;}
+        const chosen=designDefinition(parameters);
+        const signature=JSON.stringify({project,parameters,
+            machine:chosen?.machine?.id||null,
+            catalog:chosen?.entry||null});
+        // Periodic monitor/worker refresh must not discard an in-progress
+        // number edit while the last saved JSON is still unchanged.
+        if(!force&&signature===renderedDesignSignature)return;
+        renderedDesignSignature=signature;
+        const editor=$('hub-design-editor');
+        $('hub-design-availability').textContent=project==='bees'||chosen?'':(
+            project==='courier'||project==='tinybrains'
+                ?'Editable project defaults require a connected worker with a trusted, compatible Design-capable adapter. Existing drafts remain preserved; Advanced JSON can be viewed without a worker.'
+                :'This project has no installed Design schema. Registering a project does not install its training adapter.');
+        editor.hidden=!chosen;
+        $('hub-design-training').replaceChildren();
+        $('hub-design-environment').replaceChildren();
+        $('hub-design-run').replaceChildren();
+        if(!chosen)return;
+        const {entry,machine}=chosen;
+        $('hub-design-run-panel').hidden=project!=='courier';
+        if(project==='courier') {
+            const instructions=document.createElement('p');
+            instructions.className='muted hub-design-note';
+            instructions.textContent='Optional simulation modes follow connected worker defaults. Colony mode enables shared food, feeding, births and combat. Evolution and communication require colonies; speed requires both. Food patches require colonies. Switching neural observation/action modes needs a fresh lineage, not an incompatible checkpoint continuation.';
+            $('hub-design-environment').append(instructions);
+        }
+        if(project==='courier') {
+            for(const [key,label,min,max,defaultValue] of [
+                ['seed','Random seed',0,4294967295,42],
+                ['workers','Concurrent environment workers (optional)',1,64,null],
+                ['max_rounds','Maximum training rounds',0,10000000,1000],
+                ['checkpoint_rounds','Checkpoint interval (rounds)',1,10000000,250],
+            ]) {
+                const wrapper=document.createElement('label');
+                wrapper.textContent=label;
+                const input=document.createElement('input');
+                input.type='number';input.step='1';
+                input.min=String(min);input.max=String(max);
+                input.dataset.designRun=key;
+                input.value=String(parameters[key]??(defaultValue??''));
+                input.placeholder=key==='workers'?'Use allocated CPU parallelism':'';
+                const hint=document.createElement('small');
+                hint.textContent=defaultValue===null
+                    ?'Optional. Omitting requires a worker with allocation-based CPU parallelism.'
+                    :'New-draft default '+defaultValue;
+                wrapper.append(input,hint);
+                input.addEventListener('change',()=>{
+                    try{readDesignControls();feedback('hub-config-message','');}
+                    catch(error){feedback('hub-config-message',error.message);}
+                });
+                $('hub-design-run').append(wrapper);
+            }
+            const benchmarkLabel=document.createElement('label');
+            const benchmark=document.createElement('input');
+            benchmark.type='checkbox';
+            benchmark.dataset.designRun='reporting_benchmarks';
+            benchmark.checked=parameters.reporting_benchmarks===true;
+            benchmarkLabel.className='hub-design-checkbox';
+            const benchmarkText=document.createElement('span');
+            benchmarkText.className='hub-design-checkbox-text';
+            benchmarkText.textContent='Enable independent fixed and extended reporting benchmarks after champion promotions';
+            benchmarkLabel.append(benchmark,benchmarkText);
+            const benchmarkHint=document.createElement('small');
+            benchmarkHint.textContent='Off by default. Adds fresh reporting evaluations after champion promotion; costs training time and does not change the survival reward.';
+            benchmarkLabel.append(benchmarkHint);
+            benchmark.addEventListener('change',()=>{
+                try{readDesignControls();feedback('hub-config-message','');}
+                catch(error){feedback('hub-config-message',error.message);}
+            });
+            $('hub-design-run').append(benchmarkLabel);
+        }
+        $('hub-design-source').textContent='Defaults from '+machine.id+
+            ' · approved '+(project==='courier'?'environment':'profile')+
+            ' '+(entry.config_sha256||entry.profile_sha256).slice(0,12)+
+            '. Overrides are frozen in each saved draft and verified by the worker at Start.'+
+            (project==='tinybrains'
+                ?' These defaults come from the frozen source run specification. Unchanged settings continue with the imported optimizer checkpoint, which may have different current values.'
+                :'');
+        for(const field of entry.fields) {
+            const label=document.createElement('label');
+            const input=document.createElement('input');
+            input.dataset.designKey=field.key;
+            if(field.type==='boolean') {
+                label.className='hub-design-checkbox';
+                input.type='checkbox';
+                input.checked=parameters.design_overrides?.[field.key]??
+                    field.default;
+                const text=document.createElement('span');
+                text.className='hub-design-checkbox-text';
+                text.textContent=field.label;
+                label.append(input,text);
+            }else if(field.type==='enum') {
+                label.append(document.createTextNode(field.label));
+                const select=document.createElement('select');
+                select.dataset.designKey=field.key;
+                select.replaceChildren(...field.options.map(option=>new Option(option,option)));
+                const current=parameters.design_overrides?.[field.key]??field.default;
+                select.value=field.options.includes(current)?current:field.default;
+                select.addEventListener('change',()=>{
+                    try{readDesignControls();feedback('hub-config-message','');}
+                    catch(error){feedback('hub-config-message',error.message);}
+                });
+                label.append(select);
+                const hint=document.createElement('small');
+                hint.textContent=field.key+' · default '+String(field.default);
+                label.append(hint);
+                $(field.section==='training'?'hub-design-training':
+                    'hub-design-environment').append(label);
+                continue;
+            }else{
+                label.append(document.createTextNode(field.label));
+                input.type='number';
+                input.step=field.type==='integer'?'1':'any';
+                input.min=String(field.min);input.max=String(field.max);
+                input.value=String(parameters.design_overrides?.[field.key]??
+                    field.default);
+            }
+            const hint=document.createElement('small');
+            hint.textContent=field.key+' · default '+String(field.default)+
+                (field.type==='boolean'?(field.default?' (on by default)':' (off by default)'):'');
+            if(field.type==='boolean')label.append(hint);
+            else label.append(input,hint);
+            input.addEventListener('change',()=>{
+                try{readDesignControls();feedback('hub-config-message','');}
+                catch(error){feedback('hub-config-message',error.message);}
+            });
+            $(field.section==='training'?'hub-design-training':
+                'hub-design-environment').append(label);
+        }
+        for(const section of ['training','environment']) {
+            const target=$('hub-design-'+section);
+            if(!target.children.length) {
+                const note=document.createElement('p');
+                note.className='muted';
+                note.textContent=section==='training'
+                    ?'This installed adapter has no independently editable hyperparameters. Its approved training profile remains pinned.'
+                    :'This installed adapter has no independently editable simulation controls.';
+                target.append(note);
+            }
+        }
+    }
+    $('hub-design-reset').addEventListener('click',()=>{
+        try {
+            const parameters=JSON.parse($('hub-config-json').value);
+            const chosen=designDefinition(parameters);
+            if(!chosen)throw Error('No matching approved project defaults.');
+            delete parameters.design_overrides;
+            delete parameters.design_source_sha256;
+            delete parameters.training_schema_sha256;
+            if(project==='courier') {
+                parameters.seed=42;
+                delete parameters.workers;
+                parameters.max_rounds=1000;
+                parameters.checkpoint_rounds=250;
+                delete parameters.reporting_benchmarks;
+            }
+            $('hub-config-json').value=JSON.stringify(parameters,null,2);
+            renderDesignEditor(true);
+        }catch(error){feedback('hub-config-message',error.message);}
+    });
+    $('hub-config-json').addEventListener('change',()=>renderDesignEditor(true));
     function resetEditor() {
         editing=null;
         $('hub-config-name').value='';
-        $('hub-config-json').value='{}';
-        tinyBrainsUpdates.value='1';
+        $('hub-config-json').value=JSON.stringify(projectDefaultParameters(),null,2);
+        tinyBrainsUpdates.value='1000';
         tinyBrainsThreads.value='';
         tinyBrainsDevice.value='';
-        setEvaluationEditor();
+        setEvaluationEditor(state?.projects.find(p=>p.id===project)
+            ?.default_evaluation_monitor||null,true);
+        syncTinyBrainsEditor(JSON.parse($('hub-config-json').value));
+        renderDesignEditor(true);
         $('hub-config-save').textContent='Save draft';
         feedback('hub-config-message','');
     }
@@ -3021,6 +4624,172 @@ document.addEventListener('DOMContentLoaded', () => {
         const live=job.live_execution;
         const p=live?.progress||job.final_progress;
         if(p?.source==='hub-metrics-v1') {
+            // Sustained stage evidence is deliberately narrower than a CPU/GPU
+            // hardware diagnosis; measured stage time alone cannot prove
+            // device saturation or justify buying additional resources.
+            const measured=p.metrics||{};
+            const remoteWaitOwner=measured.pipeline_remote_wait_owner?.value;
+            let remoteWaitHost=null;
+            if(job.project_id==='tinybrains'&&
+                job.distributed_rollout_managed===true&&
+                Number.isSafeInteger(remoteWaitOwner)&&remoteWaitOwner>=1) {
+                const learner=(state.machines||[]).find(
+                    host=>host.id===job.assigned_machine_id);
+                const endpoint=(job.frozen_parameters?.rollout_endpoints??
+                    learner?.tinybrains_remote_rollout_endpoints)?.[
+                    remoteWaitOwner-1];
+                if(endpoint&&learner.tinybrains_remote_key_fingerprint) {
+                    // The learner's ordered, approved endpoint identity must
+                    // match exactly one originally assigned native worker.
+                    // Do not guess a physical host from collector index alone.
+                    const matching=(state.jobs||[]).filter(worker=>{
+                        if(worker.project_id!=='tinybrains_rollout'||
+                            worker.frozen_parameters?.learner_job_id!==job.id)
+                            return false;
+                        const host=(state.machines||[]).find(
+                            machine=>machine.id===worker.assigned_machine_id);
+                        const listener=host?.tinybrains_rollout_slots?.find(item=>
+                            item.slot===worker.frozen_parameters?.listener_slot);
+                        return (worker.rollout_endpoint||listener?.endpoint||
+                            host?.tinybrains_rollout_endpoint)===endpoint&&
+                            host.tinybrains_rollout_key_fingerprint===
+                                learner.tinybrains_remote_key_fingerprint;
+                    });
+                    if(matching.length===1) {
+                        const host=(state.machines||[]).find(
+                            machine=>machine.id===matching[0].assigned_machine_id);
+                        remoteWaitHost=host?.name||host?.id||null;
+                    }
+                }
+            }
+            const remoteWaitLabel=Number.isSafeInteger(remoteWaitOwner)&&
+                remoteWaitOwner>=1&&remoteWaitOwner<=16
+                ?' (Collector '+remoteWaitOwner+
+                    (remoteWaitHost?' on '+remoteWaitHost:'')+')'
+                :measured.pipeline_remote_wait_competing_collectors?.value===1
+                    ?' (multiple similar collector completion times)'
+                    :' (no stable collector owner)';
+            const delay=measured.pipeline_remote_wait_dominant?.value===1
+                ?'remote collector join wait'+remoteWaitLabel
+                :measured.pipeline_merge_dominant?.value===1
+                    ?'learner-side rollout merge':null;
+            const stage=measured.pipeline_collection_dominant?.value===1
+                ?'collection':measured.pipeline_optimization_dominant?.value===1
+                    ?'optimization':null;
+            const signal=delay
+                ?' · Sustained collection delay: '+delay+' (not proof of hardware saturation)'
+                :stage
+                    ?' · Sustained longest stage: '+stage+' (not a hardware saturation claim)'
+                    :measured.pipeline_timing_sample_count?.value>0
+                        ?' · Bottleneck stage: insufficient sustained evidence'
+                        :'';
+            const connectPressure=job.project_id==='tinybrains'&&
+                measured.pipeline_remote_connect_pressure?.value===1;
+            const connectOwner=measured.pipeline_remote_connect_owner?.value;
+            const connectSignal=connectPressure&&
+                Number.isSafeInteger(connectOwner)&&connectOwner>=1&&connectOwner<=16
+                ?' · Sustained remote TCP connection setup on Collector '+
+                    connectOwner+' (not evidence of network saturation)'
+                :'';
+            const remotePrepSignal=measured.pipeline_remote_prep_pressure?.value===1
+                ?' · Learner regularly still preparing remote rollouts after local collectors finish'
+                :'';
+            const dispatchOwner=measured.pipeline_collector_dispatch_owner?.value;
+            const dispatchSignal=measured.pipeline_collector_dispatch_pressure?.value===1&&
+                Number.isSafeInteger(dispatchOwner)&&dispatchOwner>=1&&dispatchOwner<=16
+                ?' · Collector '+dispatchOwner+' regularly waits for learner dispatch'
+                :'';
+            const measuredWorkers=[];
+            for(let i=0;i<9;i++) {
+                for(const stageName of ['engine','observation','inference','opponent']) {
+                    if(measured['collector_'+i+'_stage_'+stageName+
+                            '_dominant']?.value===1)
+                        measuredWorkers.push((i===0?'Learner':'Collector '+i)+
+                            ': '+stageName);
+                }
+            }
+            const workerSignal=measuredWorkers.length
+                ?' · Sustained measured stage: '+measuredWorkers.slice(0,2).join('; ')+
+                    (measuredWorkers.length>2
+                        ?' (+'+(measuredWorkers.length-2)+' more)':'')+
+                    ' (not hardware saturation)'
+                :'';
+            const enginePressure=[];
+            for(let i=0;i<9;i++) {
+                if(measured['collector_'+i+'_sim_straggler_pressure']?.value===1)
+                    enginePressure.push((i===0?'Learner':'Collector '+i)+
+                        ' waiting for slowest simulation');
+                if(measured['collector_'+i+'_sim_dispatch_pressure']?.value===1)
+                    enginePressure.push((i===0?'Learner':'Collector '+i)+
+                        ' simulation dispatch queueing');
+                if(measured['collector_'+i+'_record_encode_pressure']?.value===1)
+                    enginePressure.push((i===0?'Learner':'Collector '+i)+
+                        ' rollout record packing');
+            }
+            const enginePressureSignal=enginePressure.length
+                ?' · Sustained simulation pressure: '+enginePressure.slice(0,2).join('; ')+
+                    (enginePressure.length>2?' (+'+(enginePressure.length-2)+' more)':'')
+                :'';
+            const queueOwner=measured.training_sim_queue_ratio_owner?.value;
+            const courierQueueSignal=job.project_id==='courier'&&
+                measured.training_sim_queue_pressure?.value===1&&
+                Number.isSafeInteger(queueOwner)&&queueOwner>=0&&queueOwner<64
+                ?' · Sustained simulation shard backlog at PPO lineage '+queueOwner+
+                    (measured.training_sim_cpu_underuse_evidence?.value===1
+                        ?' with unused leased CPU capacity'
+                        :' (not evidence of hardware saturation)')
+                :'';
+            const idleTailOwner=measured.training_sim_idle_tail_ratio_owner?.value;
+            const courierImbalanceSignal=job.project_id==='courier'&&
+                measured.training_sim_tail_skew_pressure?.value===1&&
+                Number.isSafeInteger(idleTailOwner)&&idleTailOwner>=0&&idleTailOwner<64
+                ?' · Sustained shard receipt tail skew at PPO lineage '+
+                    idleTailOwner+' (may reflect shard imbalance or receipt overhead, not measured CPU idle%)'
+                :'';
+            const gpuFwdOwner=measured.training_gpu_forward_owner?.value;
+            const sharedGpuFwdOwner=measured.training_shared_gpu_fwd_owner?.value;
+            const tbLocalFwdOwner=measured.pipeline_local_gpu_fwd_owner?.value;
+            const tbRemoteFwdOwner=measured.pipeline_remote_gpu_fwd_owner?.value;
+            const tbGpuFwdSignal=job.project_id==='tinybrains'&&
+                measured.pipeline_local_gpu_fwd_pressure?.value===1&&
+                Number.isSafeInteger(tbLocalFwdOwner)&&tbLocalFwdOwner>=0&&
+                tbLocalFwdOwner<=16
+                ?' · Sustained exposed forward-stream work on local GPU collector '+
+                    tbLocalFwdOwner+' (not proof of GPU hardware saturation)'
+                :job.project_id==='tinybrains'&&
+                    measured.pipeline_remote_gpu_fwd_pressure?.value===1&&
+                    Number.isSafeInteger(tbRemoteFwdOwner)&&tbRemoteFwdOwner>=1&&
+                    tbRemoteFwdOwner<=16
+                    ?' · Sustained exposed forward-stream work on remote collector '+
+                        tbRemoteFwdOwner+' (not proof of GPU hardware saturation)'
+                    :'';
+            const courierGpuFwdSignal=job.project_id==='courier'&&
+                measured.training_gpu_forward_pressure?.value===1&&
+                Number.isSafeInteger(gpuFwdOwner)&&gpuFwdOwner>=0&&gpuFwdOwner<64
+                ?' · Sustained exposed GPU forward stream work at PPO lineage '+
+                    gpuFwdOwner+' (not proof of GPU hardware saturation)'
+                :job.project_id==='courier'&&
+                    measured.training_shared_gpu_fwd_pressure?.value===1&&
+                    Number.isSafeInteger(sharedGpuFwdOwner)&&
+                    sharedGpuFwdOwner>=0&&sharedGpuFwdOwner<16
+                    ?' · Sustained exposed GPU forward stream work at shared-policy collector '+
+                        sharedGpuFwdOwner+' (not proof of GPU hardware saturation)'
+                    :'';
+            const resourceFlags=[
+                ['pipeline_cpu_lease_pressure','CPU lease nearly occupied'],
+                ['pipeline_cpu_throttle_pressure','CPU quota throttling'],
+                ['pipeline_ram_lease_pressure','RAM lease nearly occupied'],
+                ['pipeline_gpu_host_busy_pressure','allocated GPUs host-busy'],
+                ['pipeline_gpu_mixed_host_evidence','allocated GPUs show mixed host activity'],
+                ['pipeline_cpu_underuse_evidence','CPU lease underused during collection'],
+                ['pipeline_gpu_idle_evidence','allocated GPUs host-idle during optimization']
+            ].filter(([metric])=>measured[metric]?.value===1)
+                .map(([,name])=>name);
+            const resourceSignal=resourceFlags.length
+                ?' · Sustained resource evidence: '+resourceFlags.slice(0,2).join('; ')+
+                    (resourceFlags.length>2?' (+'+(resourceFlags.length-2)+' more)':'')+
+                    ' (not proof of a causal hardware bottleneck)'
+                :'';
             // Compact Monitor summaries should show the trainer's recorded
             // learning outcomes as well as steps; timing-only summaries
             // can misleadingly look like missing learning telemetry.
@@ -3042,38 +4811,393 @@ document.addEventListener('DOMContentLoaded', () => {
             const remaining=Math.max(0,Object.keys(p.metrics).length-values.length);
             return 'Steps '+p.steps_completed.toLocaleString()+
                 ' · '+values.join(' · ')+
-                (remaining?' · +'+remaining+' more':'')+
+                (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
+                enginePressureSignal+connectSignal+remotePrepSignal+dispatchSignal+
+                courierQueueSignal+courierImbalanceSignal+courierGpuFwdSignal+
+                tbGpuFwdSignal+resourceSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
             return 'Local progress unavailable: '+live.progress_issue;
         return job.dispatch_id?'Awaiting trusted project summary':'—';
     }
-    function setEvaluationEditor(policy) {
-        const multi=policy?.all_of||null;
-        $('hub-evaluation-suite').value=multi?'':policy?.suite_id??'';
-        $('hub-evaluation-digest').value=multi?'':policy?.suite_sha256??'';
-        $('hub-evaluation-trials').value=multi?'':policy?.min_trials??'';
-        $('hub-evaluation-rate').value=multi?'':policy?.min_success_rate??'';
-        $('hub-evaluation-all-of').value=multi?JSON.stringify(multi,null,2):'';
+    // The native evaluator always archives all validated measurements it
+    // reports. These project-specific choices only prioritize chart series,
+    // not receipt content, stopping, checkpoint selection or training.
+    const evaluationChartOptions={
+        tinybrains:[
+            ['score_rate','Draw-adjusted score'],
+            ['win_count','Wins'],['loss_count','Losses'],['draw_count','Draws'],
+        ],
+        courier:[
+            ['survival_rate','Survival rate'],
+            ['mean_lifespan','Mean lifespan'],
+            ['mean_survival_score','Mean survival score'],
+            ['mean_deliveries','Mean deliveries'],
+            ['total_deliveries','Total deliveries'],
+            ['pickup_rate','Pickup rate'],
+            ['mean_steps_per_delivery','Steps per delivery'],
+            ['gross_energy_per_step','Energy per step'],
+            ['mean_reward','Mean environment reward'],
+            ['mean_feedings','Mean feedings'],
+            ['mean_births','Mean births'],
+        ],
+    };
+    function renderEvaluationChartOptions(preferences) {
+        const selected=new Set(preferences===undefined
+            ?project==='tinybrains'?['score_rate']
+                :project==='courier'?['survival_rate']:[]
+            :preferences);
+        const supported=evaluationChartOptions[project]||[];
+        const names=new Set(supported.map(([name])=>name));
+        // Preserve previously frozen preferences even if a newer adapter
+        // version stops advertising a measurement. Editing a draft must not
+        // silently erase its historical chart intentions.
+        const choices=[...supported,...[...selected]
+            .filter(name=>!names.has(name))
+            .map(name=>[name,name+' (not in current project catalogue)'])];
+        $('hub-evaluation-measurements').replaceChildren(
+            ...choices.map(([name,label])=>{
+                const field=document.createElement('label');
+                const checkbox=document.createElement('input');
+                checkbox.type='checkbox';
+                checkbox.value=name;
+                checkbox.checked=selected.has(name);
+                field.append(checkbox,document.createTextNode(' '+label));
+                return field;
+            }));
     }
+    function refreshEvaluationEditor() {
+        const monitor=$('hub-evaluation-mode').value==='monitor';
+        $('hub-evaluation-measurements-panel').hidden=!monitor;
+        const optionalStop=$('hub-evaluation-optional-stop');
+        const hasStop=!monitor||optionalStop.checked;
+        $('hub-evaluation-optional-stop-label').hidden=!monitor;
+        optionalStop.disabled=!monitor;
+        $('hub-evaluation-rate-label').hidden=!hasStop;
+        $('hub-evaluation-rate').disabled=!hasStop;
+        $('hub-evaluation-frequency-label').hidden=!monitor;
+        $('hub-evaluation-frequency').disabled=!monitor;
+        $('hub-evaluation-minutes-label').hidden=!monitor;
+        $('hub-evaluation-minutes').disabled=!monitor;
+        $('hub-evaluation-baseline-label').hidden=!monitor;
+        $('hub-evaluation-final-label').hidden=!monitor;
+        const regression=$('hub-evaluation-regression-enable');
+        regression.disabled=!monitor;
+        $('hub-evaluation-regression-enable-label').hidden=!monitor;
+        const regressionActive=monitor&&regression.checked;
+        $('hub-evaluation-regression-stop-label').hidden=!regressionActive;
+        $('hub-evaluation-regression-stop').disabled=!regressionActive;
+        for(const field of ['window','drop']) {
+            const label=$('hub-evaluation-regression-'+field+'-label');
+            label.hidden=!regressionActive;
+            $('hub-evaluation-regression-'+field).disabled=!regressionActive;
+        }
+        for(const row of $('hub-evaluation-more-suites').children) {
+            const label=row.querySelector('.hub-evaluation-extra-rate-label');
+            label.hidden=!hasStop;
+            label.querySelector('input').disabled=!hasStop;
+            for(const selector of [
+                '.hub-evaluation-extra-frequency-label',
+                '.hub-evaluation-extra-minutes-label',
+            ]) {
+                const schedule=row.querySelector(selector);
+                schedule.hidden=!monitor||hasStop;
+                schedule.querySelector('input').disabled=!monitor||hasStop;
+            }
+        }
+    }
+    function appendEvaluationSuite(rule={}) {
+        const container=$('hub-evaluation-more-suites');
+        if(container.children.length>=7)
+            throw Error('A configuration supports at most eight independent evaluation suites.');
+        const row=document.createElement('div');
+        row.className='formgrid hub-evaluation-extra-suite';
+        row.style.margin='10px 0';
+        const field=(title,className,value,type='text')=>{
+            const label=document.createElement('label');
+            label.textContent=title;
+            const input=document.createElement('input');
+            input.className=className;
+            input.type=type;
+            input.value=String(value??'');
+            if(type==='number') {
+                input.min=className==='hub-evaluation-extra-rate'?'0':'1';
+                input.max=className==='hub-evaluation-extra-rate'?'1':
+                    className==='hub-evaluation-extra-minutes'?'10080':'1000000';
+                input.step=className==='hub-evaluation-extra-rate'?'any':'1';
+            }
+            if(className==='hub-evaluation-extra-suite-id') {
+                input.maxLength=48;
+                input.setAttribute('list','hub-evaluation-suite-options');
+            }
+            if(className==='hub-evaluation-extra-digest') {
+                input.maxLength=64;
+                input.pattern='[0-9a-f]{64}';
+            }
+            if(className==='hub-evaluation-extra-rate')
+                label.className='hub-evaluation-extra-rate-label';
+            label.append(input);
+            row.append(label);
+        };
+        field('Suite ID','hub-evaluation-extra-suite-id',rule.suite_id);
+        field('Suite SHA-256 (optional)','hub-evaluation-extra-digest',rule.suite_sha256);
+        field('Minimum trials','hub-evaluation-extra-trials',rule.min_trials,'number');
+        field('Every N updates (optional, overrides shared interval)',
+            'hub-evaluation-extra-frequency',rule.every_n_checkpoints,'number');
+        row.querySelector('.hub-evaluation-extra-frequency').parentElement
+            .classList.add('hub-evaluation-extra-frequency-label');
+        field('Minimum minutes between evaluations (optional, overrides shared spacing)',
+            'hub-evaluation-extra-minutes',
+            rule.min_minutes_between_evaluations,'number');
+        row.querySelector('.hub-evaluation-extra-minutes').parentElement
+            .classList.add('hub-evaluation-extra-minutes-label');
+        field('Minimum success rate (Stop only)',
+            'hub-evaluation-extra-rate',rule.min_success_rate,'number');
+        const remove=document.createElement('button');
+        remove.type='button';
+        remove.textContent='Remove suite';
+        remove.addEventListener('click',()=>row.remove());
+        row.append(remove);
+        container.append(row);
+        refreshEvaluationEditor();
+    }
+    $('hub-evaluation-add-suite').addEventListener('click',()=>{
+        try {appendEvaluationSuite();}
+        catch(error){feedback('hub-config-message',error.message);}
+    });
+    function setEvaluationEditor(policy=null,monitor=policy==null,stopPolicy=null) {
+        const multi=Array.isArray(policy?.all_of)?policy.all_of:null;
+        const first=multi?.[0]||policy;
+        const stopped=stopPolicy?.all_of||(stopPolicy?[stopPolicy]:[]);
+        const stopBySuite=new Map(stopped.map(rule=>[rule.suite_id,rule]));
+        $('hub-evaluation-mode').value=monitor?'monitor':'stop';
+        $('hub-evaluation-optional-stop').checked=Boolean(monitor&&stopPolicy);
+        $('hub-evaluation-suite').value=first?.suite_id??'';
+        $('hub-evaluation-digest').value=first?.suite_sha256??'';
+        $('hub-evaluation-trials').value=first?.min_trials??'';
+        $('hub-evaluation-rate').value=stopBySuite.get(first?.suite_id)
+            ?.min_success_rate??first?.min_success_rate??'';
+        $('hub-evaluation-frequency').value=String(policy?.every_n_checkpoints??10);
+        $('hub-evaluation-minutes').value=String(
+            policy?.min_minutes_between_evaluations??'');
+        $('hub-evaluation-baseline').checked=policy?.include_baseline!==false;
+        $('hub-evaluation-final').checked=policy?.include_final!==false;
+        $('hub-evaluation-regression-enable').checked=Boolean(monitor&&policy?.regression_alert);
+        $('hub-evaluation-regression-stop').checked=Boolean(monitor&&
+            policy?.regression_alert?.stop_on_regression===true);
+        $('hub-evaluation-regression-window').value=String(
+            policy?.regression_alert?.window_checkpoints??3);
+        $('hub-evaluation-regression-drop').value=String(
+            policy?.regression_alert?.minimum_drop??0.15);
+        renderEvaluationChartOptions(policy?.preferred_metrics);
+        // The ordinary editor exposes a shared schedule for its first
+        // suite. An advanced policy can override that first suite too.
+        // Keep the exact frozen suite list in the existing JSON editor
+        // rather than silently changing inherited cadences on save.
+        const firstHasOverride=Boolean(multi?.[0]&&
+            (multi[0].every_n_checkpoints!==undefined||
+             multi[0].min_minutes_between_evaluations!==undefined));
+        $('hub-evaluation-more-suites').replaceChildren();
+        $('hub-evaluation-all-of').value=firstHasOverride
+            ?JSON.stringify(multi,null,2):'';
+        if(firstHasOverride) {
+            for(const id of ['hub-evaluation-suite','hub-evaluation-digest',
+                'hub-evaluation-trials','hub-evaluation-rate'])
+                $(id).value='';
+            $('hub-evaluation-all-of').closest('details').open=true;
+        }else {
+            for(const rule of multi?.slice(1)||[])
+                appendEvaluationSuite({...rule,min_success_rate:
+                    stopBySuite.get(rule.suite_id)?.min_success_rate??rule.min_success_rate});
+        }
+        refreshEvaluationEditor();
+    }
+    $('hub-evaluation-mode').addEventListener('change',refreshEvaluationEditor);
+    $('hub-evaluation-optional-stop').addEventListener('change',refreshEvaluationEditor);
+    $('hub-evaluation-regression-enable').addEventListener('change',refreshEvaluationEditor);
+    $('hub-evaluation-regression-stop').addEventListener('change',refreshEvaluationEditor);
     function evaluationFromEditor() {
+        const monitor=$('hub-evaluation-mode').value==='monitor';
+        const stop=!monitor||$('hub-evaluation-optional-stop').checked;
+        const cadence=monitor?Number($('hub-evaluation-frequency').value):null;
+        if(monitor&&(!Number.isSafeInteger(cadence)||cadence<1||cadence>1000000))
+            throw Error('Evaluation update interval must be an integer from 1 to 1,000,000.');
+        const timeEntry=monitor?$('hub-evaluation-minutes').value.trim():'';
+        const minMinutes=timeEntry?Number(timeEntry):null;
+        if(timeEntry&&(!Number.isSafeInteger(minMinutes)||
+            minMinutes<1||minMinutes>10080))
+            throw Error('Minimum evaluator spacing must be 1–10,080 minutes.');
+        const rawRule=(suite,digest,trials,rate)=>{
+            if(!suite&&!digest&&!trials&&!rate)return null;
+            if(!suite||!trials||(stop&&(!rate||Number(rate)<=0)))
+                throw Error('Each suite needs an ID and trial count; an optional Stop also needs a success rate.');
+            return {suite_id:suite,min_trials:Number(trials),
+                ...(digest?{suite_sha256:digest}:{}),
+                ...(stop?{min_success_rate:Number(rate)}:{})};
+        };
         const suite=$('hub-evaluation-suite').value.trim();
         const digest=$('hub-evaluation-digest').value.trim();
         const trials=$('hub-evaluation-trials').value;
-        const rate=$('hub-evaluation-rate').value;
+        const rate=stop?$('hub-evaluation-rate').value:'';
+        const extras=[...$('hub-evaluation-more-suites').children].map(row=>{
+            const value=selector=>row.querySelector(selector).value.trim();
+            const rule=rawRule(value('.hub-evaluation-extra-suite-id'),
+                value('.hub-evaluation-extra-digest'),
+                value('.hub-evaluation-extra-trials'),
+                stop?value('.hub-evaluation-extra-rate'):'');
+            if(!rule)throw Error('Complete or remove every additional evaluation suite.');
+            const frequency=value('.hub-evaluation-extra-frequency');
+            const minutes=value('.hub-evaluation-extra-minutes');
+            if(frequency||minutes) {
+                if(stop)throw Error('Per-suite update/time frequencies require monitoring without automatic Stop; coordinated stopping uses one shared schedule.');
+                if(frequency) {
+                    const count=Number(frequency);
+                    if(!Number.isSafeInteger(count)||count<1||count>1000000)
+                        throw Error('Each per-suite frequency must be 1–1,000,000 updates.');
+                    rule.every_n_checkpoints=count;
+                }
+                if(minutes) {
+                    const count=Number(minutes);
+                    if(!Number.isSafeInteger(count)||count<1||count>10080)
+                        throw Error('Each per-suite time spacing must be 1–10,080 minutes.');
+                    rule.min_minutes_between_evaluations=count;
+                }
+            }
+            return rule;
+        });
         const allOf=$('hub-evaluation-all-of').value.trim();
+        let policy=null;
         if(allOf) {
-            if(suite||digest||trials||rate)
-                throw Error('Choose either the single-suite fields or all-required-suites JSON.');
-            return {all_of:JSON.parse(allOf)};
+            if(suite||digest||trials||rate||extras.length)
+                throw Error('Use either the individual suite fields or advanced JSON, not both.');
+            policy={all_of:JSON.parse(allOf)};
+            if(monitor&&!stop&&(!Array.isArray(policy.all_of)||
+                policy.all_of.some(rule=>Object.hasOwn(rule,'min_success_rate'))))
+                throw Error('Monitoring-only suites do not use success thresholds.');
+            if(stop&&(!Array.isArray(policy.all_of)||
+                policy.all_of.some(rule=>!Number.isFinite(rule.min_success_rate)||
+                    rule.min_success_rate<=0||rule.min_success_rate>1)))
+                throw Error('Every stopping suite needs a success-rate threshold between 0 and 1.');
+            if(stop&&policy.all_of?.some(rule=>
+                rule.every_n_checkpoints!==undefined||
+                rule.min_minutes_between_evaluations!==undefined))
+                throw Error('Per-suite update/time frequencies require monitoring only; automatic Stop requires same-checkpoint evaluation.');
+        }else {
+            const first=rawRule(suite,digest,trials,rate);
+            if(!first&&extras.length)
+                throw Error('Configure the first evaluation suite before adding others.');
+            if(first)policy=extras.length?{all_of:[first,...extras]}:first;
         }
-        if(!suite&&!digest&&!trials&&!rate)return null;
-        if(!suite||!trials||!rate||Number(rate)<=0)
-            throw Error('Enter an approved suite ID, minimum trials, and a success rate greater than zero.');
-        return {suite_id:suite,min_trials:Number(trials),min_success_rate:Number(rate),
-            ...(digest?{suite_sha256:digest}:{})};
+        if(!monitor)return {evaluation_monitor:null,evaluation_stop:policy};
+        if(!policy)return {evaluation_monitor:null,evaluation_stop:null};
+        const withoutThreshold=rule=>{
+            const {min_success_rate,...monitorRule}=rule;
+            return monitorRule;
+        };
+        const alertEnabled=$('hub-evaluation-regression-enable').checked;
+        const regression=alertEnabled?{
+            window_checkpoints:Number($('hub-evaluation-regression-window').value),
+            minimum_drop:Number($('hub-evaluation-regression-drop').value),
+            ...($('hub-evaluation-regression-stop').checked
+                ?{stop_on_regression:true}:{}),
+        }:null;
+        if(regression&&(!Number.isSafeInteger(regression.window_checkpoints)||
+            regression.window_checkpoints<2||regression.window_checkpoints>20||
+            !Number.isFinite(regression.minimum_drop)||
+            regression.minimum_drop<=0||regression.minimum_drop>1))
+            throw Error('Regression detection needs 2–20 checkpoints in each window and a drop threshold in (0, 1].');
+        if(regression?.stop_on_regression&&
+            !$('hub-evaluation-final').checked)
+            throw Error('Regression-based Stop requires final-checkpoint evaluation.');
+        const options={
+            preferred_metrics:[...$('hub-evaluation-measurements')
+                .querySelectorAll('input:checked')].map(input=>input.value),
+            ...(minMinutes?{min_minutes_between_evaluations:minMinutes}:{}),
+            ...(regression?{regression_alert:regression}:{}),
+            ...(!$('hub-evaluation-baseline').checked?{include_baseline:false}:{}),
+            ...(!$('hub-evaluation-final').checked?{include_final:false}:{}),
+        };
+        const watched=policy.all_of
+            ?{all_of:policy.all_of.map(withoutThreshold),every_n_checkpoints:cadence,...options}
+            :{...withoutThreshold(policy),every_n_checkpoints:cadence,...options};
+        return {evaluation_monitor:watched,evaluation_stop:stop?policy:null};
     }
+    // Worker-advertised suite names are suggestions, not execution authority.
+    // A disconnected worker must not erase a saved suite ID or its fingerprint.
+    function renderEvaluationSuiteChoices() {
+        const available=new Map();
+        for(const machine of state?.machines||[]) {
+            if(machine.status!=='connected')continue;
+            for(const id of machine.evaluation_suites?.[project]||[]) {
+                if(!available.has(id))available.set(id,[]);
+                available.get(id).push(machine.name||machine.id);
+            }
+        }
+        $('hub-evaluation-suite-options').replaceChildren(
+            ...[...available].sort(([a],[b])=>a.localeCompare(b)).map(
+                ([id,machines])=>new Option(machines.join(', '),id)));
+        const running=state?.machines.filter(machine=>machine.status==='connected')
+            .flatMap(machine=>(machine.evaluator_services||[])
+                .filter(service=>service.project===project&&
+                    (service.scheduler_state==='active'||
+                     service.service_state==='running'))
+                .map(service=>{
+                    const cpu=Number.isSafeInteger(service.evaluator_cpus)
+                        ?service.evaluator_cpus+' CPU':'CPU ceiling unreported';
+                    const ram=Number.isSafeInteger(service.evaluator_ram_mb)
+                        ?service.evaluator_ram_mb+' MiB RAM':'RAM ceiling unreported';
+                    return (machine.name||machine.id)+': '+service.unit+
+                        ' ('+cpu+'; '+ram+')';
+                }))||[];
+        $('hub-evaluation-available-suites').textContent=available.size
+            ?available.size+' suite IDs advertised by connected '+project+
+                ' workers. '+(running.length
+                    ?'Observed evaluator services: '+running.slice(0,4).join('; ')+'.'
+                    :'No active evaluator scheduler confirmed for this project.')+
+                ' Evaluator CPU/RAM ceilings are independent service limits, not training-job allocations. Service observation does not prove frozen-suite compatibility or successful evaluations.'
+            :'No connected machine currently advertises '+project+
+                ' evaluation suites. Existing approved suite IDs remain editable.';
+        const defaults=state?.projects.find(p=>p.id===project)
+            ?.default_evaluation_monitor;
+        $('hub-evaluation-default-status').textContent=defaults
+            ?'Project monitoring default saved. New configurations inherit it; existing configurations and jobs stay unchanged.'
+            :'No project monitoring default saved. Existing configurations and jobs stay unchanged.';
+    }
+    async function saveEvaluationDefaults(clear) {
+        const current=state?.projects.find(p=>p.id===project);
+        if(!current||project==='bees')return;
+        try {
+            if(!clear&&$('hub-evaluation-mode').value!=='monitor')
+                throw Error('Project defaults support monitoring only; switch evaluation mode to Monitor.');
+            const configured=clear?null:evaluationFromEditor();
+            if(configured?.evaluation_stop)
+                throw Error('Project defaults save monitoring without a Stop target. Uncheck optional stopping.');
+            const policy=configured?.evaluation_monitor||null;
+            if(!clear&&!policy)
+                throw Error('Choose at least one evaluation suite before saving project defaults.');
+            if(!confirm(clear
+                ?'Clear project monitoring defaults? Existing configurations and jobs stay unchanged.'
+                :'Save these monitoring suites as defaults for new '+current.name+
+                    ' configurations? Existing configurations and jobs stay unchanged.'))
+                return;
+            await action('hub/projects/evaluation-defaults',{
+                project_id:project,expected_revision:current.evaluation_defaults_revision||0,
+                evaluation_monitor:policy,
+            });
+            await reload();
+            feedback('hub-evaluation-default-status',clear
+                ?'Project evaluation defaults cleared.'
+                :'Project monitoring defaults saved for new configurations.');
+        }catch(error) {
+            feedback('hub-evaluation-default-status',error.message);
+        }
+    }
+    $('hub-evaluation-save-project-defaults').addEventListener('click',
+        ()=>saveEvaluationDefaults(false));
+    $('hub-evaluation-clear-project-defaults').addEventListener('click',
+        ()=>saveEvaluationDefaults(true));
+
     // New jobs inherit a project-specific measurement priority, not a claim
     // that every candidate metric is available in every worker version.
     // Individual job choices remain editable without changing the project
@@ -3094,6 +5218,9 @@ document.addEventListener('DOMContentLoaded', () => {
             'selection_candidate_mean_lifespan',
             'selection_candidate_gross_energy_per_step',
             'training_recent_mean_completed_lifespan',
+            'colony_window_deliveries','colony_window_feedings',
+            'colony_window_births','colony_window_combat_deaths',
+            'colony_window_colony_extinctions','colony_mean_population',
             'active_training_time','job_cpu_cores','host_cpu_busy_pct',
         ],
         tinybrains_rollout:[
@@ -3124,6 +5251,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'host_cpu_busy_pct'],
     };
     const jobMetricChoicesByProject=new Map();
+    let metricDefaultsSaving=false;
     // Availability is adapter-driven. These are discoverable requests, not a
     // promise that every project provides every physical/game measurement.
     const knownLearningMetrics=[
@@ -3148,6 +5276,23 @@ document.addEventListener('DOMContentLoaded', () => {
         'selection_candidate_mean_steps_per_delivery',
         'selection_candidate_gross_energy_per_step',
         'selection_candidate_mean_feedings','selection_candidate_mean_births',
+        'colony_window_rounds','colony_window_pickups','colony_window_deliveries',
+        'colony_window_feedings','colony_window_births','colony_window_courier_deaths',
+        'colony_window_energy_deaths','colony_window_combat_deaths',
+        'colony_window_combat_encounters','colony_window_combat_rounds_won',
+        'colony_window_combat_rounds_lost','colony_window_colony_extinctions',
+        'colony_window_opponent_extinctions',
+        'colony_window_contested_pickup_attempts','colony_window_opponent_contests_won',
+        'colony_window_feeding_opportunities','colony_window_feeding_stay_choices',
+        'colony_window_messages_written','colony_window_stat_mutations',
+        'colony_window_speed_tiles_travelled',
+        'colony_window_patch_food_offered','colony_window_patch_food_placed',
+        'colony_patch_supply_fraction','colony_mean_population',
+        'colony_feedings_per_1000_courier_ticks','colony_births_per_1000_colony_ticks',
+        'colony_feeding_stay_fraction','colony_mean_energy_gained',
+        'colony_mean_food_storage_ticks','colony_teammate_food_fraction',
+        'colony_mean_colony_age_at_birth','colony_mean_courier_age_at_death',
+        'colony_mean_requested_distance',
         'benchmark_round','benchmark_survival_rate','benchmark_mean_lifespan',
         'benchmark_mean_deliveries','benchmark_pickup_rate',
         'benchmark_mean_steps_per_delivery','benchmark_gross_energy_per_step',
@@ -3159,11 +5304,80 @@ document.addEventListener('DOMContentLoaded', () => {
     const knownPerformanceMetrics=[
         'total_ppo_updates','update_wall_time','elapsed_training_seconds',
         'active_training_time',
-        'engine_steps','engine_steps_per_second','ant_decisions',
+        'pipeline_collection_work_share','pipeline_optimization_work_share',
+        'pipeline_collection_dominant','pipeline_optimization_dominant',
+        'pipeline_remote_wait_work_share','pipeline_merge_work_share',
+        'pipeline_remote_exposed_work_share','pipeline_remote_wait_owner',
+        'pipeline_remote_wait_competing_collectors',
+        'remote_collector_exposed_wait_seconds','remote_collectors_pending_after_local',
+        'remote_collector_co_limiting_count',
+        'remote_collector_exposed_wait_owner',
+        'remote_transport_new_connections',
+        'remote_transport_reused_collectors',
+        'remote_transport_connect_max_seconds',
+        'remote_transport_connect_owner',
+        'remote_connect_exposed_seconds',
+        'remote_network_launch_delay_seconds',
+        'remote_network_prep_exposed_seconds',
+        'collector_dispatch_queue_peak','collector_dispatch_queue_max_seconds',
+        'collector_dispatch_tail_seconds','collector_dispatch_tail_owner',
+        'pipeline_collector_dispatch_pressure','pipeline_collector_dispatch_owner',
+        'local_lease_ram_charged_mb',
+        'local_lease_ram_headroom_mb',
+        'remote_snapshot_cache_hits',
+        'remote_snapshot_staged_bytes',
+        'remote_snapshot_unstaged_bytes',
+        'remote_snapshot_unstaged_ratio',
+        'pipeline_remote_connection_reuse_ratio',
+        'pipeline_remote_connect_pressure',
+        'pipeline_remote_connect_owner',
+        'pipeline_remote_prep_pressure',
+        'pipeline_remote_wait_dominant','pipeline_merge_dominant',
+        'pipeline_cpu_lease_pressure','pipeline_cpu_throttle_pressure',
+        'pipeline_ram_lease_pressure','pipeline_gpu_host_busy_pressure',
+        'pipeline_gpu_mixed_host_evidence','pipeline_gpu_host_busy_device_share',
+        'pipeline_cpu_underuse_evidence','pipeline_gpu_idle_evidence',
+        'pipeline_timing_sample_count','rollout_engine_measured_work_share',
+        'rollout_inference_measured_work_share',
+        ...Array.from({length:17},(_,i)=>'collector_'+i+'_turnaround_overhead_share'),
+        'engine_steps','engine_steps_per_second',
+        'simulation_match_steps','simulation_match_steps_per_second',
+        'ant_decisions',
         'ant_decisions_per_second','group_states','group_states_per_second',
         'collection_seconds','rollout_model_refresh_seconds',
-        'rollout_engine_step_seconds','rollout_learner_inference_seconds',
-        'optimization_seconds','overlap_seconds',
+        'rollout_engine_step_seconds','rollout_observation_prepare_seconds',
+        'rollout_learner_inference_seconds','rollout_opponent_processing_seconds',
+        'simulation_engine_roundtrip_seconds','simulation_dispatch_queue_seconds',
+        'simulation_batch_wall_seconds','simulation_last_child_gap_seconds',
+        'simulation_prefetch_overlap_seconds',
+        'simulation_prefetch_engine_steps','optimization_seconds','overlap_seconds',
+        'training_sim_queue_max_ratio','training_sim_queue_ratio_owner',
+        'training_sim_queue_max_seconds','training_sim_queue_peak_shards',
+        'training_sim_prestaged_actions',
+        'training_sim_prestage_max_seconds',
+        'training_sim_dispatch_copy_max_seconds',
+        'training_sim_idle_tail_max_ratio',
+        'training_sim_idle_tail_ratio_owner',
+        'training_sim_owner_tail_max_seconds',
+        'training_sim_idle_tail_work_share',
+        'training_sim_tail_skew_pressure',
+        'training_sim_queue_work_share','training_sim_queue_pressure',
+        'training_sim_cpu_underuse_evidence',
+        'training_sim_topology_trial_lineages','training_sim_topology_accepted',
+        'training_cpu_lstm_boundary_batches','training_cpu_rollout_lstm_calls',
+        'training_cpu_optimizer_threads_max','training_cpu_optimizer_threads_next',
+        'training_cpu_optimizer_threads_settled','training_remote_cpu_optimizer_trials',
+        'training_gpu_rollout_state_copy_batches','training_gpu_rollout_state_copy_bytes',
+        'training_gpu_rollout_state_wait_seconds',
+        'training_gpu_rollout_input_packs','training_gpu_rollout_input_seconds',
+        'training_gpu_rollout_input_owner',
+        'training_local_gpu_rollout_lineages','training_gpu_rollout_next_lineages',
+        'training_gpu_rollout_trial',
+        'training_sim_topology_rejected','training_sim_topology_unavailable',
+        'training_sim_topology_unverified','training_sim_topology_migrations',
+        'training_topology_max_migration_seconds',
+        'training_topology_max_pred_gain_ratio','training_topology_migration_owner',
+            'training_topology_sps_change_pct','training_topology_result_owner',
         'remote_policy_snapshot_seconds',
         'remote_opponent_snapshot_seconds','ppo_microbatches','states_per_microbatch','actor_grad_norm',
         'group_grad_norm','baseline_grad_norm','policy_lag',
@@ -3184,6 +5398,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'host_gpu_'+i+'_hotspot_temperature_c',
             'host_gpu_'+i+'_power_w',
         ]).flat(),
+        'remote_collector_join_wait_seconds','collection_merge_seconds',
         'data_preparation_seconds','inference_seconds','forward_seconds',
         'backward_seconds','optimizer_step_seconds','cpu_wait_seconds',
         'gpu_transfer_seconds','network_transfer_seconds',
@@ -3193,11 +5408,37 @@ document.addEventListener('DOMContentLoaded', () => {
         'ppo_grouping_seconds','ppo_data_preparation_seconds',
         'ppo_forward_loss_seconds','ppo_loss_finite_check_seconds',
         'ppo_backward_seconds','ppo_metric_readback_seconds',
+        'ppo_diagnostic_aggregation_seconds',
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
         'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
-        'ppo_minibatches','ppo_board_pixel_samples',
+        'ppo_gpu_stream_interval_seconds',
+        'simulation_active_matches','simulation_target_matches',
+        'simulation_concurrency_adjustments','simulation_tuner_accepted',
+        'simulation_tuner_settled','simulation_tuner_trial','simulation_target_restored',
+        'simulation_memory_rejected_trials','simulation_workload_reprobes',
+        'simulation_inconclusive_trials',
+        'simulation_proven_target','simulation_engine_memory_mb',
+        'simulation_learner_memory_mb','simulation_total_charged_memory_mb',
+        'simulation_ram_lease_headroom_mb',
+        'ppo_minibatches','ppo_gpu_pixel_budget',
+        'ppo_diagnostic_readbacks','ppo_diagnostic_rows',
+        'ppo_prestaged_board_bytes','ppo_prestaged_board_states',
+        'ppo_reused_board_states',
+        'rollout_inference_shape_groups','rollout_inference_readbacks',
+        'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
+        'rollout_board_uploads_saved','rollout_board_packed_bytes',
+        'ppo_board_pixel_samples',
         'ppo_max_board_cells','ppo_unique_board_shapes',
         'evaluation_seconds','collector_count',
+        'collector_auto_balance_adjustments',
+        'collector_auto_balance_accepted','collector_auto_balance_settled',
+        'collector_balance_changed_next_update',
+        'collector_balance_predicted_gain_ratio','collector_balance_noisy_rollbacks',
+        'collector_balance_drift_reprobes',
+        'collector_balance_trial_sps_gain',
+        'gpu_role_optimizer_lease_index','gpu_role_primary_lease_index','gpu_role_startup_seconds',
+        'rollout_model_refresh_groups',
+        'gpu_role_probe_valid','gpu_role_estimated_gain_ratio',
         'rollout_world_steps','rollout_policy_rows','rollout_world_steps_per_second',
         'rollout_policy_rows_per_second','rollout_world_steps_per_collector_wall_second',
         'rollout_policy_rows_per_collector_wall_second',
@@ -3223,11 +5464,61 @@ document.addEventListener('DOMContentLoaded', () => {
         ...Array.from({length:9},(_,i)=>[
             'collector_'+i+'_ant_decisions',
             'collector_'+i+'_engine_steps',
+            'collector_'+i+'_simulation_match_steps',
+            'collector_'+i+'_match_steps_per_second',
+            'collector_'+i+'_inference_shape_groups',
+            'collector_'+i+'_inference_readbacks',
+            'collector_'+i+'_inference_forward_chunks',
+            'collector_'+i+'_board_uploads_saved',
+            'collector_'+i+'_board_packed_bytes',
+            'collector_'+i+'_opponent_shape_groups',
+            'collector_'+i+'_opponent_readbacks',
+            'collector_'+i+'_sim_matches',
+            'collector_'+i+'_sim_target',
+            'collector_'+i+'_sim_changes',
+            'collector_'+i+'_sim_accepted',
+            'collector_'+i+'_sim_settled',
+            'collector_'+i+'_sim_rss_mb', // Historical RSS-era reports.
+            'collector_'+i+'_sim_engine_charged_mb',
+            'collector_'+i+'_sim_learner_mb',
+            'collector_'+i+'_sim_charged_mb',
+            'collector_'+i+'_sim_ram_headroom_mb',
+            'collector_'+i+'_sim_engine_roundtrip_seconds',
+            'collector_'+i+'_sim_dispatch_queue_seconds',
+            'collector_'+i+'_sim_batch_wall_seconds',
+            'collector_'+i+'_sim_last_child_gap_seconds',
+            'collector_'+i+'_sim_prefetch_engine_steps',
+            'collector_'+i+'_sim_prefetch_overlap_seconds',
+            'collector_'+i+'_sim_last_child_gap_share',
+            'collector_'+i+'_sim_exposed_wait_share',
+            'collector_'+i+'_sim_dispatch_queue_share',
+            'collector_'+i+'_sim_inflight_factor',
+            'collector_'+i+'_sim_straggler_pressure',
+            'collector_'+i+'_sim_dispatch_pressure',
             'collector_'+i+'_action_target',
             'collector_'+i+'_elapsed_seconds',
             'collector_'+i+'_rollout_engine_step_seconds',
+            'collector_'+i+'_observation_prepare_seconds',
             'collector_'+i+'_learner_inference_seconds',
+            'collector_'+i+'_opponent_processing_seconds',
+            'collector_'+i+'_max_stage_work_share',
+            ...['engine','observation','inference','opponent'].map(
+                stage=>'collector_'+i+'_stage_'+stage+'_dominant'),
             'collector_'+i+'_roundtrip_seconds',
+            'collector_'+i+'_service_seconds',
+            'collector_'+i+'_record_encode_seconds',
+            'collector_'+i+'_record_encode_work_share',
+            'collector_'+i+'_record_encode_pressure',
+            'collector_'+i+'_serialize_seconds',
+            'collector_'+i+'_compress_seconds',
+            'collector_'+i+'_send_seconds',
+            'collector_'+i+'_receive_seconds',
+            'collector_'+i+'_decode_seconds',
+            'collector_'+i+'_ingestion_seconds',
+            'collector_'+i+'_worker_receive_seconds',
+            'collector_'+i+'_worker_decode_seconds',
+            'collector_'+i+'_request_wire_bytes',
+            'collector_'+i+'_response_wire_bytes',
             'collector_'+i+'_model_prepare_seconds',
             'collector_'+i+'_snapshot_cache_files',
             'collector_'+i+'_snapshot_cache_bytes',
@@ -3236,43 +5527,201 @@ document.addEventListener('DOMContentLoaded', () => {
         ]).flat()];
     function renderJobMetricSelection() {
         const select=$('hub-job-metrics');
-        if(!select)return;
-        const prior=jobMetricChoicesByProject.get(project) ??
-            new Set(defaultJobMetrics[project]||defaultJobMetrics.other);
+        if(!select||!state)return;
+        const configuration=state.configurations.find(c=>
+            c.project_id===project&&c.id===$('hub-job-configuration').value);
+        const params=configuration?.parameters||{};
+        const settings=state.projects.find(item=>item.id===project);
+        const savedDefaults=Array.isArray(settings?.default_metric_selection)
+            ?settings.default_metric_selection:null;
+        const defaultSelection=savedDefaults??defaultJobMetrics[project]??
+            defaultJobMetrics.other;
+        const requested=jobMetricChoicesByProject.get(project) ??
+            new Set(defaultSelection);
+        const available=new Set();
         const observed=new Set();
-        for(const job of state?.jobs||[]) {
-            if(job.project_id!==project)continue;
-            for(const name of Object.keys(job.live_execution?.progress?.metrics||
-                job.final_progress?.metrics||{}))observed.add(name);
-            for(const name of job.metric_selection||[])observed.add(name);
+        let resourceGpuCount=0;
+        try {
+            const resources=JSON.parse($('hub-job-resources').value);
+            resourceGpuCount=resources.gpu_count??resources.gpus?.length??0;
+        }catch {} // An unfinished resource edit cannot create GPU capabilities.
+        const gpuEnabled=Number.isSafeInteger(resourceGpuCount)&&resourceGpuCount>0;
+        const machines=state.machines.filter(machine=>
+            machine.status==='connected'&&machine.local_executor_enabled===true&&
+            machine.installed_projects?.includes(project));
+        const matching=machines.filter(machine=>{
+            const entry=machine.design_catalog?.[project];
+            if(!entry)return false;
+            return project==='courier'
+                ?entry.config_sha256===params.config_sha256&&
+                    (!params.training_schema_sha256||
+                        params.training_schema_sha256===entry.training_schema_sha256)
+                :project==='tinybrains'
+                    ?entry.profiles?.[params.profile]?.profile_sha256===params.profile_sha256
+                    :false;
+        });
+        for(const machine of matching) {
+            const entry=machine.design_catalog[project];
+            const catalog=entry.metric_catalog||{};
+            const add=group=>{for(const name of catalog[group]||[])available.add(name);};
+            add('base');
+            if(project==='courier') {
+                const defaults=Object.fromEntries(entry.fields.map(field=>[
+                    field.key,field.default,
+                ]));
+                const setting=key=>params.design_overrides?.[key]??defaults[key];
+                if(setting('colony')===true)add('colony');
+                if(setting('colony')===true&&setting('evolution')===true)add('evolution');
+                if(setting('colony')===true&&setting('communication')===true)add('communication');
+                if(setting('speed_enabled')===true)add('speed');
+                if(setting('food_spawn_mode')==='patches')add('patches');
+                if(params.reporting_benchmarks===true)add('reporting');
+            }
+            if(project==='tinybrains'&&params.remote_rollouts===true)
+                add('remote_rollouts');
+            if(gpuEnabled)add('gpu');
         }
-        if(comparisonProject===project)
-            for(const item of comparisonData?.samples||[])
+        // Archived observations are genuine evidence only for the exact saved
+        // configuration revision, not another project's/mode's runs. Do not
+        // turn previously requested but never reported keys into capabilities.
+        if(configuration)for(const job of state.jobs) {
+            if(job.configuration_id!==configuration.id||
+                job.configuration_revision!==configuration.revision)continue;
+            for(const name of Object.keys(job.live_execution?.progress?.metrics||{}))
+                observed.add(name);
+            for(const name of Object.keys(job.final_progress?.metrics||{}))
+                observed.add(name);
+        }
+        if(configuration&&comparisonProject===project)
+            for(const item of comparisonData?.samples||[]) {
+                const job=state.jobs.find(j=>j.id===item.job_id);
+                if(job?.configuration_id!==configuration.id||
+                    job.configuration_revision!==configuration.revision)continue;
                 for(const point of item.points||[])
                     for(const name of Object.keys(point.metrics||{}))observed.add(name);
-        const all=[...new Set([...knownLearningMetrics,...knownPerformanceMetrics,
-            ...observed])].filter(key=>/^[a-z][a-z0-9_]{0,63}$/.test(key))
+            }
+        // Host/job measurements are independent of which trainer metrics a
+        // project publishes. GPU counters only exist for GPU-bound jobs.
+        if(configuration&&machines.length) {
+            for(const name of ['job_cpu_cores','job_cpu_lease_utilization_pct',
+                'job_memory_mb','job_peak_memory_mb','job_process_tasks',
+                'job_memory_lease_utilization_pct','host_cpu_busy_pct'])
+                available.add(name);
+            if(machines.some(machine=>machine.agent_platform==='linux'))
+                for(const name of ['job_cpu_throttled_seconds',
+                    'job_cpu_throttle_events','job_cpu_quota_periods',
+                    'job_cpu_quota_throttled_periods_pct'])
+                    available.add(name);
+            if(gpuEnabled&&machines.some(machine=>(machine.verified_gpus||[]).length)) {
+                for(const name of ['host_gpu_busy_pct','host_gpu_vram_mb',
+                    'host_gpu_power_w','host_gpu_temperature_c',
+                    'host_gpu_hotspot_temperature_c'])available.add(name);
+                for(let i=0;i<Math.min(2,resourceGpuCount);i++)
+                    for(const suffix of ['busy_pct','used_vram_mb','power_w',
+                        'temperature_c','hotspot_temperature_c'])
+                        available.add('host_gpu_'+i+'_'+suffix);
+            }
+        }
+        // Earlier recordings may contain metrics added to an adapter after
+        // an experiment was queued. They remain selectable for that exact
+        // configuration, but not when CPU-only or mode-specific constraints
+        // rule out the measurement.
+        const declared=new Set(matching.flatMap(machine=>
+            Object.values(machine.design_catalog?.[project]?.metric_catalog||{}).flat()));
+        for(const name of observed) {
+            if(!gpuEnabled&&name.startsWith('host_gpu'))continue;
+            // A metric supported only in another mode is not an option for
+            // this frozen configuration, even if that name was once recorded.
+            if(declared.has(name)&&!available.has(name))continue;
+            if(project==='courier'&&matching.length) {
+                const fields=matching[0].design_catalog.courier.fields;
+                const defaults=Object.fromEntries(fields.map(f=>[f.key,f.default]));
+                const setting=key=>params.design_overrides?.[key]??defaults[key];
+                if(name.startsWith('colony_')&&setting('colony')!==true)continue;
+                if(name.startsWith('benchmark_')&&params.reporting_benchmarks!==true)continue;
+            }
+            available.add(name);
+        }
+        const all=[...available].filter(key=>/^[a-z][a-z0-9_]{0,63}$/.test(key))
             .sort();
         select.replaceChildren(...all.map(key=>{
             const option=new Option(key+(observed.has(key)
-                ?' · recorded':' · not yet observed'),key);
+                ?' · recorded':' · supported'),key);
             option.dataset.description=hubMetricDescription(key);
             option.title=option.dataset.description+'\n'+(observed.has(key)
-                ?'This metric has been published by a job in this project.'
-                :'Selecting a metric does not install missing project instrumentation.');
-            option.selected=prior.has(key);
-            option.dataset.category=knownLearningMetrics.includes(key)
+                ?'Previously recorded by this saved configuration revision.'
+                :'Supported for this configuration; an individual run may not emit it.');
+            option.selected=requested.has(key);
+            option.dataset.category=key.startsWith('eval_')||knownLearningMetrics.includes(key)
                 ?'Learning outcomes':knownPerformanceMetrics.includes(key)
-                    ?'Performance and resources':'Other observed metrics';
+                    ?'Performance and resources':'Other supported metrics';
             return option;
         }));
         renderMetricPicker('hub-job-metrics','hub-job-metric-picker');
+        $('hub-job-save-metric-defaults').disabled=metricDefaultsSaving||!configuration;
+        $('hub-job-reset-metric-defaults').disabled=metricDefaultsSaving||
+            savedDefaults===null;
+        const inScope=defaultSelection.filter(key=>available.has(key)).length;
+        const unavailable=defaultSelection.length-inScope;
+        $('hub-job-metric-default-status').textContent=
+            (savedDefaults===null
+                ?'Built-in '+project+' defaults: '
+                :'Saved '+project+' defaults: ')+
+            defaultSelection.length+' metrics ('+inScope+' currently available'+
+            (unavailable?', '+unavailable+' unavailable for this configuration':'')+
+            ').'+(jobMetricChoicesByProject.has(project)
+                ?' This job has unsaved selection changes.':'')+
+            ' Only newly queued jobs inherit updated project defaults.';
     }
     function selectedJobMetrics() {
         return [...$('hub-job-metrics').selectedOptions].map(o=>o.value);
     }
     $('hub-job-metrics').addEventListener('change',()=>{
         jobMetricChoicesByProject.set(project,new Set(selectedJobMetrics()));
+        const stateLabel=$('hub-job-metric-default-status');
+        if(stateLabel)stateLabel.textContent='This job has a temporary metric selection. '+
+            'Save it as project defaults to reuse it for future jobs.';
+    });
+    async function saveMetricDefaults(selection) {
+        const current=state?.projects.find(item=>item.id===project);
+        if(!current||metricDefaultsSaving)return;
+        const projectId=current.id;
+        const reset=selection===null;
+        if(!confirm(reset
+            ?'Restore built-in metric defaults for '+current.name+
+                '? Saved job preferences and already queued jobs will not change.'
+            :'Save '+selection.length+' selected metrics as project-wide defaults for '+
+                current.name+'? New jobs across all configurations of this project will '+
+                'inherit applicable selections. Already queued jobs remain unchanged.'))
+            return;
+        metricDefaultsSaving=true;
+        let outcome=null;
+        try {
+            await action('hub/projects/metric-defaults',{
+                project_id:projectId,
+                expected_revision:current.metric_defaults_revision||0,
+                metric_selection:selection,
+            });
+            jobMetricChoicesByProject.delete(projectId);
+            outcome=reset
+                ?'Restored built-in project metric defaults. Existing jobs unchanged.'
+                :'Saved '+selection.length+
+                    ' project metric defaults. Future jobs will inherit them.';
+            await reload();
+        }catch(error){
+            outcome=error.message;
+        }finally{
+            metricDefaultsSaving=false;
+            renderJobMetricSelection();
+            if(project===projectId&&outcome)
+                feedback('hub-job-metric-default-status',outcome);
+        }
+    }
+    $('hub-job-save-metric-defaults').addEventListener('click',()=>{
+        saveMetricDefaults(selectedJobMetrics());
+    });
+    $('hub-job-reset-metric-defaults').addEventListener('click',()=>{
+        saveMetricDefaults(null);
     });
     function display() {
         if(!state)return;
@@ -3283,7 +5732,9 @@ document.addEventListener('DOMContentLoaded', () => {
         renderJobMetricSelection();
         $('hub-copy-bees-form').hidden=project!=='bees';
         $('hub-config-evaluation').hidden=project==='bees';
+        renderEvaluationSuiteChoices();
         displayTinyBrainsProfiles();
+        renderDesignEditor();
         $('hub-config-rows').replaceChildren();
         const configs=state.configurations.filter(c=>c.project_id===project);
         for(const c of configs.slice().reverse()) {
@@ -3299,7 +5750,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 tinyBrainsThreads.value=c.parameters.threads??'';
                 tinyBrainsDevice.value=['cpu','dual'].includes(c.parameters.device)
                     ?c.parameters.device:'';
-                setEvaluationEditor(c.evaluation_stop);
+                setEvaluationEditor(c.evaluation_monitor||c.evaluation_stop,Boolean(c.evaluation_monitor),c.evaluation_monitor?c.evaluation_stop:null);
+                syncTinyBrainsEditor(c.parameters);
+                renderDesignEditor(true);
                 $('hub-config-save').textContent='Save revision';
                 feedback('hub-config-message','Editing revision '+c.revision);
             }));
@@ -3310,7 +5763,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 tinyBrainsThreads.value=c.parameters.threads??'';
                 tinyBrainsDevice.value=['cpu','dual'].includes(c.parameters.device)
                     ?c.parameters.device:'';
-                setEvaluationEditor(c.evaluation_stop);
+                setEvaluationEditor(c.evaluation_monitor||c.evaluation_stop,Boolean(c.evaluation_monitor),c.evaluation_monitor?c.evaluation_stop:null);
+                syncTinyBrainsEditor(c.parameters);
+                renderDesignEditor(true);
                 feedback('hub-config-message','Duplicated into a new unsaved draft. Select Save draft to retain it.');
             }));
             if(project==='bees') {
@@ -3339,6 +5794,9 @@ document.addEventListener('DOMContentLoaded', () => {
         jobSelect.replaceChildren(...configs.map(c=>new Option(
             c.name+' · revision '+c.revision,c.id)));
         if(configs.some(c=>c.id===former)) jobSelect.value=former;
+        // The Train capability list belongs to this saved revision, not to
+        // whichever project/configuration was selected on the previous render.
+        renderJobMetricSelection();
         const predecessorSelect=$('hub-job-predecessor');
         const previousParent=predecessorSelect.value;
         const successors=new Set((state.jobs||[])
@@ -3378,6 +5836,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' · '+j.id.slice(-8),j.id)));
         if(availableParents.some(j=>j.id===previousParent))
             predecessorSelect.value=previousParent;
+        renderCurriculumChoice();
         const sequenceRows=sequenceRowsForJobs(state.jobs||[]);
         $('hub-sequence-overview-panel').hidden=project==='bees'||
             !sequenceRows.length;
@@ -3390,7 +5849,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 summary.root.configuration_name+' · '+
                 summary.root.id.slice(-8));
             cell(tr,summary.chain.map(job=>
-                (job.continuation_of_job_id?'Resume ':job.after_job_id?'Fresh ':'')+
+                (job.continuation_of_job_id
+                    ?job.continuation_mode==='curriculum'?'Curriculum ':'Resume '
+                    :job.after_job_id?'Fresh ':'')+
                 job.project_id+' / '+job.configuration_name.slice(0,28))
                 .join(' → '));
             const position=summary.chain.indexOf(summary.current)+1;
@@ -3436,16 +5897,16 @@ document.addEventListener('DOMContentLoaded', () => {
         pipeline.hidden=['bees','ants'].includes(project);
         const kind=$('hub-pipeline-kind'),oldKind=kind.value;
         kind.replaceChildren(
-            new Option('Independent fresh jobs (no shared checkpoint)','independent'),
-            new Option('Independent trials (no dependency)','batch'),
+            new Option('Fresh jobs in sequence (wait for predecessor)','independent'),
+            new Option('Independent trials (can run concurrently)','batch'),
             ...(['tinybrains','courier'].includes(project)
-                ?[new Option('Checkpoint-continuation stages','continuation')]
+                ?[new Option('Checkpoint continuation (sequential, inherited model)','continuation')]
                 :[]));
         if(pipelineKindProject===project&&
             ['independent','batch','continuation'].includes(oldKind)&&
             (oldKind!=='continuation'||['tinybrains','courier'].includes(project)))
             kind.value=oldKind;
-        else kind.value=['tinybrains','courier'].includes(project)?'continuation':'independent';
+        else kind.value=['tinybrains','courier'].includes(project)?'batch':'independent';
         pipelineKindProject=project;
         const checkpointPipeline=['tinybrains','courier'].includes(project)&&kind.value==='continuation';
         const trialBatch=kind.value==='batch';
@@ -3453,9 +5914,9 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-pipeline-queue').textContent=trialBatch?'Queue all trials':'Queue entire pipeline';
         $('hub-pipeline-title').textContent=checkpointPipeline
             ?'Prequeue checkpoint-continuation stages'
-            :trialBatch?'Queue independent trials together':'Queue independent project jobs in sequence';
+            :trialBatch?'Queue independent trials together':'Queue fresh project jobs in sequence';
         $('hub-pipeline-description').textContent=checkpointPipeline
-            ?'Two to sixteen stages with the same approved configuration digest, on the original worker. Natural completion advances only with a verified saved checkpoint; evaluation-triggered Stop additionally requires native checkpoint-preserving shutdown. Manual Stops and failures hold later stages for review.'
+            ?'Two to sixteen stages with the same approved base configuration digest, on the original worker. Courier curriculum transitions may change compatible environment difficulty, food availability, energy and map dimensions while preserving the policy architecture. Natural completion advances only with a verified saved checkpoint; evaluation-triggered Stop additionally requires native checkpoint-preserving shutdown. Manual Stops and failures hold later stages for review.'
             :trialBatch?'Two to sixteen fresh jobs with separate artifact lineages. Select saved configurations for each seed or parameter variant. The jobs are eligible independently as qualified capacity becomes available.':
                 'Two to sixteen fresh, independent jobs from any non-Bees project. Each job gets its own artifact lineage and may use a different machine. No checkpoint, optimizer or qualification result is inherited. A verified finish or an evaluation-driven Stop can advance the next job after capacity release. Manual Stops and failures do not advance. Queueing never starts training.';
         $('hub-pipeline-predecessor-label').textContent=checkpointPipeline
@@ -3569,7 +6030,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const displayedTrialBatches=new Set();
         for(const j of hubVisibleJobs(records,50)) {
             const tr=document.createElement('tr');
-            cell(tr,(j.configuration_name||j.configuration_id)+trialBatchLabel(j));
+            cell(tr,hubJobLabel(j)+trialBatchLabel(j));
             cell(tr,j.configuration_revision);
             const provenanceLease=state.reservations.find(l=>l.id===j.lease_id);
             const linked=provenanceLease&&
@@ -3599,7 +6060,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     j.collector_replacement_of_job_id.slice(-8)+
                     ' on original machine with a new Hub lease'
                 :j.continuation_of_job_id
-                ?' · Resumes '+(state.jobs.find(p=>
+                ?(j.continuation_mode==='curriculum'
+                    ?' · Curriculum from ':' · Resumes ')+(state.jobs.find(p=>
                     p.id===j.continuation_of_job_id)?.configuration_name||
                     'prior experiment')+' on original machine'
                 :j.after_job_id
@@ -3659,16 +6121,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 :j.checkpoint_reinspection_requested_at?' · Checkpoint recheck pending':'';
             const noTrainer=j.prelaunch_absence_verified===true
                 ?' · No trainer started':'';
-            const groupWorkers=j.project_id==='tinybrains'&&
+            const courierGroup=j.project_id==='courier'&&
+                j.distributed_courier_managed===true;
+            const groupWorkers=courierGroup||j.project_id==='tinybrains'&&
                 j.distributed_rollout_managed===true
-                ?state.jobs.filter(worker=>worker.project_id==='tinybrains_rollout'&&
+                ?state.jobs.filter(worker=>
+                    worker.project_id===(courierGroup?'courier_lineage':'tinybrains_rollout')&&
                     worker.frozen_parameters?.learner_job_id===j.id):[];
             const scheduledGroup=(state.distributed_group_plans||[])
                 .filter(plan=>plan.learner_job_id===j.id).at(-1);
             const unresolvedScheduledGroup=scheduledGroup&&
                 ['pending','needs_review'].includes(scheduledGroup.status);
             const distributedLaunch=(state.distributed_launches||[]).find(launch=>
-                launch.learner_job_id===j.id);
+                launch.learner_job_id===j.id&&launch.status==='pending');
             const launchText=distributedLaunch
                 ?' · Coordinated Start '+distributedLaunch.status+
                     (distributedLaunch.recovery_pending?' (coordinator restart recovery)':'')+
@@ -3683,7 +6148,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?' · Startup abort requested: native collector shutdown and verified claim release pending'
                 :'';
             const distributedSummary=groupWorkers.length
-                ?' · Distributed collectors: '+groupWorkers.map(worker=>
+                ?' · Distributed '+(courierGroup?'PPO lineages':'collectors')+': '+groupWorkers.map(worker=>
+                    (courierGroup?'slot '+worker.frozen_parameters?.slot+' @ ':'')+
                     (worker.assigned_machine_id||'unassigned')+' '+worker.status+
                     (worker.capacity_released_at?' (released)':'')).join('; ')
                 :'';
@@ -3727,32 +6193,353 @@ document.addEventListener('DOMContentLoaded', () => {
             const resourceCell=cell(tr,resourceText);
             if(j.resources.gpu_count)
                 resourceCell.title='GPU budget reservations and observed host telemetry are separate. Shared Windows PyTorch limits do not enforce GPU compute time or non-PyTorch memory.';
-            const policy=j.evaluation_stop;
+            const policy=j.evaluation_monitor||j.evaluation_stop;
+            const monitoring=Boolean(j.evaluation_monitor);
             const multi=policy?.all_of||null;
             const evidence=j.evaluation_stop_evidence||j.last_evaluation;
             const cohort=j.evaluation_candidates?.[0];
             const gateSummary=multi?multi.map((rule,index)=>{
                 const receipt=j.evaluation_stop_evidence?.all_of?.[index]||
                     cohort?.receipts?.[rule.suite_id];
-                const met=receipt&&receipt.trials>=rule.min_trials&&
-                    receipt.successes/receipt.trials>=rule.min_success_rate;
+                const stopRule=(j.evaluation_stop?.all_of||
+                    [j.evaluation_stop].filter(Boolean))
+                    .find(candidate=>candidate.suite_id===rule.suite_id);
+                const met=Boolean(receipt&&stopRule&&
+                    receipt.trials>=stopRule.min_trials&&
+                    receipt.successes/receipt.trials>=stopRule.min_success_rate);
                 return rule.suite_id+': '+(receipt
-                    ?receipt.successes+'/'+receipt.trials+(met?' passed':' below target')
+                    ?receipt.successes+'/'+receipt.trials+
+                        (monitoring?(j.evaluation_stop
+                            ?met?' stop target met':' below stop target'
+                            :' recorded'):met?' passed':' below target')
                     :'pending');
             }).join(' · '):null;
             const evaluation=policy
                 ?multi
-                    ?' · Benchmark gates ('+multi.length+' required, same checkpoint): '+
+                    ?' · '+(monitoring?(j.evaluation_stop?'Monitoring suites with optional Stop':'Monitoring suites'):'Benchmark gates')+
+                        ' ('+multi.length+' suites'+
+                        (monitoring&&!j.evaluation_stop&&
+                            new Set(multi.map(rule=>JSON.stringify([
+                                rule.every_n_checkpoints||
+                                    policy.every_n_checkpoints||1,
+                                rule.min_minutes_between_evaluations||
+                                    policy.min_minutes_between_evaluations||null,
+                            ]))).size>1
+                            ?', independently scheduled':', same checkpoint')+'): '+
                         gateSummary+(j.evaluation_stop_evidence?' · Stop authorized':'')+
                         (j.live_execution?.evaluation_issue?' · '+j.live_execution.evaluation_issue:'')
                     :' · Evaluation '+policy.suite_id+': '+(evidence
                         ?evidence.successes+'/'+evidence.trials+' successes'+
-                            (j.evaluation_stop_evidence?' · stop target met':' · target not met')
+                            (monitoring?(j.evaluation_stop?' · monitoring with success-based Stop':' · monitoring only'):
+                                j.evaluation_stop_evidence?' · stop target met':' · target not met')
                         :'awaiting evidence')+
                         (j.live_execution?.evaluation_issue?' · '+j.live_execution.evaluation_issue:'')
                 :'';
-            cell(tr,learningSummary(j)+evaluation);
+            const requiredSuites=multi||[policy].filter(Boolean);
+            const advertised=machine?.evaluation_suites?.[j.project_id]||[];
+            const evaluatorServices=(machine?.evaluator_services||[])
+                .filter(service=>service.project===j.project_id);
+            const schedulerIssue=machine?.evaluator_service_issue||null;
+            const serviceFailures=evaluatorServices.filter(service=>
+                service.last_result==='failed'||service.service_state==='failed'||
+                service.scheduler_state==='inactive');
+            const serviceHealth=serviceFailures.length
+                ?' · Evaluator service attention: '+serviceFailures.map(service=>
+                    service.unit+' ('+service.service_state+', scheduler '+
+                    service.scheduler_state+', last result '+service.last_result+')')
+                    .join('; ')
+                :evaluatorServices.some(service=>service.scheduler_state==='active'||
+                    service.service_state==='running')
+                    ?' · Evaluator scheduler observed (not proof of completed evaluations)'
+                    :evaluatorServices.length
+                        ?' · Evaluator services observed; none confirmed scheduled'
+                        :schedulerIssue
+                            ?' · Evaluator scheduler status unavailable: '+schedulerIssue
+                            :' · No matching evaluator scheduler observed';
+            const availability=!policy?'':!j.assigned_machine_id
+                ?' · Evaluator: awaiting assigned machine'
+                :machine?.status!=='connected'
+                    ?' · Evaluator: agent '+(machine?.status||'unavailable')
+                    :!machine.local_executor_enabled
+                        ?' · Evaluator: native adapter unavailable'
+                        :requiredSuites.some(rule=>!advertised.includes(rule.suite_id))
+                            ?' · Evaluator: suite reader unavailable ('+
+                                requiredSuites.filter(rule=>
+                                    !advertised.includes(rule.suite_id))
+                                    .map(rule=>rule.suite_id).join(', ')+')'
+                            :' · Evaluator: suite reader advertised'+serviceHealth;
+            const regressionSignals=comparisonProject===project
+                ?comparisonData?.evaluation_regressions?.filter(row=>row.job_id===j.id)||[]
+                :[];
+            const regressionText=j.evaluation_regression_stop_evidence
+                ?' · Verified regression Stop requested on '+j.evaluation_regression_stop_evidence.suite_id+
+                    ' (not promotion authority)'
+                :regressionSignals.some(row=>row.status==='regressed')
+                    ?' · Independent evaluation regression detected (inspect details)'
+                    :'';
+            const learningCell=cell(tr,learningSummary(j)+evaluation+availability+regressionText);
+            if(policy) {
+                const details=document.createElement('details');
+                const summary=document.createElement('summary');
+                summary.textContent='Evaluation receipts and next eligibility';
+                details.append(summary);
+                const fromArchive=comparisonProject===project
+                    ?comparisonData?.evaluations?.find(sample=>sample.job_id===j.id)
+                        ?.points||[]:[];
+                // The full append-only archive backs Compare. Before it is
+                // loaded, the bounded registry cohort still supplies a
+                // useful last receipt without claiming complete history.
+                const fromCandidates=(j.evaluation_candidates||[]).slice().reverse()
+                    .flatMap(item=>Object.values(item.receipts||{}));
+                const known=new Map();
+                for(const rule of requiredSuites) {
+                    const archived=hubLatestEvaluatedReceipt(j,rule,fromArchive);
+                    const cached=hubLatestEvaluatedReceipt(j,rule,
+                        [...fromCandidates,j.last_evaluation]);
+                    if(archived||cached)
+                        known.set(rule.suite_id,archived||cached);
+                }
+                const description=document.createElement('p');
+                description.textContent='Evaluator machine: '+
+                    (machine?.name||j.assigned_machine_id||'unassigned')+
+                    ' · '+(monitoring?'Periodic monitoring':'Stop-gated evaluation')+
+                    (monitoring&&j.evaluation_stop?' with optional success Stop':'')+
+                    (monitoring&&j.evaluation_monitor.min_minutes_between_evaluations
+                        ?' · at least '+j.evaluation_monitor.min_minutes_between_evaluations+
+                            ' minutes between completed evaluations':'')+
+                    (monitoring&&j.evaluation_monitor.include_final===false
+                        ?' · final checkpoint evaluation disabled':'');
+                details.append(description);
+                const statusLine=document.createElement('p');
+                statusLine.textContent=machine?.status!=='connected'
+                    ?'Evaluator service status: machine agent offline or not enrolled.'
+                    :evaluatorServices.length
+                        ?'Evaluator services (OS observations, not evaluation receipts): '+
+                            evaluatorServices.map(service=>service.unit+
+                                ' · service '+service.service_state+
+                                ' · scheduler '+service.scheduler_state+
+                                ' · last poll '+service.last_result+
+                                (service.evaluator_cpus!=null&&
+                                 service.evaluator_ram_mb!=null
+                                    ?' · evaluator ceiling '+service.evaluator_cpus+
+                                        ' CPU / '+service.evaluator_ram_mb+' MiB RAM':'')+
+                                (service.last_finished_at
+                                    ?' at '+service.last_finished_at:'')+
+                                (service.last_exit_code!==null
+                                    ?' · exit '+service.last_exit_code:'')+
+                                (service.diagnostic?' · '+service.diagnostic:'')).join(' | ')
+                        :schedulerIssue
+                            ?'Evaluator scheduler probe unavailable: '+schedulerIssue
+                            :'No OS scheduler was observed for this project. A suite reader alone does not verify evaluation execution.';
+                if(machine?.status==='connected'&&
+                    machine.evaluator_service_checked_at)
+                    statusLine.textContent+=' · last service-health check '+
+                        machine.evaluator_service_checked_at;
+                details.append(statusLine);
+                const archivedIssues=comparisonProject===project
+                    ?comparisonData?.evaluation_diagnostics?.find(row=>
+                        row.job_id===j.id)?.events||[]:[];
+                if(archivedIssues.length) {
+                    const historyLine=document.createElement('p');
+                    historyLine.textContent='Archived evaluator diagnostics '+
+                        '(never measured match outcomes): '+
+                        archivedIssues.slice(-5).map(row=>
+                            row.observed_at+' · '+(row.suite_id||'suite unspecified')+
+                            (row.evaluation_status==='failed'
+                                ?' · failed attempt on checkpoint '+row.checkpoint_sha256+
+                                    (Number.isSafeInteger(row.steps_completed)
+                                        ?' at update '+row.steps_completed:'')+
+                                    ' · frozen suite SHA-256 '+row.suite_sha256+
+                                    (row.runtime_sha256
+                                        ?' · runtime SHA-256 '+row.runtime_sha256:'')+
+                                    ' · attempted '+row.attempted_at+
+                                    ': '+row.reason
+                                :' · receipt unavailable: '+row.issue)).join(' | ');
+                    details.append(historyLine);
+                }
+                const unresolved=comparisonProject===project
+                    ?comparisonData?.evaluation_open_diagnostics?.find(row=>
+                        row.job_id===j.id):null;
+                if(unresolved?.events?.length) {
+                    const notice=document.createElement('p');
+                    notice.textContent='Unresolved evaluator issues (not model scores): '+
+                        unresolved.events.slice(-8).map(row=>
+                            (row.suite_id||'unknown suite')+
+                            (row.evaluation_status==='failed'
+                                ?' · checkpoint '+row.checkpoint_sha256+
+                                    ' failed: '+row.reason
+                                :' · receipt unavailable: '+row.issue)).join(' | ')+
+                        (unresolved.total_open>8
+                            ?' | '+(unresolved.total_open-8)+
+                                ' additional issue(s) in the complete archive':'');
+                    details.append(notice);
+                }
+                if(monitoring&&j.evaluation_monitor.regression_alert) {
+                    const info=document.createElement('p');
+                    info.textContent=regressionSignals.length
+                        ?'Regression monitoring: '+regressionSignals.map(row=>
+                            row.suite_id+' '+row.status+
+                            (Number.isFinite(row.drop)
+                                ?' (change '+(100*row.drop).toFixed(1)+' percentage points)':'')+
+                            '; '+row.reason).join(' | ')
+                        :'Regression monitoring configured. Historical analysis requires loaded independent evaluation history.';
+                    if(j.evaluation_monitor.regression_alert.stop_on_regression===true)
+                        info.textContent+=' · Automatic native Stop enabled only for confirmed independent regression under identical frozen suite and runtime fingerprints.';
+                    if(j.evaluation_regression_stop_evidence)
+                        info.textContent+=' · Stop evidence: checkpoint '+
+                            j.evaluation_regression_stop_evidence.checkpoint_sha256+
+                            ', update '+j.evaluation_regression_stop_evidence.steps_completed+
+                            ', independent suite '+j.evaluation_regression_stop_evidence.suite_sha256+
+                            ', runtime '+j.evaluation_regression_stop_evidence.runtime_sha256+
+                            ', absolute decline '+(100*j.evaluation_regression_stop_evidence.drop).toFixed(1)+
+                            ' percentage points.';
+                    details.append(info);
+                }
+                const currentUpdate=j.live_execution?.progress?.steps_completed??
+                    j.final_progress?.steps_completed;
+                const currentValid=Number.isSafeInteger(currentUpdate)&&currentUpdate>=0;
+                if(currentValid) {
+                    const progressLine=document.createElement('p');
+                    progressLine.textContent='Last trainer-reported update: '+
+                        currentUpdate.toLocaleString()+
+                        ' · evaluation requires a saved immutable checkpoint; a trainer update by itself is not a runnable checkpoint.';
+                    details.append(progressLine);
+                }
+                for(const rule of requiredSuites) {
+                    const receipt=known.get(rule.suite_id);
+                    const line=document.createElement('p');
+                    const pinned=rule.suite_sha256||
+                        j.evaluation_suite_definitions?.[rule.suite_id]||null;
+                    const observed=fromArchive.filter(row=>
+                        row.suite_id===rule.suite_id);
+                    const mismatched=observed.filter(row=>
+                        pinned&&row.suite_sha256!==pinned);
+                    const comparable=observed.filter(row=>
+                        !pinned||row.suite_sha256===pinned);
+                    const runtimes=new Set(comparable.map(row=>
+                        row.runtime_sha256||'unverified'));
+                    if(!receipt) {
+                        line.textContent=rule.suite_id+
+                            ': no accepted evaluation receipt for the configured suite'+
+                            (currentValid?' (trainer update '+currentUpdate.toLocaleString()+')':'')+
+                            '. '+
+                            (monitoring&&j.evaluation_monitor.include_baseline===false
+                                ?'First available checkpoint establishes the schedule cursor.'
+                                :'Awaiting a checkpoint and compatible evaluator.');
+                    }else {
+                        const update=receipt.steps_completed;
+                        const cadence=rule.every_n_checkpoints||
+                            j.evaluation_monitor?.every_n_checkpoints||1;
+                        const next=Number.isSafeInteger(update)?update+cadence:null;
+                        const interval=rule.min_minutes_between_evaluations||
+                            j.evaluation_monitor?.min_minutes_between_evaluations;
+                        const receiptTime=Date.parse(receipt.evaluated_at||'');
+                        const earliest=monitoring&&interval&&
+                            Number.isFinite(receiptTime)
+                            ?receiptTime+interval*60000:null;
+                        const timePending=earliest!==null&&Date.now()<earliest&&
+                            !j.capacity_released_at;
+                        const clockEligibility=earliest!==null&&!j.capacity_released_at
+                            ?' · next periodic evaluator time ≥ '+
+                                new Date(earliest).toLocaleString()+
+                                (timePending?' (minimum spacing pending)':' (time spacing met)')
+                            :'';
+                        const eligible=monitoring
+                            ?(next===null
+                                ?' · next after '+cadence+' newer checkpoint update(s)'
+                                :currentValid&&currentUpdate>=next
+                                    ?' · update eligibility reached; awaiting a saved checkpoint/evaluator receipt'
+                                    :' · next checkpoint eligible at update ≥ '+
+                                        next.toLocaleString())+clockEligibility
+                            :'';
+                        line.textContent=rule.suite_id+': last completed '+
+                            receipt.successes+'/'+receipt.trials+
+                            ' ('+(100*receipt.successes/receipt.trials).toFixed(1)+'%)'+
+                            (Number.isSafeInteger(update)?' · update '+update.toLocaleString():'')+
+                            eligible+
+                            ' · checkpoint '+(receipt.checkpoint_sha256||'unreported')+
+                            ' · suite SHA-256 '+(receipt.suite_sha256||'unreported')+
+                            ' · runtime SHA-256 '+(receipt.runtime_sha256||'unverified')+
+                            (receipt.evaluated_at?' · evaluated '+receipt.evaluated_at:'');
+                    }
+                    // Trainer counters alone never prove an evaluator
+                    // missed a saved checkpoint. After a sustained interval,
+                    // flag a possible monitoring stall for inspection rather
+                    // than interpreting absent benchmark scores as poor play.
+                    const spacing=rule.every_n_checkpoints||
+                        j.evaluation_monitor?.every_n_checkpoints||1;
+                    const lastUpdate=receipt?.steps_completed;
+                    const updatesSince=Number.isSafeInteger(lastUpdate)
+                        ?currentUpdate-lastUpdate:currentUpdate;
+                    const intervalMinutes=rule.min_minutes_between_evaluations||
+                        j.evaluation_monitor?.min_minutes_between_evaluations;
+                    const lastTime=Date.parse(receipt?.evaluated_at||'');
+                    const throttled=intervalMinutes&&Number.isFinite(lastTime)&&
+                        Date.now()<lastTime+intervalMinutes*60000;
+                    if(monitoring&&j.status==='running'&&
+                        !j.capacity_released_at&&currentValid&&!throttled&&
+                        (receipt||j.evaluation_monitor.include_baseline!==false)&&
+                        updatesSince>=Math.max(20,3*spacing))
+                        line.textContent+=' REVIEW: no newer accepted suite receipt across '+
+                            updatesSince.toLocaleString()+
+                            ' trainer updates. Check saved checkpoint availability, evaluator scheduler and archived failures. This is missing evaluation evidence, not a model score.';
+                    if(mismatched.length)
+                        line.textContent+=' WARNING: '+mismatched.length+
+                            ' sampled archived receipt(s) use a different suite SHA-256 than the configured pin '+
+                            pinned+'. Do not compare those outcomes.';
+                    if(runtimes.size>1)
+                        line.textContent+=' WARNING: sampled receipts use '+
+                            runtimes.size+' evaluator runtime identities; compare only within one runtime.';
+                    details.append(line);
+                    if(typeof receipt?.suite_definition_canonical==='string') {
+                        // The native receipt was fingerprint-checked before
+                        // reaching this archive; these are actual frozen
+                        // evaluation inputs, not guesses from the suite ID.
+                        const definitionDetails=document.createElement('details');
+                        const summary=document.createElement('summary');
+                        summary.textContent=rule.suite_id+
+                            ' · inspect exact frozen suite definition';
+                        const definition=document.createElement('pre');
+                        try {
+                            definition.textContent=JSON.stringify(
+                                JSON.parse(receipt.suite_definition_canonical),null,2);
+                        }catch {
+                            definition.textContent=receipt.suite_definition_canonical;
+                        }
+                        definition.style.whiteSpace='pre-wrap';
+                        definition.style.wordBreak='break-word';
+                        definition.style.maxHeight='240px';
+                        definition.style.overflow='auto';
+                        definitionDetails.append(summary,definition);
+                        details.append(definitionDetails);
+                    }
+                }
+                if(j.live_execution?.evaluation_issue) {
+                    const issue=document.createElement('p');
+                    issue.textContent='Evaluator issue: '+j.live_execution.evaluation_issue;
+                    details.append(issue);
+                }
+                learningCell.append(details);
+            }
             const actions=cell(tr,'');
+            if(['tinybrains','courier'].includes(j.project_id))
+                actions.append(button('Duplicate job',()=>{
+                    try {duplicateJobIntoTrain(j,groupWorkers);}
+                    catch(error){feedback('hub-job-message',error.message);}
+                }));
+            actions.append(button('Rename run',async()=>{
+                const entered=prompt('Run name (optional; blank restores the configuration name):',
+                    j.run_name||'');
+                if(entered===null||entered.trim()===(j.run_name||''))return;
+                try {
+                    await action('hub/jobs/rename',{
+                        job_id:j.id,run_name:entered.trim(),
+                        expected_run_name:j.run_name||null,
+                    });
+                    feedback('hub-job-message','Run label updated. Trainer and job configuration are unchanged.');
+                    await reload();
+                }catch(error){feedback('hub-job-message',String(error.message||error));}
+            }));
             if(j.status==='waiting_adapter'&&!j.lease_id)
                 actions.append(button('Coordinate capacity',()=>allocateJob([j.id])));
             if(j.gpu_probe_block===null&&
@@ -3761,8 +6548,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     proof?.status==='verified'?'Recheck GPU device access':'Check GPU device access',async()=>{
                     if(!confirm('Run an inert Linux GPU access probe for '+
                         j.configuration_name+' on '+machine.name+
-                        '? It opens the selected and excluded render devices, '+
-                        'and starts a short isolated systemd probe. '+
+                        '? It checks which render devices a short isolated probe can open. '+
                         'It does NOT train, reserve VRAM, authorize GPU execution, '+
                         'or guarantee isolation from other host processes.'))return;
                     try{
@@ -3822,11 +6608,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             ?'Also authorize ONE learner GPU Start after all collectors have fresh verified running receipts. '+
                                 'This permission expires after 20 minutes. '+
                                 (recovery
-                                    ?'You separately approve coordinator restart recovery, but ONLY after all ORIGINAL remote dispatches are freshly verified running and the GPU learner passes its native admission and HMAC endpoint checks again. The learner and remote workers are NEVER retried. '
+                                    ?'You separately approve coordinator restart recovery after all original remote dispatches are freshly verified and the learner passes its native admission and HMAC endpoint checks again. '
                                     :'Coordinator restart disarms learner Start. ')+
                                 'Changed collector dispatches, lease owners, HMAC identities or unsafe machine states disarm launch. '+
                                 'If any collector exits before learner Start, remaining sidecars receive native Stop/cleanup requests. '
-                            :'The GPU learner must be started separately after verification. ')+
+                            :'The learner must be started separately after verification. ')+
                         'All resource allocations stay fixed.'))return;
                     try {
                         const result=await action('hub/distributed/tinybrains/start-collectors',{
@@ -3870,7 +6656,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     !worker.dispatch_id&&worker.lease_id&&worker.assigned_machine_id)) {
                 const schedule=async recovery=>{
                     if(!confirm('Approve the complete distributed TinyBrains group for one future native Start when ALL pinned collector and learner machine claims are ready? '+
-                        'This grants real remote collector Starts and a subsequent one-use GPU learner Start only after verified original native collector ownership. '+
+                        'This authorizes remote collectors and one learner Start after their native ownership is verified. '+
                         'The approval expires after 20 minutes. '+
                         (recovery
                             ?'You separately permit the pending approval to survive a coordinator restart, after fresh machine, lease, HMAC and GPU proof. '
@@ -3896,9 +6682,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if(unresolvedScheduledGroup)
                 actions.append(button('Cancel scheduled group',async()=>{
-                    if(!confirm('Revoke future collector and GPU learner Starts for this group? The queued native jobs and their resource claims stay unchanged.'))return;
+                    if(!confirm('Revoke future collector and learner Starts for this group? The queued native jobs and their resource claims stay unchanged.'))return;
                     try {
-                        await action('hub/distributed/tinybrains/cancel-start-plan',{
+                        await action('hub/distributed/'+(courierGroup?'courier':'tinybrains')+'/cancel-start-plan',{
                             plan_id:scheduledGroup.id,confirm_cancel:true,
                         });
                         feedback('hub-job-message',
@@ -3911,7 +6697,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if(!confirm('Disarm this pending coordinated learner Start? '+
                         'The existing remote collector processes and all resource claims remain unchanged.'))return;
                     try{
-                        await action('hub/distributed/tinybrains/cancel-launch',{
+                        await action('hub/distributed/'+(courierGroup?'courier':'tinybrains')+'/cancel-launch',{
                             learner_job_id:j.id,confirm_cancel:true,
                         });
                         feedback('hub-job-message',
@@ -3942,7 +6728,98 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(error){feedback('hub-job-message',error.message);}
                     await reload();
                 }));
-            if(j.status==='waiting_adapter'&&readiness?.eligible===true)
+            if(courierGroup&&j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !unresolvedScheduledGroup&&!j.distributed_abort_requested_at&&
+                groupWorkers.length>0&&
+                groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
+                    !worker.dispatch_id&&worker.lease_id&&worker.assigned_machine_id))
+                {
+                    const scheduleCourier=async recovery=>{
+                        if(!confirm('Approve these original Courier PPO machine leases for one future group Start? '+
+                            'When every worker has a fresh lease and GPU proof, the Hub will authorize '+
+                            'all remote services in one transaction, then Start the learner only after '+
+                            'authenticated running receipts. Approval expires after 20 minutes. '+
+                            (recovery
+                                ?'The pending approval may survive coordinator restart after fresh native owner, lease, HMAC and GPU proof. '
+                                :'Coordinator restart disarms the approval. ')+
+                            'No uncertain native process or incomplete PPO update will be retried.'))return;
+                        try {
+                            const plan=await action('hub/distributed/courier/schedule-start',{
+                                learner_job_id:j.id,
+                                expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
+                                confirm_schedule:true,confirm_learner_start:true,
+                                ...(recovery?{
+                                    resume_after_restart:true,confirm_restart_rearm:true,
+                                }:{}),
+                            });
+                            feedback('hub-job-message','Courier distributed group '+plan.status+
+                                '; no native process Starts until original resource proof is complete.');
+                        }catch(error){feedback('hub-job-message',error.message);}
+                        await reload();
+                    };
+                    actions.append(button('Schedule Courier group when ready',()=>scheduleCourier(false)));
+                    actions.append(button('Schedule recoverable Courier group',()=>scheduleCourier(true)));
+                }
+            if(courierGroup&&j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !unresolvedScheduledGroup&&!j.distributed_abort_requested_at&&groupWorkers.length>0&&
+                groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
+                    !worker.dispatch_id&&worker.native_start_readiness?.eligible===true)) {
+                {
+                    const startCourier=async recovery=>{
+                        if(!confirm('Authorize '+groupWorkers.length+
+                            ' separately leased Courier PPO services and one subsequent learner Start? '+
+                            'The learner Starts only after every original worker has a verified running native receipt. '+
+                            'The approval expires after 20 minutes. '+
+                            (recovery
+                                ?'Coordinator restart retains the pending learner approval after fresh native running, lease and HMAC proof. '
+                                :'Coordinator restart disarms the future learner Start. ')+
+                            'No failed PPO owner or uncertain in-flight update is retried automatically.'))return;
+                        try {
+                            const result=await action('hub/distributed/courier/start-lineages',{
+                                learner_job_id:j.id,
+                                expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
+                                confirm_start:true,confirm_learner_start:true,
+                                ...(recovery?{
+                                    resume_after_restart:true,confirm_restart_rearm:true,
+                                }:{}),
+                            });
+                            feedback('hub-job-message',result.starts_authorized+
+                                ' remote Courier Starts approved. Waiting for verified native owners.');
+                        }catch(error){feedback('hub-job-message',error.message);}
+                        await reload();
+                    };
+                    actions.append(button('Start Courier distributed group',()=>startCourier(false)));
+                    actions.append(button('Start recoverable Courier group',()=>startCourier(true)));
+                }
+            }
+            if(courierGroup&&j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !j.distributed_abort_requested_at&&groupWorkers.length>0)
+                actions.append(button('Abort Courier distributed startup',async()=>{
+                    if(!confirm('Abandon this unstarted Courier learner and its '+
+                        groupWorkers.length+' remote PPO lineages? Running or uncertain native owners '+
+                        'receive supervised Stop orders; all fixed CPU/GPU leases remain held '+
+                        'until verified termination or absence. Checkpoints are preserved.'))return;
+                    try {
+                        const result=await action('hub/distributed/courier/abort-startup',{
+                            learner_job_id:j.id,
+                            expected_lineage_job_ids:groupWorkers.map(worker=>worker.id),
+                            confirm_abort:true,
+                        });
+                        feedback('hub-job-message',result.learner_cancelled
+                            ?'Courier distributed startup cancelled.'
+                            :'Courier remote Stop reconciliation requested; claims remain reserved until verified.');
+                    }catch(error){feedback('hub-job-message',error.message);}
+                    await reload();
+                }));
+            if(j.status==='waiting_adapter'&&!j.pending_install_start&&
+                (readiness?.eligible===true||
+                    ['courier','tinybrains'].includes(j.project_id)&&
+                    machine?.status==='connected'&&machine.local_executor_enabled===true&&
+                    !machine.installed_projects?.includes(j.project_id)&&
+                    j.resources?.gpu_count===0&&
+                    !j.frozen_parameters?.remote_rollouts&&
+                    !j.frozen_parameters?.remote_lineages)&&
+                j.project_id!=='courier_lineage')
                 actions.append(button(j.native_optimizer_recovery?'Finalize optimizer rank':
                     j.native_release_recovery?'Start release recovery':
                     j.native_collector_recovery?'Resume collector':'Start native job',async()=>{
@@ -3977,9 +6854,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         $('hub-native-release-on-terminal').checked=false;
                         feedback('hub-job-message',
-                            'Native start authorized. Awaiting local OS enforcement verification.');
+                            'Start approved. If this simulation is not yet installed, the Hub will install and qualify it before launching.');
                         await reload();
                     }catch(e){feedback('hub-job-message',e.message);}
+                }));
+            if(j.status==='waiting_adapter'&&j.pending_install_start)
+                actions.append(button('Cancel pending install/Start',async()=>{
+                    if(!confirm('Withdraw the pending Start authorization for '+
+                        j.configuration_name+'? The machine claim and any software installation remain.'))return;
+                    try {
+                        await action('hub/jobs/cancel-install-start',{
+                            job_id:j.id,confirm_cancel:true,
+                        });
+                        feedback('hub-job-message','Pending Start approval withdrawn.');
+                        await reload();
+                    }catch(error){feedback('hub-job-message',error.message);}
                 }));
             if(j.status==='start_requested'&&j.start_first_offered_at===null)
                 actions.append(button('Withdraw Start',async()=>{
@@ -4260,7 +7149,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr=document.createElement('tr');
             const live=j.live_execution;
             const progress=live?.progress||j.final_progress;
-            cell(tr,j.configuration_name+
+            cell(tr,hubJobLabel(j)+
                 trialBatchLabel(j)+
                 (j.continuation_of_job_id?' · continuation':''));
             cell(tr,(j.status==='waiting_predecessor'
@@ -4391,8 +7280,58 @@ document.addEventListener('DOMContentLoaded', () => {
                 sum+j.live_execution.memory_current_mb,0);
             const overClaimed=m.capacity_overcommitted===true;
             cell(tr,m.name+' ('+m.id+')');
+            const reports=state.machine_software?.[m.id]||{};
+            const active=state.machine_active_software?.[m.id]||{};
+            const releases=state.software_release_catalog;
             const status=cell(tr,m.status+
                 (overClaimed?' · Claims exceed reported capacity':''));
+            const names=[...new Set([...Object.keys(active),...Object.keys(reports)])];
+            for(const name of names) {
+                const report=reports[name];
+                const installed=active[name]||(report?.status==='active'?report:null);
+                const latest=releases?.components?.[name];
+                const problem=releases?.errors?.[name];
+                const matches=installed&&latest&&installed.version===latest.version&&
+                    installed.sha256===latest.sha256;
+                const short=entry=>entry?.version?.slice(0,8)||'unknown';
+                const line=document.createElement('div');
+                const heading=document.createElement('strong');
+                heading.textContent=name+': ';
+                let summary;
+                if(!latest)summary='Latest release unavailable';
+                else if(!installed)summary='Active version unverified';
+                else if(matches)summary='Up to date';
+                else summary='Update available';
+                if(m.status!=='connected')summary='Last reported: '+summary;
+                if(problem)summary+=' · Release check issue';
+                line.append(heading,summary);
+                const versions=document.createElement('div');
+                versions.textContent='Active '+short(installed)+' · Latest '+short(latest);
+                line.append(versions);
+                if(report&&report.status!=='active') {
+                    const pending=document.createElement('div');
+                    pending.textContent='Update '+report.status+' ('+short(report)+')';
+                    line.append(pending);
+                }
+                line.title=[
+                    'Active release: '+(installed?.version||'not reported'),
+                    'Latest published release: '+(latest?.version||'not available'),
+                    ...(latest?.source_commit?['Latest source commit: '+latest.source_commit]:[]),
+                    ...(report?.message?[report.message]:[]),
+                    ...(problem?[problem]:[]),
+                ].join('\n');
+                status.append(line);
+            }
+            if(!names.length&&m.agent_enrolled) {
+                const line=document.createElement('div');
+                line.textContent='No worker software version reported';
+                status.append(line);
+            }
+            const lastConnection=(state.machine_connection_events||[])
+                .filter(event=>event.machine_id===m.id).slice(-1)[0];
+            if(lastConnection)status.title=
+                'Last connectivity event: '+lastConnection.event+' at '+lastConnection.at+
+                '; ongoing native jobs are not stopped merely by disconnection.';
             if(overClaimed)
                 status.title='Hub claims exceed fresh agent CPU/RAM capacity; new starts require renewed receipts. Existing processes are not stopped.';
             const cpuCell=cell(tr,m.cpus+' configured'+
@@ -4481,6 +7420,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     await reload();
                 }catch(e){feedback('hub-enrollment-message',e.message);}
             }));
+            // Only an offline identity can be approved for replacement.
+            // A signed-in same-owner Tailscale node must then claim this
+            // identity within 15 minutes; this button issues no secret.
+            if(m.agent_enrolled&&m.status==='offline')
+                actions.append(button('Allow reinstall',async()=>{
+                    if(!confirm('Permit a one-time new Tailscale enrollment for '+
+                        m.id+' within 15 minutes? It will replace the old machine credential. '+
+                        'Existing job history is preserved. The Hub refuses if native jobs or capacity claims remain.'))return;
+                    try{
+                        const result=await action('hub/machines/approve-reinstall',{
+                            machine_id:m.id,confirm_reinstall:true,
+                        });
+                        feedback('hub-enrollment-message',
+                            'Reinstall approved for '+m.id+' until '+
+                            new Date(result.expires_at).toLocaleTimeString()+
+                            '. Run the worker installer again on that machine.');
+                        await reload();
+                    }catch(e){feedback('hub-enrollment-message',e.message);}
+                }));
             if(m.agent_enrolled)actions.append(button('Revoke',async()=>{
                 if(!confirm('Disable machine agent access for '+m.id+'?'))return;
                 try{
@@ -4490,6 +7448,44 @@ document.addEventListener('DOMContentLoaded', () => {
                     await reload();
                 }catch(e){feedback('hub-enrollment-message',e.message);}
             }));
+            if(m.status==='connected'&&m.local_executor_enabled) {
+                // Software installation is an independent, authenticated
+                // machine action; no job is launched by this button.
+                const requested=new Set(state.machine_software_requests?.[m.id]||[]);
+                for(const project of ['tinybrains','courier']) {
+                    const installed=(m.installed_projects||[]).includes(
+                        project==='tinybrains'?'tinybrains_rollout':'courier_lineage');
+                    const already=requested.has(project);
+                    if(!installed&&!already)
+                        actions.append(button('Install '+(project==='tinybrains'?'TinyBrains':'Courier'),async()=>{
+                            try{
+                                await action('hub/machines/install',{
+                                    machine_id:m.id,projects:[project],confirm_install:true,
+                                });
+                                feedback('hub-enrollment-message',
+                                    project+' installation requested for '+m.id+
+                                    '. The worker updater will install it without stopping existing jobs.');
+                                await reload();
+                            }catch(error){feedback('hub-enrollment-message',error.message);}
+                        }));
+                }
+            }
+            if(m.agent_enrolled) {
+                const overriding=state.machine_update_policies?.[m.id]==='override';
+                actions.append(button(overriding?'Wait for jobs':'Override update',async()=>{
+                    const mode=overriding?'defer':'override';
+                    if(mode==='override'&&!confirm(
+                        'Authorize mid-job software activation on '+m.id+
+                        '? The worker will only activate components whose native ownership can be preserved; incompatible live jobs must still wait.'))return;
+                    try {
+                        await action('hub/machines/update',{
+                            machine_id:m.id,mode,
+                            ...(mode==='override'?{confirm_override:true}:{})
+                        });
+                        await reload();
+                    }catch(error){feedback('hub-enrollment-message',error.message);}
+                }));
+            }
             if(m.status==='connected'&&m.local_executor_enabled&&
                 m.evaluation_suites?.bees_native?.length) {
                 const issueEvaluator=async operation=>{
@@ -4532,6 +7528,61 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr=document.createElement('tr');
             cell(tr,'No registered machines.').colSpan=8;
             $('hub-machine-rows').append(tr);
+        }
+        const readiness=$('hub-machine-readiness');
+        if(readiness) {
+            readiness.replaceChildren();
+            for(const machine of state.machines) {
+                const installed=new Set(machine.installed_projects||[]);
+                const capabilities=[];
+                if(machine.status!=='connected')
+                    capabilities.push('Agent offline');
+                else if(!machine.local_executor_enabled)
+                    capabilities.push('Observation only — approve a trusted native adapter on this host');
+                else if(!machine.native_preflight_passed)
+                    capabilities.push('Native preflight incomplete');
+                if(installed.has('tinybrains'))
+                    capabilities.push('TinyBrains learner'+
+                        (machine.tinybrains_remote_rollout_count>0
+                            ?' · '+machine.tinybrains_remote_rollout_count+
+                                ' approved remote collector endpoint(s)'
+                            :' · local only; no remote collectors pinned'));
+                if(installed.has('tinybrains_rollout'))
+                    capabilities.push('TinyBrains collector'+
+                        (machine.tinybrains_rollout_slots?.length
+                            ?' · '+machine.tinybrains_rollout_slots.length+
+                                ' private listener slots: '+
+                                machine.tinybrains_rollout_slots.map(s=>s.endpoint).join(', ')
+                            :machine.tinybrains_rollout_endpoint
+                                ?' · '+machine.tinybrains_rollout_endpoint
+                                :' · no approved endpoint'));
+                if(installed.has('courier'))
+                    capabilities.push('Courier learner'+
+                        (machine.courier_remote_lineage_endpoints?.length
+                            ?' · '+machine.courier_remote_lineage_endpoints.length+
+                                ' remote endpoints pinned'+
+                                (machine.courier_remote_ppo_settings
+                                    ?' · remote PPO settings supported'
+                                    :' · remote PPO settings not supported')
+                            :' · local only; no remote lineage endpoints pinned'));
+                if(installed.has('courier_lineage'))
+                    capabilities.push('Courier collector installed'+
+                        (machine.courier_lineage_remote_ppo_settings
+                            ?' · remote PPO settings supported'
+                            :' · remote PPO settings not supported'));
+                const suites=machine.evaluation_suites||{};
+                for(const project of ['tinybrains','courier']) {
+                    const count=suites[project]?.length||0;
+                    if(count)capabilities.push(project+' evaluator suites: '+count);
+                }
+                if(!capabilities.length)capabilities.push('No approved training adapters');
+                const row=document.createElement('p');
+                const name=document.createElement('strong');
+                name.textContent=machine.name+' ('+machine.id+'): ';
+                row.append(name,document.createTextNode(capabilities.join(' · ')));
+                readiness.append(row);
+            }
+            if(!state.machines.length)readiness.textContent='No enrolled machines.';
         }
         const selectedProject=$('hub-lease-project').value;
         $('hub-lease-project').replaceChildren(...state.projects.map(p=>
@@ -4585,10 +7636,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     async function reload() {
         try {
-            const r=await fetch('/api/hub/state',{cache:'no-store'});
+            const [r,catalog]=await Promise.all([
+                fetch('/api/hub/state',{cache:'no-store'}),
+                fetch('/api/hub/software/releases',{cache:'no-store'})
+                    .then(response=>response.ok?response.json():null)
+                    .catch(()=>null),
+            ]);
             const data=await r.json();
             if(!r.ok)throw Error(data.error||'Hub state unavailable');
-            state=data;display();selectTab(tab);
+            data.software_release_catalog=catalog;
+            const apply=()=>{
+                state=data;
+                if(!initialDesignLoaded) {
+                    initialDesignLoaded=true;
+                    if(!state.projects.some(item=>item.id===project))project='bees';
+                }
+                // The initial HTML contains an empty JSON placeholder. Populate
+                // it from the connected trusted adapter, including its digest,
+                // rather than saving an unintentionally empty native job.
+                let seeded=false;
+                if(!editing&&$('hub-config-json').value.trim()==='{}') {
+                    const defaults=projectDefaultParameters();
+                    if(Object.keys(defaults).length) {
+                        $('hub-config-json').value=JSON.stringify(defaults,null,2);
+                        seeded=true;
+                    }
+                }
+                display();
+                if(seeded)syncTinyBrainsEditor(JSON.parse($('hub-config-json').value));
+                selectTab(tab);
+            };
+            if(tab==='compare')withCompareViewport(apply);
+            else apply();
         }catch(e){feedback('hub-config-message',e.message);}
     }
     function populateBeesForm(p) {
@@ -4644,6 +7723,36 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-compare-add-run').addEventListener('click',()=>{
         addComparisonSlot();
         renderComparison();
+    });
+    $('hub-historical-import-submit').addEventListener('click',async()=>{
+        const input=$('hub-historical-audit-file'),file=input.files?.[0];
+        const note='hub-historical-import-status';
+        if(!file) {
+            feedback(note,'Choose a completed independent checkpoint audit JSON file.');
+            return;
+        }
+        if(project!=='tinybrains') {
+            feedback(note,'Historical checkpoint import is available only for TinyBrains.');
+            return;
+        }
+        try {
+            if(file.size<1||file.size>65536)
+                throw Error('Historical audit must be a nonempty JSON file of at most 64 KiB.');
+            const report=JSON.parse(await file.text());
+            if(!report||report.project_id!=='tinybrains'||report.complete!==true||
+                !Array.isArray(report.results)||!report.results.length||
+                report.results.length>128)
+                throw Error('Select a complete TinyBrains independent checkpoint audit.');
+            const result=await action('hub/evaluation/historical',report);
+            feedback(note,(result.imported?'Imported':'Previously imported')+
+                ' historical checkpoint audit: '+result.record_count+
+                ' frozen-suite observations. Source remains read-only.');
+            input.value='';
+            await reload();
+        }catch(error) {
+            feedback(note,'Historical audit import refused: '+
+                String(error.message||error));
+        }
     });
     $('hub-compare-metric').addEventListener('change',()=>{
         comparisonMetricOverrides.set(project,selectedComparisonMetrics());
@@ -4811,6 +7920,7 @@ document.addEventListener('DOMContentLoaded', () => {
             resetEditor();
             $('hub-config-name').value=payload.name||'Bees draft';
             $('hub-config-json').value=JSON.stringify(payload,null,2);
+            renderDesignEditor();
             feedback('hub-config-message','Copied current Bees training form. Save draft to retain it.');
         }catch(e){feedback('hub-config-message',e.message);}
     });
@@ -4821,8 +7931,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...(editing||{}),
                 project_id:project,
                 name:$('hub-config-name').value,
-                parameters:JSON.parse($('hub-config-json').value),
-                ...(project!=='bees'?{evaluation_stop:evaluationFromEditor()}:{}),
+                parameters:readDesignControls(),
+                ...(project!=='bees'?evaluationFromEditor():{}),
             });
             editing={id:saved.id,revision:saved.revision};
             feedback('hub-config-message','Saved revision '+saved.revision+'. No training scheduled.');
@@ -5257,7 +8367,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(!selected)throw Error('Select a saved configuration for every stage.');
                 return {configuration_id:selected.id,
                     expected_revision:selected.revision,
-                    resources:JSON.parse(row.querySelector('input').value)};
+                    resources:JSON.parse(row.querySelector('.hub-pipeline-resources').value),
+                    ...(checkpointPipeline&&project==='courier'&&
+                        row.querySelector('.hub-pipeline-curriculum').checked
+                        ?{continuation_mode:'curriculum'}:{})};
             });
             const predecessor=trialBatch?'':$('hub-pipeline-predecessor').value;
             const question=checkpointPipeline
@@ -5327,11 +8440,45 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             $('hub-job-resources').value=JSON.stringify(resources,null,2);
+            renderJobMetricSelection();
             feedback('hub-build-message','Resource JSON filled. Review it before queueing; no work was started.');
         }catch(error){
             feedback('hub-build-message',String(error.message||error));
         }
     });
+    // A queue confirmation must make the lineage choice explicit. An import
+    // can seed a new model but is not a continuation of a Hub predecessor.
+    function newLineageWarning(predecessor,parameters) {
+        if(predecessor)return '';
+        return 'NO PREVIOUS JOB SELECTED.\n\n'+
+            'This queues a NEW, independent Hub job, not a continuation '+
+            'of a previously queued job.\n'+
+            (parameters?.import_checkpoint!==undefined
+                ?'This configuration imports a checkpoint as its starting state, '+
+                    'which may include learned weights and optimizer state.\n'
+                :'It will not resume a previous Hub job checkpoint or optimizer state.\n')+
+            '\n';
+    }
+    function budgetMatchingControl() {
+        const input=document.createElement('input');
+        input.type='checkbox';
+        const label=document.createElement('label');
+        label.append(input,' Match budgets across the selected machines');
+        return {input,label};
+    }
+    function distributedBudgetRequest(budgets,matching,field) {
+        const ids=budgets.map(item=>item.machine_id);
+        if(matching&&ids.some(id=>typeof id!=='string'||!id))
+            throw Error('Enter a machine ID on each row to select the machines available for matching.');
+        return {[field]:budgets.map(({machine_id,...budget})=>({
+            ...budget,...(!matching&&machine_id!==undefined?{machine_id}:{}),
+        })),...(matching?{worker_machine_ids:ids}:{})};
+    }
+    function matchedWorkerSummary(leases) {
+        return ' Assigned '+leases.slice(1).map(lease=>lease.machine_id+
+            (lease.resources.gpus.length?' ('+lease.resources.gpus.join(', ')+')':' (CPU)'))
+            .join(', ')+'.';
+    }
     // Distributed groups are frozen and claimed atomically. The operator
     // chooses the CPU/RAM/GPU budgets; endpoint-to-machine identity is never
     // entered by the browser and comes from connected native agents instead.
@@ -5341,13 +8488,73 @@ document.addEventListener('DOMContentLoaded', () => {
     const distributedMachine=document.createElement('select');
     const distributedBudgets=document.createElement('textarea');
     distributedBudgets.rows=5;
-    distributedBudgets.placeholder='Worker resource budgets, in endpoint order';
+    distributedBudgets.placeholder='Worker machine IDs and resource budgets';
+    const distributedMatch=budgetMatchingControl();
     const distributedDetails=document.createElement('div');
     const distributedFeedback=document.createElement('div');
     const distributedMachineLabel=document.createElement('label');
     distributedMachineLabel.append('Learner machine ',distributedMachine);
     const distributedBudgetsLabel=document.createElement('label');
     distributedBudgetsLabel.append('Remote worker budgets (JSON array) ',distributedBudgets);
+    // Missing software is prepared from the Train workflow, not by copying
+    // repositories to Exeter. Queue intent is frozen until that machine's
+    // authenticated agent advertises the selected physical listener.
+    const preparePanel=document.createElement('div');
+    const prepareHost=document.createElement('select');
+    const prepareEndpoint=document.createElement('select');
+    const prepareCpus=document.createElement('input');
+    prepareCpus.type='number';prepareCpus.min='1';prepareCpus.step='1';prepareCpus.value='6';
+    prepareCpus.style.width='5em';
+    const prepareRam=document.createElement('input');
+    prepareRam.type='number';prepareRam.min='128';prepareRam.step='128';prepareRam.value='4096';
+    prepareRam.style.width='7em';
+    const prepareHostLabel=document.createElement('label');
+    prepareHostLabel.append('Collector machine ',prepareHost);
+    const prepareEndpointLabel=document.createElement('label');
+    prepareEndpointLabel.append('Approved listener ',prepareEndpoint);
+    const prepareCpusLabel=document.createElement('label');
+    prepareCpusLabel.append('CPUs ',prepareCpus);
+    const prepareRamLabel=document.createElement('label');
+    prepareRamLabel.append('RAM (MiB) ',prepareRam);
+    const prepareStatus=document.createElement('div');
+    const prepareQueue=button('Install collector and queue when ready',async()=>{
+        const selected=state?.configurations.find(c=>
+            c.project_id==='tinybrains'&&c.id===$('hub-job-configuration').value);
+        if(!selected||selected.parameters?.remote_rollouts!==true||
+            !distributedMachine.value||!prepareHost.value||!prepareEndpoint.value)return;
+        const cpus=Number(prepareCpus.value),ram_mb=Number(prepareRam.value);
+        if(!Number.isSafeInteger(cpus)||cpus<1||
+            !Number.isSafeInteger(ram_mb)||ram_mb<128) {
+            prepareStatus.textContent='Enter a positive integer CPU and RAM budget.';
+            return;
+        }
+        const ancestor=$('hub-job-predecessor').value;
+        const resource=JSON.parse($('hub-job-resources').value);
+        if(!confirm(newLineageWarning(ancestor,selected.parameters)+
+            'Approve automatic TinyBrains installation on '+prepareHost.value+
+            ', followed by queueing one distributed learner on '+distributedMachine.value+
+            ' with collector '+prepareEndpoint.value+'? '+
+            'The '+cpus+' collector CPUs and '+ram_mb+' MiB are requested only once '+
+            'the authenticated agent advertises the exact listener. '+
+            'NO training will start until you separately authorize the coordinated group.'))return;
+        try {
+            const result=await action('hub/distributed/tinybrains/prepare',{
+                confirm_prepare:true,
+                learner:{configuration_id:selected.id,expected_revision:selected.revision,
+                    machine_id:distributedMachine.value,resources:resource,
+                    metric_selection:hubDistributedMetricSelection(selectedJobMetrics(),1),
+                    ...(ancestor?{continuation_of_job_id:ancestor}:{})},
+                collector:{machine_id:prepareHost.value,endpoint:prepareEndpoint.value,
+                    resources:{cpus,ram_mb,gpu_count:0},threads:cpus},
+            });
+            await reload();
+            prepareStatus.textContent='Preparation '+result.preparation_id.slice(0,8)+
+                ' queued. The Hub will install the simulation and queue the group after native verification.';
+        }catch(error){prepareStatus.textContent=String(error.message||error);}
+    });
+    const preparationRows=document.createElement('div');
+    preparePanel.append(prepareHostLabel,prepareEndpointLabel,prepareCpusLabel,
+        prepareRamLabel,prepareQueue,prepareStatus,preparationRows);
     const distributedQueue=button('Queue and reserve entire group',async()=>{
         const selected=state?.configurations.find(c=>
             c.project_id==='tinybrains'&&c.id===$('hub-job-configuration').value);
@@ -5367,43 +8574,285 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const budgets=JSON.parse(distributedBudgets.value);
             const selectedMachine=state.machines.find(m=>m.id===distributedMachine.value);
-            if(!Array.isArray(budgets)||budgets.length!==
-                selectedMachine?.tinybrains_remote_rollout_endpoints?.length)
-                throw Error('Supply one resource budget for each physically approved remote collector.');
+            if(!Array.isArray(budgets)||!budgets.length||
+                (selectedMachine?.tinybrains_rollout_subset!==true&&budgets.length!==
+                    selectedMachine?.tinybrains_remote_rollout_endpoints?.length))
+                throw Error('Supply the selected remote collector budgets.');
             const resources=JSON.parse($('hub-job-resources').value);
             // The distributed queue must preserve the same Train metrics as
             // ordinary queueing. Prioritize paired collector evidence for
             // a subsequent *advisory* allocation recommendation.
             const metricSelection=hubDistributedMetricSelection(
                 selectedJobMetrics(),budgets.length);
-            if(!confirm('Queue '+(predecessor?'checkpoint continuation':'new TinyBrains learner')+
+            const matching=distributedMatch.input.checked&&!distributedMatch.label.hidden;
+            const budgetRequest=distributedBudgetRequest(budgets.map(item=>{
+                if(!item||typeof item!=='object'||Array.isArray(item))
+                    throw Error('Each collector budget must be a JSON object.');
+                const {machine_id,threads,endpoint,...resources}=item;
+                return {resources,machine_id,
+                    ...(endpoint===undefined?{}:{endpoint}),
+                    ...(threads===undefined?{}:{threads})};
+            }),matching,'collectors');
+            if(!confirm(newLineageWarning(predecessor,selected.parameters)+
+                'Queue '+(predecessor?'checkpoint continuation':'new TinyBrains learner')+
                 ' on '+distributedMachine.value+
                 ' and '+budgets.length+' remotely pinned collectors? All CPU, RAM and GPU'+
-                ' reservations will be created together, but no process will start.'))return;
+                ' reservations will be created together, but no process will start.'+
+                (matching?' Budgets may be assigned to a different selected machine than the one on their row.':'')))return;
             const result=await action('hub/distributed/tinybrains',{
                 confirm_queue:true,
                 learner:{configuration_id:selected.id,expected_revision:selected.revision,
                     machine_id:distributedMachine.value,resources,
                     metric_selection:metricSelection,
                     ...(predecessor?{continuation_of_job_id:predecessor}:{})},
-                collectors:budgets.map(item=>{
-                    if(!item||typeof item!=='object'||Array.isArray(item))
-                        throw Error('Each collector budget must be a JSON object.');
-                    const {threads,...resources}=item;
-                    return {resources,...(threads===undefined?{}:{threads})};
-                }),
+                ...budgetRequest,
             });
             distributedFeedback.textContent='Queued learner '+result.learner.id+
                 ' and '+result.collectors.length+' separate collector jobs. All '+
-                result.leases.length+' claims await native receipts and explicit Starts.';
+                result.leases.length+' claims await native receipts and explicit Starts.'+
+                (matching?matchedWorkerSummary(result.leases):'');
             await reload();
         }catch(error){distributedFeedback.textContent=String(error.message||error);}
     });
-    distributedPanel.append(distributedLegend,distributedMachineLabel,
-        distributedBudgetsLabel,distributedDetails,distributedQueue,distributedFeedback);
+    distributedPanel.append(distributedLegend,distributedMachineLabel,preparePanel,
+        distributedBudgetsLabel,distributedMatch.label,distributedDetails,distributedQueue,distributedFeedback);
     $('hub-job-queue').insertAdjacentElement('afterend',distributedPanel);
+    // Courier reuses the same native group claims, but unlike TinyBrains
+    // each remote process trains its own immutable recurrent PPO lineage.
+    const courierPanel=document.createElement('fieldset');
+    const courierLegend=document.createElement('legend');
+    courierLegend.textContent='Distributed Courier training';
+    const courierMachine=document.createElement('select');
+    const courierBudgets=document.createElement('textarea');
+    courierBudgets.rows=5;
+    courierBudgets.placeholder='Worker machine IDs and resource budgets';
+    const courierMatch=budgetMatchingControl();
+    const courierDetails=document.createElement('div');
+    const courierFeedback=document.createElement('div');
+    const courierMachineLabel=document.createElement('label');
+    courierMachineLabel.append('Learner machine ',courierMachine);
+    const courierBudgetsLabel=document.createElement('label');
+    courierBudgetsLabel.append('Remote worker budgets (JSON array) ',courierBudgets);
+    const courierQueue=button('Queue and reserve Courier group',async()=>{
+        const selected=state?.configurations.find(c=>
+            c.project_id==='courier'&&c.id===$('hub-job-configuration').value);
+        if(!selected||selected.parameters?.remote_lineages!==true||
+            !courierMachine.value)return;
+        try {
+            const budgets=JSON.parse(courierBudgets.value);
+            const machine=state.machines.find(item=>item.id===courierMachine.value);
+            if(!Array.isArray(budgets)||!budgets.length||
+                (machine?.courier_lineage_subset!==true&&budgets.length!==
+                    machine?.courier_remote_lineage_endpoints?.length)||
+                budgets.some(item=>!item||typeof item!=='object'||
+                    Array.isArray(item)))
+                throw Error('Provide one CPU/RAM/GPU budget for each selected Courier worker.');
+            const resources=JSON.parse($('hub-job-resources').value);
+            const matching=courierMatch.input.checked&&!courierMatch.label.hidden;
+            if(budgets.some(item=>item.machine_id===courierMachine.value)&&!matching)
+                throw Error('Same-machine Courier GPU collectors require explicitly matched machine budgets.');
+            const slotBound=budgets.some(item=>Object.hasOwn(item,'endpoint'));
+            if(slotBound&&!matching)
+                throw Error('Selected Courier listeners require fixed machine binding.');
+            const budgetRequest=distributedBudgetRequest(
+                budgets.map(({machine_id,endpoint,...resources})=>({
+                    resources,machine_id,...(endpoint!==undefined?{endpoint}:{})
+                })),matching,'lineages');
+            const predecessor=$('hub-job-predecessor').value;
+            if(predecessor) {
+                const parent=state.jobs.find(job=>job.id===predecessor);
+                if(parent?.project_id!=='courier'||!parent.capacity_released_at||
+                    parent.assigned_machine_id!==courierMachine.value||
+                    !(parent.status==='finished'&&parent.checkpoint_ready_verified===true||
+                      parent.status==='stopped'&&parent.checkpoint_stop_verified===true))
+                    throw Error('Courier distributed continuation requires a released, verified checkpoint on the original learner machine.');
+            }
+            const role=selected.parameters.shared_policy===true
+                ?' shared-policy collectors':' independent PPO workers';
+            const fixedSlots=matching&&selected.parameters.shared_policy===true&&
+                budgets.some(item=>state.machines.some(machine=>
+                    machine.id===item.machine_id&&machine.courier_lineage_slots?.length>0));
+            if(!confirm('Reserve a Courier learner with '+budgets.length+role+
+                '? All machine CPU/RAM/GPU claims are atomic; '+
+                'no process will Start without a separate native approval.'+
+                (fixedSlots
+                    ?' Each collector remains bound to its chosen machine and approved PPO slot listener.'
+                    :matching
+                        ?' Budgets may be matched across the selected machines.'
+                        :'')))return;
+            const result=await action('hub/distributed/courier',{
+                confirm_queue:true,
+                learner:{configuration_id:selected.id,expected_revision:selected.revision,
+                    machine_id:courierMachine.value,resources,
+                    metric_selection:selectedJobMetrics(),
+                    ...(predecessor?{continuation_of_job_id:predecessor}:{})},
+                ...budgetRequest,
+            });
+            courierFeedback.textContent='Reserved '+result.lineages.length+
+                ' remote PPO lineages and learner '+result.learner.id+
+                '. All '+result.leases.length+' independent native leases await receipts.'+
+                (matching?matchedWorkerSummary(result.leases):'');
+            await reload();
+        }catch(error){courierFeedback.textContent=String(error.message||error);}
+    });
+    courierPanel.append(courierLegend,courierMachineLabel,
+        courierBudgetsLabel,courierMatch.label,courierDetails,courierQueue,courierFeedback);
+    distributedPanel.insertAdjacentElement('afterend',courierPanel);
+    let courierBudgetHost=null;
+    function renderCourierDistributedGroup() {
+        if(!state)return;
+        const selected=state.configurations.find(c=>
+            c.project_id==='courier'&&c.id===$('hub-job-configuration').value);
+        courierPanel.hidden=project!=='courier'||
+            selected?.parameters?.remote_lineages!==true;
+        if(courierPanel.hidden)return;
+        const shared=selected.parameters.shared_policy===true;
+        courierLegend.textContent=shared?'Courier shared-policy learner and collectors'
+            :'Courier learner and independent PPO workers';
+        const prior=courierMachine.value;
+        const machines=state.machines.filter(machine=>
+            machine.status==='connected'&&machine.local_executor_enabled&&
+            machine.native_preflight_passed&&
+            machine.installed_projects?.includes('courier')&&
+            machine.courier_remote_lineage_endpoints?.length&&
+            (!shared||machine.courier_shared_policy_maps>0));
+        courierMachine.replaceChildren(...machines.map(machine=>new Option(
+            (machine.name||machine.id)+' ('+machine.id+') · '+
+                machine.courier_remote_lineage_endpoints.length+' approved endpoints',machine.id)));
+        if(machines.some(machine=>machine.id===prior))courierMachine.value=prior;
+        const machine=machines.find(item=>item.id===courierMachine.value);
+        const endpoints=machine?.courier_remote_lineage_endpoints||[];
+        // Each separately leased shared-policy collector can use its own
+        // private slot listener and exclusive GPU on the learner machine.
+        // The coordinator proves physical identity at native Start.
+        const colocated=shared&&machine?.courier_lineage_subset===true&&
+            machine.gpus?.length>=2&&
+            ['courier','courier_lineage'].every(project=>
+                machine.gpu_projects?.includes(project));
+        const activeCourierPort=(host,endpoint)=>(state.jobs||[]).some(job=>{
+            if(job.project_id!=='courier_lineage'||job.assigned_machine_id!==host.id||
+                ['cancelled','finished','stopped'].includes(job.status))return false;
+            // A failed collector's private port becomes selectable only
+            // after the native terminal lease is explicitly released.
+            if(job.status==='failed'&&job.capacity_released_at&&
+                state.reservations?.some(lease=>lease.id===job.lease_id&&
+                    lease.job_id===job.id&&lease.machine_id===host.id&&
+                    lease.status==='released'&&lease.released_at))return false;
+            const learner=state.jobs.find(parent=>
+                parent.id===job.frozen_parameters?.learner_job_id&&
+                parent.project_id==='courier');
+            const plan=learner?.frozen_parameters?.remote_lineage_plan;
+            const first=learner?.frozen_parameters?.shared_policy===true?0:
+                Number.isSafeInteger(learner?.frozen_parameters?.workers)&&
+                Array.isArray(plan)&&learner.frozen_parameters.workers>plan.length
+                    ?learner.frozen_parameters.workers-plan.length:null;
+            const index=first===null?null:job.frozen_parameters?.slot-first;
+            const frozen=Array.isArray(plan)&&Number.isSafeInteger(index)&&
+                index>=0&&index<plan.length?plan[index]?.endpoint:null;
+            const listeners=host.courier_lineage_slots||[];
+            const advertised=(listeners.length
+                ?listeners.find(item=>item.slot===
+                    (job.frozen_parameters?.listener_slot??job.frozen_parameters?.slot))?.endpoint
+                :host.courier_lineage_endpoint)||null;
+            // A mapped listener changing while its native job remains
+            // assigned cannot make the original bound port available.
+            return !frozen||!advertised||advertised!==frozen||
+                frozen===endpoint;
+        });
+        const match=endpoints.map((endpoint,i)=>state.machines.filter(host=>
+            host.status==='connected'&&!activeCourierPort(host,endpoint)&&
+            (host.id!==machine.id||colocated)&&
+            (shared&&host.courier_lineage_slots?.length
+                ?host.courier_lineage_slots.some(listener=>
+                    listener.endpoint===endpoint&&
+                    listener.max_shards===machine.courier_remote_max_shards?.[i])
+                :host.courier_lineage_endpoint===endpoint&&
+                    host.courier_lineage_max_shards===machine.courier_remote_max_shards?.[i])&&
+            host.courier_lineage_key_fingerprint===machine.courier_remote_key_fingerprint&&
+            (!shared||host.courier_shared_policy_collector===true)&&
+            host.installed_projects?.includes('courier_lineage')));
+        const subset=machine?.courier_lineage_subset===true;
+        courierMatch.label.hidden=!subset;
+        const population=selected.parameters.workers;
+        const capacity=shared?machine?.courier_shared_policy_maps:Math.max(0,population-1);
+        // PPO slots are logical and contiguous. An explicitly chosen
+        // endpoint can be any still-approved free native listener, so
+        // a second experiment need not wait for listener zero to free.
+        const slotPinned=shared&&match.some(hosts=>hosts.some(host=>
+            host.courier_lineage_slots?.length>0));
+        const entries=match.flatMap((hosts,index)=>
+            hosts.length===1?[{host:hosts[0],endpoint:endpoints[index]}]:[]);
+        // Only the selected map/lineage population is being reserved.
+        // Extra advertised listeners are not additional resource claims.
+        const selectedEntries=entries.slice(0,capacity);
+        const available=selectedEntries.map(entry=>entry.host);
+        courierMatch.label.lastChild.textContent=slotPinned
+            ?' Bind each budget to its selected approved endpoint and machine'
+            :' Match budgets across the selected machines';
+        const budgetHost=machine?machine.id+':'+subset+':'+shared+':'+colocated+
+            ':'+selectedEntries.map(entry=>entry.host.id+'@'+entry.endpoint).join(';'):null;
+        if(courierBudgetHost!==budgetHost) {
+            const local=colocated&&available.some(host=>host.id===machine.id);
+            const repeated=available.some(host=>
+                available.filter(other=>other.id===host.id).length>1);
+            // Selected-machine mode is mandatory for a local collector:
+            // plain remote endpoint budgets cannot authorize self-hosting.
+            courierMatch.input.checked=Boolean(local||repeated||slotPinned);
+            courierBudgetHost=subset&&!available.length?null:budgetHost;
+            courierBudgets.value=JSON.stringify(
+                selectedEntries.map(({host:worker,endpoint})=>
+                    ({...(subset?{machine_id:worker.id}:{}),
+                        ...(slotPinned?{endpoint}:{}),cpus:2,ram_mb:4096,
+                        ...(subset&&(worker.id===machine.id||
+                            available.filter(other=>other.id===worker.id).length>1||
+                            worker.courier_lineage_slots?.length&&
+                                worker.gpu_projects?.includes('courier_lineage')&&
+                                worker.gpus?.length)
+                            ?{gpu_count:1,gpu_mode:'exclusive'}
+                            :{gpu_count:0})})),
+                null,2);
+        }
+        const localCount=available.filter(host=>host.id===machine?.id).length;
+        const remoteIds=available.filter(host=>host.id!==machine?.id)
+            .map(host=>host.id);
+        const localCapacity=localCount<=1||
+            colocated&&machine?.courier_lineage_slots?.length>=localCount&&
+            machine?.gpus?.length>localCount;
+        const remoteCapacity=[...new Set(remoteIds)].every(id=>{
+            const members=available.filter(host=>host.id===id);
+            if(members.length<=1)return true;
+            const host=members[0];
+            return shared&&host.gpu_projects?.includes('courier_lineage')&&
+                host.gpus?.length>=members.length&&
+                host.courier_lineage_slots?.length>=members.length;
+        });
+        const needsRemotePpoSettings=!shared&&
+            Object.keys(selected.parameters.design_overrides||{}).some(key=>
+                key.startsWith('training.'));
+        const ppoReady=!needsRemotePpoSettings||
+            machine?.courier_remote_ppo_settings===true&&
+            available.every(host=>host.courier_lineage_remote_ppo_settings===true);
+        const ready=Boolean(machine&&state.projects.some(p=>p.id==='courier_lineage')&&
+            capacity>0&&available.length>0&&localCapacity&&remoteCapacity&&ppoReady&&
+            (subset||capacity>=endpoints.length&&available.length===endpoints.length));
+        courierQueue.disabled=!ready;
+        courierDetails.textContent=ready
+            ?'Available '+(shared?'collectors':'PPO workers')+': '+available.map(host=>host.id).join(', ')+
+                (subset?'. Keep the machines you want to allocate.':'. Supply one budget per worker in the listed order.')+
+                (shared
+                    ?' Each collector gets at least one whole map.'+
+                        (slotPinned?' Several collectors may share a GPU-capable host'+
+                            ' only with unique slot listeners and independent exclusive GPUs.'+
+                            ' Keep slot-to-machine binding checked for repeated hosts.':'')
+                    :' Leave at least one PPO lineage on the learner.')
+            :!ppoReady
+                ?'The selected Courier learner or remote workers lack frozen PPO-settings support. Install the updated Courier backend on each host, then restart the native agents.'
+                :'Register the Courier lineage project and connect the approved workers.';
+    }
+    courierMachine.addEventListener('change',renderCourierDistributedGroup);
     let distributedBudgetHost=null;
     function renderDistributedGroup() {
+        renderCourierDistributedGroup();
         if(!state)return;
         const selected=state.configurations.find(c=>
             c.project_id==='tinybrains'&&c.id===$('hub-job-configuration').value);
@@ -5412,41 +8861,227 @@ document.addEventListener('DOMContentLoaded', () => {
         if(distributedPanel.hidden)return;
         const prior=distributedMachine.value;
         const machines=state.machines.filter(m=>m.status==='connected'&&
-            m.agent_platform==='linux'&&m.local_executor_enabled&&
-            m.native_preflight_passed&&m.tinybrains_profiles?.[selected.parameters.profile]===
+            ['linux','win32'].includes(m.agent_platform)&&
+            m.local_executor_enabled&&m.native_preflight_passed&&
+            m.tinybrains_profiles?.[selected.parameters.profile]===
                 selected.parameters.profile_sha256&&
             m.tinybrains_remote_rollout_profiles?.includes(selected.parameters.profile)&&
+            (selected.parameters.device!=='cpu'||m.tinybrains_remote_cpu_learner===true&&
+                m.tinybrains_cpu_fallback_profiles?.includes(selected.parameters.profile))&&
             m.tinybrains_remote_rollout_endpoints?.length);
         distributedMachine.replaceChildren(...machines.map(m=>new Option(
             (m.name||m.id)+' ('+m.id+') · '+
                 m.tinybrains_remote_rollout_endpoints.length+' collectors',m.id)));
         if(machines.some(m=>m.id===prior))distributedMachine.value=prior;
         const machine=machines.find(m=>m.id===distributedMachine.value);
-        if(distributedBudgetHost!==machine?.id) {
-            distributedBudgetHost=machine?.id||null;
-            distributedBudgets.value=JSON.stringify(
-                (machine?.tinybrains_remote_rollout_endpoints||[]).map(()=>
-                    ({cpus:2,ram_mb:4096,gpu_count:0,threads:2})),null,2);
-        }
         const endpoints=machine?.tinybrains_remote_rollout_endpoints||[];
-        const workers=endpoints.map(endpoint=>state.machines.filter(m=>
-            m.status==='connected'&&m.id!==machine.id&&
-            m.tinybrains_rollout_endpoint===endpoint&&
-            m.tinybrains_rollout_key_fingerprint===machine.tinybrains_remote_key_fingerprint&&
-            m.installed_projects?.includes('tinybrains_rollout')));
+        const subset=machine?.tinybrains_rollout_subset===true;
+        // A base-only worker is a candidate for installing a collector,
+        // never a ready collector. The exact listener is chosen only from
+        // this learner's approved remote endpoint list.
+        const pending=(state.tinybrains_preparations||[]).filter(p=>p.status==='pending');
+        const candidates=state.machines.filter(host=>
+            host.status==='connected'&&host.agent_enrolled&&
+            host.local_executor_enabled&&host.id!==machine?.id&&
+            !host.installed_projects?.includes('tinybrains_rollout'));
+        const oldHost=prepareHost.value,oldEndpoint=prepareEndpoint.value;
+        prepareHost.replaceChildren(...candidates.map(host=>
+            new Option(host.name+' ('+host.id+')',host.id)));
+        if(candidates.some(host=>host.id===oldHost))prepareHost.value=oldHost;
+        const used=new Set(pending.filter(p=>p.collector.machine_id===prepareHost.value)
+            .map(p=>p.collector.endpoint));
+        const permitted=endpoints.filter(endpoint=>!used.has(endpoint));
+        prepareEndpoint.replaceChildren(...permitted.map(endpoint=>
+            new Option(endpoint,endpoint)));
+        if(permitted.includes(oldEndpoint))prepareEndpoint.value=oldEndpoint;
+        preparePanel.hidden=!machine||!candidates.length||!permitted.length||
+            !machine.tinybrains_rollout_subset;
+        prepareQueue.disabled=preparePanel.hidden||!prepareHost.value||!prepareEndpoint.value;
+        preparationRows.replaceChildren();
+        for(const plan of (state.tinybrains_preparations||[]).slice(-12).reverse()) {
+            const line=document.createElement('div');
+            const job=plan.learner_job_id?' · learner '+plan.learner_job_id.slice(0,8):'';
+            line.append(document.createTextNode(
+                'TinyBrains '+plan.status+' · '+plan.collector.machine_id+
+                ' '+plan.collector.endpoint+job+
+                ' · '+plan.reason));
+            if(plan.status==='pending')
+                line.append(button('Cancel preparation',async()=>{
+                    if(!confirm('Cancel this unstarted TinyBrains queue request? Already installed software is retained.'))return;
+                    try {
+                        await action('hub/distributed/tinybrains/cancel-prepare',{
+                            preparation_id:plan.id,confirm_cancel:true,
+                        });await reload();
+                    }catch(error){prepareStatus.textContent=error.message;}
+                }));
+            preparationRows.append(line);
+        }
+        const offers=endpoints.map(endpoint=>({endpoint,hosts:state.machines.filter(host=>
+            host.status==='connected'&&host.id!==machine.id&&
+            (host.tinybrains_rollout_endpoint===endpoint||
+                host.tinybrains_rollout_slots?.some(slot=>slot.endpoint===endpoint))&&
+            host.tinybrains_rollout_key_fingerprint===machine.tinybrains_remote_key_fingerprint&&
+            host.installed_projects?.includes('tinybrains_rollout'))}));
+        const occupied=new Set(),uncertainHosts=new Set();
+        for(const job of state.jobs||[]) {
+            if(job.project_id!=='tinybrains_rollout'||!job.assigned_machine_id||
+                ['cancelled','finished','stopped'].includes(job.status)||
+                job.status==='failed'&&job.capacity_released_at)continue;
+            const host=state.machines.find(m=>m.id===job.assigned_machine_id);
+            const listener=host?.tinybrains_rollout_slots?.find(item=>
+                item.slot===job.frozen_parameters?.listener_slot);
+            const endpoint=job.rollout_endpoint||listener?.endpoint||
+                host?.tinybrains_rollout_endpoint;
+            if(endpoint)occupied.add(endpoint);
+            else uncertainHosts.add(job.assigned_machine_id);
+        }
+        const free=offers.filter(item=>item.hosts.length===1&&
+            !occupied.has(item.endpoint)&&!uncertainHosts.has(item.hosts[0].id));
+        // A single distributed run still has one collector per remote host.
+        // Two independent runs may use different idle ports on that host.
+        const chosen=new Set();
+        const available=free.filter(item=>{
+            const id=item.hosts[0].id;
+            if(chosen.has(id))return false;
+            chosen.add(id);
+            return true;
+        });
+        const slotsUsed=available.some(item=>
+            item.hosts[0].tinybrains_rollout_slots?.length);
+        distributedMatch.label.hidden=!subset||slotsUsed;
+        if(distributedMatch.label.hidden)distributedMatch.input.checked=false;
+        const budgetHost=machine?machine.id+':'+subset+':'+
+            available.map(item=>item.endpoint).join('|'):null;
+        if(distributedBudgetHost!==budgetHost) {
+            distributedMatch.input.checked=false;
+            distributedBudgetHost=budgetHost;
+            distributedBudgets.value=JSON.stringify((subset?available:offers).map(item=>{
+                const host=item.hosts[0];
+                if(!host)return {cpus:2,ram_mb:4096,gpu_count:0};
+                return {
+                    ...(subset?{machine_id:host.id}:{}),
+                    ...(slotsUsed?{endpoint:item.endpoint}:{}),
+                    cpus:2,ram_mb:4096,gpu_count:0,
+                };
+            }),null,2);
+        }
         const ready=Boolean(machine&&
             state.projects.some(p=>p.id==='tinybrains_rollout')&&
-            workers.every(m=>m.length===1)&&
-            new Set(workers.map(m=>m[0]?.id)).size===workers.length);
+            available.length>0&&(subset||available.length===endpoints.length));
         distributedQueue.disabled=!ready;
         distributedDetails.textContent=ready
-            ?'Approved collectors: '+workers.map((items,i)=>
-                endpoints[i]+' on '+items[0].id).join('; ')+
-                '. Modify each CPU/RAM budget, its independent threads setting, or request an exclusive CUDA GPU.'
-            :'Register the tinybrains_rollout project and connect one distinct, matching worker for every approved endpoint.';
+            ?'Available collectors: '+available.map(item=>
+                item.hosts[0].id+' ['+item.endpoint+']').join(', ')+
+                (subset?'. One free listener per selected machine is proposed. ':
+                    '. All approved endpoints must be reserved. ')+
+                'Adjust CPU/RAM/GPU budgets; different learners can reserve other free ports on the same host.'+
+                ' '+available.map(({hosts:[host]})=>{
+                    const gpuIds=(host.gpus||[]).map(g=>g.id);
+                    return host.gpu_projects?.includes('tinybrains_rollout')&&gpuIds.length
+                        ?host.id+' GPU inference available: '+gpuIds.join(', ')+
+                            ' (set gpu_count: 1, gpu_mode: "exclusive"'+
+                            (host.gpu_shared_projects?.includes('tinybrains_rollout')
+                                ?' or gpu_mode: "shared", gpu_vram_mb: 2048, gpu_compute_pct: 50'
+                                :'')+' and optionally gpus: ["'+gpuIds[0]+'"]).'
+                        :host.id+' currently has no eligible configured TinyBrains collector GPU.';
+                }).join(' ')
+            :'No eligible unreserved TinyBrains collector listener. Check the rollout project, enrolled workers, endpoints and existing group reservations.';
     }
-    $('hub-job-configuration').addEventListener('change',renderDistributedGroup);
+    function duplicateJobIntoTrain(job,workers) {
+        const saved=state.configurations.find(c=>c.id===job.configuration_id&&
+            c.revision===job.configuration_revision&&c.project_id===job.project_id);
+        if(!saved)
+            throw Error('The original configuration revision is no longer available. Restore its frozen configuration in Design before duplicating.');
+        if(job.continuation_of_job_id||job.after_job_id||job.candidate_selection)
+            throw Error('This job belongs to a checkpoint or dependency sequence. Select a valid new predecessor explicitly instead of duplicating its lineage.');
+        const resourceCopy=member=>{
+            const budget=structuredClone(member.resources);
+            const lease=state.reservations.find(l=>l.id===member.lease_id);
+            if(budget.gpu_count&&lease?.resources?.gpus?.length===budget.gpu_count)
+                budget.gpus=lease.resources.gpus.slice();
+            return budget;
+        };
+        const learner=job.assigned_machine_id;
+        let budgets=null,matching=false,distributed=null;
+        if(job.distributed_rollout_managed||job.distributed_courier_managed) {
+            distributed=job.project_id==='tinybrains'?'tinybrains':'courier';
+            const host=state.machines.find(m=>m.id===learner);
+            if(!host||!workers.length||workers.some(w=>!w.assigned_machine_id))
+                throw Error('Original distributed machine assignments are unavailable.');
+            const subset=distributed==='tinybrains'?host.tinybrains_rollout_subset:
+                host.courier_lineage_subset;
+            const shared=job.frozen_parameters?.shared_policy===true;
+            budgets=workers.map(worker=>{
+                const machine=state.machines.find(m=>m.id===worker.assigned_machine_id);
+                if(!machine)throw Error('Original collector machine is no longer registered.');
+                const budget=resourceCopy(worker);
+                if(subset)budget.machine_id=worker.assigned_machine_id;
+                if(distributed==='tinybrains') {
+                    budget.threads=worker.frozen_parameters.threads;
+                    const endpoint=worker.rollout_endpoint||
+                        machine.tinybrains_rollout_slots?.find(slot=>slot.slot===
+                            worker.frozen_parameters.listener_slot)?.endpoint||
+                        machine.tinybrains_rollout_endpoint;
+                    if(subset&&endpoint)budget.endpoint=endpoint;
+                }else if(shared&&subset) {
+                    const endpoint=machine.courier_lineage_slots?.find(slot=>slot.slot===
+                        (worker.frozen_parameters.listener_slot??worker.frozen_parameters.slot))?.endpoint;
+                    if(endpoint){budget.endpoint=endpoint;matching=true;}
+                }
+                if(distributed==='courier'&&worker.assigned_machine_id===learner)
+                    matching=true;
+                return budget;
+            });
+        }
+        $('hub-job-configuration').value=saved.id;
+        $('hub-job-predecessor').value='';
+        $('hub-job-run-name').value='';
+        $('hub-job-resources').value=JSON.stringify(resourceCopy(job),null,2);
+        const availableMachine=[...$('hub-job-machine').options].some(o=>o.value===learner);
+        if(availableMachine)$('hub-job-machine').value=learner;
+        jobMetricChoicesByProject.set(project,new Set(job.metric_selection||[]));
+        renderJobMetricSelection();
+        renderCurriculumChoice();
+        renderDistributedGroup();
+        if(distributed) {
+            const select=distributed==='tinybrains'?distributedMachine:courierMachine;
+            if(![...select.options].some(o=>o.value===learner))
+                throw Error('Original learner is not currently eligible. Select an available learner first.');
+            select.value=learner;
+            renderDistributedGroup();
+            if(distributed==='tinybrains'){
+                distributedMatch.input.checked=false;
+                distributedBudgets.value=JSON.stringify(budgets,null,2);
+            }else{
+                courierMatch.input.checked=matching;
+                courierBudgets.value=JSON.stringify(budgets,null,2);
+            }
+        }
+        selectTab('train');
+        feedback('hub-job-message','Job copied into the Train form. Review the original configuration, checkpoint import, machine and budgets, then queue a new independent run. No job was started.');
+        $('hub-job-resources').scrollIntoView({block:'center'});
+    }
+    $('hub-job-configuration').addEventListener('change',()=>{
+        renderJobMetricSelection();
+        renderDistributedGroup();
+    });
+    $('hub-job-resources').addEventListener('change',renderJobMetricSelection);
     distributedMachine.addEventListener('change',renderDistributedGroup);
+    prepareHost.addEventListener('change',renderDistributedGroup);
+    const curriculumChoiceLabel=document.createElement('label');
+    const curriculumChoice=document.createElement('input');
+    curriculumChoice.type='checkbox';
+    curriculumChoiceLabel.className='hub-curriculum-choice';
+    curriculumChoiceLabel.append(curriculumChoice,
+        document.createTextNode(' Curriculum transition: keep the trained model while changing compatible Courier environment settings (food, energy, map size and difficulty). Policy-interface changes require migration.'));
+    $('hub-job-predecessor').closest('label')
+        .insertAdjacentElement('afterend',curriculumChoiceLabel);
+    function renderCurriculumChoice() {
+        curriculumChoiceLabel.hidden=project!=='courier'||
+            !$('hub-job-predecessor').value;
+        if(curriculumChoiceLabel.hidden)curriculumChoice.checked=false;
+    }
+    $('hub-job-predecessor').addEventListener('change',renderCurriculumChoice);
     $('hub-job-queue').addEventListener('click',async()=>{
         const selected=state?.configurations.find(c=>
             c.project_id===project&&c.id===$('hub-job-configuration').value);
@@ -5455,6 +9090,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const predecessor=$('hub-job-predecessor').value;
+        const curriculum=Boolean(predecessor&&project==='courier'&&
+            curriculumChoice.checked);
         const parent=state.jobs.find(j=>j.id===predecessor);
         const prequeue=Boolean(parent&&!parent.capacity_released_at);
         if(project==='tinybrains') {
@@ -5486,11 +9123,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 'Physical native collector model handoffs use a verified source, not a normal predecessor stage.');
             return;
         }
-        if(!confirm('Freeze '+selected.name+' revision '+selected.revision+
+        if(!confirm(newLineageWarning(predecessor,selected.parameters)+
+            'Freeze '+selected.name+' revision '+selected.revision+
+            ($('hub-job-run-name').value.trim()
+                ?' as run "'+$('hub-job-run-name').value.trim()+'"':'')+
             (nativeCollectorSource
                 ?' with verified native model '+nativeCollectorSource.slice(-8)
-                :predecessor?' as a continuation of the selected predecessor':
-                    ' as a new job')+
+                :curriculum?' as a curriculum transition from the selected predecessor':
+                predecessor?' as an exact continuation of the selected predecessor':
+                    ' as a new independent run')+
             '? '+(prequeue
                 ?'This stage remains blocked until its predecessor FINISHES and capacity is released. Stops and failures do not auto-advance it. '
                 :'')+
@@ -5500,10 +9141,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const job=await action('hub/jobs',{
                 configuration_id:selected.id,expected_revision:selected.revision,
                 resources:JSON.parse($('hub-job-resources').value),
-                ...(metrics.length?{metric_selection:metrics}:{}),
+                ...($('hub-job-run-name').value.trim()
+                    ?{run_name:$('hub-job-run-name').value.trim()}:{}),
+                // [] explicitly suppresses inherited defaults for this job.
+                metric_selection:metrics,
                 ...(predecessor?{continuation_of_job_id:predecessor}:{}),
+                ...(curriculum?{continuation_mode:'curriculum'}:{}),
                 ...(nativeCollectorSource?{model_source_job_id:nativeCollectorSource}:{}),
             });
+            $('hub-job-run-name').value='';
             feedback('hub-job-message',job.status==='waiting_predecessor'
                 ?'Prequeued stage '+job.id+'. It cannot claim capacity or start until the predecessor finishes and releases capacity.'
                 :'Queued job '+job.id+'. Coordinate capacity before explicitly authorizing native execution.');
