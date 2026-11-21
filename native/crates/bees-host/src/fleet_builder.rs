@@ -885,7 +885,6 @@ fn mixed_fleet_offsets(
     let fighters = total - support - specialist;
     let fighter_kind = if side == 0 { 21 } else { 13 };
     let support_kind = mix.support_type(side);
-    let specialist_kind = mix.specialist_type(side);
     let fighter_size = catalog.sprite_size(fighter_kind)
         .ok_or_else(|| invalid("source fighter has no sprite extents"))?;
     let home = if side == 0 { -75.0 } else { 75.0 };
@@ -901,8 +900,9 @@ fn mixed_fleet_offsets(
         .chain(1..fighters)
     {
         let kind = if index >= fighters + specialist { support_kind }
-            else if index >= fighters { specialist_kind }
-            else { fighter_kind };
+            else if index >= fighters {
+                mix.specialist_type_at(side, index - fighters)
+            } else { fighter_kind };
         let size = catalog.sprite_size(kind)
             .ok_or_else(|| invalid("source mixed fleet has no sprite extents"))?;
         let half_x = size.x * 0.5;
