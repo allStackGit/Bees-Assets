@@ -234,6 +234,24 @@ struct CampaignTacticsEdit {
     tactics: NativeSavedSquadTactics,
 }
 
+/// Rename the durable squad identity, not the transient Stage SquadLifetime.
+/// Career names survive rematches and do not enter the physical game digest.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignSquadNameEdit {
+    campaign_id: String,
+    side: i32,
+    saved_squad_id: i64,
+    name: String,
+}
+
+fn valid_saved_squad_name(name: &str) -> bool {
+    (1..=32).contains(&name.len()) &&
+    name.trim() == name &&
+    name.bytes().all(|byte|
+        byte.is_ascii_alphanumeric() || matches!(byte, b' ' | b'-' | b'_'))
+}
+
 /// Reassignment changes only who commands a purchased persistent hull.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -282,6 +300,7 @@ pub struct CampaignProgress<'a> {
     awarded_saved_squad_ids: HashSet<i64>,
     created_squads: Vec<NativeCreatedSquad>,
     retired_squad_ids: HashSet<i64>,
+    squad_names: HashMap<i64, String>,
     tactics: Vec<NativeSavedSquadTactics>,
     tactics_edits: u64,
     transfer_count: u64,
@@ -436,6 +455,10 @@ impl CampaignProgress<'_> {
         self.retired_squad_ids.contains(&saved_squad_id)
     }
 
+    pub fn squad_name(&self, saved_squad_id: i64) -> Option<&str> {
+        self.squad_names.get(&saved_squad_id).map(String::as_str)
+    }
+
     pub fn created_squads_for_side(&self, side: i32) -> Vec<NativeCreatedSquad> {
         self.created_squads.iter().copied().filter(|squad|
             squad.side == side).collect()
@@ -480,9 +503,13 @@ impl CampaignProgress<'_> {
         ids.sort_unstable();
         ids.dedup();
         ids.into_iter().map(|id| {
+            let label = match self.squad_name(id) {
+                Some(name) => format!("Squad #{id} {name}"),
+                None => format!("Squad #{id}"),
+            };
             if let Some(squad) = self.squads.get(&id) {
                 format!(
-                    "Squad #{id} S{} W{}/{} Lost{} Hit{} Taken{} Kill{}",
+                    "{label} S{} W{}/{} Lost{} Hit{} Taken{} Kill{}",
                     squad.side, squad.battles_won, squad.battles_fought,
                     squad.ships_lost, squad.damage_done, squad.damage_received,
                     squad.kills,
@@ -492,7 +519,7 @@ impl CampaignProgress<'_> {
             } else {
                 let side = self.created_squads.iter().find(|squad|
                     squad.saved_squad_id == id).map_or(0, |squad| squad.side);
-                format!("Squad #{id} S{side}  Created - no completed battles yet")
+                format!("{label} S{side}  Created - no completed battles yet")
             }
         }).collect()
     }
@@ -695,6 +722,32 @@ impl BattleCatalog {
             to_saved_squad_id,
         })?;
         Ok(NativePurchasedShip { saved_squad_id: to_saved_squad_id, ..ship })
+    }
+
+    /// One immutable career rename. Caller verifies the source squad
+    /// against the selected playable missions before committing.
+    pub fn name_saved_squad(
+        &self, progress: &CampaignProgress<'_>, output: &Path,
+        side: i32, saved_squad_id: i64, name: &str,
+    ) -> io::Result<()> {
+        let campaign_id = self.campaign_id.as_deref()
+            .ok_or_else(|| invalid("squad naming requires a native campaign"))?;
+        if !matches!(side, 1 | 2) || saved_squad_id <= 0 ||
+            progress.is_retired_saved_squad(saved_squad_id) ||
+            !valid_saved_squad_name(name) ||
+            progress.squad_name(saved_squad_id) == Some(name) ||
+            progress.squads.get(&saved_squad_id)
+                .is_some_and(|record| record.side != side) ||
+            progress.created_squads.iter().any(|record|
+                record.saved_squad_id == saved_squad_id && record.side != side)
+        {
+            return Err(invalid("squad rename needs a live, owned SavedSquad and printable name"));
+        }
+        commit_campaign_edit(output, "squad-name-", "name.json",
+            &CampaignSquadNameEdit {
+                campaign_id: campaign_id.to_owned(),
+                side, saved_squad_id, name: name.to_owned(),
+            })
     }
 
     /// Append a player-owned SavedSquad without borrowing a transient
@@ -1229,6 +1282,30 @@ impl BattleCatalog {
             progress.authored_transfer_count = progress.authored_transfer_count.checked_add(1)
                 .ok_or_else(|| invalid("authored squad edit counter overflow"))?;
         }
+        // Renames are presentation-only career history, kept separately
+        // from tactics, physical source offsets, and past mission receipts.
+        for directory in numbered_directories(output, "squad-name-")? {
+            let bytes = match fs::read(directory.join("name.json")) {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            let edit: CampaignSquadNameEdit = serde_json::from_slice(&bytes)
+                .map_err(|error| invalid(format!("invalid saved squad name: {error}")))?;
+            if edit.campaign_id != *campaign ||
+                !matches!(edit.side, 1 | 2) || edit.saved_squad_id <= 0 ||
+                !valid_saved_squad_name(&edit.name) ||
+                progress.squad_name(edit.saved_squad_id) == Some(edit.name.as_str()) ||
+                progress.squads.get(&edit.saved_squad_id)
+                    .is_some_and(|record| record.side != edit.side) ||
+                progress.created_squads.iter().any(|record|
+                    record.saved_squad_id == edit.saved_squad_id &&
+                    record.side != edit.side)
+            {
+                return Err(invalid("invalid or stale saved squad name receipt"));
+            }
+            progress.squad_names.insert(edit.saved_squad_id, edit.name);
+        }
         // Retirement is replayed after every fleet assignment. Because
         // retirement is allowed only for an empty created squad, later
         // valid transfers cannot depend on a removed identity. Keep an
@@ -1423,6 +1500,15 @@ impl BattleCatalog {
                 let mut ids = progress.retired_squad_ids.iter().copied().collect::<Vec<_>>();
                 ids.sort_unstable();
                 ids
+            },
+            "named_saved_squads": {
+                let mut ids = progress.squad_names.keys().copied().collect::<Vec<_>>();
+                ids.sort_unstable();
+                ids.into_iter().map(|id| json!({
+                    "saved_squad_id": id,
+                    "name": progress.squad_names[&id],
+                    "retired": progress.retired_squad_ids.contains(&id),
+                })).collect::<Vec<_>>()
             },
             "saved_squad_tactics_edits": progress.tactics_edits,
             "saved_squad_tactics": progress.tactics.iter().map(|entry| json!({
