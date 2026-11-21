@@ -73,6 +73,7 @@ use crate::durable_connection::DurableHiveMindConnection;
 
 mod native_game_scene;
 mod saved_squad_formation;
+mod native_squad_merge;
 pub use saved_squad_formation::{NativeSavedSquadFormation, NativeSquadFormationKind};
 
 const SNAPSHOT_VERSION: u32 = 35;
@@ -673,6 +674,10 @@ pub struct NativeLevelLayout {
     pub translate_squads: Vec<NativeSquadTranslation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub clone_squads: Vec<NativeSquadClone>,
+    /// Setup-time source squad composition. Merged physical ships share
+    /// one real command owner for game input, scripted AI and simulation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub merge_squads: Vec<NativeSquadMerge>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub remove_squads: Vec<i64>,
 }
@@ -728,6 +733,16 @@ pub struct NativeSquadClone {
     /// Legacy layout clones retain their original zero-fleet-value behavior.
     #[serde(default)]
     pub count_as_fleet_value: bool,
+}
+
+/// Merge genuine non-special, non-policy game squad members into one
+/// existing command owner after source squad cloning. Physical ships,
+/// FleetShip identities and weapon configurations remain unchanged.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeSquadMerge {
+    pub primary_squad_item_id: i64,
+    pub merged_squad_item_ids: Vec<i64>,
 }
 
 /// Source MapData.Location is cosmetic soundtrack metadata. It never
@@ -2165,7 +2180,8 @@ impl NativePhysicalScene {
         if layout.remove_static_ids.is_empty() && layout.add_static_boxes.is_empty() &&
             layout.add_map_borders.is_empty() &&
             layout.add_static_polygons.is_empty() && layout.translate_squads.is_empty() &&
-            layout.clone_squads.is_empty() && layout.remove_squads.is_empty()
+            layout.clone_squads.is_empty() && layout.merge_squads.is_empty() &&
+            layout.remove_squads.is_empty()
         {
             return Ok(());
         }
@@ -2184,6 +2200,7 @@ impl NativePhysicalScene {
         if !self.source_policy_bindings.is_empty() && (
             !layout.translate_squads.is_empty() ||
             !layout.clone_squads.is_empty() ||
+            !layout.merge_squads.is_empty() ||
             !layout.remove_squads.is_empty()
         ) {
             return Err(invalid(
@@ -2546,6 +2563,7 @@ impl NativePhysicalScene {
             }
             self.source_squads.push(squad);
         }
+        self.merge_native_layout_squads(&layout.merge_squads)?;
         Ok(())
     }
 
