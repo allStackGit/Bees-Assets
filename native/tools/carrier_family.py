@@ -51,9 +51,19 @@ def source_carrier_groups(scene: dict, parent: dict, *, inert: bool = False):
         members = squad_members(squad)
         if not any(member in children for member in members):
             continue
+        # The Rust campaign installer accepts live Carrier decks only
+        # under the original player command owner, and reserved decks only
+        # as inactive (non-player) templates. Do not publish a shop class
+        # that the playable native campaign cannot actually construct.
         if (squad["side"] != parent["side"] or
                 squad.get("saved_squad_id") not in (None, 0) or
                 not squad.get("is_carrier_squad") or
+                squad.get("user_controlled") is not (not inert) or
+                (inert and (squad.get("can_accept_input") or
+                            squad.get("locked_on") or
+                            squad.get("hotkey_number") is not None or
+                            squad.get("hivemind") is not None)) or
+                len(set(members)) != len(members) or
                 not all(member in children for member in members)):
             return None
         hulls = [children.pop(member) for member in members]
