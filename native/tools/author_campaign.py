@@ -141,6 +141,11 @@ def neptune_production_waves_match_source(scene: dict, level: dict) -> bool:
         if when != due:
             return False
         actual = by_second[when]
+        # The original repeated timer still calls its dialogue when
+        # CurrentShips has no matching unused SavedSquad. These
+        # physical-empty arrivals need no escalating class template.
+        if not actual:
+            continue
         if index == 3:
             # At 480 seconds Unity prefixes all surviving veteran squads,
             # then asks for its ordinary escalating formation.
