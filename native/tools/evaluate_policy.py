@@ -357,7 +357,8 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     # authoritative. Otherwise a fixed holdout may silently measure another
     # environment while its run.json and policy manifest hashes still match.
     check_native_input_dependencies({"source_dependencies": source_dependencies})
-    check_native_model_dependencies(model_dependencies)
+    if native_manifest_model_dependencies(manifest, model_store) != model_dependencies:
+        raise ValueError("native evaluation model paths changed during the holdout")
     receipt = {
         "schema_version": 1, "kind": "native_policy_evaluation_complete",
         "source_run_config": str(source_path), "source_run_config_sha256": source_sha,
