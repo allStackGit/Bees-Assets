@@ -6495,6 +6495,27 @@ fn run_battle(
         }
         if let Some(dialogue) = level.campaign_dialogue {
             let player_side = dialogue.player_side();
+            // Uranus II does not install its Bee-elimination victory
+            // trigger until the 600-second sixth wave has fired. Its
+            // shared terminal therefore releases that gate on the next
+            // completed fixed step. Reject a playable mission whose
+            // configured round budget would stop before that callback.
+            if matches!(dialogue,
+                bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusDefensive { .. })
+            {
+                let last_admission = (600.0_f64 /
+                    f64::from(source.fixed_dt_seconds)).floor() + 1.0;
+                let required = last_admission + 1.0;
+                if !required.is_finite() || required < 1.0 ||
+                    required >= u64::MAX as f64 ||
+                    required as u64 > config.max_rounds
+                {
+                    return Err(invalid(format!(
+                        "Uranus II needs at least {} fixed rounds to reach its final wave and victory trigger; max_rounds is {}",
+                        required as u64, config.max_rounds,
+                    )).into());
+                }
+            }
             if !single_level || !sides.contains(&player_side) ||
                 mission.is_some_and(|mission| mission.player_side != player_side) ||
                 !source.source_squads.iter().any(|squad|
