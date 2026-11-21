@@ -98,5 +98,28 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
             ("Emilia", "Sorry..."),
             ("Alejandra", "We'll join your formation shortly, commander."),
         ],
+        CampaignCue::NeptunePressingForwardBriefing => &[
+            ("Samuel", "It's time to break through this blockade, commander. Use everything at your disposal."),
+        ],
+        CampaignCue::NeptunePressingForwardVictory => &[
+            ("Samuel", "Great work, commander! We're free to travel to Uranus."),
+            ("Marco", "That was a tough fight, commander, you did well."),
+            ("Yoshiko", "We showed those bee losers who the real fighters are!"),
+            ("Oviya", "Don't get too cocky now, Yoshiko. Let's focus on what's next."),
+        ],
+        CampaignCue::NeptunePressingForwardDefeat { has_factory: false } => &[
+            ("Samuel", "Commander, we've lost contact with all our forces. What do we do now? The bees from Pluto are catching up."),
+            ("Oviya", "The fight diverted forces from elsewhere in the blockade. We can escape if we move quickly!"),
+            ("Samuel", "Full speed ahead!"),
+        ],
+        CampaignCue::NeptunePressingForwardDefeat { has_factory: true } => &[
+            ("Samuel", "Commander, we've lost contact with all our forces. What do we do now? The bees from Pluto are catching up."),
+            ("Oviya", "The fight diverted forces from elsewhere in the blockade. We can escape if we move quickly!"),
+            ("Marco", "Those Factories are slow and defenseless. Leave them behind."),
+            ("Wesley", "Now hold on a second! Those ships have already proven lots of shareholder val-"),
+            ("Yoshiko", "He's right, Wes, if they can't fight and they can't move they won't make it!"),
+            ("Oviya", "Agreed. Now move!"),
+            ("Samuel", "Full speed ahead!"),
+        ],
     }
 }
