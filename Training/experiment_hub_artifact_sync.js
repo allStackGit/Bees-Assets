@@ -125,7 +125,8 @@ class ArtifactMirror {
         const job=UUID.test(String(jobId||''))&&hub.state.jobs.find(j=>j.id===jobId);
         if(!job||job.assigned_machine_id!==machineId||
             job.project_id==='bees'||!job.lease_id||
-            job.start_first_offered_at==null)
+            (job.start_first_offered_at==null&&
+             !job.native_release_attempts?.[0]?.previous_start_first_offered_at))
             fail('Artifact job is not owned by this machine.',409);
         const modelArtifact=job.project_id==='bees_native'&&safeNativeModelPath(relative);
         if(!(modelArtifact

@@ -845,7 +845,8 @@ function verifiedOptimizerCompletion(job,raw,state) {
     if(requiresRelease||raw.continual_release!==undefined) {
         const release=raw.continual_release;
         const fields=['checkpoint_sha256','parent_model_id','model_id','training_step',
-            'evaluation_report_id','passed','deployment_id','deployed_model_id'];
+            'evaluation_report_id','passed','deployment_id','deployed_model_id',
+            ...(release?.release_attempt_wall_seconds!==undefined?['release_attempt_wall_seconds']:[])];
         const modelId=/^bees-rl-v[0-9]+-[0-9a-f]{24}$/;
         if(!requiresRelease||bundle.index!==1||!object(release)||
             Object.keys(release).sort().join(',')!==fields.sort().join(',')||
@@ -855,7 +856,10 @@ function verifiedOptimizerCompletion(job,raw,state) {
             !/^eval-[0-9a-f]{24}$/.test(String(release.evaluation_report_id||''))||
             !/^native-[0-9a-f]{24}$/.test(String(release.deployment_id||''))||
             !Number.isSafeInteger(release.training_step)||release.training_step<1||
-            typeof release.passed!=='boolean')
+            typeof release.passed!=='boolean'||
+            (release.release_attempt_wall_seconds!==undefined&&
+                (!Number.isFinite(release.release_attempt_wall_seconds)||
+                 release.release_attempt_wall_seconds<0||release.release_attempt_wall_seconds>1e12)))
             throw Error('Native optimizer completion lacks the exact authorized generation release.');
     }
     return copy(raw);
@@ -870,6 +874,7 @@ function nativeBeesRoundTrainingSummary(plan) {
     let worldSteps=0,policyRows=0,collectorSeconds=0,modelForwards=0;
     let optimizerRows=0,learnerSeconds=0,ppoSeconds=0,processingSeconds=0;
     let learnerCpuSeconds=0,collectorCoverage=0,learnerCoverage=0;
+    let releaseCoverage=0,promotions=0,releaseSeconds=0,releaseTimingCoverage=0;
     const evaluations=new Map();
     for(const entry of rounds) {
         const work=entry.collector_work_totals;
@@ -888,6 +893,15 @@ function nativeBeesRoundTrainingSummary(plan) {
             processingSeconds+=learner.trajectory_processing_wall_seconds;
             learnerCpuSeconds+=learner.learner_process_cpu_seconds;
             learnerCoverage++;
+        }
+        const release=entry.continual_release;
+        if(release) {
+            releaseCoverage++;
+            if(release.passed)promotions++;
+            if(Number.isFinite(release.release_attempt_wall_seconds)) {
+                releaseSeconds+=release.release_attempt_wall_seconds;
+                releaseTimingCoverage++;
+            }
         }
         for(const receipt of entry.evaluation_receipts||[]) {
             // A suite name alone cannot establish comparability across
@@ -936,6 +950,10 @@ function nativeBeesRoundTrainingSummary(plan) {
         publishing_learner_process_cpu_seconds:learnerCpuSeconds,
         optimizer_input_rows_per_ppo_update_second:
             ppoSeconds>0?optimizerRows/ppoSeconds:null,
+        continual_generations_released:releaseCoverage,
+        continual_promotions_passed:promotions,
+        continual_release_attempts_timed:releaseTimingCoverage,
+        sum_completed_continual_release_attempt_wall_seconds:releaseSeconds,
         independent_evaluations:[...evaluations.values()],
     };
 }
@@ -2509,6 +2527,8 @@ class ExperimentHub {
                 !['waiting_adapter','finished','failed','stopped'].includes(job.status))
                 throw Error('Cannot release an unknown, active, or unverified managed job.');
             if(job.status==='waiting_adapter') {
+                if(job.native_release_recovery)
+                    throw Error('Cancel the prepared release recovery before abandoning its pinned machine claim.');
                 if(job.dispatch_id)throw Error('Cannot release a claim after native dispatch.');
                 if(gpuProbeHoldsClaim(job))
                     throw Error('Wait for the offered GPU probe and verified cleanup before releasing its claim.');
@@ -2685,7 +2705,7 @@ class ExperimentHub {
             const job=next.jobs.find(j=>j.id===move.job_id);
             if(!job||job.adapter!=='unconfigured'||job.status!=='waiting_adapter'||job.dispatch_id)
                 throw Error('Only an unstarted non-Bees job claim can move.');
-            if(job.resource_bundle||job.distributed_rollout_managed===true||
+            if(job.native_release_recovery||job.resource_bundle||job.distributed_rollout_managed===true||
                 job.project_id==='tinybrains_rollout'&&next.jobs.some(parent=>
                     parent.id===job.frozen_parameters?.learner_job_id&&
                     parent.distributed_rollout_managed===true))
@@ -3741,11 +3761,12 @@ class ExperimentHub {
         const lease=next.reservations.find(item=>item.id===job?.lease_id&&
             item.job_id===job.id&&item.machine_id===job.assigned_machine_id&&
             item.project_id==='bees_native'&&item.issued_by==='experiment-hub'&&
-            item.status==='acknowledged');
+            ['acknowledged','released'].includes(item.status));
         if(!job||job.project_id!=='bees_native'||job.status!=='failed'||
             job.frozen_parameters?.continual_release!==true||!proof||!lease||
-            job.capacity_released_at||!job.dispatch_id||!job.execution_updated_at)
-            throw Error('Release recovery requires the verified committed round and its original retained owner lease.');
+            (lease.status==='released')!==Boolean(job.capacity_released_at)||
+            !job.dispatch_id||!job.start_first_offered_at||!job.execution_updated_at)
+            throw Error('Release recovery requires the verified committed round and its original machine ownership.');
         if(job.frozen_parameters.optimizer_group===true) {
             const group=job.resource_bundle;
             const members=next.jobs.filter(item=>item.resource_bundle?.id===group?.id)
@@ -3768,8 +3789,26 @@ class ExperimentHub {
             throw Error('Native generation recovery attempt history is full.');
         const attempt={attempt_id:crypto.randomUUID(),
             previous_attempt_id:previous?.attempt_id||job.id,
+            previous_lease_id:lease.id,
+            original_lease_id:attempts[0]?.original_lease_id||lease.id,
             checkpoint_sha256:proof.checkpoint_sha256,
-            previous_dispatch_id:job.dispatch_id,prepared_at:now()};
+            previous_dispatch_id:job.dispatch_id,
+            previous_start_first_offered_at:job.start_first_offered_at,
+            previous_resource_usage:job.final_resource_usage||null,
+            prepared_at:now()};
+        if(lease.status==='released') {
+            // Recovery may need to reacquire capacity after an operator
+            // released the failed owner. Pin the SAME machine and GPUs.
+            const replacement=this.offerIn(next,job.project_id,job.assigned_machine_id,
+                resourceRequest(lease.resources),job.id);
+            if(JSON.stringify(replacement.gpu_bindings)!==JSON.stringify(lease.gpu_bindings)||
+                !matchingLeaseBudget(job.resources,replacement.resources))
+                throw Error('Release recovery cannot change the original physical GPU or resource budget.');
+            job.lease_id=replacement.id;
+            job.assigned_at=now();
+            delete job.capacity_released_at;
+            delete job.gpu_qualification;
+        }
         job.native_release_attempts=[...attempts,attempt];
         job.native_release_recovery=attempt;
         job.status='waiting_adapter';
@@ -3859,6 +3898,9 @@ class ExperimentHub {
                     changed=true;
                 }
             }
+            if(job.native_release_recovery&&report.checkpoint_model_sha256!=null&&
+                report.checkpoint_model_sha256!==job.native_release_recovery.checkpoint_sha256)
+                throw Error('Release recovery cannot publish a different optimizer checkpoint.');
             const optimizerCompletion=verifiedOptimizerCompletion(
                 job,report.optimizer_completion,report.state);
             if(optimizerCompletion) {
@@ -7287,10 +7329,25 @@ class ExperimentHub {
             const lease=next.reservations.find(l=>l.id===job.lease_id &&
                 l.job_id===job.id && ['offered','acknowledged'].includes(l.status));
             if(!lease)throw Error('Job allocation ledger inconsistent; refusing cancellation.');
+            if(job.native_release_recovery) {
+                if(gpuProbeHoldsClaim(job))
+                    throw Error('Wait for native GPU probe cleanup before cancelling release recovery.');
+                if(job.gpu_qualification?.status==='requested')
+                    job.gpu_qualification.status='cancelled';
+                // Only this unoffered recovery is cancelled. The original
+                // failed training dispatch and artifact ownership survive.
+                job.status='failed';
+                job.dispatch_id=job.native_release_recovery.previous_dispatch_id;
+                job.start_first_offered_at=
+                    job.native_release_recovery.previous_start_first_offered_at;
+                job.native_release_recovery.cancelled_at=cancelledAt;
+            }
             this.releaseIn(next,lease);
         }
         job.status='cancelled';
-        job.status_reason='Cancelled before any execution was permitted.';
+        job.status_reason=job.native_release_recovery
+            ?'Prepared generation release recovery cancelled; committed PPO artifacts retained.'
+            :'Cancelled before any execution was permitted.';
         job.cancelled_at=cancelledAt;
     }
     plannedJobs() {

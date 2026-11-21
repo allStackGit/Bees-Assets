@@ -1420,11 +1420,20 @@ def main() -> None:
             from train_policy_session import verify_round
             record, _, _ = verify_round(output, input_manifest_sha, input_checkpoint_sha,
                                         args.learner_slot, args.refresh_opponent_slot)
-            if (record.get("continual_release_plan") != args.continual_plan or
+            if (record.get("seed_offset") != args.seed_offset or
+                    record.get("optimizer_group_id") != args.learner_group_id or
+                    record.get("continual_release_plan") != args.continual_plan or
                     record.get("continual_trainer_sha256") != result["continual_trainer_sha256"]):
                 raise ValueError("release recovery differs from the original authorized plan or trainer")
             if "rollout_bundles" in run_document:
-                if record["run_config_sha256"] != hashlib.sha256(run_bytes).hexdigest():
+                bundles = run_document["rollout_bundles"] or [
+                    {"path": path, "sha256": digest}
+                    for path, digest in args.pinned_rollout_bundle
+                ]
+                pinned = [{"path": str(resolved(run_path.parent, bundle["path"])),
+                           "sha256": bundle["sha256"]} for bundle in bundles]
+                if (record["run_config_sha256"] != hashlib.sha256(run_bytes).hexdigest() or
+                        record.get("rollout_bundles") != pinned):
                     raise ValueError("release recovery belongs to a different bundle round")
             elif record["source_run_config_sha256"] != result["source_run_config_sha256"]:
                 raise ValueError("release recovery belongs to a different source round")

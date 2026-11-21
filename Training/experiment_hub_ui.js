@@ -3978,9 +3978,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             if(j.project_id==='bees_native'&&j.status==='failed'&&
-                j.native_release_pending&&!j.capacity_released_at)
+                j.native_release_pending)
                 actions.append(button('Recover generation release',async()=>{
-                    if(!confirm('Queue release-only recovery of the committed checkpoint on its original machine and retained resource lease? No simulation or PPO optimizer runs will be repeated. Start the recovery after any required GPU qualification.'))return;
+                    if(!confirm('Queue release-only recovery of the committed checkpoint on its original machine and exact resource budget? If the old lease was released, capacity must be available again. No simulation or PPO optimizer runs will be repeated. Start the recovery after any required GPU qualification.'))return;
                     try {
                         await action('hub/jobs/recover-native-release',{
                             job_id:j.id,confirm_recover:true,

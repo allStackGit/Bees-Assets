@@ -8,6 +8,7 @@ loop, process supervisor or scheduler is introduced here.
 import hashlib
 import json
 import random
+import time
 from pathlib import Path
 
 from native_continual_release import (
@@ -218,6 +219,7 @@ def complete_generations(root, recipe, completed, *, final=False):
                 if registered["artifact_sha256"] != checkpoint_sha:
                     raise ValueError("released checkpoint differs from the registry")
             else:
+                release_started = time.perf_counter()
                 if not checked_plan:
                     check_plan(plan, store)
                     checked_plan = True
@@ -258,6 +260,7 @@ def complete_generations(root, recipe, completed, *, final=False):
                     "evaluation_report_id": decision_id,
                     "passed": passed, "deployment_id": deployment["deployment_id"],
                     "deployed_model_id": deployment["model_id"],
+                    "release_attempt_wall_seconds": time.perf_counter() - release_started,
                 }
                 immutable_json(receipt_path, result)
                 print(json.dumps(result, sort_keys=True), flush=True)

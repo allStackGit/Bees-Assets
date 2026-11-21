@@ -1312,7 +1312,10 @@ function createNativeBeesAdapter({
                 receipt.checkpoint_sha256 !== round.receipt.next_checkpoint_sha256 ||
                 receipt.parent_model_id !== plan.initial_parent_model_id ||
                 typeof receipt.passed !== 'boolean' ||
-                !Number.isSafeInteger(step) || step < 1 || receipt.training_step !== step)
+                !Number.isSafeInteger(step) || step < 1 || receipt.training_step !== step ||
+                (receipt.release_attempt_wall_seconds!==undefined&&
+                    (!Number.isFinite(receipt.release_attempt_wall_seconds)||
+                     receipt.release_attempt_wall_seconds<0)))
             throw Error('Continual release does not identify this learner checkpoint and lineage.');
         return release;
     }
@@ -1678,6 +1681,9 @@ function createNativeBeesAdapter({
                         passed:release.receipt.passed,
                         deployment_id:release.receipt.deployment_id,
                         deployed_model_id:release.receipt.deployed_model_id,
+                        ...(release.receipt.release_attempt_wall_seconds!==undefined?{
+                            release_attempt_wall_seconds:release.receipt.release_attempt_wall_seconds,
+                        }:{}),
                     }}:{})};
             },
         }:{}),
@@ -2169,6 +2175,11 @@ function createNativeBeesAdapter({
                     ...(release ? {
                         continual_promotion_passed: {value: Number(release.receipt.passed), unit: 'count'},
                         continual_training_step: {value: release.receipt.training_step, unit: 'count'},
+                        ...(release.receipt.release_attempt_wall_seconds!==undefined?{
+                            continual_release_attempt_wall_seconds: {
+                                value:release.receipt.release_attempt_wall_seconds,unit:'seconds',
+                            },
+                        }:{}),
                     } : {}),
                     ...(rollout ? {
                         ...rolloutPhysicsMeasurements(rollout),
