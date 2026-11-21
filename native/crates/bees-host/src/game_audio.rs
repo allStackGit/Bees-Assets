@@ -482,8 +482,15 @@ impl NativeGameAudio {
             // phase, not a fresh loop at the beginning of the recording.
             // Source ChangeSpriteLoop fires at the same physical threshold.
             let phase = (elapsed - WARP_GATE_OPENING_SECONDS).max(0.0);
+            // Seeking through the entire lifetime of an infinite source
+            // would decode minutes of audio when a peer reconnects late.
+            // Reduce by the clip duration before asking rodio to skip.
+            let offset = source.total_duration()
+                .filter(|duration| !duration.is_zero())
+                .map(|duration| phase % duration.as_secs_f32())
+                .unwrap_or(0.0);
             sink.append(source.repeat_infinite().skip_duration(
-                Duration::from_secs_f32(phase),
+                Duration::from_secs_f32(offset),
             ));
         } else {
             // A spectator attaching while the gate is already opening
