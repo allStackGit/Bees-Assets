@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {spawnSync, execFile} = require('node:child_process');
-const {promisify} = require('node:util');
+const {promisify, isDeepStrictEqual} = require('node:util');
 const execFileAsync = promisify(execFile);
 const {validateProgress} = require('./experiment_hub_progress');
 const {evaluationReader} = require('./experiment_hub_evaluation');
@@ -1133,6 +1133,15 @@ function createNativeBeesAdapter({
         // continuation; their attempt evidence must survive relocation.
         verifiedOptimizerAttempt(output,receipt);
         const metrics = receipt.learner_metrics;
+        if(receipt.optimizer_metrics_sha256!=null) {
+            const file=path.join(output,'learner','metrics.json');
+            const finalizer=completionReceipt(path.join(output,'learner'),'metrics.json');
+            if(!SHA256.test(String(receipt.optimizer_metrics_sha256))||
+                !finalizer||sha256(fs.readFileSync(file))!==receipt.optimizer_metrics_sha256||
+                !isDeepStrictEqual(finalizer.receipt,metrics))
+                throw Error('Native optimizer final metrics changed after group consensus.');
+        }else if(receipt.optimizer_attempt_sha256!=null)
+            throw Error('Native optimizer completion omitted the durable metrics identity.');
         if (receipt.schema_version !== 1 || receipt.kind !== 'native_training_round_complete' ||
             metrics?.schema_version !== 1 || metrics.source !== 'bees-native-ma-poca-v1' ||
             metrics.learner_slot !== (learnerSlot ?? null) ||
@@ -1335,6 +1344,18 @@ function createNativeBeesAdapter({
         const nodes=bundle?.size;
         const local=gpuLeaseCount(context);
         const rows=receipt.gpu_per_device;
+        // Node rank zero writes node-result.json only AFTER the global
+        // consensus barrier. The Hub-facing worker receipt is a second
+        // commit and must retain that exact source proof, including after
+        // interruption and local job inspection.
+        const nodeResult=completionReceipt(path.join(output,'learner'),'node-result.json');
+        if(!SHA256.test(String(receipt.optimizer_node_receipt_sha256||''))||
+            !nodeResult||
+            sha256(fs.readFileSync(path.join(output,'learner','node-result.json')))!==
+                receipt.optimizer_node_receipt_sha256||
+            Object.entries(nodeResult.receipt).some(([key,value])=>
+                !isDeepStrictEqual(value,receipt[key])))
+            throw Error('Native optimizer worker completion lost its original rank consensus receipt.');
         const inputs=roundInputs(context);
         if(bundle&&UUID.test(String(bundle.id||'')))
             verifiedOptimizerAttempt(output,receipt,{
