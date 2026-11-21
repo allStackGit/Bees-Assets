@@ -171,9 +171,11 @@ fn uranus_defensive_waves_match_source(
             true
         };
         if veterans {
-            // The fifth upper wave can prefix historic mixed squads.
-            // Keep at least one newly selected source formation.
-            (0..actual.len()).any(|start| matches_order(&actual[start..]))
+            // Source may run the timer with no available Bee squads at
+            // all; otherwise historic mixed squads prefix the surviving
+            // newly selected formations in their original order.
+            actual.is_empty() ||
+                (0..actual.len()).any(|start| matches_order(&actual[start..]))
         } else {
             matches_order(&actual)
         }
