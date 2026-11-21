@@ -5972,6 +5972,28 @@ fn run_battle(
                 );
             }
         }
+        // Uranus III begins with Stage.ActivateHiveMind=false while the
+        // opening dialogue and optional Carrier tutorial hold gameplay.
+        // Source FinishCarrierIntroduction then calls SetupHivemind and
+        // enables command requests before the first physical game step.
+        // Native clients and authenticated dedicated hosts hold the same
+        // briefing at tick zero, so the executable Level must use the
+        // *post-briefing* authority rather than the exported pre-intro flag.
+        if matches!(level.campaign_dialogue,
+            Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusNewThreat { .. }))
+        {
+            if source.schema_version < 27 ||
+                source.activate_hivemind != Some(false) ||
+                source.starting_positions.is_none() ||
+                source.hivemind_initial_command_delay_seconds.is_none() ||
+                source.source_squads.iter().any(|squad| squad.hivemind.is_none())
+            {
+                return Err(invalid(
+                    "Uranus III requires pre-intro source HiveMind authority and a complete post-intro command roster",
+                ).into());
+            }
+            source.activate_hivemind = Some(true);
+        }
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
         }
