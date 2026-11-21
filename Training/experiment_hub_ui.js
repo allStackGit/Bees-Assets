@@ -5998,6 +5998,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 learningCell.append(details);
             }
             const actions=cell(tr,'');
+            if(['tinybrains','courier'].includes(j.project_id))
+                actions.append(button('Duplicate job',()=>{
+                    try {duplicateJobIntoTrain(j,groupWorkers);}
+                    catch(error){feedback('hub-job-message',error.message);}
+                }));
             actions.append(button('Rename run',async()=>{
                 const entered=prompt('Run name (optional; blank restores the configuration name):',
                     j.run_name||'');
@@ -8230,6 +8235,80 @@ document.addEventListener('DOMContentLoaded', () => {
                     '. All approved endpoints must be reserved. ')+
                 'Adjust CPU/RAM budgets; different learners can reserve other free ports on the same host.'
             :'No eligible unreserved TinyBrains collector listener. Check the rollout project, enrolled workers, endpoints and existing group reservations.';
+    }
+    function duplicateJobIntoTrain(job,workers) {
+        const saved=state.configurations.find(c=>c.id===job.configuration_id&&
+            c.revision===job.configuration_revision&&c.project_id===job.project_id);
+        if(!saved)
+            throw Error('The original configuration revision is no longer available. Restore its frozen configuration in Design before duplicating.');
+        if(job.continuation_of_job_id||job.after_job_id||job.candidate_selection)
+            throw Error('This job belongs to a checkpoint or dependency sequence. Select a valid new predecessor explicitly instead of duplicating its lineage.');
+        const resourceCopy=member=>{
+            const budget=structuredClone(member.resources);
+            const lease=state.reservations.find(l=>l.id===member.lease_id);
+            if(budget.gpu_count&&lease?.resources?.gpus?.length===budget.gpu_count)
+                budget.gpus=lease.resources.gpus.slice();
+            return budget;
+        };
+        const learner=job.assigned_machine_id;
+        let budgets=null,matching=false,distributed=null;
+        if(job.distributed_rollout_managed||job.distributed_courier_managed) {
+            distributed=job.project_id==='tinybrains'?'tinybrains':'courier';
+            const host=state.machines.find(m=>m.id===learner);
+            if(!host||!workers.length||workers.some(w=>!w.assigned_machine_id))
+                throw Error('Original distributed machine assignments are unavailable.');
+            const subset=distributed==='tinybrains'?host.tinybrains_rollout_subset:
+                host.courier_lineage_subset;
+            const shared=job.frozen_parameters?.shared_policy===true;
+            budgets=workers.map(worker=>{
+                const machine=state.machines.find(m=>m.id===worker.assigned_machine_id);
+                if(!machine)throw Error('Original collector machine is no longer registered.');
+                const budget=resourceCopy(worker);
+                if(subset)budget.machine_id=worker.assigned_machine_id;
+                if(distributed==='tinybrains') {
+                    budget.threads=worker.frozen_parameters.threads;
+                    const endpoint=worker.rollout_endpoint||
+                        machine.tinybrains_rollout_slots?.find(slot=>slot.slot===
+                            worker.frozen_parameters.listener_slot)?.endpoint||
+                        machine.tinybrains_rollout_endpoint;
+                    if(subset&&endpoint)budget.endpoint=endpoint;
+                }else if(shared&&subset) {
+                    const endpoint=machine.courier_lineage_slots?.find(slot=>slot.slot===
+                        (worker.frozen_parameters.listener_slot??worker.frozen_parameters.slot))?.endpoint;
+                    if(endpoint){budget.endpoint=endpoint;matching=true;}
+                }
+                if(distributed==='courier'&&worker.assigned_machine_id===learner)
+                    matching=true;
+                return budget;
+            });
+        }
+        $('hub-job-configuration').value=saved.id;
+        $('hub-job-predecessor').value='';
+        $('hub-job-run-name').value='';
+        $('hub-job-resources').value=JSON.stringify(resourceCopy(job),null,2);
+        const availableMachine=[...$('hub-job-machine').options].some(o=>o.value===learner);
+        if(availableMachine)$('hub-job-machine').value=learner;
+        jobMetricChoicesByProject.set(project,new Set(job.metric_selection||[]));
+        renderJobMetricSelection();
+        renderCurriculumChoice();
+        renderDistributedGroup();
+        if(distributed) {
+            const select=distributed==='tinybrains'?distributedMachine:courierMachine;
+            if(![...select.options].some(o=>o.value===learner))
+                throw Error('Original learner is not currently eligible. Select an available learner first.');
+            select.value=learner;
+            renderDistributedGroup();
+            if(distributed==='tinybrains'){
+                distributedMatch.input.checked=false;
+                distributedBudgets.value=JSON.stringify(budgets,null,2);
+            }else{
+                courierMatch.input.checked=matching;
+                courierBudgets.value=JSON.stringify(budgets,null,2);
+            }
+        }
+        selectTab('train');
+        feedback('hub-job-message','Job copied into the Train form. Review the original configuration, checkpoint import, machine and budgets, then queue a new independent run. No job was started.');
+        $('hub-job-resources').scrollIntoView({block:'center'});
     }
     $('hub-job-configuration').addEventListener('change',()=>{
         renderJobMetricSelection();
