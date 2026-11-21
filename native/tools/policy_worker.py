@@ -581,6 +581,27 @@ def decode_row_metadata(meta: bytearray | memoryview, rows: int, output_buffers=
     allow[:, 10:15] = special
     return slots, fire, special, allow
 
+def share_device_input_staging(policy_map, previous_models=()):
+    """One accelerator input staging allocation per effective physical device.
+
+    Distinct resident models are evaluated sequentially in collect_predictions
+    and read back their actions before the next model runs. Sharing only
+    their *input* buffers reduces VRAM and cross-model allocator traffic
+    without sharing weights, policy RNG or sampler outputs. Retain existing
+    buffers across validated manifest updates as well.
+    """
+    buffers = {}
+    for model in previous_models:
+        if isinstance(model, (TorchScriptPolicy, MlagentsPolicy)) and (
+                model.device.type != "cpu"):
+            buffers.setdefault(model.device, model.input_staging)
+    for model in dict.fromkeys(policy_map.values()):
+        if isinstance(model, (TorchScriptPolicy, MlagentsPolicy)) and (
+                model.device.type != "cpu"):
+            existing = buffers.setdefault(model.device, model.input_staging)
+            model.input_staging = existing
+
+
 class InferenceOutputBuffers:
     """Retain action and mask arrays across batches, not model-owned state.
 
@@ -775,6 +796,7 @@ def main() -> None:
     parser.add_argument("--manifest", required=True, type=Path)
     args = parser.parse_args()
     signature, policy_map, manifest_digest = checked_manifest(args.manifest)
+    share_device_input_staging(policy_map)
     resident_models = {
         model._verified_identity: model for model in policy_map.values()
     }
@@ -907,6 +929,9 @@ def main() -> None:
                     raise ValueError("model-update policy ABI signature mismatch")
                 if new_map.keys() != policy_map.keys():
                     raise ValueError("model-update changes active policy slots")
+                # Reuse the prior device allocations only AFTER the new
+                # manifest and every candidate weight has been verified.
+                share_device_input_staging(new_map, policy_map.values())
             except Exception as error:
                 # Backend libraries raise different Exception subclasses.
                 # A failed candidate must not replace or poison the active
