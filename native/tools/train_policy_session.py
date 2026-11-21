@@ -1711,6 +1711,8 @@ def main():
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("--rounds", type=int, required=True,
                         help="total number of completed rounds desired, including prior rounds")
+    parser.add_argument("--continual-release-plan", type=Path,
+                        help="pinned native registry and generation promotion suites")
     parser.add_argument("--resume", action="store_true",
                         help="resume an existing session without changing its pinned inputs")
     parser.add_argument("--model-manifest", type=Path)
@@ -2034,6 +2036,13 @@ def main():
         *recipe.get("monitor_evaluations", []),
         *([] if curriculum is None else [item["run_config"] for item in curriculum["stages"]]),
     )
+    if args.continual_release_plan is not None:
+        if args.learner_slot is None:
+            parser.error("continual release requires an explicit learner slot")
+        from native_continual_session import load_plan
+        recipe["continual_release"] = load_plan(
+            args.continual_release_plan, Path(checkpoint["path"]),
+        )
     root = args.output_dir.resolve()
     if args.resume:
         if not root.is_dir():
@@ -2191,6 +2200,10 @@ def main():
         ))
         if len(completed) > args.rounds:
             raise ValueError("target round count is smaller than the completed checkpoint lineage")
+        if "continual_release" in recipe:
+            from native_continual_session import complete_generations
+            complete_generations(root, recipe, completed,
+                final=len(completed) == args.rounds or bool(stop_state and stop_state["stop"]))
         first_pending_round = len(completed) + 1
         for index in range(first_pending_round, args.rounds + 1):
             if stop_state is not None and stop_state["stop"]:
@@ -2537,6 +2550,13 @@ def main():
                 monitor_baseline=monitor_baseline,
                 monitor_observations=monitor_observations,
             )
+            if "continual_release" in recipe:
+                releases = complete_generations(root, recipe, completed,
+                    final=index == args.rounds or bool(stop_state and stop_state["stop"]))
+                snapshot["continual_release"] = {
+                    "completed_generations": len(releases),
+                    "latest": releases[-1] if releases else None,
+                }
             atomic_json(root / "session-progress.json", snapshot)
             print(json.dumps({"kind": "native_training_session_round_complete",
                               "round": index, "directory": str(directory),
