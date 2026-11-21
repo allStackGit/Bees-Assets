@@ -14,8 +14,14 @@ impl CombatWorld {
         if let Some(&count) = self.vision_unlearned_obstacles.get(&side) {
             return count;
         }
-        let count = self.obstacles.iter()
-            .zip(self.physics.obstacles()).filter(|(obstacle, body)| {
+        // The stable all-lifetime obstacle array retains dead mines,
+        // broken terrain and pooled asteroid debris for attribution.
+        // Only active physics slots can still be discovered; visiting
+        // historical dead slots on every vision sweep is wasted work.
+        let count = self.physics.active_obstacle_indices().iter()
+            .filter(|&&index| {
+                let obstacle = &self.obstacles[index];
+                let body = &self.physics.obstacles()[index];
                 if !obstacle.live() || !body.active { return false; }
                 let kind = match obstacle.kind {
                     ObstacleKind::MiningAsteroid => DiscoveryKind::MiningAsteroid,
