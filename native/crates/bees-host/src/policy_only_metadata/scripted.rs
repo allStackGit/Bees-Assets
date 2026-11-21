@@ -725,6 +725,7 @@ impl NativePolicyOnlyMetadata {
                     .side;
                 if !centers_ready {
                     self.scripted_centers.clear();
+                    self.scripted_center_by_owner.clear();
                     for &candidate in roster.source_order() {
                         let Some(target) = roster.get(candidate) else { continue };
                         if target.members.is_empty() { continue; }
@@ -735,6 +736,7 @@ impl NativePolicyOnlyMetadata {
                                 GameCommandError::InvalidEnemy,
                             ));
                         }
+                        self.scripted_center_by_owner.insert(candidate, center);
                         self.scripted_centers.push((candidate, target.side, center));
                     }
                     // Sort once for all orders on this tick. The
@@ -749,9 +751,8 @@ impl NativePolicyOnlyMetadata {
                         self.scripted_centers.len() as u64;
                     centers_ready = true;
                 }
-                let own_center = self.scripted_centers.iter()
-                    .find(|(candidate, _, _)| *candidate == owner)
-                    .map(|(_, _, center)| *center)
+                let own_center = self.scripted_center_by_owner.get(&owner)
+                    .copied()
                     .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?;
                 let (nearest, inspected) = nearest_scripted_enemy(
                     &self.scripted_centers, owner, own_side, own_center,
