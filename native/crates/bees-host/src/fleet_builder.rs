@@ -1379,6 +1379,11 @@ pub(super) fn archive(
             } else if index < late.len().div_ceil(2) { 25_u32 } else { 55 };
             wave_times_and_squads.push((seconds, side, squad));
             deferred_squads.push(squad);
+            if let Some(&child) = carrier_children.get(&squad) {
+                // The native Level registers a Carrier's free Striker
+                // complement atomically with its parent's real arrival.
+                deferred_squads.push(child);
+            }
         }
     }
     if !wave_times_and_squads.is_empty() {
@@ -1389,6 +1394,10 @@ pub(super) fn archive(
             (seconds, side, squad));
         run["levels"][0]["reinforcements"] = json!(
             wave_times_and_squads.iter().map(|&(seconds, side, squad)| {
+                let mut group = vec![squad];
+                if let Some(&child) = carrier_children.get(&squad) {
+                    group.push(child);
+                }
                 if seconds == 0 {
                     // The first source ship (11 Bees / 12 Humans) remains
                     // deployed initially even when its faction has reserves.
@@ -1396,12 +1405,12 @@ pub(super) fn archive(
                     // is the sole activation source.
                     json!({
                         "on_ship_destroyed": if side == 0 { 11 } else { 12 },
-                        "squad_item_ids": [squad],
+                        "squad_item_ids": group,
                     })
                 } else {
                     json!({
                         "after_seconds": seconds as f32,
-                        "squad_item_ids": [squad],
+                        "squad_item_ids": group,
                     })
                 }
             }).collect::<Vec<_>>()
@@ -1587,6 +1596,22 @@ pub(super) fn archive(
             }
             queues.push(queue);
         }
+    }
+    // Free Strikers remain physically real members of the same Carrier
+    // family. The existing scripted BombingRun owns autonomous AI children;
+    // player-controlled decks instead retain their ordinary player input
+    // permissions, so no competing command authority is introduced.
+    for (child_squad, player_controlled) in free_striker_squads {
+        if player_controlled { continue; }
+        let mut queue = json!({
+            "squad_item_id": child_squad,
+            "repeat": true,
+            "orders": [{"kind": "bombing_nearest"}],
+        });
+        if deferred_squads.contains(&child_squad) {
+            queue["activation"] = json!({"kind": "on_deployment"});
+        }
+        queues.push(queue);
     }
     run["levels"][0]["scripted_queues"] = json!(queues);
     if selected.ai_both {
