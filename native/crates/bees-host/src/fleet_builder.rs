@@ -1474,6 +1474,48 @@ pub(super) fn archive(
             free_striker_squads.push((child_squad_id, controlled));
         }
     }
+    if let Some(hivemind) = &selected.hivemind {
+        // This is the original game's per-squad HiveMind ownership, not
+        // scripted AI disguised as a network request. Even human squads
+        // carry explicit non-HiveMind authority while Stage activation is
+        // enabled. The ordinary DurableHiveMindConnection will manage
+        // authentication, command hashes, outcomes and continuation.
+        let mobility = scene["ships"].as_array()
+            .ok_or_else(|| invalid("HiveMind battle has no physical ships"))?
+            .iter().map(|ship| {
+                let id = ship["entity_id"].as_i64()
+                    .ok_or_else(|| invalid("HiveMind hull needs a physical identity"))?;
+                let speed = ship["base_speed"].as_f64()
+                    .filter(|speed| speed.is_finite() && *speed >= 0.0)
+                    .ok_or_else(|| invalid("HiveMind hull needs authentic movement speed"))?;
+                Ok::<_, io::Error>((id, speed > 0.0))
+            }).collect::<Result<HashMap<_, _>, _>>()?;
+        for squad in scene["squads"].as_array_mut()
+            .ok_or_else(|| invalid("HiveMind battle has no source squads"))?
+        {
+            let side = squad["side"].as_i64()
+                .ok_or_else(|| invalid("HiveMind squad lacks faction ownership"))?;
+            let members = squad["members"].as_array()
+                .ok_or_else(|| invalid("HiveMind squad lacks source physical members"))?;
+            if members.is_empty() {
+                return Err(invalid("HiveMind cannot own an empty native squad").into());
+            }
+            let mobile = members.iter().map(|member|
+                member.as_i64().and_then(|id| mobility.get(&id).copied())
+            ).collect::<Option<Vec<_>>>()
+                .ok_or_else(|| invalid("HiveMind squad references an unknown physical hull"))?
+                .into_iter().any(|mobile| mobile);
+            squad["hivemind"] = json!({
+                "opponent_id": hivemind.opponent_id,
+                "hivemind_controlled": side == i64::from(hivemind.controlled_side),
+                "immobile": !mobile,
+            });
+        }
+        scene["activate_hivemind"] = json!(true);
+        scene["hivemind_initial_command_delay_seconds"] =
+            json!(hivemind.initial_delay_seconds);
+        run["hivemind"] = hivemind.network.clone();
+    }
     let level_name = scene["level_name"].as_str()
         .unwrap_or("Fleet Skirmish").to_owned();
     scene["level_name"] = json!(format!(
@@ -1707,6 +1749,11 @@ pub(super) fn archive(
         selected.objective_side.unwrap_or(0),
         u8::from(selected.mining_field), u8::from(selected.fog_of_war),
     ));
+    if let Some(hivemind) = &selected.hivemind {
+        let id = run["run_id"].as_str()
+            .ok_or_else(|| invalid("HiveMind battle is missing its run identity"))?;
+        run["run_id"] = json!(format!("{id}-hivemind-side{}", hivemind.controlled_side));
+    }
     // Different arrival patterns must have different immutable source IDs,
     // especially when saved battles later become separate PPO experiments.
     if !wave_times_and_squads.is_empty() &&
@@ -1743,7 +1790,9 @@ pub(super) fn archive(
     let mut queues = Vec::new();
     for side in 0..2_usize {
         if !selected.ai_both &&
-            selected.player_side.is_none_or(|player| player == side as i32 + 1)
+            (selected.player_side.is_none_or(|player| player == side as i32 + 1) ||
+             selected.hivemind.as_ref().is_some_and(|hivemind|
+                 hivemind.controlled_side == side as i32 + 1))
         {
             continue;
         }
@@ -1885,7 +1934,9 @@ pub(super) fn archive(
     // player-controlled decks instead retain their ordinary player input
     // permissions, so no competing command authority is introduced.
     for (child_squad, player_controlled) in free_striker_squads {
-        if player_controlled { continue; }
+        if player_controlled || selected.hivemind.as_ref()
+            .is_some_and(|hivemind| hivemind.controlled_side == 2)
+        { continue; }
         let mut queue = json!({
             "squad_item_id": child_squad,
             "repeat": true,
