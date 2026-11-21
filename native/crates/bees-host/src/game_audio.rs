@@ -33,15 +33,15 @@ const TITANIA_LOOP_END: f32 = 185.461_18;
 enum Effect {
     LightLaser, SmallLaser, BigLaser, BeamCannon, FlagshipLaser, QueenLaser,
     RocketLaunch, StrikerBomb, Explosion, HugeExplosion,
-    Warp, Button,
+    Warp, Button, FireBargeClick,
 }
 
 impl Effect {
-    const ALL: [Self; 12] = [
+    const ALL: [Self; 13] = [
         Self::LightLaser, Self::SmallLaser, Self::BigLaser,
         Self::BeamCannon, Self::FlagshipLaser, Self::QueenLaser, Self::RocketLaunch,
         Self::StrikerBomb, Self::Explosion, Self::HugeExplosion,
-        Self::Warp, Self::Button,
+        Self::Warp, Self::Button, Self::FireBargeClick,
     ];
 
     fn file(self) -> &'static str {
@@ -58,6 +58,7 @@ impl Effect {
             Self::HugeExplosion => "Largest Explosion.mp3",
             Self::Warp => "Enter The Warp.mp3",
             Self::Button => "Beez Button Click.mp3",
+            Self::FireBargeClick => "Fire Barge Detonation Click.mp3",
         }
     }
 
@@ -331,6 +332,19 @@ impl NativeGameAudio {
     pub fn click_ui(&mut self) {
         self.voices.retain(|sink| !sink.empty());
         self.play(Effect::Button);
+    }
+
+    /// Source SquadActionBox.Detonate plays this cue once for every
+    /// selected physical Fire Barge before calling FireBarge.Detonate.
+    /// It is a local user-command sound, never a fabricated CombatEvent
+    /// or a headless training cost. Bound the burst for large selections.
+    pub fn click_fire_barge_detonation(&mut self, count: usize) {
+        self.voices.retain(|sink| !sink.empty());
+        self.measurements.sound_effects_dropped +=
+            count.saturating_sub(MAX_NEW_EFFECTS_PER_FRAME) as u64;
+        for _ in 0..count.min(MAX_NEW_EFFECTS_PER_FRAME) {
+            self.play(Effect::FireBargeClick);
+        }
     }
 
     fn play(&mut self, effect: Effect) {
