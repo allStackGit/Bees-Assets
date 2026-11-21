@@ -2056,6 +2056,12 @@ pub(super) fn archive(
         .map_or(125.0, |size| (size as f32 * 0.25 + 50.0)
             .min(size as f32 * 0.5 - 18.0));
     let mut deferred_squads = Vec::new();
+    // Dense Cover spans the central lane at y=0. Position the actual
+    // destructible objective beside that obstruction, rather than
+    // embedding its collider inside the original Box obstacle.
+    let demolition_target_x = if matches!(selected.terrain, Terrain::DenseCover) {
+        38.0_f32
+    } else { 0.0 };
     if matches!(selected.objective, Objective::Survival) {
         let defender = selected.objective_side.ok_or_else(||
             invalid("survival requires a real defending faction"))?;
@@ -2100,7 +2106,7 @@ pub(super) fn archive(
             invalid("fleet scene has invalid MapObjects"))?.push(json!({
                 "entity_id": target_id,
                 "kind": "generic",
-                "position": [0.0, 0.0],
+                "position": [demolition_target_x, 0.0],
                 "rotation_degrees": 0.0,
                 "layer": 18,
                 "max_health": 240,
@@ -2378,7 +2384,7 @@ pub(super) fn archive(
                 // remain normal automatically acquired combat turrets.
                 vec![
                     json!({"kind": "move_to_point", "destination": [
-                        if side == 0 { -16.0 } else { 16.0 }, 0.0,
+                        demolition_target_x + if side == 0 { -16.0 } else { 16.0 }, 0.0,
                     ]}),
                     json!({"kind": "hold"}),
                 ]
@@ -2391,7 +2397,7 @@ pub(super) fn archive(
                 // authored MapObject collider. No custom weapon simulator.
                 vec![
                     json!({"kind": "move_to_point", "destination": [
-                        if side == 0 { -28.0 } else { 28.0 }, 0.0,
+                        demolition_target_x + if side == 0 { -28.0 } else { 28.0 }, 0.0,
                     ]}),
                     json!({"kind": "bombard_map_object", "target_map_object_id": 91}),
                 ]
