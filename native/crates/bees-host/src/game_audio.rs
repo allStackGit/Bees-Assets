@@ -509,6 +509,38 @@ impl NativeGameAudio {
         let mut budget = MAX_NEW_EFFECTS_PER_FRAME;
         let mut new_effects = [None; MAX_NEW_EFFECTS_PER_FRAME];
         let mut new_effects_len = 0;
+        // Source Weapon.PlaySoundEffect runs on the firing command, not on
+        // the first later frame that happens to contain an airborne shot.
+        // Projectiles can collide and retire within one fixed tick. The
+        // canonical fire event and installed turret survive that short
+        // lifetime, while the original simulation remains unchanged.
+        for event in view.combat.events() {
+            let (ship_id, slot, projectile_id) = match event {
+                CombatEvent::GameWeaponFired { ship_id, slot, projectile_id } |
+                CombatEvent::PolicyWeaponFired { ship_id, slot, projectile_id } =>
+                    (*ship_id, *slot, *projectile_id),
+                _ => continue,
+            };
+            if self.seen_projectiles.insert(projectile_id, view.tick).is_some() ||
+                first_snapshot { continue; }
+            let Some(kind) = view.combat.weapon_projectile_type(ship_id, slot)
+                else { continue };
+            let Some(effect) = Effect::projectile(kind) else { continue };
+            let Some(point) = view.combat.ship_body(ship_id)
+                .map(|body| body.motion.position) else { continue };
+            if !on_screen(visible, point) { continue; }
+            if budget > 0 {
+                budget -= 1;
+                new_effects[new_effects_len] = Some(effect);
+                new_effects_len += 1;
+            } else {
+                self.measurements.sound_effects_dropped += 1;
+            }
+        }
+        // Retain compatibility with surviving projectiles from older
+        // host versions or a client that joined between fixed steps.
+        // Every launch already sounded above is marked, so it cannot be
+        // sounded twice merely because its projectile is still active.
         for (projectile, body) in view.combat.render_projectiles() {
             if self.seen_projectiles.insert(projectile.entity_id, view.tick).is_some() {
                 continue;
