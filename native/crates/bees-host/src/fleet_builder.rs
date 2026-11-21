@@ -917,6 +917,7 @@ pub(super) fn archive(
     let mut squad_ids = [vec![101_i64], vec![102_i64]];
     let mut support_squads = Vec::new();
     let mut scout_squads = Vec::new();
+    let mut miner_squads = Vec::new();
     let catalog = ShipAssetCatalog::embedded()
         .map_err(|_| invalid("native source ship collider catalogue is incomplete"))?;
     let offsets = [
@@ -948,6 +949,19 @@ pub(super) fn archive(
     // fleet metadata, visuals and colliders come from a known native game
     // scene, never from an approximate handcrafted stats table.
     let source_archetypes: Value = serde_json::from_str(SOURCE_ARCHETYPES)?;
+    if selected.mining_field {
+        // Duplicate the original authenticated physical mining collider
+        // into a new, nonconflicting native scene identity. Its ore/health,
+        // collision layer, and eventual depletion are handled by the shared
+        // CombatWorld and Level, not by this fleet authoring screen.
+        let mut mine = source_archetypes["mining_asteroids"]
+            .as_array().and_then(|ores| ores.first())
+            .ok_or_else(|| invalid("native source has no mineable asteroid archetype"))?
+            .clone();
+        mine["entity_id"] = json!(40_001_i64);
+        scene["activate_mining"] = json!(true);
+        scene["mining_asteroids"] = json!([mine]);
+    }
     let available = source_archetypes["ships"].as_array().ok_or_else(||
         invalid("native skirmish has no source ship archetypes"))?;
     for side in 0..2_usize {
@@ -990,7 +1004,8 @@ pub(super) fn archive(
     for side in 0..2_usize {
         if specialist_count[side] == 0 { continue; }
         let side_id = side as i64 + 1;
-        let specialist_type = if side == 0 { 18 } else { 10 };
+        let specialist_type = if matches!(selected.mix[side], FleetMix::Miners) { 4 }
+            else if side == 0 { 18 } else { 10 };
         let template = available.iter().find(|ship|
             ship["side"].as_i64() == Some(side_id) &&
             ship["ship_type"].as_u64() == Some(specialist_type)
@@ -1018,7 +1033,11 @@ pub(super) fn archive(
                 "user_controlled": controlled, "can_accept_input": controlled,
                 "command_bans": [],
             }));
-        if side == 0 { scout_squads.push(squad_id); }
+        if matches!(selected.mix[side], FleetMix::Miners) {
+            miner_squads.push(squad_id);
+        } else if side == 0 {
+            scout_squads.push(squad_id);
+        }
     }
     for side in 0..2_usize {
         for index in 1..selected.fleet_sizes[side] {
@@ -1069,6 +1088,10 @@ pub(super) fn archive(
         "{level_name}  |  Support: {} Beehives, {} Carriers  |  Specialists: {} Scouts, {} Fire Barges",
         support_count[0], support_count[1], specialist_count[0], specialist_count[1],
     ));
+    if selected.mining_field {
+        let title = scene["level_name"].as_str().unwrap_or("Fleet Skirmish");
+        scene["level_name"] = json!(format!("{title}  |  Physical mineral field"));
+    }
     if !matches!(selected.terrain, Terrain::Original) {
         // The two-player template's id=30 tiny box is a real authored
         // static collider. Remove it when choosing a different map.
@@ -1218,7 +1241,7 @@ pub(super) fn archive(
     }
     run["next_squad_item_id"] = json!(3_000);
     run["run_id"] = json!(format!(
-        "native-fleet-{}v{}-support-{}v{}-specialist-{}v{}-{}-{}-owner{}",
+        "native-fleet-{}v{}-support-{}v{}-specialist-{}v{}-{}-{}-owner{}-ore{}-fog{}",
         selected.fleet_sizes[0], selected.fleet_sizes[1],
         support_count[0], support_count[1],
         specialist_count[0], specialist_count[1],
@@ -1233,6 +1256,7 @@ pub(super) fn archive(
             Objective::Demolition => "demolition",
         },
         selected.objective_side.unwrap_or(0),
+        u8::from(selected.mining_field), u8::from(selected.fog_of_war),
     ));
     // Different arrival patterns must have different immutable source IDs,
     // especially when saved battles later become separate PPO experiments.
@@ -1277,6 +1301,7 @@ pub(super) fn archive(
         for (position, &owner) in squad_ids[side].iter().enumerate() {
             let supporting = support_squads.contains(&owner);
             let scout = scout_squads.contains(&owner);
+            let miner = miner_squads.contains(&owner);
             let start = offsets[side][position];
             // A source-authored Aggressive lifetime still owns all
             // physical movement, weapon targeting and enemy deaths.
@@ -1340,7 +1365,7 @@ pub(super) fn archive(
                     json!({"kind": "hold"}),
                 ]
             } else if mission_owner &&
-                matches!(selected.objective, Objective::Demolition) && !scout
+                matches!(selected.objective, Objective::Demolition) && !scout && !miner
             {
                 // Approach within the actual turret firing range, then
                 // use the source point-fire controller against the live
@@ -1351,6 +1376,11 @@ pub(super) fn archive(
                     ]}),
                     json!({"kind": "bombard_map_object", "target_map_object_id": 91}),
                 ]
+            } else if miner {
+                // A genuine source Carpenter Bee uses the existing
+                // authored mining order; on depletion it selects the next
+                // visible physical ore body rather than minting minerals.
+                vec![json!({"kind": "mining_nearest"})]
             } else if scout {
                 vec![json!({
                     "kind": "move_to_point",
@@ -1369,7 +1399,7 @@ pub(super) fn archive(
             let one_shot_goal = mission_owner && match selected.objective {
                 Objective::Extraction => true,
                 Objective::Escort | Objective::Survival => position == 0,
-                Objective::Demolition => !supporting && !scout,
+                Objective::Demolition => !supporting && !scout && !miner,
                 _ => false,
             };
             let mut queue = json!({
