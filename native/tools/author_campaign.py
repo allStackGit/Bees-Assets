@@ -455,6 +455,43 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     "Neptune Of Production requires real mineable asteroids "
                     "and an authored native fleet extraction Level"
                 )
+        elif story == "uranus_on_the_defensive":
+            # Uranus II is a real mining/withdrawal encounter with six
+            # timed physical Bee waves; attach its shared Level story only
+            # to a source scene that actually implements those mechanics.
+            # No shadow mission simulation or invented reinforcement plans.
+            zone = level.get("extraction")
+            waves = level.get("reinforcements")
+            expected = (120.0, 240.0, 360.0, 480.0, 540.0, 600.0)
+            times = sorted(wave.get("after_seconds") for wave in waves
+                           if isinstance(wave, dict)) if isinstance(waves, list) else []
+            if (scene.get("human_side") != args.player_side or
+                    scene.get("activate_mining") is not True or
+                    not scene.get("mining_asteroids") or
+                    not isinstance(zone, dict) or
+                    zone.get("player_side") != args.player_side or
+                    zone.get("retreat_on_exit") is not True or
+                    len(times) != len(expected) or
+                    any(type(time) not in (int, float) or
+                        abs(time - due) > 0.0001
+                        for time, due in zip(times, expected)) or
+                    level.get("campaign_dialogue") is not None or
+                    any(level.get(name) is not None for name in
+                        ("survival", "demolition", "escort", "groups"))):
+                raise ValueError(
+                    "Uranus On the Defensive requires actual mining asteroids, "
+                    "a player withdrawal exit and the six source timed waves"
+                )
+            level["campaign_dialogue"] = {
+                "uranus_defensive": {
+                    "player_side": args.player_side,
+                    # These source campaign flags are authored separately:
+                    # persistent Cruiser ownership is recomputed by native
+                    # launch and scientist contact must be explicitly known.
+                    "has_cruiser": False,
+                    "met_scientists": index in args.mission_scientists_met,
+                }
+            }
         elif story == "pluto_bluer_pastures":
             objective = level.get("survival")
             target = next((ship for ship in scene["ships"]
@@ -609,7 +646,10 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             mission["evacuation_rewards"] = True
             mission["advance_on"] = "finished"
             mission["grant_on"] = "finished"
-        if mission_stories.get(index) == "neptune_of_production":
+        if mission_stories.get(index) in (
+                "neptune_of_production", "uranus_on_the_defensive"):
+            # Both source encounters bank the surviving fleet's actual
+            # mining TSV and advance on completed withdrawals, not victory.
             mission["advance_on"] = "finished"
             mission["bank_player_minerals"] = True
             mission["bank_on_finished"] = True
@@ -968,10 +1008,13 @@ def mission_advance(value: str) -> tuple[int, str]:
 
 
 def mission_story(value: str) -> tuple[int, str]:
-    match = re.fullmatch(r"(\d+):(neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures)", value)
+    match = re.fullmatch(
+        r"(\d+):(neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_defensive)",
+        value,
+    )
     if match is None or not 1 <= int(match.group(1)) <= 40:
         raise argparse.ArgumentTypeError(
-            "--mission-story needs MISSION:neptune_pressing_forward, neptune_of_production or pluto_bluer_pastures"
+            "--mission-story needs MISSION:neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures or uranus_on_the_defensive"
         )
     return int(match.group(1)), match.group(2)
 
@@ -1040,6 +1083,9 @@ def main() -> None:
     parser.add_argument("--mission-story", action="append", type=mission_story,
                         default=[], metavar="MISSION:STORY",
                         help="attach original native campaign dialogue and terminal cues to an authored mission")
+    parser.add_argument("--mission-scientists-met", type=int, action="append",
+                        default=[], metavar="MISSION",
+                        help="source Uranus II dialogue flag: Alejandra and Emilia were previously met on this campaign route")
     parser.add_argument("--mission-variant", action="append", type=mission_variant,
                         default=[], metavar="MISSION:PREVIOUS:RUN",
                         help="use another native battle if the required previous mission's latest result was victory")
@@ -1061,6 +1107,11 @@ def main() -> None:
     if (any(mission > len(args.mission) for mission, _ in args.mission_story) or
             len({mission for mission, _ in args.mission_story}) != len(args.mission_story)):
         parser.error("--mission-story needs distinct existing mission indices")
+    story_by_index = dict(args.mission_story)
+    if (len(set(args.mission_scientists_met)) != len(args.mission_scientists_met) or
+            any(story_by_index.get(index) != "uranus_on_the_defensive"
+                for index in args.mission_scientists_met)):
+        parser.error("--mission-scientists-met needs unique authored Uranus II story indices")
     if any(mission > len(args.mission) for mission, _, _ in args.mission_unlock_any):
         parser.error("--mission-unlock-any refers to an absent mission")
     if len(set(args.mission_unlock_any)) != len(args.mission_unlock_any):
