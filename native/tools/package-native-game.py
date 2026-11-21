@@ -195,7 +195,12 @@ def package_game_library(
         original machine. Shared in-root assets keep their original
         names; external inputs receive a content-addressed name.
         """
-        if not isinstance(value, str) or not value or "\\" in value:
+        if (not isinstance(value, str) or not value or
+                ("\\" in value and os.name != "nt")):
+            # Native Windows authoring may produce absolute C:\\ paths.
+            # Path.resolve below authenticates the real existing JSON file
+            # before exporting a portable forward-slash package reference.
+            # Linux must not reinterpret foreign backslashes as filenames.
             raise ValueError(f"Invalid native {kind} asset path")
         file = (run_source.parent / value).resolve(strict=True)
         if file.suffix != ".json" or not file.is_file():
