@@ -143,6 +143,11 @@ impl CombatWorld {
             let rotation = body.motion.rotation_degrees;
             let side = self.ships[owner_index].side;
             let active = body.active && !self.ships[owner_index].vitals.is_dead();
+            // Faction counts are updated at authoritative ship spawn/death
+            // boundaries. An enemy-free range needs only to clear stale
+            // contacts; it cannot produce a new enemy trigger.
+            let has_hostiles = self.live_ship_total >
+                self.live_ships_by_side.get(&side).copied().unwrap_or(0);
             for slot in 0..weapons.turrets.len() {
                 let Some(mount) = weapons.turrets[slot].as_ref() else { continue };
                 // Schema20/direct legacy setups have no real range trigger.
@@ -150,9 +155,13 @@ impl CombatWorld {
                 let Ok(range) = mount.world_range(position, rotation, weapons.last_hull_rotation)
                     else { continue };
                 has_ranges = true;
-                refresh_circle_contacts(&mut self.physics, &self.ships, side, active, range,
+                refresh_circle_contacts(&mut self.physics, &self.ships, side,
+                    active && has_hostiles, range,
                     &mut weapons.range_contacts[slot], &mut self.weapon_range_candidates,
                     &mut self.weapon_range_entering_ids, collisions, &mut counts);
+                if active && range.enabled && !has_hostiles {
+                    counts.weapon_range_queries_skipped_no_enemies += 1;
+                }
             }
         }
 
