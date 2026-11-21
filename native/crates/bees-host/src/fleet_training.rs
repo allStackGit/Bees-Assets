@@ -700,7 +700,20 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     };
     let hub = if use_hub { approved_hub_plan()? } else { None };
     let (worlds, workers, hub_worlds, rollout_processes, rollout_binary) = if use_hub {
-        let choices: [u32; 7] = [16, 32, 64, 128, 256, 512, 1024];
+        let approved = hub.as_ref()
+            .ok_or_else(|| invalid("selected Hub training has no approved source allocation"))?;
+        let plan: Value = serde_json::from_slice(&fs::read(&approved.0)?)?;
+        let machines = plan["collectors"].as_array()
+            .filter(|items| (1..=16).contains(&items.len()))
+            .ok_or_else(|| invalid("Hub collector allocation changed during native selection"))?
+            .len() as u32;
+        // The existing portable allocator admits at most 1,024 genuine
+        // World identities per leased collector. Expose its full capacity
+        // without offering impossible choices for smaller machine groups.
+        let choices = [16, 32, 64, 128, 256, 512, 1024,
+            2048, 4096, 8192, 16384].into_iter()
+            .filter(|worlds| *worlds >= machines && *worlds <= machines * 1024)
+            .collect::<Vec<u32>>();
         let titles = std::iter::once(
             "Automatically size arenas from approved Hub CPU and RAM".to_owned()
         ).chain(choices.iter().map(|worlds|
