@@ -69,6 +69,18 @@ impl CombatWorld {
             ))
     }
 
+    /// All authored live gates, regardless of faction. Presentation audio
+    /// must not assume the battle contains only sides 1 and 2. Iterate the
+    /// existing support registry instead of scanning historical ship slots.
+    pub fn live_warp_gate_ids(&self) -> impl Iterator<Item = i64> + '_ {
+        self.support_zone_ids.iter()
+            .filter(|((kind, _), _)| *kind == WARP_GATE_TYPE)
+            .flat_map(|(_, ids)| ids.iter().copied())
+            .filter(|id| self.ship(*id).is_some_and(|ship|
+                !ship.vitals.is_dead() && ship.ship_type == WARP_GATE_TYPE
+            ))
+    }
+
     pub fn game_warp_gate_position(&self, gate_id: i64) -> Option<Vec2> {
         let &index = self.ship_by_id.get(&gate_id)?;
         let ship = &self.ships[index];
