@@ -1572,11 +1572,13 @@ impl BattleCatalog {
         fields.remove("max_squad_ships");
         let mut mission_ids = progress.missions.keys().copied().collect::<Vec<_>>();
         mission_ids.sort_unstable();
-        let defeat_routes = self.battles.iter().filter_map(|entry|
-            entry.mission.as_ref()).any(|mission|
-                mission.on_defeat.is_some() ||
-                mission.unlock_if_any.iter().any(|condition|
-                    condition.result == RequiredOutcome::Defeat));
+        let missions = self.battles.iter().filter_map(|entry|
+            entry.mission.as_ref()).collect::<Vec<_>>();
+        let defeat_routes = missions.iter().any(|mission|
+            mission.on_defeat.is_some() ||
+            mission.unlock_if_any.iter().any(|condition|
+                condition.result == RequiredOutcome::Defeat));
+        let evacuation_history = missions.iter().any(|mission| mission.evacuation_rewards);
         let mission_results = mission_ids.into_iter().map(|id| {
             let result = &progress.missions[id];
             let mut row = json!({
@@ -1590,6 +1592,9 @@ impl BattleCatalog {
             // non-victorious mission was ever played: false is not the same
             // as never attempted for a defeat-conditioned mission variant.
             if defeat_routes { row["attempted"] = json!(result.attempted); }
+            if evacuation_history {
+                row["evacuated_personnel"] = json!(result.evacuated_personnel);
+            }
             row
         }).collect::<Vec<_>>();
         fields.insert("missions".to_owned(), json!(mission_results));
