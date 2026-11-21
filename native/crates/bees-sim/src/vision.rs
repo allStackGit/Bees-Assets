@@ -35,6 +35,10 @@ pub struct VisionSweepCounts {
     pub live_ship_pairs: u64,
     /// Pairs actually examined after the physics grid or dense fallback.
     pub ship_pairs_tested: u64,
+    /// Observer passes that avoided the shared spatial query because all
+    /// remaining living ships belonged to the observer's faction.
+    #[serde(default)]
+    pub ship_queries_skipped_no_enemies: u64,
     pub unlearned_obstacle_pairs: u64,
     /// Obstacle spatial candidate count across all source observers.
     /// Compare with unlearned_obstacle_pairs for broadphase savings.
@@ -111,6 +115,8 @@ impl VisionSweepCounts {
                 .checked_sub(before.live_storage_identity_checks)?,
             live_ship_pairs: self.live_ship_pairs.checked_sub(before.live_ship_pairs)?,
             ship_pairs_tested: self.ship_pairs_tested.checked_sub(before.ship_pairs_tested)?,
+            ship_queries_skipped_no_enemies: self.ship_queries_skipped_no_enemies
+                .checked_sub(before.ship_queries_skipped_no_enemies)?,
             unlearned_obstacle_pairs: self.unlearned_obstacle_pairs.checked_sub(before.unlearned_obstacle_pairs)?,
             obstacle_candidates: self.obstacle_candidates.checked_sub(before.obstacle_candidates)?,
             obstacle_vision_grid_rebuilds: self.obstacle_vision_grid_rebuilds.checked_sub(before.obstacle_vision_grid_rebuilds)?,
@@ -133,6 +139,7 @@ impl VisionSweepCounts {
         self.live_storage_identity_checks += other.live_storage_identity_checks;
         self.live_ship_pairs += other.live_ship_pairs;
         self.ship_pairs_tested += other.ship_pairs_tested;
+        self.ship_queries_skipped_no_enemies += other.ship_queries_skipped_no_enemies;
         self.unlearned_obstacle_pairs += other.unlearned_obstacle_pairs;
         self.obstacle_candidates += other.obstacle_candidates;
         self.obstacle_vision_grid_rebuilds += other.obstacle_vision_grid_rebuilds;
