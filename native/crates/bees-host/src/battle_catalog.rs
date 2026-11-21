@@ -85,15 +85,21 @@ pub struct BattleEntry {
 impl BattleEntry {
     pub fn configurations(&self) -> impl Iterator<Item = &Path> {
         std::iter::once(self.config.as_path()).chain(
-            self.mission.as_ref().and_then(|mission| mission.on_victory.as_ref())
-                .map(|route| route.config.as_path()),
+            self.mission.iter().flat_map(|mission|
+                mission.on_victory.iter().chain(mission.on_defeat.iter())
+                    .map(|route| route.config.as_path())),
         )
     }
 
     pub fn config_for(&self, progress: &CampaignProgress<'_>) -> &Path {
-        self.mission.as_ref().and_then(|mission| mission.on_victory.as_ref())
-            .filter(|route| progress.latest_victory(&route.mission))
-            .map_or(self.config.as_path(), |route| route.config.as_path())
+        let Some(mission) = &self.mission else { return self.config.as_path() };
+        if let Some(route) = mission.on_victory.as_ref()
+            .filter(|route| progress.latest_victory(&route.mission)) {
+            return route.config.as_path();
+        }
+        mission.on_defeat.as_ref().filter(|route|
+            progress.latest_defeat(&route.mission)
+        ).map_or(self.config.as_path(), |route| route.config.as_path())
     }
 }
 
@@ -131,7 +137,8 @@ pub struct Mission {
     pub victory_squads: Vec<VictorySquadGrant>,
     #[serde(default)]
     advance_on: AdvanceOn,
-    on_victory: Option<VictoryRoute>,
+    on_victory: Option<MissionRoute>,
+    on_defeat: Option<MissionRoute>,
 }
 
 #[derive(Deserialize)]
@@ -151,7 +158,7 @@ pub struct VictorySquadGrant {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct VictoryRoute {
+struct MissionRoute {
     mission: String,
     config: PathBuf,
 }
@@ -335,6 +342,7 @@ struct SquadProgress {
 #[derive(Default)]
 struct MissionProgress {
     completed: bool,
+    attempted: bool,
     latest_victory: bool,
     grants_claimed: bool,
 }
@@ -345,7 +353,11 @@ impl CampaignProgress<'_> {
     }
 
     fn latest_victory(&self, id: &str) -> bool {
-        self.missions.get(id).is_some_and(|mission| mission.latest_victory)
+        self.missions.get(id).is_some_and(|mission| mission.attempted && mission.latest_victory)
+    }
+
+    fn latest_defeat(&self, id: &str) -> bool {
+        self.missions.get(id).is_some_and(|mission| mission.attempted && !mission.latest_victory)
     }
 
     pub fn grants_claimed(&self, id: &str) -> bool {
@@ -652,11 +664,11 @@ impl BattleCatalog {
                     mission.id,
                 )));
             }
-            if mission.on_victory.as_ref().is_some_and(|route|
+            if mission.on_victory.iter().chain(mission.on_defeat.iter()).any(|route|
                 !mission.requires.contains(&route.mission) || route.config.as_os_str().is_empty()
             ) {
                 return Err(invalid(format!(
-                    "Mission {:?} needs an existing prerequisite and a run configuration for on_victory",
+                    "Mission {:?} needs an existing prerequisite and run configuration for its conditional route",
                     mission.id,
                 )));
             }
@@ -932,6 +944,7 @@ impl BattleCatalog {
                 .find(|mission| mission.id == outcome.mission_id && mission.player_side == outcome.player_side)
             {
                 let state = progress.missions.entry(&mission.id).or_default();
+                state.attempted = true;
                 state.latest_victory = outcome.mission_victory();
                 state.completed |= matches!(mission.advance_on, AdvanceOn::Finished) || state.latest_victory;
                 // Awarded hulls and SavedSquads are one atomic campaign
@@ -1369,6 +1382,7 @@ impl BattleCatalog {
             json!({
                 "id": id,
                 "completed": result.completed,
+                "attempted": result.attempted,
                 "latest_victory": result.latest_victory,
                 "grants_claimed": result.grants_claimed,
             })
@@ -1391,6 +1405,13 @@ impl BattleCatalog {
                     "previous_mission": route.mission,
                     "config": route.config,
                     "active": progress.latest_victory(&route.mission),
+                })),
+                "defeat_route": mission.on_defeat.as_ref().map(|route| json!({
+                    "previous_mission": route.mission,
+                    "config": route.config,
+                    "active": progress.latest_defeat(&route.mission) &&
+                        mission.on_victory.as_ref().is_none_or(|win|
+                            !progress.latest_victory(&win.mission)),
                 })),
                 "requires": mission.requires,
                 "waiting_for": mission.requires.iter().filter(|id|
