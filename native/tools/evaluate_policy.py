@@ -19,8 +19,7 @@ from native_training_artifacts import (file_sha256, sync_directory, atomic_json,
                                        native_input_dependencies,
                                        check_native_input_dependencies,
                                        native_headless_environment,
-                                       native_manifest_model_dependencies,
-                                       check_native_model_dependencies)
+                                       native_manifest_model_dependencies)
 
 
 def resolved(base, path):
