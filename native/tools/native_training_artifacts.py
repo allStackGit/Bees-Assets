@@ -307,8 +307,9 @@ class RolloutProcessSampler:
     CPU deltas are lower bounds: short-lived children and the final partial
     sampling interval may be missed. RSS sums include shared pages.
     """
-    def __init__(self, interval=1.0):
+    def __init__(self, interval=1.0, simulator_via_cargo=False):
         import time
+        self.simulator_via_cargo = simulator_via_cargo
         try:
             import psutil
         except ImportError:
@@ -348,8 +349,9 @@ class RolloutProcessSampler:
             return
         self.next_sample = now + self.interval
         current = {}
-        all_roots = {}
-        all_children = {}
+        all_simulators = {}
+        all_inference = {}
+        all_processes = {}
         for index, process in enumerate(processes):
             if process is None or index in settled:
                 continue
@@ -358,26 +360,43 @@ class RolloutProcessSampler:
                 children = root.children(recursive=True)
             except (self.psutil.Error, OSError):
                 continue
-            roots, descendants = {}, {}
+            # cargo run may still be compiling, or may remain the parent
+            # of the actual simulator. Never attribute cargo or rustc
+            # CPU/RSS to the simulator or its inference worker.
+            simulator_pids, inference_pids = set(), set()
+            for candidate in ((root, *children) if self.simulator_via_cargo else (root,)):
+                try:
+                    if self.simulator_via_cargo and candidate.name().lower() not in (
+                        "policy_rollout", "policy_rollout.exe",
+                    ):
+                        continue
+                    simulator_pids.add(candidate.pid)
+                    inference_pids.update(
+                        child.pid for child in candidate.children(recursive=True)
+                    )
+                except (self.psutil.Error, OSError):
+                    continue
+            worker_processes = {}
             for candidate in (root, *children):
                 try:
                     with candidate.oneshot():
                         identity = candidate.pid, candidate.create_time()
                         times = candidate.cpu_times()
                         rss = candidate.memory_info().rss
-                    (roots if candidate.pid == root.pid else descendants)[identity] = (
-                        times.user + times.system, rss,
-                    )
+                    observation = (times.user + times.system, rss)
+                    worker_processes[identity] = observation
+                    if candidate.pid in simulator_pids:
+                        all_simulators[identity] = observation
+                    elif candidate.pid in inference_pids:
+                        all_inference[identity] = observation
                 except (self.psutil.Error, OSError):
                     continue
-            if not roots:
-                continue
-            current[f"worker_{index}"] = {**roots, **descendants}
-            all_roots.update(roots)
-            all_children.update(descendants)
-        current["simulator_processes"] = all_roots
-        current["inference_descendants"] = all_children
-        current["collector_process_tree"] = {**all_roots, **all_children}
+            if worker_processes:
+                current[f"worker_{index}"] = worker_processes
+                all_processes.update(worker_processes)
+        current["simulator_processes"] = all_simulators
+        current["inference_descendants"] = all_inference
+        current["collector_process_tree"] = all_processes
         elapsed = now - self.last_sample if self.last_sample is not None else 0.0
         for name, values in current.items():
             self._observe(name, values, self.previous.get(name, {}), elapsed)

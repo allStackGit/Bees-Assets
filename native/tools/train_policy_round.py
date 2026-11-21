@@ -699,7 +699,7 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
     gpu_proofs = {}
     gpu_requested = gpu_ids is not None or leased_gpu_inference
     settled = set()
-    resources = RolloutProcessSampler()
+    resources = RolloutProcessSampler(simulator_via_cargo=command[0] == "cargo")
     with ExitStack() as files:
         try:
             for index, (shard, config_path) in enumerate(shards):
