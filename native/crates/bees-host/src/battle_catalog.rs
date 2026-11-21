@@ -118,6 +118,11 @@ pub struct Mission {
     /// designated authored missions credit the player account.
     #[serde(default)]
     pub bank_player_minerals: bool,
+    /// Source Neptune Of Production credits all surviving FleetShip mined
+    /// TSV even if the last active ship retreats and the encounter ends.
+    /// Default banking remains victory-only for existing authored games.
+    #[serde(default)]
+    pub bank_on_finished: bool,
     /// Opt-in historical FleetShip deaths on the next authored Level.
     /// Only ships belonging to the player side are removed at setup;
     /// opposing authored forces remain owned by their scenario.
@@ -704,6 +709,9 @@ impl BattleCatalog {
                 !matches!(mission.player_side, 1 | 2) ||
                 ((mission.persist_fleet_losses || mission.bank_player_minerals) &&
                     !mission.record_fleet_stats) ||
+                (mission.bank_on_finished &&
+                    (!mission.bank_player_minerals ||
+                        !matches!(mission.advance_on, AdvanceOn::Finished))) ||
                 (mission.persist_enemy_fleet_losses &&
                     (!mission.persist_fleet_losses || !mission.record_fleet_stats)) ||
                 (mission.grants_on_finished() &&
@@ -1639,6 +1647,9 @@ impl BattleCatalog {
             }
             if mission.grants_on_finished() {
                 row["grant_on"] = json!("finished");
+            }
+            if mission.bank_on_finished {
+                row["bank_on_finished"] = json!(true);
             }
             if mission.evacuation_rewards {
                 row["evacuation_rewards"] = json!(true);
