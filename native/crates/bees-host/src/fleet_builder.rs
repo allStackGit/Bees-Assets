@@ -2319,6 +2319,7 @@ pub(super) fn archive(
             // this loop; a player's commander never loses input authority.
             let mission_owner = selected.objective_side == Some(side as i32 + 1);
             let orders = if supporting && mission_owner && side == 1 &&
+                !matches!(selected.mix[side], FleetMix::Queen) &&
                 matches!(selected.objective, Objective::Extraction)
             {
                 // The original Carrier is a mobile source ship. It must
@@ -2328,6 +2329,7 @@ pub(super) fn archive(
                     -extraction_x, 0.0,
                 ]})]
             } else if supporting && mission_owner && side == 1 &&
+                !matches!(selected.mix[side], FleetMix::Queen) &&
                 matches!(selected.objective, Objective::Escort)
             {
                 // Mobile Carriers defend the moving command convoy with
