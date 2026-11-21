@@ -151,11 +151,75 @@ impl ReinforcementWave {
     pub(crate) fn ship_count(&self) -> usize { self.ships.len() }
 }
 
-/// Source LevelConstructor.PositionSquads with squadsAreReinforcements=true.
-/// Each plan represents ONE source construction call, including any Carrier
-/// child squads. The authored squad order controls alternating left/right
-/// placement, independently of the imported scene entity-array order.
+/// Source AddReinforcementSquads calls SpawnShipsAndSquads separately
+/// for EACH independent SavedSquad. Only Carrier children join their
+/// parent's constructor call, where PositionSquads spreads them apart.
+/// Preserve that distinction rather than spreading unrelated Uranus
+/// reinforcements as if they belonged to one giant Carrier fleet.
 fn plan_reinforcement_wave(
+    squads: &[&NativeAuthoredSquad],
+    ships: &HashMap<i64, &NativeAuthoredShip>,
+    spawn: Vec2,
+    metadata: &NativePolicyOnlyMetadata,
+) -> Result<HashMap<i64, Vec2>, &'static str> {
+    let mut construction_groups: Vec<Vec<&NativeAuthoredSquad>> = Vec::new();
+    let mut carrier_group = HashMap::new();
+    for &squad in squads {
+        let mut parent = None;
+        let mut child_count = 0;
+        for id in &squad.members {
+            let ship = ships.get(id)
+                .ok_or("Reinforcement source squad lacks its physical ship")?;
+            if let Some(carrier) = reinforcement_carrier_parent(ship) {
+                if parent.is_some_and(|previous| previous != carrier) {
+                    return Err("Reinforcement child squad mixes Carrier parents");
+                }
+                parent = Some(carrier);
+                child_count += 1;
+            }
+        }
+        if child_count != 0 && child_count != squad.members.len() {
+            return Err("Reinforcement Carrier child squad mixes unrelated ships");
+        }
+        if let Some(parent) = parent {
+            let &group = carrier_group.get(&parent)
+                .ok_or("Reinforcement Carrier child precedes or lacks its parent")?;
+            construction_groups[group].push(squad);
+        } else {
+            let group = construction_groups.len();
+            for id in &squad.members {
+                if ships[id].ship_type == 5 {
+                    carrier_group.insert(*id, group);
+                }
+            }
+            construction_groups.push(vec![squad]);
+        }
+    }
+    let mut placements = HashMap::new();
+    for group in construction_groups {
+        placements.extend(plan_reinforcement_constructor(
+            &group, ships, spawn, metadata,
+        )?);
+    }
+    Ok(placements)
+}
+
+fn reinforcement_carrier_parent(ship: &NativeAuthoredShip) -> Option<i64> {
+    match ship.ship_type {
+        8 => ship.drone_carrier_id,
+        19 => match &ship.special {
+            Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) =>
+                carrier.carrier_id,
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// PositionSquads is called once per original constructor invocation:
+/// the primary SavedSquad and only its generated Carrier descendants.
+/// Within that one family the authored order controls left/right spacing.
+fn plan_reinforcement_constructor(
     squads: &[&NativeAuthoredSquad],
     ships: &HashMap<i64, &NativeAuthoredShip>,
     spawn: Vec2,
@@ -457,15 +521,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 let mut child_parent = None;
                 for ship_id in &squad.members {
                     let ship = source_ships[ship_id];
-                    let parent = match ship.ship_type {
-                        8 => ship.drone_carrier_id,
-                        19 => match &ship.special {
-                            Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) =>
-                                carrier.carrier_id,
-                            _ => None,
-                        },
-                        _ => None,
-                    };
+                    let parent = reinforcement_carrier_parent(ship);
                     if let Some(parent) = parent {
                         if !carrier_ids.contains(&parent) ||
                             child_parent.is_some_and(|prior| prior != parent)
