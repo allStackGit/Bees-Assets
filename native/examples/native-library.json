@@ -30,6 +30,18 @@
       "title": "Hold the Beehive — Wave Defense",
       "kind": "battle",
       "config": "native-wave-defense.run.json"
+    },
+    {
+      "id": "escort-convoy",
+      "title": "Escort the Fleet Convoy",
+      "kind": "battle",
+      "config": "native-escort-convoy.run.json"
+    },
+    {
+      "id": "fire-tank-defense",
+      "title": "Fire Tank Defense",
+      "kind": "battle",
+      "config": "native-fire-tank-defense.run.json"
     }
   ]
 }
