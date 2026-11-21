@@ -394,6 +394,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     missions = []
     mission_dependencies = dict(args.mission_requires)
     mission_advances = dict(args.mission_advance)
+    mission_stories = dict(args.mission_story)
     mission_outcomes = {}
     for index, prior, result in args.mission_unlock_any:
         mission_outcomes.setdefault(index, []).append((prior, result))
@@ -410,6 +411,30 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     shop_catalog = {}
     per_mission_sources = []
     per_mission_class_contracts = []
+
+    def apply_story(index: int, scene: dict, run: dict) -> None:
+        story = mission_stories.get(index)
+        if story is None:
+            return
+        level = run["levels"][0]
+        if story == "neptune_pressing_forward":
+            # This authored story accompanies ordinary original elimination.
+            # Its Factory dialogue choice is resolved after the native
+            # launcher restores actual purchased/lost persistent FleetShips.
+            if (scene.get("native_game_schema") != 1 or
+                    scene.get("human_side") != args.player_side or
+                    any(level.get(name) is not None for name in
+                        ("survival", "demolition", "escort", "extraction")) or
+                    level.get("campaign_dialogue") is not None):
+                raise ValueError(
+                    "Neptune Pressing Forward needs an ordinary native human "
+                    "elimination Level without another authored story or objective"
+                )
+            level["campaign_dialogue"] = {
+                "neptune_pressing_forward": {
+                    "player_side": args.player_side, "has_factory": False,
+                }
+            }
 
     def record_class_source(scene: dict) -> None:
         """Require each selectable game variant to supply real identical hulls."""
@@ -461,6 +486,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     for index, source in enumerate(args.mission, 1):
         source_path = source.resolve(strict=True)
         scene, run, provenance = input_mission(source_path, args.player_side)
+        apply_story(index, scene, run)
         if stable_roster is None:
             stable_roster = provenance["player_fleet_contract"]
         elif provenance["player_fleet_contract"] != stable_roster:
@@ -597,6 +623,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             variant_scene, variant_run, provenance_variant = input_mission(
                 variant_path.resolve(strict=True), args.player_side,
             )
+            apply_story(index, variant_scene, variant_run)
             if provenance_variant["player_fleet_contract"] != stable_roster:
                 raise ValueError(
                     f"mission {index} conditional {outcome} battle changes the "
@@ -815,6 +842,15 @@ def mission_advance(value: str) -> tuple[int, str]:
     return int(match.group(1)), match.group(2)
 
 
+def mission_story(value: str) -> tuple[int, str]:
+    match = re.fullmatch(r"(\d+):(neptune_pressing_forward)", value)
+    if match is None or not 1 <= int(match.group(1)) <= 40:
+        raise argparse.ArgumentTypeError(
+            "--mission-story needs MISSION:neptune_pressing_forward"
+        )
+    return int(match.group(1)), match.group(2)
+
+
 def mission_unlock_any(value: str) -> tuple[int, int, str]:
     """MISSION:PRIOR:finished|victory|defeat; alternative forward mission gate."""
     match = re.fullmatch(r"(\d+):(\d+):(finished|victory|defeat)", value)
@@ -868,6 +904,9 @@ def main() -> None:
     parser.add_argument("--mission-unlock-any", action="append", type=mission_unlock_any,
                         default=[], metavar="MISSION:PRIOR:OUTCOME",
                         help="unlock a mission through any listed earlier finished, victory or defeat outcome; use --mission-requires MISSION:none for a full alternative route")
+    parser.add_argument("--mission-story", action="append", type=mission_story,
+                        default=[], metavar="MISSION:STORY",
+                        help="attach original native campaign dialogue and terminal cues to an authored mission")
     parser.add_argument("--mission-variant", action="append", type=mission_variant,
                         default=[], metavar="MISSION:PREVIOUS:RUN",
                         help="use another native battle if the required previous mission's latest result was victory")
@@ -886,6 +925,9 @@ def main() -> None:
                         default=[], metavar="MISSION:NEW_SQUAD:TEMPLATE_SQUAD",
                         help="one-time victory SavedSquad; ships may be awarded into this ID in the same mission")
     args = parser.parse_args()
+    if (any(mission > len(args.mission) for mission, _ in args.mission_story) or
+            len({mission for mission, _ in args.mission_story}) != len(args.mission_story)):
+        parser.error("--mission-story needs distinct existing mission indices")
     if any(mission > len(args.mission) for mission, _, _ in args.mission_unlock_any):
         parser.error("--mission-unlock-any refers to an absent mission")
     if len(set(args.mission_unlock_any)) != len(args.mission_unlock_any):
