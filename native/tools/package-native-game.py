@@ -254,10 +254,15 @@ def package_game_library(
             for battle in data["battles"]:
                 pending.append(((PurePosixPath(path.parent.as_posix()) /
                                  battle["config"]).as_posix(), "run"))
-                route = (battle.get("mission") or {}).get("on_victory")
-                if route is not None:
-                    pending.append(((PurePosixPath(path.parent.as_posix()) /
-                                     route["config"]).as_posix(), "run"))
+                # BattleCatalog.configurations() includes BOTH authored
+                # conditional branches. A defeat route must remain playable
+                # in a portable release, not disappear during packaging.
+                mission = battle.get("mission") or {}
+                for outcome in ("on_victory", "on_defeat"):
+                    route = mission.get(outcome)
+                    if route is not None:
+                        pending.append(((PurePosixPath(path.parent.as_posix()) /
+                                         route["config"]).as_posix(), "run"))
         elif kind == "run":
             if data.get("hivemind") or data.get("model_updates") or (
                     data.get("recover_notifications") or
