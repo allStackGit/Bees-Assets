@@ -5539,6 +5539,9 @@ def _poca_full_cuda_graph_update(
         _POLICY_DIMENSION_MASK_STATE.mask = previous_dimension_mask
         _POLICY_DIMENSION_MASK_STATE.sample_weights = previous_sample_weights
 
+    # Capture records GPU work without executing it. Apply this minibatch once
+    # before returning; subsequent minibatches reuse the recorded graph below.
+    graph.replay()
     state["graph"] = graph
     state["signature"] = signature
     state["static"] = static
@@ -5705,7 +5708,7 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
         )
         return
 
-    # Capture one real step with stable gradient inputs. Eager backward
+    # Record this minibatch's Adam step with stable gradient inputs. Eager backward
     # uses fresh gradients each minibatch, preserving missing-gradient semantics.
     # If capture fails, propagate the error rather than double-stepping.
     capture_started = time.perf_counter()
@@ -5718,6 +5721,9 @@ def _poca_optimizer_step(optimizer, *, graph_eligible: bool = False) -> None:
     graph = torch.cuda.CUDAGraph()
     with torch.cuda.graph(graph):
         optimizer.step()
+    # Capture records GPU work without executing it. Apply this minibatch once
+    # before returning; subsequent minibatches reuse the recorded graph below.
+    graph.replay()
     state["graph"] = graph
     state["signature"] = signature
     state["learning_rates"] = learning_rates
