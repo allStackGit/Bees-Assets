@@ -1679,6 +1679,7 @@ fn collect_remote_audio(
         // Enemy effects still require the current fog predicate.
         let affected_ship = match event {
             CombatEvent::Hit(hit) => Some(hit.target_id),
+            CombatEvent::BombDetonated { target_id, .. } => Some(*target_id),
             CombatEvent::ShipDied { victim_id, .. } => Some(*victim_id),
             CombatEvent::StrikerBombDropped { ship_id, .. } |
             CombatEvent::ShipWarped { ship_id, .. } |
