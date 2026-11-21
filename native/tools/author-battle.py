@@ -531,9 +531,18 @@ def author(args) -> tuple[dict, dict, dict]:
         if (not isinstance(hive, dict) or set(hive) - fields or
                 not isinstance(hive.get("endpoint"), str) or
                 not hive["endpoint"] or
-                type(hive.get("user_id")) is not int or hive["user_id"] <= 0 or
-                not isinstance(hive.get("version"), (int, float)) or
-                not math.isfinite(hive["version"]) or hive["version"] <= 0 or
+                type(hive.get("user_id")) is not int or
+                not 0 < hive["user_id"] < 1 << 64 or
+                type(hive.get("version")) not in (int, float) or
+                not math.isfinite(hive["version"]) or
+                not 0 < hive["version"] <= 3.4e38 or
+                (hive.get("auth_ticket_env") is not None and
+                 (not isinstance(hive["auth_ticket_env"], str) or
+                  re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}",
+                               hive["auth_ticket_env"]) is None)) or
+                type(hive.get("allow_insecure_loopback", False)) is not bool or
+                type(hive.get("shutdown_flush_seconds", 5)) is not int or
+                not 0 <= hive.get("shutdown_flush_seconds", 5) <= 3600 or
                 hive.get("issue_source_commands") is not True or
                 hive.get("reconnect_game_id") is not None or
                 type(hive_opponent) is not int or
