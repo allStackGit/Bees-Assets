@@ -582,6 +582,12 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         }
         if args.persist_enemy_losses:
             mission["persist_enemy_fleet_losses"] = True
+        # Mining income is a source Level.Ending action, not an automatic
+        # consequence of a victory. Neither Pluto IV nor the Neptune
+        # blockade invokes CollectMinedMineralsForPlayer.
+        if mission_stories.get(index) in (
+                "pluto_bluer_pastures", "neptune_pressing_forward"):
+            mission["bank_player_minerals"] = False
         if mission_stories.get(index) == "pluto_bluer_pastures":
             mission["evacuation_rewards"] = True
             mission["advance_on"] = "finished"
