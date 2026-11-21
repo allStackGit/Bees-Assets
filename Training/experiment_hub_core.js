@@ -1567,6 +1567,19 @@ function gpuProbeHoldsClaim(job) {
             (proof.status==='requested'&&proof.first_offered_at!==null)));
 }
 
+// Cancel only unoffered device probes. An offered probe may own a
+// transient native unit, so retain it until authenticated cleanup.
+function cancelUnofferedBundleProbes(next,plan) {
+    for(const job of next.jobs) {
+        const proof=job.gpu_qualification;
+        if(proof?.bundle_start_plan_id===plan.id&&proof.status==='requested'&&
+            proof.first_offered_at===null) {
+            proof.status='cancelled';
+            proof.diagnostic='Original bundle Start authorization ended before this GPU probe was offered.';
+        }
+    }
+}
+
 // The whole original bundle is the unit of operator authorization.
 // Validate exact membership and frozen member order before any draft is changed.
 function exactResourceBundle(snapshot,value,confirmation) {
@@ -1662,6 +1675,7 @@ class ExperimentHub {
                     plan.status='disarmed';
                     plan.reason='Coordinator restarted; this launch requires a new explicit approval.';
                     plan.resolved_at=now();
+                    cancelUnofferedBundleProbes(next,plan);
                 }
             for(const plan of next.distributed_launch_plans||[])
                 if(plan.status==='pending') {
@@ -2818,8 +2832,35 @@ class ExperimentHub {
             released_lease_id:source.id,lease_id:replacements.get(job.id).id,
         }))};
     }
+    // A scheduled native Bees bundle may request the exact same device
+    // proof as an operator. This permission exists only for its original
+    // pending launch window, roster, leases and authenticated sessions.
+    nativeBundleProbeAuthorized(snapshot,job,planId) {
+        const plan=(this.state.bundle_start_plans||[]).find(item=>item.id===planId);
+        if(!plan||plan.status!=='pending'||plan.gpu_approval!==true||
+            Date.now()>=Date.parse(plan.expires_at)||
+            !job||!plan.member_job_ids.includes(job.id))return false;
+        const members=snapshot.jobs.filter(item=>item.resource_bundle?.id===plan.bundle_id)
+            .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
+        return members.length===plan.frozen_members.length&&members.every((member,index)=>{
+            const approved=plan.frozen_members[index];
+            return ['bees_native','bees_native_collect','bees_native_optimizer_worker']
+                .includes(member.project_id)&&member.id===approved.job_id&&
+                member.assigned_machine_id===approved.machine_id&&
+                member.lease_id===approved.lease_id&&member.status==='waiting_adapter'&&
+                !member.dispatch_id&&
+                this.agentReports.get(member.assigned_machine_id)?.instance_id===
+                    plan.agent_instances[member.assigned_machine_id]&&
+                snapshot.machines.find(machine=>machine.id===member.assigned_machine_id)
+                    ?.status==='connected'&&
+                snapshot.reservations.some(lease=>lease.id===member.lease_id&&
+                    lease.job_id===member.id&&lease.machine_id===member.assigned_machine_id&&
+                    lease.project_id===member.project_id&&lease.issued_by==='experiment-hub'&&
+                    ['offered','acknowledged'].includes(lease.status));
+        });
+    }
     // Explicitly request bounded device access and runtime PCI proof, not a trainer launch.
-    requestGpuQualification(value,origin='operator') {
+    requestGpuQualification(value,origin='operator',bundlePlanId=null) {
         if(!object(value)||value.confirm_qualify!==true||
             !UUID.test(String(value.job_id||'')))
             throw Error('Explicitly confirm the job whose GPU access will be probed.');
@@ -2838,6 +2879,8 @@ class ExperimentHub {
         if(['native_round_release','native_round_collection'].includes(origin)&&
             !this.nativeRoundRecoveryAuthorized(snapshot,job))
             throw Error('Release GPU probe requires the current authorized native round.');
+        if(origin==='native_bundle'&&!this.nativeBundleProbeAuthorized(snapshot,job,bundlePlanId))
+            throw Error('GPU probe requires its original authorized native Bees bundle.');
         const session=this.automation;
         if(origin==='automation'&&(!session.probe_exclusive_gpu||
             !session.claimed_lease_ids.includes(lease.id)||
@@ -2860,6 +2903,7 @@ class ExperimentHub {
             ...(origin==='automation'?{automation_session_id:session.session_id}:{}),
             ...(['native_round_release','native_round_collection'].includes(origin)?
                 {native_round_recovery:true}:{}),
+            ...(origin==='native_bundle'?{bundle_start_plan_id:bundlePlanId}:{}),
         };
         this.commit(next);
         return {job_id:job.id,lease_id:lease.id,
@@ -2881,6 +2925,14 @@ class ExperimentHub {
         if((proof.native_round_release||proof.native_round_recovery)&&nativeRecovery(job))
             delete nativeRecovery(job).round_plan_id;
         proof.diagnostic='Operator withdrew this undelivered GPU access probe.';
+        const plan=(next.bundle_start_plans||[]).find(item=>
+            item.id===proof.bundle_start_plan_id&&item.status==='pending');
+        if(plan) {
+            plan.status='needs_review';
+            plan.reason='Operator withdrew an automatic GPU probe; bundle Start requires renewed approval.';
+            plan.resolved_at=now();
+            cancelUnofferedBundleProbes(next,plan);
+        }
         this.commit(next);
         return {job_id:job.id,request_id:proof.request_id,status:proof.status};
     }
@@ -4532,11 +4584,15 @@ class ExperimentHub {
                 const releaseProbeBlocked=(proof.native_round_release===true||
                     proof.native_round_recovery===true)&&
                     !this.nativeRoundRecoveryAuthorized(snapshot,job);
-                if((blocked||releaseProbeBlocked)&&proof.first_offered_at===null&&!proof.cleanup_only)continue;
+                const bundleProbeBlocked=Boolean(proof.bundle_start_plan_id&&
+                    !this.nativeBundleProbeAuthorized(snapshot,job,proof.bundle_start_plan_id));
+                if((blocked||releaseProbeBlocked||bundleProbeBlocked)&&
+                    proof.first_offered_at===null&&!proof.cleanup_only)continue;
                 // An offered probe can still owe a result when its lease
                 // loses eligibility. The worker rejects an order without
                 // a fresh receipt and reports whether cleanup is verified.
-                probeRecoveryOnly=Boolean(blocked||releaseProbeBlocked||proof.cleanup_only);
+                probeRecoveryOnly=Boolean(blocked||releaseProbeBlocked||
+                    bundleProbeBlocked||proof.cleanup_only);
             }
             if(action==='start'&&job.start_first_offered_at==null) {
                 // Persist the point of no return before the order can leave
@@ -6770,6 +6826,7 @@ class ExperimentHub {
         plan.status='cancelled';
         plan.reason='Future native group Start cancelled by operator; existing jobs and claims are unchanged.';
         plan.resolved_at=now();
+        cancelUnofferedBundleProbes(next,plan);
         this.commit(next);
         return {plan_id:plan.id,bundle_id:plan.bundle_id,status:plan.status,
             native_starts_withdrawn:0};
@@ -6789,6 +6846,7 @@ class ExperimentHub {
                 item.status=status;
                 item.reason=reason;
                 item.resolved_at=now();
+                cancelUnofferedBundleProbes(next,item);
                 this.commit(next);
             };
             if(Date.now()>=Date.parse(plan.expires_at)) {
@@ -6825,8 +6883,36 @@ class ExperimentHub {
                 halt('disarmed','An authenticated GPU machine agent was replaced; fresh operator approval is required.');
                 continue;
             }
-            if(!members.every(job=>nativeStartReadiness(snapshot,job).eligible))
+            if(!members.every(job=>nativeStartReadiness(snapshot,job).eligible)) {
+                if(plan.gpu_approval&&this.nativeBundleProbeAuthorized(snapshot,members[0],plan.id)) {
+                    // At most one new request per bundle heartbeat. Wait
+                    // for the authenticated agent's real lease proof, and
+                    // never loop on a rejected or outstanding probe.
+                    for(const job of members) {
+                        const host=snapshot.machines.find(machine=>machine.id===job.assigned_machine_id);
+                        if(host?.agent_platform!=='linux'||!job.resources.gpu_count||
+                            job.gpu_qualification?.current===true)continue;
+                        const proof=job.gpu_qualification;
+                        if(proof?.lease_id===job.lease_id&&
+                            (proof.status==='rejected'||proof.cleanup_required)) {
+                            halt('needs_review','Native bundle GPU device proof requires operator review.');
+                            break;
+                        }
+                        if(proof?.lease_id===job.lease_id&&proof.status==='requested')continue;
+                        const lease=snapshot.reservations.find(item=>item.id===job.lease_id);
+                        if(gpuProbeBlock(job,lease,host))continue;
+                        try {
+                            this.requestGpuQualification({job_id:job.id,confirm_qualify:true},
+                                'native_bundle',plan.id);
+                        }catch(error) {
+                            halt('needs_review','Native bundle GPU probe admission changed: '+
+                                String(error.message||error).slice(0,160));
+                        }
+                        break;
+                    }
+                }
                 continue;
+            }
             try {
                 this.authorizeResourceBundle({
                     bundle_id:plan.bundle_id,expected_job_ids:plan.member_job_ids,
@@ -6856,6 +6942,7 @@ class ExperimentHub {
             planned.status='disarmed';
             planned.reason='Operator requested group shutdown before auto-start.';
             planned.resolved_at=at;
+            cancelUnofferedBundleProbes(next,planned);
             changed=true;
         }
         for(const member of members) {
