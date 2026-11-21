@@ -920,7 +920,7 @@ fn mixed_fleet_offsets(
 /// ship extents. A free Striker must begin inside the same Level, separate
 /// from its Carrier and every other authored ship; the shared game will
 /// handle its flight, bombing, rearming, and eventual retirement.
-fn place_free_striker(
+fn place_free_carrier_child(
     parent: [f32; 2], size: [f32; 2],
     occupied: &mut Vec<(f32, f32, f32, f32)>,
 ) -> Result<[f32; 2], Box<dyn Error>> {
@@ -946,7 +946,7 @@ fn place_free_striker(
         }
     }
     let (_, position) = best.ok_or_else(||
-        invalid("no unobstructed source-sized space for the Carrier's Striker deck"))?;
+        invalid("no unobstructed source-sized space for the Carrier's free deck"))?;
     occupied.push((position[0], position[1], half_x, half_y));
     Ok(position)
 }
@@ -1270,6 +1270,26 @@ pub(super) fn archive(
         source_archetypes["ships"].as_array_mut()
             .ok_or_else(|| invalid("native source archetypes are not a ship roster"))?
             .push(queen);
+    }
+    if support_count[1] > 0 && !matches!(selected.mix[1], FleetMix::Queen) {
+        // The original Carrier carries both Drone and Striker combat
+        // complements. Reuse the exact source-authored Drone hull and
+        // weapon from the existing native game scene, discarding only
+        // that example's external policy ownership. This does NOT
+        // construct a new projectile or approximate its combat physics.
+        let source: Value = serde_json::from_str(SOURCE_QUEEN)?;
+        let mut drone = source["ships"].as_array()
+            .and_then(|ships| ships.iter().find(|ship|
+                ship["side"] == 2 && ship["ship_type"] == 8 &&
+                ship["drone_carrier_id"].as_i64().is_some()))
+            .ok_or_else(|| invalid("native original Carrier lacks a Drone source hull"))?
+            .clone();
+        drone.as_object_mut()
+            .ok_or_else(|| invalid("native Drone source must be an object"))?
+            .remove("policy");
+        source_archetypes["ships"].as_array_mut()
+            .ok_or_else(|| invalid("native Carrier archetypes lost their ship list"))?
+            .push(drone);
     }
     if selected.mining_field {
         // Duplicate the original authenticated physical mining collider
