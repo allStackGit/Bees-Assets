@@ -250,7 +250,11 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
         center = [0.0, 0.0]
         for ship_id in members:
             ship = ship_by_id.get(ship_id)
-            if ship is None or ship["side"] != primary["side"] or any(
+            if (ship is None or ship["side"] != primary["side"] or
+                    ship["ship_type"] == 5 or
+                    not isinstance(ship.get("base_speed"), (int, float)) or
+                    not math.isfinite(ship["base_speed"]) or
+                    ship["base_speed"] <= 0 or any(
                     ship.get(key) is not None for key in (
                         "policy", "special", "special_weapon", "drone_carrier_id")
             ) or ship.get("is_moving", False) or ship.get(
