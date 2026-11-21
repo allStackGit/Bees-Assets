@@ -5305,6 +5305,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderDesignEditor(true);
                 feedback('hub-config-message','Duplicated into a new unsaved draft. Select Save draft to retain it.');
             }));
+            const configurationDelete=button('Delete configuration',async()=>{
+                if(!confirm('Delete saved configuration "'+c.name+'" revision '+
+                    c.revision+' from the Hub? This cannot be undone. Referencing jobs '+
+                    'and pending selection plans must be removed first.'))return;
+                try {
+                    await action('hub/configurations/delete',{
+                        configuration_id:c.id,expected_revision:c.revision,
+                        confirm_delete:true,
+                    });
+                    if(editing?.id===c.id)resetEditor();
+                    feedback('hub-config-message','Deleted configuration '+c.name+'.');
+                    await reload();
+                }catch(error){feedback('hub-config-message',error.message);}
+            });
+            configurationDelete.className='danger';
+            configurationDelete.title='Removes only this saved configuration, never a training job.';
+            actions.append(configurationDelete);
             if(project==='bees') {
                 actions.append(button('Queue for Bees',async()=>{
                     if(!confirm('Freeze and queue "'+c.name+'"? Training will not start until the queue is armed.'))return;
@@ -6567,6 +6584,35 @@ document.addEventListener('DOMContentLoaded', () => {
                         await reload();
                     }catch(error){feedback('hub-job-message',error.message);}
                 }));
+            }
+            const groupForDeletion=state.jobs.filter(worker=>
+                ['tinybrains_rollout','courier_lineage'].includes(worker.project_id)&&
+                worker.frozen_parameters?.learner_job_id===j.id);
+            if(!['tinybrains_rollout','courier_lineage'].includes(j.project_id)&&
+                [j,...groupForDeletion].every(item=>
+                    ['cancelled','finished','failed','stopped'].includes(item.status)&&
+                    (!item.dispatch_id||Boolean(item.capacity_released_at)))) {
+                const remove=button(groupForDeletion.length
+                    ?'Delete completed group':'Delete old job',async()=>{
+                    const groupIds=[j.id,...groupForDeletion.map(worker=>worker.id)];
+                    if(!confirm('Permanently remove '+groupIds.length+' completed Hub job '+
+                        (groupIds.length===1?'record':'records')+
+                        ' and released claim history? Training artifacts, evaluator '+
+                        'archives and downloaded exports are NOT deleted. Active or '+
+                        'referenced jobs will be refused by the server.'))return;
+                    try {
+                        const result=await action('hub/jobs/delete',{
+                            job_id:j.id,expected_job_ids:groupIds,
+                            confirm_delete:true,
+                        });
+                        feedback('hub-job-message',
+                            'Deleted '+result.deleted_count+' completed Hub job records. '+
+                            'Native artifacts and evaluation archives were preserved.');
+                        await reload();
+                    }catch(error){feedback('hub-job-message',error.message);}
+                });
+                remove.className='danger';
+                actions.append(remove);
             }
             // Most actions are intentionally behind one expandable control.
             // Starts, Stops and capacity actions remain immediately visible.
