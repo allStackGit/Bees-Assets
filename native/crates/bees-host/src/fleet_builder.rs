@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use bees_host::presentation::{select_library, BattleMenuRow};
 use bees_host::unity_scene_snapshot::{
     NativeLevelLayout, NativePlacedStaticBox, NativeSquadClone, NativeSquadMerge,
+    NativeSquadShortcut,
 };
 use bees_sim::ship_assets::ShipAssetCatalog;
 use serde_json::{json, Value};
@@ -1477,6 +1478,24 @@ pub(super) fn archive(
         }
         groups.extend_from_slice(&originals[fighter_count[side]..]);
         squad_ids[side] = groups;
+    }
+    // The same source hotkey metadata that GameState sets up for Unity's
+    // initial player squads is now available to both local commanders and
+    // independently authenticated LAN clients. Each side receives its own
+    // stable 1..9,0 mapping after grouped squads have been constructed.
+    for side in 0..2_usize {
+        let controlled = !selected.ai_both &&
+            selected.player_side.is_none_or(|player| player == side as i32 + 1);
+        if !controlled { continue; }
+        let count = u32::try_from(squad_ids[side].len())
+            .map_err(|_| invalid("native player squad count overflow"))?;
+        for (index, &squad_item_id) in squad_ids[side].iter().take(10).enumerate() {
+            cloned.number_squads.push(NativeSquadShortcut {
+                squad_item_id, side: side as i32 + 1,
+                number: (index as u32 + 1) % 10,
+                original_squad_count: count,
+            });
+        }
     }
     run["levels"][0]["native_layout"] = serde_json::to_value(&cloned)?;
     let mut deferred_squads = Vec::new();
