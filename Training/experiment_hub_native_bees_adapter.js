@@ -1186,20 +1186,47 @@ function createNativeBeesAdapter({
     }
 
     function bundleArguments(bundles) {
-        if (!Array.isArray(bundles) || !bundles.length)
-            throw Error('Native Bees inbox learners require approved rollout bundles.');
+        if (!Array.isArray(bundles) || !bundles.length || bundles.length>256)
+            throw Error('Native Bees inbox learners require 1–256 approved rollout bundles.');
         const seen = new Set();
-        return bundles.flatMap(bundle => {
+        const entries=bundles.map(bundle => {
             const {job_id, sha256: digest} = bundle ?? {};
             if (typeof job_id !== 'string' || !UUID.test(job_id) || seen.has(job_id) ||
-                typeof digest !== 'string' || !/^[a-f0-9]{64}$/.test(digest))
+                typeof digest !== 'string' || !SHA256.test(digest))
                 throw Error('Invalid or duplicate native Bees rollout bundle identity.');
             seen.add(job_id);
             const receipt = path.join(inbox, job_id, 'rollout-bundle.json');
             if (trustedFile(receipt) !== receipt)
                 throw Error('Native Bees rollout receipt must be inside its inbox job directory.');
-            return ['--pinned-rollout-bundle', receipt, digest];
+            return {path:receipt,sha256:digest};
         });
+        // Keep the entire already-approved collector set off the process
+        // command line, including torchrun's child ranks on Windows.
+        // Identical ordered pins on this host share one immutable list.
+        const bytes=Buffer.from(JSON.stringify(entries)+'\n','utf8');
+        if(bytes.length>1024*1024)throw Error('Native collector pin list exceeds its bound.');
+        const digest=sha256(bytes);
+        const filename=path.join(inbox,'hub-inputs-'+digest+'.json');
+        const verify=()=>{
+            if(trustedFile(filename)!==filename||
+                fs.statSync(filename).size!==bytes.length||
+                !fs.readFileSync(filename).equals(bytes))
+                throw Error('Existing native collector pin list differs from the approved inputs.');
+        };
+        if(fs.existsSync(filename))verify();
+        else {
+            const stage=fs.mkdtempSync(path.join(inbox,'.native-inputs-'));
+            try {
+                const pending=path.join(stage,'pins.json');
+                const fd=fs.openSync(pending,'wx',0o600);
+                try{fs.writeFileSync(fd,bytes);fs.fsyncSync(fd);}
+                finally{fs.closeSync(fd);}
+                try{fs.linkSync(pending,filename);}
+                catch(error){if(error.code!=='EEXIST')throw error;}
+                verify();
+            }finally{fs.rmSync(stage,{recursive:true,force:true});}
+        }
+        return ['--pinned-rollout-list',filename,digest];
     }
 
     function completionReceipt(output, name, maxBytes=64 * 1024) {
@@ -1266,7 +1293,7 @@ function createNativeBeesAdapter({
     }
 
     function completedRound(output) {
-        const result = completionReceipt(output, 'round-result.json');
+        const result = completionReceipt(output, 'round-result.json',2*1024*1024);
         if (!result) return null;
         const {receipt, stat} = result;
         // Also authenticate predecessor rounds loaded for Hub model
@@ -1660,7 +1687,7 @@ function createNativeBeesAdapter({
         if (distributedOptimizer?.role!=='worker')
             throw Error('Only a Hub-owned native optimizer worker may publish a worker receipt.');
         const output=jobRoot(context);
-        const file=completionReceipt(output,'round-worker-result.json');
+        const file=completionReceipt(output,'round-worker-result.json',2*1024*1024);
         if(!file)return null;
         const {receipt,stat}=file;
         const bundle=context.resource_bundle;
@@ -2050,7 +2077,7 @@ function createNativeBeesAdapter({
             // predecessor. The runner verifies its original input, trainer
             // and release plan before resuming the registry transaction.
             const committedRound = continual_release
-                ?completionReceipt(output, 'round-result.json'):null;
+                ?completionReceipt(output, 'round-result.json',2*1024*1024):null;
             const resumeRelease = committedRound!==null;
             const selectInitial = continual_release && !bundleRound && !inboxLearner &&
                 !distributedOptimizer && !context.model_source_job_id &&
@@ -2244,7 +2271,7 @@ function createNativeBeesAdapter({
                 },project);
             }
             if (collectOnly) {
-                const bundle = completionReceipt(jobRoot(context), 'rollout-bundle.json');
+                const bundle = completionReceipt(jobRoot(context), 'rollout-bundle.json',2*1024*1024);
                 if (!bundle) return null;
                 const {receipt, stat} = bundle;
                 const rollout = receipt.rollout_metrics;

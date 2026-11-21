@@ -188,7 +188,7 @@ function nativeModelPackage(hub,source) {
     }
     const root=path.dirname(hub.file),jobId=source.id;
     const signed=mirroredByMetadata(root,jobId,'round-result.json');
-    if(signed.size>64*1024)fail('Invalid native model completion receipt size.');
+    if(signed.size>2*1024*1024)fail('Invalid native model completion receipt size.');
     let receipt;
     try{receipt=JSON.parse(fs.readFileSync(signed.file,'utf8'));}
     catch{fail('Invalid native model completion receipt.');}

@@ -27,6 +27,7 @@ from native_mission_contract import (
 )
 from native_training_artifacts import (
     file_sha256, check_learner, sync_directory, normalized_python_source_sha256,
+    read_pinned_rollout_list,
     native_source_contract_sha256,
     verified_source_scene_cache, combined_source_scene_cache,
     native_manifest_model_dependencies, combined_rollout_lifecycle_metrics,
@@ -1301,12 +1302,18 @@ def main() -> None:
                         help="work-order inbox directory; local Hub job artifacts retain their original UUID")
     parser.add_argument("--pinned-rollout-bundle", nargs=2, action="append", default=[],
                         metavar=("RECEIPT", "SHA256"), help="supply an approved receipt to an empty bundle template")
+    parser.add_argument("--pinned-rollout-list", nargs=2,
+                        metavar=("FILE", "SHA256"), help=argparse.SUPPRESS)
     parser.add_argument("--collection-orders", type=Path,
                         help="verify every imported bundle against one distributed session order")
     parser.add_argument("--optimizer-finalizer-sha256", nargs=2,
                         metavar=("ATTEMPT", "FINALIZER"),
                         help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.pinned_rollout_list is not None:
+        if args.pinned_rollout_bundle:
+            parser.error("use one native collector pin list or individual bundle pins")
+        args.pinned_rollout_bundle = read_pinned_rollout_list(*args.pinned_rollout_list)
     if args.optimizer_finalizer_sha256 is not None and (
             not args.resume_optimizer or any(
                 re.fullmatch(r"[a-f0-9]{64}", digest) is None
@@ -1520,7 +1527,10 @@ def main() -> None:
             if digest != bundle["sha256"]:
                 raise ValueError("rollout bundle receipt differs from the approved digest")
             pinned.append({"path": path, "sha256": digest})
-            rollout_args.extend(["--pinned-rollout-bundle", path, digest])
+            if args.pinned_rollout_list is None:
+                rollout_args.extend(["--pinned-rollout-bundle", path, digest])
+        if args.pinned_rollout_list is not None:
+            rollout_args.extend(["--pinned-rollout-list", *args.pinned_rollout_list])
         if args.collection_orders is not None:
             order_path = args.collection_orders.resolve(strict=True)
             orders = json.loads(order_path.read_text(encoding="utf-8"))

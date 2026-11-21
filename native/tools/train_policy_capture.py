@@ -18,7 +18,7 @@ import numpy as np
 from policy_worker import file_sha256, install_bees_actor, mlagents_behavior_spec, stream_sha256
 from read_policy_capture import capture_frames
 from native_training_outcomes import accumulate_training_outcome, record_combat_hit
-from native_training_artifacts import sync_directory
+from native_training_artifacts import sync_directory, read_pinned_rollout_list
 from native_gpu_allocation import OptimizerResourceSampler
 from native_mission_contract import (
     OBJECTIVE_START as NATIVE_MISSION_ACTIVE_INDEX,
@@ -1386,7 +1386,13 @@ def main():
                         help="import a completed collection receipt and its captures")
     parser.add_argument("--pinned-rollout-bundle", nargs=2, action="append", default=[],
                         metavar=("RECEIPT", "SHA256"), help="import a receipt with an approved digest")
+    parser.add_argument("--pinned-rollout-list", nargs=2,
+                        metavar=("FILE", "SHA256"), help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.pinned_rollout_list is not None:
+        if args.pinned_rollout_bundle or args.rollout_bundle:
+            parser.error("use one native collector pin list or individual bundle pins")
+        args.pinned_rollout_bundle = read_pinned_rollout_list(*args.pinned_rollout_list)
     bundles = [(path, None) for path in args.rollout_bundle]
     bundles.extend((Path(path), digest) for path, digest in args.pinned_rollout_bundle)
     if (args.capture is None) != (args.journal is None) or (

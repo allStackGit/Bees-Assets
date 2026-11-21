@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 
 
@@ -21,6 +22,40 @@ def file_sha256(path: Path) -> str:
 
 
 
+
+
+def read_pinned_rollout_list(filename, digest):
+    """Read the exact same ordered collector pins in a round and its
+    worker ranks. This file contains data only, never executable arguments.
+    """
+    source = Path(filename)
+    if (not source.is_absolute() or source.is_symlink() or
+            source.resolve(strict=True) != source or not source.is_file() or
+            source.stat().st_size > 1024 * 1024 or
+            re.fullmatch(r"[a-f0-9]{64}", digest) is None):
+        raise ValueError("invalid native collector pin list")
+    raw = source.read_bytes()
+    if len(raw) > 1024 * 1024 or hashlib.sha256(raw).hexdigest() != digest:
+        raise ValueError("native collector pin list differs from its approved digest")
+    entries = json.loads(raw)
+    if not isinstance(entries, list) or not 1 <= len(entries) <= 256:
+        raise ValueError("native collector pin list must contain 1–256 receipts")
+    seen = set()
+    result = []
+    for entry in entries:
+        if (not isinstance(entry, dict) or set(entry) != {"path", "sha256"} or
+                not isinstance(entry["path"], str) or
+                not isinstance(entry["sha256"], str) or
+                re.fullmatch(r"[a-f0-9]{64}", entry["sha256"]) is None):
+            raise ValueError("invalid native collector receipt pin")
+        receipt = Path(entry["path"])
+        if (not receipt.is_absolute() or receipt.name != "rollout-bundle.json" or
+                receipt.is_symlink() or receipt.resolve(strict=True) != receipt or
+                not receipt.is_file() or receipt in seen):
+            raise ValueError("native collector pin list contains a redirected or duplicate receipt")
+        seen.add(receipt)
+        result.append((str(receipt), entry["sha256"]))
+    return result
 
 
 def native_headless_environment():
