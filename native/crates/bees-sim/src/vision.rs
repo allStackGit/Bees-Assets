@@ -26,6 +26,11 @@ pub struct VisionSweepCounts {
     pub completed_sweeps: u64,
     pub suppressed_sweeps: u64,
     pub active_observers: u64,
+    /// Actual live ship and obstacle identity checks in source vision.
+    /// Retired historical slots are validated at restore and never
+    /// reread per tick simply because they once existed.
+    #[serde(default)]
+    pub live_storage_identity_checks: u64,
     /// All logically eligible observer/enemy pairs (comparable to the old scan).
     pub live_ship_pairs: u64,
     /// Pairs actually examined after the physics grid or dense fallback.
@@ -102,6 +107,8 @@ impl VisionSweepCounts {
             completed_sweeps: self.completed_sweeps.checked_sub(before.completed_sweeps)?,
             suppressed_sweeps: self.suppressed_sweeps.checked_sub(before.suppressed_sweeps)?,
             active_observers: self.active_observers.checked_sub(before.active_observers)?,
+            live_storage_identity_checks: self.live_storage_identity_checks
+                .checked_sub(before.live_storage_identity_checks)?,
             live_ship_pairs: self.live_ship_pairs.checked_sub(before.live_ship_pairs)?,
             ship_pairs_tested: self.ship_pairs_tested.checked_sub(before.ship_pairs_tested)?,
             unlearned_obstacle_pairs: self.unlearned_obstacle_pairs.checked_sub(before.unlearned_obstacle_pairs)?,
@@ -123,6 +130,7 @@ impl VisionSweepCounts {
         self.completed_sweeps += other.completed_sweeps;
         self.suppressed_sweeps += other.suppressed_sweeps;
         self.active_observers += other.active_observers;
+        self.live_storage_identity_checks += other.live_storage_identity_checks;
         self.live_ship_pairs += other.live_ship_pairs;
         self.ship_pairs_tested += other.ship_pairs_tested;
         self.unlearned_obstacle_pairs += other.unlearned_obstacle_pairs;
