@@ -773,6 +773,78 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                         for due, _ in expected
                     )
                 )
+                # Unity's six timers deploy these physical SavedSquad
+                # compositions, not arbitrary units at matching times.
+                # The 540s upper route also takes previously fought Bee
+                # squads from the real career fleet before its fixed list.
+                # Those veteran squads may vary, but the authored suffix
+                # must always remain intact and in source order.
+                ordinary = [(16, 1), (14, 2), (21, 2), (15, 4), (15, 4)]
+                late_upper = [(14, 2), (21, 6), (15, 8), (3, 2), (16, 4)]
+                lower = [(14, 2), (21, 6), (15, 8),
+                         (22, 4), (22, 4), (16, 4)]
+                formations = {
+                    (120, "upper"): ordinary,
+                    (240, "upper"): ordinary,
+                    (360, "upper"): [(22, 4), (22, 4), (14, 2),
+                                      (21, 4), (15, 4)],
+                    (480, "upper"): [(22, 6), (22, 6), (14, 2), (16, 4)],
+                    (480, "lower"): [(21, 4), (14, 2), (21, 4)],
+                    (540, "upper"): late_upper,
+                    (540, "lower"): lower,
+                    (600, "upper"): late_upper,
+                    (600, "lower"): [(14, 2), (21, 6), (15, 8),
+                                     (22, 4), (22, 4), (3, 2), (16, 4)],
+                }
+                source_squads = {
+                    squad["item_id"]: squad for squad in scene.get("squads", [])
+                    if isinstance(squad, dict) and type(squad.get("item_id")) is int
+                }
+                source_ships = {
+                    ship["entity_id"]: ship for ship in scene.get("ships", [])
+                    if isinstance(ship, dict) and type(ship.get("entity_id")) is int
+                }
+
+                def source_fleet(wave):
+                    squad_ids = wave.get("squad_item_ids")
+                    if not isinstance(squad_ids, list) or not squad_ids:
+                        return None
+                    fleet = []
+                    for squad_id in squad_ids:
+                        squad = source_squads.get(squad_id)
+                        if squad is None or squad.get("side") != scene.get("bee_side"):
+                            return None
+                        members = squad_members(squad)
+                        if not members or len(members) != len(set(members)):
+                            return None
+                        ships = [source_ships.get(member) for member in members]
+                        if (any(ship is None or
+                                ship.get("side") != scene.get("bee_side")
+                                for ship in ships) or
+                                len({ship["ship_type"] for ship in ships}) != 1):
+                            return None
+                        fleet.append((ships[0]["ship_type"], len(ships)))
+                    return fleet
+
+                for wave in waves:
+                    when = next((int(due) for due, _ in expected
+                                 if abs(wave["after_seconds"] - due) <= 0.0001), None)
+                    lane = ("upper" if same_route(wave, upper_spawn, upper_entry)
+                            else "lower")
+                    actual = source_fleet(wave)
+                    required = formations.get((when, lane))
+                    if required is None or actual is None:
+                        valid_waves = False
+                        break
+                    # Only the original fifth upper wave can prepend
+                    # surviving veteran SavedSquads from earlier battles.
+                    if (when, lane) == (540, "upper"):
+                        if len(actual) < len(required) or actual[-len(required):] != required:
+                            valid_waves = False
+                            break
+                    elif actual != required:
+                        valid_waves = False
+                        break
             if (scene.get("human_side") != args.player_side or
                     scene.get("activate_hivemind") is not False or
                     not isinstance(run.get("hivemind"), dict) or
