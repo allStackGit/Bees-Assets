@@ -469,7 +469,7 @@ impl NativeGameAudio {
         self.seen_projectiles.retain(|_, seen| *seen == view.tick);
         for event in view.combat.events() {
             let (effect, point): (Effect, Option<Vec2>) = match event {
-                CombatEvent::ShipDied { victim_id, .. } => (
+                CombatEvent::ShipDied { victim_id, end_kill: false, .. } => (
                     if view.combat.ship(*victim_id)
                         .is_some_and(|ship| matches!(ship.ship_type, 7 | 10 | 11 | 17)) {
                         Effect::HugeExplosion

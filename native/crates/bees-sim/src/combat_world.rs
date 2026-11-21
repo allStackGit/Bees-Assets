@@ -415,6 +415,10 @@ pub enum CombatEvent {
         killer_id: i64,
         command_outcome_id: i64,
         policy_binding_revision: Option<u64>,
+        /// Source EndKill for physical WarpGate/exit delivery: retire all
+        /// gameplay ownership without depicting a combat explosion.
+        #[serde(default)]
+        end_kill: bool,
     },
     ProjectileEnded {
         projectile_id: i64,
@@ -1595,6 +1599,7 @@ impl CombatWorld {
         }
         self.events.push(CombatEvent::ShipDied {
             victim_id, killer_id, command_outcome_id, policy_binding_revision,
+            end_kill,
         });
         Ok(())
     }
