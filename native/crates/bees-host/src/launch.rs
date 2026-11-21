@@ -3972,6 +3972,7 @@ fn run_all_campaign_missions(
     let mut world_steps = 0_u64;
     let mut episode_count = 0_u64;
     let mut completed = Vec::new();
+    let mut skipped_outcome_branches = Vec::new();
     // The original catalog defines mission order, dependencies and route
     // selection. Keep that one source of truth; never simulate or advance
     // a campaign through an alternate training-only state machine.
@@ -3986,6 +3987,7 @@ fn run_all_campaign_missions(
             // predecessor in a linear campaign.
             if mission.has_outcome_alternatives() &&
                 mission.requires.iter().all(|id| progress.completed(id)) {
+                skipped_outcome_branches.push(mission.id.as_str());
                 continue;
             }
             return Err(invalid(format!(
@@ -4029,6 +4031,7 @@ fn run_all_campaign_missions(
         "kind": "native_campaign_batch_complete",
         "campaign_id": catalog.campaign_id,
         "newly_completed_missions": completed,
+        "skipped_outcome_branches": skipped_outcome_branches,
         "played_missions": played,
         "successful_world_steps": world_steps,
         "completed_episodes": episode_count,
