@@ -8199,7 +8199,12 @@ fn run_battle(
                 awarded_squads: if mission_success {
                     mission.victory_squads.to_vec()
                 } else { Vec::new() },
-                retired_fleet_ids: if mission_success { Vec::new() } else {
+                // The original Neptune3Ending destroys Factories only
+                // when the opposing faction wins, not for an incomplete
+                // objective, timeout or a neutral no-winner result.
+                retired_fleet_ids: if result.winner_side != 3 - mission.player_side {
+                    Vec::new()
+                } else {
                     let mut ids = defeat_retirement_ids.iter().copied().collect::<Vec<_>>();
                     ids.sort_unstable();
                     ids
