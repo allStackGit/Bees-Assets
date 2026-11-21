@@ -1151,11 +1151,12 @@ impl NativePhysicalScene {
         &mut self, player_side: i32, settings: &[NativeSavedSquadTactics],
     ) -> Result<usize, NativeSnapshotError> {
         let invalid = NativeSnapshotError::InvalidNativeLayout;
-        if !matches!(player_side, 1 | 2) {
-            return Err(invalid("saved matching-speed owner must be a player faction"));
+        if !matches!(player_side, 1 | 2) ||
+            !self.allows_campaign_fleet_edit(player_side)
+        {
+            return Err(invalid("saved matching-speed owner must be an ordinary player faction"));
         }
-        // Preflight all members before modifying any physics or squad data.
-        let mut updates = Vec::new();
+        let mut overrides = HashMap::new();
         for entry in settings {
             let Some(enabled) = entry.match_speed else { continue };
             if entry.side != player_side {
@@ -1165,8 +1166,26 @@ impl NativePhysicalScene {
                 squad.saved_squad_id == Some(entry.saved_squad_id) &&
                 squad.side == player_side && squad.player_permissions.user_controlled
             ).ok_or(invalid("saved matching-speed squad is unavailable"))?;
+            if overrides.insert(index, enabled).is_some() {
+                return Err(invalid("duplicate saved matching-speed squad"));
+            }
+        }
+        // MatchSpeed is also an authored persistent preference. Recompute
+        // it against the final roster even if the player has never edited
+        // that preference (a transferred hull or casualty changes the min).
+        // Preflight all affected members before modifying physics or metadata.
+        let mut updates = Vec::new();
+        for (index, squad) in self.source_squads.iter().enumerate() {
+            if squad.side != player_side || !squad.player_permissions.user_controlled {
+                continue;
+            }
+            let enabled = match overrides.get(&index) {
+                Some(&enabled) => enabled,
+                None if squad.matching_speed.is_some() => true,
+                None => continue,
+            };
             let mut slowest = None::<f32>;
-            for &ship_id in &self.source_squads[index].members {
+            for &ship_id in &squad.members {
                 let ship = self.entities.iter().find_map(|entity| match entity {
                     NativeAuthoredEntity::Ship(ship) if ship.entity_id == ship_id =>
                         Some(ship),
@@ -1390,6 +1409,10 @@ impl NativePhysicalScene {
                 weapon.weapon_id = next_entity;
             }
             ship.motion.position = position;
+            // A source archetype may have belonged to a speed-matched
+            // squad. Newly installed hulls start at their own speed; the
+            // destination's final MatchSpeed pass owns any reduction.
+            ship.motion.current_speed = ship.motion.base_speed;
             ship.motion.user_controlled =
                 self.source_squads[owner].player_permissions.user_controlled;
             // The saved squad owns its cease-fire order; a prefab from
@@ -1658,6 +1681,9 @@ impl NativePhysicalScene {
                         return Err(invalid("a FleetShip family member was not a ship"));
                     };
                     ship.motion.position += delta;
+                    // Do not carry the previous squad's matched speed
+                    // into the destination or its final MatchSpeed pass.
+                    ship.motion.current_speed = ship.motion.base_speed;
                     ship.motion.user_controlled = true;
                     ship.cease_fire = cease_fire.unwrap_or(ship.cease_fire);
                     if let Some(bounds) = &mut ship.target_geometry {

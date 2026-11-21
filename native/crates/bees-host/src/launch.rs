@@ -5347,9 +5347,9 @@ fn run_battle(
         // Speed matching must use the FINAL surviving and purchased roster.
         // Applying it to the unmodified scene would make a slow replacement
         // ship move faster than the source's MatchSpeed permits.
-        if let Some(tactics) = mission.and_then(|mission| mission.tactics) {
+        if let Some(mission) = mission {
             source.apply_saved_squad_matching_speeds(
-                mission.expect("campaign matching-speed owner").player_side, tactics,
+                mission.player_side, mission.tactics.unwrap_or(&[]),
             ).map_err(|error| contextual("restored SavedSquad matching speed", error))?;
         }
         if source.stage_name != config.stage_name {
