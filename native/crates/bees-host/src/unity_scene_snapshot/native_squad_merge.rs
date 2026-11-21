@@ -81,7 +81,7 @@ impl NativePhysicalScene {
             let &primary = by_id.get(&group.primary_squad_item_id)
                 .ok_or(invalid("squad grouping primary has no real command owner"))?;
             let leader = &self.source_squads[primary];
-            if leader.members.is_empty() || leader.hivemind.is_some() ||
+            if leader.members.is_empty() ||
                 leader.is_carrier_squad == Some(true)
             {
                 return Err(invalid("squad grouping requires ordinary game command owners"));
@@ -110,7 +110,7 @@ impl NativePhysicalScene {
                     donor.saved_squad_id.is_some() ||
                     donor.hotkey_number.is_some() ||
                     donor.original_squad_count.is_some() ||
-                    donor.hivemind.is_some() ||
+                    donor.hivemind != leader.hivemind ||
                     donor.is_carrier_squad == Some(true)
                 {
                     return Err(invalid("grouped squads must share one ordinary player/AI command contract"));
