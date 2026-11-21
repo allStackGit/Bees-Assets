@@ -51,7 +51,8 @@ def native_manifest_model_dependencies(manifest, model_store=None):
     manifest = Path(manifest).resolve(strict=True)
     document = json.loads(manifest.read_text(encoding="utf-8"))
     models = document.get("models") if isinstance(document, dict) else None
-    if (document.get("format") != "bees-native-model-v1" or
+    if (not isinstance(document, dict) or
+            document.get("format") != "bees-native-model-v1" or
             not isinstance(models, list) or not 1 <= len(models) <= 256):
         raise ValueError("native evaluation requires a valid model manifest")
     store = None
