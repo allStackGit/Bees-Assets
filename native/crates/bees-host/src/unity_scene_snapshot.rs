@@ -2713,6 +2713,20 @@ impl NativePhysicalScene {
                     setup.survival.is_some() || setup.demolition.is_some() ||
                     setup.escort.is_some() || setup.extraction.is_some() =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
+            Some(CampaignDialogueSpec::PlutoEvacuation {
+                player_side, protected_ship_id,
+            }) if !setup.survival.is_some_and(|objective|
+                    objective.defending_side == player_side &&
+                    objective.protected_ship_id == protected_ship_id &&
+                    (objective.seconds - 300.49).abs() <= 0.01) ||
+                    !self.entities.iter().any(|entity| matches!(entity,
+                        NativeAuthoredEntity::Ship(ship)
+                            if ship.entity_id == protected_ship_id &&
+                            ship.side == player_side &&
+                            ship.ship_type == bees_sim::ship_assets::HUMAN_TARGET_TYPE)) ||
+                    setup.extraction.is_some() || setup.demolition.is_some() ||
+                    setup.escort.is_some() =>
+                return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             _ => {}
         }
         if let Some(objective) = setup.survival {
