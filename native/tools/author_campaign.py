@@ -456,6 +456,14 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     "Pluto evacuation requires the native 300.49-second "
                     "physical HumanTarget survival mission"
                 )
+            if level.get("campaign_dialogue") is not None:
+                raise ValueError("Pluto evacuation already has a conflicting story owner")
+            level["campaign_dialogue"] = {
+                "pluto_evacuation": {
+                    "player_side": args.player_side,
+                    "protected_ship_id": objective["protected_ship_id"],
+                }
+            }
 
     def record_enemy_fleet_source(scene: dict) -> None:
         if not args.persist_enemy_losses:
