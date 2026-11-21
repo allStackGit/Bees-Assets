@@ -6568,6 +6568,36 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(error){feedback('hub-job-message',error.message);}
                 }));
             }
+            // Most actions are intentionally behind one expandable control.
+            // Starts, Stops and capacity actions remain immediately visible.
+            const buttons=[...actions.querySelectorAll(':scope > button')];
+            const primaryTitles=/^(Start native job|Stop managed job|Start coordinated group|Start recoverable coordinated group|Schedule full group when ready|Schedule recoverable group|Start Courier distributed group|Start recoverable Courier group|Schedule Courier group when ready|Schedule recoverable Courier group|Coordinate capacity|Release completed capacity)$/;
+            const important=buttons.filter(b=>primaryTitles.test(b.textContent)).slice(0,2);
+            const primary=document.createElement('div');
+            primary.className='hub-job-action-primary';
+            for(const item of important)primary.append(item);
+            const more=document.createElement('div');
+            more.className='hub-job-action-other';
+            more.append(...[...actions.childNodes]);
+            actions.replaceChildren();
+            if(primary.childNodes.length)actions.append(primary);
+            if(more.childNodes.length) {
+                const menu=document.createElement('details');
+                menu.className='hub-job-action-menu';
+                if(expandedRecordDetails.has('job-actions:'+j.id))menu.open=true;
+                menu.addEventListener('toggle',()=>{
+                    if(menu.open)expandedRecordDetails.add('job-actions:'+j.id);
+                    else expandedRecordDetails.delete('job-actions:'+j.id);
+                });
+                const heading=document.createElement('summary');
+                const count=more.querySelectorAll('button').length;
+                heading.textContent='More actions'+(count?' ('+count+')':'');
+                menu.append(heading,more);
+                actions.append(menu);
+            }
+            const columnNames=['Configuration','Revision','Status','Resources',
+                'Learning progress','Actions'];
+            [...tr.children].forEach((td,index)=>td.dataset.label=columnNames[index]);
             $('hub-job-rows').append(tr);
         }
         if(!records.length) {
@@ -6922,6 +6952,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(error){feedback('hub-enrollment-message',error.message);}
                 }));
             }
+            const machineButtons=[...actions.querySelectorAll(':scope > button')];
+            const machineActions=document.createElement('div');
+            machineActions.className='hub-machine-actions';
+            machineActions.append(...machineButtons);
+            actions.append(machineActions);
+            [...tr.children].forEach((td,index)=>td.dataset.label=[
+                'Machine','Agent and software','CPU capacity','RAM capacity',
+                'GPUs','Native controls','Last seen','Machine actions'][index]);
             $('hub-machine-rows').append(tr);
         }
         if(!state.machines.length) {
