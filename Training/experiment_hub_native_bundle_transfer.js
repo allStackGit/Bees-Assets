@@ -111,6 +111,10 @@ function authorizedBundleFile(hub,machineId,token,learnerId,collectorId,relative
     if(collector.model_source_job_id) {
         const source=hub.state.jobs.find(job=>job.id===collector.model_source_job_id);
         const model=nativeModelPackage(hub,source);
+        checkSourceManifest(collector,model);
+        if(learner.model_source_job_id!==collector.model_source_job_id)
+            fail('Native optimizer and collector have different model source ownership.');
+        checkSourceManifest(learner,model);
         if(!SHA.test(String(collector.expected_parent_model_sha256||''))||
             receipt.input_checkpoint_sha256!==collector.expected_parent_model_sha256||
             receipt.input_manifest_sha256!==model.collectionManifestSha256)
@@ -310,17 +314,38 @@ function nativeModelPackage(hub,source) {
         included.set(transferManifest,selection.effective_manifest_sha256);
     }
     return {root,jobId,included,transferManifest,
-        collectionManifestSha256:included.get(transferManifest)};
+        collectionManifestSha256:included.get(transferManifest),
+        collectionSelection:selection};
 }
 
 // A completed optimizer model must be fully mirrored before any remote
 // physical collector can be reserved for the next training round. Verify
 // the checkpoint, manifest and every frozen opponent as one bounded package.
-function verifiedNativeModelMirror(hub,source) {
+function verifiedNativeModelPin(hub,source) {
     const model=nativeModelPackage(hub,source);
     for(const [relative,digest] of model.included)
         mirroredFile(model.root,model.jobId,relative,digest);
+    return {
+        model_source_job_id:source.id,
+        expected_parent_model_sha256:source.checkpoint_model_sha256,
+        expected_parent_manifest_sha256:model.collectionManifestSha256,
+        ...(model.collectionSelection?{
+            parent_collection_selection:model.collectionSelection,
+        }:{}),
+    };
+}
+function verifiedNativeModelMirror(hub,source) {
+    verifiedNativeModelPin(hub,source);
     return true;
+}
+
+function checkSourceManifest(job,model) {
+    if(job.expected_parent_manifest_sha256!==undefined&&
+        job.expected_parent_manifest_sha256!==model.collectionManifestSha256)
+        fail('Native model manifest differs from the immutable Hub job pin.');
+    if(job.parent_collection_selection!==undefined&&
+        !isDeepStrictEqual(job.parent_collection_selection,model.collectionSelection))
+        fail('Native historical opponent differs from the immutable Hub job pin.');
 }
 
 // Queue-time source of truth for physical experience. Only terminal,
@@ -421,10 +446,14 @@ function verifiedNativeCollectorPin(hub,collectorId) {
             :(receipt.leased_gpu_inference===true||
                 receipt.leased_gpu_count!==undefined)))
         fail('Native collector execution evidence exceeds or differs from its Hub CPU/GPU lease.');
-    if(collector.model_source_job_id&&(
-        !SHA.test(String(collector.expected_parent_model_sha256||''))||
-        receipt.input_checkpoint_sha256!==collector.expected_parent_model_sha256))
-        fail('Collector experience differs from its exact Hub predecessor checkpoint.');
+    if(collector.model_source_job_id) {
+        const source=hub.state.jobs.find(job=>job.id===collector.model_source_job_id);
+        const model=nativeModelPackage(hub,source);
+        checkSourceManifest(collector,model);
+        if(receipt.input_checkpoint_sha256!==collector.expected_parent_model_sha256||
+            receipt.input_manifest_sha256!==model.collectionManifestSha256)
+            fail('Collector experience differs from its exact Hub predecessor model and opponent routes.');
+    }
     if(collector.frozen_parameters?.collection_id!==undefined&&
         receipt.collection_id!==collector.frozen_parameters.collection_id||
         collector.frozen_parameters?.source_run_contract_sha256!==undefined&&
@@ -487,6 +516,7 @@ function authorizedModelFile(hub,machineId,token,recipientId,sourceId,relative) 
         recipient.expected_parent_model_sha256!==source?.checkpoint_model_sha256)
         fail('Native recipient does not hold this exact checkpoint handoff.');
     const packageFiles=nativeModelPackage(hub,source);
+    checkSourceManifest(recipient,packageFiles);
     // Remote caches retain their existing manifest.json contract. The
     // coordinator serves the exact selected generation's immutable bytes.
     const actual=relative==='learner/manifest.json'?packageFiles.transferManifest:relative;
@@ -735,7 +765,7 @@ async function syncNativeModels(job,adapter,endpoint,machineId,token) {
     const stage=fs.mkdtempSync(path.join(inbox,'.native-model-'));
     try {
         const manifestSha=await downloadFile(endpoint,machineId,token,job.id,sourceId,
-            'learner/manifest.json',null,stage,'model');
+            'learner/manifest.json',job.expected_parent_manifest_sha256??null,stage,'model');
         const matchingModel=async()=>{
             const cached=path.join(destination,'learner','manifest.json');
             return publishedPathExists(cached)&&regular(cached).size<=1024*1024&&
@@ -808,5 +838,5 @@ async function syncNativeBundles(job,adapter,endpoint,machineId,token) {
 }
 
 module.exports={capturePaths,authorizedBundleFile,authorizedModelFile,
-    verifiedNativeCollectorPin,verifiedNativeModelMirror,
+    verifiedNativeCollectorPin,verifiedNativeModelMirror,verifiedNativeModelPin,
     syncNativeBundles,syncNativeModels,nativeModelPackage};

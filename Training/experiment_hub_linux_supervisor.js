@@ -222,6 +222,8 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         artifact_lineage_root_id:lineageRoot,
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
+        ...(job.expected_parent_manifest_sha256?
+    {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
         ...(!cpuOnly?(dual
             ?{gpu_pci_addresses:bindings.map(bound=>bound.pci_address),
                 gpu_mode:'exclusive'}

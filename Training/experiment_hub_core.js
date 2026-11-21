@@ -13,7 +13,7 @@ const {evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,su
 const {ProgressHistory}=require('./experiment_hub_history');
 const {ObservationArchive}=require('./experiment_hub_observations');
 const {validateSelection}=require('./experiment_hub_native_historical');
-const {verifiedNativeCollectorPin,verifiedNativeModelMirror}=
+const {verifiedNativeCollectorPin,verifiedNativeModelMirror,verifiedNativeModelPin}=
     require('./experiment_hub_native_bundle_transfer');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -1032,7 +1032,13 @@ function nativeModelSourceBlock(snapshot,job) {
         !source.capacity_released_at||!source.dispatch_id||
         !source.execution_updated_at||
         !SHA256.test(String(source.checkpoint_model_sha256||''))||
-        source.checkpoint_model_sha256!==job.expected_parent_model_sha256)
+        source.checkpoint_model_sha256!==job.expected_parent_model_sha256||
+        (job.expected_parent_manifest_sha256!==undefined&&
+            !SHA256.test(String(job.expected_parent_manifest_sha256)))||
+        (source.optimizer_completion?.continual_release?.collection_selection&&
+            job.expected_parent_manifest_sha256!==undefined&&
+            job.expected_parent_manifest_sha256!==source.optimizer_completion
+                .continual_release.collection_selection.effective_manifest_sha256))
         return 'The selected native model source has no verified, released checkpoint matching the job pin.';
     return nativeOptimizerGroupBlock(snapshot,source);
 }
@@ -1060,6 +1066,8 @@ function collectorReplacementBlock(snapshot,job) {
             (job.model_source_job_id||null)||
         (parent.expected_parent_model_sha256||null)!==
             (job.expected_parent_model_sha256||null)||
+        (parent.expected_parent_manifest_sha256||null)!==
+            (job.expected_parent_manifest_sha256||null)||
         job.continuation_machine_id!==parent.assigned_machine_id||
         job.artifact_lineage_root_id!==(parent.artifact_lineage_root_id||parent.id)||
         job.assigned_machine_id&&
@@ -4416,6 +4424,8 @@ class ExperimentHub {
                     ...(lease.status==='released'?{final_checkpoint_sha256:job.checkpoint_model_sha256}:{}),
                     ...(job.expected_parent_model_sha256
                         ?{expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
+                    ...(job.expected_parent_manifest_sha256?
+                        {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
                 },
                 lease:{
                     id:lease.id,job_id:job.id,project_id:lease.project_id,
@@ -5566,7 +5576,9 @@ class ExperimentHub {
                                     JSON.stringify(approved.resources)||
                                 job.model_source_job_id!==plan.source_job_id||
                                 job.expected_parent_model_sha256!==
-                                    plan.source_model_sha256;
+                                    plan.source_model_sha256||
+                                (plan.source_manifest_sha256!=null&&
+                                    job.expected_parent_manifest_sha256!==plan.source_manifest_sha256);
                         }))
                         throw Error('Frozen native round resource bundle, machine or model ownership changed.');
                     // A known terminal failure cannot be repaired by waiting
@@ -5789,6 +5801,12 @@ class ExperimentHub {
                         round:nextCount,
                         source_job_id:plan.source_job_id,
                         source_checkpoint_sha256:plan.source_model_sha256,
+                        ...(plan.source_manifest_sha256?{
+                            source_manifest_sha256:plan.source_manifest_sha256,
+                        }:{}),
+                        ...(plan.source_collection_selection?{
+                            source_collection_selection:copy(plan.source_collection_selection),
+                        }:{}),
                         collector_job_ids:plan.collectors_job_ids.slice(),
                         ...(plan.collector_source_contracts?{
                             collector_source_contract_sha256:
@@ -5839,6 +5857,7 @@ class ExperimentHub {
                             round_history:history,
                             source_job_id:owner.id,
                             source_model_sha256:owner.checkpoint_model_sha256,
+                            source_manifest_sha256:null,source_collection_selection:null,
                             collectors_bundle_id:null,collectors_job_ids:null,
                             collector_world_partitions:null,
                             collector_work:null,collector_work_totals:null,
@@ -6040,6 +6059,16 @@ class ExperimentHub {
                 approvedRound.source_job_id,approvedRound.source_model_sha256,
             ])).digest('hex')
             :null;
+        const modelPin=value.model_source_job_id===undefined?null:
+            verifiedNativeModelPin(this,next.jobs.find(
+                job=>job.id===value.model_source_job_id));
+        if(modelPin&&collectors&&collectors.some(item=>
+            item.model_sha256!==modelPin.expected_parent_model_sha256||
+            item.manifest_sha256!==modelPin.expected_parent_manifest_sha256))
+            throw Error('Native optimizer inputs differ from the pinned collection manifest.');
+        if(approvedRound?.source_manifest_sha256&&
+            modelPin?.expected_parent_manifest_sha256!==approvedRound.source_manifest_sha256)
+            throw Error('Native round source manifest changed after physical collection.');
         const bundleId=crypto.randomUUID(),jobs=[],leases=[];
         for(const [index,selection] of value.members.entries()) {
             if(!object(selection)||
@@ -6068,7 +6097,7 @@ class ExperimentHub {
                         config.id===selection.configuration_id)?.project_id==='bees_native'
                         ?{continuation_of_job_id:modelSourceId}:{}),
                 }:{}),
-            },restartGroup?{optimizerRestartFrom:restartGroup[index]}:undefined);
+            },{modelPin,optimizerRestartFrom:restartGroup?.[index]??null});
             if(nativeCollectionId!==null) {
                 // The native run configuration, not the Hub, knows how
                 // many authored Levels must be preserved and how much
@@ -6155,7 +6184,10 @@ class ExperimentHub {
                     (job.model_source_job_id||null)!==
                         (predecessor.model_source_job_id||null)||
                     (job.expected_parent_model_sha256||null)!==
-                        (predecessor.expected_parent_model_sha256||null))
+                        (predecessor.expected_parent_model_sha256||null)||
+                    (predecessor.expected_parent_manifest_sha256!==undefined&&
+                        job.expected_parent_manifest_sha256!==
+                            predecessor.expected_parent_manifest_sha256))
                     throw Error('Native restart changed the pinned optimizer source, machine, GPU budget or rank.');
                 job.optimizer_restart_of_bundle_id=value.restart_optimizer_bundle_id;
                 job.optimizer_restart_of_job_id=predecessor.id;
@@ -6244,6 +6276,8 @@ class ExperimentHub {
             if(!plan||!['collectors','optimizer'].includes(roundPlan.phase)||
                 roundPlan.status!=='pending_'+roundPlan.phase)
                 throw Error('Native training round changed before atomically reserving its next stage.');
+            plan.source_manifest_sha256=modelPin.expected_parent_manifest_sha256;
+            plan.source_collection_selection=modelPin.parent_collection_selection??null;
             plan[roundPlan.phase+'_bundle_id']=bundleId;
             plan[roundPlan.phase+'_job_ids']=jobs.map(job=>job.id);
             plan.status='awaiting_'+roundPlan.phase;
@@ -6913,7 +6947,7 @@ class ExperimentHub {
         return {jobs,executable:false,
             note:'Frozen pipeline only; native execution remains subject to separate authorization.'};
     }
-    queueIn(next,value,{optimizerRestartFrom=null}={}) {
+    queueIn(next,value,{optimizerRestartFrom=null,modelPin=null}={}) {
         if (!object(value) || typeof value.configuration_id !== 'string')
             throw Error('Select a saved configuration to queue.');
         const selected = next.configurations.find(x=>x.id===value.configuration_id);
@@ -7146,11 +7180,8 @@ class ExperimentHub {
             ...(failedCollector?{
                 collector_replacement_of_job_id:failedCollector.id,
             }:{}),
-            ...(sourceId?{
-                model_source_job_id:sourceId,
-                expected_parent_model_sha256:next.jobs.find(
-                    item=>item.id===sourceId)?.checkpoint_model_sha256,
-            }:{}),
+            ...(sourceId?(modelPin||verifiedNativeModelPin(this,
+                next.jobs.find(item=>item.id===sourceId))):{}),
             continuation_machine_id:parent
                 ?(parent.continuation_machine_id||
                     (parent.dispatch_id?parent.assigned_machine_id:null))

@@ -1411,6 +1411,8 @@ function createNativeBeesAdapter({
                     checkpointDigest,manifestDigest,...gpuSupport};
             }
             if(source.checkpointDigest!==context.expected_parent_model_sha256||
+                (context.expected_parent_manifest_sha256!==undefined&&
+                    source.manifestDigest!==context.expected_parent_manifest_sha256)||
                 (context.continuation_of_job_id&&
                  context.continuation_of_job_id!==sourceId))
                 throw Error('Native model handoff differs from its exact Hub continuation ancestry.');
