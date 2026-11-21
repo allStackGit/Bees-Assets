@@ -264,14 +264,6 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
     ) -> Result<(), &'static str>
     {
         if plans.is_empty() { return Ok(()); }
-        // Source SetStartingPosition may use Pathfinder to search a nearby
-        // formation center or separate slots in obstacle-bearing maps.
-        // A requested spawn alone cannot reproduce that decision. Reject
-        // such plans before consuming any authored squads or entities.
-        if self.metadata.player_formation_options().has_obstacles &&
-            plans.iter().any(|plan| plan.spawn.is_some()) {
-            return Err("Obstacle-bearing reinforcement spawns need captured physical ship positions (omit spawn)");
-        }
         let mut squad_waves = HashMap::new();
         let mut seen_squads = HashSet::new();
         let mut waves = Vec::with_capacity(plans.len());
@@ -486,6 +478,39 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             planned_positions.extend(plan_reinforcement_wave(
                 &squads, &source_ships, spawn, &self.metadata,
             )?);
+        }
+        // An explicit spawn on an obstacle-bearing map is valid when the
+        // complete original two-pass squad formation fits at that exact
+        // authored point. Preflight before extracting any deferred owner;
+        // unsafe positions remain rejected instead of fabricating a
+        // replacement Pathfinder destination or moving an existing ship.
+        if !planned_positions.is_empty() &&
+            self.metadata.player_formation_options().has_obstacles
+        {
+            let obstacles = crate::campaign_staging::authored_obstacle_bodies(&self.entities)?;
+            for (&ship_id, &position) in &planned_positions {
+                let ship = source_ships[&ship_id];
+                let extents = self.metadata.ship_catalog.sprite_size(ship.ship_type)
+                    .ok_or("Reinforcement spawn ship has no source sprite size")?;
+                if !extents.is_finite() || extents.x <= 0.0 || extents.y <= 0.0 {
+                    return Err("Reinforcement spawn ship has invalid physical size");
+                }
+                // A conservative original-sprite footprint protects the
+                // genuine ship collider and the pathfinder obstacle hull.
+                let radius = extents.x.max(extents.y) * 0.5 + 2.0;
+                let bounds = self.broadphase_bounds;
+                if !position.is_finite() ||
+                    position.x - radius < bounds.min.x ||
+                    position.x + radius > bounds.max.x ||
+                    position.y - radius < bounds.min.y ||
+                    position.y + radius > bounds.max.y ||
+                    obstacles.iter().any(|obstacle|
+                        obstacle.navigation_closest_point(position).is_some_and(|point|
+                            (point - position).length_squared() < radius * radius))
+                {
+                    return Err("Reinforcement authored spawn intersects the physical map or obstacle");
+                }
+            }
         }
         let mut selected_squads = HashMap::new();
         let mut initial_squads = Vec::new();
