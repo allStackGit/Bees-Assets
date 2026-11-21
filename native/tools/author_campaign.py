@@ -603,22 +603,20 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             if index not in configured:
                 continue
             previous, variant_path = configured[index]
-            if previous not in prerequisites and not any(
-                    prior == previous for prior, _ in alternatives):
+            advances_on_finish = mission_advances.get(previous, "victory") == "finished"
+            prerequisite_allows = previous in prerequisites and (
+                outcome == "victory" or advances_on_finish
+            )
+            alternative_allows = any(
+                prior == previous and (result == outcome or
+                    result == "finished" and
+                    (outcome == "victory" or advances_on_finish))
+                for prior, result in alternatives
+            )
+            if not prerequisite_allows and not alternative_allows:
                 raise ValueError(
-                    f"mission {index} conditional {outcome} route requires "
-                    f"mission {previous} in its own prerequisites or outcome alternatives"
-                )
-            if outcome == "defeat" and not (
-                    previous in prerequisites and
-                    mission_advances.get(previous, "victory") == "finished" or
-                    any(prior == previous and (result == "defeat" or
-                        result == "finished" and
-                        mission_advances.get(previous, "victory") == "finished")
-                        for prior, result in alternatives)):
-                raise ValueError(
-                    f"mission {index} defeat route needs an achievable "
-                    f"defeat or finished gate on mission {previous}"
+                    f"mission {index} {outcome} variant requires a reachable "
+                    f"{outcome} or finished gate on mission {previous}"
                 )
             variant_scene, variant_run, provenance_variant = input_mission(
                 variant_path.resolve(strict=True), args.player_side,
