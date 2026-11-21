@@ -30,6 +30,8 @@ pub enum CampaignDialogueSpec {
     /// Source Neptune I awards five unassigned Factory fleet hulls on a
     /// real military victory; the native career ledger owns those grants.
     NeptuneSeizeMeans { player_side: i32 },
+    /// Neptune II's real mining withdrawal and escalating source waves.
+    NeptuneProduction { player_side: i32 },
     PlutoEvacuation { player_side: i32, protected_ship_id: i64 },
     /// Source Uranus III protects exactly three real Barge hulls.
     UranusNewThreat { player_side: i32, barges: [i64; 3], has_cruiser: bool },
@@ -51,6 +53,7 @@ impl CampaignDialogueSpec {
             Self::PlutoPushback { player_side, .. } |
             Self::NeptunePressingForward { player_side, .. } |
             Self::NeptuneSeizeMeans { player_side } |
+            Self::NeptuneProduction { player_side } |
             Self::PlutoEvacuation { player_side, .. } |
             Self::UranusNewThreat { player_side, .. } |
             Self::UranusDefensive { player_side, .. } |
@@ -102,6 +105,9 @@ pub enum CampaignCue {
     NeptuneSeizeBriefing,
     NeptuneSeizeVictory,
     NeptuneSeizeDefeat,
+    NeptuneProductionBriefing,
+    NeptuneProductionWave { number: u32, line: u8 },
+    NeptuneProductionEnding { last_ship_retreated: bool, player_victory: bool },
     PlutoEvacuationBriefing,
     PlutoEvacuationComplete { personnel_saved: u32, shield_health: i32, shield_max: i32 },
     UranusNewThreatBriefing,
@@ -125,7 +131,7 @@ impl CampaignCue {
         matches!(self, Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. } |
             Self::PlutoPushbackBriefing { .. } |
             Self::NeptunePressingForwardBriefing | Self::NeptuneSeizeBriefing |
-            Self::PlutoEvacuationBriefing |
+            Self::PlutoEvacuationBriefing | Self::NeptuneProductionBriefing |
             Self::UranusNewThreatBriefing | Self::UranusDefensiveBriefing |
             Self::UranusOffensiveBriefing)
     }
@@ -139,6 +145,7 @@ enum DialogueMode {
     PlutoPushback { speaker_mask: u8 },
     NeptunePressingForward { has_factory: bool },
     NeptuneSeizeMeans,
+    NeptuneProduction { waves_reported: u32 },
     PlutoEvacuation { protected_ship_id: i64 },
     UranusNewThreat {
         barges: [i64; 3], has_cruiser: bool,
@@ -226,6 +233,10 @@ impl CampaignDialogue {
                 DialogueMode::NeptuneSeizeMeans,
                 CampaignCue::NeptuneSeizeBriefing,
             ),
+            CampaignDialogueSpec::NeptuneProduction { .. } => (
+                DialogueMode::NeptuneProduction { waves_reported: 0 },
+                CampaignCue::NeptuneProductionBriefing,
+            ),
             CampaignDialogueSpec::PlutoEvacuation { protected_ship_id, .. } => (
                 DialogueMode::PlutoEvacuation { protected_ship_id },
                 CampaignCue::PlutoEvacuationBriefing,
@@ -297,6 +308,8 @@ impl CampaignDialogue {
                 saved == authored,
             (DialogueMode::NeptuneSeizeMeans, DialogueMode::NeptuneSeizeMeans) =>
                 true,
+            (DialogueMode::NeptuneProduction { .. },
+                DialogueMode::NeptuneProduction { .. }) => true,
             (DialogueMode::PlutoEvacuation { protected_ship_id: saved },
                 DialogueMode::PlutoEvacuation { protected_ship_id: authored }) =>
                 saved == authored,
@@ -354,6 +367,19 @@ impl CampaignDialogue {
             (DialogueMode::PlutoPushback { speaker_mask },
                 CampaignCue::PlutoPushbackVictory | CampaignCue::PlutoPushbackDefeat) =>
                 sequence == 1 && *speaker_mask <= 0b1111,
+            (DialogueMode::NeptuneProduction { waves_reported: 0 },
+                CampaignCue::NeptuneProductionBriefing) => sequence == 0,
+            (DialogueMode::NeptuneProduction { waves_reported },
+                CampaignCue::NeptuneProductionWave { number, line }) =>
+                number > 0 && number == *waves_reported &&
+                sequence == number && match number {
+                    1 => line == 8,
+                    3 => line == 9,
+                    _ => (10..=14).contains(&line),
+                },
+            (DialogueMode::NeptuneProduction { waves_reported },
+                CampaignCue::NeptuneProductionEnding { .. }) =>
+                sequence == *waves_reported + 1,
             (DialogueMode::NeptuneSeizeMeans, CampaignCue::NeptuneSeizeBriefing) =>
                 sequence == 0,
             (DialogueMode::NeptuneSeizeMeans,
@@ -487,6 +513,11 @@ impl CampaignDialogue {
                 CampaignCue::PlutoPushbackVictory,
             (DialogueMode::PlutoPushback { .. }, false) =>
                 CampaignCue::PlutoPushbackDefeat,
+            (DialogueMode::NeptuneProduction { .. }, player_victory) =>
+                CampaignCue::NeptuneProductionEnding {
+                    last_ship_retreated: world.extraction_retreat_completed(),
+                    player_victory,
+                },
             (DialogueMode::NeptuneSeizeMeans, true) =>
                 CampaignCue::NeptuneSeizeVictory,
             (DialogueMode::NeptuneSeizeMeans, false) =>
