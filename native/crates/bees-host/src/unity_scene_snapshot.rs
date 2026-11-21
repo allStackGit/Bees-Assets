@@ -78,6 +78,34 @@ pub use saved_squad_formation::{NativeSavedSquadFormation, NativeSquadFormationK
 
 const SNAPSHOT_VERSION: u32 = 35;
 
+/// Uranus II scripts six physical MiningAsteroids and then moves each
+/// source-owned collider to a particular location before play. Use the
+/// existing authored obstacle bodies: neither the native scene nor a Unity
+/// migration may replace them with generic static objects.
+fn uranus_defensive_mining_matches_source(
+    entities: &[NativeAuthoredEntity],
+) -> bool {
+    const POSITIONS: [(f32, f32); 6] = [
+        (235.0, -105.0), (0.0, -300.0), (20.0, -400.0),
+        (-80.0, -370.0), (-350.0, 80.0), (-200.0, 200.0),
+    ];
+    let mut seen = [false; 6];
+    let mut physical_count = 0;
+    for entity in entities {
+        let NativeAuthoredEntity::MiningAsteroid { body, .. } = entity else {
+            continue;
+        };
+        physical_count += 1;
+        let position = body.pose.position;
+        let Some(index) = POSITIONS.iter().position(|&(x, y)|
+            (position - Vec2::new(x, y)).length_squared() <= 0.000001)
+        else { return false };
+        if seen[index] { return false }
+        seen[index] = true;
+    }
+    physical_count == 6 && seen.into_iter().all(|found| found)
+}
+
 /// Validate Uranus II's six timers against all nine *physical* source
 /// AddReinforcementSquads calls. Three later timers each launch one
 /// upper-lane and one lower-lane formation. Reusing a timer with all
@@ -2819,6 +2847,10 @@ impl NativePhysicalScene {
                     zone.player_side == player_side && zone.retreat_on_exit) ||
                 setup.groups.is_some() || setup.survival.is_some() ||
                 setup.demolition.is_some() || setup.escort.is_some() ||
+                !setup.extraction.is_some_and(|zone|
+                    (zone.center - Vec2::new(-512.0, 0.0)).length_squared()
+                        <= 0.000001) ||
+                !uranus_defensive_mining_matches_source(&self.entities) ||
                 !uranus_defensive_waves_match_source(&setup.reinforcements) =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::UranusNewThreat {
