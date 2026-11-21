@@ -286,9 +286,16 @@ impl CombatWorld {
             // Unity first-sighting credit follows Level.State.Ships order.
             // Grid cells are not ordered that way. For dense queries avoid
             // a costly sort: visiting the complete roster is cheaper.
-            if self.vision_ship_candidates.len().saturating_mul(2) >= self.ships.len() {
+            if self.vision_ship_candidates.len().saturating_mul(2) >=
+                self.physics.active_ship_indices().len()
+            {
+                // The canonical physics registry keeps active slots
+                // sorted by source index, including after retirement.
+                // Preserve Unity GameState.Ships discovery order without
+                // scanning thousands of dead historical ship lifetimes.
                 self.vision_ship_candidates.clear();
-                self.vision_ship_candidates.extend(0..self.ships.len());
+                self.vision_ship_candidates
+                    .extend_from_slice(self.physics.active_ship_indices());
             } else {
                 self.vision_ship_candidates.sort_unstable();
             }
