@@ -13,6 +13,7 @@ const {WindowsSupervisor}=require('./experiment_hub_windows_supervisor');
 const {inspectHost}=require('./experiment_hub_host');
 const {matchingLeaseBudget}=require('./experiment_hub_resources');
 const {validateProgress}=require('./experiment_hub_progress');
+const {physicalExecution}=require('./experiment_hub_native_release_recovery');
 const {evaluationEvidence,evaluationRules,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -99,6 +100,8 @@ class LocalExecution {
             !(order.lease.status==='acknowledged'||order.action==='inspect'&&order.lease.status==='released'))
             throw Error('Rejected invalid or unauthorized local dispatch instruction.');
         const {job,lease}=order;
+        const physical=physicalExecution(job,lease);
+        const physicalId=physical.job.id;
         if(order.action==='start'&&!this.projects.includes(job.project_id))
             throw Error('A locally installed project adapter is required for Start.');
         const localAdapter=this.supervisor.adapters?.[job.project_id];
@@ -111,7 +114,7 @@ class LocalExecution {
             // confirm that the coordinator may release the claim.
             let jobUnowned=false;
             try {
-                jobUnowned=!this.supervisor.snapshot().some(r=>r.job_id===job.id);
+                jobUnowned=!this.supervisor.snapshot().some(r=>r.job_id===physicalId);
                 if(!jobUnowned)
                     throw Error('GPU access probe refused for an already owned native service.');
                 if(!this.projects.includes(job.project_id))
@@ -194,7 +197,7 @@ class LocalExecution {
         }
         let observed,diagnostic=null;
         try {
-            const record=this.supervisor.snapshot().find(r=>r.job_id===job.id);
+            const record=this.supervisor.snapshot().find(r=>r.job_id===physicalId);
             if(record&&(record.lease_id!==lease.id||
                 record.project_id!==job.project_id))
                 throw Error('Existing locally supervised service has different lease ownership.');
@@ -202,8 +205,8 @@ class LocalExecution {
                 // An ambiguous, previously issued launch is reconciled, never
                 // launched again, including after agent/coordinator restarts.
                 observed=record
-                    ?await this.supervisor.reconcile(job.id)
-                    :await this.supervisor.start({...job,dispatch_id:order.dispatch_id},lease);
+                    ?await this.supervisor.reconcile(physicalId)
+                    :await this.supervisor.start({...physical.job,dispatch_id:order.dispatch_id},physical.lease);
             }else if(!record) {
                 // Only the Docker backend can verify an absent deterministic
                 // container after excluding a concurrent journal/GPU probe.
@@ -216,15 +219,15 @@ class LocalExecution {
                     diagnostic='Missing local ownership record; inspect the native supervisor before recovery.';
                 }
             }else if(order.action==='stop') {
-                observed=await this.supervisor.stop(job.id);
+                observed=await this.supervisor.stop(physicalId);
             }else {
-                observed=await this.supervisor.reconcile(job.id);
+                observed=await this.supervisor.reconcile(physicalId);
             }
         }catch(error) {
             diagnostic=String(error.message||error).slice(0,220);
-            const record=this.supervisor.snapshot().find(r=>r.job_id===job.id);
+            const record=this.supervisor.snapshot().find(r=>r.job_id===physicalId);
             if(record&&record.lease_id===lease.id&&record.project_id===job.project_id) {
-                try{observed=await this.supervisor.reconcile(job.id);}
+                try{observed=await this.supervisor.reconcile(physicalId);}
                 catch{observed=null;}
             }else if(!record&&order.action==='start'&&
                 typeof this.supervisor.reconcileAbsent==='function') {
@@ -274,10 +277,34 @@ class LocalExecution {
         // Optional adapter metrics are observational. A malformed or
         // unavailable summary must never turn verified service state into
         // an unverified start/stop or influence the policy/checkpoint.
-        const owned=this.supervisor.snapshot().find(r=>r.job_id===job.id);
+        const owned=this.supervisor.snapshot().find(r=>r.job_id===physicalId);
         const ownsArtifacts=owned&&owned.lease_id===lease.id&&owned.project_id===job.project_id&&
             (owned.artifact_lineage_root_id||owned.job_id)===
-                (job.artifact_lineage_root_id||job.id);
+                (job.artifact_lineage_root_id||job.id)&&
+            (owned.native_release_recovery_of_job_id||owned.job_id)===job.id;
+        if(ownsArtifacts&&state==='failed'&&observed.active===false&&
+            job.frozen_parameters?.continual_release===true&&
+            typeof localAdapter?.release_recovery_ready==='function') {
+            try {
+                const pending=await localAdapter.release_recovery_ready(Object.freeze({
+                    job_id:job.id,project_id:job.project_id,
+                    cpu_quota:job.resources.cpus,frozen_parameters:job.frozen_parameters,
+                    continuation_of_job_id:job.continuation_of_job_id||null,
+                    ...(job.resource_bundle?{resource_bundle:structuredClone(job.resource_bundle)}:{}),
+                    ...(job.model_source_job_id?{model_source_job_id:job.model_source_job_id}:{}),
+                    ...(job.expected_parent_model_sha256?
+                        {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
+                    ...(lease.gpu_bindings?.length===1?
+                        {gpu_pci_address:lease.gpu_bindings[0].pci_address}:
+                        lease.gpu_bindings?.length===2?
+                        {gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}:{}),
+                }));
+                if(pending)report.native_release_pending=pending;
+            }catch(error) {
+                report.diagnostic=('Native continual recovery evidence unavailable: '+
+                    String(error.message||error)).slice(0,220);
+            }
+        }
         // A native collector can exit zero after writing the physical World
         // but before a verified training bundle is durably published. Do
         // not let an OS exit status release Hub resources or advance the
@@ -432,7 +459,9 @@ class LocalExecution {
             }
         }
         if(ownsArtifacts&&state==='finished'&&
-            job.frozen_parameters?.optimizer_group===true) {
+            job.frozen_parameters?.optimizer_group===true&&
+            (job.frozen_parameters.continual_release!==true||
+                report.checkpoint_ready_verified===true&&report.checkpoint_model_sha256)) {
             try {
                 if(typeof localAdapter?.distributed_completion!=='function')
                     throw Error('No native synchronized optimizer completion reader installed.');

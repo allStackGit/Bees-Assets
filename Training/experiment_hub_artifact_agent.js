@@ -30,7 +30,7 @@ function filesForJob(folder,projectId,nativeTrainingOnly=false) {
                 ?projectId==='bees_native'&&
                     (safeNativeModelPath(name)||[
                         'round-result.json', 'optimizer-attempt.json',
-                        'learner/metrics.json',
+                        'learner/metrics.json','continual-release.json',
                     ].includes(name))||
                     projectId==='bees_native_collect'&&
                     (name==='rollout-bundle.json'||
@@ -156,7 +156,8 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
             ?128*1024*1024:MAX_CYCLE;
         if(typeof adapter?.artifact_export_dir!=='function')continue;
         if(!executor.projects.includes(project))continue;
-        const root=adapter.artifact_export_dir(record.job_id);
+        const jobId=record.native_release_recovery_of_job_id||record.job_id;
+        const root=adapter.artifact_export_dir(jobId);
         if(typeof root!=='string'||!path.isAbsolute(root))continue;
         if(!fs.existsSync(root))continue;
         for(const relative of filesForJob(root,project,nativeTrainingOnly)) {
@@ -167,7 +168,7 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
             const file=path.join(root,...relative.split('/'));
             let st;
             try{st=fs.lstatSync(file);}catch{continue;}
-            const key=record.job_id+':'+relative;
+            const key=jobId+':'+relative;
             const cached=cache.get(key);
             const unchanged=cached&&st.isFile()&&st.dev===cached.dev&&
                 st.ino===cached.ino&&st.size===cached.size&&
@@ -180,7 +181,7 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
             cache.set(key,{...proof,mtimeMs:st.mtimeMs,complete:false});
             if(cache.size>10000)cache.clear();
             let response=await remoteCall(endpoint,machineId,token,
-                record.job_id,relative,snapshot,0,null);
+                jobId,relative,snapshot,0,null);
             if(response.complete){
                 cache.set(key,{...proof,mtimeMs:st.mtimeMs,complete:true});
                 completed++;continue;
@@ -210,7 +211,7 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
                     if(fs.readSync(fd,block,0,length,response.offset)!==length)
                         throw Error('Job log shortened during transfer.');
                     response=await remoteCall(endpoint,machineId,token,
-                        record.job_id,relative,snapshot,response.offset,block);
+                        jobId,relative,snapshot,response.offset,block);
                     sent+=length;
                 }
                 if(response.complete) {

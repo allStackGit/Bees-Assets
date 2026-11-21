@@ -16,6 +16,8 @@ const {matchingLeaseBudget,startHeadroom,ensureLocalCpuRamCapacity}=
     require('./experiment_hub_resources');
 const {availableMemoryMb}=require('./experiment_hub_host');
 const {discoverNvidiaGpus}=require('./experiment_hub_gpu_inventory');
+const {logicalJobId,recoveryPredecessor,completedPredecessor}=
+    require('./experiment_hub_native_release_recovery');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const SHA=/^[a-f0-9]{64}$/;
@@ -114,7 +116,8 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
     const predecessor=job.continuation_of_job_id||null,
         replacement=job.collector_replacement_of_job_id||null,
         oldOptimizer=job.optimizer_restart_of_job_id||null,
-        root=job.artifact_lineage_root_id||job.id;
+        logicalId=logicalJobId(job),
+        root=job.artifact_lineage_root_id||logicalId;
     if(replacement!==null&&(
         job.project_id!=='bees_native_collect'||predecessor!==null||
         !UUID.test(String(replacement))||replacement===job.id||
@@ -137,11 +140,14 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         throw Error('Windows synchronized optimizer restart needs new leased ranks and a pinned original group.');
     if(!UUID.test(String(root))||
         (predecessor!==null&&(!UUID.test(String(predecessor))||
-            predecessor===job.id||root===job.id))||
-        (predecessor===null&&root!==job.id))
+            predecessor===logicalId||root===logicalId))||
+        (predecessor===null&&root!==logicalId))
         throw Error('Invalid Windows continuation ancestry.');
     const context=Object.freeze({
-        job_id:job.id,project_id:job.project_id,
+        job_id:logicalId,project_id:job.project_id,
+        ...(logicalId!==job.id?{
+            native_release_checkpoint_sha256:job.native_release_checkpoint_sha256,
+        }:{}),
         ...(job.resource_bundle?{resource_bundle:Object.freeze({...job.resource_bundle})}:{}),
         ...(job.model_source_job_id?{model_source_job_id:job.model_source_job_id}:{}),
         cpu_quota:r.cpus,
@@ -499,9 +505,15 @@ class WindowsSupervisor {
                 !['failed','stopped','finished'].includes(observed.state))
                 throw Error('Previous native GPU rank still has active or unverified Windows Job Object ownership.');
         }
+        const releasePrior=recoveryPredecessor(this.state.records,job);
+        if(releasePrior) {
+            const observed=await this.observe(releasePrior);
+            if(observed.active!==false||observed.owner_verified!==true||
+                observed.state!=='failed')
+                throw Error('Previous Windows native release owner is not verified inactive and failed.');
+        }
         if(invocation.predecessor) {
-            const parent=this.state.records.find(r=>
-                r.job_id===invocation.predecessor);
+            const parent=completedPredecessor(this.state.records,invocation.predecessor);
             const checkpointStopped=['courier','tinybrains'].includes(parent?.project_id)&&parent.state==='stopped'&&
                 parent.checkpoint_stop_file&&parent.stop_requested_at;
             if(!parent||parent.project_id!==job.project_id||
@@ -535,6 +547,7 @@ class WindowsSupervisor {
             continuation_of_job_id:invocation.predecessor,
             collector_replacement_of_job_id:job.collector_replacement_of_job_id||null,
             optimizer_restart_of_job_id:job.optimizer_restart_of_job_id||null,
+            ...(releasePrior?{native_release_recovery_of_job_id:logicalJobId(job)}:{}),
             artifact_lineage_root_id:invocation.root,
             ...(invocation.stopFile?{checkpoint_stop_file:invocation.stopFile}:{}),
             token,cpus:invocation.cpus,host_cpus:invocation.hostCpus,

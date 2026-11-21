@@ -3889,7 +3889,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     await reload();
                 }));
             if(j.status==='waiting_adapter'&&readiness?.eligible===true)
-                actions.append(button('Start native job',async()=>{
+                actions.append(button(j.native_release_recovery?'Start release recovery':'Start native job',async()=>{
                     const windows=machine.agent_platform==='win32';
                     const gpu=j.resources.gpu_count>0;
                     const autoRelease=$('hub-native-release-on-terminal').checked;
@@ -3977,6 +3977,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     }));
                 }
             }
+            if(j.project_id==='bees_native'&&j.status==='failed'&&
+                j.native_release_pending&&!j.capacity_released_at)
+                actions.append(button('Recover generation release',async()=>{
+                    if(!confirm('Queue release-only recovery of the committed checkpoint on its original machine and retained resource lease? No simulation or PPO optimizer runs will be repeated. Start the recovery after any required GPU qualification.'))return;
+                    try {
+                        await action('hub/jobs/recover-native-release',{
+                            job_id:j.id,confirm_recover:true,
+                        });
+                        feedback('hub-job-message','Release recovery prepared. Authorize the native Start after resource qualification.');
+                        await reload();
+                    }catch(error){feedback('hub-job-message',error.message);}
+                }));
             if(j.resource_bundle?.index===1&&
                 j.frozen_parameters?.optimizer_group===true) {
                 const optimizerGroup=state.jobs.filter(member=>
@@ -3992,7 +4004,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const alreadyRestarted=state.jobs.some(member=>
                     member.optimizer_restart_of_bundle_id===j.resource_bundle.id&&
                     member.status!=='cancelled');
-                if(groupFailed&&!alreadyRestarted)
+                if(groupFailed&&!alreadyRestarted&&!j.native_release_pending)
                     actions.append(button('Restart failed GPU optimizer group',async()=>{
                         if(!confirm('Reserve a NEW complete native MA-POCA GPU group on the same '+
                             optimizerGroup.length+' machines using the ORIGINAL input model, '+

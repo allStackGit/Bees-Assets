@@ -11,6 +11,8 @@ const {promisify}=require('node:util');
 const {execFile}=require('node:child_process');
 const {inspectHost,availableMemoryMb}=require('./experiment_hub_host');
 const {discoverAmdGpus}=require('./experiment_hub_gpu_inventory');
+const {logicalJobId,recoveryPredecessor,completedPredecessor}=
+    require('./experiment_hub_native_release_recovery');
 const {matchingLeaseBudget,startHeadroom,ensureLocalCpuRamCapacity}=
     require('./experiment_hub_resources');
 const {verifyKernelLimits}=require('./experiment_hub_linux_cgroup');
@@ -177,7 +179,8 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
     const predecessor=job.continuation_of_job_id||null;
     const replaced=job.collector_replacement_of_job_id||null;
     const oldOptimizer=job.optimizer_restart_of_job_id||null;
-    const lineageRoot=job.artifact_lineage_root_id||job.id;
+    const logicalId=logicalJobId(job);
+    const lineageRoot=job.artifact_lineage_root_id||logicalId;
     if(replaced!==null&&(
         job.project_id!=='bees_native_collect'||predecessor!==null||
         !UUID.test(String(replaced))||replaced===job.id||
@@ -200,11 +203,14 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         throw Error('Synchronized optimizer restart requires a separately leased new rank and an exact old group.');
     if(!UUID.test(String(lineageRoot))||
         (predecessor!==null&&(!UUID.test(String(predecessor))||
-            predecessor===job.id||lineageRoot===job.id))||
-        (predecessor===null&&lineageRoot!==job.id))
+            predecessor===logicalId||lineageRoot===logicalId))||
+        (predecessor===null&&lineageRoot!==logicalId))
         throw Error('Invalid immutable local continuation ancestry.');
     const context=Object.freeze({
-        job_id:job.id,project_id:job.project_id,
+        job_id:logicalId,project_id:job.project_id,
+        ...(logicalId!==job.id?{
+            native_release_checkpoint_sha256:job.native_release_checkpoint_sha256,
+        }:{}),
         ...(job.resource_bundle?{resource_bundle:Object.freeze({...job.resource_bundle})}:{}),
         ...(job.model_source_job_id?{model_source_job_id:job.model_source_job_id}:{}),
         cpu_quota:r.cpus,ram_quota_mb:r.ram_mb,
@@ -863,9 +869,15 @@ class LinuxSupervisor {
                   ['failed','stopped','finished'].includes(physical.state)))
                 throw Error('Previous synchronized optimizer rank is active or has unverified OS ownership.');
         }
+        const releasePrior=recoveryPredecessor(this.state.records,job);
+        if(releasePrior) {
+            const physical=await this.inspectUnit(releasePrior);
+            if(physical.active!==false||
+                !(physical.state==='failed'||physical.unit_exists===false))
+                throw Error('Previous native release process is not verified inactive.');
+        }
         if(job.continuation_of_job_id) {
-            const parent=this.state.records.find(r=>
-                r.job_id===job.continuation_of_job_id);
+            const parent=completedPredecessor(this.state.records,job.continuation_of_job_id);
             if(!parent||parent.project_id!==job.project_id||
                 (parent.state!=='finished'&&!(parent.state==='stopped'&&
                     ['courier','tinybrains'].includes(parent.project_id)&&parent.checkpoint_stop_verified===true))||
@@ -925,7 +937,8 @@ class LinuxSupervisor {
             continuation_of_job_id:job.continuation_of_job_id||null,
             collector_replacement_of_job_id:job.collector_replacement_of_job_id||null,
             optimizer_restart_of_job_id:job.optimizer_restart_of_job_id||null,
-            artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+            ...(releasePrior?{native_release_recovery_of_job_id:logicalJobId(job)}:{}),
+            artifact_lineage_root_id:job.artifact_lineage_root_id||logicalJobId(job),
             unit:unitFor(job.id),state:'launch_requested',
             cpus:invocation.cpus,ram_mb:invocation.ram_mb,
             stop_policy:invocation.stop_policy,

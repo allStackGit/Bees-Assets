@@ -791,6 +791,20 @@ function comparableCandidate(job) {
 // Native process exit is not optimizer completion. Accept the machine
 // authenticated, independently verified source receipt as durable group
 // evidence, bound to the exact original Hub lease and dispatch.
+// A committed rank-zero checkpoint is not yet a released generation.
+function verifiedReleaseRecovery(job,raw,state) {
+    if(raw==null)return null;
+    const grouped=job?.frozen_parameters?.optimizer_group===true;
+    const keys=['checkpoint_sha256',...(grouped?
+        ['input_sha256','model_consensus_sha256']:[])];
+    if(state!=='failed'||job?.project_id!=='bees_native'||
+        job.frozen_parameters?.continual_release!==true||!object(raw)||
+        Object.keys(raw).sort().join(',')!==keys.slice().sort().join(',')||
+        keys.some(key=>!SHA256.test(String(raw[key]||'')))||
+        grouped&&job.resource_bundle?.index!==1)
+        throw Error('Invalid native continual release recovery proof.');
+    return copy(raw);
+}
 function verifiedOptimizerCompletion(job,raw,state) {
     if(raw==null)return null;
     const bundle=job?.resource_bundle;
@@ -2854,8 +2868,10 @@ class ExperimentHub {
             throw Error('Cancel the frozen distributed group plan before individually starting one of its members.');
         const snapshot=this.snapshot();
         const job=snapshot.jobs.find(j=>j.id===value.job_id);
-        if(job?.frozen_parameters?.optimizer_group===true)
+        if(job?.frozen_parameters?.optimizer_group===true&&!job.native_release_recovery)
             throw Error('Synchronized native optimizer nodes must start together through their exact approved resource bundle.');
+        if(job?.native_release_recovery&&origin!=='operator')
+            throw Error('A release-only recovery requires an explicit owner Start.');
         const readiness=nativeStartReadiness(snapshot,job);
         if(!readiness.eligible)
             throw Error(readiness.reason);
@@ -3687,7 +3703,7 @@ class ExperimentHub {
             next.jobs.some(parent=>parent.id===job.frozen_parameters?.learner_job_id&&
                 parent.project_id==='tinybrains'&&
                 parent.distributed_rollout_managed===true);
-        if(!groupOwnedCollector)delete job.release_on_terminal;
+        if(!groupOwnedCollector&&!job.native_release_recovery)delete job.release_on_terminal;
         delete job.automation_start_session_id;
         job.status_reason='Undelivered Start withdrawn. The queued job retains its existing claim.';
         this.commit(next);
@@ -3713,6 +3729,62 @@ class ExperimentHub {
         job.status_reason='Stop requested; awaiting local service confirmation.';
         this.commit(next);
         return {id:job.id,status:job.status};
+    }
+    prepareNativeReleaseRecovery(value) {
+        if(!object(value)||value.confirm_recover!==true||
+            !UUID.test(String(value.job_id||''))||
+            Object.keys(value).some(key=>!['job_id','confirm_recover'].includes(key)))
+            throw Error('Confirm the exact failed native generation release.');
+        const next=copy(this.state);
+        const job=next.jobs.find(item=>item.id===value.job_id);
+        const proof=job?.native_release_pending;
+        const lease=next.reservations.find(item=>item.id===job?.lease_id&&
+            item.job_id===job.id&&item.machine_id===job.assigned_machine_id&&
+            item.project_id==='bees_native'&&item.issued_by==='experiment-hub'&&
+            item.status==='acknowledged');
+        if(!job||job.project_id!=='bees_native'||job.status!=='failed'||
+            job.frozen_parameters?.continual_release!==true||!proof||!lease||
+            job.capacity_released_at||!job.dispatch_id||!job.execution_updated_at)
+            throw Error('Release recovery requires the verified committed round and its original retained owner lease.');
+        if(job.frozen_parameters.optimizer_group===true) {
+            const group=job.resource_bundle;
+            const members=next.jobs.filter(item=>item.resource_bundle?.id===group?.id)
+                .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
+            if(group?.index!==1||members.length!==group.size||members[0]?.id!==job.id||
+                members.slice(1).some((worker,index)=>
+                    worker.project_id!=='bees_native_optimizer_worker'||
+                    worker.resource_bundle.index!==index+2||
+                    worker.resource_bundle.size!==group.size||
+                    worker.status!=='finished'||!worker.capacity_released_at||
+                    worker.optimizer_completion?.group_id!==group.id||
+                    worker.optimizer_completion?.node_rank!==index+1||
+                    worker.optimizer_completion?.input_sha256!==proof.input_sha256||
+                    worker.optimizer_completion?.model_consensus_sha256!==proof.model_consensus_sha256))
+                throw Error('Wait for every original optimizer worker to finish, release capacity and prove the same checkpoint consensus.');
+        }
+        const previous=job.native_release_recovery;
+        const attempts=job.native_release_attempts||[];
+        if(attempts.length>=16)
+            throw Error('Native generation recovery attempt history is full.');
+        const attempt={attempt_id:crypto.randomUUID(),
+            previous_attempt_id:previous?.attempt_id||job.id,
+            checkpoint_sha256:proof.checkpoint_sha256,
+            previous_dispatch_id:job.dispatch_id,prepared_at:now()};
+        job.native_release_attempts=[...attempts,attempt];
+        job.native_release_recovery=attempt;
+        job.status='waiting_adapter';
+        job.status_reason='Committed training round retained; release-only recovery is queued for explicit Start.';
+        delete job.dispatch_id;
+        delete job.start_requested_at;
+        delete job.start_first_offered_at;
+        delete job.stop_requested_at;
+        delete job.automation_start_session_id;
+        delete job.prelaunch_absence_verified;
+        job.release_on_terminal=true;
+        // A separate physical attempt preserves the original logical
+        // round, worker group and completed consensus receipts.
+        this.commit(next);
+        return {id:job.id,status:job.status,recovery_attempt_id:attempt.attempt_id};
     }
     requestCheckpointReinspection(value) {
         if(!object(value)||value.confirm_reinspect!==true||
@@ -3776,6 +3848,17 @@ class ExperimentHub {
                 lease.machine_id!==machine.id||job.assigned_machine_id!==machine.id||
                 lease.project_id!==job.project_id)
                 throw Error('Native execution report does not match its job and machine.');
+            const releaseRecovery=verifiedReleaseRecovery(
+                job,report.native_release_pending,report.state);
+            if(releaseRecovery) {
+                if(job.native_release_pending&&
+                    JSON.stringify(job.native_release_pending)!==JSON.stringify(releaseRecovery))
+                    throw Error('Committed native release recovery checkpoint changed.');
+                if(!job.native_release_pending) {
+                    job.native_release_pending=releaseRecovery;
+                    changed=true;
+                }
+            }
             const optimizerCompletion=verifiedOptimizerCompletion(
                 job,report.optimizer_completion,report.state);
             if(optimizerCompletion) {
@@ -4047,7 +4130,9 @@ class ExperimentHub {
                     Date.parse(progress.source_modified_at)<
                         Date.parse(latest.source_modified_at))
                     ?latest:progress;
-                if(selected&&!job.final_progress) {
+                if(selected&&(!job.final_progress||
+                    job.native_release_recovery&&Date.parse(selected.source_modified_at)>
+                        Date.parse(job.final_progress.source_modified_at))) {
                     job.final_progress=selected;
                     changed=true;
                 }
@@ -4240,6 +4325,9 @@ class ExperimentHub {
                 job:{
                     id:job.id,project_id:job.project_id,adapter:job.adapter,
                     lease_id:job.lease_id,status:'waiting_adapter',
+                    ...(job.native_release_recovery?{
+                        native_release_recovery:copy(job.native_release_recovery),
+                    }:{}),
                     ...(job.collector_replacement_of_job_id?{
                         collector_replacement_of_job_id:
                             job.collector_replacement_of_job_id,
@@ -5187,6 +5275,9 @@ class ExperimentHub {
             // all its independent machine-owned processes and leases.
             const owned=jobs.every(job=>
                 job.status==='finished'&&job.capacity_released_at||
+                stage==='optimizer'&&job.id===jobs[0].id&&
+                    job.native_release_pending&&
+                    ['failed','waiting_adapter'].includes(job.status)||
                 ['start_requested','launch_requested','running','stop_requested']
                     .includes(job.status)&&UUID.test(String(job.dispatch_id||'')));
             if(!allWaiting&&!owned)
@@ -5424,6 +5515,13 @@ class ExperimentHub {
                     // A known terminal failure cannot be repaired by waiting
                     // for an unrelated offline machine. Settle surviving
                     // native Stop owners and surface manual review now.
+                    if(phase==='optimizer'&&members[0].native_release_pending&&
+                        ['failed','waiting_adapter'].includes(members[0].status)&&
+                        members.slice(1).every(job=>!['failed','unverified','stopped','cancelled'].includes(job.status))) {
+                        const reason='Committed PPO checkpoint is retained; awaiting checkpoint-owner release recovery, not another optimizer group.';
+                        if(plan.reason!==reason)update(plan.status,reason);
+                        continue;
+                    }
                     if(members.some(job=>['failed','unverified','stopped','cancelled']
                         .includes(job.status))) {
                         // A failed GPU optimizer rank cannot finish a
@@ -5739,6 +5837,8 @@ class ExperimentHub {
             !previous.some(job=>['failed','stopped'].includes(job.status))||
             !nativeOptimizerGroupBlock(snapshot,previous[0]))
             throw Error('A full synchronized optimizer restart requires every original rank to terminate, release its lease, and leave an incomplete group.');
+        if(previous[0].native_release_pending)
+            throw Error('The original owner already committed its PPO checkpoint; recover the continual release instead of restarting optimization.');
         if(snapshot.jobs.some(job=>
             job.optimizer_restart_of_bundle_id===value.bundle_id&&
             job.status!=='cancelled'))
@@ -5860,6 +5960,7 @@ class ExperimentHub {
                     lease.issued_by==='experiment-hub'&&
                     lease.status==='released'&&Boolean(lease.released_at)))||
             !restartGroup.some(old=>['failed','stopped'].includes(old.status))||
+            Boolean(restartGroup[0]?.native_release_pending)||
             !nativeOptimizerGroupBlock(next,restartGroup[0])||
             next.jobs.some(job=>
                 job.optimizer_restart_of_bundle_id===value.restart_optimizer_bundle_id&&

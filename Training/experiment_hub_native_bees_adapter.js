@@ -1327,6 +1327,11 @@ function createNativeBeesAdapter({
         if (!round) throw Error('Native Bees continuation needs a completed round.');
         if (!releaseReady(round, output))
             throw Error('Native Bees continual generation release is not complete.');
+        return verifiedRoundArtifacts(round, output);
+    }
+
+    function verifiedRoundArtifacts(round, output) {
+        if (!round) throw Error('Native Bees recovery needs a committed training round.');
         const {receipt, metrics} = round;
         const checkpoint = path.join(output, 'learner', 'checkpoint.pt');
         const manifest = path.join(output, 'learner', 'manifest.json');
@@ -1872,6 +1877,15 @@ function createNativeBeesAdapter({
             // and release plan before resuming the registry transaction.
             const resumeRelease = continual_release &&
                 completionReceipt(output, 'round-result.json') !== null;
+            if (context.native_release_checkpoint_sha256 !== undefined) {
+                if (!resumeRelease)
+                    throw Error('Release recovery must never start another optimizer round.');
+                const round=jobRound({...context,frozen_parameters:parameters});
+                if (!round?.receipt.continual_release_plan ||
+                    verifiedRoundArtifacts(round,output).checkpointDigest!==
+                        context.native_release_checkpoint_sha256)
+                    throw Error('Release recovery checkpoint differs from the authorized committed round.');
+            }
             return ['-B', runner, activeRun, inputs.checkpoint, trainer, output,
                 ...(continual_release ? ['--continual-release-plan', releasePlan] : []),
                 ...(resumeRelease ? ['--resume-continual-release'] : []),
@@ -1936,6 +1950,21 @@ function createNativeBeesAdapter({
         ...(!collectOnly ? {
             ...(inbox ? {bundle_inbox_dir() { return inbox; }} : {}),
             ...(distributedOptimizer?.role==='worker'?{}:{
+            release_recovery_ready(context) {
+                if (context.frozen_parameters?.continual_release!==true || !releasePlan)
+                    return null;
+                const round=jobRound(context);
+                if (!round) return null;
+                if (round.receipt.continual_release_plan?.plan_sha256!==pins.get(releasePlan))
+                    throw Error('Committed round differs from the installed continual release plan.');
+                const verified=verifiedRoundArtifacts(round,jobRoot(context));
+                const metrics=round.metrics;
+                return {checkpoint_sha256:verified.checkpointDigest,
+                    ...(distributedOptimizer?{
+                        input_sha256:metrics.optimizer_global_input_sha256,
+                        model_consensus_sha256:metrics.optimizer_gpu_model_consensus_sha256,
+                    }:{})};
+            },
             async checkpoint_ready(context) {
                 const output = jobRoot(context);
                 const round = jobRound(context);
