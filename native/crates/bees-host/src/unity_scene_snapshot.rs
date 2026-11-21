@@ -78,6 +78,48 @@ pub use saved_squad_formation::{NativeSavedSquadFormation, NativeSquadFormationK
 
 const SNAPSHOT_VERSION: u32 = 35;
 
+/// Validate Uranus II's six timers against all nine *physical* source
+/// AddReinforcementSquads calls. Three later timers each launch one
+/// upper-lane and one lower-lane formation. Reusing a timer with all
+/// squads on one lane changes gameplay, pathfinding and HiveMind tactics.
+fn uranus_defensive_waves_match_source(
+    waves: &[crate::reinforcements::NativeReinforcementPlan],
+) -> bool {
+    use crate::reinforcements::NativeReinforcementActivation::AfterSeconds;
+    if waves.len() != 9 { return false; }
+    let timed = |wave: &crate::reinforcements::NativeReinforcementPlan, at: f32|
+        matches!(wave.activation, AfterSeconds(seconds)
+            if (seconds - at).abs() <= 0.0001);
+    let Some(initial) = waves.iter().find(|wave| timed(wave, 120.0)) else {
+        return false;
+    };
+    let (Some(upper_start), Some(upper_entry)) = (initial.spawn, initial.entry)
+        else { return false };
+    let lower_start = Vec2::new(600.0, -512.0);
+    let lower_entry = Vec2::new(450.0, -450.0);
+    for (at, upper_count, lower_count) in [
+        (120.0, 1, 0), (240.0, 1, 0), (360.0, 1, 0),
+        (480.0, 1, 1), (540.0, 1, 1), (600.0, 1, 1),
+    ] {
+        let (mut upper, mut lower) = (0_usize, 0_usize);
+        for wave in waves.iter().filter(|wave| timed(wave, at)) {
+            let (Some(start), Some(entry)) = (wave.spawn, wave.entry)
+                else { return false };
+            if start.unity_equal(upper_start) && entry.unity_equal(upper_entry) {
+                upper += 1;
+            } else if start.unity_equal(lower_start) &&
+                entry.unity_equal(lower_entry)
+            {
+                lower += 1;
+            } else {
+                return false;
+            }
+        }
+        if (upper, lower) != (upper_count, lower_count) { return false; }
+    }
+    true
+}
+
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
 
@@ -2744,18 +2786,7 @@ impl NativePhysicalScene {
                     zone.player_side == player_side && zone.retreat_on_exit) ||
                 setup.groups.is_some() || setup.survival.is_some() ||
                 setup.demolition.is_some() || setup.escort.is_some() ||
-                // Original Uranus2.StartWaves uses SIX timer callbacks
-                // but NINE AddReinforcementSquads calls: waves 4, 5
-                // and 6 each deploy independent upper and lower lanes.
-                // A single generic merged wave would alter physical
-                // starting positions, squad formations and AI commands.
-                setup.reinforcements.len() != 9 ||
-                [(120.0_f32, 1_usize), (240.0, 1), (360.0, 1),
-                 (480.0, 2), (540.0, 2), (600.0, 2)].iter().any(|&(due, expected)|
-                    setup.reinforcements.iter().filter(|wave|
-                        matches!(wave.activation,
-                            crate::reinforcements::NativeReinforcementActivation::AfterSeconds(seconds)
-                            if (seconds - due).abs() <= 0.0001)).count() != expected) =>
+                !uranus_defensive_waves_match_source(&setup.reinforcements) =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::UranusNewThreat {
                 player_side, barges, ..

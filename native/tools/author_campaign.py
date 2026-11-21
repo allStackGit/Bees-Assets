@@ -597,6 +597,41 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                                for time in times) and
                            all(sum(abs(time - due) <= 0.0001 for time in times) == count
                                for due, count in expected))
+            if valid_waves:
+                # Each later timer launches a *pair* of separate fleets.
+                # Preserve the original lower route coordinates and reuse
+                # the 120s upper route for every upper formation.
+                upper_first = next(wave for wave in waves
+                                   if abs(wave["after_seconds"] - 120.0) <= 0.0001)
+                upper_spawn = upper_first.get("spawn")
+                upper_entry = upper_first.get("entry")
+
+                def same_point(actual, expected):
+                    return (isinstance(actual, list) and len(actual) == 2 and
+                            isinstance(expected, list) and len(expected) == 2 and
+                            all(type(a) in (int, float) and
+                                type(b) in (int, float) and
+                                abs(a - b) <= 0.00001
+                                for a, b in zip(actual, expected)))
+
+                def same_route(wave, spawn, entry):
+                    return (same_point(wave.get("spawn"), spawn) and
+                            same_point(wave.get("entry"), entry))
+
+                valid_waves = (
+                    same_point(upper_spawn, upper_spawn) and
+                    same_point(upper_entry, upper_entry) and
+                    all(
+                        sum(same_route(wave, upper_spawn, upper_entry)
+                            for wave in waves
+                            if abs(wave["after_seconds"] - due) <= 0.0001) == 1 and
+                        sum(same_route(wave, [600, -512], [450, -450])
+                            for wave in waves
+                            if abs(wave["after_seconds"] - due) <= 0.0001) ==
+                            (0 if due < 480 else 1)
+                        for due, _ in expected
+                    )
+                )
             if (scene.get("human_side") != args.player_side or
                     scene.get("activate_hivemind") is not False or
                     not isinstance(run.get("hivemind"), dict) or
