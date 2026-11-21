@@ -51,6 +51,7 @@ impl NativeMissionCue {
                 matches!(self, Self::UranusBargeLost | Self::UranusBargeCharged |
                     Self::UranusReinforcements),
             Some(CampaignDialogueSpec::PlutoPushback { .. }) |
+            Some(CampaignDialogueSpec::NeptuneProduction { .. }) |
             Some(CampaignDialogueSpec::NeptuneSeizeMeans { .. }) |
             Some(CampaignDialogueSpec::NeptunePressingForward { .. }) |
             Some(CampaignDialogueSpec::PlutoEvacuation { .. }) |
