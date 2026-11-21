@@ -72,6 +72,64 @@ fn place_at_center(radius: f32, occupied: &[(Vec2, f32)],
     None
 }
 
+/// Resolve immutable authored obstacle bodies using the same source prefabs
+/// and exact navigation hulls that the ordinary CombatWorld installs.
+/// Called only during one-time campaign or reinforcement authoring.
+pub(crate) fn authored_obstacle_bodies(
+    entities: &[NativeAuthoredEntity],
+) -> Result<Vec<ObstacleBody>, &'static str> {
+        let boxes = BoxObstacleCatalog::embedded().map_err(|_| "Titania II needs valid source box assets")?;
+        let polygons = PolygonObstacleCatalog::embedded().map_err(|_| "Titania II needs valid source polygon assets")?;
+        let mut obstacles = Vec::new();
+        let asteroids = CollisionAsteroidCatalog::embedded().map_err(|_| "Titania II needs valid source asteroid assets")?;
+        for entity in entities {
+                let body = match entity {
+                    NativeAuthoredEntity::BoxObstacle {
+                        entity_id, prefab_name, pose, live_corners,
+                    } => {
+                        let asset = &boxes
+                            .by_name(prefab_name)
+                            .ok_or("Titania II obstacle lacks its source prefab")?;
+                        if asset.kind != ObstacleKind::StaticObstacle { continue; }
+                        let (_, body) = if let Some(corners) = live_corners {
+                            asset.prepare_spawn_live_box(*entity_id,
+                                pose.ok_or("Titania II live box has no pose")?, *corners)
+                        } else { asset.prepare_spawn(*entity_id, *pose) }
+                            .map_err(|_| "Titania II box obstacle has invalid geometry")?;
+                        body
+                    }
+                    NativeAuthoredEntity::PolygonObstacle {
+                        entity_id, pose, live_vertices,
+                    } => {
+                        let catalog = &polygons;
+                        let (_, body) = if let Some(vertices) = live_vertices {
+                            catalog.prepare_spawn_live_polygon(*entity_id,
+                                pose.ok_or("Titania II live polygon has no pose")?, vertices.clone())
+                        } else { catalog.prepare_spawn(*entity_id, *pose) }
+                            .map_err(|_| "Titania II polygon obstacle has invalid geometry")?;
+                        body
+                    }
+                    NativeAuthoredEntity::MapObject { body, .. } |
+                    NativeAuthoredEntity::MiningAsteroid { body, .. } => body.clone(),
+                    NativeAuthoredEntity::FullCollisionAsteroid {
+                        entity_id, profile, pose, velocity,
+                        angular_velocity_degrees, effective_max_health,
+                    } => {
+                        let (_, body) = &asteroids
+                            .prepare_spawn(profile.prefab_number, *entity_id,
+                                *pose, *velocity, *angular_velocity_degrees,
+                                Some(*effective_max_health))
+                            .map_err(|_| "Titania II asteroid has invalid source geometry")?;
+                        body
+                    },
+                    NativeAuthoredEntity::Ship(_) => continue,
+                };
+                if body.active { obstacles.push(body); }
+            }
+
+    Ok(obstacles)
+}
+
 impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
     /// Unity StageTitania2HumanFleetAtCenter runs BEFORE the briefing and
     /// before its four initial enemy arrivals. Reposition real player squads
@@ -97,60 +155,9 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         // one-time staging decision. This neither builds a second CombatWorld
         // nor creates a campaign-specific movement or collision engine.
         let has_obstacles = self.metadata.player_formation_options().has_obstacles;
-        let boxes = has_obstacles.then(BoxObstacleCatalog::embedded)
-            .transpose().map_err(|_| "Titania II needs valid source box assets")?;
-        let polygons = has_obstacles.then(PolygonObstacleCatalog::embedded)
-            .transpose().map_err(|_| "Titania II needs valid source polygon assets")?;
-        let mut obstacles = Vec::new();
-        let asteroids = has_obstacles.then(CollisionAsteroidCatalog::embedded)
-            .transpose().map_err(|_| "Titania II needs valid source asteroid assets")?;
-        if has_obstacles {
-            for entity in &self.entities {
-                let body = match entity {
-                    NativeAuthoredEntity::BoxObstacle {
-                        entity_id, prefab_name, pose, live_corners,
-                    } => {
-                        let asset = boxes.as_ref().expect("loaded source boxes")
-                            .by_name(prefab_name)
-                            .ok_or("Titania II obstacle lacks its source prefab")?;
-                        if asset.kind != ObstacleKind::StaticObstacle { continue; }
-                        let (_, body) = if let Some(corners) = live_corners {
-                            asset.prepare_spawn_live_box(*entity_id,
-                                pose.ok_or("Titania II live box has no pose")?, *corners)
-                        } else { asset.prepare_spawn(*entity_id, *pose) }
-                            .map_err(|_| "Titania II box obstacle has invalid geometry")?;
-                        body
-                    }
-                    NativeAuthoredEntity::PolygonObstacle {
-                        entity_id, pose, live_vertices,
-                    } => {
-                        let catalog = polygons.as_ref().expect("loaded source polygons");
-                        let (_, body) = if let Some(vertices) = live_vertices {
-                            catalog.prepare_spawn_live_polygon(*entity_id,
-                                pose.ok_or("Titania II live polygon has no pose")?, vertices.clone())
-                        } else { catalog.prepare_spawn(*entity_id, *pose) }
-                            .map_err(|_| "Titania II polygon obstacle has invalid geometry")?;
-                        body
-                    }
-                    NativeAuthoredEntity::MapObject { body, .. } |
-                    NativeAuthoredEntity::MiningAsteroid { body, .. } => body.clone(),
-                    NativeAuthoredEntity::FullCollisionAsteroid {
-                        entity_id, profile, pose, velocity,
-                        angular_velocity_degrees, effective_max_health,
-                    } => {
-                        let (_, body) = asteroids.as_ref()
-                            .expect("loaded source asteroid colliders")
-                            .prepare_spawn(profile.prefab_number, *entity_id,
-                                *pose, *velocity, *angular_velocity_degrees,
-                                Some(*effective_max_health))
-                            .map_err(|_| "Titania II asteroid has invalid source geometry")?;
-                        body
-                    },
-                    NativeAuthoredEntity::Ship(_) => continue,
-                };
-                if body.active { obstacles.push(body); }
-            }
-        }
+        let obstacles = if has_obstacles {
+            authored_obstacle_bodies(&self.entities)?
+        } else { Vec::new() };
 
         let mut index_by_id = HashMap::new();
         for (index, entity) in self.entities.iter().enumerate() {
