@@ -20,13 +20,17 @@ pub enum CampaignDialogueSpec {
         #[serde(default)]
         under_heavy_fire: bool,
     },
+    /// Source Neptune 3 ending branches on persistent Factory ownership,
+    /// not the presence of a surviving Factory in the deployed roster.
+    NeptunePressingForward { player_side: i32, has_factory: bool },
 }
 
 impl CampaignDialogueSpec {
     pub fn player_side(self) -> i32 {
         match self {
             Self::TitaniaMinesweeper { player_side } |
-            Self::TitaniaBeenoculars { player_side, .. } => player_side,
+            Self::TitaniaBeenoculars { player_side, .. } |
+            Self::NeptunePressingForward { player_side, .. } => player_side,
         }
     }
 }
@@ -65,11 +69,15 @@ pub enum CampaignCue {
     BeenocularsUpload(UploadMilestone),
     BeenocularsVictory,
     BeenocularsDefeat,
+    NeptunePressingForwardBriefing,
+    NeptunePressingForwardVictory,
+    NeptunePressingForwardDefeat { has_factory: bool },
 }
 
 impl CampaignCue {
     pub fn is_briefing(self) -> bool {
-        matches!(self, Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. })
+        matches!(self, Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. } |
+            Self::NeptunePressingForwardBriefing)
     }
 }
 
@@ -78,6 +86,7 @@ impl CampaignCue {
 enum DialogueMode {
     Minesweeper { tracked_tank: Option<i64> },
     Beenoculars { under_heavy_fire: bool, next_milestone: usize },
+    NeptunePressingForward { has_factory: bool },
 }
 
 /// Exact authored campaign progress at the shared fixed-step recovery
@@ -118,6 +127,10 @@ impl CampaignDialogue {
                 DialogueMode::Beenoculars { under_heavy_fire, next_milestone: 0 },
                 CampaignCue::BeenocularsBriefing { under_heavy_fire },
             ),
+            CampaignDialogueSpec::NeptunePressingForward { has_factory, .. } => (
+                DialogueMode::NeptunePressingForward { has_factory },
+                CampaignCue::NeptunePressingForwardBriefing,
+            ),
         };
         Self { player_side: spec.player_side(), mode, cue, sequence: 0 }
     }
@@ -152,6 +165,9 @@ impl CampaignDialogue {
             (DialogueMode::Beenoculars { under_heavy_fire: saved, .. },
                 DialogueMode::Beenoculars { under_heavy_fire: authored, .. }) =>
                 saved == authored,
+            (DialogueMode::NeptunePressingForward { has_factory: saved },
+                DialogueMode::NeptunePressingForward { has_factory: authored }) =>
+                saved == authored,
             _ => false,
         };
         if player_side != self.player_side || !same_authored_story {
@@ -185,6 +201,13 @@ impl CampaignDialogue {
                 CampaignCue::BeenocularsVictory | CampaignCue::BeenocularsDefeat) =>
                 *next_milestone <= UploadMilestone::ORDERED.len() &&
                 usize::from(sequence) == *next_milestone + 1,
+            (DialogueMode::NeptunePressingForward { .. },
+                CampaignCue::NeptunePressingForwardBriefing) => sequence == 0,
+            (DialogueMode::NeptunePressingForward { .. },
+                CampaignCue::NeptunePressingForwardVictory) => sequence == 1,
+            (DialogueMode::NeptunePressingForward { has_factory: authored },
+                CampaignCue::NeptunePressingForwardDefeat { has_factory }) =>
+                sequence == 1 && *authored == has_factory,
             _ => false,
         };
         if !valid {
@@ -208,6 +231,10 @@ impl CampaignDialogue {
             (DialogueMode::Minesweeper { .. }, false) => CampaignCue::MinesweeperDefeat,
             (DialogueMode::Beenoculars { .. }, true) => CampaignCue::BeenocularsVictory,
             (DialogueMode::Beenoculars { .. }, false) => CampaignCue::BeenocularsDefeat,
+            (DialogueMode::NeptunePressingForward { .. }, true) =>
+                CampaignCue::NeptunePressingForwardVictory,
+            (DialogueMode::NeptunePressingForward { has_factory }, false) =>
+                CampaignCue::NeptunePressingForwardDefeat { has_factory: *has_factory },
         }
     }
 
