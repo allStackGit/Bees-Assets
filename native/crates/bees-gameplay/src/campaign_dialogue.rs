@@ -20,6 +20,10 @@ pub enum CampaignDialogueSpec {
         #[serde(default)]
         under_heavy_fire: bool,
     },
+    /// Pluto III's introduction includes only officers whose real
+    /// player-side ship classes are present after career fleet restoration.
+    /// Bits: Scout, Frigate, Gunship, Dreadnought.
+    PlutoPushback { player_side: i32, speaker_mask: u8 },
     /// Source Neptune 3 ending branches on persistent Factory ownership,
     /// not the presence of a surviving Factory in the deployed roster.
     NeptunePressingForward { player_side: i32, has_factory: bool },
@@ -44,6 +48,7 @@ impl CampaignDialogueSpec {
         match self {
             Self::TitaniaMinesweeper { player_side } |
             Self::TitaniaBeenoculars { player_side, .. } |
+            Self::PlutoPushback { player_side, .. } |
             Self::NeptunePressingForward { player_side, .. } |
             Self::NeptuneSeizeMeans { player_side } |
             Self::PlutoEvacuation { player_side, .. } |
@@ -88,6 +93,9 @@ pub enum CampaignCue {
     BeenocularsUpload(UploadMilestone),
     BeenocularsVictory,
     BeenocularsDefeat,
+    PlutoPushbackBriefing { speaker_mask: u8 },
+    PlutoPushbackVictory,
+    PlutoPushbackDefeat,
     NeptunePressingForwardBriefing,
     NeptunePressingForwardVictory,
     NeptunePressingForwardDefeat { has_factory: bool },
@@ -115,6 +123,7 @@ pub enum CampaignCue {
 impl CampaignCue {
     pub fn is_briefing(self) -> bool {
         matches!(self, Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. } |
+            Self::PlutoPushbackBriefing { .. } |
             Self::NeptunePressingForwardBriefing | Self::NeptuneSeizeBriefing |
             Self::PlutoEvacuationBriefing |
             Self::UranusNewThreatBriefing | Self::UranusDefensiveBriefing |
@@ -127,6 +136,7 @@ impl CampaignCue {
 enum DialogueMode {
     Minesweeper { tracked_tank: Option<i64> },
     Beenoculars { under_heavy_fire: bool, next_milestone: usize },
+    PlutoPushback { speaker_mask: u8 },
     NeptunePressingForward { has_factory: bool },
     NeptuneSeizeMeans,
     PlutoEvacuation { protected_ship_id: i64 },
@@ -201,6 +211,10 @@ impl CampaignDialogue {
                 DialogueMode::Beenoculars { under_heavy_fire, next_milestone: 0 },
                 CampaignCue::BeenocularsBriefing { under_heavy_fire },
             ),
+            CampaignDialogueSpec::PlutoPushback { speaker_mask, .. } => (
+                DialogueMode::PlutoPushback { speaker_mask },
+                CampaignCue::PlutoPushbackBriefing { speaker_mask },
+            ),
             CampaignDialogueSpec::NeptunePressingForward { has_factory, .. } => (
                 DialogueMode::NeptunePressingForward { has_factory },
                 CampaignCue::NeptunePressingForwardBriefing,
@@ -272,6 +286,9 @@ impl CampaignDialogue {
             (DialogueMode::Beenoculars { under_heavy_fire: saved, .. },
                 DialogueMode::Beenoculars { under_heavy_fire: authored, .. }) =>
                 saved == authored,
+            (DialogueMode::PlutoPushback { speaker_mask: saved },
+                DialogueMode::PlutoPushback { speaker_mask: authored }) =>
+                saved == authored,
             (DialogueMode::NeptunePressingForward { has_factory: saved },
                 DialogueMode::NeptunePressingForward { has_factory: authored }) =>
                 saved == authored,
@@ -328,6 +345,12 @@ impl CampaignDialogue {
                 CampaignCue::BeenocularsVictory | CampaignCue::BeenocularsDefeat) =>
                 *next_milestone <= UploadMilestone::ORDERED.len() &&
                 usize::from(sequence) == *next_milestone + 1,
+            (DialogueMode::PlutoPushback { speaker_mask: authored },
+                CampaignCue::PlutoPushbackBriefing { speaker_mask }) =>
+                sequence == 0 && *authored == speaker_mask && speaker_mask <= 0b1111,
+            (DialogueMode::PlutoPushback { speaker_mask },
+                CampaignCue::PlutoPushbackVictory | CampaignCue::PlutoPushbackDefeat) =>
+                sequence == 1 && *speaker_mask <= 0b1111,
             (DialogueMode::NeptuneSeizeMeans, CampaignCue::NeptuneSeizeBriefing) =>
                 sequence == 0,
             (DialogueMode::NeptuneSeizeMeans,
@@ -457,6 +480,10 @@ impl CampaignDialogue {
             (DialogueMode::Minesweeper { .. }, false) => CampaignCue::MinesweeperDefeat,
             (DialogueMode::Beenoculars { .. }, true) => CampaignCue::BeenocularsVictory,
             (DialogueMode::Beenoculars { .. }, false) => CampaignCue::BeenocularsDefeat,
+            (DialogueMode::PlutoPushback { .. }, true) =>
+                CampaignCue::PlutoPushbackVictory,
+            (DialogueMode::PlutoPushback { .. }, false) =>
+                CampaignCue::PlutoPushbackDefeat,
             (DialogueMode::NeptuneSeizeMeans, true) =>
                 CampaignCue::NeptuneSeizeVictory,
             (DialogueMode::NeptuneSeizeMeans, false) =>
