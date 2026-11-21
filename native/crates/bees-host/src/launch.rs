@@ -5229,6 +5229,7 @@ fn run_battle(
     let mut level_ids = HashSet::new();
     let mut world_ids = HashSet::new();
     let mut highest_squad_item_id = 0_i64;
+    let mut highest_authored_squad_item_id = 0_i64;
     let mut source_levels = Vec::with_capacity(config.levels.len());
     let mut source_sides = Vec::with_capacity(config.levels.len());
     // Parse and validate an immutable authored scene/layout ONCE per
@@ -5294,6 +5295,9 @@ fn run_battle(
         source_template_clone_count += 1;
         source_template_clone_wall += started.elapsed();
         source_scene_templates.push(Arc::clone(&template));
+        for squad in &template.source_squads {
+            highest_authored_squad_item_id = highest_authored_squad_item_id.max(squad.item_id);
+        }
         if let Some(created) = mission.and_then(|mission| mission.created_squads) {
             source.install_created_squads(
                 mission.expect("campaign squad creation owner").player_side, created,
@@ -5652,15 +5656,23 @@ fn run_battle(
     // training so large jobs do not keep redundant source bytes alive.
     drop(source_documents);
     drop(source_templates);
-    if config.next_squad_item_id <= highest_squad_item_id {
+    if config.next_squad_item_id <= highest_authored_squad_item_id {
         return Err(invalid(
             "next_squad_item_id must be the real next Stage pool identity, above all source squads",
         ).into());
     }
+    // Career-created squads are materialized after loading the immutable
+    // authored Stage. Advance past their deterministic setup identities
+    // rather than rejecting a valid campaign with a newly created squad.
+    let next_squad_item_id = config.next_squad_item_id.max(
+        highest_squad_item_id.checked_add(1)
+            .filter(|&id| id < i64::MAX)
+            .ok_or_else(|| invalid("Stage squad identities exhausted during setup"))?,
+    );
 
     // Every world shares the one source Stage pool identity stream, even
     // when an opted-in physics worker admits a newly spawned child squad.
-    let next_id = Arc::new(AtomicI64::new(config.next_squad_item_id));
+    let next_id = Arc::new(AtomicI64::new(next_squad_item_id));
     // Multiple independently driven arena instances may intentionally use
     // the same exported Level template, whose original Stage pool IDs are
     // duplicates. Keep the first source lifetime and allocate fresh IDs

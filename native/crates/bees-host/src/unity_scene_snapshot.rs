@@ -1533,9 +1533,10 @@ impl NativePhysicalScene {
     /// the original parent FleetShip owns its deployment. Keep source entity
     /// IDs and explicit carrier references unchanged across the move.
     ///
-    /// Reject ambiguous cross-squad/active-policy ownership rather than
-    /// detaching children, cloning their collider inputs or manufacturing
-    /// a new combat hierarchy. This runs at scene construction, never per tick.
+    /// Independent child squads remain independent on reassignment. Only
+    /// the owning persistent hull changes SavedSquad; the free complements
+    /// follow its placement and are removed together when it enters reserve.
+    /// Reject ambiguous or active-policy ownership at scene construction.
     fn movable_authored_family(&self, side: i32, parent_id: i64) -> Option<Vec<i64>> {
         let parent = self.entities.iter().find_map(|entity| match entity {
             NativeAuthoredEntity::Ship(ship) if ship.entity_id == parent_id =>
@@ -1572,11 +1573,34 @@ impl NativePhysicalScene {
         for entity in &self.entities {
             if let NativeAuthoredEntity::Ship(ship) = entity {
                 if ship.entity_id != parent_id && attached_to(ship, parent_id) {
-                    if !stationary(ship) || !owner.members.contains(&ship.entity_id) {
+                    if !stationary(ship) || !matches!(ship.ship_type, 8 | 19) ||
+                        !self.fleet.get(ship.entity_id)
+                            .is_some_and(|value| !value.has_persistent_fleet_value)
+                    {
+                        return None;
+                    }
+                    let mut child_owners = self.source_squads.iter().filter(|squad|
+                        squad.members.contains(&ship.entity_id));
+                    let child_owner = child_owners.next()?;
+                    if child_owners.next().is_some() || child_owner.side != side ||
+                        !child_owner.player_permissions.user_controlled ||
+                        (child_owner.item_id != owner.item_id &&
+                            child_owner.saved_squad_id.is_some())
+                    {
                         return None;
                     }
                     family.push(ship.entity_id);
                 }
+            }
+        }
+        // Independent complements must actually belong to this carrier,
+        // not share one command owner with another Carrier's family.
+        for squad in &self.source_squads {
+            if squad.item_id != owner.item_id &&
+                squad.members.iter().any(|id| family.contains(id)) &&
+                !squad.members.iter().all(|id| family.contains(id))
+            {
+                return None;
             }
         }
         // A nested carrier graph cannot be moved as a partial family. The
@@ -1664,6 +1688,11 @@ impl NativePhysicalScene {
             if family.iter().any(|id| !touched_entities.insert(*id)) {
                 return Err(invalid("overlapping saved FleetShip family assignments"));
             }
+            // Only members of the old persistent squad enter the new
+            // persistent squad. Independent complements retain their
+            // original source ItemIds and squad-relative formation offsets.
+            let transferred_members = self.source_squads[old_index].members.iter()
+                .copied().filter(|id| family.contains(id)).collect::<Vec<_>>();
             let family_positions = family.iter().map(|&id| {
                 self.entities.iter().find_map(|entity| match entity {
                     NativeAuthoredEntity::Ship(ship) if ship.entity_id == id =>
@@ -1757,13 +1786,21 @@ impl NativePhysicalScene {
                     }
                     let formation = self.source_formation.get_mut(&id)
                         .ok_or(invalid("FleetShip family member lacks formation data"))?;
-                    formation.offset = anchor_offset +
-                        (ship.motion.position - anchor_position);
+                    if transferred_members.contains(&id) {
+                        formation.offset = anchor_offset +
+                            (ship.motion.position - anchor_position);
+                    }
                 }
-                self.source_squads[index].members.extend(family.iter().copied());
+                self.source_squads[index].members.extend(transferred_members.iter().copied());
             }
             self.source_squads[old_index].members.retain(|id| !family.contains(id));
             if destination.is_none() {
+                // The source constructor does not instantiate child squads
+                // for a Carrier held in reserve. Retain their vacant source
+                // identities so authored deployment references remain valid.
+                for squad in &mut self.source_squads {
+                    squad.members.retain(|id| !family.contains(id));
+                }
                 self.entities.retain(|entity| !family.contains(&entity.entity_id()));
                 for &id in &family {
                     self.authored_ship_perceptions.remove(&id);
