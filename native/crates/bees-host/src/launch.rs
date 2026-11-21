@@ -4502,6 +4502,26 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
         entry.id == settings.game_id && entry.kind == "campaign");
     let static_battle = library.games.iter().position(|entry|
         entry.id == settings.game_id && entry.kind == "battle");
+    if let Some(gate) = static_battle.and_then(|index|
+        library.games[index].unlock_after.as_ref())
+    {
+        // A saved multiplayer host selection must obey the same authored
+        // progression as the visible local game menu. The only authority
+        // is the committed career ledger, never the saved host game ID.
+        let campaign = library.games.iter().position(|entry|
+            entry.kind == "campaign" && entry.id == gate.campaign_id)
+            .ok_or_else(|| invalid("multiplayer game unlock campaign is unavailable"))?;
+        let catalog: battle_catalog::BattleCatalog =
+            serde_json::from_slice(&fs::read(&games[campaign])?)?;
+        let progress = catalog.load_progress(
+            &save_root.join("campaigns").join(&gate.campaign_id),
+        )?;
+        if !progress.completed(&gate.mission_id) {
+            return Err(invalid(
+                "multiplayer game mode is locked until its campaign mission is completed",
+            ).into());
+        }
+    }
     let trained_model = if custom_fleet || campaign_index.is_some() ||
         static_battle.is_some()
     {
