@@ -1979,7 +1979,8 @@ fn current_state(
             "map_object_kind": map.map(|object| object.kind as u8),
             "max_health": map.map(|object| object.max_health),
             "range_visible": map.is_some() &&
-                view.combat.range_visible_map_object_ids().contains(&object.entity_id),
+                view.combat.range_visible_map_objects_for_side(side)
+                    .is_some_and(|visible| visible.contains(&object.entity_id)),
         }))
     }).collect();
     // Active non-colliding fragments already have authoritative IDs,
