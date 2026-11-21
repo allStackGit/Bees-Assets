@@ -177,6 +177,26 @@ impl FleetMix {
         }
     }
 
+    /// Keep a fleet composition's actual source archetypes in one place.
+    /// Placement bounds and the authored physical scene must agree.
+    fn support_type(self, side: usize) -> u8 {
+        if side == 0 {
+            if matches!(self, Self::Gate) { 20 } else { 2 }
+        } else {
+            5
+        }
+    }
+
+    fn specialist_type(self, side: usize) -> u8 {
+        match self {
+            Self::Miners => 4,
+            Self::Chargers => 0,
+            Self::Detonators => 22,
+            _ if side == 0 => 18,
+            _ => 10,
+        }
+    }
+
     fn support_count(self, total: usize) -> usize {
         (match self {
             Self::Fighters => 0,
@@ -622,12 +642,8 @@ fn mixed_fleet_offsets(
     let specialist = mix.specialist_count(total);
     let fighters = total - support - specialist;
     let fighter_kind = if side == 0 { 21 } else { 13 };
-    let support_kind = if matches!(mix, FleetMix::Gate) { 20 }
-        else if side == 0 { 2 } else { 5 };
-    let specialist_kind = if matches!(mix, FleetMix::Miners) { 4 }
-        else if matches!(mix, FleetMix::Chargers) { 0 }
-        else if matches!(mix, FleetMix::Detonators) { 22 }
-        else if side == 0 { 18 } else { 10 };
+    let support_kind = mix.support_type(side);
+    let specialist_kind = mix.specialist_type(side);
     let fighter_size = catalog.sprite_size(fighter_kind)
         .ok_or_else(|| invalid("source fighter has no sprite extents"))?;
     let home = if side == 0 { -75.0 } else { 75.0 };
@@ -1058,8 +1074,7 @@ pub(super) fn archive(
     for side in 0..2_usize {
         if support_count[side] == 0 { continue; }
         let side_id = side as i64 + 1;
-        let archetype = if matches!(selected.mix[side], FleetMix::Gate) { 20 }
-            else if side == 0 { 2 } else { 5 };
+        let archetype = selected.mix[side].support_type(side);
         let template = available.iter().find(|ship|
             ship["side"].as_i64() == Some(side_id) &&
             ship["ship_type"].as_u64() == Some(archetype)
@@ -1101,10 +1116,7 @@ pub(super) fn archive(
     for side in 0..2_usize {
         if specialist_count[side] == 0 { continue; }
         let side_id = side as i64 + 1;
-        let specialist_type = if matches!(selected.mix[side], FleetMix::Miners) { 4 }
-            else if matches!(selected.mix[side], FleetMix::Chargers) { 0 }
-            else if matches!(selected.mix[side], FleetMix::Detonators) { 22 }
-            else if side == 0 { 18 } else { 10 };
+        let specialist_type = selected.mix[side].specialist_type(side);
         let template = available.iter().find(|ship|
             ship["side"].as_i64() == Some(side_id) &&
             ship["ship_type"].as_u64() == Some(specialist_type)
@@ -1271,13 +1283,9 @@ pub(super) fn archive(
         for side in 0..2_usize {
             for index in 0..selected.fleet_sizes[side] {
                 let kind = if index >= fighter_count[side] + specialist_count[side] {
-                    if matches!(selected.mix[side], FleetMix::Gate) { 20 }
-                    else if side == 0 { 2 } else { 5 }
+                    selected.mix[side].support_type(side)
                 } else if index >= fighter_count[side] {
-                    if matches!(selected.mix[side], FleetMix::Miners) { 4 }
-                    else if matches!(selected.mix[side], FleetMix::Chargers) { 0 }
-                    else if matches!(selected.mix[side], FleetMix::Detonators) { 22 }
-                    else if side == 0 { 18 } else { 10 }
+                    selected.mix[side].specialist_type(side)
                 } else if side == 0 { 21 } else { 13 };
                 let extents = catalog.sprite_size(kind)
                     .ok_or_else(|| invalid("native Carrier fleet has no source sprite extents"))?;
