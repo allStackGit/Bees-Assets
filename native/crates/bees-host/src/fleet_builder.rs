@@ -1922,7 +1922,41 @@ pub(super) fn archive(
                 });
             }
         }
-        groups.extend_from_slice(&originals[fighter_count[side]..]);
+        // Group independent physical specialists only with the same
+        // original hull class. An authored Scout Beacon, Barge charge,
+        // Fire Barge explosion or Yellow Jacket detonation stays on its
+        // OWN real ship: grouping changes the source squad command owner,
+        // not any weapon, spawn or fleet record. Order cohorts by first
+        // appearance for stable keyboard and reinforcement identities.
+        let specialist_start = fighter_count[side];
+        let specialist_end = specialist_start + specialist_count[side];
+        let mut cohorts = Vec::<(u8, Vec<i64>)>::new();
+        for (slot, &squad) in originals[specialist_start..specialist_end]
+            .iter().enumerate()
+        {
+            let kind = selected.mix[side].specialist_type_at(side, slot);
+            if let Some((_, members)) = cohorts.iter_mut()
+                .find(|(class, _)| *class == kind)
+            {
+                members.push(squad);
+            } else {
+                cohorts.push((kind, vec![squad]));
+            }
+        }
+        for (_, members) in cohorts {
+            for cohort in members.chunks(selected.specialist_squad_sizes[side]) {
+                let &primary = cohort.first()
+                    .ok_or_else(|| invalid("native specialist squad is empty"))?;
+                groups.push(primary);
+                if cohort.len() > 1 {
+                    cloned.merge_squads.push(NativeSquadMerge {
+                        primary_squad_item_id: primary,
+                        merged_squad_item_ids: cohort[1..].to_vec(),
+                    });
+                }
+            }
+        }
+        groups.extend_from_slice(&originals[specialist_end..]);
         squad_ids[side] = groups;
     }
     // The same source hotkey metadata that GameState sets up for Unity's
@@ -2092,6 +2126,14 @@ pub(super) fn archive(
         selected.objective_side.unwrap_or(0),
         u8::from(selected.mining_field), u8::from(selected.fog_of_war),
     ));
+    if selected.specialist_squad_sizes != [1, 1] {
+        let id = run["run_id"].as_str()
+            .ok_or_else(|| invalid("specialist squad has no saved run identity"))?;
+        run["run_id"] = json!(format!(
+            "{id}-specialist-group-{}v{}",
+            selected.specialist_squad_sizes[0], selected.specialist_squad_sizes[1],
+        ));
+    }
     if support_count[1] > 0 && !matches!(selected.mix[1], FleetMix::Queen) {
         let id = run["run_id"].as_str()
             .ok_or_else(|| invalid("Carrier fleet is missing its saved source ID"))?;
