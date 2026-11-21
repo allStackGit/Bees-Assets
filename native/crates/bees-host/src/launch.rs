@@ -5128,7 +5128,7 @@ fn run_campaign_game_menu(
         let rows = catalog.battles.iter().map(|entry| {
             let unlocked = (!hosted || entry.mission.is_some()) &&
                 entry.mission.as_ref().is_none_or(|mission|
-                    mission.requires.iter().all(|id| progress.completed(id)));
+                    mission.unlocked(&progress));
             let status = if hosted && entry.mission.is_none() { "  [No campaign mission]" }
                 else if !unlocked { "  [Locked]" }
                 else if entry.mission.as_ref().is_some_and(|mission| progress.completed(&mission.id)) {
