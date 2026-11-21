@@ -180,7 +180,15 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
                 (fs.constants.O_NOFOLLOW||0));
             try {
                 const opened=fs.fstatSync(fd);
-                if(!opened.isFile()||opened.nlink!==1||
+                // The native learner intentionally hard-links immutable
+                // frozen opponents into its published model package. The
+                // initial SHA snapshot allows these exact model paths;
+                // the streaming phase must enforce the SAME rule or the
+                // checkpoint handoff silently stalls after discovery.
+                const modelArtifact=project==='bees_native'&&
+                    safeNativeModelPath(relative);
+                if(!opened.isFile()||opened.nlink<1||
+                    (!modelArtifact&&opened.nlink!==1)||
                     opened.dev!==proof.dev||opened.ino!==proof.ino||
                     opened.size<proof.size)continue;
                 while(response.offset<snapshot.size&&sent<cycleBudget) {
