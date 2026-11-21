@@ -465,6 +465,93 @@ impl NativeGameAudio {
         self.measurements.sound_effects_started += 1;
     }
 
+    /// Start a client-only WarpGate audio stem on its original animation
+    /// clock. The actual gameplay gate and opening instant belong to
+    /// CombatWorld; never use a second timer to open or close the gate.
+    fn start_warp_voice(&mut self, effect: Effect, elapsed: f32) -> Option<Sink> {
+        let handle = self.handle.as_ref()?;
+        let data = self.effects.get(&effect)?;
+        let source = Decoder::new(Cursor::new(Arc::clone(data))).ok()?;
+        let sink = Sink::try_new(handle).ok()?;
+        sink.set_volume(if self.muted { 0.0 } else { EFFECT_VOLUME });
+        if effect == Effect::WarpGateLoop {
+            sink.append(source.repeat_infinite());
+        } else {
+            // A spectator attaching while the gate is already opening
+            // hears the remaining original clip, not a restarted gate.
+            sink.append(source.skip_duration(Duration::from_secs_f32(
+                elapsed.max(0.0),
+            )));
+        }
+        if self.paused { sink.pause(); }
+        Some(sink)
+    }
+
+    fn sync_warp_gate(&mut self, gate_id: i64, elapsed: f32, ready: bool, tick: u64) {
+        if !elapsed.is_finite() || elapsed < 0.0 { return; }
+        self.seen_warp_gates.insert(gate_id, tick);
+        if ready {
+            if let Some(starting) = self.warp_gate_openings.remove(&gate_id) {
+                starting.stop();
+                self.measurements.warp_gate_voices_stopped += 1;
+            }
+            if self.warp_gate_loops.contains_key(&gate_id) { return; }
+        } else {
+            if let Some(looping) = self.warp_gate_loops.remove(&gate_id) {
+                looping.stop();
+                self.measurements.warp_gate_voices_stopped += 1;
+            }
+            if self.warp_gate_openings.contains_key(&gate_id) { return; }
+        }
+        if self.warp_gate_openings.len() + self.warp_gate_loops.len() >= MAX_ACTIVE_WARP_AUDIO {
+            // No unbounded per-ship audio sources in a large battle.
+            self.measurements.warp_gate_voices_dropped += 1;
+            return;
+        }
+        let effect = if ready { Effect::WarpGateLoop } else { Effect::WarpGateStarting };
+        if let Some(sink) = self.start_warp_voice(effect, elapsed) {
+            if ready {
+                self.warp_gate_loops.insert(gate_id, sink);
+                self.measurements.warp_gate_loops_started += 1;
+            } else {
+                self.warp_gate_openings.insert(gate_id, sink);
+                self.measurements.warp_gate_openings_started += 1;
+            }
+        }
+    }
+
+    /// Any gate that died, deactivated, became hidden, or left the camera
+    /// stops playback. Reuse the per-episode ID map instead of allocating
+    /// a new set of visible gates every presentation frame.
+    fn finish_warp_gate_audio(&mut self, tick: u64) {
+        let seen = &self.seen_warp_gates;
+        let before = self.warp_gate_openings.len() + self.warp_gate_loops.len();
+        self.warp_gate_openings.retain(|id, sink| {
+            if seen.get(id) == Some(&tick) { true } else {
+                sink.stop();
+                false
+            }
+        });
+        self.warp_gate_loops.retain(|id, sink| {
+            if seen.get(id) == Some(&tick) { true } else {
+                sink.stop();
+                false
+            }
+        });
+        self.measurements.warp_gate_voices_stopped += (before -
+            self.warp_gate_openings.len() - self.warp_gate_loops.len()) as u64;
+        self.seen_warp_gates.retain(|_, last| *last == tick);
+    }
+
+    fn reset_warp_gate_audio(&mut self) {
+        for (_, voice) in self.warp_gate_openings.drain()
+            .chain(self.warp_gate_loops.drain()) {
+            voice.stop();
+            self.measurements.warp_gate_voices_stopped += 1;
+        }
+        self.seen_warp_gates.clear();
+    }
+
     /// Read-only remote sound projection. The only input is host-authorized
     /// visible physical entities and fog-filtered cues. There are no gameplay
     /// callbacks, new policy decisions, or physics work in this client.
