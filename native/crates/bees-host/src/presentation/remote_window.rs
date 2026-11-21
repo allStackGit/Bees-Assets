@@ -201,11 +201,17 @@ impl RemoteArtwork {
             if obstacle["map_object_kind"].as_u64() ==
                 Some(bees_sim::map_object::MapObjectKind::FireTank as u64)
             {
-                let (Some(health), Some(max_health)) = (
-                    obstacle["health"].as_i64().and_then(|v| i32::try_from(v).ok()),
-                    obstacle["max_health"].as_i64().and_then(|v| i32::try_from(v).ok()),
-                ) else { continue };
-                if self.raster.draw_fire_tank(id, health, max_health,
+                // New hosts disclose only the source sprite's four-stage
+                // smoke state until weapon-range discovery. Old recordings
+                // can still provide raw HP for the identical stage formula.
+                let stage = obstacle["fire_tank_stage"].as_u64()
+                    .and_then(|stage| u8::try_from(stage).ok())
+                    .or_else(|| super::fire_tank_sprite_stage(
+                        i32::try_from(obstacle["health"].as_i64()?).ok()?,
+                        i32::try_from(obstacle["max_health"].as_i64()?).ok()?,
+                    ));
+                let Some(stage) = stage else { continue };
+                if self.raster.draw_fire_tank_stage(id, stage,
                     Pose { position: point, rotation_degrees: angle }, tick as f32 * dt) {
                     self.fire_tanks.insert(id);
                     stats.fire_tank_sprite_draws += 1;
