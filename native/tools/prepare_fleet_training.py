@@ -110,8 +110,8 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
     layout = level.pop("native_layout", {})
     if not isinstance(layout, dict):
         raise ValueError("native layout must be an object")
-    supported = {"clone_squads", "remove_static_ids", "add_static_boxes",
-                 "add_map_borders"}
+    supported = {"clone_squads", "merge_squads", "remove_static_ids",
+                 "add_static_boxes", "add_map_borders"}
     if any(key not in supported and value not in ([], None)
            for key, value in layout.items()):
         raise ValueError("unsupported fleet layout operation; refusing a changed physical battle")
@@ -130,7 +130,8 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
     if not isinstance(scene_layout, dict):
         raise ValueError("native scene layout must be an object")
     if any(scene_layout.get(key) for key in
-           ("clone_squads", "translate_squads", "remove_squads", "remove_static_ids")):
+           ("clone_squads", "merge_squads", "translate_squads",
+            "remove_squads", "remove_static_ids")):
         raise ValueError("source scene already changes its native squad roster or removes terrain")
     source_entities = [
         *ships, *scene.get("mining_asteroids", []),
@@ -198,6 +199,80 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
             ship_by_id[new_id] = ship
         squads.append(new_squad)
         squad_by_id[new_squad_id] = new_squad
+
+    # Convert the same source squad merge operation used by the live
+    # Rust Level. No ship or fleet identity is added here; only command
+    # ownership and per-member formation offsets are rebuilt. Conversion
+    # intentionally rejects policy or specialist owners, matching the
+    # playable game's shared NativePhysicalScene contract.
+    merges = layout.get("merge_squads", [])
+    if not isinstance(merges, list):
+        raise ValueError("native multi-ship squad composition must be a list")
+    used = set()
+    plans = []
+    for merge in merges:
+        if not isinstance(merge, dict) or set(merge) != {
+                "primary_squad_item_id", "merged_squad_item_ids"}:
+            raise ValueError("native squad merge requires original source ownership IDs")
+        primary_id = merge["primary_squad_item_id"]
+        donor_ids = merge["merged_squad_item_ids"]
+        if (type(primary_id) is not int or primary_id <= 0 or
+                not isinstance(donor_ids, list) or not donor_ids or
+                len(donor_ids) > 1023 or primary_id in used):
+            raise ValueError("native merged squad has invalid original command ownership")
+        primary = squad_by_id.get(primary_id)
+        if primary is None or primary.get("hivemind") is not None or (
+                primary.get("is_carrier_squad", False)):
+            raise ValueError("native primary squad must be an ordinary game command owner")
+        used.add(primary_id)
+        members = list(primary["members"])
+        for donor_id in donor_ids:
+            if type(donor_id) is not int or donor_id <= 0 or donor_id in used:
+                raise ValueError("native squad cannot be merged twice or into itself")
+            used.add(donor_id)
+            donor = squad_by_id.get(donor_id)
+            if donor is None or donor.get("saved_squad_id") is not None or (
+                    donor.get("is_carrier_squad", False)) or (
+                    donor.get("hivemind") is not None) or (
+                    donor.get("hotkey_number") is not None) or (
+                    donor.get("original_squad_count") is not None) or any(
+                        donor.get(field) != primary.get(field)
+                        for field in (
+                            "side", "user_controlled", "can_accept_input",
+                            "locked_on", "shooting_strategy_id",
+                            "cease_fire", "should_chase", "matching_speed",
+                            "custom_color_rgb", "command_bans",
+                        )):
+                raise ValueError("native group members have incompatible physical command owners")
+            members.extend(donor["members"])
+        if len(members) > 1024 or len(set(members)) != len(members):
+            raise ValueError("native merged squad duplicates a ship or exceeds game member cap")
+        center = [0.0, 0.0]
+        for ship_id in members:
+            ship = ship_by_id.get(ship_id)
+            if ship is None or ship["side"] != primary["side"] or any(
+                    ship.get(key) is not None for key in (
+                        "policy", "special", "special_weapon", "drone_carrier_id")
+            ) or ship.get("is_moving", False) or ship.get(
+                    "has_target_coordinates", False):
+                raise ValueError("native grouped squad must contain stationary ordinary ships")
+            center[0] += ship["position"][0]
+            center[1] += ship["position"][1]
+        center = [axis / len(members) for axis in center]
+        plans.append((primary_id, donor_ids, members, center))
+
+    for primary_id, donor_ids, members, center in plans:
+        squad_by_id[primary_id]["members"] = members
+        for ship_id in members:
+            ship = ship_by_id[ship_id]
+            ship["formation_offset"] = [
+                ship["position"][axis] - center[axis] for axis in (0, 1)
+            ]
+    if used:
+        donors = {donor_id for _, donor_ids, _, _ in plans
+                  for donor_id in donor_ids}
+        scene["squads"] = [squad for squad in squads
+                           if squad["item_id"] not in donors]
 
     removed = layout.get("remove_static_ids", [])
     added = layout.get("add_static_boxes", [])
@@ -451,6 +526,9 @@ def convert(source: Path, destination: Path, archetypes: Path,
         "source_scene_sha256": scene_sha,
         "policy_archetypes_sha256": archetypes_sha,
         "source_squad_clones": clone_count,
+        "source_squad_merges": len(
+            read_json(source)["levels"][0].get("native_layout", {}).get("merge_squads", [])
+        ),
         "scripted_reinforcement_ships": sum(
             "policy" not in ship for ship in policy_scene["ships"]
             if ship["entity_id"] in reserved_ships
