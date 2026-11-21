@@ -1575,6 +1575,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees reassign <catalog.json> --output-dir <battle-runs> --side <n> --ship <fleet-id> --from <saved-id> --squad <saved-id>
        bees squad-create <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
        bees squad-delete <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id>
+       bees squad-name <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --name <printable-name>
        bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false> [--match-speed <true|false>] [--color <inherit|clear|RRGGBB>] [--formation <source|line|box|rectangle|pyramid|hollow-pyramid>[:width]]
   play  Open the native battle window (requires the client feature)
   serve  Host headless authenticated multiplayer with deterministic input recording
@@ -1938,6 +1939,30 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             .to_string_lossy().parse()?;
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
         return run_retire_saved_squad(&catalog, &output, side, saved_squad_id);
+    }
+    if first == "squad-name" {
+        let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--side") {
+            return Err(invalid(USAGE).into());
+        }
+        let side: i32 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--squad") {
+            return Err(invalid(USAGE).into());
+        }
+        let id: i64 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--name") {
+            return Err(invalid(USAGE).into());
+        }
+        let name = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().into_owned();
+        if args.next().is_some() { return Err(invalid(USAGE).into()); }
+        return run_name_saved_squad(&catalog, &output, side, id, &name);
     }
     if first == "tactics" {
         let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
@@ -3526,6 +3551,64 @@ fn run_reassign_authored_ship(
         "from_saved_squad_id": from_squad,
         "to_saved_squad_id": to_squad,
         "cost_tsv": 0,
+    }));
+    Ok(())
+}
+
+/// Rename one persistent squad from its actual authored player contract.
+/// This has no physical gameplay side effects; no separate scene compiler or
+/// tactical roster is necessary. Validate every route, then append one
+/// ordinary durable career receipt under the same exclusive writer lease.
+fn run_name_saved_squad(
+    catalog_path: &Path, output_root: &Path,
+    side: i32, saved_id: i64, name: &str,
+) -> Result<(), Box<dyn Error>> {
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: battle_catalog::BattleCatalog =
+        serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
+    let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
+    let progress = catalog.load_progress(output_root)?;
+    if !matches!(side, 1 | 2) || saved_id <= 0 ||
+        progress.is_retired_saved_squad(saved_id)
+    {
+        return Err(invalid("squad naming needs a current player SavedSquad").into());
+    }
+    let root = catalog_path.parent().ok_or_else(|| invalid("missing campaign root"))?;
+    let mut checked = 0_usize;
+    let created = progress.created_squads_for_side(side);
+    for battle in &catalog.battles {
+        if !battle.mission.as_ref().is_some_and(|mission| mission.player_side == side) {
+            continue;
+        }
+        for configuration in battle.configurations() {
+            let run_path = resolve(root, configuration).canonicalize()?;
+            let mut scene = load_native_fleet_edit_scene(&run_path)?;
+            scene.install_created_squads(side, &created)
+                .map_err(|error| contextual("squad name source", error))?;
+            if scene.source_squads.iter().filter(|squad|
+                squad.side == side && squad.saved_squad_id == Some(saved_id) &&
+                squad.player_permissions.user_controlled &&
+                !squad.hivemind.as_ref()
+                    .is_some_and(|source| source.hivemind_controlled)
+            ).count() != 1 {
+                return Err(invalid(
+                    "named SavedSquad must have unique player ownership in every authored mission route",
+                ).into());
+            }
+            checked += 1;
+        }
+    }
+    if checked == 0 {
+        return Err(invalid("squad naming requires a playable authored campaign Level").into());
+    }
+    catalog.name_saved_squad(&progress, output_root, side, saved_id, name)?;
+    println!("{}", json!({
+        "kind": "native_campaign_squad_named",
+        "campaign_id": catalog.campaign_id,
+        "side": side, "saved_squad_id": saved_id,
+        "name": name, "validated_configs": checked,
     }));
     Ok(())
 }
