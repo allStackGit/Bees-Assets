@@ -142,6 +142,11 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
     for(const record of executor.supervisor.snapshot()) {
         if(!TERMINAL.has(record.state))continue;
         const project=record.project_id,adapter=executor.supervisor.adapters?.[project];
+        // Failed physical collectors may own recoverable journals and
+        // captures. Never mirror those mutable files as optimizer inputs.
+        // Only the terminal successful collector publishes its bundle.
+        if(nativeTrainingOnly&&project==='bees_native_collect'&&record.state!=='finished')
+            continue;
         if(nativeTrainingOnly&&
             (!['bees_native','bees_native_collect'].includes(project)||
              // Only a finished, checkpoint-verified publisher can mirror

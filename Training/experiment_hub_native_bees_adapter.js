@@ -1681,6 +1681,15 @@ function createNativeBeesAdapter({
             if(!UUID.test(String(jobId)))throw Error('Invalid native Bees artifact job.');
             return path.join(artifacts,jobId);
         },
+        ...(collectOnly?{
+            completion_ready(context) {
+                // Reuse the same work-order/manifest/GPU validation as
+                // collector telemetry. The committed receipt identifies
+                // immutable captures; the authenticated artifact mirror
+                // verifies their bytes before the optimizer can use them.
+                return this.readProgress(context)!==null;
+            },
+        }:{}),
         ...(modelsInbox?{model_inbox_dir(){return modelsInbox;}}:{}),
         ...(optimizerInputsSha256?{optimizer_inputs_sha256:optimizerInputsSha256}:{}),
         gpu_execution: 'cuda',

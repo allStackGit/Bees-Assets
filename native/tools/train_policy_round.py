@@ -1650,7 +1650,69 @@ def main() -> None:
     # The initial league draw, when enabled, already owns this new output
     # directory. Do not permit reuse of unrelated direct-round artifacts.
     if initial_selection is None:
+        existed = output.exists()
         output.mkdir(parents=True, exist_ok=args.resume_rollout)
+        if args.collect_only:
+            # Pin the execution contract before creating any physical shard.
+            # A host restart must not mix newly installed simulation or
+            # policy-worker bytes with already captured experience.
+            identity = {
+                "schema_version": 1, "kind": "native_collector_attempt",
+                "collection_id": args.collection_id,
+                "input_checkpoint_sha256": input_checkpoint_sha,
+                "input_manifest_sha256": input_manifest_sha,
+                "run_config_sha256": hashlib.sha256(run_bytes).hexdigest(),
+                "source_run_contract_sha256": source_contract_sha,
+                "native_runner_sha256": runner_sha,
+                "policy_worker_sha256": policy_worker_sha,
+                "learner_slot": args.learner_slot,
+                "seed_offset": args.seed_offset,
+                "rollout_world_start": world_start, "rollout_worlds": len(levels),
+                "rollout_processes": workers, "physics_workers_per_process": physics_workers,
+                "leased_gpu_inference": args.leased_gpu_inference,
+                "leased_gpu_count": args.leased_gpu_count,
+                "gpu_allocation": gpu_allocation,
+                "bundle_delivery_name": args.bundle_delivery_name,
+            }
+            attempt_path = output / "collector-attempt.json"
+            if existed and not attempt_path.exists() and any(output.iterdir()):
+                raise ValueError("existing collector shards lack an immutable execution contract")
+            publish_receipt(output, attempt_path.name, identity, announce=False)
+            if args.resume_rollout:
+                receipt_path = output / "rollout-bundle.json"
+                delivered = (inbox / (args.bundle_delivery_name or output.name) /
+                             "rollout-bundle.json" if inbox is not None else None)
+                committed = receipt_path if receipt_path.exists() else delivered
+                if committed is not None and committed.exists():
+                    receipt = json.loads(committed.read_text(encoding="utf-8"))
+                    if (receipt.get("kind") != "native_rollout_bundle" or
+                            any(receipt.get(key) != identity[key] for key in (
+                                "input_checkpoint_sha256", "input_manifest_sha256",
+                                "run_config_sha256", "source_run_contract_sha256",
+                                "native_runner_sha256", "policy_worker_sha256",
+                                "learner_slot", "seed_offset", "collection_id",
+                                "rollout_worlds", "rollout_processes",
+                                "physics_workers_per_process")) or
+                            receipt.get("partition", {}).get("world_start") != world_start or
+                            receipt.get("partition", {}).get("world_count") != len(levels)):
+                        raise ValueError("published native collection differs from the resumed work order")
+                    # A crash after delivery but before local publication
+                    # must not regenerate timing fields or a receipt digest.
+                    verify_bundle_files(committed)
+                    if committed != receipt_path:
+                        for name, digest in artifact_paths(receipt).items():
+                            file = output / Path(*PurePosixPath(name).parts)
+                            if file.is_symlink() or file_sha256(file) != digest:
+                                raise ValueError("original capture differs from delivered bundle")
+                    if delivered is not None:
+                        if delivered.exists():
+                            if json.loads(delivered.read_text(encoding="utf-8")) != receipt:
+                                raise ValueError("delivered collection receipt differs from local receipt")
+                        else:
+                            deliver_bundle(output, inbox, receipt, args.bundle_delivery_name,
+                                           preserve_delivery=True)
+                    publish_receipt(output, receipt_path.name, receipt)
+                    return
     shards = []
     for index, allocated_levels in enumerate(buckets):
         directory = output if workers == 1 else output / f"rollout-{index}"
