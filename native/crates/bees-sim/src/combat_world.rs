@@ -2649,6 +2649,19 @@ impl CombatWorld {
         })
     }
 
+    /// Look up one currently active physical projectile without rebuilding
+    /// an all-shot presentation index. The same world-owned identity table
+    /// backs gameplay hit attribution and client event projection.
+    pub fn render_projectile(&self, id: i64)
+        -> Option<(&CombatProjectile, &ProjectileBody)>
+    {
+        let &index = self.projectile_by_id.get(&id)?;
+        let shot = self.projectiles.get(index)?;
+        let body = self.physics.projectiles().get(index)?;
+        (body.active && shot.entity_id == id && body.id == id)
+            .then_some((shot, body))
+    }
+
     pub fn render_projectiles(&self)
         -> impl Iterator<Item = (&CombatProjectile, &ProjectileBody)> + '_
     {
