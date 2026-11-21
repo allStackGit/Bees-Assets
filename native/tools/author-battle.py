@@ -515,6 +515,51 @@ def author(args) -> tuple[dict, dict, dict]:
         "bees": {1}, "humans": {2}, "both": {1, 2}, "none": set(),
     }[args.control]
     host = args.host_side
+    hive_run = getattr(args, "hivemind_run", None)
+    hive = None
+    hive_opponent = getattr(args, "hivemind_opponent_id", None)
+    hive_delay = getattr(args, "hivemind_initial_delay_seconds", None)
+    if hive_run is not None:
+        # Only import an existing source-command connection, never synthesize
+        # credentials, an opponent identity or a second command service.
+        hive = load_json(hive_run).get("hivemind")
+        fields = {
+            "endpoint", "user_id", "version", "auth_ticket_env",
+            "allow_insecure_loopback", "reconnect_game_id",
+            "issue_source_commands", "shutdown_flush_seconds",
+        }
+        if (not isinstance(hive, dict) or set(hive) - fields or
+                not isinstance(hive.get("endpoint"), str) or
+                not hive["endpoint"] or
+                type(hive.get("user_id")) is not int or hive["user_id"] <= 0 or
+                not isinstance(hive.get("version"), (int, float)) or
+                not math.isfinite(hive["version"]) or hive["version"] <= 0 or
+                hive.get("issue_source_commands") is not True or
+                hive.get("reconnect_game_id") is not None or
+                type(hive_opponent) is not int or
+                not 0 < hive_opponent < 1 << 64 or
+                type(hive_delay) is not int or not 0 <= hive_delay <= 3600 or
+                len(controlled) != 1 or
+                args.trainable or cue_commands or death_commands):
+            raise ValueError(
+                "live HiveMind authoring needs an existing fresh source-command "
+                "run, one human-controlled side, explicit positive server "
+                "opponent ID and original command delay (0..3600 seconds); "
+                "it cannot combine scripted gates or policy training"
+            )
+        if (hive.get("auth_ticket_env") is None and
+                hive.get("allow_insecure_loopback") is not True):
+            raise ValueError(
+                "HiveMind requires environment-held credentials or explicit "
+                "insecure-loopback authorization in its existing run"
+            )
+        if any(ship["base_speed"] <= 0
+               for side, entries in by_side.items() if side not in controlled
+               for ship in entries):
+            raise ValueError(
+                "generated HiveMind opponent only supports mobile authentic "
+                "squads; stationary authority must be separately authored"
+            )
     if host is None and controlled:
         host = 1 if 1 in controlled else 2
     if host is not None and host not in controlled:
@@ -700,6 +745,23 @@ def author(args) -> tuple[dict, dict, dict]:
                     if members:
                         add_group(members, wave, parent)
     deferred_squad_ids = {id for groups in wave_squads for id in groups}
+    if hive is not None:
+        # Each source squad retains one explicit opponent identity. Player
+        # control and server AI ownership remain mutually exclusive. The
+        # ordinary canonical HiveMind scheduler owns all AI orders; there
+        # is no second scripted or Python-side command director.
+        for squad in new_squads:
+            squad["hivemind"] = {
+                "opponent_id": hive_opponent,
+                "hivemind_controlled": squad["side"] not in controlled,
+                "immobile": all(
+                    ship_by_id[id]["base_speed"] <= 0
+                    for id in squad["members"]
+                ),
+            }
+        scene["activate_hivemind"] = True
+        scene["hivemind_initial_command_delay_seconds"] = hive_delay
+        run["hivemind"] = copy.deepcopy(hive)
     for side in controlled:
         total = len(by_side_squads[side])
         for index, squad in enumerate(by_side_squads[side], 1):
@@ -711,7 +773,7 @@ def author(args) -> tuple[dict, dict, dict]:
     # not a second Python/simulation implementation.
     queues = []
     for side in (1, 2):
-        if side in controlled:
+        if side in controlled or hive is not None:
             continue
         for squad_index, squad in enumerate(by_side_squads[side]):
             members = [ship for ship in by_side[side]
@@ -1629,6 +1691,12 @@ def main() -> None:
     parser.add_argument("--fleet-template", action="append", type=fleet_template,
                         dest="fleet_templates", default=[], metavar="SIDE:TYPE",
                         help="full-health authored reserve class for later campaign rewards, not a battle combatant")
+    parser.add_argument("--hivemind-run", type=Path,
+                        help="existing authenticated native run whose fresh, real HiveMind connection is reused for server-owned AI squads")
+    parser.add_argument("--hivemind-opponent-id", type=int,
+                        help="original server opponent identity (required with --hivemind-run)")
+    parser.add_argument("--hivemind-initial-delay-seconds", type=int,
+                        help="source-authored HiveMind initial command delay (required with --hivemind-run)")
     parser.add_argument("--ai-tactics",
                         choices=("aggressive", "circle", "right-swipe",
                                  "left-swipe", "in-and-out", "mixed"),
@@ -1716,6 +1784,10 @@ def main() -> None:
                         default=EXAMPLES / "native-skirmish.run.json",
                         help="paired native run with the same map/physics asset matrix")
     args = parser.parse_args()
+    if args.hivemind_run is None and (
+            args.hivemind_opponent_id is not None or
+            args.hivemind_initial_delay_seconds is not None):
+        parser.error("HiveMind opponent and original command delay require --hivemind-run")
     if args.policy_reinforcements and not args.trainable:
         parser.error("--policy-reinforcements requires --trainable")
     if args.under_heavy_fire and args.campaign_dialogue != "titania-beenoculars":
