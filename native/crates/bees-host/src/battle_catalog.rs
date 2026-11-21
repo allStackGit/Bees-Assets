@@ -148,6 +148,10 @@ pub struct Mission {
     pub victory_squads: Vec<VictorySquadGrant>,
     #[serde(default)]
     advance_on: AdvanceOn,
+    /// Source campaign endings such as Pluto 3 can award ships after a
+    /// completed defeat. The default remains the original victory gate.
+    #[serde(default)]
+    grant_on: AdvanceOn,
     on_victory: Option<MissionRoute>,
     on_defeat: Option<MissionRoute>,
 }
@@ -202,6 +206,10 @@ impl OutcomePrerequisite {
 impl Mission {
     pub fn has_outcome_alternatives(&self) -> bool {
         !self.unlock_if_any.is_empty()
+    }
+
+    pub fn grants_on_finished(&self) -> bool {
+        matches!(self.grant_on, AdvanceOn::Finished)
     }
 
     pub fn unlocked(&self, progress: &CampaignProgress<'_>) -> bool {
@@ -671,6 +679,8 @@ impl BattleCatalog {
                 !matches!(mission.player_side, 1 | 2) ||
                 ((mission.persist_fleet_losses || mission.bank_player_minerals) &&
                     !mission.record_fleet_stats) ||
+                (mission.grants_on_finished() &&
+                    !matches!(mission.advance_on, AdvanceOn::Finished)) ||
                 earlier.contains(mission.id.as_str()) ||
                 mission.requires.iter().any(|id| !earlier.contains(id.as_str())) ||
                 mission.unlock_if_any.len() > 40 ||
@@ -1034,7 +1044,8 @@ impl BattleCatalog {
                 // outcome. They are reconstructed together from this
                 // immutable winning battle, not from player-edit receipts.
                 if !outcome.awarded_ships.is_empty() || !outcome.awarded_squads.is_empty() {
-                    if !state.latest_victory || state.grants_claimed {
+                    if (!state.latest_victory && !mission.grants_on_finished()) ||
+                        state.grants_claimed {
                         return Err(invalid("campaign victory ships were granted on an ineligible or repeated result"));
                     }
                     if outcome.awarded_squads.len() != mission.victory_squads.len() {
@@ -1570,6 +1581,9 @@ impl BattleCatalog {
             });
             if !mission.retire_on_defeat_types.is_empty() {
                 row["retire_on_defeat_types"] = json!(mission.retire_on_defeat_types);
+            }
+            if mission.grants_on_finished() {
+                row["grant_on"] = json!("finished");
             }
             if has_defeat_conditions {
                 row["attempted"] = json!(progress.missions.get(mission.id.as_str())
