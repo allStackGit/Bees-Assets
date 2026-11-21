@@ -3175,7 +3175,8 @@ fn preflight_native_fleet_edit_with_squads(
         } else { &no_casualties };
         for config in entry.configurations() {
             let run_path = resolve(root, config).canonicalize()?;
-            let mut source = load_native_fleet_edit_scene(&run_path)?;
+            let source_archetypes = load_native_fleet_edit_scene(&run_path)?;
+            let mut source = source_archetypes.clone();
             // Purchase and victory-grant FleetShip IDs remain unique across
             // replayable completed missions and alternate victory routes.
             for entity in &source.entities {
@@ -3196,7 +3197,7 @@ fn preflight_native_fleet_edit_with_squads(
                 .map_err(|error| contextual("shop saved squad tactics", error))?;
             source.apply_authored_fleet_roster(side, roster)
                 .map_err(|error| contextual("shop original FleetShip reassignment", error))?;
-            source.install_purchased_ships(side, deployed, casualties)
+            source.install_purchased_ships(&source_archetypes, side, deployed, casualties)
                 .map_err(|error| contextual("shop purchased FleetShip placement", error))?;
             source.omit_killed_fleet_ships(side, casualties)
                 .map_err(|error| contextual("shop saved-fleet casualties", error))?;
@@ -3554,7 +3555,8 @@ fn run_set_saved_squad_tactics(
             .filter(|(id, _, _)| !lost.contains(id)).collect::<Vec<_>>();
         for config in battle.configurations() {
             let scene_path = resolve(root, config).canonicalize()?;
-            let mut scene = load_native_fleet_edit_scene(&scene_path)?;
+            let source_archetypes = load_native_fleet_edit_scene(&scene_path)?;
+            let mut scene = source_archetypes.clone();
             // Use the exact order of run_battle: a changed SavedSquad
             // preference must be valid for the final route-specific fleet,
             // including transferred hulls, purchases and prior casualties.
@@ -3564,7 +3566,7 @@ fn run_set_saved_squad_tactics(
                 .map_err(|error| contextual("tactics native scene preflight", error))?;
             scene.apply_authored_fleet_roster(entry.side, &surviving_authored)
                 .map_err(|error| contextual("tactics authored fleet preflight", error))?;
-            scene.install_purchased_ships(entry.side, &deployed, &lost)
+            scene.install_purchased_ships(&source_archetypes, entry.side, &deployed, &lost)
                 .map_err(|error| contextual("tactics purchased fleet preflight", error))?;
             scene.omit_killed_fleet_ships(entry.side, &lost)
                 .map_err(|error| contextual("tactics saved casualties preflight", error))?;
@@ -5291,7 +5293,7 @@ fn run_battle(
         let mut source = template.as_ref().clone();
         source_template_clone_count += 1;
         source_template_clone_wall += started.elapsed();
-        source_scene_templates.push(template);
+        source_scene_templates.push(Arc::clone(&template));
         if let Some(created) = mission.and_then(|mission| mission.created_squads) {
             source.install_created_squads(
                 mission.expect("campaign squad creation owner").player_side, created,
@@ -5317,6 +5319,7 @@ fn run_battle(
         if let Some(purchased) = mission.and_then(|mission| mission.purchased_ships) {
             let empty_casualties = HashSet::new();
             let installed = source.install_purchased_ships(
+                template.as_ref(),
                 mission.expect("campaign purchase owner").player_side, purchased,
                 mission.and_then(|mission| mission.lost_fleet_ids)
                     .unwrap_or(&empty_casualties),

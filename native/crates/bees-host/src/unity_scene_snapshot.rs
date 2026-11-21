@@ -1201,8 +1201,8 @@ impl NativePhysicalScene {
     /// and perception; no alternate training or gameplay constructor is
     /// needed. This is setup-only, never in the simulation hot path.
     pub fn install_purchased_ships(
-        &mut self, player_side: i32, purchases: &[NativePurchasedShip],
-        permanently_lost: &HashSet<i64>,
+        &mut self, source_archetypes: &Self, player_side: i32,
+        purchases: &[NativePurchasedShip], permanently_lost: &HashSet<i64>,
     ) -> Result<usize, NativeSnapshotError> {
         if purchases.is_empty() { return Ok(0); }
         let invalid = NativeSnapshotError::InvalidNativeLayout;
@@ -1211,7 +1211,11 @@ impl NativePhysicalScene {
         {
             return Err(invalid("purchased ships require an ordinary native game Level"));
         }
-        let mut used_fleet = self.entities.iter().filter_map(|entity| match entity {
+        // Reserve original identities even when the corresponding hull
+        // has been moved into the career reserve before this installation.
+        let mut used_fleet = self.entities.iter()
+            .chain(source_archetypes.entities.iter())
+            .filter_map(|entity| match entity {
             NativeAuthoredEntity::Ship(ship) => ship.fleet_ship_id,
             _ => None,
         }).collect::<HashSet<_>>();
@@ -1219,12 +1223,17 @@ impl NativePhysicalScene {
         // Reserve above both entity IDs and authored weapon IDs so the
         // normal CombatWorld identity authority cannot collide with a
         // copied specialist when setting up future projectiles/minions.
+        let ship_high_water = |ship: &NativeAuthoredShip| ship.entity_id.max(
+            ship.special_weapon.map_or(0, |weapon| weapon.weapon_id));
         let mut next_entity = self.entities.iter()
+            .chain(source_archetypes.entities.iter())
             .map(|entity| match entity {
-                NativeAuthoredEntity::Ship(ship) => ship.entity_id.max(
-                    ship.special_weapon.map_or(0, |weapon| weapon.weapon_id)),
+                NativeAuthoredEntity::Ship(ship) => ship_high_water(ship),
                 _ => entity.entity_id(),
-            }).max().unwrap_or(0);
+            })
+            .chain(source_archetypes.fleet_templates.iter().map(|entry|
+                ship_high_water(&entry.ship)))
+            .max().unwrap_or(0);
         let mut filled_casualty_slots = HashSet::new();
         for purchase in purchases {
             if purchase.fleet_ship_id <= 0 || purchase.saved_squad_id <= 0 ||
@@ -1255,7 +1264,10 @@ impl NativePhysicalScene {
                         .ok_or(invalid("vacant saved squad has no authored Stage home"))?;
                     (home[(player_side - 1) as usize], Vec2::ZERO)
                 };
-            let template = self.entities.iter().find_map(|entity| match entity {
+            // Purchase definitions belong to the immutable authored
+            // scene. A valid previously purchased class remains available
+            // when its entire original fleet is now in reserve.
+            let template = source_archetypes.entities.iter().find_map(|entity| match entity {
                 NativeAuthoredEntity::Ship(ship)
                     if ship.side == player_side &&
                         ship.ship_type == purchase.ship_type &&
@@ -1269,7 +1281,7 @@ impl NativePhysicalScene {
                         // Drones cannot be purchased as a bare hull: its
                         // source scene describes an owned family, not a
                         // factory for orphaned single-ship clones.
-                        !self.entities.iter().any(|entity| match entity {
+                        !source_archetypes.entities.iter().any(|entity| match entity {
                             NativeAuthoredEntity::Ship(child) =>
                                 child.drone_carrier_id == Some(ship.entity_id) ||
                                 matches!(&child.special,
@@ -1283,7 +1295,7 @@ impl NativePhysicalScene {
                         ship.vitals.mined_cargo() == 0 =>
                     Some(ship.clone()),
                 _ => None,
-            }).or_else(|| self.fleet_templates.iter().find(|entry|
+            }).or_else(|| source_archetypes.fleet_templates.iter().find(|entry|
                 entry.ship.side == player_side &&
                 entry.ship.ship_type == purchase.ship_type &&
                 entry.ship.policy.is_none() &&
@@ -1397,19 +1409,19 @@ impl NativePhysicalScene {
                 rank.fleet_owner_ship_id = ship_entity_id;
             }
             let template_id = template.entity_id;
-            let reserved = self.fleet_templates.iter()
+            let reserved = source_archetypes.fleet_templates.iter()
                 .find(|entry| entry.ship.entity_id == template_id);
-            let mut perception = self.authored_ship_perceptions.get(&template_id)
+            let mut perception = source_archetypes.authored_ship_perceptions.get(&template_id)
                 .copied().or_else(|| reserved.map(|entry| entry.perception))
                 .ok_or(invalid("purchased ship template lacks authored perception"))?;
             perception.minerals_mined_this_level = 0;
             if let Some(message) = &mut perception.allied_communication {
                 *message = [0.0; 4];
             }
-            let vision = self.source_vision.get(&template_id)
+            let vision = source_archetypes.source_vision.get(&template_id)
                 .copied().or_else(|| reserved.map(|entry| entry.vision))
                 .ok_or(invalid("purchased ship template lacks vision"))?;
-            let mut formation = self.source_formation.get(&template_id)
+            let mut formation = source_archetypes.source_formation.get(&template_id)
                 .copied().or_else(|| reserved.map(|entry| entry.formation))
                 .ok_or(invalid("purchased ship template lacks formation"))?;
             formation.offset = casualty_slot.map_or(
