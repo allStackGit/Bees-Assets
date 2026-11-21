@@ -67,6 +67,14 @@ pub struct NativeCreateSquadMenuRow {
     pub template_saved_squad_id: i64,
 }
 
+/// Only vacant, user-created SavedSquads are removable. The ledger
+/// validates again under the exclusive campaign writer lease.
+pub struct NativeDeleteSquadMenuRow {
+    pub title: String,
+    pub side: i32,
+    pub saved_squad_id: i64,
+}
+
 pub struct NativeTacticsMenuRow {
     pub title: String,
     pub side: i32,
@@ -81,6 +89,7 @@ pub struct NativeTacticsMenuRow {
 pub enum NativeBattleMenuAction {
     Play(usize),
     CreateSquad { side: i32, template_saved_squad_id: i64 },
+    DeleteSquad { side: i32, saved_squad_id: i64 },
     Tactics { side: i32, saved_squad_id: i64,
         shooting_strategy_id: u8, should_chase: bool, cease_fire: bool,
         match_speed: bool, color_setting: NativeSquadColorSetting },
@@ -99,9 +108,11 @@ pub fn select_battle(
     transfer_rows: &[NativeTransferMenuRow],
     create_rows: &[NativeCreateSquadMenuRow],
     tactics_rows: &[NativeTacticsMenuRow],
+    delete_rows: &[NativeDeleteSquadMenuRow],
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     select_battle_inner(rows, selected, launch_failed, fleet_rows, squad_rows,
-        shop_rows, banked_tsv, transfer_rows, create_rows, tactics_rows, false)
+        shop_rows, banked_tsv, transfer_rows, create_rows, tactics_rows,
+        delete_rows, false)
 }
 
 /// The packaged-game launcher uses the same list renderer without exposing
@@ -110,7 +121,7 @@ pub fn select_library(
     rows: &[BattleMenuRow<'_>], selected: &mut usize, launch_failed: bool,
 ) -> Result<Option<usize>, minifb::Error> {
     match select_battle_inner(rows, selected, launch_failed,
-        &[], &[], &[], 0, &[], &[], &[], true)? {
+        &[], &[], &[], 0, &[], &[], &[], &[], true)? {
         Some(NativeBattleMenuAction::Play(index)) => Ok(Some(index)),
         _ => Ok(None),
     }
@@ -123,6 +134,7 @@ fn select_battle_inner(
     transfer_rows: &[NativeTransferMenuRow],
     create_rows: &[NativeCreateSquadMenuRow],
     tactics_rows: &[NativeTacticsMenuRow],
+    delete_rows: &[NativeDeleteSquadMenuRow],
     library_mode: bool,
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     if rows.is_empty() { return Ok(None); }
@@ -143,6 +155,7 @@ fn select_battle_inner(
     let mut show_shop = false;
     let mut show_transfer = false;
     let mut show_create = false;
+    let mut show_delete = false;
     let mut show_tactics = false;
     let mut tactic_edit_index: Option<usize> = None;
     let mut tactic_strategy = 1_u8;
@@ -163,6 +176,7 @@ fn select_battle_inner(
             show_transfer = false;
             show_create = false;
             show_tactics = false;
+            show_delete = false;
         }
         if !library_mode && window.is_key_pressed(Key::S, KeyRepeat::No) {
             career_view = if career_view == Some(true) && !show_shop && !show_transfer && !show_create {
@@ -172,12 +186,14 @@ fn select_battle_inner(
             show_transfer = false;
             show_create = false;
             show_tactics = false;
+            show_delete = false;
         }
         if !library_mode && window.is_key_pressed(Key::B, KeyRepeat::No) {
             show_shop = !show_shop;
             show_transfer = false;
             show_create = false;
             show_tactics = false;
+            show_delete = false;
             career_view = None;
         }
         if !library_mode && window.is_key_pressed(Key::T, KeyRepeat::No) {
@@ -185,6 +201,7 @@ fn select_battle_inner(
             show_shop = false;
             show_create = false;
             show_tactics = false;
+            show_delete = false;
             career_view = None;
         }
         if !library_mode && window.is_key_pressed(Key::N, KeyRepeat::No) {
@@ -192,6 +209,7 @@ fn select_battle_inner(
             show_shop = false;
             show_transfer = false;
             show_tactics = false;
+            show_delete = false;
             career_view = None;
         }
         if !library_mode && window.is_key_pressed(Key::P, KeyRepeat::No) {
@@ -202,9 +220,18 @@ fn select_battle_inner(
             tactic_edit_index = None;
             career_view = None;
         }
-        if show_shop || show_transfer || show_create || show_tactics {
+        if !library_mode && window.is_key_pressed(Key::D, KeyRepeat::No) {
+            show_delete = !show_delete;
+            show_shop = false;
+            show_transfer = false;
+            show_create = false;
+            show_tactics = false;
+            career_view = None;
+        }
+        if show_shop || show_transfer || show_create || show_tactics || show_delete {
             let count = if show_transfer { transfer_rows.len() }
                 else if show_create { create_rows.len() }
+                else if show_delete { delete_rows.len() }
                 else if show_tactics { tactics_rows.len() }
                 else { shop_rows.len() };
             let choose = |index: usize, edit_index: Option<usize>,
@@ -227,6 +254,10 @@ fn select_battle_inner(
                     create_rows.get(index).map(|row| NativeBattleMenuAction::CreateSquad {
                         side: row.side,
                         template_saved_squad_id: row.template_saved_squad_id,
+                    })
+                } else if show_delete {
+                    delete_rows.get(index).map(|row| NativeBattleMenuAction::DeleteSquad {
+                        side: row.side, saved_squad_id: row.saved_squad_id,
                     })
                 } else if show_tactics {
                     tactics_rows.get(index).map(|row| NativeBattleMenuAction::Tactics {
@@ -320,10 +351,10 @@ fn select_battle_inner(
                         if index < count {
                             shop_selected = index;
                             if (y - LIST_TOP) % ROW_HEIGHT < ROW_HEIGHT - 4 {
-                                if show_tactics {
-                                    // Select a row before editing it; mouse
-                                    // selection is not an implicit save.
-                                    tactic_edit_index = None;
+                                if show_tactics || show_delete {
+                                    // Destructive actions require Enter after
+                                    // selection, never an accidental click.
+                                    if show_tactics { tactic_edit_index = None; }
                                 } else if let Some(action) = choose(index, tactic_edit_index,
                                     tactic_strategy, tactic_chase, tactic_cease_fire,
                                     tactic_match_speed, tactic_color)
@@ -340,11 +371,13 @@ fn select_battle_inner(
             text::draw_centered(&mut pixels, WIDTH, 24,
                 if show_transfer { "Assign fleet" }
                 else if show_create { "Create saved squad" }
+                else if show_delete { "Delete saved squad" }
                 else if show_tactics { "Saved squad tactics" }
                 else { "Build fleet" }, 2, TEXT);
             text::draw_centered(&mut pixels, WIDTH, 78,
                 if show_transfer { "Move owned ships between saved squads (no TSV cost)" }
                 else if show_create { "Choose a player squad to copy its command settings" }
+                else if show_delete { "Only empty created squads; select a row, then Enter to delete" }
                 else if show_tactics { "Left/Right strategy, C chase, V fire, M speed, R color, Enter save" }
                 else { "Buy a source-authored ship" }, 1, MUTED);
             if show_shop {
@@ -355,6 +388,7 @@ fn select_battle_inner(
                 text::draw_centered(&mut pixels, WIDTH, 218,
                     if show_transfer { "No transferable owned ships" }
                     else if show_create { "No native player squad templates" }
+                    else if show_delete { "Move squad ships to reserve before deleting" }
                     else if show_tactics { "No editable authored player squads" }
                     else { "Finish a campaign battle to register saved squads" }, 1, MUTED);
             }
@@ -369,6 +403,8 @@ fn select_battle_inner(
                     (transfer_rows[index].title.as_str(), true)
                 } else if show_create {
                     (create_rows[index].title.as_str(), true)
+                } else if show_delete {
+                    (delete_rows[index].title.as_str(), true)
                 } else if show_tactics {
                     (tactics_rows[index].title.as_str(), true)
                 } else { (shop_rows[index].title.as_str(), shop_rows[index].unlocked) };
@@ -408,8 +444,10 @@ fn select_battle_inner(
             text::draw_centered(&mut pixels, WIDTH, 441,
                 if show_tactics {
                     "Left/Right strategy   C chase   V fire   M speed   R color   Enter save   P close"
+                } else if show_delete {
+                    "Up/Down select   Enter delete   D close   Esc exit"
                 } else {
-                    "Enter select   B build   T transfer   N new   P tactics"
+                    "Enter select   B build   T transfer   N new   D delete   P tactics"
                 }, 1, MUTED);
             window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
             continue;
@@ -516,7 +554,7 @@ fn select_battle_inner(
         }
         text::draw_centered(&mut pixels, WIDTH, 441,
             if library_mode { "Enter open   Up / Down navigate   Esc exit" }
-            else { "Enter play   B build   T transfer   N new   P tactics   F fleet   S squads" },
+            else { "Enter play   B build   T transfer   N new   D delete   P tactics   F fleet   S squads" },
             1, MUTED);
         if launch_failed {
             text::draw_centered(&mut pixels, WIDTH, 468,
