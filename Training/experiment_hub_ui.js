@@ -1330,7 +1330,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
                 const collectorJobs=(owner.frozen_parameters?.rollout_bundles||[])
                     .map(pin=>state.jobs.find(job=>job.id===pin?.job_id));
-                const suitable=collectorJobs.length>=2&&
+                const suitable=collectorJobs.length>=1&&
                     collectorJobs.length<=16&&collectorJobs.every(job=>
                         job?.project_id==='bees_native_collect'&&
                         state.configurations.some(config=>

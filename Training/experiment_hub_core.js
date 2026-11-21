@@ -5423,7 +5423,7 @@ class ExperimentHub {
              plan.origin_source_job_id===source.id)))
             throw Error('This native model already has an unresolved training-round plan.');
         const validateMembers=(members,kind)=>{
-            const lower=2,upper=kind==='collector'?16:8;
+            const lower=kind==='collector'?1:2,upper=kind==='collector'?16:8;
             if(!Array.isArray(members)||members.length<lower||members.length>upper)
                 throw Error('Native round '+kind+' stage requires '+lower+'–'+upper+' fixed machine members.');
             const machines=new Set();
