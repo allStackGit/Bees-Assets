@@ -2047,8 +2047,13 @@ pub(super) fn archive(
         }
     }
     run["levels"][0]["native_layout"] = serde_json::to_value(&cloned)?;
+    // The extraction collider and its activation radius must fit inside
+    // the actual physical arena even at the smallest 64-unit size. The
+    // former quarter-size-plus-50 position escaped 64/128-unit maps,
+    // making the ordinary Level objective impossible to complete.
+    // Preserve the source classic arena's authored destination.
     let extraction_x = selected.arena_size
-        .map_or(125.0, |size| size as f32 * 0.25 + 50.0);
+        .map_or(125.0, |size| size as f32 * 0.5 - 18.0);
     let mut deferred_squads = Vec::new();
     if matches!(selected.objective, Objective::Survival) {
         let defender = selected.objective_side.ok_or_else(||
