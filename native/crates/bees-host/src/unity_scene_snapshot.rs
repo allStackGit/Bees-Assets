@@ -2952,6 +2952,10 @@ impl NativePhysicalScene {
                     !setup.reinforcements.is_empty() ||
                     !self.source_squads.iter().any(|squad|
                         squad.side == bee_side && !squad.members.is_empty()) ||
+                    self.source_squads.iter().any(|squad|
+                        squad.side == bee_side && !squad.members.is_empty() &&
+                        !squad.hivemind.is_some_and(|source|
+                            source.hivemind_controlled)) ||
                     setup.groups.is_some() || setup.survival.is_some() ||
                     setup.demolition.is_some() || setup.escort.is_some() ||
                     setup.extraction.is_some() =>
