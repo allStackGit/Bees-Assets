@@ -437,35 +437,43 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 return Err("Policy reinforcement participant is absent from the authored group");
             }
         }
-        // One wave represents exactly one source constructor invocation.
-        // Validate Carrier descendants EVEN when the wave's physical
-        // positions come from a later capture and spawn is omitted.
+        // One wave represents one source AddReinforcementSquads call.
+        // Uranus II and other authored encounters pass several independent
+        // SavedSquads to that call; Carrier descendants are only a subset.
+        // Validate the actual child links without confusing independent
+        // squads with children or assuming the Carrier squad comes first.
         for ids in &planned_squad_order {
-            if ids.len() < 2 { continue; }
-            let root = source_squads[&ids[0]];
-            let parents: HashSet<i64> = root.members.iter().copied().filter(|id|
-                source_ships.get(id).is_some_and(|ship| ship.ship_type == 5)
-            ).collect();
-            for id in ids.iter().skip(1) {
-                let child = source_squads[id];
-                if child.side != root.side {
-                    return Err("Carrier child reinforcement squad has a different side from its source squad");
+            let root_side = source_squads[&ids[0]].side;
+            let carrier_ids: HashSet<i64> = ids.iter()
+                .flat_map(|id| source_squads[id].members.iter().copied())
+                .filter(|id| source_ships.get(id)
+                    .is_some_and(|ship| ship.ship_type == 5))
+                .collect();
+            for id in ids {
+                let squad = source_squads[id];
+                if squad.side != root_side {
+                    return Err("Reinforcement squads in one source deployment must share a side");
                 }
-                let mut parent = None;
-                for ship_id in &child.members {
+                let mut child_parent = None;
+                for ship_id in &squad.members {
                     let ship = source_ships[ship_id];
-                    let carrier = match ship.ship_type {
+                    let parent = match ship.ship_type {
                         8 => ship.drone_carrier_id,
                         19 => match &ship.special {
-                            Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) => carrier.carrier_id,
+                            Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) =>
+                                carrier.carrier_id,
                             _ => None,
                         },
                         _ => None,
-                    }.ok_or("Multi-squad reinforcement spawn requires source-linked Carrier children")?;
-                    if !parents.contains(&carrier) || parent.is_some_and(|id| id != carrier) {
-                        return Err("Reinforcement Carrier child squad must share a parent in the primary squad");
+                    };
+                    if let Some(parent) = parent {
+                        if !carrier_ids.contains(&parent) ||
+                            child_parent.is_some_and(|prior| prior != parent)
+                        {
+                            return Err("Reinforcement Carrier descendants need one parent in their deployment");
+                        }
+                        child_parent = Some(parent);
                     }
-                    parent = Some(carrier);
                 }
             }
         }
