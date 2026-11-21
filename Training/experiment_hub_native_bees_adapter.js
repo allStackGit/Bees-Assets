@@ -1062,7 +1062,7 @@ function createNativeBeesAdapter({
         });
     }
 
-    function completionReceipt(output, name) {
+    function completionReceipt(output, name, maxBytes=64 * 1024) {
         const file = path.join(output, name);
         let stat;
         try {
@@ -1071,7 +1071,7 @@ function createNativeBeesAdapter({
             if (error.code === 'ENOENT') return null;
             throw error;
         }
-        if (!stat.isFile() || stat.size < 1 || stat.size > 64 * 1024 || fs.realpathSync(file) !== file)
+        if (!stat.isFile() || stat.size < 1 || stat.size > maxBytes || fs.realpathSync(file) !== file)
             throw Error('Invalid native Bees completion receipt file.');
         return {receipt: JSON.parse(fs.readFileSync(file, 'utf8')), stat};
     }
@@ -1135,7 +1135,10 @@ function createNativeBeesAdapter({
         const metrics = receipt.learner_metrics;
         if(receipt.optimizer_metrics_sha256!=null) {
             const file=path.join(output,'learner','metrics.json');
-            const finalizer=completionReceipt(path.join(output,'learner'),'metrics.json');
+            // Full synchronized learner metrics contain one timing/resource
+            // record per GPU rank, potentially larger than a small Hub
+            // completion receipt. Keep an explicit bounded read.
+            const finalizer=completionReceipt(path.join(output,'learner'),'metrics.json',2 * 1024 * 1024);
             if(!SHA256.test(String(receipt.optimizer_metrics_sha256))||
                 !finalizer||sha256(fs.readFileSync(file))!==receipt.optimizer_metrics_sha256||
                 !isDeepStrictEqual(finalizer.receipt,metrics))
