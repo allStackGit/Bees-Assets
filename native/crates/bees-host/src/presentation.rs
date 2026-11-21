@@ -95,6 +95,23 @@ impl NativeFogFade {
     }
 }
 
+/// Source Weapon.Create chooses one clip from each two-sample weapon
+/// family ONCE for the mounted weapon, never on every fired projectile.
+/// Native clients make that presentation-only choice reproducibly from
+/// immutable world/mount identity, without consuming CombatWorld RNG.
+/// LAN hosts send only the selected sample bit, never an unseen shooter ID.
+#[inline]
+pub(crate) fn mounted_weapon_clip_variant(
+    ship_id: i64, slot: u8, world: u64, revision: u64,
+) -> bool {
+    let mut seed = (ship_id as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        ^ (u64::from(slot) + 1).wrapping_mul(0xbf58_476d_1ce4_e5b9)
+        ^ world.rotate_left(17) ^ revision.rotate_left(41);
+    seed ^= seed >> 30;
+    seed = seed.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    seed >> 63 != 0
+}
+
 pub(crate) fn battle_outcome_label(result: bees_sim::episode_terminal::EpisodeTerminalResult) -> String {
     if result.winner_side == 0 { "Draw".to_owned() }
     else if result.extraction_victory { format!("Side {} extracted", result.winner_side) }
