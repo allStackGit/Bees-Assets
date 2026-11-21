@@ -394,6 +394,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     missions = []
     mission_dependencies = dict(args.mission_requires)
     mission_advances = dict(args.mission_advance)
+    mission_grants = dict(args.mission_grant_on)
     mission_stories = dict(args.mission_story)
     mission_outcomes = {}
     for index, prior, result in args.mission_unlock_any:
@@ -542,6 +543,12 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             ]
         if mission_advances.get(index, "victory") == "finished":
             mission["advance_on"] = "finished"
+        if mission_grants.get(index) == "finished":
+            if mission_advances.get(index, "victory") != "finished":
+                raise ValueError(
+                    f"mission {index} completion-based rewards require --mission-advance {index}:finished"
+                )
+            mission["grant_on"] = "finished"
         alternatives = mission_outcomes.get(index, [])
         if alternatives:
             mission["unlock_if_any"] = [
@@ -722,6 +729,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             "mission_id": f"mission-{index:03d}",
             "requires": missions[index - 1]["mission"].get("requires", []),
             "advance_on": missions[index - 1]["mission"].get("advance_on", "victory"),
+            "grant_on": missions[index - 1]["mission"].get("grant_on", "victory"),
             "on_victory": missions[index - 1]["mission"].get("on_victory"),
             "on_defeat": missions[index - 1]["mission"].get("on_defeat"),
             "unlock_if_any": missions[index - 1]["mission"].get("unlock_if_any", []),
@@ -911,6 +919,9 @@ def main() -> None:
     parser.add_argument("--mission-advance", action="append", type=mission_advance,
                         default=[], metavar="MISSION:victory|finished",
                         help="choose the finished-battle or victorious-battle unlock rule")
+    parser.add_argument("--mission-grant-on", action="append", type=mission_advance,
+                        default=[], metavar="MISSION:victory|finished",
+                        help="award the mission's authored FleetShips and SavedSquads after a committed finish, including a defeat")
     parser.add_argument("--mission-unlock-any", action="append", type=mission_unlock_any,
                         default=[], metavar="MISSION:PRIOR:OUTCOME",
                         help="unlock a mission through any listed earlier finished, victory or defeat outcome; use --mission-requires MISSION:none for a full alternative route")
@@ -956,6 +967,7 @@ def main() -> None:
     for label, rules in (
         ("--mission-requires", args.mission_requires),
         ("--mission-advance", args.mission_advance),
+        ("--mission-grant-on", args.mission_grant_on),
         ("--mission-variant", [(mission, path) for mission, _, path
                               in args.mission_variant]),
         ("--mission-defeat-variant", [(mission, path) for mission, _, path
