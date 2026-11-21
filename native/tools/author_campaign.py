@@ -120,7 +120,6 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
             not isinstance(levels[0], dict) or
             run.get("episodes_per_world") != 1 or
             not (inline_stage or legacy_stage) or
-            run.get("hivemind") is not None or
             run.get("model_updates") or
             run.get("recover_notifications") or
             run.get("recover_outcome_journals")):
@@ -143,6 +142,52 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
         # replay the full physical fleet, not only its two template hulls.
         # No separate ship stats, combat simulation or roster interpreter.
         scene, run, _ = materialize_native_fleet_layout(scene, run)
+    # Original native live-HiveMind missions are playable campaign sources,
+    # provided the player side remains authoritative and the opponent is
+    # owned solely by the actual BeesServer command connection. This
+    # permits a complete campaign or challenge series against live HiveMind
+    # without introducing a scripted stand-in or duplicate simulation.
+    hivemind = run.get("hivemind")
+    if hivemind is not None:
+        if (scene.get("native_game_schema") != 1 or
+                not isinstance(hivemind, dict) or
+                hivemind.get("issue_source_commands") is not True or
+                hivemind.get("reconnect_game_id") is not None or
+                scene.get("activate_hivemind") is not True or
+                not isinstance(scene.get("squads"), list) or
+                not isinstance(scene.get("ships"), list) or
+                any(isinstance(ship.get("policy"), dict)
+                    for ship in scene["ships"])):
+            raise ValueError(
+                "campaign HiveMind mission requires a fresh real native source-command Game"
+            )
+        player_owned, remote_owned = 0, 0
+        opponent_ids = set()
+        for squad in scene["squads"]:
+            source = squad.get("hivemind")
+            if (not isinstance(source, dict) or
+                    type(source.get("opponent_id")) is not int or
+                    source["opponent_id"] <= 0 or
+                    type(source.get("hivemind_controlled")) is not bool or
+                    type(source.get("immobile")) is not bool):
+                raise ValueError("HiveMind campaign squad lacks explicit original source authority")
+            opponent_ids.add(source["opponent_id"])
+            if squad.get("side") == player_side:
+                if (source["hivemind_controlled"] or
+                        not squad.get("user_controlled") or
+                        not squad.get("can_accept_input")):
+                    raise ValueError("HiveMind mission must preserve campaign player command ownership")
+                player_owned += 1
+            elif squad.get("side") == 3 - player_side:
+                if (not source["hivemind_controlled"] or
+                        squad.get("user_controlled") or
+                        squad.get("can_accept_input")):
+                    raise ValueError("HiveMind mission opponent requires exclusive server ownership")
+                remote_owned += 1
+            else:
+                raise ValueError("HiveMind mission has an unknown player faction")
+        if player_owned == 0 or remote_owned == 0 or len(opponent_ids) != 1:
+            raise ValueError("HiveMind campaign requires one verified source opponent and player")
     # Migration snapshots are the original game's observed initial state.
     # Keep their original field schema for the native importer; never
     # synthesize the missing rules from a second game model.
@@ -255,6 +300,8 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
         "source_scene": str(scene_path),
         "source_scene_sha256": file_sha256(scene_path),
         "player_fleet_contract": canonical,
+        "hivemind_source_opponent": None if hivemind is None
+            else next(iter(opponent_ids)),
         **model_provenance,
     }
 
