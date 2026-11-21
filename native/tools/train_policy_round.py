@@ -809,6 +809,17 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     work["gpu_agent_rows"] += proof["agent_rows"]
                     work["successful_world_steps"] += metrics[index]["successful_world_steps"]
                     work["successful_policy_rows"] += metrics[index]["successful_policy_rows"]
+                # Count the actual decisions serviced per neural forward.
+                # Unlike GPU busy%, this directly reflects useful model
+                # batching even when CPUs and GPUs overlap in time.
+                for work in by_device.values():
+                    forwards = work["model_forwards"]
+                    if forwards:
+                        work["agent_rows_per_model_forward"] = (
+                            work["gpu_agent_rows"] / forwards
+                        )
+                model_forwards = sum(p["model_forwards"] for p in gpu_proofs.values())
+                agent_rows = sum(p["agent_rows"] for p in gpu_proofs.values())
                 result["gpu_inference"] = {
                     "verified_workers": len(gpu_proofs),
                     "workers_with_final_counters": sum(
@@ -817,8 +828,11 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     # in a terminated process. These counters cover only
                     # the final invocation of each worker, not prior work.
                     "resumed_collection": resume,
-                    "model_forwards": sum(p["model_forwards"] for p in gpu_proofs.values()),
-                    "agent_rows": sum(p["agent_rows"] for p in gpu_proofs.values()),
+                    "model_forwards": model_forwards,
+                    "agent_rows": agent_rows,
+                    "agent_rows_per_model_forward": (
+                        agent_rows / model_forwards if model_forwards else None
+                    ),
                     **({"gpu_pci_addresses": sorted(addresses)} if addresses else {}),
                     **({"per_device": [by_device[pci] for pci in sorted(by_device)]}
                        if by_device else {}),
