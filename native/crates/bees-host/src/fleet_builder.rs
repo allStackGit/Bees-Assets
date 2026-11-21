@@ -246,11 +246,24 @@ struct NativeHiveMindFleet {
     controlled_side: i32,
 }
 
-fn configured_hivemind_fleet() -> Result<Option<NativeHiveMindFleet>, Box<dyn Error>> {
-    let Some(path) = std::env::var_os("BEES_NATIVE_HIVEMIND_FLEET_CONFIG") else {
-        return Ok(None);
-    };
-    let config: Value = serde_json::from_slice(&fs::read(PathBuf::from(path))?)?;
+fn configured_hivemind_fleet(save_root: &Path)
+    -> Result<Option<NativeHiveMindFleet>, Box<dyn Error>>
+{
+    // Match the existing saved LAN host configuration: a portable native
+    // game discovers its own settings without demanding process-global
+    // environment edits. An explicit environment path overrides the
+    // profile for automation, Windows services and external launchers.
+    let override_path = std::env::var_os("BEES_NATIVE_HIVEMIND_FLEET_CONFIG");
+    let path = override_path.as_ref().map_or_else(
+        || save_root.join("hivemind-fleet.json"), PathBuf::from);
+    if !path.exists() && override_path.is_none() { return Ok(None); }
+    let metadata = fs::symlink_metadata(&path)?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() ||
+        metadata.len() == 0 || metadata.len() > 32_768
+    {
+        return Err(invalid("HiveMind fleet settings must be a regular JSON file under 32 KiB").into());
+    }
+    let config: Value = serde_json::from_slice(&fs::read(&path)?)?;
     let opponent_id = config["opponent_id"].as_u64()
         .filter(|id| *id > 0)
         .ok_or_else(|| invalid("HiveMind fleet needs a source opponent_id"))?;
@@ -311,8 +324,8 @@ fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }
 
-pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
-    let network = configured_hivemind_fleet()?;
+pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Error>> {
+    let network = configured_hivemind_fleet(save_root)?;
     let mut choices = vec![
         ("Bees commander vs Human AI", "  [Player side 1]"),
         ("Humans commander vs Bee AI", "  [Player side 2]"),
@@ -390,12 +403,12 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
 /// The existing private host authenticates a separate remote commander
 /// per side; no new network controller, simulation or permission model.
 pub(super) fn choose_multiplayer(
-    authenticated_side: Option<i32>,
+    authenticated_side: Option<i32>, save_root: &Path,
 ) -> Result<Option<FleetChoice>, Box<dyn Error>> {
     // The existing LAN host's token map is authoritative. A HiveMind
     // opponent is selectable only when exactly one real remote commander
     // can authenticate, so two users can never be assigned the same side.
-    let configured = configured_hivemind_fleet()?;
+    let configured = configured_hivemind_fleet(save_root)?;
     let use_hivemind = if configured.is_some() && authenticated_side.is_some() {
         let rows = [
             BattleMenuRow { title: "Two remote commanders",
