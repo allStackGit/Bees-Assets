@@ -531,7 +531,21 @@ def verify_same_battle(scene: dict, run: dict,
             continue
         squad_id = row.get("squad_item_id")
         squad = original_squads.get(squad_id)
-        if (squad is None or not squad.get("user_controlled") or
+        # Source HiveMind squads are already commanded by the live
+        # BeesServer player in gameplay. After replacing that network
+        # owner with a trainable policy, the two unmodeled physical Bomb
+        # classes still need their original game Charge/BombingRun orders.
+        # Accept only the exact authoring fallback for either verified
+        # player ownership or a verified source HiveMind owner.
+        sourced_network = (
+            isinstance(run.get("hivemind"), dict) and
+            run["hivemind"].get("issue_source_commands") is True and
+            scene.get("activate_hivemind") is True and
+            isinstance(squad.get("hivemind"), dict) and
+            squad["hivemind"].get("hivemind_controlled") is True
+        ) if squad is not None else False
+        if (squad is None or
+                not (squad.get("user_controlled") or sourced_network) or
                 squad_id in extra_owners or squad_id in owned):
             raise ValueError("policy added an unauthorized game command owner")
         extra_owners.add(squad_id)
@@ -599,8 +613,18 @@ def convert(source: Path, destination: Path, archetypes: Path,
                    ship.get("base_speed", 0) > 0
                    for ship in scene["ships"]):
             raise ValueError("escort needs an authentic same-side mobile hull")
+    # A saved HiveMind source has genuine delayed server commands, not
+    # local scripted queues. When its physical waves are converted into
+    # model episodes, deferred ships must be eligible for model decisions
+    # on arrival or for the original Barge/Bomb fallbacks. Keeping the
+    # network-only source queues would leave an entire reinforcement
+    # wave idle after disconnecting the external command owner.
+    live_hivemind = (isinstance(run.get("hivemind"), dict) and
+                     run["hivemind"].get("issue_source_commands") is True and
+                     scene.get("activate_hivemind") is True)
+    policy_waves = policy_reinforcements or live_hivemind
     reserved_ships = deferred_reinforcement_ships(
-        scene, run, require_scripted_fallback=not policy_reinforcements,
+        scene, run, require_scripted_fallback=not policy_waves,
     )
     if escort is not None and escort["escorted_ship_id"] in reserved_ships:
         raise ValueError("escort ship must be initially deployed")
@@ -608,7 +632,7 @@ def convert(source: Path, destination: Path, archetypes: Path,
         policy_archetypes=archetypes, minutes=seconds / 60,
         deferred_reinforcement_ship_ids=reserved_ships,
         scripted_reinforcement_ship_ids=(
-            set() if policy_reinforcements else reserved_ships
+            set() if policy_waves else reserved_ships
         ),
     )
     policy_input_scene, policy_input_run = copy.deepcopy(scene), copy.deepcopy(run)
@@ -666,6 +690,7 @@ def convert(source: Path, destination: Path, archetypes: Path,
             if ship["entity_id"] in reserved_ships
         ),
         "policy_reinforcements_requested": policy_reinforcements,
+        "policy_reinforcements_effective": policy_waves,
         "physical_scene_sha256": physical_identity,
         "source_hivemind_opponent": run.get("hivemind") is not None,
         "physical_objective": (
