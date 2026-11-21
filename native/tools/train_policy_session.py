@@ -1779,7 +1779,7 @@ def main():
     parser.add_argument("--hub-dispatch-port", type=int, default=7148,
                         help="loopback Experiment Hub operator API port (default: 7148)")
     parser.add_argument("--hub-auto-worlds", type=int,
-                        help="explicit fixed World budget for a Hub dispatch plan (default: up to 32 Worlds per reserved machine CPU allocation)")
+                        help="explicit fixed World budget for a Hub dispatch plan (default: bounded by reserved CPUs and RAM, up to 32 per machine)")
     parser.add_argument("--auto-balance-collectors", action="store_true",
                         help="redistribute contiguous native arena windows conservatively between verified distributed rounds")
     parser.add_argument("--collector-timeout-seconds", type=int, default=0,
@@ -1887,9 +1887,16 @@ def main():
         for entry in entries:
             resources = entry.get("resources") if isinstance(entry, dict) else None
             cpus = resources.get("cpus") if isinstance(resources, dict) else None
-            if type(cpus) is not int or not 1 <= cpus <= 32768:
-                parser.error("Hub World allocation needs positive CPU reservations on every machine")
-            world_budget += min(32, cpus)
+            ram_mb = resources.get("ram_mb") if isinstance(resources, dict) else None
+            if (type(cpus) is not int or not 1 <= cpus <= 32768 or
+                    type(ram_mb) is not int or ram_mb < 1):
+                parser.error("Hub World allocation needs positive CPU and RAM reservations on every machine")
+            # This is only a conservative automatic *admission ceiling*,
+            # not a claim of measured per-World memory consumption.
+            # An explicitly issued --hub-auto-worlds still owns its exact
+            # simulation population. A machine with a tiny RAM lease must
+            # never receive 32 default arenas solely because it has CPUs.
+            world_budget += min(32, cpus, max(1, ram_mb // 1024))
         args.hub_auto_worlds = world_budget
     if args.hub_auto_worlds is not None and (
             args.hub_dispatch_plan is None or args.distributed_plan is not None or
