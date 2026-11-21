@@ -300,7 +300,13 @@ pub struct ShotOwner {
 pub enum CombatEvent {
     Hit(HitEvent),
     UnattributedDamage { target_id: i64, delta: crate::combat::DamageDelta },
-    BombDetonated { projectile_id: i64, target_id: i64 },
+    BombDetonated {
+        projectile_id: i64, target_id: i64,
+        /// Actual attached-fuse position when the source detonation occurs.
+        /// Absent from older serialized checkpoint events.
+        #[serde(default)]
+        origin: Option<Vec2>,
+    },
     /// Striker.TryToDropBombs created the real delayed StrikerBomb fuse.
     StrikerBombDropped {
         ship_id: i64, target_id: i64, projectile_id: i64,
@@ -4523,6 +4529,7 @@ impl CombatWorld {
                     self.events.push(CombatEvent::BombDetonated {
                         projectile_id: self.projectiles[index].entity_id,
                         target_id,
+                        origin: Some(self.physics.projectiles()[index].motion.position),
                     });
                 }
                 BombAction::EndWithoutDamage => self.end_projectile(index),
@@ -5941,7 +5948,7 @@ mod tests {
         );
         assert!(matches!(
             world.events()[0],
-            CombatEvent::BombDetonated { projectile_id: 10, target_id: 2 }
+            CombatEvent::BombDetonated { projectile_id: 10, target_id: 2, .. }
         ));
         assert_eq!(world.ships()[1].vitals.health(), 100);
         world.step_fixed(0.51, &mask).unwrap();
