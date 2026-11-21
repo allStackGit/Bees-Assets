@@ -144,6 +144,63 @@ def input_mission(run_path: Path, player_side: int,
         # replay the full physical fleet, not only its two template hulls.
         # No separate ship stats, combat simulation or roster interpreter.
         scene, run, _ = materialize_native_fleet_layout(scene, run)
+    # A player-side value of zero is reserved for a *non-career* Fish Tank
+    # spectator game. The original setup has no player, so both factions
+    # receive real HiveMind requests through the one native command owner,
+    # with the same physics, weapons and game rules as ordinary play.
+    spectator = player_side == 0 and not require_career_fleet
+    if spectator:
+        squads = scene.get("squads")
+        ships = scene.get("ships")
+        hive = run.get("hivemind")
+        if (scene.get("native_game_schema") != 1 or
+                scene.get("local_player_side") is not None or
+                scene.get("activate_hivemind") is not True or
+                scene.get("policy_gameplay") is True or
+                scene.get("policy_episode") is not None or
+                run.get("model_manifest") is not None or
+                not isinstance(hive, dict) or
+                hive.get("issue_source_commands") is not True or
+                hive.get("reconnect_game_id") is not None or
+                not isinstance(squads, list) or not isinstance(ships, list) or
+                not squads or not ships or
+                scene.get("bee_side") not in (1, 2) or
+                scene.get("human_side") != 3 - scene["bee_side"] or
+                any(not isinstance(ship, dict) or
+                    ship.get("side") not in (1, 2) or
+                    ship.get("user_controlled") is True or
+                    ship.get("policy") is not None
+                    for ship in ships) or
+                any(not isinstance(squad, dict) or
+                    squad.get("side") not in (1, 2) or
+                    squad.get("user_controlled") is True or
+                    squad.get("can_accept_input") is True or
+                    not isinstance(squad.get("hivemind"), dict) or
+                    squad["hivemind"].get("hivemind_controlled") is not True or
+                    type(squad["hivemind"].get("opponent_id")) is not int or
+                    squad["hivemind"]["opponent_id"] <= 0 or
+                    type(squad["hivemind"].get("immobile")) is not bool
+                    for squad in squads) or
+                {squad["side"] for squad in squads} != {1, 2} or
+                {ship["side"] for ship in ships} != {1, 2}):
+            raise ValueError(
+                "Fish Tank requires an original two-faction native scene, "
+                "both sides HiveMind-owned, with no player or policy agents"
+            )
+        if (scene.get("stage_name") != run.get("stage_name") or
+                scene.get("bounds") != run.get("fragment_spawn", {}).get("map_bounds")):
+            raise ValueError("Fish Tank source has mismatched Stage and physical bounds")
+        return scene, run, {
+            "source_run": str(run_path),
+            "source_run_sha256": file_sha256(run_path),
+            "source_scene": str(scene_path),
+            "source_scene_sha256": file_sha256(scene_path),
+            "player_fleet_contract": {"ships": [], "squads": []},
+            "hivemind_source_opponents": sorted({
+                squad["hivemind"]["opponent_id"] for squad in squads
+            }),
+            "spectator": True,
+        }
     # Original native live-HiveMind missions are playable campaign sources,
     # provided the player side remains authoritative and the opponent is
     # owned solely by the actual BeesServer command connection. This
@@ -1341,9 +1398,9 @@ def postcampaign_game(value: str) -> tuple[str, int, Path]:
     """GAME_ID:PLAYER_SIDE:AUTHORED_RUN, with no synthetic scene fallback."""
     pieces = value.split(":", 2)
     if (len(pieces) != 3 or not re.fullmatch(r"[a-z][a-z0-9_-]{0,39}", pieces[0])
-            or pieces[1] not in ("1", "2") or not pieces[2]):
+            or pieces[1] not in ("0", "1", "2") or not pieces[2]):
         raise argparse.ArgumentTypeError(
-            "--postcampaign-game needs GAME_ID:PLAYER_SIDE:AUTHORED_RUN"
+            "--postcampaign-game needs GAME_ID:PLAYER_SIDE:AUTHORED_RUN (side 0 = HiveMind Fish Tank spectator)"
         )
     return pieces[0], int(pieces[1]), Path(pieces[2])
 
@@ -1405,7 +1462,7 @@ def main() -> None:
     parser.add_argument("--postcampaign-game", action="append",
                         type=postcampaign_game, default=[],
                         metavar="ID:PLAYER_SIDE:RUN",
-                        help="package a real native playable mode or verified challenge, locked until the authored Uranus III campaign finale finishes")
+                        help="package a real native playable mode or verified challenge; side 0 is a no-player HiveMind Fish Tank scene, locked until Uranus III finishes")
     parser.add_argument("--mission-variant", action="append", type=mission_variant,
                         default=[], metavar="MISSION:PREVIOUS:RUN",
                         help="use another native battle if the required previous mission's latest result was victory")
