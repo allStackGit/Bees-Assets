@@ -1536,6 +1536,44 @@ impl NativePhysicalScene {
         }
     }
 
+    /// Independent free Carrier squad -> current persistent parent squad.
+    /// The source order is retained for the original LevelConstructor
+    /// deployment order. No account ID or hotkey is used as a live link.
+    pub fn campaign_carrier_squad_links(&self, side: i32) -> Vec<(i64, i64)> {
+        let ships = self.entities.iter().filter_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) => Some((ship.entity_id, ship)),
+            _ => None,
+        }).collect::<HashMap<_, _>>();
+        let owners = self.source_squads.iter().flat_map(|squad|
+            squad.members.iter().map(move |&id| (id, squad))
+        ).collect::<HashMap<_, _>>();
+        self.source_squads.iter().filter_map(|squad| {
+            if squad.side != side || squad.saved_squad_id.is_some() ||
+                !squad.player_permissions.user_controlled
+            {
+                return None;
+            }
+            let parent = Self::authored_carrier_parent(ships.get(squad.members.first()?)?)?;
+            if !squad.members.iter().all(|id|
+                self.fleet.get(*id).is_some_and(|value| !value.has_persistent_fleet_value) &&
+                ships.get(id).is_some_and(|ship|
+                    ship.side == side && Self::authored_carrier_parent(ship) == Some(parent)))
+            {
+                return None;
+            }
+            let parent_ship = ships.get(&parent)?;
+            let owner = owners.get(&parent)?;
+            if parent_ship.side != side || parent_ship.ship_type != 5 ||
+                !self.fleet.get(parent).is_some_and(|value| value.has_persistent_fleet_value) ||
+                owner.side != side || owner.saved_squad_id.is_none() ||
+                !owner.player_permissions.user_controlled
+            {
+                return None;
+            }
+            Some((squad.item_id, owner.item_id))
+        }).collect()
+    }
+
     /// An ordinary source Carrier's free complement is a set of real,
     /// independently registered single-type squads. The immutable template
     /// supplies their own physics, weapons, formation and command metadata.

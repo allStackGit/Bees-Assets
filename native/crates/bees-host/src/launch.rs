@@ -3069,6 +3069,12 @@ fn preflight_native_ship_purchase(
 /// campaign fleet editing that run_battle loads for gameplay. Shared by
 /// full fleet preflight and the read-only squad picker.
 fn load_native_fleet_edit_scene(run_path: &Path) -> Result<NativePhysicalScene, Box<dyn Error>> {
+    load_native_fleet_edit_scene_with_level(run_path).map(|(scene, _)| scene)
+}
+
+fn load_native_fleet_edit_scene_with_level(run_path: &Path)
+    -> Result<(NativePhysicalScene, LevelConfig), Box<dyn Error>>
+{
     let run: RunConfig = serde_json::from_slice(&fs::read(&run_path)?)?;
     if run.levels.len() != 1 || run.episodes_per_world != 1 {
         return Err(invalid("native shop requires one physical episode per campaign Level").into());
@@ -3118,7 +3124,74 @@ fn load_native_fleet_edit_scene(run_path: &Path) -> Result<NativePhysicalScene, 
         ).map_err(|error| contextual("shop native Level layout", error))?;
     }
 
-    Ok(source)
+    Ok((source, run.levels.into_iter().next().expect("one authored campaign level")))
+}
+
+/// Reconcile only the player's actual free Carrier dependents with the
+/// source mission's existing deployment gates. A purchased or transferred
+/// Carrier arrives with the SavedSquad that currently owns it; a removed
+/// one cannot leave behind a phantom child wave. Training and enemy plans
+/// remain immutable. Run this exact projection during shop preflight
+/// and when building the playable mission, before allocating Stage IDs.
+fn reconcile_campaign_carrier_deployment(
+    level: &mut LevelConfig, authored: &NativePhysicalScene,
+    restored: &NativePhysicalScene, player_side: i32,
+) -> io::Result<()> {
+    let original_ids = authored.source_squads.iter().map(|squad| squad.item_id)
+        .collect::<HashSet<_>>();
+    let mut original_waves = HashMap::new();
+    for (index, wave) in level.reinforcements.iter().enumerate() {
+        if wave.squad_item_ids.is_empty() {
+            return Err(invalid("authored reinforcement wave has no source squads"));
+        }
+        for &id in &wave.squad_item_ids {
+            if !original_ids.contains(&id) || original_waves.insert(id, index).is_some() {
+                return Err(invalid("authored reinforcement wave references unknown or duplicate source squads"));
+            }
+        }
+    }
+    let original_links = authored.campaign_carrier_squad_links(player_side);
+    // Refuse malformed original sources rather than silently repairing
+    // an unrelated or independently deferred child in a campaign.
+    for &(child, parent) in &original_links {
+        if original_waves.get(&child) != original_waves.get(&parent) {
+            return Err(invalid("authored Carrier and free child must deploy together"));
+        }
+    }
+    let restored_links = restored.campaign_carrier_squad_links(player_side);
+    let child_ids = original_links.iter().chain(&restored_links)
+        .map(|&(child, _)| child).collect::<HashSet<_>>();
+    let mut current_waves = HashMap::new();
+    for (index, wave) in level.reinforcements.iter_mut().enumerate() {
+        wave.squad_item_ids.retain(|id| !child_ids.contains(id));
+        for &id in &wave.squad_item_ids {
+            current_waves.insert(id, index);
+        }
+    }
+    for (child, parent) in restored_links {
+        if let Some(&index) = current_waves.get(&parent) {
+            level.reinforcements[index].squad_item_ids.push(child);
+            current_waves.insert(child, index);
+        }
+    }
+    // A source child command's deployment-relative gate follows its
+    // physical admission. Explicit mission/time/death conditions retain
+    // their authored meaning and are checked by the shared director.
+    for queue in &mut level.scripted_queues {
+        if !child_ids.contains(&queue.squad_item_id) { continue; }
+        let was_deferred = original_waves.contains_key(&queue.squad_item_id);
+        let deferred = current_waves.contains_key(&queue.squad_item_id);
+        if was_deferred == deferred { continue; }
+        queue.activation = match (deferred, queue.activation) {
+            (true, ScriptedActivationConfig::Immediate) =>
+                ScriptedActivationConfig::OnDeployment,
+            (false, ScriptedActivationConfig::OnDeployment |
+                ScriptedActivationConfig::OnArrival) => ScriptedActivationConfig::Immediate,
+            (_, activation) => activation,
+        };
+    }
+    level.reinforcements.retain(|wave| !wave.squad_item_ids.is_empty());
+    Ok(())
 }
 
 fn preflight_native_fleet_edit(
@@ -3175,7 +3248,7 @@ fn preflight_native_fleet_edit_with_squads(
         } else { &no_casualties };
         for config in entry.configurations() {
             let run_path = resolve(root, config).canonicalize()?;
-            let source_archetypes = load_native_fleet_edit_scene(&run_path)?;
+            let (source_archetypes, mut level) = load_native_fleet_edit_scene_with_level(&run_path)?;
             let mut source = source_archetypes.clone();
             // Purchase and victory-grant FleetShip IDs remain unique across
             // replayable completed missions and alternate victory routes.
@@ -3206,19 +3279,24 @@ fn preflight_native_fleet_edit_with_squads(
             source.finalize_campaign_squad_tactics(
                 side, &progress.tactics_for_side(side),
             ).map_err(|error| contextual("shop saved matching speed", error))?;
+            reconcile_campaign_carrier_deployment(&mut level, &source_archetypes, &source, side)?;
+            let persistent_count = |squad: &bees_host::unity_scene_snapshot::NativeSourceSquad|
+                squad.members.iter().filter(|id|
+                    source.fleet.get(**id).is_some_and(|value| value.has_persistent_fleet_value)
+                ).count();
             if target_saved_squad_id > 0 {
                 let squad = source.source_squads.iter().find(|squad|
                     squad.saved_squad_id == Some(target_saved_squad_id) &&
                     squad.side == side && squad.player_permissions.user_controlled
                 ).ok_or_else(|| invalid("target saved squad is missing"))?;
-                if squad.members.len() > max_size {
+                if persistent_count(squad) > max_size {
                     return Err(invalid(
                         "purchased hull exceeds the source's maximum saved-squad size",
                     ).into());
                 }
             } else if source.source_squads.iter().any(|squad|
                 squad.side == side && squad.player_permissions.user_controlled &&
-                squad.members.len() > max_size
+                squad.saved_squad_id.is_some() && persistent_count(squad) > max_size
             ) {
                 return Err(invalid(
                     "awarded fleet exceeds the source's maximum saved-squad size",
@@ -3378,7 +3456,9 @@ fn run_reassign_authored_ship(
                 &resolve(root, battle.config_for(&progress)))?;
             let Some(parent) = scene.entities.iter().find_map(|entity| match entity {
                 NativeAuthoredEntity::Ship(ship) if ship.side == mission.player_side &&
-                    ship.fleet_ship_id == Some(fleet_ship_id) => Some(ship.entity_id),
+                    ship.fleet_ship_id == Some(fleet_ship_id) &&
+                    scene.fleet.get(ship.entity_id)
+                        .is_some_and(|value| value.has_persistent_fleet_value) => Some(ship.entity_id),
                 _ => None,
             }) else { continue };
             if scene.source_squads.iter().any(|squad|
@@ -3555,7 +3635,7 @@ fn run_set_saved_squad_tactics(
             .filter(|(id, _, _)| !lost.contains(id)).collect::<Vec<_>>();
         for config in battle.configurations() {
             let scene_path = resolve(root, config).canonicalize()?;
-            let source_archetypes = load_native_fleet_edit_scene(&scene_path)?;
+            let (source_archetypes, mut level) = load_native_fleet_edit_scene_with_level(&scene_path)?;
             let mut scene = source_archetypes.clone();
             // Use the exact order of run_battle: a changed SavedSquad
             // preference must be valid for the final route-specific fleet,
@@ -3574,6 +3654,9 @@ fn run_set_saved_squad_tactics(
                 .map_err(|error| contextual("tactics final campaign deployment", error))?;
             scene.finalize_campaign_squad_tactics(entry.side, &effective)
                 .map_err(|error| contextual("tactics matching-speed preflight", error))?;
+            reconcile_campaign_carrier_deployment(
+                &mut level, &source_archetypes, &scene, entry.side,
+            )?;
             checked += 1;
         }
     }
@@ -5355,6 +5438,9 @@ fn run_battle(
             source.finalize_campaign_squad_tactics(
                 mission.player_side, mission.tactics.unwrap_or(&[]),
             ).map_err(|error| contextual("restored SavedSquad tactics", error))?;
+            reconcile_campaign_carrier_deployment(
+                level, template.as_ref(), &source, mission.player_side,
+            )?;
         }
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
