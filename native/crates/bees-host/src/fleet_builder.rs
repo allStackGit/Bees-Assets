@@ -1426,25 +1426,52 @@ pub(super) fn archive(
         // into a new, nonconflicting native scene identity. Its ore/health,
         // collision layer, and eventual depletion are handled by the shared
         // CombatWorld and Level, not by this fleet authoring screen.
-        let mut mine = source_archetypes["mining_asteroids"]
+        let mine = source_archetypes["mining_asteroids"]
             .as_array().and_then(|ores| ores.first())
             .ok_or_else(|| invalid("native source has no mineable asteroid archetype"))?
             .clone();
-        // Keep source entities below the native layout's cloned ship ID
-        // range (10_000+). Layout validation requires every clone identity
-        // to be higher than all authored scene entities.
-        mine["entity_id"] = json!(31_i64);
-        let mut other = mine.clone();
-        other["entity_id"] = json!(32_i64);
         let original = mine["position"].as_array().ok_or_else(||
             invalid("source mineable asteroid has no physical position"))?;
         let x = original.first().and_then(Value::as_f64)
             .ok_or_else(|| invalid("source mineable asteroid has no X coordinate"))?;
         let y = original.get(1).and_then(Value::as_f64)
             .ok_or_else(|| invalid("source mineable asteroid has no Y coordinate"))?;
-        other["position"] = json!([-x, -y]);
+        if !x.is_finite() || !y.is_finite() ||
+            !matches!(selected.ore_count, 2 | 8 | 16) ||
+            (selected.ore_count > 2 &&
+                !selected.arena_size.is_some_and(|size| size >= 512)) ||
+            !matches!(selected.terrain, Terrain::Open | Terrain::Original)
+        {
+            return Err(invalid("native mineral field needs a valid physical arena and source ore").into());
+        }
+        // Original two deposits retain their precise source coordinates;
+        // additional mineable ores are neutral physical placements on a
+        // larger map, with authentic original polygon, health and collision
+        // layers. Their central lane lies outside both deployed fleet
+        // halves and the classic map's small lower-center obstacle.
+        const RICH_ORE: [[f64; 2]; 14] = [
+            [-60.0, 60.0], [60.0, -60.0],
+            [-60.0, -60.0], [60.0, 60.0],
+            [-30.0, 30.0], [30.0, -30.0],
+            [-30.0, -30.0], [30.0, 30.0],
+            [-60.0, 0.0], [60.0, 0.0],
+            [0.0, 100.0], [0.0, -100.0],
+            [-30.0, 100.0], [30.0, -100.0],
+        ];
+        let positions = [[x, y], [-x, -y]].into_iter()
+            .chain(RICH_ORE)
+            .take(selected.ore_count);
+        // Keep these source body identities well below cloned fighter IDs,
+        // and disjoint from every original live ship, MapObject and cover.
+        let mut resources = Vec::with_capacity(selected.ore_count);
+        for (index, position) in positions.enumerate() {
+            let mut ore = mine.clone();
+            ore["entity_id"] = json!(31_i64 + index as i64);
+            ore["position"] = json!(position);
+            resources.push(ore);
+        }
         scene["activate_mining"] = json!(true);
-        scene["mining_asteroids"] = json!([mine, other]);
+        scene["mining_asteroids"] = json!(resources);
     }
     let available = source_archetypes["ships"].as_array().ok_or_else(||
         invalid("native skirmish has no source ship archetypes"))?;
