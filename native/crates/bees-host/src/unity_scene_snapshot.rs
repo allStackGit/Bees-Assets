@@ -2941,6 +2941,21 @@ impl NativePhysicalScene {
                     setup.demolition.is_some() || setup.escort.is_some() ||
                     setup.extraction.is_some() =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
+            Some(CampaignDialogueSpec::PlutoPushback { player_side, speaker_mask })
+                if player_side != human_side || speaker_mask > 0b1111 ||
+                    self.activate_hivemind != Some(true) ||
+                    // Source Pluto III's introduction completes before
+                    // the one authentic Bee reinforcement deployment.
+                    // This native snapshot begins AFTER that introduction,
+                    // with the actual physical enemy roster already bound
+                    // to HiveMind, not a second scripted imitation.
+                    !setup.reinforcements.is_empty() ||
+                    !self.source_squads.iter().any(|squad|
+                        squad.side == bee_side && !squad.members.is_empty()) ||
+                    setup.groups.is_some() || setup.survival.is_some() ||
+                    setup.demolition.is_some() || setup.escort.is_some() ||
+                    setup.extraction.is_some() =>
+                return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::NeptunePressingForward { player_side, .. })
                 if ![bee_side, human_side].contains(&player_side) ||
                     setup.survival.is_some() || setup.demolition.is_some() ||
