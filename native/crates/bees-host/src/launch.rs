@@ -1597,6 +1597,7 @@ struct CampaignMission<'a> {
     player_side: i32,
     record_fleet_stats: bool,
     bank_player_minerals: bool,
+    bank_on_finished: bool,
     lost_fleet_ids: Option<&'a HashSet<i64>>,
     enemy_lost_fleet_ids: Option<&'a HashSet<i64>>,
     purchased_ships: Option<&'a [NativePurchasedShip]>,
@@ -1643,6 +1644,8 @@ struct CampaignReplaySetup {
     player_side: i32,
     record_fleet_stats: bool,
     bank_player_minerals: bool,
+    #[serde(default)]
+    bank_on_finished: bool,
     lost_fleet_ids: Option<HashSet<i64>>,
     #[serde(default)]
     enemy_lost_fleet_ids: Option<HashSet<i64>>,
@@ -1687,6 +1690,7 @@ impl CampaignReplaySetup {
             player_side: mission.player_side,
             record_fleet_stats: mission.record_fleet_stats,
             bank_player_minerals: mission.bank_player_minerals,
+            bank_on_finished: mission.bank_on_finished,
             lost_fleet_ids: mission.lost_fleet_ids.cloned(),
             enemy_lost_fleet_ids: mission.enemy_lost_fleet_ids.cloned(),
             purchased_ships: mission.purchased_ships.map(|ships| ships.to_vec()),
@@ -1730,6 +1734,7 @@ impl CampaignReplaySetup {
             player_side: self.player_side,
             record_fleet_stats: self.record_fleet_stats,
             bank_player_minerals: self.bank_player_minerals,
+            bank_on_finished: self.bank_on_finished,
             lost_fleet_ids: self.lost_fleet_ids.as_ref(),
             enemy_lost_fleet_ids: self.enemy_lost_fleet_ids.as_ref(),
             purchased_ships: self.purchased_ships.as_deref(),
@@ -3026,6 +3031,7 @@ fn launch_catalog_battle(
             campaign_id, mission_id: &mission.id, player_side: mission.player_side,
             record_fleet_stats: mission.record_fleet_stats,
             bank_player_minerals: mission.bank_player_minerals,
+            bank_on_finished: mission.bank_on_finished,
             lost_fleet_ids: lost.as_ref(),
             enemy_lost_fleet_ids: enemy_lost.as_ref(),
             purchased_ships: purchased.as_deref(),
@@ -8321,7 +8327,8 @@ fn run_battle(
     let record_fleet_stats = mission.is_some_and(|value| value.record_fleet_stats);
     let banking_side = mission.filter(|value|
         value.bank_player_minerals &&
-        campaign_outcome.as_ref().is_some_and(CampaignOutcome::mission_victory)
+        (value.bank_on_finished ||
+            campaign_outcome.as_ref().is_some_and(CampaignOutcome::mission_victory))
     ).map(|value| value.player_side);
     let mut banked_minerals = 0_u64;
     let campaign_fleet = if campaign_outcome.is_some() &&
@@ -8416,9 +8423,9 @@ fn run_battle(
         squads.sort_unstable_by_key(|row| row.saved_squad_id);
         Some(squads)
     } else { None };
-    // CollectMinedMineralsForPlayer banks only after actual mission
-    // victory, even when the source Stage opts out of RecordStats.
-    // A completed defeat has an explicit zero-income receipt.
+    // Source mining credit is the sum of surviving FleetShip cargo from
+    // the real Level, regardless of whether the authored mission credits
+    // it on a completed defeat or only on a victory. No duplicate economy.
     let campaign_banked_minerals = if campaign_outcome.is_some() &&
         mission.is_some_and(|value| value.bank_player_minerals) {
         Some(banked_minerals)
