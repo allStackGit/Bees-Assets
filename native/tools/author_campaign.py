@@ -80,6 +80,81 @@ def source_types_in_order(actual, required) -> bool:
                for kind in actual)
 
 
+def neptune_production_waves_match_source(scene: dict, level: dict) -> bool:
+    """The original mining mission's real 120/240/360/480s waves, then 60s.
+
+    A timer with no remaining saved enemy squad still emits the source
+    announcement. Timed physical arrivals must be source squads deployed
+    through the one CombatWorld, never generated stand-ins.
+    """
+    waves = level.get("reinforcements")
+    homes = scene.get("starting_positions")
+    ai_side = scene.get("bee_side")
+    if (not isinstance(waves, list) or not waves or
+            not isinstance(homes, list) or len(homes) != 2 or
+            ai_side not in (1, 2)):
+        return False
+    home = homes[ai_side - 1]
+    if isinstance(home, dict):
+        home = [home.get("x"), home.get("y")]
+    if (not isinstance(home, list) or len(home) != 2 or
+            any(type(x) not in (int, float) for x in home)):
+        return False
+    spawn = [home[0] + 100, home[1]]
+    source_squads = {
+        squad["item_id"]: squad for squad in scene.get("squads", [])
+        if isinstance(squad, dict) and type(squad.get("item_id")) is int
+    }
+    source_ships = {
+        ship["entity_id"]: ship for ship in scene.get("ships", [])
+        if isinstance(ship, dict) and type(ship.get("entity_id")) is int
+    }
+    by_second = {}
+    for wave in waves:
+        if not isinstance(wave, dict) or (
+                set(wave) - {"after_seconds", "squad_item_ids", "spawn", "entry"}) or
+                type(wave.get("after_seconds")) not in (int, float) or
+                not 0 < wave["after_seconds"] < float("inf") or
+                not same_point(wave.get("spawn"), spawn) or
+                not same_point(wave.get("entry"), home)):
+            return False
+        second = round(wave["after_seconds"])
+        if abs(wave["after_seconds"] - second) > 0.0001:
+            return False
+        types = source_wave_types(wave, source_squads, source_ships, ai_side)
+        if types is None:
+            return False
+        by_second.setdefault(second, []).extend(types)
+    times = sorted(by_second)
+    if len(times) < 4:
+        return False
+    initial = (
+        [14, 14, 15, 15],
+        [14, 21, 15, 15],
+        [14, 21, 21, 15, 15, 22, 22, 22],
+        [14, 21, 21, 15, 15, 22, 22, 22, 16, 16],
+    )
+    base_late = [14, 21, 21, 15, 15, 22, 22, 22, 16, 16]
+    late_extra = [21, 21, 15, 22, 22, 16, 16]
+    for index, when in enumerate(times):
+        due = 120 * (index + 1) if index < 4 else 480 + 60 * (index - 3)
+        if when != due:
+            return False
+        actual = by_second[when]
+        if index == 3:
+            # At 480 seconds Unity prefixes all surviving veteran squads,
+            # then asks for its ordinary escalating formation.
+            if any(source_types_in_order(actual[start:], initial[3])
+                   for start in range(len(actual) + 1)):
+                continue
+            return False
+        required = (initial[index] if index < 3 else
+                    base_late + late_extra * (index - 4))
+        if not source_types_in_order(actual, required):
+            return False
+    return True
+
+
 def trained_opponent(run_path: Path, run: dict, scene_path: Path,
                      player_side: int) -> dict:
     """Allow only a checkpoint-pinned challenge from the native publisher.
@@ -717,14 +792,21 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     scene.get("human_side") != args.player_side or
                     not isinstance(zone, dict) or
                     zone.get("player_side") != args.player_side or
-                    not scene.get("mining_asteroids") or
+                    zone.get("retreat_on_exit") is not True or
+                    scene.get("activate_mining") is not True or
+                    len(scene.get("mining_asteroids") or []) != 5 or
+                    not neptune_production_waves_match_source(scene, level) or
                     level.get("campaign_dialogue") is not None or
                     any(level.get(name) is not None for name in
                         ("survival", "demolition", "escort"))):
                 raise ValueError(
-                    "Neptune Of Production requires real mineable asteroids "
-                    "and an authored native fleet extraction Level"
+                    "Neptune Of Production requires five real mining asteroids, "
+                    "the fleet withdrawal trigger and its exact escalating "
+                    "physical Bee wave schedule"
                 )
+            level["campaign_dialogue"] = {
+                "neptune_production": {"player_side": args.player_side}
+            }
         elif story == "uranus_on_the_offensive":
             # The original Uranus I locates the one authored Bumblebee
             # through true weapon contacts or real Scout sight, then
