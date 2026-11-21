@@ -30,7 +30,9 @@ from transfer_policy_bundle import import_bundle_archive, completed_uploaded_bun
 
 CHUNK = 1024 * 1024
 MAX_ARCHIVE_BYTES = 8 * 1024 ** 3
-MAX_CLIENTS = 4
+# The Hub can issue sixteen collectors in one round. Leave room for
+# acknowledgement GETs alongside their streaming uploads/downloads.
+MAX_CLIENTS = 20
 MAX_DOWNLOAD_ATTEMPTS = 4
 MAX_UPLOAD_ATTEMPTS = 4
 TOKEN_ENV = "BEES_NATIVE_BUNDLE_TOKEN"
@@ -102,6 +104,8 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
             body = answer.read(64 * 1024)
             if answer.status == 404:
                 return None
+            if answer.status == 503:
+                raise ConnectionError("native bundle receiver is at its connection limit")
             try:
                 payload = json.loads(body)
             except (ValueError, UnicodeDecodeError) as exc:
@@ -159,6 +163,8 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
                 payload = json.loads(body)
             except (ValueError, UnicodeDecodeError):
                 raise ValueError(f"invalid collector receiver response: HTTP {response.status}")
+            if response.status == 503:
+                raise ConnectionError("native bundle receiver is at its connection limit")
             if (response.status == 409 and isinstance(payload, dict) and
                     payload.get("error") == "collector bundle already published or being received"):
                 # The previous connection can still be finishing import.
@@ -240,6 +246,8 @@ def download_input_archive(base_url, collector_id, destination, token=None):
                     connection.request("GET", endpoint, headers=headers)
                     response = connection.getresponse()
                     expected_status = 206 if received else 200
+                    if response.status == 503:
+                        raise ConnectionError("learner input receiver is at its connection limit")
                     if response.status != expected_status:
                         reason = response.read(4096)
                         raise ValueError(
@@ -302,7 +310,19 @@ class LimitedHTTPServer(ThreadingHTTPServer):
 
     def process_request(self, request, client_address):
         if not self.slots.acquire(blocking=False):
-            request.close()
+            # Reject excess accepted sockets with a machine-readable
+            # transient response instead of silently resetting the client.
+            try:
+                request.sendall(
+                    b"HTTP/1.1 503 Service Unavailable\r\n"
+                    b"Content-Length: 0\r\n"
+                    b"Retry-After: 2\r\n"
+                    b"Connection: close\r\n\r\n"
+                )
+            except OSError:
+                pass
+            finally:
+                request.close()
             return
         try:
             super().process_request(request, client_address)
@@ -354,6 +374,7 @@ class BundleReceiver:
             self.on_event("native_bundle_receiver_listening", {
                 "address": f"{self.server.server_address[0]}:{self.server.server_address[1]}",
                 "max_concurrent_uploads": MAX_CLIENTS,
+                "max_concurrent_requests": MAX_CLIENTS,
             })
         return self
 
