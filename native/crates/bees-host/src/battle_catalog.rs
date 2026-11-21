@@ -616,6 +616,7 @@ impl BattleCatalog {
             }
         }
         let mut earlier = HashSet::new();
+        let mut advances_on_finish = HashSet::new();
         let mut awarded_squad_ids = HashSet::new();
         for mission in self.battles.iter().filter_map(|entry| entry.mission.as_ref()) {
             if self.campaign_id.is_none() || mission.id.trim().is_empty() ||
@@ -666,13 +667,17 @@ impl BattleCatalog {
             }
             if mission.on_victory.iter().chain(mission.on_defeat.iter()).any(|route|
                 !mission.requires.contains(&route.mission) || route.config.as_os_str().is_empty()
-            ) {
+            ) || mission.on_defeat.as_ref().is_some_and(|route|
+                !advances_on_finish.contains(route.mission.as_str())) {
                 return Err(invalid(format!(
-                    "Mission {:?} needs an existing prerequisite and run configuration for its conditional route",
+                    "Mission {:?} requires a reachable previous outcome and a native run for its conditional route",
                     mission.id,
                 )));
             }
             earlier.insert(mission.id.as_str());
+            if matches!(mission.advance_on, AdvanceOn::Finished) {
+                advances_on_finish.insert(mission.id.as_str());
+            }
         }
         Ok(())
     }
@@ -1377,15 +1382,23 @@ impl BattleCatalog {
         fields.remove("max_squad_ships");
         let mut mission_ids = progress.missions.keys().copied().collect::<Vec<_>>();
         mission_ids.sort_unstable();
+        let defeat_routes = self.battles.iter().filter_map(|entry|
+            entry.mission.as_ref().and_then(|mission| mission.on_defeat.as_ref())
+        ).count() != 0;
         let mission_results = mission_ids.into_iter().map(|id| {
             let result = &progress.missions[id];
-            json!({
+            let mut row = json!({
                 "id": id,
                 "completed": result.completed,
-                "attempted": result.attempted,
                 "latest_victory": result.latest_victory,
                 "grants_claimed": result.grants_claimed,
-            })
+            });
+            // Existing campaigns retain their checkpoint identity. An
+            // outcome-branching campaign must additionally pin whether a
+            // non-victorious mission was ever played: false is not the same
+            // as never attempted for a defeat-conditioned mission variant.
+            if defeat_routes { row["attempted"] = json!(result.attempted); }
+            row
         }).collect::<Vec<_>>();
         fields.insert("missions".to_owned(), json!(mission_results));
         identity
@@ -1397,7 +1410,7 @@ impl BattleCatalog {
     pub fn status(&self, progress: &CampaignProgress<'_>) -> Value {
         let missions = self.battles.iter().filter_map(|entry| {
             let mission = entry.mission.as_ref()?;
-            Some(json!({
+            let mut row = json!({
                 "id": mission.id,
                 "title": entry.title,
                 "selected_config": entry.config_for(progress),
@@ -1406,13 +1419,7 @@ impl BattleCatalog {
                     "config": route.config,
                     "active": progress.latest_victory(&route.mission),
                 })),
-                "defeat_route": mission.on_defeat.as_ref().map(|route| json!({
-                    "previous_mission": route.mission,
-                    "config": route.config,
-                    "active": progress.latest_defeat(&route.mission) &&
-                        mission.on_victory.as_ref().is_none_or(|win|
-                            !progress.latest_victory(&win.mission)),
-                })),
+                
                 "requires": mission.requires,
                 "waiting_for": mission.requires.iter().filter(|id|
                     !progress.completed(id)).collect::<Vec<_>>(),
@@ -1434,7 +1441,17 @@ impl BattleCatalog {
                 "record_fleet_stats": mission.record_fleet_stats,
                 "bank_player_minerals": mission.bank_player_minerals,
                 "persist_fleet_losses": mission.persist_fleet_losses,
-            }))
+            });
+            if let Some(route) = &mission.on_defeat {
+                row["defeat_route"] = json!({
+                    "previous_mission": route.mission,
+                    "config": route.config,
+                    "active": progress.latest_defeat(&route.mission) &&
+                        mission.on_victory.as_ref().is_none_or(|win|
+                            !progress.latest_victory(&win.mission)),
+                });
+            }
+            Some(row)
         }).collect::<Vec<_>>();
         let mut ids = progress.fleet.keys().copied().collect::<Vec<_>>();
         ids.sort_unstable();
