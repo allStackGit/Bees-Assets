@@ -1653,9 +1653,15 @@ fn collect_remote_audio(
                 "huge_explosion",
                 shots.get(explosion_projectile_id).map(|shot| shot.1),
             ),
-            CombatEvent::BombDetonated { projectile_id, .. } => (
+            CombatEvent::BombDetonated { projectile_id, target_id } => (
                 "huge_explosion",
-                shots.get(projectile_id).map(|shot| shot.1),
+                // The fuse attaches to the target's real hull. A bomb
+                // that ended before this presentation pass must not lose
+                // its detonation sound merely because its projectile slot
+                // has already been retired.
+                shots.get(projectile_id).map(|shot| shot.1)
+                    .or_else(|| view.combat.ship_body(*target_id)
+                        .map(|body| body.motion.position)),
             ),
             CombatEvent::FireTankObstacleBrokenApart { origin, bounds, .. } => {
                 // Never disclose a hidden tank through a visible wall or
