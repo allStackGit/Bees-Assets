@@ -8,6 +8,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const http=require('node:http');
 const crypto=require('node:crypto');
+const {isDeepStrictEqual}=require('node:util');
 const {safeLogPath,safeNativeCollectorPath,safeNativeModelPath,MAX_FILE,MAX_CHUNK}=
     require('./experiment_hub_artifact_sync');
 
@@ -195,6 +196,46 @@ function nativeModelPackage(hub,source) {
         receipt.learner_metrics?.next_manifest_sha256!==
             receipt.next_manifest_sha256)
         fail('Mirrored native model completion disagrees with its Hub checkpoint identity.');
+    // The local optimizer and the Hub adapter already require these
+    // immutable finalizers. Verify the same source artifacts in the
+    // coordinator mirror before authorizing cross-machine model transfer;
+    // a model/checkpoint digest alone cannot prove which optimizer attempt
+    // and synchronized GPU group produced the published generation.
+    if(receipt.optimizer_attempt_sha256!==undefined) {
+        if(!SHA.test(String(receipt.optimizer_attempt_sha256||''))||
+            !SHA.test(String(receipt.optimizer_metrics_sha256||'')))
+            fail('Native model source lacks complete optimizer finalizer digests.');
+        const attemptFile=mirroredByMetadata(root,jobId,'optimizer-attempt.json');
+        const metricsFile=mirroredByMetadata(root,jobId,'learner/metrics.json');
+        if(attemptFile.sha!==receipt.optimizer_attempt_sha256||
+            attemptFile.size>64*1024||
+            metricsFile.sha!==receipt.optimizer_metrics_sha256||
+            metricsFile.size>2*1024*1024)
+            fail('Mirrored native optimizer finalizers differ from the committed round.');
+        let attempt,metrics;
+        try {
+            attempt=JSON.parse(fs.readFileSync(attemptFile.file,'utf8'));
+            metrics=JSON.parse(fs.readFileSync(metricsFile.file,'utf8'));
+        }catch{fail('Native optimizer finalizer contains invalid JSON.');}
+        if(attempt?.schema_version!==1||
+            attempt.kind!=='native_optimizer_attempt'||
+            attempt.run_id!==receipt.run_id||
+            attempt.run_config_sha256!==receipt.run_config_sha256||
+            attempt.source_run_config_sha256!==receipt.source_run_config_sha256||
+            attempt.input_checkpoint_sha256!==receipt.input_checkpoint_sha256||
+            attempt.input_manifest_sha256!==receipt.input_manifest_sha256||
+            attempt.learner_group_id!==(receipt.optimizer_group_id??null)||
+            attempt.collection_orders_sha256!==(receipt.collection_orders_sha256??null)||
+            source.frozen_parameters?.optimizer_group===true&&(
+                attempt.learner_group_id!==source.resource_bundle?.id||
+                attempt.learner_node_rank!==0||
+                attempt.learner_nodes!==source.resource_bundle?.size
+            )||
+            !isDeepStrictEqual(metrics,receipt.learner_metrics))
+            fail('Original optimizer attempt and metrics do not authorize this transferred model.');
+    }else if(receipt.optimizer_metrics_sha256!==undefined) {
+        fail('Native model source has metrics without its original optimizer attempt.');
+    }
     const manifest=mirroredFile(root,jobId,'learner/manifest.json',
         receipt.next_manifest_sha256);
     if(manifest.size>1024*1024)fail('Native model manifest exceeds its bounded size.');
