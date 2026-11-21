@@ -646,7 +646,7 @@ fn fleet_offsets(side: usize, count: usize) -> Vec<[f32; 2]> {
 /// This one-time authoring search does not run inside any simulation tick.
 fn mixed_fleet_offsets(
     side: usize, total: usize, mix: FleetMix,
-    catalog: &ShipAssetCatalog,
+    arena_size: Option<u32>, catalog: &ShipAssetCatalog,
 ) -> Result<Vec<[f32; 2]>, Box<dyn Error>> {
     let support = mix.support_count(total);
     let specialist = mix.specialist_count(total);
@@ -675,6 +675,26 @@ fn mixed_fleet_offsets(
             .ok_or_else(|| invalid("source mixed fleet has no sprite extents"))?;
         let half_x = size.x * 0.5;
         let half_y = size.y * 0.5;
+        if matches!(mix, FleetMix::Queen) && kind == 17 {
+            // A Queen is a genuine 128-unit-class factory, not a fighter
+            // squeezed into the classic 320x200 lane. Its source-local
+            // Yellow Jacket wave offset is rotated by its own body pose.
+            // A large real Stage gives the Queen AND spawned minions enough
+            // room without altering CombatWorld's source spawn rules.
+            let half = arena_size.map_or(0.0, |size| size as f32 * 0.5);
+            let queen_x = 200.0_f32;
+            if side != 1 || queen_x + half_x + 16.0 >= half ||
+                half_y + 16.0 >= half ||
+                occupied.iter().any(|&(x, y, half_other_x, half_other_y)|
+                    (queen_x - x).abs() < half_x + half_other_x + 2.0 &&
+                    y.abs() < half_y + half_other_y + 2.0)
+            {
+                return Err(invalid("source Queen needs an unobstructed large native arena").into());
+            }
+            offsets[index] = [queen_x - home, 0.0];
+            occupied.push((queen_x, 0.0, half_x, half_y));
+            continue;
+        }
         let columns = if index >= fighters + specialist {
             &outer_x
         } else {
@@ -1029,12 +1049,12 @@ pub(super) fn archive(
         if matches!(selected.mix[0], FleetMix::Fighters) {
             fleet_offsets(0, selected.fleet_sizes[0])
         } else {
-            mixed_fleet_offsets(0, selected.fleet_sizes[0], selected.mix[0], &catalog)?
+            mixed_fleet_offsets(0, selected.fleet_sizes[0], selected.mix[0], selected.arena_size, &catalog)?
         },
         if matches!(selected.mix[1], FleetMix::Fighters) {
             fleet_offsets(1, selected.fleet_sizes[1])
         } else {
-            mixed_fleet_offsets(1, selected.fleet_sizes[1], selected.mix[1], &catalog)?
+            mixed_fleet_offsets(1, selected.fleet_sizes[1], selected.mix[1], selected.arena_size, &catalog)?
         },
     ];
     let support_count = [
@@ -1053,7 +1073,20 @@ pub(super) fn archive(
     // archetypes ONLY when requested. Their healing/support capabilities,
     // fleet metadata, visuals and colliders come from a known native game
     // scene, never from an approximate handcrafted stats table.
-    let source_archetypes: Value = serde_json::from_str(SOURCE_ARCHETYPES)?;
+    let mut source_archetypes: Value = serde_json::from_str(SOURCE_ARCHETYPES)?;
+    if matches!(selected.mix[1], FleetMix::Queen) {
+        let queen_source: Value = serde_json::from_str(SOURCE_QUEEN)?;
+        let queen = queen_source["ships"].as_array()
+            .and_then(|ships| ships.iter().find(|ship|
+                ship["side"] == 2 && ship["ship_type"] == 17))
+            .ok_or_else(|| invalid("native original Queen scene has no physical source hull"))?
+            .clone();
+        // Preserve the complete source Queen.Spawn minion template. The
+        // shared Level will materialize real Yellow Jackets on its clock.
+        source_archetypes["ships"].as_array_mut()
+            .ok_or_else(|| invalid("native source archetypes are not a ship roster"))?
+            .push(queen);
+    }
     if selected.mining_field {
         // Duplicate the original authenticated physical mining collider
         // into a new, nonconflicting native scene identity. Its ore/health,
@@ -1101,7 +1134,7 @@ pub(super) fn archive(
         ]);
         ship["user_controlled"] = json!(controlled);
         ship["fleet_ship_id"] = json!(ship_id);
-        if side == 1 {
+        if side == 1 && archetype == 5 {
             carrier_parents.push((ship_id, squad_id,
                 fighter_count[side] + specialist_count[side],
                 [75.0 + offset[0], offset[1]], controlled));
@@ -1220,7 +1253,9 @@ pub(super) fn archive(
             let offset = offsets[side][index];
             let base = if supporting { offsets[side][support_origin] }
                 else { [0.0, 0.0] };
-            if supporting && side == 1 {
+            if supporting && side == 1 &&
+                !matches!(selected.mix[side], FleetMix::Queen)
+            {
                 // A Carrier must not be cloned through NativeLevelLayout:
                 // its free Striker deck has real source-owned relationships
                 // and cannot be remapped by a generic single-hull clone.
@@ -1341,10 +1376,12 @@ pub(super) fn archive(
     let level_name = scene["level_name"].as_str()
         .unwrap_or("Fleet Skirmish").to_owned();
     scene["level_name"] = json!(format!(
-        "{level_name}  |  Support: {} {}, {} Carriers  |  Specialist hulls: {} Bees, {} Humans",
+        "{level_name}  |  Support: {} {}, {} {}  |  Specialist hulls: {} Bees, {} Humans",
         support_count[0],
         if matches!(selected.mix[0], FleetMix::Gate) { "WarpGates" } else { "Beehives" },
-        support_count[1], specialist_count[0], specialist_count[1],
+        support_count[1],
+        if matches!(selected.mix[1], FleetMix::Queen) { "Queens" } else { "Carriers" },
+        specialist_count[0], specialist_count[1],
     ));
     if selected.mining_field {
         let title = scene["level_name"].as_str().unwrap_or("Fleet Skirmish");
