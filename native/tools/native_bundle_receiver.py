@@ -32,6 +32,7 @@ CHUNK = 1024 * 1024
 MAX_ARCHIVE_BYTES = 8 * 1024 ** 3
 MAX_CLIENTS = 4
 MAX_DOWNLOAD_ATTEMPTS = 4
+MAX_UPLOAD_ATTEMPTS = 4
 TOKEN_ENV = "BEES_NATIVE_BUNDLE_TOKEN"
 DIGEST_RE = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -61,7 +62,12 @@ def bundle_token(token_file=None):
 
 
 def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha256=None):
-    """Stream a verified portable archive without reading it into RAM."""
+    """Stream a verified portable archive with bounded recoverable retries.
+
+    The collector keeps its already-completed local artifact. If a transport
+    dies, query the receiver's durable receipt before another POST; never
+    replay collection or accept a different bundle under the same identity.
+    """
     original = Path(path).absolute()
     if original.is_symlink():
         raise ValueError("collector archive cannot be a symlink")
@@ -85,6 +91,7 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
     sha256 = archive_sha256 or file_sha256(archive)
     if not DIGEST_RE.fullmatch(sha256):
         raise ValueError("invalid collector archive checksum")
+
     def published_receipt():
         # A completed import is recoverable even when its original response
         # was lost. Query first so a retry never sends an entire archive again.
@@ -110,56 +117,81 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
         finally:
             query.close()
 
-    prior = published_receipt()
-    if prior is not None:
-        return {**prior, "already_received": True,
-                "upload_wall_seconds": time.perf_counter() - started,
-                "receiver": base_url}
-
-    connection = connection_class(parts.hostname, parts.port, timeout=60)
-    try:
-        connection.putrequest("POST", endpoint)
-        connection.putheader("Authorization", "Bearer " + auth)
-        connection.putheader("Content-Type", "application/x-native-rollout-tar")
-        connection.putheader("Content-Length", str(size))
-        connection.putheader("X-Archive-SHA256", sha256)
-        connection.endheaders()
-        with archive.open("rb") as stream:
-            while True:
-                chunk = stream.read(CHUNK)
-                if not chunk:
-                    break
-                connection.send(chunk)
-        response = connection.getresponse()
-        body = response.read(64 * 1024)
-        try:
-            payload = json.loads(body)
-        except (ValueError, UnicodeDecodeError):
-            raise ValueError(f"invalid collector receiver response: HTTP {response.status}")
-        if response.status != 200:
-            raise ValueError(f"collector upload rejected: HTTP {response.status}: {payload.get('error')}")
-        if (payload.get("collector_id") != collector_id or
-                payload.get("archive_sha256") != sha256 or
-                payload.get("archive_bytes") != size):
-            raise ValueError("receiver did not confirm this exact collector archive")
-        return {
-            **payload, "upload_wall_seconds": time.perf_counter() - started,
-            "receiver": base_url,
-        }
-    except (OSError, ValueError, http.client.HTTPException):
-        # Upload may already have committed when the response connection
-        # died. Check its durable receipt once, never publish twice.
+    def confirmed(attempt):
         try:
             prior = published_receipt()
-        except (OSError, ValueError, http.client.HTTPException):
-            prior = None
-        if prior is not None:
-            return {**prior, "already_received": True,
-                    "upload_wall_seconds": time.perf_counter() - started,
-                    "receiver": base_url}
-        raise
-    finally:
-        connection.close()
+        except (OSError, http.client.HTTPException):
+            return None
+        if prior is None:
+            return None
+        return {**prior, "already_received": True,
+                "upload_wall_seconds": time.perf_counter() - started,
+                "upload_attempts": attempt, "receiver": base_url}
+
+    prior = confirmed(0)
+    if prior is not None:
+        return prior
+
+    for attempt in range(1, MAX_UPLOAD_ATTEMPTS + 1):
+        if attempt > 1:
+            time.sleep(min(2 ** (attempt - 2), 8))
+            prior = confirmed(attempt - 1)
+            if prior is not None:
+                return prior
+        connection = None
+        try:
+            connection = connection_class(parts.hostname, parts.port, timeout=60)
+            connection.putrequest("POST", endpoint)
+            connection.putheader("Authorization", "Bearer " + auth)
+            connection.putheader("Content-Type", "application/x-native-rollout-tar")
+            connection.putheader("Content-Length", str(size))
+            connection.putheader("X-Archive-SHA256", sha256)
+            connection.endheaders()
+            with archive.open("rb") as stream:
+                while True:
+                    chunk = stream.read(CHUNK)
+                    if not chunk:
+                        break
+                    connection.send(chunk)
+            response = connection.getresponse()
+            body = response.read(64 * 1024)
+            try:
+                payload = json.loads(body)
+            except (ValueError, UnicodeDecodeError):
+                raise ValueError(f"invalid collector receiver response: HTTP {response.status}")
+            if (response.status == 409 and isinstance(payload, dict) and
+                    payload.get("error") == "collector bundle already published or being received"):
+                # The previous connection can still be finishing import.
+                # Query its receipt rather than accepting a duplicate POST.
+                raise ConnectionError("collector bundle import is still in flight")
+            if response.status != 200:
+                raise ValueError(f"collector upload rejected: HTTP {response.status}: {payload.get('error')}")
+            if (not isinstance(payload, dict) or
+                    payload.get("collector_id") != collector_id or
+                    payload.get("archive_sha256") != sha256 or
+                    payload.get("archive_bytes") != size):
+                raise ValueError("receiver did not confirm this exact collector archive")
+            return {
+                **payload, "upload_wall_seconds": time.perf_counter() - started,
+                "upload_attempts": attempt, "receiver": base_url,
+            }
+        except (OSError, http.client.HTTPException):
+            prior = confirmed(attempt)
+            if prior is not None:
+                return prior
+            if attempt == MAX_UPLOAD_ATTEMPTS:
+                raise
+        except ValueError:
+            # A malformed/negative response is not a transient network
+            # failure. Only a matching committed receipt can override it.
+            prior = confirmed(attempt)
+            if prior is not None:
+                return prior
+            raise
+        finally:
+            if connection is not None:
+                connection.close()
+    raise RuntimeError("collector upload retries exhausted")
 
 
 def download_input_archive(base_url, collector_id, destination, token=None):
