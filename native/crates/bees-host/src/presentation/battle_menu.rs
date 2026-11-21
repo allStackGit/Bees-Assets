@@ -217,6 +217,7 @@ fn select_battle_inner(
             show_shop = false;
             show_transfer = false;
             show_create = false;
+            show_delete = false;
             tactic_edit_index = None;
             career_view = None;
         }
