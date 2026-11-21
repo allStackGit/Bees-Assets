@@ -62,6 +62,191 @@ function evaluationPolicy(value) {
         ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{})};
 }
 
+// Regression monitoring is descriptive by default. Explicit opt-in may
+// request a native Stop only after an independently verified archive proof;
+// neither alerts nor chart points can authorize model promotion.
+function regressionAlertPolicy(value) {
+    if(value===undefined)return undefined;
+    if(!record(value)||Object.keys(value).some(key=>
+        !['window_checkpoints','minimum_drop','stop_on_regression'].includes(key))||
+        Object.keys(value).length!==(value.stop_on_regression===undefined?2:3)||
+        (value.stop_on_regression!==undefined&&value.stop_on_regression!==true)||
+        !Number.isSafeInteger(value.window_checkpoints)||
+        value.window_checkpoints<2||value.window_checkpoints>20||
+        typeof value.minimum_drop!=='number'||
+        !Number.isFinite(value.minimum_drop)||
+        !(value.minimum_drop>0&&value.minimum_drop<=1)||
+        !Object.hasOwn(value,'window_checkpoints')||
+        !Object.hasOwn(value,'minimum_drop'))
+        throw Error('Regression alerts need a 2–20 checkpoint window and an absolute success-rate drop in (0, 1].');
+    return {window_checkpoints:value.window_checkpoints,
+        minimum_drop:value.minimum_drop,
+        ...(value.stop_on_regression===true?{stop_on_regression:true}:{})};
+}
+
+// These names select existing, already validated receipt measurements for
+// presentation. They are not evaluator instructions, proof of a measurement,
+// or model-selection authority. Keep the contract project-neutral.
+function preferredEvaluationMetrics(value) {
+    if(value===undefined)return undefined;
+    if(!Array.isArray(value)||value.length>12||
+        value.some(name=>typeof name!=='string'||
+            !/^[a-z][a-z0-9_]{0,23}$/.test(name))||
+        new Set(value).size!==value.length)
+        throw Error('Preferred evaluation chart measurements need up to 12 distinct metric names.');
+    return value.slice();
+}
+
+// Monitoring suites share the immutable receipt contract, but have no
+// success threshold and cannot authorize a native Stop.
+function monitoringPolicy(value) {
+    if(value==null)return null;
+    if(record(value)&&Object.hasOwn(value,'all_of')) {
+        if(Object.keys(value).some(key=>!['all_of','every_n_checkpoints','include_baseline','include_final',
+            'regression_alert','min_minutes_between_evaluations','preferred_metrics'].includes(key))||
+            (value.min_minutes_between_evaluations!==undefined&&
+             (!Number.isSafeInteger(value.min_minutes_between_evaluations)||
+              value.min_minutes_between_evaluations<1||
+              value.min_minutes_between_evaluations>10080))||
+            (value.include_baseline!==undefined&&typeof value.include_baseline!=='boolean')||
+            (value.include_final!==undefined&&typeof value.include_final!=='boolean')||
+            !Array.isArray(value.all_of)||
+            value.all_of.length<2||value.all_of.length>8||
+            (value.every_n_checkpoints!==undefined&&
+             (!Number.isSafeInteger(value.every_n_checkpoints)||
+              value.every_n_checkpoints<1||value.every_n_checkpoints>1000000)))
+            throw Error('Monitoring requires 2–8 distinct independent suites and a valid cadence.');
+        const rules=value.all_of.map(rule=>{
+            if(record(rule)&&(Object.hasOwn(rule,'regression_alert')||
+                Object.hasOwn(rule,'preferred_metrics')))
+                throw Error('Regression and chart preferences belong to the policy, not individual suite rules.');
+            return monitoringPolicy(rule);
+        });
+        if(rules.some(rule=>!rule||rule.all_of||
+            rule.include_baseline!==undefined||rule.include_final!==undefined)||
+            new Set(rules.map(rule=>rule.suite_id)).size!==rules.length)
+            throw Error('Multi-suite monitoring requires distinct suite IDs; baseline and final scheduling are shared.');
+        if(value.regression_alert?.stop_on_regression===true&&value.include_final===false)
+            throw Error('Regression-based Stop requires final-checkpoint evaluation for independently verified recovery.');
+        return {all_of:rules,...(value.every_n_checkpoints!=null
+            ?{every_n_checkpoints:value.every_n_checkpoints}:{}),
+            ...(value.regression_alert!==undefined
+                ?{regression_alert:regressionAlertPolicy(value.regression_alert)}:{}),
+            ...(value.min_minutes_between_evaluations!==undefined
+                ?{min_minutes_between_evaluations:value.min_minutes_between_evaluations}:{}),
+            ...(value.include_baseline!==undefined?{include_baseline:value.include_baseline}:{}),
+            ...(value.include_final!==undefined?{include_final:value.include_final}:{}),
+            ...(value.preferred_metrics!==undefined
+                ?{preferred_metrics:preferredEvaluationMetrics(value.preferred_metrics)}:{})};
+    }
+    if(!record(value)||Object.keys(value).some(key=>
+        !['suite_id','suite_sha256','min_trials','every_n_checkpoints',
+          'include_baseline','include_final','regression_alert',
+          'min_minutes_between_evaluations','preferred_metrics'].includes(key))||
+        (value.min_minutes_between_evaluations!==undefined&&
+         (!Number.isSafeInteger(value.min_minutes_between_evaluations)||
+          value.min_minutes_between_evaluations<1||
+          value.min_minutes_between_evaluations>10080))||
+        (value.include_baseline!==undefined&&typeof value.include_baseline!=='boolean')||
+        (value.include_final!==undefined&&typeof value.include_final!=='boolean')||
+        typeof value.suite_id!=='string'||!SUITE.test(value.suite_id)||
+        (Object.hasOwn(value,'suite_sha256')&&
+            (typeof value.suite_sha256!=='string'||!SHA256.test(value.suite_sha256)))||
+        !trials(value.min_trials)||
+        (value.every_n_checkpoints!==undefined&&
+         (!Number.isSafeInteger(value.every_n_checkpoints)||
+          value.every_n_checkpoints<1||value.every_n_checkpoints>1000000)))
+        throw Error('Evaluation monitoring requires a suite ID, trial count and valid cadence.');
+    if(value.regression_alert?.stop_on_regression===true&&value.include_final===false)
+        throw Error('Regression-based Stop requires final-checkpoint evaluation for independently verified recovery.');
+    return {suite_id:value.suite_id,min_trials:value.min_trials,
+        ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{}),
+        ...(value.every_n_checkpoints!=null
+            ?{every_n_checkpoints:value.every_n_checkpoints}:{}),
+        ...(value.include_baseline!==undefined?{include_baseline:value.include_baseline}:{}),
+        ...(value.include_final!==undefined?{include_final:value.include_final}:{}),
+        ...(value.regression_alert!==undefined
+            ?{regression_alert:regressionAlertPolicy(value.regression_alert)}:{}),
+        ...(value.min_minutes_between_evaluations!==undefined
+            ?{min_minutes_between_evaluations:value.min_minutes_between_evaluations}:{}),
+        ...(value.preferred_metrics!==undefined
+            ?{preferred_metrics:preferredEvaluationMetrics(value.preferred_metrics)}:{})};
+}
+// A monitoring cadence may also have a success gate, but both policies
+// must describe precisely the same frozen suite set and trial requirements.
+// This preserves checkpoint-coherent Stop authorization without introducing
+// a second evaluator or accepting results from unrelated benchmark suites.
+function compatibleMonitoringStop(monitor,stop) {
+    if(!monitor||!stop)return;
+    if(monitor.include_final===false)
+        throw Error('A success-based Stop requires a final-checkpoint evaluation for verified continuation.');
+    // Per-suite monitoring frequencies run independently. Stop proof must
+    // remain a same-checkpoint batch; no asynchronous suite results can
+    // authorize a native transition or model promotion.
+    if(monitor.all_of?.some(rule=>rule.every_n_checkpoints!==undefined||
+        rule.min_minutes_between_evaluations!==undefined))
+        throw Error('Evaluation-based stopping requires one coordinated multi-suite schedule; remove per-suite update/time frequency overrides.');
+    const watched=evaluationRules(monitor);
+    const gated=evaluationRules(stop);
+    const byId=new Map(watched.map(rule=>[rule.suite_id,rule]));
+    if(Boolean(monitor.all_of)!==Boolean(stop.all_of)||
+        byId.size!==gated.length||gated.some(rule=>{
+            const candidate=byId.get(rule.suite_id);
+            return !candidate||candidate.min_trials!==rule.min_trials||
+                (candidate.suite_sha256||null)!==(rule.suite_sha256||null);
+        }))
+        throw Error('Monitoring and stopping must use identical suite IDs, fingerprints and minimum trial counts.');
+}
+
+function activeEvaluation(job) {
+    return job?.evaluation_monitor||job?.evaluation_stop||null;
+}
+
+// Optional domain measurements remain observational and cannot contribute
+// to the shared success threshold or grant checkpoint-promotion authority.
+function evaluationMeasurements(metrics) {
+    if(metrics===undefined)return undefined;
+    if(!record(metrics)||Object.keys(metrics).length>24)
+        throw Error('Independent evaluation measurements must be a bounded object.');
+    const normalized={};
+    for(const [key,measurement] of Object.entries(metrics)) {
+        if(!/^[a-z][a-z0-9_]{0,23}$/.test(key)||
+            !record(measurement)||
+            Object.keys(measurement).some(k=>!['value','unit'].includes(k))||
+            Object.keys(measurement).length!==2||
+            !['count','ratio','scalar','seconds'].includes(measurement.unit)||
+            typeof measurement.value!=='number'||
+            !Number.isFinite(measurement.value)||
+            Math.abs(measurement.value)>1e12||
+            (measurement.unit==='ratio'&&
+             (measurement.value<0||measurement.value>1))||
+            (measurement.unit==='count'&&
+             (!Number.isSafeInteger(measurement.value)||measurement.value<0)))
+            throw Error('Invalid independent evaluation measurement '+key+'.');
+        normalized[key]={value:measurement.value,unit:measurement.unit};
+    }
+    return normalized;
+}
+
+function verifiedSuiteDefinition(value) {
+    if(value.suite_definition_canonical===undefined)return undefined;
+    const canonical=value.suite_definition_canonical;
+    if(typeof canonical!=='string'||
+        Buffer.byteLength(canonical,'utf8')>2048||
+        !SHA256.test(String(value.suite_sha256||''))||
+        crypto.createHash('sha256').update(canonical,'utf8').digest('hex')!==
+            value.suite_sha256)
+        throw Error('Independent evaluation frozen suite definition fingerprint differs.');
+    let definition;
+    try {definition=JSON.parse(canonical);}
+    catch {throw Error('Independent evaluation frozen suite definition is invalid JSON.');}
+    if(!record(definition)||
+        definition.suite_id!==value.suite_id||
+        (definition.runtime_sha256??null)!==(value.runtime_sha256??null))
+        throw Error('Independent evaluation frozen suite or runtime identity differs.');
+    return canonical;
+}
+
 function evaluationEvidence(value,policy,dispatchId) {
     if(!record(value)||value.schema_version!==1||
         value.suite_id!==policy.suite_id||value.dispatch_id!==dispatchId||
@@ -73,14 +258,62 @@ function evaluationEvidence(value,policy,dispatchId) {
         value.successes<0||value.successes>value.trials||
         (value.success_metric!==undefined&&
             (typeof value.success_metric!=='string'||
-                !/^[a-z][a-z0-9_]{0,63}$/.test(value.success_metric))))
+                !/^[a-z][a-z0-9_]{0,63}$/.test(value.success_metric)))||
+        (Object.hasOwn(value,'steps_completed')&&
+            (!Number.isSafeInteger(value.steps_completed)||value.steps_completed<0))||
+        (Object.hasOwn(value,'runtime_sha256')&&
+            (typeof value.runtime_sha256!=='string'||!SHA256.test(value.runtime_sha256)))||
+        (Object.hasOwn(value,'evaluated_at')&&
+            (typeof value.evaluated_at!=='string'||!Number.isFinite(Date.parse(value.evaluated_at))||
+             new Date(value.evaluated_at).toISOString()!==value.evaluated_at)))
         throw Error('Invalid independent evaluation evidence for this suite and dispatch.');
+    // The exact source is optional for legacy receipts and large suites.
+    // When present it must hash to the same immutable suite fingerprint
+    // already required for checkpoint comparison and Stop authorization.
+    const frozen=verifiedSuiteDefinition(value);
     return {schema_version:1,suite_id:value.suite_id,dispatch_id:dispatchId,
         checkpoint_sha256:value.checkpoint_sha256,trials:value.trials,
         successes:value.successes,
         ...(value.success_metric?{success_metric:value.success_metric}:{}),
-        ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{})};
+        ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{}),
+        ...(value.runtime_sha256?{runtime_sha256:value.runtime_sha256}:{}),
+        ...(value.steps_completed!==undefined?{steps_completed:value.steps_completed}:{}),
+        ...(value.evaluated_at?{evaluated_at:value.evaluated_at}:{}),
+        ...(frozen!==undefined?{suite_definition_canonical:frozen}:{}),
+        ...(value.metrics!==undefined?{metrics:evaluationMeasurements(value.metrics)}:{})};
 }
+// A failed evaluator attempt is an observation, never an evaluation score.
+function evaluationFailure(value,context) {
+    const keys=['schema_version','evaluation_status','project_id','job_id',
+        'dispatch_id','suite_id','suite_sha256','checkpoint_sha256',
+        'runtime_sha256','steps_completed','attempted_at','reason'];
+    if(!record(value)||!record(context)||
+        !SUITE.test(String(context.project_id||''))||
+        !SUITE.test(String(context.suite_id||''))||
+        !UUID.test(String(context.job_id||''))||
+        !UUID.test(String(context.dispatch_id||''))||
+        Object.keys(value).some(key=>!keys.includes(key))||
+        value.schema_version!==1||value.evaluation_status!=='failed'||
+        value.project_id!==context.project_id||
+        value.job_id!==context.job_id||
+        value.dispatch_id!==context.dispatch_id||
+        value.suite_id!==context.suite_id||
+        !SHA256.test(String(value.suite_sha256||''))||
+        !SHA256.test(String(value.checkpoint_sha256||''))||
+        (context.suite_sha256&&value.suite_sha256!==context.suite_sha256)||
+        (value.runtime_sha256!==undefined&&
+            !SHA256.test(String(value.runtime_sha256)))||
+        (value.steps_completed!==undefined&&
+            (!Number.isSafeInteger(value.steps_completed)||value.steps_completed<0))||
+        typeof value.attempted_at!=='string'||
+        !Number.isFinite(Date.parse(value.attempted_at))||
+        new Date(value.attempted_at).toISOString()!==value.attempted_at||
+        typeof value.reason!=='string'||!value.reason||
+        value.reason.length>160||value.reason.split(/\s+/).join(' ')!==value.reason)
+        throw Error('Invalid independent evaluation failed-attempt identity.');
+    return {...value};
+}
+
 function evaluationRules(policy) {
     return policy?.all_of|| (policy?[policy]:[]);
 }
@@ -116,9 +349,10 @@ function suiteIds(value) {
     return value.slice();
 }
 function supportsEvaluation(suites,job) {
-    return !job.evaluation_stop||
+    const policy=activeEvaluation(job);
+    return !policy||
         (suites&&Object.hasOwn(suites,job.project_id)&&
-         evaluationRules(job.evaluation_stop).every(rule=>
+         evaluationRules(policy).every(rule=>
              suites[job.project_id].includes(rule.suite_id)));
 }
 function isWithin(parent,child) {
@@ -135,13 +369,11 @@ function evaluationReader(projectId,evaluationRoot,evaluationSuites,protectedRoo
         isWithin(dir,root)||isWithin(root,dir)))
         throw Error('Evaluation receipts must be separate from source and training artifacts.');
     const suites=Object.freeze(suiteIds(evaluationSuites));
-    return {
-        evaluation_suites:suites,
-        readEvaluation(context) {
-            if(context?.project_id!==projectId||!UUID.test(String(context.job_id||''))||
-                !UUID.test(String(context.dispatch_id||''))||!suites.includes(context.suite_id))
-                throw Error('Invalid independent evaluation identity.');
-            const file=path.join(root,context.dispatch_id+'.'+context.suite_id+'.json');
+    function readRaw(context,suffix) {
+        if(context?.project_id!==projectId||!UUID.test(String(context.job_id||''))||
+            !UUID.test(String(context.dispatch_id||''))||!suites.includes(context.suite_id))
+            throw Error('Invalid independent evaluation identity.');
+        const file=path.join(root,context.dispatch_id+'.'+context.suite_id+suffix);
             if(fs.realpathSync(root)!==root)
                 throw Error('Evaluation directory identity changed.');
             let fd;
@@ -153,17 +385,28 @@ function evaluationReader(projectId,evaluationRoot,evaluationSuites,protectedRoo
                 const bytes=fs.readSync(fd,buffer,0,buffer.length,0);
                 if(bytes<1||bytes>4096)
                     throw Error('Invalid evaluation receipt size.');
-                return evaluationEvidence(JSON.parse(buffer.toString('utf8',0,bytes)),
-                    {suite_id:context.suite_id},context.dispatch_id);
+                return JSON.parse(buffer.toString('utf8',0,bytes));
             }catch(error) {
                 if(error.code==='ENOENT'&&fd===undefined)return null;
                 throw error;
             }finally {
                 if(fd!==undefined)fs.closeSync(fd);
             }
+    }
+    return {
+        evaluation_suites:suites,
+        readEvaluation(context) {
+            const receipt=readRaw(context,'.json');
+            return receipt===null?null:evaluationEvidence(receipt,
+                {suite_id:context.suite_id},context.dispatch_id);
+        },
+        readEvaluationFailure(context) {
+            const failure=readRaw(context,'.failed.json');
+            return failure===null?null:evaluationFailure(failure,context);
         },
     };
 }
 
-module.exports={evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,
+module.exports={evaluationPolicy,monitoringPolicy,compatibleMonitoringStop,activeEvaluation,
+    evaluationEvidence,evaluationFailure,evaluationRules,evaluationComplete,
     suiteIds,supportsEvaluation,evaluationReader,modelFileSha256};

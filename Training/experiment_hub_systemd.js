@@ -5,6 +5,7 @@
 // Printing is the default. --install writes only an absent unit file and
 // deliberately neither enables nor starts it.
 const fs=require('node:fs');
+const {isTailnetIPv4}=require('./experiment_hub_agent_listener');
 const os=require('node:os');
 const path=require('node:path');
 const {parseArgs}=require('node:util');
@@ -12,18 +13,24 @@ const {parseArgs}=require('node:util');
 const NAMES={
     coordinator:'bees-experiment-hub.service',
     agent:'bees-experiment-hub-agent.service',
+    standalone:'bees-experiment-hub-standalone.service',
 };
 // Reject systemd specifiers, shell expansion, whitespace and escapes rather
 // than pretending a path containing them is safely quoted in a unit file.
 const UNIT_PATH=/^\/[A-Za-z0-9._/@:+-]+$/;
 const DIRECTORY_KINDS=new Set([
-    'Training directory','Courier project','Courier snapshots',
+    'Training directory','Standalone Hub data','Courier project','Courier snapshots',
     'Training artifacts','Evaluator scratch','Evaluator receipts',
 ]);
 function localPath(input,kind) {
     if(typeof input!=='string'||!path.isAbsolute(input))
         throw Error(kind+' must be an absolute path.');
-    const canonical=fs.realpathSync(input);
+    // Python virtual environments commonly use bin/python symlinks.
+    // Preserve the explicitly approved invocation path so pyvenv.cfg and
+    // site-packages are used; validate the resolved file separately.
+    // Other unit-file paths retain their canonical no-redirection policy.
+    const canonical=kind==='Python executable'
+        ?path.resolve(input):fs.realpathSync(input);
     if(!UNIT_PATH.test(canonical)||canonical.split('/').includes('..'))
         throw Error(kind+' contains characters that are unsafe in systemd units.');
     const stat=fs.statSync(canonical);
@@ -44,7 +51,7 @@ function privateEnvironmentFile(input) {
     return file;
 }
 function serviceDefinition(kind,{trainingDir=__dirname,nodePath=process.execPath,
-    environmentFile=null}={}) {
+    environmentFile=null,dataRoot=null}={}) {
     if(process.platform!=='linux')
         throw Error('User systemd service generation is supported on Linux only.');
     if(!Object.hasOwn(NAMES,kind))
@@ -52,18 +59,30 @@ function serviceDefinition(kind,{trainingDir=__dirname,nodePath=process.execPath
     const directory=localPath(trainingDir,'Training directory');
     const node=localPath(nodePath,'Node executable');
     const entry=localPath(path.join(directory,kind==='coordinator'
-        ?'bees_experiments.js':'experiment_hub_agent.js'),'Service entrypoint');
+        ?'bees_experiments.js':kind==='standalone'
+            ?'experiment_hub_standalone.js':'experiment_hub_agent.js'),'Service entrypoint');
+    let extraArgs='';
+    if(kind==='standalone') {
+        if(!dataRoot)throw Error('Standalone coordinator requires --data-root.');
+        const root=localPath(dataRoot,'Standalone Hub data');
+        const stat=fs.statSync(root);
+        if(stat.uid!==process.getuid()||(stat.mode&0o077)!==0||
+            !fs.statSync(path.join(root,'hub-v1.json')).isFile())
+            throw Error('Standalone Hub data must contain the existing registry in a private user-owned directory.');
+        extraArgs=' --data-root '+root;
+    }
     let envLine='';
     if(kind==='agent'&&!environmentFile)
         throw Error('Agent service needs --env-file containing its machine ID and enrollment token.');
     if(environmentFile) {
         envLine='EnvironmentFile='+privateEnvironmentFile(environmentFile)+'\n';
     }
-    const title=kind==='coordinator'
-        ?'Bees experiment coordinator':'Experiment Hub native machine agent';
+    const title=kind==='coordinator'?'Bees experiment coordinator':
+        kind==='standalone'?'Standalone Experiment Hub coordinator':
+            'Experiment Hub native machine agent';
     // The Bees operator owns its training children, not the coordinator
     // service. Stop/restart must not kill an independently running learner.
-    const killMode=kind==='coordinator'?'process':'control-group';
+    const killMode=kind==='agent'?'control-group':'process';
     return [
         '[Unit]',
         'Description='+title,
@@ -74,7 +93,7 @@ function serviceDefinition(kind,{trainingDir=__dirname,nodePath=process.execPath
         '[Service]',
         'Type=exec',
         'WorkingDirectory='+directory,
-        'ExecStart='+node+' '+entry,
+        'ExecStart='+node+' '+entry+extraArgs,
         ...(envLine?[envLine.trimEnd()]:[]),
         'UMask=0077',
         'Restart=on-failure',
@@ -82,6 +101,9 @@ function serviceDefinition(kind,{trainingDir=__dirname,nodePath=process.execPath
         'TimeoutStopSec=30s',
         'KillMode='+killMode,
         '',
+        // The standalone Hub and enrolled agent are independently managed
+        // user services; enabling them starts them at user-session startup.
+        ...(kind==='coordinator'?[]:['[Install]','WantedBy=default.target','']),
     ].join('\n');
 }
 function installUnit(kind,content,home=os.homedir()) {
@@ -101,13 +123,18 @@ function positiveInt(input,min,max,label) {
     return value;
 }
 function evaluatorDefinition({
-    project,machine,trainingDir=__dirname,pythonPath,port=null,suites,
+    project,machine,trainingDir=__dirname,pythonPath,port=null,
+    hubHost='127.0.0.1',suites,
     projectRoot,artifactRoot,snapshotRoot,scratch,receiptRoot,enginePath,
     rolloutBinary,environmentFile=null,cpus,ramMb,interval='180',timeout='7200',
+    unitId=null,
 }={}) {
     if(process.platform!=='linux')throw Error('Evaluator timers are Linux-only.');
     if(!['courier','tinybrains','bees_native'].includes(project)||!/^[a-z][a-z0-9_-]{0,47}$/.test(machine||''))
         throw Error('Select a supported evaluator project and registered machine ID.');
+    if(unitId!==null&&(!/^[a-z][a-z0-9_-]{0,31}$/.test(unitId)||
+        ('bees-experiment-hub-'+project+'-'+machine+'-evaluator-'+unitId).length>180))
+        throw Error('Evaluator unit ID must be 1–32 lowercase letters, digits, underscores or hyphens.');
     if(!Array.isArray(suites)||suites.length<1||suites.length>8||
         new Set(suites).size!==suites.length)
         throw Error('Supply 1–8 distinct --suite files for a coordinated benchmark batch.');
@@ -118,9 +145,13 @@ function evaluatorDefinition({
     const targetPort=positiveInt(port??(environmentFile?'7149':'7148'),1,65535,'Port');
     if((targetPort===7148)===Boolean(environmentFile))
         throw Error('Restricted evaluator ports need a private machine --env-file; dashboard port 7148 is local-only.');
+    if((hubHost!=='127.0.0.1'&&!isTailnetIPv4(hubHost))||
+        (hubHost!=='127.0.0.1'&&targetPort!==7149)||
+        ![7148,7149].includes(targetPort))
+        throw Error('Evaluator host must be loopback or a tailnet IPv4 at port 7149.');
     const localEnv=environmentFile?privateEnvironmentFile(environmentFile):null;
     const args=['-B',script,'--machine',machine,'--port',
-        String(targetPort)];
+        String(targetPort),'--hub-host',hubHost];
     for(const suite of suites)
         args.push('--suite',localPath(suite,'Benchmark suite'));
     if(project==='courier') {
@@ -138,7 +169,11 @@ function evaluatorDefinition({
     const memoryBudget=positiveInt(ramMb,512,1048576,'Evaluator RAM MiB');
     const period=positiveInt(interval,60,86400,'Evaluator interval seconds');
     const timeoutSeconds=positiveInt(timeout,60,86400,'Evaluator timeout seconds');
-    const name='bees-experiment-hub-'+project+'-'+machine+'-evaluator';
+    // Legacy units retain their existing names. Separately scheduled suites
+    // use different explicit IDs, avoiding unit collisions without
+    // changing any installed service or timer.
+    const name='bees-experiment-hub-'+project+'-'+machine+'-evaluator'+
+        (unitId?'-'+unitId:'');
     const service=[
         '[Unit]','Description=Independent '+project+' evaluation for '+machine,
         'After=network.target','',
@@ -158,13 +193,30 @@ function evaluatorDefinition({
     ].join('\n');
     return {name,service,timer};
 }
-function installEvaluatorUnits(result,home=os.homedir()) {
+function installEvaluatorUnits(result,home=os.homedir(),{repairPartial=false}={}) {
     const dir=path.join(home,'.config','systemd','user');
     fs.mkdirSync(dir,{recursive:true,mode:0o700});
     const service=path.join(dir,result.name+'.service');
     const timer=path.join(dir,result.name+'.timer');
-    if(fs.existsSync(service)||fs.existsSync(timer))
-        throw Error('Evaluator unit already exists; review and reconcile it manually.');
+    const serviceExists=fs.existsSync(service),timerExists=fs.existsSync(timer);
+    if(serviceExists||timerExists) {
+        // Only an explicit local setup action can finish an interrupted
+        // exclusive-create. A complete or mismatched installation is never
+        // overwritten, and ordinary CLI --install remains exclusive-create.
+        if(!repairPartial||serviceExists===timerExists)
+            throw Error('Evaluator unit already exists; review and reconcile it manually.');
+        const retained=serviceExists?service:timer;
+        const expected=serviceExists?result.service:result.timer;
+        const stat=fs.lstatSync(retained);
+        if(!stat.isFile()||stat.isSymbolicLink()||
+            stat.uid!==process.getuid()||(stat.mode&0o077)!==0||
+            fs.readFileSync(retained,'utf8')!==expected)
+            throw Error('Existing partial evaluator unit differs from its approved definition.');
+        const missing=serviceExists?timer:service;
+        fs.writeFileSync(missing,serviceExists?result.timer:result.service,
+            {encoding:'utf8',flag:'wx',mode:0o600});
+        return {service,timer};
+    }
     fs.writeFileSync(service,result.service,{encoding:'utf8',flag:'wx',mode:0o600});
     try {
         fs.writeFileSync(timer,result.timer,{encoding:'utf8',flag:'wx',mode:0o600});
@@ -180,11 +232,13 @@ function main(argv=process.argv.slice(2)) {
             'training-dir':{type:'string'},
             'node':{type:'string'},
             'env-file':{type:'string'},
+            'data-root':{type:'string'},
             'install':{type:'boolean'},
             'project':{type:'string'},
             'machine':{type:'string'},
             'python':{type:'string'},
             'port':{type:'string'},
+            'hub-host':{type:'string'},
             'suite':{type:'string',multiple:true},
             'project-root':{type:'string'},
             'artifact-root':{type:'string'},
@@ -197,6 +251,7 @@ function main(argv=process.argv.slice(2)) {
             'ram-mb':{type:'string'},
             'interval':{type:'string'},
             'timeout':{type:'string'},
+            'evaluator-id':{type:'string'},
         }});
     if(positionals.length!==1||
         !(Object.hasOwn(NAMES,positionals[0])||positionals[0]==='evaluator'))
@@ -207,6 +262,7 @@ function main(argv=process.argv.slice(2)) {
             project:values.project,machine:values.machine,
             trainingDir:values['training-dir']||__dirname,
             pythonPath:values.python,port:values.port||null,
+            hubHost:values['hub-host']||'127.0.0.1',
             environmentFile:values['env-file']||null,
             suites:values.suite,projectRoot:values['project-root'],
             artifactRoot:values['artifact-root'],snapshotRoot:values['snapshot-root'],
@@ -215,6 +271,7 @@ function main(argv=process.argv.slice(2)) {
             rolloutBinary:values['rollout-binary'],
             cpus:values.cpus,ramMb:values['ram-mb'],
             interval:values.interval||'180',timeout:values.timeout||'7200',
+            unitId:values['evaluator-id']||null,
         });
         if(!values.install) {
             process.stdout.write('# '+result.name+'.service\n'+result.service+
@@ -230,6 +287,7 @@ function main(argv=process.argv.slice(2)) {
         trainingDir:values['training-dir']||__dirname,
         nodePath:values.node||process.execPath,
         environmentFile:values['env-file']||null,
+        dataRoot:values['data-root']||null,
     });
     if(!values.install) {
         process.stdout.write(unit);
@@ -237,7 +295,7 @@ function main(argv=process.argv.slice(2)) {
     }
     const filename=installUnit(kind,unit);
     console.log('Installed (not started): '+filename);
-    console.log('Review the unit, then run: systemctl --user daemon-reload && systemctl --user start '+NAMES[kind]);
+    console.log('Review the unit, then run: systemctl --user daemon-reload && systemctl --user '+(kind==='coordinator'?'start ':'enable --now ')+NAMES[kind]);
 }
 if(require.main===module) {
     try {main();}

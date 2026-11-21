@@ -2,9 +2,12 @@
 """Project-neutral scheduled evaluation coordination and durable cursors."""
 
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import hashlib
 import http.client
+import ipaddress
 import json
+import math
 import os
 import re
 import shutil
@@ -34,31 +37,28 @@ def exclusive(path: Path):
         yield
 
 
-def targets(port: int, machine: str, suite: str, project: str) -> dict:
+def targets(port: int, machine: str, suite: str, project: str,
+            host: str = "127.0.0.1") -> dict:
     query = urlencode({"project_id": project, "machine_id": machine, "suite_id": suite})
-    # A remote worker needs only the restricted agent-only SSH tunnel.
-    # Never transmit its machine token on the privileged dashboard port,
-    # in a URL, or to a network interface other than local loopback.
+    if host != "127.0.0.1":
+        try:
+            address = ipaddress.IPv4Address(host)
+        except ipaddress.AddressValueError as exc:
+            raise ValueError("Remote evaluation requires a literal Tailscale IPv4 address.") from exc
+        if address not in ipaddress.IPv4Network("100.64.0.0/10") or port != 7149:
+            raise ValueError("Remote evaluation is restricted to a tailnet address on port 7149.")
+    elif port not in (7148, 7149):
+        raise ValueError("Local evaluation supports only Hub ports 7148 and 7149.")
     if port == 7148:
-        # Local co-located evaluators retain the historical dashboard path.
         endpoint = "/api/hub/evaluation/targets"
         headers = {}
-    elif 1 <= port <= 65535:
-        # The worker's local agent tunnel can use any available port
-        # (e.g. 17149), while the coordinator stays bound to 7149.
+    else:
         token = os.environ.get("EXPERIMENT_HUB_AGENT_TOKEN", "")
         if not re.fullmatch(r"[a-f0-9]{64}", token):
             raise ValueError("Restricted evaluator endpoint requires the enrolled machine token.")
         endpoint = "/api/hub/agent/evaluation/targets"
-        headers = {
-            "X-Hub-Agent-Token": token,
-            # The coordinator checks its own listener Host, not the local
-            # SSH-forwarded port (which may be 17149 on this worker).
-            "Host": "127.0.0.1:7149",
-        }
-    else:
-        raise ValueError("Invalid local evaluator port.")
-    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        headers = {"X-Hub-Agent-Token": token}
+    connection = http.client.HTTPConnection(host, port, timeout=10)
     try:
         connection.request("GET", f"{endpoint}?{query}", headers=headers)
         with connection.getresponse() as response:
@@ -69,7 +69,6 @@ def targets(port: int, machine: str, suite: str, project: str) -> dict:
         return {job["dispatch_id"]: job for job in jobs}
     finally:
         connection.close()
-
 
 def retain_dispatch_cursors(previous: dict, live: dict) -> dict:
     # Dispatch IDs are immutable across native restarts. Keep watermarks
@@ -167,6 +166,92 @@ def final_checkpoint(artifact_root, job, filename):
     return 10**16, file  # Greater than any supported running checkpoint ordinal.
 
 
+def evaluation_outcome(result, trials: int) -> tuple[int, dict]:
+    """Normalize legacy integer results and optional domain measurements."""
+    if type(result) is int:
+        successes, metrics = result, {}
+    elif isinstance(result, dict) and set(result) == {"successes", "metrics"}:
+        successes, metrics = result["successes"], result["metrics"]
+    else:
+        raise ValueError("Evaluation must return successes or successes plus measurements.")
+    if type(successes) is not int or not 0 <= successes <= trials:
+        raise ValueError("Invalid independent evaluation success count.")
+    if not isinstance(metrics, dict) or len(metrics) > 24:
+        raise ValueError("Invalid independent evaluation measurements.")
+    normalized = {}
+    for key, sample in metrics.items():
+        if (not isinstance(key, str) or
+            not re.fullmatch(r"[a-z][a-z0-9_]{0,23}", key) or
+            not isinstance(sample, dict) or set(sample) != {"value", "unit"} or
+            sample["unit"] not in ("count", "ratio", "scalar", "seconds") or
+            type(sample["value"]) not in (int, float) or
+            not math.isfinite(sample["value"]) or
+            abs(sample["value"]) > 1e12 or
+            (sample["unit"] == "ratio" and not 0 <= sample["value"] <= 1) or
+            (sample["unit"] == "count" and
+             (type(sample["value"]) is not int or not 0 <= sample["value"] < 2**53))):
+            raise ValueError("Invalid independent evaluation measurement.")
+        normalized[key] = {"value": sample["value"], "unit": sample["unit"]}
+    return successes, normalized
+
+
+def receipt_provenance(job: dict, ordinal: int, suite: dict, coordinate=None) -> dict:
+    """Record the tested checkpoint's training coordinate when available."""
+    # A project adapter can provide the measured update stored inside the
+    # exact copied checkpoint. Prefer that to possibly stale trainer status.
+    step = (coordinate if coordinate is not None else
+            job.get("final_steps_completed")
+            if "final_checkpoint_sha256" in job else ordinal)
+    fields = {"evaluated_at": datetime.now(timezone.utc)
+              .isoformat(timespec="milliseconds").replace("+00:00", "Z")}
+    if type(step) is int and 0 <= step <= 2**53 - 1:
+        fields["steps_completed"] = step
+    if isinstance(suite.get("runtime_sha256"), str):
+        fields["runtime_sha256"] = suite["runtime_sha256"]
+    return fields
+
+
+def receipt_with_suite_definition(receipt: dict, suite: dict) -> dict:
+    """Attach the exact frozen suite only when it fits the native receipt cap.
+
+    Suite identity comes from the same pinned definition used for the
+    evaluation, never a recomputed description or an untrusted report.
+    This is inspection evidence, not additional Stop or ranking authority.
+    """
+    canonical = json.dumps(suite, sort_keys=True)
+    if len(canonical.encode("utf-8")) > 2048:
+        return receipt
+    enriched = {**receipt, "suite_definition_canonical": canonical}
+    # The publication format appends one newline; native readers cap the
+    # complete receipt file at 4096 bytes, including that newline.
+    if len(json.dumps(enriched, separators=(",", ":")).encode("utf-8")) > 4095:
+        return receipt
+    return enriched
+
+
+def publish_failure(args, project: str, job: dict, suite: dict,
+                    checkpoint_digest: str, update: int, error: Exception) -> None:
+    """Publish a non-scoring, checkpoint-bound failed attempt.
+
+    This sidecar is observational: it cannot satisfy a success gate or
+    replace the verified success receipt. The Hub validates it again under
+    the native lease and persists accepted evidence separately.
+    """
+    provenance = receipt_provenance(job, update, suite)
+    reason = " ".join(str(error).split())[:160] or type(error).__name__
+    failure = {
+        "schema_version": 1, "evaluation_status": "failed",
+        "project_id": project, "job_id": job["job_id"],
+        "dispatch_id": job["dispatch_id"],
+        "suite_id": suite["suite_id"], "suite_sha256": suite_digest(suite),
+        "checkpoint_sha256": checkpoint_digest,
+        "attempted_at": provenance.pop("evaluated_at"),
+        "reason": reason,
+        **provenance,
+    }
+    print(publish(args.receipt_root, failure, suffix=".failed.json"))
+
+
 def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict, expected_digest: str) -> bool:
     try:
         receipt = json.loads(read_bounded(path, 4096))
@@ -191,6 +276,91 @@ def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict, expected_d
         )
     except (FileNotFoundError, KeyError, TypeError, ValueError):
         return False
+
+
+def completed_recently(path: Path, dispatch: str, suite_id: str,
+                       fingerprint: str, minutes: int) -> bool:
+    """Throttle only a verified receipt from this dispatch and frozen suite.
+
+    A time interval is a minimum spacing between completed evaluations,
+    not a substitute for a new checkpoint or the update-based cadence.
+    """
+    if type(minutes) is not int or not 1 <= minutes <= 10080:
+        raise ValueError("Invalid minimum time between independent evaluations.")
+    try:
+        value = json.loads(read_bounded(path, 4096))
+    except FileNotFoundError:
+        return False
+    if (value.get("schema_version") != 1 or
+        value.get("dispatch_id") != dispatch or
+        value.get("suite_id") != suite_id or
+        value.get("suite_sha256") != fingerprint):
+        return False
+    timestamp = value.get("evaluated_at")
+    if not isinstance(timestamp, str):
+        return False  # A legacy receipt cannot prove a completed clock interval.
+    try:
+        when = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        if when.tzinfo is None:
+            raise ValueError("Missing evaluator time zone.")
+        seconds = (datetime.now(timezone.utc) - when).total_seconds()
+    except ValueError as error:
+        raise ValueError("Invalid evaluator receipt timestamp.") from error
+    if seconds < -60:
+        raise ValueError("Evaluation receipt is from the future; inspect evaluator clock.")
+    return seconds < minutes * 60
+
+
+def awaits_archive_ack(path: Path, job: dict, suite_id: str,
+                       fingerprint: str) -> bool:
+    """Do not overwrite the single published receipt before Hub archival.
+
+    A verified native agent may inspect a published receipt after a delayed
+    heartbeat or after the Hub restarts. The coordinator returns only the
+    last *durably archived* receipt, never the bounded candidate cache.
+    No training or native job lifecycle is blocked by this evaluation-only
+    throttle.
+    """
+    try:
+        receipt = json.loads(read_bounded(path, 4096))
+    except FileNotFoundError:
+        return False
+    if (not isinstance(receipt, dict) or
+        receipt.get("schema_version") != 1 or
+        receipt.get("dispatch_id") != job["dispatch_id"] or
+        receipt.get("suite_id") != suite_id or
+        receipt.get("suite_sha256") != fingerprint or
+        not isinstance(receipt.get("checkpoint_sha256"), str) or
+        not SHA256.fullmatch(receipt["checkpoint_sha256"])):
+        raise ValueError("Published evaluator receipt has unexpected identity; retain for inspection.")
+    # On a verified terminal job, native Inspect is allowed to accept
+    # only the final model fingerprint. A pending intermediate receipt can
+    # no longer enter the archive and must not block the required final
+    # evaluation. Training and checkpoint ownership remain unchanged.
+    final = job.get("final_checkpoint_sha256")
+    if final is not None and final != receipt["checkpoint_sha256"]:
+        return False
+    archived = job.get("archived_evaluation")
+    # Compare complete, normalized measurement evidence. A matching model
+    # digest alone cannot acknowledge a contradictory measured result.
+    fields = ("schema_version", "dispatch_id", "suite_id", "suite_sha256",
+              "checkpoint_sha256", "runtime_sha256", "steps_completed",
+              "evaluated_at", "trials", "successes", "metrics")
+    return not isinstance(archived, dict) or any(
+        receipt.get(field) != archived.get(field) for field in fields)
+
+
+def archive_matches_checkpoint(job: dict, checkpoint: str,
+                               suite_digest_value: str) -> bool:
+    """A durable Hub observation can de-duplicate work after scratch loss."""
+    receipt = job.get("archived_evaluation")
+    return (isinstance(receipt, dict) and
+            receipt.get("checkpoint_sha256") == checkpoint and
+            receipt.get("suite_sha256") == suite_digest_value and
+            type(receipt.get("trials")) is int and
+            receipt["trials"] >= job["min_trials"] and
+            type(receipt.get("successes")) is int and
+            0 <= receipt["successes"] <= receipt["trials"])
 
 
 def flush_receipt(args, suite: dict, pending: dict, expected_digest: str) -> None:
@@ -220,11 +390,22 @@ def flush_receipt(args, suite: dict, pending: dict, expected_digest: str) -> Non
     # worker and Hub verify independently. Do not discard completed work
     # because a heartbeat expires during a long independent evaluation.
     destination = args.receipt_root / f"{dispatch}.{suite['suite_id']}.json"
-    if not passed_receipt(destination, dispatch, suite, job, expected_digest):
+    # Monitoring results are checkpoint-indexed observations, not terminal
+    # threshold passes. A newer checkpoint must replace the current receipt.
+    # Stop-gated evaluations keep the existing pass-until-final behavior.
+    if job.get("monitor_only"):
+        try:
+            existing = json.loads(read_bounded(destination, 4096))
+        except (FileNotFoundError, ValueError, json.JSONDecodeError):
+            existing = None
+        if existing != receipt:
+            print(publish(args.receipt_root, receipt))
+    elif not passed_receipt(destination, dispatch, suite, job, expected_digest):
         print(publish(args.receipt_root, receipt))
 
 
-def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evaluate_checkpoint):
+def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint,
+                    evaluate_checkpoint, verify_checkpoint=None):
     suite_id = suite["suite_id"]
     state = args.scratch / f"{project}-evaluation-{args.machine}.{suite_id}.json"
     digest = suite_digest(suite)
@@ -241,7 +422,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
             flush_receipt(args, receipt_suite, pending, digest)
             save_cursor(state, {"suite_sha256": digest, "dispatches": prior["dispatches"]})
             return
-        live = targets(args.port, args.machine, suite_id, project)
+        live = targets(args.port, args.machine, suite_id, project, getattr(args, 'hub_host', '127.0.0.1'))
         cursor = retain_dispatch_cursors(prior["dispatches"], live)
         saved = {"suite_sha256": digest, "dispatches": cursor}
         # Persist a rotation order across calls; a newer checkpoint on one
@@ -266,18 +447,46 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                     print(f"{project} evaluation target {dispatch} requires a different suite definition.", file=sys.stderr)
                     continue
                 receipt = args.receipt_root / f"{dispatch}.{suite_id}.json"
-                if passed_receipt(receipt, dispatch, receipt_suite, job, digest):
+                if awaits_archive_ack(receipt, job, suite_id, digest):
+                    print(f"{project} evaluator {dispatch} awaiting Hub archive for "
+                          f"{suite_id}; preserving previous checkpoint receipt.",
+                          file=sys.stderr)
+                    continue
+                # A monitoring-only result does not finish a suite: keep
+                # observing newer checkpoints. An exact final result is reusable.
+                if passed_receipt(receipt, dispatch, receipt_suite, job, digest) and (
+                    not job.get("monitor_only") or "final_checkpoint_sha256" in job
+                ):
                     continue
                 checkpoint = find_checkpoint(job)
-                if not checkpoint or ("final_checkpoint_sha256" not in job and checkpoint[0] <= cursor[dispatch]):
+                if not checkpoint:
                     continue
-                update, file = checkpoint
+                update, file = checkpoint[:2]
+                coordinate = checkpoint[2] if len(checkpoint) > 2 else update
+                if "final_checkpoint_sha256" not in job:
+                    cadence = job.get("every_n_checkpoints", 1)
+                    if type(cadence) is not int or not 1 <= cadence <= 1000000:
+                        raise ValueError("Invalid checkpoint evaluation cadence.")
+                    previous = cursor[dispatch]
+                    if update <= previous or (previous > 0 and
+                                              update - previous < cadence):
+                        continue
+                    # Establish a durable cursor without evaluating the first
+                    # available checkpoint when the baseline is disabled.
+                    if previous == 0 and job.get("include_baseline", True) is False:
+                        cursor[dispatch] = update
+                        continue
+                    interval = job.get("min_minutes_between_evaluations")
+                    if interval is not None and completed_recently(
+                        receipt, dispatch, suite_id, digest, interval):
+                        continue
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 print(f"{project} evaluation target {dispatch} skipped: {exc}", file=sys.stderr)
                 continue
             # Do not consume a checkpoint before its evaluation has
             # produced a durable pending receipt. An interrupted evaluator
             # must be able to retry the same immutable checkpoint.
+            verified_checkpoint = None
             try:
                 with evaluation_workspace(state) as work:
                     # Training may prune or replace its checkpoint after
@@ -288,10 +497,34 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                         checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
                     if job.get("final_checkpoint_sha256", checkpoint_digest) != checkpoint_digest:
                         raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
-                    successes = evaluate_checkpoint(job, frozen, checkpoint_digest, work)
-                if type(successes) is not int or not 0 <= successes <= receipt_suite["trials"]:
-                    raise ValueError("Invalid evaluation success count.")
-            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                    if verify_checkpoint is not None:
+                        verify_checkpoint(frozen, checkpoint)
+                    # A copied model without matching update identity is
+                    # not a failed match at the previous training coordinate.
+                    verified_checkpoint = checkpoint_digest
+                    # A new checkpoint filename is not proof of new policy
+                    # bytes. Avoid repeated expensive deterministic matches
+                    # against the same immutable model in monitoring mode.
+                    if job.get("monitor_only") and (
+                        archive_matches_checkpoint(job, checkpoint_digest, digest) or
+                        (passed_receipt(receipt, dispatch, receipt_suite, job, digest) and
+                         json.loads(read_bounded(receipt, 4096)).get(
+                             "checkpoint_sha256") == checkpoint_digest)
+                    ):
+                        cursor.pop(dispatch)
+                        cursor[dispatch] = update
+                        save_cursor(state, saved)
+                        return
+                    result = evaluate_checkpoint(job, frozen, checkpoint_digest, work)
+                successes, measurements = evaluation_outcome(result, receipt_suite["trials"])
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
+                if verified_checkpoint is not None:
+                    try:
+                        publish_failure(args, project, job, suite,
+                                        verified_checkpoint, coordinate, exc)
+                    except (OSError, RuntimeError, ValueError, TypeError, KeyError) as archive_error:
+                        print(f"{project} failed-attempt observation unavailable: {archive_error}",
+                              file=sys.stderr)
                 # Keep this checkpoint eligible, but rotate a failing dispatch
                 # behind other workers so it cannot starve their evaluations.
                 cursor[dispatch] = cursor.pop(dispatch)
@@ -299,12 +532,14 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                 raise
             cursor.pop(dispatch)
             cursor[dispatch] = update
-            pending = {"target": job, "receipt": {
+            pending = {"target": job, "receipt": receipt_with_suite_definition({
                 "schema_version": 1, "suite_id": suite_id, "suite_sha256": digest, "dispatch_id": dispatch,
                 "checkpoint_sha256": checkpoint_digest, "trials": receipt_suite["trials"], "successes": successes,
                 **({"success_metric": receipt_suite["success_metric"]}
                    if receipt_suite.get("success_metric") else {}),
-            }}
+                **({"metrics": measurements} if measurements else {}),
+                **receipt_provenance(job, update, suite, coordinate),
+            }, suite)}
             save_cursor(state, {**saved, "pending_receipt": pending})
             flush_receipt(args, receipt_suite, pending, digest)
             save_cursor(state, saved)
@@ -313,7 +548,8 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
             save_cursor(state, saved)
 
 
-def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
+def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint,
+               verify_checkpoint=None):
     """Evaluate every required suite on one immutable checkpoint snapshot.
 
     suites: sequence of (frozen suite, receipt suite with trial count).
@@ -388,7 +624,7 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                                 "dispatches": prior["dispatches"]})
             return
 
-        target_sets = {sid: targets(args.port, args.machine, sid, project)
+        target_sets = {sid: targets(args.port, args.machine, sid, project, getattr(args, 'hub_host', '127.0.0.1'))
                        for sid, _ in ordered}
         expected_ids = set(by_id)
         common = set.intersection(*(set(items) for items in target_sets.values()))
@@ -401,8 +637,9 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                     for job in per_suite) or
                 len({job["job_id"] for job in per_suite}) != 1 or
                 len({job["artifact_lineage_root_id"] for job in per_suite}) != 1):
-                print(f"{project} batch target {dispatch} needs the complete "
-                      "frozen suite set for one job and artifact lineage.",
+                print(f"{project} batch target {dispatch} needs one frozen "
+                      "suite set and lineage. Different monitoring frequencies "
+                      "require independent --suite pollers, not a batch.",
                       file=sys.stderr)
                 continue
             live[dispatch] = per_suite
@@ -427,6 +664,14 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                           "benchmark suite definition; restore the pinned "
                           "suite or use a new experiment.", file=sys.stderr)
                     continue
+                if any(awaits_archive_ack(
+                    args.receipt_root / f"{dispatch}.{sid}.json",
+                    target_sets[sid][dispatch], sid, definitions[sid]
+                ) for sid, _ in ordered):
+                    print(f"{project} evaluator batch {dispatch} awaiting Hub "
+                          "archive acknowledgement; preserving existing receipts.",
+                          file=sys.stderr)
+                    continue
                 seen = []
                 for sid, (_, receipt_suite) in ordered:
                     job = target_sets[sid][dispatch]
@@ -437,12 +682,45 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                     seen.append(json.loads(read_bounded(destination, 4096))[
                         "checkpoint_sha256"])
                 else:
-                    if len(set(seen)) == 1:
+                    if len(set(seen)) == 1 and (
+                        not jobs[0].get("monitor_only") or
+                        "final_checkpoint_sha256" in jobs[0]
+                    ):
                         continue
                 checkpoint = find_checkpoint(jobs[0])
-                if not checkpoint or ("final_checkpoint_sha256" not in jobs[0] and checkpoint[0] <= cursor[dispatch]):
+                if not checkpoint:
                     continue
-                update, file = checkpoint
+                update, file = checkpoint[:2]
+                coordinate = checkpoint[2] if len(checkpoint) > 2 else update
+                if "final_checkpoint_sha256" not in jobs[0]:
+                    cadence = jobs[0].get("every_n_checkpoints", 1)
+                    if (type(cadence) is not int or not 1 <= cadence <= 1000000 or
+                        any(job.get("every_n_checkpoints", 1) != cadence
+                            for job in jobs)):
+                        raise ValueError("Invalid or inconsistent checkpoint evaluation cadence.")
+                    previous = cursor[dispatch]
+                    if update <= previous or (previous > 0 and
+                                              update - previous < cadence):
+                        continue
+                    if previous == 0 and jobs[0].get("include_baseline", True) is False:
+                        cursor[dispatch] = update
+                        continue
+                    interval = jobs[0].get("min_minutes_between_evaluations")
+                    if interval is not None:
+                        if any(job.get("min_minutes_between_evaluations") != interval
+                               for job in jobs):
+                            raise ValueError("Inconsistent multi-suite time interval.")
+                        # Do not delay completion of a partially published
+                        # cohort: time spacing applies only after all suites
+                        # finished the same previous checkpoint.
+                        if len(seen) == len(ordered) and len(set(seen)) == 1:
+                            # Enforce spacing since the last completed
+                            # suite, not the first suite in a long batch.
+                            if any(completed_recently(
+                                args.receipt_root / f"{dispatch}.{sid}.json",
+                                dispatch, sid, definitions[sid], interval)
+                                for sid, _ in ordered):
+                                continue
                 if not file.is_file():
                     continue
             except (OSError, ValueError, TypeError, KeyError) as exc:
@@ -452,6 +730,8 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
 
             # One durable snapshot is shared by every suite. The trainer
             # may prune its source at any moment; copy and verify it first.
+            verified_checkpoint = None
+            attempted_suite = None
             try:
                 with evaluation_workspace(state) as temp:
                     # Evaluators may create checkpoint.pt or policy.zip
@@ -463,19 +743,40 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                     if any(job.get("final_checkpoint_sha256", checkpoint_digest) != checkpoint_digest
                            for job in jobs):
                         raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
+                    if verify_checkpoint is not None:
+                        verify_checkpoint(frozen, checkpoint)
+                    # A copied model without matching update identity is
+                    # not a failed match at the previous training coordinate.
+                    verified_checkpoint = checkpoint_digest
+                    if jobs[0].get("monitor_only") and all(
+                        archive_matches_checkpoint(
+                            job, checkpoint_digest, definitions[sid]
+                        ) or (
+                            passed_receipt(
+                                args.receipt_root / f"{dispatch}.{sid}.json",
+                                dispatch, receipt_suite, job, definitions[sid]
+                            ) and json.loads(read_bounded(
+                                args.receipt_root / f"{dispatch}.{sid}.json", 4096)
+                            ).get("checkpoint_sha256") == checkpoint_digest
+                        )
+                        for (sid, (_, receipt_suite)), job in zip(ordered, jobs)
+                    ):
+                        cursor.pop(dispatch)
+                        cursor[dispatch] = update
+                        save_cursor(state, saved)
+                        return
                     pending = []
                     for (sid, (suite, receipt_suite)), job in zip(ordered, jobs):
+                        attempted_suite = (job, suite)
                         # Dispose of large models and replays after each
                         # suite; only the shared immutable input survives.
                         with tempfile.TemporaryDirectory(
                             prefix=f"{sid}-", dir=temp
                         ) as work:
-                            successes = evaluate_checkpoint(
+                            result = evaluate_checkpoint(
                                 job, frozen, checkpoint_digest, Path(work), suite)
-                        if (type(successes) is not int or
-                            not 0 <= successes <= receipt_suite["trials"]):
-                            raise ValueError("Invalid batch evaluation success count.")
-                        pending.append({"target": job, "receipt": {
+                        successes, measurements = evaluation_outcome(result, receipt_suite["trials"])
+                        pending.append({"target": job, "receipt": receipt_with_suite_definition({
                             "schema_version": 1, "suite_id": sid,
                             "suite_sha256": definitions[sid],
                             "dispatch_id": dispatch,
@@ -484,8 +785,18 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                             "successes": successes,
                             **({"success_metric": receipt_suite["success_metric"]}
                                if receipt_suite.get("success_metric") else {}),
-                        }})
-            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                            **({"metrics": measurements} if measurements else {}),
+                            **receipt_provenance(job, update, suite, coordinate),
+                        }, suite)})
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
+                if verified_checkpoint is not None and attempted_suite is not None:
+                    failed_job, failed_suite = attempted_suite
+                    try:
+                        publish_failure(args, project, failed_job, failed_suite,
+                                        verified_checkpoint, coordinate, exc)
+                    except (OSError, RuntimeError, ValueError, TypeError, KeyError) as archive_error:
+                        print(f"{project} failed-attempt observation unavailable: {archive_error}",
+                              file=sys.stderr)
                 # A bad snapshot cannot consume the cursor or starve other
                 # eligible dispatches on subsequent scheduled invocations.
                 cursor[dispatch] = cursor.pop(dispatch)
