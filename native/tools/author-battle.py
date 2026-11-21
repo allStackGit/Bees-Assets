@@ -1043,16 +1043,34 @@ def author(args) -> tuple[dict, dict, dict]:
                   if args.extraction_center is not None
                   else scene["starting_positions"][2 - owner])
         lower, upper = scene["bounds"]["min"], scene["bounds"]["max"]
+        half = args.extraction_half_extents
         if (not all(math.isfinite(v) for v in center) or
-                not all(lower[i] + 5 < center[i] < upper[i] - 5
-                        for i in range(2))):
-            raise ValueError("extraction center must be inside the native map with room for its exit zone")
+                not all(math.isfinite(v) and v > 0 for v in half) or
+                not 0 <= args.extraction_layer < 32):
+            raise ValueError("extraction needs finite center/positive half-extents and a valid collider layer")
+        if args.retreat_on_exit:
+            # Uranus II's real exit is centered at the left map boundary,
+            # with its 50x256 BoxCollider extending into the playable
+            # area. Do not move this source-authored zone inward.
+            valid_center = all(
+                center[i] + half[i] > lower[i] and
+                center[i] - half[i] < upper[i]
+                for i in range(2)
+            )
+        else:
+            valid_center = all(
+                lower[i] + half[i] < center[i] < upper[i] - half[i]
+                for i in range(2)
+            )
+        if not valid_center:
+            raise ValueError("extraction trigger must intersect its playable map bounds")
         if not math.isfinite(args.extraction_radius) or args.extraction_radius <= 0:
             raise ValueError("extraction activation radius must be finite and positive")
         level["extraction"] = {
             "player_side": owner, "center": center,
-            "half_extents": [5.0, 5.0],
-            "activation_radius": args.extraction_radius, "layer": 19,
+            "half_extents": half,
+            "activation_radius": args.extraction_radius,
+            "layer": args.extraction_layer,
             **({"retreat_on_exit": True} if args.retreat_on_exit else {}),
         }
         if args.objective == "escort":
@@ -1585,6 +1603,11 @@ def main() -> None:
                         help="extraction or escort: world X Y (default: enemy home)")
     parser.add_argument("--extraction-radius", type=float, default=15,
                         help="extraction or escort: activation distance before exit trigger appears")
+    parser.add_argument("--extraction-half-extents", type=float, nargs=2,
+                        default=[5.0, 5.0],
+                        help="extraction or escort: trigger half-width and half-height; Uranus II uses 25 128")
+    parser.add_argument("--extraction-layer", type=int, default=19,
+                        help="extraction or escort: source collision layer; Uranus II's exit uses 20")
     parser.add_argument("--retreat-on-exit", action="store_true",
                         help="extraction only: withdraw surviving fleet ships without military victory, as in Uranus II")
     parser.add_argument("--escort-type", type=int,
@@ -1656,8 +1679,10 @@ def main() -> None:
             args.protect_type is not None or args.survive_seconds is not None):
         parser.error("--protect-type and --survive-seconds require --objective survival")
     if args.objective not in ("extraction", "escort") and (
-            args.extraction_center is not None or args.extraction_radius != 15):
-        parser.error("--extraction-center and --extraction-radius require --objective extraction or escort")
+            args.extraction_center is not None or args.extraction_radius != 15 or
+            args.extraction_half_extents != [5.0, 5.0] or
+            args.extraction_layer != 19):
+        parser.error("extraction settings require --objective extraction or escort")
     if args.retreat_on_exit and (args.objective != "extraction" or args.trainable):
         parser.error("--retreat-on-exit requires a non-training extraction battle")
     if args.objective != "escort" and (
