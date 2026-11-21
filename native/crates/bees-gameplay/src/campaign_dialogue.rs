@@ -23,6 +23,7 @@ pub enum CampaignDialogueSpec {
     /// Source Neptune 3 ending branches on persistent Factory ownership,
     /// not the presence of a surviving Factory in the deployed roster.
     NeptunePressingForward { player_side: i32, has_factory: bool },
+    PlutoEvacuation { player_side: i32, protected_ship_id: i64 },
 }
 
 impl CampaignDialogueSpec {
@@ -30,7 +31,8 @@ impl CampaignDialogueSpec {
         match self {
             Self::TitaniaMinesweeper { player_side } |
             Self::TitaniaBeenoculars { player_side, .. } |
-            Self::NeptunePressingForward { player_side, .. } => player_side,
+            Self::NeptunePressingForward { player_side, .. } |
+            Self::PlutoEvacuation { player_side, .. } => player_side,
         }
     }
 }
@@ -72,12 +74,14 @@ pub enum CampaignCue {
     NeptunePressingForwardBriefing,
     NeptunePressingForwardVictory,
     NeptunePressingForwardDefeat { has_factory: bool },
+    PlutoEvacuationBriefing,
+    PlutoEvacuationComplete { personnel_saved: u32, shield_health: i32, shield_max: i32 },
 }
 
 impl CampaignCue {
     pub fn is_briefing(self) -> bool {
         matches!(self, Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. } |
-            Self::NeptunePressingForwardBriefing)
+            Self::NeptunePressingForwardBriefing | Self::PlutoEvacuationBriefing)
     }
 }
 
@@ -87,6 +91,7 @@ enum DialogueMode {
     Minesweeper { tracked_tank: Option<i64> },
     Beenoculars { under_heavy_fire: bool, next_milestone: usize },
     NeptunePressingForward { has_factory: bool },
+    PlutoEvacuation { protected_ship_id: i64 },
 }
 
 /// Exact authored campaign progress at the shared fixed-step recovery
@@ -131,6 +136,10 @@ impl CampaignDialogue {
                 DialogueMode::NeptunePressingForward { has_factory },
                 CampaignCue::NeptunePressingForwardBriefing,
             ),
+            CampaignDialogueSpec::PlutoEvacuation { protected_ship_id, .. } => (
+                DialogueMode::PlutoEvacuation { protected_ship_id },
+                CampaignCue::PlutoEvacuationBriefing,
+            ),
         };
         Self { player_side: spec.player_side(), mode, cue, sequence: 0 }
     }
@@ -167,6 +176,9 @@ impl CampaignDialogue {
                 saved == authored,
             (DialogueMode::NeptunePressingForward { has_factory: saved },
                 DialogueMode::NeptunePressingForward { has_factory: authored }) =>
+                saved == authored,
+            (DialogueMode::PlutoEvacuation { protected_ship_id: saved },
+                DialogueMode::PlutoEvacuation { protected_ship_id: authored }) =>
                 saved == authored,
             _ => false,
         };
@@ -208,6 +220,13 @@ impl CampaignDialogue {
             (DialogueMode::NeptunePressingForward { has_factory: authored },
                 CampaignCue::NeptunePressingForwardDefeat { has_factory }) =>
                 sequence == 1 && *authored == has_factory,
+            (DialogueMode::PlutoEvacuation { .. },
+                CampaignCue::PlutoEvacuationBriefing) => sequence == 0,
+            (DialogueMode::PlutoEvacuation { .. },
+                CampaignCue::PlutoEvacuationComplete {
+                    personnel_saved, shield_health, shield_max,
+                }) => sequence == 1 && personnel_saved <= 60 &&
+                    shield_max > 0 && (0..=shield_max).contains(&shield_health),
             _ => false,
         };
         if !valid {
@@ -225,7 +244,10 @@ impl CampaignDialogue {
         self.cue = cue;
     }
 
-    pub(crate) fn outcome(&self, winner_side: i32) -> CampaignCue {
+    pub(crate) fn outcome(
+        &self, winner_side: i32, world: &CombatWorld,
+        survival: Option<SurvivalStatus>,
+    ) -> CampaignCue {
         match (&self.mode, winner_side == self.player_side) {
             (DialogueMode::Minesweeper { .. }, true) => CampaignCue::MinesweeperVictory,
             (DialogueMode::Minesweeper { .. }, false) => CampaignCue::MinesweeperDefeat,
@@ -235,6 +257,17 @@ impl CampaignDialogue {
                 CampaignCue::NeptunePressingForwardVictory,
             (DialogueMode::NeptunePressingForward { has_factory }, false) =>
                 CampaignCue::NeptunePressingForwardDefeat { has_factory: *has_factory },
+            (DialogueMode::PlutoEvacuation { protected_ship_id }, _) => {
+                let status = survival.expect("Pluto evacuation requires survival");
+                let ship = world.ship(*protected_ship_id)
+                    .expect("Pluto evacuation has an authoritative HumanTarget");
+                CampaignCue::PlutoEvacuationComplete {
+                    personnel_saved: (status.elapsed_seconds / 5.0)
+                        .floor().clamp(0.0, 60.0) as u32,
+                    shield_health: ship.vitals.health(),
+                    shield_max: ship.vitals.max_health(),
+                }
+            },
         }
     }
 
