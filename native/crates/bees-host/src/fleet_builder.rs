@@ -323,6 +323,7 @@ pub(super) struct FleetChoice {
     /// FishTank spectators use both scripted factions but still need
     /// ordinary one-World gameplay, replay and durable crash recovery.
     benchmark: bool,
+    spectator_episodes: usize,
     ai_tactics: AiTactics,
     hivemind: Option<NativeHiveMindFleet>,
     objective: Objective,
@@ -378,6 +379,12 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
         let Some(value) = choose_ai_tactics()? else { return Ok(None); };
         value
     };
+    let spectator_episodes = if mode == 3 {
+        let Some(count) = choose_resource(
+            "AI-vs-AI battles in this spectator session", &[1, 4, 16, 64],
+        )? else { return Ok(None); };
+        count
+    } else { 1 };
     let Some(objective) = choose_objective()? else { return Ok(None); };
     let player_side = match mode {
         0 | 4 => Some(1),
@@ -413,7 +420,7 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
     };
     Ok(Some(FleetChoice {
         player_side, fleet_sizes, squad_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
-        ai_both: mode == 3, benchmark: false, ai_tactics, hivemind, objective,
+        ai_both: mode == 3, benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
@@ -477,6 +484,7 @@ pub(super) fn choose_multiplayer(
         fleet_sizes, squad_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
         ai_both: false,
         benchmark: false,
+        spectator_episodes: 1,
         ai_tactics: AiTactics::Aggressive,
         hivemind, objective, reinforcements, objective_side,
         benchmark_worlds: 1, benchmark_workers: 1,
@@ -522,6 +530,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
         player_side: None, fleet_sizes, squad_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
         ai_both: true,
         benchmark: true,
+        spectator_episodes: 1,
         ai_tactics, hivemind: None, objective, objective_side,
         reinforcements, benchmark_worlds: worlds, benchmark_workers: threads,
     }))
@@ -1940,6 +1949,14 @@ pub(super) fn archive(
         run["run_id"] = json!(format!(
             "{run_id}-{}", selected.reinforcements.label(),
         ));
+    }
+    if selected.ai_both && !selected.benchmark {
+        // FishTank-style spectator sessions repeat the exact same physics
+        // World with new episode seeds and native source AI commands. No
+        // second game, training policy, or headless benchmark is involved.
+        // Terminal fleets are reset by the ordinary Level lifecycle.
+        run["episodes_per_world"] = json!(selected.spectator_episodes);
+        run["status_every_rounds"] = json!(2_000);
     }
     if selected.benchmark {
         // A repeatable multi-CPU stress case: the runner does no GUI or
