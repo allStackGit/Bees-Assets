@@ -3979,7 +3979,15 @@ fn run_all_campaign_missions(
         let Some(mission) = &entry.mission else { continue };
         let progress = catalog.load_progress(output_root)?;
         if progress.completed(&mission.id) { continue; }
-        if !mission.requires.iter().all(|id| progress.completed(id)) {
+        if !mission.unlocked(&progress) {
+            // Mutually exclusive source campaign paths are not failed
+            // missions. Skip a branch whose explicit outcome gate did not
+            // occur, but retain the old error for an incomplete mandatory
+            // predecessor in a linear campaign.
+            if mission.has_outcome_alternatives() &&
+                mission.requires.iter().all(|id| progress.completed(id)) {
+                continue;
+            }
             return Err(invalid(format!(
                 "campaign batch cannot unlock mission {}: an earlier prerequisite is incomplete",
                 mission.id,
