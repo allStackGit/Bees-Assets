@@ -77,6 +77,9 @@ impl CombatWorld {
         self.obstacle_by_id.remove(&entity_id);
         self.map_objects.remove(&entity_id);
         self.range_visible_map_objects.remove(&entity_id);
+        for visible in self.range_visible_map_objects_by_side.values_mut() {
+            visible.remove(&entity_id);
+        }
         self.discovery.retire(DiscoveryKind::MapObject, entity_id);
         self.free_obstacle_slots.push(index);
         true
