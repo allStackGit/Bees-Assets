@@ -31,14 +31,17 @@ const TITANIA_LOOP_END: f32 = 185.461_18;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Effect {
-    LightLaser, SmallLaser, BigLaser, BeamCannon, FlagshipLaser, QueenLaser,
+    LightLaser, LightLaserAlt, SmallLaser, SmallLaserAlt,
+    BigLaser, BigLaserAlt, BeamCannon, FlagshipLaser, QueenLaser,
     RocketLaunch, StrikerBomb, Explosion, SmallExplosion, MediumExplosion,
     LargeExplosion, HugeExplosion, Warp, Button, FireBargeClick, Intercom,
 }
 
 impl Effect {
-    const ALL: [Self; 17] = [
-        Self::LightLaser, Self::SmallLaser, Self::BigLaser,
+    const ALL: [Self; 20] = [
+        Self::LightLaser, Self::LightLaserAlt,
+        Self::SmallLaser, Self::SmallLaserAlt,
+        Self::BigLaser, Self::BigLaserAlt,
         Self::BeamCannon, Self::FlagshipLaser, Self::QueenLaser, Self::RocketLaunch,
         Self::StrikerBomb, Self::Explosion, Self::SmallExplosion,
         Self::MediumExplosion, Self::LargeExplosion, Self::HugeExplosion,
@@ -48,8 +51,11 @@ impl Effect {
     fn file(self) -> &'static str {
         match self {
             Self::LightLaser => "Light Cannon Laser.mp3",
+            Self::LightLaserAlt => "Light Cannon Laser 2.mp3",
             Self::SmallLaser => "Small Cannon Laser.mp3",
+            Self::SmallLaserAlt => "Small Cannon Laser 2.mp3",
             Self::BigLaser => "Big Cannon Laser.mp3",
+            Self::BigLaserAlt => "Big Cannon Laser 2.mp3",
             Self::BeamCannon => "Beam Cannon.mp3",
             Self::FlagshipLaser => "Flagship Laser Shot.mp3",
             Self::QueenLaser => "Queen Laser.mp3",
@@ -64,6 +70,16 @@ impl Effect {
             Self::Button => "Beez Button Click.mp3",
             Self::FireBargeClick => "Fire Barge Detonation Click.mp3",
             Self::Intercom => "Intercom Notification Sound Effect.mp3",
+        }
+    }
+
+    fn clip_variant(self, alternate: bool) -> Self {
+        if !alternate { return self; }
+        match self {
+            Self::LightLaser => Self::LightLaserAlt,
+            Self::SmallLaser => Self::SmallLaserAlt,
+            Self::BigLaser => Self::BigLaserAlt,
+            _ => self,
         }
     }
 
@@ -471,6 +487,9 @@ impl NativeGameAudio {
                         event["weapon_sound_type"].as_u64()
                             .and_then(|sound| u8::try_from(sound).ok()),
                         kind,
+                    ))
+                    .map(|effect| effect.clip_variant(
+                        event["weapon_sound_variant"].as_bool().unwrap_or(false)
                     )),
                 _ => None,
             };
@@ -567,6 +586,11 @@ impl NativeGameAudio {
             let Some(effect) = Effect::weapon(
                 view.combat.weapon_sound_type(ship_id, slot), kind,
             ) else { continue };
+            let effect = effect.clip_variant(
+                crate::presentation::mounted_weapon_clip_variant(
+                    ship_id, slot, view.world_id.0, view.episode_revision,
+                )
+            );
             let Some(point) = view.combat.ship_body(ship_id)
                 .map(|body| body.motion.position) else { continue };
             if !on_screen(visible, point) { continue; }
