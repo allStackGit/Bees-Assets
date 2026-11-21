@@ -386,7 +386,7 @@ fn choose_mining_field(terrain: Terrain) -> Result<Option<bool>, Box<dyn Error>>
     let rows = [
         BattleMenuRow { title: "Combat only", status: "  [No mineral deposits]",
             unlocked: true },
-        BattleMenuRow { title: "Mineral field", status: "  [Physical mineable asteroid]",
+        BattleMenuRow { title: "Mineral field", status: "  [Two physical mineable asteroids]",
             unlocked: true },
     ];
     let mut selected = 0_usize;
@@ -1020,8 +1020,17 @@ pub(super) fn archive(
         // range (10_000+). Layout validation requires every clone identity
         // to be higher than all authored scene entities.
         mine["entity_id"] = json!(31_i64);
+        let mut other = mine.clone();
+        other["entity_id"] = json!(32_i64);
+        let original = mine["position"].as_array().ok_or_else(||
+            invalid("source mineable asteroid has no physical position"))?;
+        let x = original.first().and_then(Value::as_f64)
+            .ok_or_else(|| invalid("source mineable asteroid has no X coordinate"))?;
+        let y = original.get(1).and_then(Value::as_f64)
+            .ok_or_else(|| invalid("source mineable asteroid has no Y coordinate"))?;
+        other["position"] = json!([-x, -y]);
         scene["activate_mining"] = json!(true);
-        scene["mining_asteroids"] = json!([mine]);
+        scene["mining_asteroids"] = json!([mine, other]);
     }
     let available = source_archetypes["ships"].as_array().ok_or_else(||
         invalid("native skirmish has no source ship archetypes"))?;
