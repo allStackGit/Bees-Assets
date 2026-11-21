@@ -214,6 +214,8 @@ struct ExtractionConfig {
     half_extents: [f32; 2],
     activation_radius: f32,
     layer: u8,
+    #[serde(default)]
+    retreat_on_exit: bool,
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -680,6 +682,7 @@ fn make_setup(
         extraction: level.extraction.as_ref().map(|zone| bees_sim::combat_world::ExtractionZone {
             player_side: zone.player_side, center: vec2(zone.center), half_extents: vec2(zone.half_extents),
             activation_radius: zone.activation_radius, layer: zone.layer,
+            retreat_on_exit: zone.retreat_on_exit,
         }),
         survival: level.survival.map(|objective| bees_sim::episode_terminal::SurvivalObjective {
             defending_side: objective.defending_side,
@@ -6076,6 +6079,16 @@ fn run_battle(
              )))
         );
         if let Some(zone) = &level.extraction {
+            // The original Uranus II retreat is a completed defeat, not an
+            // extraction victory. Do not enable this route in PPO episodes
+            // or a campaign that advances only on military victory.
+            if zone.retreat_on_exit && (level.groups.is_some() ||
+                level.survival.is_some() || level.demolition.is_some() ||
+                level.escort.is_some() ||
+                mission.is_some_and(|mission| !mission.advances_on_finished()))
+            {
+                return Err(invalid("Campaign withdrawal requires a finish-advancing non-policy extraction mission").into());
+            }
             if !sides.contains(&zone.player_side) ||
                 mission.is_some_and(|mission| mission.player_side != zone.player_side) ||
                 !objective_has_controller(zone.player_side)
