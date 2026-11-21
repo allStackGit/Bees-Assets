@@ -104,7 +104,8 @@ def trained_opponent(run_path: Path, run: dict, scene_path: Path,
 
 
 def input_mission(run_path: Path, player_side: int,
-                  story: str | None = None) -> tuple[dict, dict, dict]:
+                  story: str | None = None,
+                  require_career_fleet: bool = True) -> tuple[dict, dict, dict]:
     run = read(run_path)
     levels = run.get("levels")
     inline_stage = (
@@ -238,7 +239,10 @@ def input_mission(run_path: Path, player_side: int,
         scene["local_player_side"] = player_side
     ships = {ship["entity_id"]: ship for ship in scene["ships"]
              if ship["side"] == player_side}
-    if not ships or not any(ship.get("persistent_fleet") for ship in ships.values()):
+    if not ships:
+        raise ValueError("native game needs original physical ships on the selected side")
+    if require_career_fleet and not any(
+            ship.get("persistent_fleet") for ship in ships.values()):
         raise ValueError("campaign needs an authored persistent player fleet")
     squads = [squad for squad in scene["squads"]
               if squad["side"] == player_side]
@@ -246,7 +250,7 @@ def input_mission(run_path: Path, player_side: int,
     # HumanTarget) with input deliberately disabled by their source script.
     # Require player authority for the durable fleet, not temporary allies.
     if not squads:
-        raise ValueError("campaign requires source player-side squads")
+        raise ValueError("native game requires source player-side squads")
     if any(has_policy(ship) or
            (ship.get("persistent_fleet") and not ship.get("user_controlled"))
            for ship in ships.values()):
@@ -270,8 +274,13 @@ def input_mission(run_path: Path, player_side: int,
                         for ship_id in squad_members(squad)
                         if ships[ship_id].get("persistent_fleet")))
         if not members:
-            if squad.get("saved_squad_id") not in (None, 0):
-                raise ValueError("transient player squad cannot own a SavedSquad identity")
+            # Ordinary post-campaign games are not a durable career.
+            # Their real source squads may have authoring IDs without
+            # an associated persistent FleetShip; preserve those IDs
+            # unchanged rather than inventing or writing campaign saves.
+            if (require_career_fleet and
+                    squad.get("saved_squad_id") not in (None, 0)):
+                raise ValueError("transient campaign squad cannot own a SavedSquad identity")
             continue
         if not squad["user_controlled"] or not squad["can_accept_input"]:
             raise ValueError("durable player squad must own explicit input authority")
@@ -1040,7 +1049,9 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         )
     for game_id, side, run_source in args.postcampaign_game:
         source_path = run_source.resolve(strict=True)
-        game_scene, game_run, provenance = input_mission(source_path, side)
+        game_scene, game_run, provenance = input_mission(
+            source_path, side, require_career_fleet=False,
+        )
         if game_scene.get("native_game_schema") != 1:
             raise ValueError(
                 f"post-campaign game {game_id} requires a complete native game scene"
