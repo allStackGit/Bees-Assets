@@ -340,6 +340,10 @@ pub struct RemotePlayMeasurements {
     pub fog_visibility_candidate_checks: u64,
     pub fog_visibility_sources_indexed: u64,
     pub fog_visibility_grid_queries: u64,
+    /// Actual side-scoped visibility views omitted on quiet physical ticks.
+    /// Counts skipped allocations/index preparations, not estimated time.
+    #[serde(default)]
+    pub fog_query_views_skipped_no_output: u64,
     /// Source-authored shrinking vision masks, sampled only for connected sides.
     pub fog_fading_source_ticks: u64,
     pub fog_fading_sources_peak: usize,
@@ -1155,7 +1159,10 @@ impl NativeRemotePlay {
         let publish_frame = self.last_state != Some(episode) ||
             view.tick % STATE_EVERY_TICKS == 0 ||
             view.terminal_result.is_some() || self.force_initial_state;
-        if !has_events && !publish_frame { return; }
+        if !has_events && !publish_frame {
+            self.measurements.fog_query_views_skipped_no_output += sides.len() as u64;
+            return;
+        }
         let mut vision = HashMap::<i32, RemoteFogSources>::new();
         for &side in &sides {
             let source = self.fog_by_side.get(&side)
