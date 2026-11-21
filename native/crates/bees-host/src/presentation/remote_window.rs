@@ -93,6 +93,11 @@ struct WireCounts {
     minimap_camera_moves: u64,
     ship_type_multiselections: u64,
     selection_drag_preview_frames: u64,
+    weapon_range_draws: u64,
+    weapon_charge_draws: u64,
+    weapon_aim_draws: u64,
+    command_target_draws: u64,
+    striker_bomb_indicator_draws: u64,
     tactical_button_clicks: u64,
     squad_tab_clicks: u64,
     shooting_strategy_choices: u64,
@@ -1449,7 +1454,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     patrol_start: Option<Vec2>, metrics: &WireCounts, dialogue_line: usize,
     held_fire_active: bool, shooting_menu: bool, shooting_focus: u8,
     visual: &RemoteVisual, fraction: f32,
-    artwork: &RemoteArtwork, show_art: bool, obstacle_hull_draws: &mut u64,
+    artwork: &RemoteArtwork, show_art: bool, show_weapon_ranges: bool,
+    combat_hud_draws: &mut [u64; 5], obstacle_hull_draws: &mut u64,
     minimap_ship_markers: &mut u64, minimap_objective_markers: &mut u64,
     fog_masked_pixels: &mut u64) {
     // F6 avoids allocating or clearing a second per-frame art layer,
@@ -1511,6 +1517,11 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 s["owner"]["squad_id"].as_i64().is_some_and(|id|selected.contains(&id)))
             .flat_map(|s|s["members"].as_array().into_iter().flatten())
             .filter_map(Value::as_i64).collect();
+        let command_targets: HashSet<i64> = state["squads"].as_array().into_iter().flatten()
+            .filter(|s|s["controllable"]==true &&
+                s["owner"]["squad_id"].as_i64().is_some_and(|id|selected.contains(&id)))
+            .flat_map(|s|s["command_targets"].as_array().into_iter().flatten())
+            .filter_map(Value::as_i64).collect();
         for ship in state["ships"].as_array().into_iter().flatten() {
             let Some(point)=visual.position(ship, 0, fraction) else { continue };
             let center=screen(camera,point);
@@ -1551,8 +1562,60 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                      (center.0-10+(20.0*(health/maximum).clamp(0.0,1.0)) as i32,center.1+14),
                      color);
             }
+            if command_targets.contains(&ship["id"].as_i64().unwrap_or(-1)) {
+                let (x,y)=center;
+                let marker=0xffba6d;
+                line(pixels,(x-11,y),(x,y-11),marker);
+                line(pixels,(x,y-11),(x+11,y),marker);
+                line(pixels,(x+11,y),(x,y+11),marker);
+                line(pixels,(x,y+11),(x-11,y),marker);
+                combat_hud_draws[3]+=1;
+            }
+            if let Some(loaded)=ship["striker_bomb_ready"].as_bool() {
+                line(pixels,(center.0+12,center.1-9),(center.0+17,center.1-9),
+                    if loaded {0x87dfad} else {0x987d7d});
+                combat_hud_draws[4]+=1;
+            }
             if selected_ship {
                 outline(pixels,center.0-15,center.1-17,30,34,0xf9f0a1);
+                for weapon in ship["weapons"].as_array().into_iter().flatten() {
+                    let Some(slot)=weapon["slot"].as_u64().filter(|&slot|slot<5) else {continue};
+                    if let Some(charge)=weapon["charge"].as_array().filter(|v|v.len()==3) {
+                        if let (Some(elapsed),Some(total),Some(paused))=
+                            (charge[0].as_f64(),charge[1].as_f64(),charge[2].as_bool())
+                        {
+                            if total>0.0 && total.is_finite() && elapsed.is_finite() {
+                                let y=center.1+18+slot as i32*3;
+                                let x=center.0-10;
+                                line(pixels,(x,y),(x+20,y),0x34435a);
+                                line(pixels,(x,y),(x+(20.0*(elapsed/total).clamp(0.0,1.0)) as i32,y),
+                                    if paused {0xe1a34b} else {0x62b9ff});
+                                combat_hud_draws[1]+=1;
+                            }
+                        }
+                    }
+                    if !show_weapon_ranges {continue;}
+                    if let Some(range)=weapon["range"].as_array().filter(|v|v.len()==4) {
+                        if let (Some(x),Some(y),Some(radius),Some(enabled))=
+                            (range[0].as_f64(),range[1].as_f64(),range[2].as_f64(),range[3].as_bool())
+                        {
+                            let offset=Vec2::new(x as f32,y as f32);
+                            let radius=radius as f32;
+                            let range_center=point+offset;
+                            if range_center.is_finite() && radius.is_finite() && radius>0.0 {
+                                RemotePrimaryHull::Circle {center:range_center,radius}
+                                    .draw(pixels,camera,if enabled {0x355b80} else {0x555555});
+                                combat_hud_draws[0]+=1;
+                            }
+                        }
+                    }
+                    if let Some(aim)=point_from_wire(&weapon["aim"]) {
+                        let (x,y)=screen(camera,aim);
+                        line(pixels,(x-4,y),(x+4,y),0xf6df85);
+                        line(pixels,(x,y-4),(x,y+4),0xf6df85);
+                        combat_hud_draws[2]+=1;
+                    }
+                }
                 if let Some(destination)=ship["destination"].as_array() {
                     if destination.len()==2 {
                         if let (Some(x),Some(y))=(destination[0].as_f64(),destination[1].as_f64()) {
@@ -2079,6 +2142,7 @@ pub fn connect_remote(
     let mut held_fire_active=false;
     let mut held_fire_target:Option<Vec2>=None;
     let mut show_art=true;
+    let mut show_weapon_ranges=false;
     let mut shooting_menu=false;
     let mut shooting_focus=1_u8;
     let mut hud_press:Option<HudAction>=None;
@@ -2098,6 +2162,12 @@ pub fn connect_remote(
             } else {
                 "Fast geometric display enabled".into()
             };
+        }
+        if window.is_key_pressed(Key::B, KeyRepeat::No) {
+            show_weapon_ranges=!show_weapon_ranges;
+            peer.notice=if show_weapon_ranges {
+                "Selected weapon ranges enabled".into()
+            } else { "Selected weapon ranges hidden".into() };
         }
         if window.is_key_pressed(Key::F7, KeyRepeat::No) {
             peer.notice=if audio.toggle_muted() {
@@ -2850,11 +2920,17 @@ pub fn connect_remote(
         let mut map_ships = 0_u64;
         let mut map_objectives = 0_u64;
         let mut fog_masked = 0_u64;
+        let mut combat_hud_draws = [0_u64; 5];
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
             held_fire_active,shooting_menu,shooting_focus,
-            &peer.visual,visual_fraction,&artwork,show_art,
-            &mut hulls, &mut map_ships, &mut map_objectives, &mut fog_masked);
+            &peer.visual,visual_fraction,&artwork,show_art,show_weapon_ranges,
+            &mut combat_hud_draws, &mut hulls, &mut map_ships, &mut map_objectives, &mut fog_masked);
+        peer.metrics.weapon_range_draws += combat_hud_draws[0];
+        peer.metrics.weapon_charge_draws += combat_hud_draws[1];
+        peer.metrics.weapon_aim_draws += combat_hud_draws[2];
+        peer.metrics.command_target_draws += combat_hud_draws[3];
+        peer.metrics.striker_bomb_indicator_draws += combat_hud_draws[4];
         // The local client shows the selection box while dragging. Draw
         // only the current screen-space intent; the real ship collisions
         // are evaluated from the host-supplied hulls on release.
@@ -2931,6 +3007,11 @@ pub fn connect_remote(
         "minimap_camera_moves":peer.metrics.minimap_camera_moves,
         "ship_type_multiselections":peer.metrics.ship_type_multiselections,
         "selection_drag_preview_frames":peer.metrics.selection_drag_preview_frames,
+        "weapon_range_draws":peer.metrics.weapon_range_draws,
+        "weapon_charge_draws":peer.metrics.weapon_charge_draws,
+        "weapon_aim_draws":peer.metrics.weapon_aim_draws,
+        "command_target_draws":peer.metrics.command_target_draws,
+        "striker_bomb_indicator_draws":peer.metrics.striker_bomb_indicator_draws,
         "tactical_button_clicks":peer.metrics.tactical_button_clicks,
         "squad_tab_clicks":peer.metrics.squad_tab_clicks,
         "shooting_strategy_choices":peer.metrics.shooting_strategy_choices,

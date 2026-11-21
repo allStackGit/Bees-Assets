@@ -280,6 +280,10 @@ pub struct RemotePlayMeasurements {
     /// never once per cooperative peer who consumes the same bytes.
     pub snapshot_unique_encoded_bytes: u64,
     pub snapshot_projection_wall_seconds: f64,
+    #[serde(default)]
+    pub weapon_status_slots_projected: u64,
+    #[serde(default)]
+    pub command_target_markers_projected: u64,
     /// Includes only enqueue and nonblocking write attempts made during
     /// snapshot broadcast, not later terminal drain or reliable replies.
     pub snapshot_socket_wall_seconds: f64,
@@ -1703,9 +1707,39 @@ fn current_state(
                 } else { (0u8, elapsed) }),
             _ => None,
         };
+        // Compact fixed-slot presentation data for owned weapons only.
+        // These are real collider and timer values, not nominal ranges
+        // from the artwork catalog or a client-side weapon simulation.
+        let weapons: Vec<_> = if owned {
+            (0..5).filter_map(|slot| {
+                let range = view.combat.weapon_range(ship.entity_id, slot).ok().flatten();
+                let charge = view.combat.weapon_charge(ship.entity_id, slot).ok().flatten();
+                if range.is_none() && charge.is_none() { return None; }
+                let aim = view.combat.weapon_automatic_status(ship.entity_id, slot)
+                    .ok().flatten().and_then(|status| status.asteroid_aim_point)
+                    .filter(|&point| !fog || sources.covers(point, measurements));
+                measurements.weapon_status_slots_projected += 1;
+                Some(json!({
+                    "slot": slot,
+                    "range": range.map(|range| {
+                        let offset = range.center - body.motion.position;
+                        json!([offset.x, offset.y, range.radius, range.enabled])
+                    }),
+                    "charge": charge.map(|charge| [
+                        json!(charge.elapsed_seconds), json!(charge.event_seconds), json!(charge.paused),
+                    ]),
+                    "aim": aim.map(|point| [point.x, point.y]),
+                }))
+            }).collect()
+        } else { Vec::new() };
         Some(json!({
             "id": ship.entity_id,
             "side": ship.side, "ship_type": ship.ship_type,
+            "weapons": weapons,
+            "striker_bomb_ready": if ship.ship_type == 19 {
+                view.combat.game_striker_bomb_ready(ship.entity_id)
+                    .or_else(|| view.combat.policy_striker_bomb_ready(ship.entity_id))
+            } else { None },
             "x": body.motion.position.x, "y": body.motion.position.y,
             "rotation": body.motion.rotation_degrees,
             "collider": wire_primary_hull(body.shape()),
@@ -1794,8 +1828,25 @@ fn current_state(
         let command = if owned { view.commands.current_kind(owner)
             .map(|kind| format!("{kind:?}")) } else { None };
         let permissions = view.player_authority.player_permissions(owner);
+        // Same MarkTargets rule as the local renderer, restricted to
+        // already disclosed live hulls. Never serialize hidden enemy IDs.
+        let command_targets: Vec<_> = if owned &&
+            view.commands.current_selection(owner).is_some_and(|selection|
+                matches!(selection.origin(),
+                    bees_gameplay::commands::NativeCommandOrigin::Local(local)
+                    if local.source == bees_gameplay::commands::NativeLocalCommandSource::Player) &&
+                matches!(selection.kind(),
+                    bees_hivemind::dispatch::LocalCommandKind::Aggressive |
+                    bees_hivemind::dispatch::LocalCommandKind::BombingRun))
+        {
+            view.commands.selected_enemy(owner).and_then(|target| view.roster.get(target))
+                .into_iter().flat_map(|target| target.members.iter().copied())
+                .filter(|id| visible_ids.contains(id)).collect()
+        } else { Vec::new() };
+        measurements.command_target_markers_projected += command_targets.len() as u64;
         Some(json!({
             "owner": owner, "side": squad.side, "owned": owned,
+            "command_targets": command_targets,
             "controllable": owned && permissions.is_some_and(|p| p.can_accept_input),
             // Source Ctrl+A selects only top-level player squads. A live
             // Queen/Carrier child may be individually controllable, but
