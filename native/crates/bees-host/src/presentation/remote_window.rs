@@ -1170,7 +1170,8 @@ fn squad_for_ship<'a>(state: &'a Value, id: i64, side: i64) -> Option<&'a Value>
             members.iter().any(|member| member.as_i64() == Some(id))))
 }
 fn hit<'a>(state: &'a Value, camera: NativeCamera, x: i32, y: i32,
-    visual: &RemoteVisual, fraction: f32)
+    visual: &RemoteVisual, fraction: f32,
+    ship_filter: impl Fn(&Value) -> bool, obstacle_filter: impl Fn(&Value) -> bool)
     -> Option<(&'static str, &'a Value)>
 {
     // A foreground ship wins over an obstacle underneath its hull.
@@ -1179,6 +1180,7 @@ fn hit<'a>(state: &'a Value, camera: NativeCamera, x: i32, y: i32,
     let mut ship_hit=None;
     let mut best_ship=i32::MAX;
     for ship in state["ships"].as_array().into_iter().flatten() {
+        if !ship_filter(ship) { continue; }
         let Some(point)=visual.position(ship,0,fraction) else {continue};
         let (sx,sy)=screen(camera,point);
         let distance=(sx-x).pow(2)+(sy-y).pow(2);
@@ -1196,6 +1198,7 @@ fn hit<'a>(state: &'a Value, camera: NativeCamera, x: i32, y: i32,
     let mut selected = None;
     let mut nearest = i32::MAX;
     for obj in state["obstacles"].as_array().into_iter().flatten() {
+        if !obstacle_filter(obj) { continue; }
         let Some(point) = visual.position(obj, 2, fraction) else { continue };
         let overlap = remote_primary_hull(obj, point,
             visual.heading_for(obj, 2, fraction))
@@ -1826,7 +1829,35 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
     x: i32,y: i32, mode: Option<TargetMode>) -> Result<(),Box<dyn Error>> {
     if x<0||x>=FIELD as i32||y<0||y>=HEIGHT as i32{return Ok(())}
     let Some(state)=peer.state.as_ref() else{return Ok(())};
-    let hit=hit(state,camera,x,y,&peer.visual,peer.visual.fraction());
+    // Resolve eligible targets before comparing hull distance. A friendly
+    // ship over a mining rock or a non-healer in front of a Beehive must
+    // not mask the explicit command's actual target. Context clicks follow
+    // the same Attack -> Retreat -> Heal -> Mining priority as local play.
+    let pick = |target_mode| {
+        hit(state, camera, x, y, &peer.visual, peer.visual.fraction(),
+            |ship| match target_mode {
+                Some(TargetMode::Attack | TargetMode::Circle | TargetMode::RightSwipe |
+                    TargetMode::LeftSwipe | TargetMode::InAndOut) => ship["friendly"] == false,
+                Some(TargetMode::Guard) => ship["friendly"] == true,
+                Some(TargetMode::Heal) => ship["friendly"] == true &&
+                    ship["ship_type"].as_u64() == Some(u64::from(bees_sim::combat_world::BEEHIVE_TYPE)),
+                Some(TargetMode::Retreat) => ship["friendly"] == true &&
+                    ship["ship_type"].as_u64() == Some(u64::from(bees_sim::combat_world::WARP_GATE_TYPE)),
+                _ => false,
+            },
+            |object| match target_mode {
+                Some(TargetMode::Mine) => object["mining"] == true,
+                None => state["campaign_objective"]["kind"] == "demolition" &&
+                    state["campaign_objective"]["attacking_side"].as_i64() == Some(i64::from(peer.side)) &&
+                    object["id"] == state["campaign_objective"]["target_map_object_id"],
+                _ => false,
+            })
+    };
+    let (mode, hit) = if mode.is_none() {
+        [TargetMode::Attack, TargetMode::Retreat, TargetMode::Heal, TargetMode::Mine]
+            .into_iter().find_map(|candidate| pick(Some(candidate)).map(|target| (Some(candidate), Some(target))))
+            .unwrap_or_else(|| (None, pick(None)))
+    } else { (mode, pick(mode)) };
     let action=match (mode,hit) {
         (Some(TargetMode::Attack | TargetMode::Circle | TargetMode::RightSwipe |
               TargetMode::LeftSwipe | TargetMode::InAndOut),Some(("ship",target))) |
@@ -1845,22 +1876,12 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
             };
             ("support",json!({"action":action}))
         }
-        (Some(TargetMode::Guard),Some(("ship",target))) |
-        (None,Some(("ship",target))) if target["friendly"]==true => {
+        (Some(TargetMode::Guard),Some(("ship",target))) if target["friendly"]==true => {
             let Some(squad)=squad_for_ship(state,target["id"].as_i64().unwrap_or(-1),
                 target["side"].as_i64().unwrap_or(0)) else {
                 return Err(invalid("friendly target has no visible squad").into())
             };
-            if mode.is_none() && squad["owner"]["squad_id"].as_i64()
-                .is_some_and(|id| selected.contains(&id))
-            {
-                // A context click on one's already-selected formation is a
-                // destination order, not a request to guard itself.
-                let point = camera.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
-                ("move",json!({"destination":{"x":point.x,"y":point.y}}))
-            } else {
-                ("support",json!({"action":{"Guard":{"target":squad["owner"]}}}))
-            }
+            ("support",json!({"action":{"Guard":{"target":squad["owner"]}}}))
         }
         (Some(TargetMode::Mine),Some(("obstacle",target))) |
         (None,Some(("obstacle",target))) if target["mining"]==true => {
@@ -1885,7 +1906,19 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
             ("fire",json!({"target":{"x":point.x,"y":point.y}}))
         }
         (Some(TargetMode::Heal),Some(("ship",target))) if target["friendly"]==true => {
-            ("support",json!({"action":{"Heal":{"beehive_ids":[target["id"]]}}}))
+            let squad = squad_for_ship(state, target["id"].as_i64().unwrap_or(-1),
+                target["side"].as_i64().unwrap_or(0))
+                .ok_or_else(|| invalid("healing target has no visible squad"))?;
+            // The local source sends all live Beehives in GetShips order.
+            // Use only the server's disclosed members, not an inferred roster.
+            let beehive_ids: Vec<i64> = squad["members"].as_array().into_iter().flatten()
+                .filter_map(Value::as_i64)
+                .filter(|&id| state["ships"].as_array().into_iter().flatten().any(|ship|
+                    ship["id"].as_i64() == Some(id) && ship["friendly"] == true &&
+                    ship["ship_type"].as_u64() == Some(u64::from(bees_sim::combat_world::BEEHIVE_TYPE))))
+                .collect();
+            if beehive_ids.is_empty() { return Err(invalid("no live visible Beehives").into()); }
+            ("support",json!({"action":{"Heal":{"beehive_ids":beehive_ids}}}))
         }
         (Some(TargetMode::Retreat),Some(("ship",target))) if target["friendly"]==true => {
             ("support",json!({"action":{"FullRetreat":{"warp_gate_id":target["id"]}}}))
@@ -2700,6 +2733,7 @@ pub fn connect_remote(
                                 }
                             } else if let Some(("ship",ship))=hit(
                                 state,cam,x,y,&peer.visual,peer.visual.fraction(),
+                                |_| true, |_| true,
                             ) {
                                 if ship["owned"]==true {
                                     if double_left_press && !additive &&
