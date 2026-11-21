@@ -1651,14 +1651,12 @@ fn collect_remote_audio(
                     *explosion_projectile_id,
                 ).map(|(_, body)| body.motion.position)),
             ),
-            CombatEvent::BombDetonated { projectile_id, target_id } => (
+            CombatEvent::BombDetonated {
+                projectile_id, target_id, origin,
+            } => (
                 "huge_explosion",
-                // The fuse attaches to the target's real hull. A bomb
-                // that ended before this presentation pass must not lose
-                // its detonation sound merely because its projectile slot
-                // has already been retired.
-                view.combat.render_projectile(*projectile_id)
-                    .map(|(_, body)| body.motion.position)
+                (*origin).or_else(|| view.combat.render_projectile(*projectile_id)
+                    .map(|(_, body)| body.motion.position))
                     .or_else(|| view.combat.ship_body(*target_id)
                         .map(|body| body.motion.position)),
             ),
