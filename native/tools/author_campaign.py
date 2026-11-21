@@ -394,6 +394,9 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     missions = []
     mission_dependencies = dict(args.mission_requires)
     mission_advances = dict(args.mission_advance)
+    mission_outcomes = {}
+    for index, prior, result in args.mission_unlock_any:
+        mission_outcomes.setdefault(index, []).append((prior, result))
     shop_unlocks = dict(args.shop_unlock)
     variants = {
         "victory": {mission: (previous, run_path)
@@ -502,6 +505,12 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             ]
         if mission_advances.get(index, "victory") == "finished":
             mission["advance_on"] = "finished"
+        alternatives = mission_outcomes.get(index, [])
+        if alternatives:
+            mission["unlock_if_any"] = [
+                {"mission": f"mission-{prior:03d}", "result": result}
+                for prior, result in alternatives
+            ]
         ancestors = set(prerequisites)
         for prerequisite in prerequisites:
             ancestors.update(required_ancestors[prerequisite])
@@ -568,15 +577,22 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             if index not in configured:
                 continue
             previous, variant_path = configured[index]
-            if previous not in prerequisites:
+            if previous not in prerequisites and not any(
+                    prior == previous for prior, _ in alternatives):
                 raise ValueError(
                     f"mission {index} conditional {outcome} route requires "
-                    f"mission {previous} in its own --mission-requires"
+                    f"mission {previous} in its own prerequisites or outcome alternatives"
                 )
-            if outcome == "defeat" and mission_advances.get(previous, "victory") != "finished":
+            if outcome == "defeat" and not (
+                    previous in prerequisites and
+                    mission_advances.get(previous, "victory") == "finished" or
+                    any(prior == previous and (result == "defeat" or
+                        result == "finished" and
+                        mission_advances.get(previous, "victory") == "finished")
+                        for prior, result in alternatives)):
                 raise ValueError(
-                    f"mission {index} defeat route requires previous mission "
-                    f"{previous} to advance on finished, not victory"
+                    f"mission {index} defeat route needs an achievable "
+                    f"defeat or finished gate on mission {previous}"
                 )
             variant_scene, variant_run, provenance_variant = input_mission(
                 variant_path.resolve(strict=True), args.player_side,
@@ -671,6 +687,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             "advance_on": missions[index - 1]["mission"].get("advance_on", "victory"),
             "on_victory": missions[index - 1]["mission"].get("on_victory"),
             "on_defeat": missions[index - 1]["mission"].get("on_defeat"),
+            "unlock_if_any": missions[index - 1]["mission"].get("unlock_if_any", []),
         } for index in range(1, len(missions) + 1)],
         "shop_unlocked_after": {
             str(entry["ship_type"]): entry["unlocked_after"]
@@ -798,6 +815,19 @@ def mission_advance(value: str) -> tuple[int, str]:
     return int(match.group(1)), match.group(2)
 
 
+def mission_unlock_any(value: str) -> tuple[int, int, str]:
+    """MISSION:PRIOR:finished|victory|defeat; alternative forward mission gate."""
+    match = re.fullmatch(r"(\\d+):(\\d+):(finished|victory|defeat)", value)
+    if match is None:
+        raise argparse.ArgumentTypeError(
+            "--mission-unlock-any needs MISSION:PRIOR:finished|victory|defeat"
+        )
+    mission, prior, result = int(match.group(1)), int(match.group(2)), match.group(3)
+    if not 2 <= mission <= 40 or not 1 <= prior < mission:
+        raise argparse.ArgumentTypeError("outcome alternative requires an earlier mission")
+    return mission, prior, result
+
+
 def shop_unlock(value: str) -> tuple[int, list[int]]:
     """SHIP_TYPE:MISSION[,MISSION] or SHIP_TYPE:none for initial availability."""
     match = re.fullmatch(r"(\d+):(none|\d+(?:,\d+)*)", value)
@@ -835,6 +865,9 @@ def main() -> None:
     parser.add_argument("--mission-advance", action="append", type=mission_advance,
                         default=[], metavar="MISSION:victory|finished",
                         help="choose the finished-battle or victorious-battle unlock rule")
+    parser.add_argument("--mission-unlock-any", action="append", type=mission_unlock_any,
+                        default=[], metavar="MISSION:PRIOR:OUTCOME",
+                        help="unlock a mission through any listed earlier finished, victory or defeat outcome; use --mission-requires MISSION:none for a full alternative route")
     parser.add_argument("--mission-variant", action="append", type=mission_variant,
                         default=[], metavar="MISSION:PREVIOUS:RUN",
                         help="use another native battle if the required previous mission's latest result was victory")
@@ -853,6 +886,10 @@ def main() -> None:
                         default=[], metavar="MISSION:NEW_SQUAD:TEMPLATE_SQUAD",
                         help="one-time victory SavedSquad; ships may be awarded into this ID in the same mission")
     args = parser.parse_args()
+    if any(mission > len(args.mission) for mission, _, _ in args.mission_unlock_any):
+        parser.error("--mission-unlock-any refers to an absent mission")
+    if len(set(args.mission_unlock_any)) != len(args.mission_unlock_any):
+        parser.error("--mission-unlock-any contains a duplicate outcome gate")
     if any(mission > len(args.mission) for mission, _, _ in args.victory_squad):
         parser.error("--victory-squad refers to a mission not included by --mission")
     if any(mission > len(args.mission) for mission, _, _, _ in args.victory_grant):
