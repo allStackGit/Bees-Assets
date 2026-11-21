@@ -194,13 +194,21 @@ impl NativeFleetInventory {
     /// Sparse special actions are authenticated by the same physical
     /// event buffer as combat. Only persistent FleetShips with campaign
     /// career tracking enabled have a stored row.
-    fn special_stats(&mut self, ship_id: i64) -> Option<&mut NativeFleetCombatStats> {
-        if !self.entries.get(&ship_id)
-            .is_some_and(|entry| entry.has_persistent_fleet_value)
-        {
-            return None;
-        }
-        Some(self.combat.entry(ship_id).or_default())
+    fn persistent_credit_owner(&self, world: &CombatWorld, ship_id: i64) -> Option<i64> {
+        // Existing rank history represents the same FleetShip object
+        // shared by source Carrier/Queen/Scout children. Do not follow a
+        // live replacement Carrier after its original owner dies.
+        let owner = world.ship_fleet_rank_owner(ship_id).unwrap_or(ship_id);
+        self.entries.get(&owner)
+            .filter(|entry| entry.has_persistent_fleet_value)
+            .map(|_| owner)
+    }
+
+    fn special_stats(&mut self, world: &CombatWorld, ship_id: i64)
+        -> Option<&mut NativeFleetCombatStats>
+    {
+        let owner = self.persistent_credit_owner(world, ship_id)?;
+        Some(self.combat.entry(owner).or_default())
     }
 
     /// One pass over the authoritative combat event buffer per completed
@@ -212,70 +220,59 @@ impl NativeFleetInventory {
             match event {
                 CombatEvent::GameWeaponFired { ship_id, .. } |
                 CombatEvent::PolicyWeaponFired { ship_id, .. } => {
-                    if self.entries.get(ship_id)
-                        .is_some_and(|entry| entry.has_persistent_fleet_value)
-                    {
-                        let row = self.combat.entry(*ship_id).or_default();
+                    if let Some(row) = self.special_stats(world, *ship_id) {
                         row.observed_turret_shots =
                             row.observed_turret_shots.saturating_add(1);
                     }
                 }
                 CombatEvent::StrikerBombDropped { ship_id, .. } => {
-                    if let Some(stats) = self.special_stats(*ship_id) {
+                    if let Some(stats) = self.special_stats(world, *ship_id) {
                         stats.striker_bombs_dropped = stats.striker_bombs_dropped.saturating_add(1);
                     }
                 }
                 // Also count death-triggered explosions; not every blast
                 // was a player special-action input.
                 CombatEvent::FireBargeDetonated { ship_id, .. } => {
-                    if let Some(stats) = self.special_stats(*ship_id) {
+                    if let Some(stats) = self.special_stats(world, *ship_id) {
                         stats.fire_barge_explosions = stats.fire_barge_explosions.saturating_add(1);
                     }
                 }
                 CombatEvent::YellowJacketDetonated { ship_id, .. } => {
-                    if let Some(stats) = self.special_stats(*ship_id) {
+                    if let Some(stats) = self.special_stats(world, *ship_id) {
                         stats.yellow_jacket_detonations = stats.yellow_jacket_detonations.saturating_add(1);
                     }
                 }
                 CombatEvent::BargeChargeStarted { ship_id } => {
-                    if let Some(stats) = self.special_stats(*ship_id) {
+                    if let Some(stats) = self.special_stats(world, *ship_id) {
                         stats.barge_charges_started = stats.barge_charges_started.saturating_add(1);
                     }
                 }
                 CombatEvent::ScoutBeaconDropped { scout_id, .. } => {
-                    if let Some(stats) = self.special_stats(*scout_id) {
+                    if let Some(stats) = self.special_stats(world, *scout_id) {
                         stats.scout_beacons_deployed = stats.scout_beacons_deployed.saturating_add(1);
                     }
                 }
                 CombatEvent::QueenMinionSpawned { queen_id, .. } => {
-                    if let Some(stats) = self.special_stats(*queen_id) {
+                    if let Some(stats) = self.special_stats(world, *queen_id) {
                         stats.queen_minions_spawned = stats.queen_minions_spawned.saturating_add(1);
                     }
                 }
                 CombatEvent::Hit(hit) => {
                     let loss = hit.delta.tsv_loss.max(0) as u64;
                     if loss == 0 { continue; }
-                    if hit.attacker_side != hit.target_side &&
-                        self.entries.get(&hit.attacker_id)
-                            .is_some_and(|entry| entry.has_persistent_fleet_value)
-                    {
-                        let row = self.combat.entry(hit.attacker_id).or_default();
-                        row.enemy_tsv_damage_done =
-                            row.enemy_tsv_damage_done.saturating_add(loss);
+                    if hit.attacker_side != hit.target_side {
+                        if let Some(row) = self.special_stats(world, hit.attacker_id) {
+                            row.enemy_tsv_damage_done =
+                                row.enemy_tsv_damage_done.saturating_add(loss);
+                        }
                     }
-                    if self.entries.get(&hit.target_id)
-                        .is_some_and(|entry| entry.has_persistent_fleet_value)
-                    {
-                        let row = self.combat.entry(hit.target_id).or_default();
+                    if let Some(row) = self.special_stats(world, hit.target_id) {
                         row.tsv_damage_received =
                             row.tsv_damage_received.saturating_add(loss);
                     }
                 }
                 CombatEvent::UnattributedDamage { target_id, delta } => {
-                    if self.entries.get(target_id)
-                        .is_some_and(|entry| entry.has_persistent_fleet_value)
-                    {
-                        let row = self.combat.entry(*target_id).or_default();
+                    if let Some(row) = self.special_stats(world, *target_id) {
                         row.tsv_damage_received = row.tsv_damage_received
                             .saturating_add(delta.tsv_loss.max(0) as u64);
                     }
@@ -286,12 +283,11 @@ impl NativeFleetInventory {
                     }
                     let opposing = world.ship(*killer_id).zip(world.ship(*victim_id))
                         .is_some_and(|(killer, victim)| killer.side != victim.side);
-                    if opposing && self.entries.get(killer_id)
-                        .is_some_and(|entry| entry.has_persistent_fleet_value)
-                    {
-                        let row = self.combat.entry(*killer_id).or_default();
-                        row.attributed_enemy_kills =
-                            row.attributed_enemy_kills.saturating_add(1);
+                    if opposing {
+                        if let Some(row) = self.special_stats(world, *killer_id) {
+                            row.attributed_enemy_kills =
+                                row.attributed_enemy_kills.saturating_add(1);
+                        }
                     }
                 }
                 _ => {}

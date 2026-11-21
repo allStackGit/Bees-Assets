@@ -72,6 +72,14 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// The original FleetShip credit owner survives physical parent
+    /// reassignment and death. Career accounting uses this exact alias,
+    /// rather than inferring ownership from a live Carrier reference.
+    pub fn ship_fleet_rank_owner(&self, ship_id: i64) -> Option<i64> {
+        self.weapon_rank_history.ships.get(&ship_id)
+            .map(|source| source.fleet_owner_ship_id)
+    }
+
     pub fn weapon_target_rank_stats(&self, ship_id: i64) -> Result<NativeEnemyTargetStats, CombatWorldError> {
         let source = self.weapon_rank_history.ships.get(&ship_id)
             .ok_or(CombatWorldError::MissingAutomaticTargetingInputs)?;

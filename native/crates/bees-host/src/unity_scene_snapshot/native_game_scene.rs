@@ -972,6 +972,9 @@ impl NativePhysicalScene {
             };
             let parent_carrier_id = ship.drone_carrier_id.or(striker_carrier);
             if let Some(carrier_id) = parent_carrier_id {
+                if ship.persistent_fleet {
+                    return Err(invalid("free native Carrier child cannot own a persistent FleetShip"));
+                }
                 carrier_children.push((id, ship.side, carrier_id));
             }
             ship_types.insert(id, ship.ship_type);
@@ -1240,7 +1243,10 @@ impl NativePhysicalScene {
                         firepower: ship.firepower, max_range: ship.target_max_range,
                         speed: ship.base_speed,
                     },
-                    fleet_owner_ship_id: ship.fleet_ship_id.unwrap_or(id),
+                    // Rank history aliases physical owner IDs, not
+                    // durable FleetShip numbers. Independent ships own
+                    // themselves even when their career ID differs.
+                    fleet_owner_ship_id: parent_carrier_id.unwrap_or(id),
                 }),
                 target_geometry: Some(NativeShipTargetGeometry {
                     front_offset: ship.front_offset, bounds_latched: false,
@@ -1255,6 +1261,25 @@ impl NativePhysicalScene {
             )
         {
             return Err(invalid("native Bomb weapon identity collision or an invalid same-side Carrier child link"));
+        }
+
+        // LevelConstructor.SetCarrierShipFleetships links free children
+        // to the original parent's FleetShip object. Resolve after parsing
+        // all ships, including legacy native archetypes with forward IDs.
+        if !carrier_children.is_empty() {
+            let fleet_ids = entities.iter().filter_map(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship) =>
+                    Some((ship.entity_id, ship.fleet_ship_id.unwrap_or(ship.entity_id))),
+                _ => None,
+            }).collect::<HashMap<_, _>>();
+            let parents = carrier_children.iter().map(|&(child, _, parent)|
+                (child, parent)).collect::<HashMap<_, _>>();
+            for entity in &mut entities {
+                let NativeAuthoredEntity::Ship(ship) = entity else { continue };
+                if let Some(parent) = parents.get(&ship.entity_id) {
+                    ship.fleet_ship_id = Some(fleet_ids[parent]);
+                }
+            }
         }
 
         let mut world_ids = ship_sides.keys().copied().collect::<HashSet<_>>();

@@ -510,6 +510,7 @@ pub(crate) struct SpawnedShipAttachments {
     weapon: Option<bees_sim::combat_world::NativeSpecialWeaponSpec>,
     special: Option<NativeAuthoredShipSpecial>,
     carrier: Option<i64>,
+    rank_alias: Option<NativeWeaponRankSource>,
 }
 
 pub(crate) fn spawn_authored_ship(
@@ -570,7 +571,14 @@ pub(crate) fn spawn_authored_ship(
                 .map_err(NativeSceneBuildError::Combat)?;
         }
     }
-    if let Some(source) = ship.weapon_rank_source {
+    // Physical IDs are sorted for deterministic creation, not for the
+    // FleetShip object's ownership graph. Register independent rank roots
+    // now and resolve aliases after the whole deployment exists.
+    let rank_alias = ship.weapon_rank_source.filter(|source|
+        source.fleet_owner_ship_id != ship.entity_id);
+    if let Some(source) = ship.weapon_rank_source.filter(|source|
+        source.fleet_owner_ship_id == ship.entity_id)
+    {
         combat.configure_weapon_rank_source(source).map_err(NativeSceneBuildError::Combat)?;
     }
     if let Some(geometry) = ship.target_geometry {
@@ -594,17 +602,25 @@ pub(crate) fn spawn_authored_ship(
                 .map_err(NativeSceneBuildError::Combat)?;
         }
     }
-    Ok((ship.special_weapon.is_some() || ship.special.is_some() || ship.drone_carrier_id.is_some())
+    Ok((ship.special_weapon.is_some() || ship.special.is_some() ||
+        ship.drone_carrier_id.is_some() || rank_alias.is_some())
         .then_some(SpawnedShipAttachments {
         id: ship.entity_id, policy: is_policy, weapon: ship.special_weapon,
-        special: ship.special, carrier: ship.drone_carrier_id,
+        special: ship.special, carrier: ship.drone_carrier_id, rank_alias,
     }))
 }
 
 pub(crate) fn install_ship_attachments(
     combat: &mut CombatWorld, mut attachments: Vec<SpawnedShipAttachments>,
 ) -> Result<(), NativeSceneBuildError> {
-    // Source carrier links can point forward within the same deployment.
+    // Source carrier links and their FleetShip aliases can point forward
+    // within the same deployment (including a deferred reinforcement wave).
+    for ship in &attachments {
+        if let Some(source) = ship.rank_alias {
+            combat.configure_weapon_rank_source(source)
+                .map_err(NativeSceneBuildError::Combat)?;
+        }
+    }
     for ship in &attachments {
         if let Some(spec) = ship.weapon {
             combat.configure_special_weapon(ship.id, spec).map_err(NativeSceneBuildError::Combat)?;
