@@ -186,7 +186,12 @@ impl FleetMix {
     }
 
     fn specialist_count(self, total: usize) -> usize {
-        usize::from(matches!(self, Self::Specialists | Self::Miners | Self::Chargers) && total >= 2)
+        if total < 2 { return 0; }
+        match self {
+            Self::Miners => total.div_ceil(4).min(8),
+            Self::Specialists | Self::Chargers => 1,
+            _ => 0,
+        }
     }
 }
 
@@ -454,9 +459,10 @@ fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool)
             )),
         ];
         if side == 0 && mining_field {
+            let miners = FleetMix::Miners.specialist_count(total);
             options.push((FleetMix::Miners, format!(
-                "{} fighters, 1 Carpenter Bee  |  Source mineral miner",
-                total - 1,
+                "{} fighters, {} Carpenter Bees  |  Source mineral mining",
+                total - miners, miners,
             )));
         } else if side == 1 {
             options.push((FleetMix::Chargers, format!(
@@ -1125,11 +1131,36 @@ pub(super) fn archive(
     for side in 0..2_usize {
         for index in 1..selected.fleet_sizes[side] {
             let specialist = specialist_count[side] != 0 &&
-                index == fighter_count[side];
+                (fighter_count[side]..fighter_count[side] + specialist_count[side])
+                    .contains(&index);
             let supporting = index >= fighter_count[side] + specialist_count[side];
             let support_origin = fighter_count[side] + specialist_count[side];
             if specialist {
-                squad_ids[side].push(105 + side as i64);
+                if index == fighter_count[side] {
+                    // The first specialty hull is the source template.
+                    squad_ids[side].push(105 + side as i64);
+                } else {
+                    // Only the ordinary Carpenter Bee can safely multiply
+                    // through NativeSquadClone. Scout/Charge/Bomb abilities
+                    // retain separate special-weapon and lifecycle owners.
+                    if !matches!(selected.mix[side], FleetMix::Miners) {
+                        return Err(invalid("specialist replication needs a native source clone-safe miner").into());
+                    }
+                    let side_base = (side as i64 + 1) * 100;
+                    let new_squad = 2_000 + side_base + index as i64;
+                    let new_ship = 10_000 + side_base + index as i64;
+                    let offset = offsets[side][index];
+                    let origin = offsets[side][fighter_count[side]];
+                    cloned.clone_squads.push(NativeSquadClone {
+                        source_squad_item_id: 105 + side as i64,
+                        new_squad_item_id: new_squad,
+                        ship_ids: vec![new_ship],
+                        by: [offset[0] - origin[0], offset[1] - origin[1]],
+                        count_as_fleet_value: true,
+                    });
+                    squad_ids[side].push(new_squad);
+                    miner_squads.push(new_squad);
+                }
                 continue;
             }
             let source_squad = if supporting {
@@ -1273,7 +1304,7 @@ pub(super) fn archive(
     let level_name = scene["level_name"].as_str()
         .unwrap_or("Fleet Skirmish").to_owned();
     scene["level_name"] = json!(format!(
-        "{level_name}  |  Support: {} Beehives, {} Carriers  |  Specialists: {} Scouts, {} Fire Barges",
+        "{level_name}  |  Support: {} Beehives, {} Carriers  |  Specialist hulls: {} Bees, {} Humans",
         support_count[0], support_count[1], specialist_count[0], specialist_count[1],
     ));
     if selected.mining_field {
