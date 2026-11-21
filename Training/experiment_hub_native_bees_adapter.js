@@ -1977,24 +1977,32 @@ function createNativeBeesAdapter({
             // Each exclusive physical GPU requires its own persistent
             // model worker; expand the default native World pool rather
             // than forcing users to tune counts for every project.
+            // The Hub reserves real CPUs, not merely a process slot.
+            // A missing replica count means "use my lease", whereas an
+            // explicit count in the frozen job or authored run is exact.
+            // Cap the automatic fleet to avoid allocating hundreds of
+            // physical Worlds for a simple duel on a very large machine.
+            // The existing native rollout engine still owns every World,
+            // its fixed-step gameplay, batched model inference and seeds.
+            const authoredWorlds = activeConfig.levels?.length ?? 1;
+            const defaultWorlds = Math.max(
+                authoredWorlds,dualGpu ? 2 : 1,
+                Math.min(32,context.cpu_quota));
             const activeWorlds = rollout_worlds ??
-                Math.max(activeConfig.rollout_worlds ??
-                    activeConfig.levels?.length ?? 1,dualGpu ? 2 : 1);
+                activeConfig.rollout_worlds ?? defaultWorlds;
             const activeWorkers = rollout_workers ??
                 Math.max(activeConfig.rollout_workers ?? 1,dualGpu ? 2 : 1);
-            // Rollout processes each retain a model worker and run their
-            // own shared physical CPU pool. Both dimensions consume the
-            // same fixed machine lease; never advertise more runnable
-            // physics threads than the coordinator allocated.
-            // An opt-in allocation mode chooses the largest useful physics
-            // pool that fits both the current CPU lease and the independent
-            // Worlds assigned to each rollout process. It makes no claim of
-            // measured optimality; an explicit count remains available.
-            // Existing jobs without this option retain their old default.
+            // Keep one persistent inference process per allocated GPU by
+            // default: its shared model worker batches decisions across
+            // independent arenas instead of launching tiny GPU kernels in
+            // one Python process per CPU. Physics can run in parallel on
+            // the remaining reserved cores. User-authored quotas win.
+            const allocatedPhysicsWorkers = Math.min(
+                128,Math.floor(context.cpu_quota / activeWorkers),
+                Math.ceil(activeWorlds / activeWorkers));
             const activePhysicsWorkers = physics_workers === 'allocation'
-                ? Math.min(128, Math.floor(context.cpu_quota / activeWorkers),
-                    Math.ceil(activeWorlds / activeWorkers))
-                : physics_workers ?? activeConfig.physics_workers ?? 1;
+                ? allocatedPhysicsWorkers
+                : physics_workers ?? activeConfig.physics_workers ?? allocatedPhysicsWorkers;
             if (!bundleRound && !inboxLearner &&
                 (!Number.isSafeInteger(activeWorkers) ||
                     activeWorkers < 1 || activeWorkers > 256 ||
@@ -2162,10 +2170,14 @@ function createNativeBeesAdapter({
                 // effective World count with its global partition start.
                 // Never emit a second conflicting --rollout-worlds flag.
                 ...((!inboxLearner && !bundleRound && collection_id === undefined) &&
-                    (rollout_worlds !== undefined || dualGpu) ?
+                    (rollout_worlds !== undefined || dualGpu ||
+                     (activeConfig.rollout_worlds === undefined &&
+                      activeWorlds > authoredWorlds)) ?
                     ['--rollout-worlds', String(activeWorlds)] : []),
-                ...(physics_workers === undefined ? [] :
-                    ['--physics-workers', String(activePhysicsWorkers)]),
+                ...((physics_workers !== undefined ||
+                     (activeConfig.physics_workers === undefined &&
+                      activePhysicsWorkers > 1)) ?
+                    ['--physics-workers', String(activePhysicsWorkers)] : []),
                 '--seed-offset', String(seed_offset),
                 ...(learnerSlot === undefined ? [] : ['--learner-slot', String(learnerSlot)]),
                 ...(refresh_opponent_slot === undefined ? [] :
