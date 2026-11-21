@@ -5808,8 +5808,8 @@ fn run_battle(
                 // original FleetShips transferred into reserve. Only the
                 // immutable authored player roster, not inert shop class
                 // templates, can establish that pre-existing ownership.
-                let has_factory = template.entities.iter().any(owned_factory) ||
-                    source.entities.iter().any(owned_factory) ||
+                let has_factory = template.entities.iter().any(|entity| owned_factory(entity)) ||
+                    source.entities.iter().any(|entity| owned_factory(entity)) ||
                     mission.and_then(|owner| owner.purchased_ships)
                         .is_some_and(|purchases| purchases.iter().any(|ship|
                             ship.ship_type == bees_sim::combat_world::MINING_FACTORY_TYPE &&
