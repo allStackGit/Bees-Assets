@@ -1325,13 +1325,34 @@ fn remote_squad_tab_hit(state: &Value,x: f32,y: f32) -> Option<i64> {
         })
 }
 
+/// Only the current host-authorized and selected physical Fire Barges
+/// have a source DetonationClick sound. Resolve their identities at the
+/// actual user action, never with per-frame sound-side roster tracking.
+fn selected_fire_barges(state: Option<&Value>, selected: &[i64]) -> usize {
+    let Some(state) = state else { return 0 };
+    let selected_members: HashSet<i64> =
+        state["squads"].as_array().into_iter().flatten()
+            .filter(|squad| squad["controllable"] == true &&
+                squad["owner"]["squad_id"].as_i64()
+                    .is_some_and(|id| selected.contains(&id)))
+            .flat_map(|squad| squad["members"].as_array().into_iter().flatten())
+            .filter_map(Value::as_i64).collect();
+    state["ships"].as_array().into_iter().flatten()
+        .filter(|ship| ship["owned"] == true &&
+            ship["ship_type"].as_u64() == Some(10) &&
+            ship["health"].as_i64().is_some_and(|health| health > 0) &&
+            ship["id"].as_i64().is_some_and(|id|
+                selected_members.contains(&id)))
+        .count()
+}
+
 /// One dispatcher for LAN keyboard and on-screen tactical commands.
 fn remote_tactical_action(
     peer: &mut PeerClient, selected: &mut Vec<i64>,
     mode: &mut Option<TargetMode>, patrol_start: &mut Option<Vec2>,
     held_fire_active: &mut bool, held_fire_target: &mut Option<Vec2>,
     shooting_menu: &mut bool, shooting_focus: &mut u8,
-    action: HudAction,
+    action: HudAction, audio: &mut NativeGameAudio,
 ) -> Result<(),Box<dyn Error>> {
     // End releases a peer-owned weapon lease, not a command for the
     // currently selected squads. An eliminated squad or new terminal
@@ -1409,7 +1430,12 @@ fn remote_tactical_action(
         HudAction::CeaseFire=>peer.order(selected,"cease_fire",json!({"cease_fire":true})),
         HudAction::AttackOnSight=>peer.order(selected,"cease_fire",json!({"cease_fire":false})),
         HudAction::Beacon=>peer.order(selected,"special",json!({"kind":"DropBeacon"})),
-        HudAction::Detonate=>peer.order(selected,"special",json!({"kind":"Detonate"})),
+        HudAction::Detonate=>{
+            let fire_barges = selected_fire_barges(peer.state.as_ref(),selected);
+            peer.order(selected,"special",json!({"kind":"Detonate"}))?;
+            audio.click_fire_barge_detonation(fire_barges);
+            Ok(())
+        },
         HudAction::Charge=>peer.order(selected,"special",json!({"kind":"Charge"})),
         HudAction::MatchSpeed=>peer.order(selected,"match_speed",json!({"match_speed":true})),
         HudAction::FreeSpeed=>peer.order(selected,"match_speed",json!({"match_speed":false})),
@@ -2711,7 +2737,7 @@ pub fn connect_remote(
                     if let Err(error)=remote_tactical_action(
                         &mut peer,&mut selected,&mut mode,&mut patrol_start,
                         &mut held_fire_active,&mut held_fire_target,
-                        &mut shooting_menu,&mut shooting_focus,action,
+                        &mut shooting_menu,&mut shooting_focus,action,&mut audio,
                     ) {
                         peer.notice=error.to_string();
                     }
@@ -2885,7 +2911,7 @@ pub fn connect_remote(
                     if let Err(error)=remote_tactical_action(
                         &mut peer,&mut selected,&mut mode,&mut patrol_start,
                         &mut held_fire_active,&mut held_fire_target,
-                        &mut shooting_menu,&mut shooting_focus,action,
+                        &mut shooting_menu,&mut shooting_focus,action,&mut audio,
                     ) {
                         peer.notice=error.to_string();
                     }
