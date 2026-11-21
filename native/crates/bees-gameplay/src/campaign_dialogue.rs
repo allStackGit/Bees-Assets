@@ -82,6 +82,7 @@ pub enum CampaignCue {
     UranusNewThreatBriefing,
     UranusNewThreatBargeLost,
     UranusNewThreatBargeCharged,
+    UranusNewThreatReinforcements,
     UranusNewThreatEnding { barges_survived: bool, has_cruiser: bool },
 }
 
@@ -103,6 +104,7 @@ enum DialogueMode {
     UranusNewThreat {
         barges: [i64; 3], has_cruiser: bool,
         loss_reported: bool, charge_observed: bool, charge_reported: bool,
+        reinforcement_reported: bool,
     },
 }
 
@@ -156,6 +158,7 @@ impl CampaignDialogue {
                 DialogueMode::UranusNewThreat {
                     barges, has_cruiser, loss_reported: false,
                     charge_observed: false, charge_reported: false,
+                    reinforcement_reported: false,
                 },
                 CampaignCue::UranusNewThreatBriefing,
             ),
@@ -253,24 +256,32 @@ impl CampaignDialogue {
                     shield_max > 0 && (0..=shield_max).contains(&shield_health),
             (DialogueMode::UranusNewThreat {
                 loss_reported: false, charge_observed: false,
-                charge_reported: false, ..
+                charge_reported: false, reinforcement_reported: false, ..
             }, CampaignCue::UranusNewThreatBriefing) => sequence == 0,
             (DialogueMode::UranusNewThreat {
-                loss_reported: true, charge_reported, ..
+                loss_reported: true, charge_reported, reinforcement_reported, ..
             }, CampaignCue::UranusNewThreatBargeLost) =>
-                sequence == 1 + u8::from(*charge_reported),
+                sequence == 1 + u8::from(*charge_reported) +
+                    u8::from(*reinforcement_reported),
             (DialogueMode::UranusNewThreat {
                 loss_reported, charge_observed: true,
-                charge_reported: true, ..
+                charge_reported: true, reinforcement_reported, ..
             }, CampaignCue::UranusNewThreatBargeCharged) =>
-                sequence == 1 + u8::from(*loss_reported),
+                sequence == 1 + u8::from(*loss_reported) +
+                    u8::from(*reinforcement_reported),
+            (DialogueMode::UranusNewThreat {
+                loss_reported, charge_reported, reinforcement_reported: true, ..
+            }, CampaignCue::UranusNewThreatReinforcements) =>
+                sequence == 1 + u8::from(*loss_reported) +
+                    u8::from(*charge_reported),
             (DialogueMode::UranusNewThreat {
                 loss_reported, charge_observed, charge_reported,
-                has_cruiser: authored, ..
+                reinforcement_reported, has_cruiser: authored, ..
             }, CampaignCue::UranusNewThreatEnding { has_cruiser, .. }) =>
                 *authored == has_cruiser &&
                 (!*charge_reported || *charge_observed) &&
-                sequence == 1 + u8::from(*loss_reported) + u8::from(*charge_reported),
+                sequence == 1 + u8::from(*loss_reported) +
+                    u8::from(*charge_reported) + u8::from(*reinforcement_reported),
             _ => false,
         };
         if !valid {
@@ -337,6 +348,18 @@ impl CampaignDialogue {
         }
         *next_milestone += 1;
         Some(CampaignCue::BeenocularsUpload(milestone))
+    }
+
+    /// Source Uranus III announces the timed follow-up wave when its
+    /// physical squads actually arrive, not merely when the timer elapses.
+    /// The shared Level event owner provides the arrival receipt exactly
+    /// once, even for multiple squads admitted in the same fixed tick.
+    pub(crate) fn reinforcement_arrived(&mut self) -> Option<CampaignCue> {
+        let DialogueMode::UranusNewThreat { reinforcement_reported, .. } =
+            &mut self.mode else { return None };
+        if *reinforcement_reported { return None; }
+        *reinforcement_reported = true;
+        Some(CampaignCue::UranusNewThreatReinforcements)
     }
 
     pub(crate) fn observe_combat(&mut self, world: &CombatWorld) -> Option<CampaignCue> {

@@ -16,6 +16,7 @@ pub enum NativeMissionCue {
     FireTankDestroyed,
     UranusBargeLost,
     UranusBargeCharged,
+    UranusReinforcements,
     UploadTen,
     UploadTwentyFour,
     UploadFifty,
@@ -30,6 +31,7 @@ impl NativeMissionCue {
             (Self::FireTankDestroyed, CampaignCue::FireTankDestroyed { .. }) |
             (Self::UranusBargeLost, CampaignCue::UranusNewThreatBargeLost) |
             (Self::UranusBargeCharged, CampaignCue::UranusNewThreatBargeCharged) |
+            (Self::UranusReinforcements, CampaignCue::UranusNewThreatReinforcements) |
             (Self::UploadTen, CampaignCue::BeenocularsUpload(UploadMilestone::Ten)) |
             (Self::UploadTwentyFour, CampaignCue::BeenocularsUpload(UploadMilestone::TwentyFour)) |
             (Self::UploadFifty, CampaignCue::BeenocularsUpload(UploadMilestone::Fifty)) |
@@ -46,7 +48,8 @@ impl NativeMissionCue {
                 matches!(self, Self::UploadTen | Self::UploadTwentyFour |
                     Self::UploadFifty | Self::UploadSeventyFive | Self::UploadNinety),
             Some(CampaignDialogueSpec::UranusNewThreat { .. }) =>
-                matches!(self, Self::UranusBargeLost | Self::UranusBargeCharged),
+                matches!(self, Self::UranusBargeLost | Self::UranusBargeCharged |
+                    Self::UranusReinforcements),
             Some(CampaignDialogueSpec::NeptunePressingForward { .. }) |
             Some(CampaignDialogueSpec::PlutoEvacuation { .. }) | None => false,
         }

@@ -1511,6 +1511,14 @@ where
         let ships_before_deployment = state.combat.physics().ships().len();
         if !state.events.completed() {
             state.metadata.deploy_reinforcements(&mut state.combat, &mut state.events, completed_tick)?;
+            if state.events.last_reinforcement_tick() == Some(completed_tick) {
+                if let Some(dialogue) = &mut state.campaign_dialogue {
+                    if let Some(cue) = dialogue.reinforcement_arrived() {
+                        dialogue.set_cue(cue);
+                        state.events.queue_campaign_dialogue(completed_tick, cue)?;
+                    }
+                }
+            }
         }
         let ships_deployed = state.combat.physics().ships().len() != ships_before_deployment;
         // Unity Ship.Kill removes the casualty, then calls Squad.SetOffsets

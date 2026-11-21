@@ -17,6 +17,10 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
         CampaignCue::UranusNewThreatBargeCharged => &[
             ("Marge", "Just cuz I don’t have guns don't mean I can’t fight! Take this!"),
         ],
+        CampaignCue::UranusNewThreatReinforcements => &[
+            ("Marge", "There’s more coming! "),
+            ("Yoshiko", "Those are Yellow Jackets! Don’t let them hit those Barges!"),
+        ],
         CampaignCue::UranusNewThreatEnding { barges_survived: false, .. } => &[
             ("Samuel", "We couldn’t save them…"),
             ("Marco", "Sometimes that’s life, kid. We’ll avenge them."),
