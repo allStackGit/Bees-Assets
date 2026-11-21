@@ -1151,21 +1151,12 @@ impl NativeRemotePlay {
         // This runs at each physical tick, including the four ticks with no
         // state frame. Carry short-lived sounds to the next presentation frame.
         if !view.combat.events().is_empty() {
-            // Build an event-local physical lookup once across all player
-            // sides, not once for each simultaneous weapon launch and peer.
-            let needs_shots = view.combat.events().iter().any(|event| matches!(event,
-                CombatEvent::PolicyWeaponFired { .. } |
-                CombatEvent::GameWeaponFired { .. } |
-                CombatEvent::FireTankExploded { .. } |
-                CombatEvent::BombDetonated { .. }));
-            let shot_positions: HashMap<i64, (u8, Vec2)> = if needs_shots {
-                view.combat.render_projectiles()
-                    .map(|(shot, body)| (
-                        shot.entity_id, (shot.projectile_type, body.motion.position),
-                    )).collect()
-            } else { HashMap::new() };
+            // Audio events already carry exact projectile IDs. Look up
+            // only those physical shots in CombatWorld's existing live
+            // identity index; do not allocate and hash every active shot
+            // just because one weapon fired during a crowded battle.
             for &side in &sides {
-                collect_remote_audio(view, side, &shot_positions,
+                collect_remote_audio(view, side,
                     vision.get(&side).expect("authenticated side has sight"),
                     self.pending_audio.entry(side).or_default(),
                     &mut self.measurements);
@@ -1551,7 +1542,7 @@ fn owns_player_side(view: &NativeRenderWorldView<'_>, owner: SquadLifetime, side
 /// geometry. Unlocalized events are deliberately not sent to opponents.
 fn collect_remote_audio(
     view: &NativeRenderWorldView<'_>, side: i32,
-    shots: &HashMap<i64, (u8, Vec2)>, sources: &RemoteFogSources,
+    sources: &RemoteFogSources,
     pending: &mut Vec<Value>, measurements: &mut RemotePlayMeasurements,
 ) {
     // Track at most the previous admitted source turret volley. The
@@ -1635,7 +1626,8 @@ fn collect_remote_audio(
                 // living projectile inventory cannot supply its type/pose.
                 // Resolve the installed authentic turret rather than
                 // losing this cue or inventing a projectile in the world.
-                let source = shots.get(projectile_id).copied();
+                let source = view.combat.render_projectile(*projectile_id)
+                    .map(|(shot, body)| (shot.projectile_type, body.motion.position));
                 let Some((kind, point)) = source.or_else(|| {
                     let kind = view.combat.weapon_projectile_type(*ship_id, *slot)?;
                     let point = view.combat.ship_body(*ship_id)?.motion.position;
@@ -1653,7 +1645,8 @@ fn collect_remote_audio(
                 object_id, explosion_projectile_id, ..
             } => (
                 "huge_explosion",
-                shots.get(explosion_projectile_id).map(|shot| shot.1)
+                view.combat.render_projectile(*explosion_projectile_id)
+                    .map(|(_, body)| body.motion.position)
                     .or_else(|| view.combat.events().iter().find_map(|event| {
                         match event {
                             CombatEvent::FireTankObstacleBrokenApart {
@@ -1669,7 +1662,8 @@ fn collect_remote_audio(
                 // that ended before this presentation pass must not lose
                 // its detonation sound merely because its projectile slot
                 // has already been retired.
-                shots.get(projectile_id).map(|shot| shot.1)
+                view.combat.render_projectile(*projectile_id)
+                    .map(|(_, body)| body.motion.position)
                     .or_else(|| view.combat.ship_body(*target_id)
                         .map(|body| body.motion.position)),
             ),
