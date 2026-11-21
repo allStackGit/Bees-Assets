@@ -1454,6 +1454,30 @@ pub(super) fn archive(
         scene["level_name"] = json!(format!("{name}  |  Arena: {size} x {size}{}",
             if selected.lethal_borders { " (lethal borders)" } else { "" }));
     }
+    // The sources and their true physical identities have all been
+    // authored by now. Group only ordinary fighters, leaving original
+    // specialist, support, Carrier and transient minion ownership intact.
+    // The shared native Level merges these command owners after cloning
+    // all physical bodies, before gameplay or RL policy registration.
+    for side in 0..2_usize {
+        let originals = std::mem::take(&mut squad_ids[side]);
+        let mut groups = Vec::with_capacity(originals.len());
+        for members in originals[..fighter_count[side]]
+            .chunks(selected.squad_sizes[side])
+        {
+            let &primary = members.first()
+                .ok_or_else(|| invalid("fighter squad group is empty"))?;
+            groups.push(primary);
+            if members.len() > 1 {
+                cloned.merge_squads.push(NativeSquadMerge {
+                    primary_squad_item_id: primary,
+                    merged_squad_item_ids: members[1..].to_vec(),
+                });
+            }
+        }
+        groups.extend_from_slice(&originals[fighter_count[side]..]);
+        squad_ids[side] = groups;
+    }
     run["levels"][0]["native_layout"] = serde_json::to_value(&cloned)?;
     let mut deferred_squads = Vec::new();
     if matches!(selected.objective, Objective::Survival) {
@@ -1579,8 +1603,9 @@ pub(super) fn archive(
     }
     run["next_squad_item_id"] = json!(3_000);
     run["run_id"] = json!(format!(
-        "native-fleet-{}v{}-mix-{}v{}-support-{}v{}-specialist-{}v{}-{}-{}-owner{}-ore{}-fog{}",
+        "native-fleet-{}v{}-squad-{}v{}-mix-{}v{}-support-{}v{}-specialist-{}v{}-{}-{}-owner{}-ore{}-fog{}",
         selected.fleet_sizes[0], selected.fleet_sizes[1],
+        selected.squad_sizes[0], selected.squad_sizes[1],
         selected.mix[0].label(), selected.mix[1].label(),
         support_count[0], support_count[1],
         specialist_count[0], specialist_count[1],
