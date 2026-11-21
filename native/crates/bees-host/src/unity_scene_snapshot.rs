@@ -112,6 +112,7 @@ fn uranus_defensive_mining_matches_source(
 /// squads on one lane changes gameplay, pathfinding and HiveMind tactics.
 fn uranus_defensive_waves_match_source(
     waves: &[crate::reinforcements::NativeReinforcementPlan],
+    ai_home: Vec2,
 ) -> bool {
     use crate::reinforcements::NativeReinforcementActivation::AfterSeconds;
     if waves.len() != 9 { return false; }
@@ -123,6 +124,13 @@ fn uranus_defensive_waves_match_source(
     };
     let (Some(upper_start), Some(upper_entry)) = (initial.spawn, initial.entry)
         else { return false };
+    // CurrentLevelOptions.AIStartingPosition is the source upper entry.
+    // Every upper reinforcement starts 100 source units to its right.
+    if !upper_entry.unity_equal(ai_home) ||
+        !upper_start.unity_equal(ai_home + Vec2::new(100.0, 0.0))
+    {
+        return false;
+    }
     let lower_start = Vec2::new(600.0, -512.0);
     let lower_entry = Vec2::new(450.0, -450.0);
     for (at, upper_count, lower_count) in [
@@ -2842,7 +2850,7 @@ impl NativePhysicalScene {
                 setup.extraction.is_some() =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::UranusDefensive { player_side, .. })
-                if ![bee_side, human_side].contains(&player_side) ||
+                if player_side != human_side ||
                 !setup.extraction.is_some_and(|zone|
                     zone.player_side == player_side && zone.retreat_on_exit) ||
                 setup.groups.is_some() || setup.survival.is_some() ||
@@ -2851,7 +2859,11 @@ impl NativePhysicalScene {
                     (zone.center - Vec2::new(-512.0, 0.0)).length_squared()
                         <= 0.000001) ||
                 !uranus_defensive_mining_matches_source(&self.entities) ||
-                !uranus_defensive_waves_match_source(&setup.reinforcements) =>
+                !self.starting_positions.is_some_and(|home|
+                    usize::try_from(bee_side - 1).ok()
+                        .and_then(|index| home.get(index))
+                        .is_some_and(|ai|
+                            uranus_defensive_waves_match_source(&setup.reinforcements, *ai))) =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::UranusNewThreat {
                 player_side, barges, ..

@@ -751,10 +751,18 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     return (same_point(wave.get("spawn"), spawn) and
                             same_point(wave.get("entry"), entry))
 
+                homes = scene.get("starting_positions")
+                ai_side = scene.get("bee_side")
+                ai_home = None
+                if (isinstance(homes, list) and len(homes) == 2 and
+                        ai_side in (1, 2)):
+                    ai_home = homes[ai_side - 1]
+                    if isinstance(ai_home, dict):
+                        ai_home = [ai_home.get("x"), ai_home.get("y")]
                 valid_waves = (
-                    same_point(upper_spawn, upper_spawn) and
-                    same_point(upper_entry, upper_entry) and
-                    all(
+                    same_point(upper_entry, ai_home) and
+                    same_point(upper_spawn, [ai_home[0] + 100, ai_home[1]])
+                    and all(
                         sum(same_route(wave, upper_spawn, upper_entry)
                             for wave in waves
                             if abs(wave["after_seconds"] - due) <= 0.0001) == 1 and
