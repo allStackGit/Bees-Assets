@@ -194,6 +194,7 @@ pub struct CampaignDialogue {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CampaignObjectiveKind {
     PlutoPushback,
+    NeptuneProduction,
     UranusOffensive,
     UranusDefensive,
 }
@@ -203,6 +204,8 @@ impl CampaignDialogue {
         match self.mode {
             DialogueMode::PlutoPushback { .. } =>
                 Some(CampaignObjectiveKind::PlutoPushback),
+            DialogueMode::NeptuneProduction { .. } =>
+                Some(CampaignObjectiveKind::NeptuneProduction),
             DialogueMode::UranusOffensive { .. } =>
                 Some(CampaignObjectiveKind::UranusOffensive),
             DialogueMode::UranusDefensive { .. } =>
