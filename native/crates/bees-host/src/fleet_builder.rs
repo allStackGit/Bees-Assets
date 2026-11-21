@@ -71,7 +71,7 @@ impl ReinforcementPattern {
 }
 
 #[derive(Clone, Copy)]
-enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Scouts, Chargers, FireBarges, Gate, Detonators, Queen }
+enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Scouts, ReconMiners, Chargers, FireBarges, Siege, Gate, Detonators, Queen }
 
 #[derive(Clone, Copy)]
 enum AiTactics { Aggressive, Circle, RightSwipe, LeftSwipe, InAndOut, Mixed }
@@ -174,8 +174,10 @@ impl FleetMix {
             Self::Specialists => "specialists",
             Self::Miners => "miners",
             Self::Scouts => "scouts",
+            Self::ReconMiners => "recon-miners",
             Self::Chargers => "chargers",
             Self::FireBarges => "fire-barges",
+            Self::Siege => "siege",
             Self::Gate => "warp-gate",
             Self::Detonators => "yellow-jackets",
             Self::Queen => "queen",
@@ -195,9 +197,15 @@ impl FleetMix {
     }
 
     fn specialist_type(self, side: usize) -> u8 {
+        self.specialist_type_at(side, 0)
+    }
+
+    fn specialist_type_at(self, side: usize, slot: usize) -> u8 {
         match self {
             Self::Miners => 4,
+            Self::ReconMiners => if slot % 2 == 0 { 18 } else { 4 },
             Self::Chargers => 0,
+            Self::Siege => if slot % 2 == 0 { 0 } else { 10 },
             Self::Detonators => 22,
             _ if side == 0 => 18,
             _ => 10,
@@ -211,8 +219,8 @@ impl FleetMix {
             Self::SupportHeavy => (total / 2).min(12),
             Self::Specialists => if total >= 4 { total.div_ceil(4).min(8) } else { 0 },
             Self::Gate | Self::Queen => usize::from(total >= 2),
-            Self::Miners | Self::Scouts | Self::Chargers |
-            Self::FireBarges | Self::Detonators => 0,
+            Self::Miners | Self::Scouts | Self::ReconMiners |
+            Self::Chargers | Self::FireBarges | Self::Siege | Self::Detonators => 0,
         }).min(total.saturating_sub(1 + self.specialist_count(total)))
     }
 
@@ -221,6 +229,8 @@ impl FleetMix {
         match self {
             Self::Miners | Self::Scouts | Self::Chargers |
             Self::FireBarges | Self::Detonators => total.div_ceil(4).min(8),
+            Self::ReconMiners | Self::Siege => total.div_ceil(4).max(2).min(8)
+                .min(total.saturating_sub(1)),
             Self::Specialists => 1,
             _ => 0,
         }
@@ -643,6 +653,11 @@ fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool, arena_size: Option<u3
                     "{} fighters, {} Carpenter Bees  |  Source mineral mining",
                     total - miners, miners,
                 )));
+                let mixed = FleetMix::ReconMiners.specialist_count(total);
+                options.push((FleetMix::ReconMiners, format!(
+                    "{} fighters, {} Scouts and {} Carpenter Bees  |  Beacon recon + mining",
+                    total - mixed, mixed.div_ceil(2), mixed / 2,
+                )));
             }
             options.push((FleetMix::Gate, format!(
                 "{} fighters, 1 WarpGate  |  Source FullRetreat evacuation",
@@ -663,6 +678,11 @@ fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool, arena_size: Option<u3
             options.push((FleetMix::Detonators, format!(
                 "{} fighters, {} Yellow Jackets  |  Source physical detonations",
                 total - detonators, detonators,
+            )));
+            let siege = FleetMix::Siege.specialist_count(total);
+            options.push((FleetMix::Siege, format!(
+                "{} fighters, {} Charge Barges and {} Fire Barges  |  Combined assault",
+                total - siege, siege.div_ceil(2), siege / 2,
             )));
             if arena_size.is_some_and(|size| size >= 1024) {
                 options.push((FleetMix::Queen, format!(
