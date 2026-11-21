@@ -5,6 +5,53 @@
 use super::*;
 
 impl NativePhysicalScene {
+    /// Original squad keyboard routing is authored once at game construction,
+    /// after all fleet clones/groups have their stable command identities.
+    /// A shortcut changes no physics or neural policy state.
+    pub fn install_native_squad_shortcuts(
+        &mut self, shortcuts: &[NativeSquadShortcut],
+    ) -> Result<usize, NativeSnapshotError> {
+        if shortcuts.is_empty() { return Ok(0); }
+        let invalid = NativeSnapshotError::InvalidNativeLayout;
+        if self.source_episode.is_some() || self.source_policy_group.is_some() ||
+            !self.source_policy_bindings.is_empty()
+        {
+            return Err(invalid("squad hotkeys are only available in native player games"));
+        }
+        let mut used = HashSet::new();
+        let mut squad_ids = HashSet::new();
+        let mut updates = Vec::with_capacity(shortcuts.len());
+        for row in shortcuts {
+            if !matches!(row.side, 1 | 2) ||
+                row.squad_item_id <= 0 ||
+                row.original_squad_count == 0 ||
+                row.number > 9 ||
+                !used.insert((row.side, row.number)) ||
+                !squad_ids.insert(row.squad_item_id)
+            {
+                return Err(invalid("invalid or duplicate native squad hotkey"));
+            }
+            let index = self.source_squads.iter().position(|squad|
+                squad.item_id == row.squad_item_id && squad.side == row.side &&
+                squad.player_permissions.user_controlled &&
+                squad.player_permissions.can_accept_input &&
+                squad.hivemind.is_none() &&
+                squad.is_carrier_squad != Some(true)
+            ).ok_or(invalid("numbered squad is not a player command owner"))?;
+            if self.source_squads[index].hotkey_number.is_some() ||
+                self.source_squads[index].original_squad_count.is_some()
+            {
+                return Err(invalid("native squad already has a source keyboard shortcut"));
+            }
+            updates.push((index, row.number, row.original_squad_count));
+        }
+        for (index, number, original_squad_count) in updates {
+            self.source_squads[index].hotkey_number = Some(number);
+            self.source_squads[index].original_squad_count = Some(original_squad_count);
+        }
+        Ok(shortcuts.len())
+    }
+
     pub fn merge_native_layout_squads(
         &mut self, groups: &[NativeSquadMerge],
     ) -> Result<usize, NativeSnapshotError> {
