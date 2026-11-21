@@ -39,7 +39,10 @@ impl ExtractionState {
         self.zone == authored.zone &&
         self.escort_ship_id == authored.escort_ship_id &&
         (!self.escort_delivered || self.escort_ship_id.is_some()) &&
-        (!self.escort_delivered || self.active)
+        (!self.escort_delivered || self.active) &&
+        // The final fleet hull cannot have been extracted before the
+        // Level's physical exit trigger was activated.
+        (!self.last_mobile_extracted || self.active)
     }
 }
 
