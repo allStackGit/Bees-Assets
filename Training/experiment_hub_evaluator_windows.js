@@ -9,11 +9,12 @@ const crypto=require('node:crypto');
 const {spawn,execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const {parseArgs}=require('node:util');
+const {isTailnetIPv4}=require('./experiment_hub_agent_listener');
 const {setTimeout:delay}=require('node:timers/promises');
 const run=promisify(execFile);
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const NAME=/^Bees-ExperimentHub-[A-Za-z0-9-]{1,64}$/;
-const FIELDS=new Set(['schema_version','project','machine','python','port','suites',
+const FIELDS=new Set(['schema_version','project','machine','python','port','hub_host','suites',
     'project_root','artifact_root','snapshot_root','scratch','receipt_root',
     'engine_path','rollout_binary','interval_seconds','timeout_seconds']);
 
@@ -53,9 +54,14 @@ function readConfiguration(file) {
     if(new Set(suites.map(file=>file.toLowerCase())).size!==suites.length)
         throw Error('Evaluation suites must be distinct.');
     const python=local(value.python,'Python executable');
+    const hubHost=value.hub_host??'127.0.0.1';
+    const port=integer(value.port??7148,1,65535,'Port');
+    if((hubHost!=='127.0.0.1'&&!isTailnetIPv4(hubHost))||
+        (hubHost!=='127.0.0.1'&&port!==7149)||![7148,7149].includes(port))
+        throw Error('Evaluator host must be localhost or a tailnet IPv4 at port 7149.');
     const args=['-B',local(path.join(__dirname,
         'experiment_hub_'+value.project+'_eval_poll.py'),'Evaluator entrypoint'),
-        '--machine',value.machine,'--port',String(integer(value.port??7148,1,65535,'Port'))];
+        '--machine',value.machine,'--port',String(port),'--hub-host',hubHost];
     for(const suite of suites)args.push('--suite',suite);
     const directories=[];
     for(const key of ['artifact_root','scratch','receipt_root',
@@ -83,19 +89,18 @@ function readConfiguration(file) {
             value.engine_path))
         throw Error('Configuration contains paths for a different evaluator project.');
     return {project:value.project,machine:value.machine,python,args,
-        port:integer(value.port??7148,1,65535,'Port'),
+        port,
         interval:integer(value.interval_seconds??180,60,86400,'Interval seconds'),
         timeout:integer(value.timeout_seconds??7200,60,86400,'Timeout seconds'),
         sha256:crypto.createHash('sha256').update(bytes).digest('hex')};
 }
 function validateEvaluatorTransport(config,env=process.env) {
-    // Port 7148 is the trusted coordinator-local administrator listener.
-    // Remote evaluators use only the private machine-agent endpoint,
-    // normally through a local SSH forward (e.g. 17149 -> 7149).
+    // Port 7148 is a coordinator-local privileged route. Remote evaluators
+    // use the authenticated machine-agent tailnet listener on port 7149.
     // Reject a missing token *before* starting repeated evaluator polls.
     if(config.port!==7148) {
         if(!/^[a-f0-9]{64}$/.test(String(env.EXPERIMENT_HUB_AGENT_TOKEN||'')))
-            throw Error('Remote evaluation requires a private machine agent token for the restricted loopback port.');
+            throw Error('Remote evaluation requires a private machine agent token for the restricted Hub port.');
         if(env.EXPERIMENT_HUB_MACHINE_ID!=null&&
             env.EXPERIMENT_HUB_MACHINE_ID!==config.machine)
             throw Error('Remote evaluator machine ID differs from its enrolled agent identity.');
@@ -126,6 +131,7 @@ function saveStatus(file,value) {
 }
 async function poll(config) {
     return await new Promise((resolve,reject)=>{
+        let stderrTail='';
         const child=spawn(config.python,config.args,
             {cwd:__dirname,windowsHide:true,stdio:['ignore','pipe','pipe']});
         const timeout=setTimeout(()=>{
@@ -134,9 +140,20 @@ async function poll(config) {
             reject(Error('Evaluation exceeded '+config.timeout+' seconds; stopping its native process tree.'));
         },config.timeout*1000);
         child.stdout.on('data',data=>console.log(data.toString('utf8').trimEnd()));
-        child.stderr.on('data',data=>console.error(data.toString('utf8').trimEnd()));
+        child.stderr.on('data',data=>{
+            const line=data.toString('utf8');
+            stderrTail=(stderrTail+line).slice(-4096);
+            console.error(line.trimEnd());
+        });
         child.once('error',error=>{clearTimeout(timeout);reject(error);});
-        child.once('exit',(code,signal)=>{clearTimeout(timeout);resolve({code,signal});});
+        child.once('exit',(code,signal)=>{
+            clearTimeout(timeout);
+            const details=stderrTail.split(/\r?\n/).reverse().find(line=>
+                /^Scheduled (TinyBrains|Courier) evaluation failed:/.test(line));
+            resolve({code,signal,diagnostic:code===0?null:
+                (details||'Evaluator process exited unsuccessfully; inspect local service output.')
+                    .replace(/[\x00-\x1f]/g,' ').slice(0,160)});
+        });
     });
 }
 async function main(argv=process.argv.slice(2),env=process.env) {
@@ -170,6 +187,7 @@ async function main(argv=process.argv.slice(2),env=process.env) {
                 started_at:startedAt,finished_at:new Date().toISOString(),
                 elapsed_ms:Math.round(performance.now()-start),python_exit_code:result.code,
                 signal:result.signal,
+                ...(result.diagnostic?{diagnostic:result.diagnostic}:{}),
                 service_job_cpu_time_ns:Number.isSafeInteger(after.cpu_time_ns)&&
                     Number.isSafeInteger(before.cpu_time_ns)&&after.cpu_time_ns>=before.cpu_time_ns
                     ?after.cpu_time_ns-before.cpu_time_ns:null,

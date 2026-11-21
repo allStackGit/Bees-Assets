@@ -7,19 +7,34 @@ const {placements,plan}=require('./experiment_hub_resources');
 
 const POST_ACTIONS={
     '/api/hub/projects':[201,'addProject'],
+    '/api/hub/projects/metric-defaults':[200,'setProjectMetricDefaults'],
+    '/api/hub/projects/evaluation-defaults':[200,'setProjectEvaluationDefaults'],
+    '/api/hub/evaluation/historical':[201,'importHistoricalEvaluation'],
     '/api/hub/configurations':[200,'saveConfiguration'],
     '/api/hub/machines':[201,'addMachine'],
     '/api/hub/machines/budget':[200,'updateMachineBudget'],
     '/api/hub/machines/gpu-budget':[200,'updateMachineGpuBudget'],
     '/api/hub/machines/gpus':[200,'bindMachineGpus'],
     '/api/hub/machines/enroll':[201,'enrollMachine'],
+    '/api/hub/machines/approve-reinstall':[200,'approveMachineReinstallation'],
     '/api/hub/machines/revoke':[200,'revokeMachine'],
+    '/api/hub/machines/update':[200,'configureMachineUpdate'],
+    '/api/hub/machines/install':[200,'requestMachineSoftware'],
     '/api/hub/machines/native-evaluator':[200,'controlNativeEvaluator'],
     '/api/hub/leases':[201,'requestLease'],
     '/api/hub/leases/release':[200,'releaseLease'],
     '/api/hub/jobs':[201,'queueConfiguration'],
+    '/api/hub/jobs/rename':[200,'renameJob'],
     '/api/hub/pipelines':[201,'queuePipeline'],
     '/api/hub/distributed/tinybrains':[201,'queueDistributedTinyBrains'],
+    '/api/hub/distributed/tinybrains/prepare':[202,'prepareDistributedTinyBrains'],
+    '/api/hub/distributed/tinybrains/cancel-prepare':[200,'cancelDistributedTinyBrainsPreparation'],
+    '/api/hub/distributed/courier':[201,'queueDistributedCourier'],
+    '/api/hub/distributed/courier/start-lineages':[200,'authorizeCourierLineages'],
+    '/api/hub/distributed/courier/schedule-start':[200,'scheduleCourierGroup'],
+    '/api/hub/distributed/courier/cancel-start-plan':[200,'cancelScheduledDistributedGroup'],
+    '/api/hub/distributed/courier/cancel-launch':[200,'cancelDistributedLaunch'],
+    '/api/hub/distributed/courier/abort-startup':[200,'abortCourierStartup'],
     '/api/hub/distributed/tinybrains/schedule-start':[200,'scheduleDistributedGroup'],
     '/api/hub/distributed/tinybrains/cancel-start-plan':[200,'cancelScheduledDistributedGroup'],
     '/api/hub/distributed/tinybrains/start-collectors':[200,'authorizeDistributedCollectors'],
@@ -54,6 +69,7 @@ const POST_ACTIONS={
     '/api/hub/jobs/qualify-gpu':[200,'requestGpuQualification'],
     '/api/hub/jobs/withdraw-gpu-probe':[200,'withdrawGpuQualification'],
     '/api/hub/jobs/start':[200,'authorizeStart'],
+    '/api/hub/jobs/cancel-install-start':[200,'cancelPendingInstallStart'],
     '/api/hub/jobs/withdraw-start':[200,'withdrawStart'],
     '/api/hub/jobs/stop':[200,'authorizeStop'],
     '/api/hub/jobs/reinspect-checkpoint':[200,'requestCheckpointReinspection'],
@@ -80,9 +96,11 @@ function route(hub,method,pathname,query,value,bees) {
         if(pathname==='/api/hub/progress')
             return {status:200,data:hub.progressComparison(query.get('project_id'))};
         if(pathname==='/api/hub/state')
-            return {status:200,data:{...hub.snapshot(),bees:bees||{
-                active_id:null,queue_armed:false,runs:[],
-            }}};
+            return {status:200,data:{...hub.snapshot(),
+                historical_evaluation_jobs:hub.historicalEvaluations(),
+                bees:bees||{
+                    active_id:null,queue_armed:false,runs:[],
+                }}};
         if(pathname==='/api/hub/placements') {
             const snapshot=hub.snapshot();
             const gpus=(query.get('gpus')||'').split(',').filter(Boolean);

@@ -1,11 +1,13 @@
 'use strict';
 
-// Restricted, worker-only loopback listener shared by the Bees coordinator
-// and isolated Hub transport qualification. The caller binds to loopback;
-// neither project administration nor Bees training routes are available here.
+// Restricted machine-agent listener. Standalone Hub may opt in to a
+// separate Tailscale interface; administrator routes are never available here.
 const http=require('node:http');
+const net=require('node:net');
+const os=require('node:os');
 const fs=require('node:fs');
 const {ArtifactMirror,MAX_CHUNK}=require('./experiment_hub_artifact_sync');
+const {bootstrap,keyFile}=require('./experiment_hub_worker_bootstrap');
 const {authorizedBundleFile,authorizedModelFile}=
     require('./experiment_hub_native_bundle_transfer');
 const AGENT_HOST='127.0.0.1';
@@ -13,6 +15,20 @@ const AGENT_PORT=7149;
 // A heartbeat includes machine/lease reports beyond the separately
 // validated 32-KiB trainer progress summary.
 const MAX_BODY_BYTES=65536;
+
+function isTailnetIPv4(value) {
+    if(typeof value!=='string'||net.isIP(value)!==4)return false;
+    const parts=value.split('.').map(Number);
+    return parts[0]===100&&parts[1]>=64&&parts[1]<=127;
+}
+function activeTailnetAddress(value,interfaces=os.networkInterfaces()) {
+    if(!isTailnetIPv4(value)||!Object.entries(interfaces).some(([name,addresses])=>
+        /^tailscale/i.test(name)&&Array.isArray(addresses)&&
+        addresses.some(info=>info.family==='IPv4'&&info.address===value&&
+            info.internal!==true)))
+        throw Error('Agent tailnet listener requires a local Tailscale interface address in 100.64.0.0/10.');
+    return value;
+}
 
 function respond(res,status,value) {
     const payload=JSON.stringify(value);
@@ -44,15 +60,138 @@ async function readBody(req) {
         Buffer.concat(chunks,received))||'{}');
 }
 
-function createAgentServer(getHub) {
+function approvedReleaseProjects(hub,id) {
+    // Worker capability names refer to executor roles; release component
+    // names refer to the shared simulation source shipped to those roles.
+    const live=hub.agentReports.get(id)?.installed_projects;
+    const selected=hub.state.machines.find(m=>m.id===id)?.bootstrap_projects;
+    const projects=new Set([...(live||[]),...(selected||[]),
+        ...(hub.state.machine_software_requests?.[id]||[])]);
+    // A machine-pinned, Hub-issued claim can prepare software before
+    // its native Start. The installed-adapter gate remains mandatory.
+    for(const job of hub.state.jobs)
+        if(job.assigned_machine_id===id&&job.lease_id&&
+            !job.capacity_released_at&&job.status!=='cancelled') {
+            if(['tinybrains','tinybrains_rollout'].includes(job.project_id))
+                projects.add('tinybrains');
+            if(['courier','courier_lineage'].includes(job.project_id))
+                projects.add('courier');
+        }
+    if(projects.has('tinybrains_rollout'))projects.add('tinybrains');
+    if(projects.has('courier_lineage'))projects.add('courier');
+    return [...projects].filter(project=>
+        ['tinybrains','courier','bees'].includes(project));
+}
+function createAgentServer(getHub,bindHost=AGENT_HOST,releases=null,bootstrapRoot=null) {
+    if(bindHost!==AGENT_HOST&&!isTailnetIPv4(bindHost))
+        throw Error('Machine-agent server can bind only to loopback or a tailnet IPv4.');
+    const hosts=new Set(bindHost===AGENT_HOST
+        ?[AGENT_HOST+':'+AGENT_PORT,'localhost:'+AGENT_PORT]
+        :[bindHost+':'+AGENT_PORT]);
     if(typeof getHub!=='function')
         throw Error('Agent endpoint requires a local Hub provider.');
     const mirror=new ArtifactMirror(getHub);
     return http.createServer(async(req,res)=>{
         const host=req.headers.host;
-        if((host!==AGENT_HOST+':'+AGENT_PORT&&
-            host!=='localhost:'+AGENT_PORT)||req.headers.origin)
+        if(!hosts.has(host)||req.headers.origin)
             return respond(res,404,{error:'Agent endpoint only.'});
+        // Only a direct tailnet peer, verified by local tailscaled as owned by
+        // Halifax's signed-in Tailscale user, may perform initial enrollment.
+        // Loopback and the public dashboard never provide this capability.
+        if(req.method==='POST'&&req.url==='/api/hub/agent/bootstrap') {
+            if(!bootstrapRoot||bindHost===AGENT_HOST||
+                !isTailnetIPv4(req.socket.remoteAddress)||
+                Number(req.headers['content-length']||0)>2048)
+                return respond(res,403,{error:'Tailnet bootstrap only.'});
+            try {
+                const payload=await readBody(req);
+                return respond(res,200,bootstrap(getHub(),bootstrapRoot,
+                    req.socket.remoteAddress,payload));
+            }catch(error) {
+                return respond(res,[401,403,409,413].includes(error.status)
+                    ?error.status:403,{error:String(error.message||error).slice(0,240)});
+            }
+        }
+        // Authenticated release distribution uses the existing machine token.
+        // The administrator cannot reach this route from a worker port.
+        if(releases&&req.url?.startsWith('/api/hub/agent/releases')) {
+            try {
+                if(req.url.length>512)return respond(res,404,{error:'Invalid release route.'});
+                const url=new URL(req.url,'http://'+AGENT_HOST+':'+AGENT_PORT);
+                const pathname=url.pathname,keys=[...url.searchParams.keys()];
+                const identity=url.searchParams.get('machine_id');
+                if(url.hash||!identity||
+                    new Set(keys).size!==keys.length||
+                    req.headers.origin)
+                    return respond(res,404,{error:'Invalid release envelope.'});
+                const hub=getHub();
+                hub.authenticateAgent(identity,req.headers['x-hub-agent-token']);
+                if(req.method==='GET'&&pathname==='/api/hub/agent/releases'&&
+                    keys.length===1&&Number(req.headers['content-length']||0)===0) {
+                    const live=hub.agentReports.get(identity);
+                    return respond(res,200,{
+                        components:releases.manifest(approvedReleaseProjects(hub,identity)),
+                        mode:hub.machineUpdatePolicy(identity),
+                        agent_instance_id:live?.instance_id||null,
+                        agent_preflight_passed:live?.native_preflight_passed===true,
+                        agent_installed_projects:live?.installed_projects||[],
+                        agent_report_age_ms:live?Date.now()-live.received_ms:null,
+                        pending_native_jobs:hub.state.jobs.filter(job=>
+                            job.assigned_machine_id===identity&&job.dispatch_id&&
+                            !job.capacity_released_at&&
+                            !['finished','failed','stopped','cancelled'].includes(job.status))
+                            .map(job=>job.id),
+                    });
+                }
+                if(req.method==='GET'&&pathname==='/api/hub/agent/releases/bundle'&&
+                    keys.length===3&&keys.every(key=>
+                        ['machine_id','component','sha256'].includes(key))&&
+                    Number(req.headers['content-length']||0)===0) {
+                    const component=url.searchParams.get('component');
+                    const sha=url.searchParams.get('sha256');
+                    if(component!=='worker'&&
+                        !approvedReleaseProjects(hub,identity).includes(component))
+                        return respond(res,403,{error:'Project not enrolled on this worker.'});
+                    const archive=releases.archive(component,sha);
+                    res.writeHead(200,{
+                        'Content-Type':'application/x-tar',
+                        'Content-Length':archive.bytes,
+                        'Cache-Control':'no-store',
+                        'X-Content-Type-Options':'nosniff',
+                    });
+                    const stream=require('node:fs').createReadStream(archive.path);
+                    stream.on('error',()=>res.destroy());
+                    stream.pipe(res);
+                    return;
+                }
+                if(req.method==='GET'&&
+                    pathname==='/api/hub/agent/releases/rollout-key'&&
+                    keys.length===2&&keys.includes('machine_id')&&
+                    keys.includes('component')&&bootstrapRoot) {
+                    const component=url.searchParams.get('component');
+                    if(!['tinybrains','courier'].includes(component)||
+                        !approvedReleaseProjects(hub,identity).includes(component))
+                        return respond(res,403,{error:'Simulation is not approved for this machine.'});
+                    // The private simulation key is obtained only over the
+                    // machine-token-authenticated agent port, never via UI.
+                    return respond(res,200,{component,key:keyFile(bootstrapRoot,component)});
+                }
+                if(req.method==='POST'&&pathname==='/api/hub/agent/releases/status'&&
+                    keys.length===1) {
+                    const bytes=Number(req.headers['content-length']||0);
+                    if(bytes<1||bytes>MAX_BODY_BYTES)
+                        return respond(res,413,{error:'Invalid release status envelope.'});
+                    const report=await readBody(req);
+                    if(report.machine_id!==identity)throw Error('Machine status identity changed.');
+                    return respond(res,200,hub.reportMachineSoftware(report,
+                        req.headers['x-hub-agent-token']));
+                }
+                return respond(res,404,{error:'Unknown release route.'});
+            }catch(error) {
+                return respond(res,[401,403,409,413].includes(error.status)
+                    ?error.status:400,{error:String(error.message||error).slice(0,240)});
+            }
+        }
         // Model and rollout reads use the same authenticated loopback
         // transport. The model path is a closed allowlist and additionally
         // requires a verified predecessor and an explicit recipient pin.
@@ -203,4 +342,4 @@ function createAgentServer(getHub) {
         }
     });
 }
-module.exports={createAgentServer,AGENT_HOST,AGENT_PORT,MAX_BODY_BYTES};
+module.exports={createAgentServer,AGENT_HOST,AGENT_PORT,MAX_BODY_BYTES,isTailnetIPv4,activeTailnetAddress};
