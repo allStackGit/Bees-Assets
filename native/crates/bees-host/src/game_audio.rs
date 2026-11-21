@@ -431,6 +431,9 @@ impl NativeGameAudio {
             if let Some(id) = event["projectile_id"].as_i64() {
                 self.seen_projectiles.insert(id, tick);
             }
+            if let Some(id) = event["paired_projectile_id"].as_i64() {
+                self.seen_projectiles.insert(id, tick);
+            }
             let effect = match event["effect"].as_str() {
                 Some("explosion") => Some(Effect::Explosion),
                 Some("small_explosion") => Some(Effect::SmallExplosion),
