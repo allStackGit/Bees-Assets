@@ -41,6 +41,30 @@ def fleet(value: str) -> list[tuple[int, int]]:
     return list(counts.items())
 
 
+def squad_sizes(value: str) -> tuple[int, int, tuple[int, ...]]:
+    """Preserve source SavedSquad boundaries: SIDE:TYPE:SIZE[,SIZE...].
+
+    This only partitions initially deployed ordinary ships of one type;
+    deferred waves and Carrier-child ownership have their own authentic
+    source lifetimes and cannot be silently repartitioned here.
+    """
+    if not re.fullmatch(r"[12]:[0-9]+:[0-9]+(?:,[0-9]+)*", value):
+        raise argparse.ArgumentTypeError(
+            "--squad-sizes requires SIDE:TYPE:SIZE[,SIZE...]"
+        )
+    side, kind, raw = value.split(":", 2)
+    sizes = tuple(int(part) for part in raw.split(","))
+    if (int(kind) >= 24 or int(kind) in (5, 8, 19) or
+            len(sizes) > 1024 or
+            any(not 1 <= size <= MAX_SQUAD_MEMBERS for size in sizes) or
+            sum(sizes) > 1024):
+        raise argparse.ArgumentTypeError(
+            "source squad sizes require an ordinary ship type 0..23 and "
+            "1..10 physical hulls per squad, at most 1024 total"
+        )
+    return int(side), int(kind), sizes
+
+
 def reinforcement(value: str) -> tuple[float, int, int, int]:
     """A timed deferred squad allocation: SECONDS:SIDE:TYPE:COUNT."""
     parts = value.split(":")
@@ -447,6 +471,16 @@ def author(args) -> tuple[dict, dict, dict]:
                 f"reinforcement ships for side {side} type {kind} exceed "
                 "that faction's authored total"
             )
+    squad_sizes_by_type = {}
+    for side, kind, sizes in getattr(args, "squad_sizes", []):
+        key = (side, kind)
+        initial = requested_counts.get(key, 0) - deferred_counts.get(key, 0)
+        if key in squad_sizes_by_type or not initial or sum(sizes) != initial:
+            raise ValueError(
+                f"--squad-sizes {side}:{kind} must specify exactly the "
+                "initially deployed hulls of one unique authored type"
+            )
+        squad_sizes_by_type[key] = sizes
     if any(
         sum(count - deferred_counts.get((side, kind), 0)
             for kind, count in requested[side] if kind not in (8, 19)) == 0
@@ -638,8 +672,18 @@ def author(args) -> tuple[dict, dict, dict]:
             matching = by_kind[(side, kind)]
             for wave in [None, *range(len(waves))]:
                 members = [id for id in matching if deferred_owner.get(id) == wave]
-                for start in range(0, len(members), MAX_SQUAD_MEMBERS):
-                    add_group(members[start:start + MAX_SQUAD_MEMBERS], wave)
+                if wave is None and (side, kind) in squad_sizes_by_type:
+                    # Source SavedSquad composition is significant to
+                    # formation movement, HiveMind and campaign rewards.
+                    # Preserve the exact authored partition, not a generic
+                    # ten-hull grouping or a synthetic training squad.
+                    start = 0
+                    for count in squad_sizes_by_type[(side, kind)]:
+                        add_group(members[start:start + count], wave)
+                        start += count
+                else:
+                    for start in range(0, len(members), MAX_SQUAD_MEMBERS):
+                        add_group(members[start:start + MAX_SQUAD_MEMBERS], wave)
         for parent in by_kind.get((side, 5), []):
             wave = deferred_owner.get(parent)
             # Preserve Drone-then-Striker pair order across multiple
@@ -1579,6 +1623,9 @@ def main() -> None:
                         default="bees", help="which sides have player input authority")
     parser.add_argument("--host-side", type=int, choices=(1, 2),
                         help="local host window side when both sides are controlled")
+    parser.add_argument("--squad-sizes", action="append", default=[],
+                        type=squad_sizes, metavar="SIDE:TYPE:SIZE[,SIZE...]",
+                        help="preserve original individually authored squad sizes for initially deployed non-Carrier ships")
     parser.add_argument("--fleet-template", action="append", type=fleet_template,
                         dest="fleet_templates", default=[], metavar="SIDE:TYPE",
                         help="full-health authored reserve class for later campaign rewards, not a battle combatant")
