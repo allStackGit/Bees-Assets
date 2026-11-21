@@ -235,6 +235,19 @@ class OptimizerResourceSampler:
                     # Monitoring is best-effort; never abort an update
                     # because its driver does not expose a counter.
                     pass
+            # PyTorch's optional NVML-backed readings are available on
+            # supported Windows and Linux NVIDIA drivers. CUDA reports
+            # power in milliwatts and temperature in degrees Celsius.
+            for name, key, scale in (
+                ("power_draw", "physical_gpu_nvml_power_watts", 1000.0),
+                ("temperature", "physical_gpu_nvml_temp_celsius", 1.0),
+            ):
+                try:
+                    getter = getattr(self.torch.cuda, name, None)
+                    if getter is not None:
+                        self._observe(key, getter(self.device) / scale)
+                except Exception:
+                    pass
 
     def _run(self):
         while not self.stop_event.wait(self.interval):
@@ -261,6 +274,10 @@ class OptimizerResourceSampler:
                if self.gpu_temperature_sensor is not None else {}),
             **({"gpu_junction_source": "amdgpu hwmon labeled junction/hotspot sensor"}
                if self.gpu_junction_sensor is not None else {}),
+            **({"gpu_power_source": "PyTorch NVML power_draw (device sensor)"}
+               if "physical_gpu_nvml_power_watts" in self.samples else {}),
+            **({"gpu_temperature_source": "PyTorch NVML temperature (device sensor)"}
+               if "physical_gpu_nvml_temp_celsius" in self.samples else {}),
             "samples": {
                 key: ({"sample_count": count, "observed_high_water": peak}
                       if key == "process_peak_resident_bytes" else
