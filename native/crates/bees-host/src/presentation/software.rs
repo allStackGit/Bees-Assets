@@ -2092,6 +2092,9 @@ impl NativeSoftwareRenderer {
                 let own_side = view.player_authority.player_viewer_side()
                     == Some(exiting_side);
                 let label = match (own_side, withdrawing) {
+                    (true, true) if view.campaign_objective == Some(
+                        bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusDefensive,
+                    ) => "Survive and mine minerals  |  Retreat through the marked zone",
                     (true, true) => "Withdraw surviving fleet through the marked retreat zone",
                     (false, true) => "Intercept enemy fleet before it withdraws",
                     (true, false) => "Extract your mobile fleet to the marked exit",
@@ -2110,6 +2113,17 @@ impl NativeSoftwareRenderer {
             };
             text::draw_centered(&mut self.pixels, self.width, 8,
                 &label, 1, [239, 247, 255]);
+        } else if view.campaign_objective == Some(
+            bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusOffensive,
+        ) {
+            let objective = if view.player_authority.player_viewer_side()
+                == view.campaign_dialogue_side {
+                "Find and destroy all the Bees"
+            } else {
+                "Defend the Bee fleet from the human attackers"
+            };
+            text::draw_centered(&mut self.pixels, self.width, 8,
+                objective, 1, [239, 247, 255]);
         }
         // The durable Level notification records arrivals exactly once.
         // A short visual acknowledgement survives an outbox ACK, but
@@ -2118,7 +2132,8 @@ impl NativeSoftwareRenderer {
         if view.terminal_result.is_none() {
             let y = if view.survival.is_some() || view.demolition.is_some() ||
                 view.escort.is_some() || view.combat.extraction_objective().is_some() ||
-                view.rescue_barges.is_some() {
+                view.rescue_barges.is_some() ||
+                view.campaign_objective.is_some() {
                 8 + text::HEIGHT + 4
             } else { 8 };
             let recently_arrived = view.last_reinforcement_tick

@@ -2073,6 +2073,16 @@ fn current_state(
                 "duration_seconds": objective.duration_seconds,
                 "seconds_remaining": objective.seconds_remaining,
             }))
+        } else if let Some((exiting_side, _, escort)) =
+            view.combat.extraction_objective()
+        {
+            (!escort).then(|| json!({
+                "kind": "extraction",
+                "exiting_side": exiting_side,
+                "retreat_on_exit": view.combat.extraction_is_withdrawal(),
+                "mine_and_withdraw": view.campaign_objective == Some(
+                    bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusDefensive),
+            }))
         } else if let Some(barges) = view.rescue_barges {
             // Original rescue squad identities are private to the
             // authenticated campaign owner; the opponent sees only
@@ -2085,6 +2095,13 @@ fn current_state(
                     Some(barges.iter().filter(|id| view.combat.ship(**id)
                         .is_some_and(|ship| !ship.vitals.is_dead())).count())
                 } else { None },
+            }))
+        } else if view.campaign_objective == Some(
+            bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusOffensive,
+        ) {
+            Some(json!({
+                "kind": "campaign_elimination",
+                "attacking_side": view.campaign_dialogue_side,
             }))
         } else { None },
         // An authored exit is also public to both opponents in the local

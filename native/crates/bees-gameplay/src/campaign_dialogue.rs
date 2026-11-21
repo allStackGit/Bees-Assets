@@ -172,7 +172,25 @@ pub struct CampaignDialogue {
     sequence: u8,
 }
 
+/// Read-only public mission identity, derived from the one campaign
+/// state machine. This is not another objective/lifecycle owner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CampaignObjectiveKind {
+    UranusOffensive,
+    UranusDefensive,
+}
+
 impl CampaignDialogue {
+    pub fn objective_kind(&self) -> Option<CampaignObjectiveKind> {
+        match self.mode {
+            DialogueMode::UranusOffensive { .. } =>
+                Some(CampaignObjectiveKind::UranusOffensive),
+            DialogueMode::UranusDefensive { .. } =>
+                Some(CampaignObjectiveKind::UranusDefensive),
+            _ => None,
+        }
+    }
+
     pub fn new(spec: CampaignDialogueSpec) -> Self {
         let (mode, cue) = match spec {
             CampaignDialogueSpec::TitaniaMinesweeper { .. } => (
