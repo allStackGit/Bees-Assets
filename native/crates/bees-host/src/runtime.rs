@@ -736,7 +736,7 @@ where
     where M: NativeLevelPlayerContext
     {
         use bees_gameplay::player_inputs::{NativePlayerCommand, NativePlayerCommandPlan,
-            NativePlayerCommandCounts};
+            NativePlayerCommandCounts, NativePlayerSupportAction};
         let index = (0..self.simulation.world_count()).find(|&index|
             self.simulation.world(index).is_some_and(|world| world.id == input.world_id))
             .ok_or(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld))?;
@@ -744,6 +744,30 @@ where
         if world.episode_revision() != input.episode_revision {
             return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld));
         }
+        // The UI identifies a clicked Beehive, but the authoritative live
+        // squad owns GetShips order and membership. Resolve once per input
+        // (including replay), before any existing orders are retired.
+        let resolved_heal;
+        let action = if let NativePlayerSupportAction::Heal { beehive_ids } = &input.action {
+            let roster = world.state.events.roster();
+            let combat = &world.state.combat;
+            let valid_hive = |id| combat.ship(id).is_some_and(|ship|
+                ship.ship_type == bees_sim::combat_world::BEEHIVE_TYPE &&
+                !ship.vitals.is_dead()) &&
+                combat.ship_body(id).is_some_and(|body| body.active);
+            let target = beehive_ids.first().copied().filter(|&id| valid_hive(id))
+                .and_then(|id| roster.owning_squad(id))
+                .and_then(|owner| roster.get(owner).map(|squad| (owner, squad)))
+                .ok_or(HostPlayerInputError::Gameplay(NativePlayerInputError::InvalidAction))?;
+            if beehive_ids.iter().any(|&id| !valid_hive(id) ||
+                roster.owning_squad(id) != Some(target.0)) {
+                return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::InvalidAction));
+            }
+            resolved_heal = NativePlayerSupportAction::Heal {
+                beehive_ids: target.1.members.iter().copied().filter(|&id| valid_hive(id)).collect(),
+            };
+            &resolved_heal
+        } else { &input.action };
         let mut counts = NativePlayerCommandCounts::default();
         let mut seen = std::collections::HashSet::with_capacity(input.squads.len());
         let mut plans = Vec::with_capacity(input.squads.len());
@@ -756,7 +780,7 @@ where
             };
             match NativePlayerCommandPlan::prepare(world, NativePlayerCommand {
                 world_id: input.world_id, episode_revision: input.episode_revision,
-                selected_ship, action: input.action.as_local_action(),
+                selected_ship, action: action.as_local_action(),
             }) {
                 Ok(plan) => plans.push(plan),
                 Err(error) if error.is_rejection() => counts.rejected_squads += 1,

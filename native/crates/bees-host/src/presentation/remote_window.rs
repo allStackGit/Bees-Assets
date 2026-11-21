@@ -1906,19 +1906,9 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
             ("fire",json!({"target":{"x":point.x,"y":point.y}}))
         }
         (Some(TargetMode::Heal),Some(("ship",target))) if target["friendly"]==true => {
-            let squad = squad_for_ship(state, target["id"].as_i64().unwrap_or(-1),
-                target["side"].as_i64().unwrap_or(0))
-                .ok_or_else(|| invalid("healing target has no visible squad"))?;
-            // The local source sends all live Beehives in GetShips order.
-            // Use only the server's disclosed members, not an inferred roster.
-            let beehive_ids: Vec<i64> = squad["members"].as_array().into_iter().flatten()
-                .filter_map(Value::as_i64)
-                .filter(|&id| state["ships"].as_array().into_iter().flatten().any(|ship|
-                    ship["id"].as_i64() == Some(id) && ship["friendly"] == true &&
-                    ship["ship_type"].as_u64() == Some(u64::from(bees_sim::combat_world::BEEHIVE_TYPE))))
-                .collect();
-            if beehive_ids.is_empty() { return Err(invalid("no live visible Beehives").into()); }
-            ("support",json!({"action":{"Heal":{"beehive_ids":beehive_ids}}}))
+            // Send the clicked identity only. The host owns live squad
+            // expansion, source ordering and healing reservations.
+            ("support",json!({"action":{"Heal":{"beehive_ids":[target["id"]]}}}))
         }
         (Some(TargetMode::Retreat),Some(("ship",target))) if target["friendly"]==true => {
             ("support",json!({"action":{"FullRetreat":{"warp_gate_id":target["id"]}}}))

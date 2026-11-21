@@ -6771,6 +6771,14 @@ fn run_battle(
                         Err("stale world, unauthorized side, or unavailable squad"));
                     continue;
                 }
+                if !host.render_world(0).is_some_and(|view|
+                    remote.as_mut().expect("remote listener")
+                        .support_target_visible(&view, order.side, &order.action))
+                {
+                    remote.as_mut().expect("remote listener").reply(
+                        order.peer, order.request_id, Err("unavailable support target"));
+                    continue;
+                }
                 // HiveMind may keep a request outstanding for several
                 // ticks, preventing an atomic host checkpoint. Do not
                 // retain an unbounded backlog of successful yet uncommitted

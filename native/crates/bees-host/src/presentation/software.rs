@@ -1444,12 +1444,9 @@ impl NativeSoftwareRenderer {
             Mode::LeftSwipe => Some(Action::LeftSwipe { target: view.roster.owning_squad(id)? }),
             Mode::InAndOut => Some(Action::InAndOut { target: view.roster.owning_squad(id)? }),
             Mode::Guard => Some(Action::Guard { target: view.roster.owning_squad(id)? }),
-            // Source input sends every Beehive in the clicked squad, in
-            // GetShips order, rather than silently restricting it to one hull.
-            Mode::Heal => Some(Action::Heal { beehive_ids: view.roster.get(view.roster.owning_squad(id)?)?
-                .members.iter().copied().filter(|id| view.combat.ship(*id).is_some_and(|ship|
-                    !ship.vitals.is_dead() && ship.ship_type == bees_sim::combat_world::BEEHIVE_TYPE))
-                .collect() }),
+            // The host expands the clicked live Beehive to its canonical
+            // squad's eligible members, in source GetShips order.
+            Mode::Heal => Some(Action::Heal { beehive_ids: vec![id] }),
             Mode::FullRetreat => Some(Action::FullRetreat { warp_gate_id: id }),
             _ => None,
         }

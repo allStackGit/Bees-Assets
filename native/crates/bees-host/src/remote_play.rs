@@ -1027,6 +1027,57 @@ impl NativeRemotePlay {
         self.measurements.state_bytes += peer.flush();
     }
 
+    /// Admit object- and squad-targeted commands against the same live
+    /// faction view sent to this peer. Point movement, manual aim and
+    /// untargeted commands deliberately have no visibility requirement.
+    /// Called only at a player input boundary, before durable recording.
+    pub fn support_target_visible(&mut self, view: &NativeRenderWorldView<'_>,
+        side: i32, action: &NativePlayerInput) -> bool
+    {
+        use bees_gameplay::player_inputs::NativePlayerSupportAction as Action;
+        let NativePlayerInput::Support(input) = action else { return true };
+        if matches!(&input.action, Action::Hold | Action::Patrol { .. }) { return true; }
+        let fog = view.player_authority.player_fog_of_war_enabled();
+        // Do not use fading sources from another World/episode.
+        if fog && self.last_state != Some((view.world_id.0, view.episode_revision)) {
+            return false;
+        }
+        let sources = if fog {
+            Some(self.fog_by_side.entry(side).or_default()
+                .sources(view, side, &mut self.measurements))
+        } else { None };
+        let mut ship_visible = |id: i64, friendly: bool, ship_type: Option<u8>| {
+            let Some(ship) = view.combat.ship(id) else { return false };
+            let Some(body) = view.combat.ship_body(id) else { return false };
+            if ship.vitals.is_dead() || !body.active || (ship.side == side) != friendly ||
+                ship_type.is_some_and(|kind| kind != ship.ship_type) {
+                return false;
+            }
+            if view.roster.owning_squad(id).is_some_and(|owner| owns_player_side(view, owner, side)) {
+                return true;
+            }
+            sources.as_ref().is_none_or(|sight|
+                sight.covers(body.motion.position, &mut self.measurements))
+        };
+        match &input.action {
+            Action::Attack { target } | Action::Circle { target } |
+            Action::RightSwipe { target } | Action::LeftSwipe { target } |
+            Action::InAndOut { target } => view.roster.get(*target).is_some_and(|squad|
+                squad.members.iter().copied().any(|id| ship_visible(id, false, None))),
+            Action::Guard { target } => view.roster.get(*target).is_some_and(|squad|
+                squad.members.iter().copied().any(|id| ship_visible(id, true, None))),
+            Action::Heal { beehive_ids } => !beehive_ids.is_empty() &&
+                beehive_ids.iter().copied().all(|id| ship_visible(id, true,
+                    Some(bees_sim::combat_world::BEEHIVE_TYPE))),
+            Action::FullRetreat { warp_gate_id } => ship_visible(*warp_gate_id, true,
+                Some(bees_sim::combat_world::WARP_GATE_TYPE)),
+            Action::Mining { asteroid_id } => view.combat.mining_asteroid_position(*asteroid_id)
+                .is_some_and(|point| sources.as_ref().is_none_or(|sight|
+                    sight.covers(point, &mut self.measurements))),
+            Action::Hold | Action::Patrol { .. } => true,
+        }
+    }
+
     pub fn broadcast(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) {
         // A disconnected side must not retain old live vision or resurrect
         // decaying death masks when its player authenticates again much

@@ -108,7 +108,8 @@ pub struct NativePlayerCommand<'a> {
 }
 
 /// Owned UI intent; targets remain identities in the canonical world. Heal
-/// owns its ordered ID list so input can cross the window's borrowed frame.
+/// identifies live Beehives in one clicked squad; the host expands that
+/// squad in canonical member order before preparing the local command.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum NativePlayerSupportAction {
     /// Source Hold button: stop an active Aggressive chase, not a new order.
