@@ -374,10 +374,16 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     # complement composition as well as the root hull.
                     # Runtime IDs and mission-specific positions are not
                     # part of the immutable purchased class.
+                    # The source's transient squad/member order can change
+                    # between battles without changing a Carrier's actual
+                    # purchasable family. Preserve squad boundaries, but
+                    # compare each same-class deck as a multiset of hulls.
+                    family_contract = sorted(
+                        sorted(fingerprint(child) for child in children)
+                        for _, children in family
+                    )
                     contract = hashlib.sha256(json.dumps([
-                        contract,
-                        [[fingerprint(child) for child in children]
-                         for _, children in family],
+                        contract, family_contract,
                     ], separators=(",", ":")).encode("utf-8")).hexdigest()
                 class_prices.setdefault(ship_type, set()).add(ship["max_tsv"])
                 class_contracts.setdefault(ship_type, set()).add(contract)
