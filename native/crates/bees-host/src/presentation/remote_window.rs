@@ -1274,6 +1274,9 @@ fn remote_tactical_action(
     if peer.input_suppressed {
         return Err(invalid("orders unavailable during briefing or after battle").into());
     }
+    if *held_fire_active && action != HudAction::Shooting {
+        return Err(invalid("release manual fire before issuing another tactical order").into());
+    }
     if action==HudAction::SelectAll {
         if let Some(state)=peer.state.as_ref() {
             *selected=state["squads"].as_array().into_iter().flatten()
@@ -1800,7 +1803,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 TargetMode::Mine=>"Click mining asteroid to MINE",
                 TargetMode::Heal=>"Click friendly Beehive to HEAL",
                 TargetMode::Retreat=>"Click friendly WarpGate to RETREAT",
-                TargetMode::Patrol=>"Click first / second PATROL corner",
+                TargetMode::Patrol=>"Drag the PATROL area, Esc cancels",
             },1,[255,221,151]);
     }
     if shooting_menu {
@@ -2241,6 +2244,7 @@ pub fn connect_remote(
                     selected.clear();
                     mode=None;
                     patrol_start=None;
+                    drag_start=None;
                     minimap_dragging=false;
                     right_press=None;
                     last_selection_press=None;double_left_press=false;
@@ -2340,6 +2344,12 @@ pub fn connect_remote(
         }
         if peer.input_suppressed||selected.is_empty() {
             shooting_menu=false;shooting_press=None;
+            mode=None;patrol_start=None;drag_start=None;
+        }
+        if !window.is_active() {
+            drag_start=None;patrol_start=None;right_press=None;
+            hud_press=None;squad_tab_press=None;shooting_press=None;
+            minimap_dragging=false;
         }
         if let Some(mut cam)=camera {
             let keys=window.get_keys_pressed(KeyRepeat::No);
@@ -2380,6 +2390,7 @@ pub fn connect_remote(
                 };
                 if numbered.is_some()||key==Key::Tab||
                     (!shift&&matches!(key,Key::PageUp|Key::PageDown)) {
+                    if held_fire_active { continue; }
                     if let Some(state)=peer.state.as_ref() {
                         let next=numbered.and_then(|number|numbered_squad(state,number))
                             .or_else(||(key==Key::Tab||key==Key::PageDown||key==Key::PageUp)
@@ -2388,7 +2399,7 @@ pub fn connect_remote(
                         if let Some(id)=next {
                             selected.clear();selected.push(id);
                             if let Some(point)=focus_squad(state,id){cam.center=point;}
-                            mode=None;patrol_start=None;
+                            mode=None;patrol_start=None;drag_start=None;
                             peer.notice=format!("Selected source squad {id}");
                         } else {
                             peer.notice="No surviving authored numbered squad for that key".into();
@@ -2444,6 +2455,7 @@ pub fn connect_remote(
                     _=>None,
                 };
                 if let Some(action)=action {
+                    drag_start=None;patrol_start=None;
                     if let Err(error)=remote_tactical_action(
                         &mut peer,&mut selected,&mut mode,&mut patrol_start,
                         &mut held_fire_active,&mut held_fire_target,
@@ -2539,7 +2551,7 @@ pub fn connect_remote(
             // not immediately begin another weapon lease in this frame.
             // An already active gesture still sends Aim and End as usual.
             let holding=window.is_active() && window.is_key_down(Key::J)
-                && !peer.held_fire_rejected && mode.is_none() && within.is_some() &&
+                && !peer.input_suppressed && !peer.held_fire_rejected && within.is_some() &&
                 (held_fire_active || (!selected.is_empty() &&
                     window.is_key_pressed(Key::J,KeyRepeat::No)));
             match (held_fire_active,holding,within) {
@@ -2548,6 +2560,8 @@ pub fn connect_remote(
                     match peer.held_fire(&selected,"Begin",Some(point)) {
                         Ok(()) => {
                             held_fire_active=true;held_fire_target=Some(point);
+                            mode=None;patrol_start=None;drag_start=None;right_press=None;
+                            minimap_dragging=false;
                         },
                         Err(error) => peer.notice=error.to_string(),
                     }
@@ -2581,13 +2595,15 @@ pub fn connect_remote(
             let middle=window.get_mouse_down(MouseButton::Middle);
             let minimap_point = mouse.and_then(|(x, y)|
                 minimap.and_then(|layout| layout.world_at(x, y)));
+            let battlefield_input = window.is_active() && !peer.input_suppressed && !held_fire_active;
             if left && !last_left && window.is_active() {
+                drag_start=None;patrol_start=None;
                 hud_press=mouse.and_then(|(x,y)|remote_tactical_hit(x,y));
                 squad_tab_press=if hud_press.is_none() {
                     peer.state.as_ref().and_then(|state|
                         mouse.and_then(|(x,y)|remote_squad_tab_hit(state,x,y)))
                 }else{None};
-                minimap_dragging=hud_press.is_none()&&
+                minimap_dragging=battlefield_input&&mode.is_none()&&hud_press.is_none()&&
                     squad_tab_press.is_none()&&minimap_point.is_some();
             }
             if !left && last_left {
@@ -2597,7 +2613,7 @@ pub fn connect_remote(
                     peer.state.as_ref().and_then(|state|
                         mouse.and_then(|(x,y)|remote_squad_tab_hit(state,x,y)))
                         ==Some(id));
-                if let Some(id)=clicked_tab {
+                if let Some(id)=clicked_tab.filter(|_| battlefield_input) {
                     peer.metrics.squad_tab_clicks+=1;
                     if control {
                         if let Some(index)=selected.iter().position(|&current|current==id) {
@@ -2647,45 +2663,39 @@ pub fn connect_remote(
             }else{last_middle=None;}
             if let Some((x,y))=mouse {
                 let (x,y)=(x as i32,y as i32);
-                if left&&!last_left&&!minimap_dragging&&
-                    hud_press.is_none()&&squad_tab_press.is_none()&&
-                    x>=0&&x<FIELD as i32&&y>=0&&y<HEIGHT as i32 {
+                if battlefield_input&&left&&!last_left&&!minimap_dragging&&
+                    hud_press.is_none()&&squad_tab_press.is_none()&&within.is_some() {
                     // Source double-click is a second completed selection
                     // press within 250 ms. The release still must be prompt;
                     // a long drag cannot turn into a ship-type selection.
-                    double_left_press=last_selection_press.is_some_and(|previous|
+                    double_left_press=mode.is_none()&&last_selection_press.is_some_and(|previous|
                         now.duration_since(previous)<=Duration::from_millis(250));
-                    last_selection_press=Some(now);
+                    last_selection_press=mode.is_none().then_some(now);
                     drag_start=Some((x,y));
+                    if mode == Some(TargetMode::Patrol) {
+                        patrol_start=Some(cam.screen_to_world(x as f32,y as f32,FIELD,HEIGHT));
+                    }
                 }
-                if !left&&last_left&&!minimap_release {
-                    if mode.is_some() {
-                        drag_start=None;
-                        if x>=0 && x<FIELD as i32 && y>=0 && y<HEIGHT as i32 {
-                            if mode == Some(TargetMode::Patrol) {
+                if battlefield_input&&!left&&last_left&&!minimap_release&&within.is_some() {
+                    if mode.is_some() && drag_start.take().is_some() {
+                        if mode == Some(TargetMode::Patrol) {
+                            if let Some(first)=patrol_start.take() {
                                 let point=cam.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
-                                if let Some(first)=patrol_start {
-                                    let fields=json!({"action":{"Patrol":{
-                                        "top_left":{"x":first.x.min(point.x),
-                                                    "y":first.y.max(point.y)},
-                                        "bottom_right":{"x":first.x.max(point.x),
-                                                        "y":first.y.min(point.y)}
-                                    }}});
-                                    if let Err(error)=peer.order(&selected,"support",fields) {
-                                        peer.notice=error.to_string();
-                                    } else {
-                                        mode=None;
-                                        patrol_start=None;
-                                    }
-                                } else {
-                                    patrol_start=Some(point);
-                                    peer.notice="Choose the second patrol corner".into();
-                                }
-                            } else if let Err(error)=order_at(&mut peer,&selected,cam,x,y,mode) {
-                                peer.notice=error.to_string();
-                            } else {mode=None;}
-                        }
-                    } else if let Some((sx,sy))=drag_start.take() {
+                                let fields=json!({"action":{"Patrol":{
+                                    "top_left":{"x":first.x.min(point.x),
+                                                "y":first.y.max(point.y)},
+                                    "bottom_right":{"x":first.x.max(point.x),
+                                                    "y":first.y.min(point.y)}
+                                }}});
+                                if let Err(error)=peer.order(&selected,"support",fields) {
+                                    peer.notice=error.to_string();
+                                } else { mode=None; }
+                            }
+                        } else if let Err(error)=order_at(&mut peer,&selected,cam,x,y,mode) {
+                            peer.notice=error.to_string();
+                        } else {mode=None;}
+                    } else if mode.is_none() {
+                        if let Some((sx,sy))=drag_start.take() {
                         if let Some(state)=peer.state.as_ref() {
                             let additive=window.is_key_down(Key::LeftShift)||
                                 window.is_key_down(Key::RightShift)||
@@ -2750,16 +2760,21 @@ pub fn connect_remote(
                                 if !selected.contains(&id){selected.push(id);}
                             }
                         }
+                        }
                     }
                 }
             }
+            // A release outside the captured battlefield (including HUD,
+            // minimap or window) never carries a corner into a later drag.
+            if !left { drag_start=None;patrol_start=None; }
+            if !battlefield_input { right_press=None; }
             // Capture the origin of a right-button gesture. Its minimap
             // and World coordinates must never swap halfway through a drag.
             // A right-click while aiming a support order cancels that mode,
             // as in the source local client, without issuing a new command.
-            if right&&!last_right {
+            if battlefield_input&&right&&!last_right {
                 if mode.is_some() {
-                    mode=None;patrol_start=None;right_press=None;
+                    mode=None;patrol_start=None;drag_start=None;right_press=None;
                     peer.notice="Target selection cancelled".into();
                 } else if !selected.is_empty() {
                     if let Some((x,y))=mouse {
@@ -2843,13 +2858,18 @@ pub fn connect_remote(
         // The local client shows the selection box while dragging. Draw
         // only the current screen-space intent; the real ship collisions
         // are evaluated from the host-supplied hulls on release.
-        if !shooting_menu && mode.is_none() && !minimap_dragging &&
+        if !shooting_menu && (mode.is_none() || mode == Some(TargetMode::Patrol)) &&
+            !minimap_dragging && window.is_active() && !held_fire_active &&
             window.get_mouse_down(MouseButton::Left)
         {
             if let (Some((sx,sy)),Some((mx,my)))=
                 (drag_start,window.get_mouse_pos(MouseMode::Discard))
             {
                 let (x,y)=(mx as i32,my as i32);
+                // Patrol's first corner is in World coordinates, so zoom
+                // or camera movement during the drag cannot move it.
+                let (sx,sy)=patrol_start.zip(camera)
+                    .map_or((sx,sy), |(point,cam)| screen(cam,point));
                 if x>=0&&x<FIELD as i32&&y>=0&&y<HEIGHT as i32 &&
                     (x-sx).pow(2)+(y-sy).pow(2)>16
                 {
