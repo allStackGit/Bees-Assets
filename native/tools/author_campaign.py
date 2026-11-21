@@ -764,6 +764,29 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     "Uranus A New Threat needs the real three-Barge SavedSquad, "
                     "pre-intro HiveMind authority and the physical 60-second wave"
                 )
+            # Source Uranus3ANewThreat explicitly enqueues one
+            # MoveToPoint(Vector2.zero) for its newly created three-Barge
+            # SavedSquad, then starts that queue after the introduction.
+            # Native combat owns the actual movement and queue lifetime.
+            queues = level.setdefault("scripted_queues", [])
+            if not isinstance(queues, list) or any(
+                    not isinstance(queue, dict) for queue in queues):
+                raise ValueError("Uranus III requires native scripted command queues")
+            barge_id = candidates[0]["item_id"]
+            existing = [queue for queue in queues
+                        if queue.get("squad_item_id") == barge_id]
+            if len(existing) > 1:
+                raise ValueError("Uranus III Barge squad has duplicate command owners")
+            first_order = {
+                "squad_item_id": barge_id,
+                "repeat": False,
+                "orders": [{"kind": "move_to_point", "destination": [0, 0]}],
+            }
+            if existing:
+                existing[0].clear()
+                existing[0].update(first_order)
+            else:
+                queues.append(first_order)
             level["campaign_dialogue"] = {
                 "uranus_new_threat": {
                     "player_side": args.player_side,
