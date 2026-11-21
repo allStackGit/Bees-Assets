@@ -204,6 +204,38 @@ fn plan_reinforcement_wave(
     Ok(placements)
 }
 
+/// Unity Squad.SetOffscreenStartingPosition bypasses its ordinary
+/// obstacle-aware starting-position search. Every SavedSquad and every
+/// generated Carrier child uses the SAME authored offscreen center and
+/// its own adjusted offsets, without constructor horizontal spacing.
+fn plan_offscreen_reinforcement(
+    squads: &[&NativeAuthoredSquad],
+    ships: &HashMap<i64, &NativeAuthoredShip>,
+    spawn: Vec2,
+    metadata: &NativePolicyOnlyMetadata,
+) -> Result<HashMap<i64, Vec2>, &'static str> {
+    let mut positions = HashMap::new();
+    for squad in squads {
+        for &ship_id in &squad.members {
+            let ship = ships.get(&ship_id)
+                .ok_or("Offscreen reinforcement lacks a physical ship")?;
+            let offset = metadata.stored_formation_offset(ship_id)
+                .ok_or("Offscreen reinforcement lacks its source offset")?;
+            if !offset.is_finite() {
+                return Err("Offscreen reinforcement has a nonfinite formation offset");
+            }
+            let position = spawn + authored_placement_offset(
+                ship.ship_type, squad.members.len(), offset,
+            );
+            if !position.is_finite() {
+                return Err("Offscreen reinforcement position overflowed");
+            }
+            positions.insert(ship_id, position);
+        }
+    }
+    Ok(positions)
+}
+
 fn reinforcement_carrier_parent(ship: &NativeAuthoredShip) -> Option<i64> {
     match ship.ship_type {
         8 => ship.drone_carrier_id,
@@ -377,9 +409,9 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             {
                 return Err("Reinforcements need nonempty squads and finite spawn/entry coordinates");
             }
-            // Multiple IDs within a single plan share the source
-            // LevelConstructor.PositionSquads call, including Carrier
-            // children. Their authored order determines physical spacing.
+            // A source plan preserves AddReinforcementSquads order.
+            // Independent SavedSquads each get a constructor call; only
+            // the generated Carrier children share physical spacing.
             for &id in &plan.squad_item_ids {
                 if !seen_squads.insert(id) {
                     return Err("A squad may arrive in only one reinforcement wave");
@@ -541,13 +573,32 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         // ship or squad. The subsequent commit phase cannot fail on late
         // formation geometry or Carrier group membership.
         let mut planned_positions = HashMap::new();
+        let bounds = self.broadphase_bounds;
+        let has_obstacles = self.metadata.player_formation_options().has_obstacles;
         for (wave_idx, ids) in planned_squad_order.iter().enumerate() {
             let Some(spawn) = spawn_centers[wave_idx] else { continue };
             let squads: Vec<&NativeAuthoredSquad> = ids.iter()
                 .map(|id| source_squads[id]).collect();
-            planned_positions.extend(plan_reinforcement_wave(
-                &squads, &source_ships, spawn, &self.metadata,
-            )?);
+            // Source ShouldStageOffscreenReinforcement: only a genuine
+            // outside-to-inside route on an obstacle-bearing map skips
+            // normal placement. A missing/zero entry is not such a route.
+            let offscreen = has_obstacles &&
+                (spawn.x < bounds.min.x || spawn.x > bounds.max.x ||
+                 spawn.y < bounds.min.y || spawn.y > bounds.max.y) &&
+                waves[wave_idx].entry.is_some_and(|entry|
+                    !spawn.unity_equal(entry) &&
+                    entry.x >= bounds.min.x && entry.x <= bounds.max.x &&
+                    entry.y >= bounds.min.y && entry.y <= bounds.max.y);
+            let positions = if offscreen {
+                plan_offscreen_reinforcement(
+                    &squads, &source_ships, spawn, &self.metadata,
+                )?
+            } else {
+                plan_reinforcement_wave(
+                    &squads, &source_ships, spawn, &self.metadata,
+                )?
+            };
+            planned_positions.extend(positions);
         }
         // An explicit spawn on an obstacle-bearing map is valid when the
         // complete original two-pass squad formation fits at that exact
