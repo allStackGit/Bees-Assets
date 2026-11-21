@@ -2469,10 +2469,25 @@ pub(super) fn archive(
             if player_controlled || selected.hivemind.as_ref()
                 .is_some_and(|hivemind| hivemind.controlled_side == 2)
             { continue; }
+            // Carrier Drones defend the real escorted command squad rather
+            // than chasing distant enemies away from the convoy. Strikers
+            // retain their source bombing role; both use ordinary Level
+            // commands, movement and weapon targeting.
+            let escort_guard = command == "aggressive_nearest" &&
+                selected.objective_side == Some(2) &&
+                matches!(selected.objective, Objective::Escort);
+            let orders = if escort_guard {
+                vec![json!({
+                    "kind": "guard",
+                    "friendly_squad_item_id": squad_ids[1][0],
+                })]
+            } else {
+                vec![json!({"kind": command})]
+            };
             let mut queue = json!({
                 "squad_item_id": child_squad,
                 "repeat": true,
-                "orders": [{"kind": command}],
+                "orders": orders,
             });
             if deferred_squads.contains(&child_squad) {
                 queue["activation"] = json!({"kind": "on_deployment"});
