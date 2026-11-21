@@ -39,6 +39,59 @@ def native_headless_environment():
     return env
 
 
+
+def native_manifest_model_dependencies(manifest, model_store=None):
+    """Pin the actual model bytes the native policy worker loads.
+
+    The worker checks each manifest SHA when opening weights; evaluate the
+    same filenames before and after a holdout so a later in-place mutation
+    cannot receive a valid evaluation receipt. A portable model store
+    substitutes SHA-addressed files exactly as the worker does.
+    """
+    manifest = Path(manifest).resolve(strict=True)
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    models = document.get("models") if isinstance(document, dict) else None
+    if (document.get("format") != "bees-native-model-v1" or
+            not isinstance(models, list) or not 1 <= len(models) <= 256):
+        raise ValueError("native evaluation requires a valid model manifest")
+    store = None
+    if model_store:
+        store = Path(model_store)
+        if not store.is_absolute() or not store.is_dir():
+            raise ValueError("native portable model store must be an existing absolute directory")
+    files = {}
+    slots = set()
+    for model in models:
+        if not isinstance(model, dict):
+            raise ValueError("native model manifest contains an invalid slot")
+        slot, digest, location = (model.get("slot"), model.get("sha256"),
+                                  model.get("path"))
+        if (type(slot) is not int or not 0 <= slot < 1 << 32 or slot in slots or
+                not isinstance(digest, str) or len(digest) != 64 or
+                any(character not in "0123456789abcdef" for character in digest) or
+                not isinstance(location, str) or not location):
+            raise ValueError("native model manifest has invalid weight identity")
+        slots.add(slot)
+        file = ((store / (digest + ".model")) if store is not None
+                else (manifest.parent / location)).resolve(strict=True)
+        if not file.is_file():
+            raise ValueError(f"native model weight is not a file: {file}")
+        if files.get(file, digest) != digest:
+            raise ValueError("one native model path has conflicting manifest digests")
+        files[file] = digest
+    dependencies = [{"path": str(file), "sha256": digest}
+                    for file, digest in sorted(files.items())]
+    check_native_model_dependencies(dependencies)
+    return dependencies
+
+
+def check_native_model_dependencies(dependencies):
+    for item in dependencies:
+        file = Path(item["path"])
+        if file_sha256(file) != item["sha256"]:
+            raise ValueError(f"native model weights changed during evaluation: {file}")
+
+
 def native_input_dependencies(*runs):
     """Pin the original physical scenes, Stage files and inference code.
 
