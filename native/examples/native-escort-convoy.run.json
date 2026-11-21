@@ -1,6 +1,6 @@
 {
   "run_id": "native-escort-convoy",
-  "stage_name": "Native Fleet Skirmish",
+  "stage_name": "Native Escort Convoy",
   "native_stage": {
     "collision_matrix_rows": [
       0,
