@@ -4256,6 +4256,18 @@ struct NativeLibraryGame {
     title: String,
     kind: String,
     config: PathBuf,
+    /// Complete this genuine campaign mission before showing its
+    /// playable post-campaign mode (e.g. Challenge or Fish Tank).
+    #[serde(default)]
+    unlock_after: Option<NativeLibraryUnlock>,
+}
+
+#[cfg(feature = "client")]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeLibraryUnlock {
+    campaign_id: String,
+    mission_id: String,
 }
 
 /// Local player settings contain only the server endpoint and a path to a
@@ -4748,6 +4760,30 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         }
         games.push(config);
     }
+    // All game sources have already been canonicalized and validated.
+    // Cross-entry gates must resolve to a real campaign/mission in this
+    // library; a misspelled gate must not make a mode permanently locked.
+    for item in &library.games {
+        let Some(gate) = &item.unlock_after else { continue };
+        let campaign_index = library.games.iter().position(|entry|
+            entry.kind == "campaign" && entry.id == gate.campaign_id);
+        if item.kind != "battle" || gate.mission_id.trim().is_empty() ||
+            campaign_index.is_none()
+        {
+            return Err(invalid(
+                "post-campaign game unlock requires a real library campaign and mission ID",
+            ).into());
+        }
+        let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(
+            &fs::read(&games[campaign_index.expect("validated campaign")])?
+        )?;
+        if !catalog.battles.iter().any(|entry|
+            entry.mission.as_ref().is_some_and(|mission|
+                mission.id == gate.mission_id))
+        {
+            return Err(invalid("library game unlock refers to an unknown campaign mission").into());
+        }
+    }
     fs::create_dir_all(save_root)?;
     let mut trained = trained_library::load(save_root)?;
     println!("{}", json!({
@@ -4766,12 +4802,18 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         // register a second independent learner while this game is open.
         // Refresh only between menu selections, never in the render loop.
         trained = trained_library::load(save_root)?;
+        let mut completed_by_campaign = HashMap::<String, HashSet<String>>::new();
         let status = library.games.iter().zip(&games).map(|(item, config)| {
             if item.kind != "campaign" {
                 return Ok("  [Battle]".to_string());
             }
             let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(&fs::read(config)?)?;
             let career_root = save_root.join("campaigns").join(&item.id);
+            let progress = catalog.load_progress(&career_root)?;
+            completed_by_campaign.insert(item.id.clone(),
+                catalog.battles.iter().filter_map(|entry| entry.mission.as_ref())
+                    .filter(|mission| progress.completed(&mission.id))
+                    .map(|mission| mission.id.clone()).collect());
             // Surface the original interrupted World at the game-library level.
             // The campaign menu will offer only its recovery until it finishes.
             if let Some(mission_id) = pending_saved_campaign_mission(&catalog, &career_root)? {
@@ -4782,16 +4824,26 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     ))?;
                 return Ok(format!("  [Resume: {}]", mission.title.trim()));
             }
-            let progress = catalog.load_progress(&career_root)?;
             let total = catalog.battles.iter().filter_map(|b| b.mission.as_ref()).count();
             let complete = catalog.battles.iter().filter_map(|b| b.mission.as_ref())
                 .filter(|mission| progress.completed(&mission.id)).count();
             Ok::<String, Box<dyn Error>>(format!("  [Career {complete}/{total}]"))
         }).collect::<Result<Vec<_>,_>>()?;
+        let unlocked_games = library.games.iter().map(|game|
+            game.unlock_after.as_ref().is_none_or(|gate|
+                completed_by_campaign.get(&gate.campaign_id)
+                    .is_some_and(|missions| missions.contains(&gate.mission_id)))
+        ).collect::<Vec<_>>();
+        let status = status.into_iter().enumerate().map(|(index, text)| {
+            if !unlocked_games[index] {
+                format!("  [Locked until {}]", library.games[index].unlock_after
+                    .as_ref().expect("locked game has an authored prerequisite").mission_id)
+            } else { text }
+        }).collect::<Vec<_>>();
         let mut rows = library.games.iter().enumerate().map(|(index, item)| {
             BattleMenuRow {
                 title: item.title.as_str(), status: status[index].as_str(),
-                unlocked: true,
+                unlocked: unlocked_games[index],
             }
         }).collect::<Vec<_>>();
         for model in &trained {
