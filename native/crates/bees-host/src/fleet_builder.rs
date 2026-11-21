@@ -71,7 +71,7 @@ impl ReinforcementPattern {
 }
 
 #[derive(Clone, Copy)]
-enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Chargers, FireBarges, Gate, Detonators, Queen }
+enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Scouts, Chargers, FireBarges, Gate, Detonators, Queen }
 
 #[derive(Clone, Copy)]
 enum AiTactics { Aggressive, Circle, RightSwipe, LeftSwipe, InAndOut, Mixed }
@@ -173,6 +173,7 @@ impl FleetMix {
             Self::SupportHeavy => "support-heavy",
             Self::Specialists => "specialists",
             Self::Miners => "miners",
+            Self::Scouts => "scouts",
             Self::Chargers => "chargers",
             Self::FireBarges => "fire-barges",
             Self::Gate => "warp-gate",
@@ -210,15 +211,16 @@ impl FleetMix {
             Self::SupportHeavy => (total / 2).min(12),
             Self::Specialists => if total >= 4 { total.div_ceil(4).min(8) } else { 0 },
             Self::Gate | Self::Queen => usize::from(total >= 2),
-            Self::Miners | Self::Chargers | Self::FireBarges | Self::Detonators => 0,
+            Self::Miners | Self::Scouts | Self::Chargers |
+            Self::FireBarges | Self::Detonators => 0,
         }).min(total.saturating_sub(1 + self.specialist_count(total)))
     }
 
     fn specialist_count(self, total: usize) -> usize {
         if total < 2 { return 0; }
         match self {
-            Self::Miners | Self::Chargers | Self::FireBarges | Self::Detonators =>
-                total.div_ceil(4).min(8),
+            Self::Miners | Self::Scouts | Self::Chargers |
+            Self::FireBarges | Self::Detonators => total.div_ceil(4).min(8),
             Self::Specialists => 1,
             _ => 0,
         }
@@ -601,6 +603,11 @@ fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool, arena_size: Option<u3
             )),
         ];
         if side == 0 {
+            let scouts = FleetMix::Scouts.specialist_count(total);
+            options.push((FleetMix::Scouts, format!(
+                "{} fighters, {} Scouts  |  Source deployed Beacons and vision",
+                total - scouts, scouts,
+            )));
             if mining_field {
                 let miners = FleetMix::Miners.specialist_count(total);
                 options.push((FleetMix::Miners, format!(
