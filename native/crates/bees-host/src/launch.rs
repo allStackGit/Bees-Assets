@@ -6141,7 +6141,8 @@ fn run_battle(
         if matches!(level.campaign_dialogue,
             Some(CampaignDialogueSpec::UranusNewThreat { .. }) |
             Some(CampaignDialogueSpec::UranusOffensive { .. }) |
-            Some(CampaignDialogueSpec::UranusDefensive { .. }))
+            Some(CampaignDialogueSpec::UranusDefensive { .. }) |
+            Some(CampaignDialogueSpec::NeptuneSeizeMeans { .. }))
         {
             if source.schema_version < 27 ||
                 source.activate_hivemind != Some(false) ||
@@ -6150,7 +6151,7 @@ fn run_battle(
                 source.source_squads.iter().any(|squad| squad.hivemind.is_none())
             {
                 return Err(invalid(
-                    "Uranus I, II and III require pre-intro source HiveMind authority and a complete post-intro command roster",
+                    "Neptune I and Uranus I-III require pre-intro HiveMind authority and complete post-intro squad commands",
                 ).into());
             }
             source.activate_hivemind = Some(true);
