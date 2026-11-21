@@ -68,7 +68,7 @@ impl ReinforcementPattern {
 }
 
 #[derive(Clone, Copy)]
-enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists }
+enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners }
 
 #[derive(Clone, Copy)]
 enum AiTactics { Aggressive, Circle, RightSwipe, LeftSwipe, InAndOut, Mixed }
@@ -169,11 +169,12 @@ impl FleetMix {
             Self::Balanced => total.div_ceil(4).min(8),
             Self::SupportHeavy => (total / 2).min(12),
             Self::Specialists => if total >= 4 { total.div_ceil(4).min(8) } else { 0 },
+            Self::Miners => 0,
         }).min(total.saturating_sub(1 + self.specialist_count(total)))
     }
 
     fn specialist_count(self, total: usize) -> usize {
-        usize::from(matches!(self, Self::Specialists) && total >= 2)
+        usize::from(matches!(self, Self::Specialists | Self::Miners) && total >= 2)
     }
 }
 
@@ -197,6 +198,7 @@ pub(super) struct FleetChoice {
     mix: [FleetMix; 2],
     terrain: Terrain,
     fog_of_war: bool,
+    mining_field: bool,
     /// None preserves the original authored 320x200 map.
     arena_size: Option<u32>,
     lethal_borders: bool,
@@ -229,8 +231,9 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
         return Ok(None);
     };
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
-    let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
+    let Some(mining_field) = choose_mining_field(terrain)? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes, mining_field)? else { return Ok(None); };
     // A single local window cannot present two opposing, independently
     // fog-filtered viewpoints. LAN commanders have separate viewers and
     // may enable authentic fog independently.
@@ -265,7 +268,7 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side, fleet_sizes, mix, terrain, fog_of_war, arena_size, lethal_borders,
+        player_side, fleet_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
         ai_both: false, ai_tactics, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
@@ -275,8 +278,9 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
 /// per side; no new network controller, simulation or permission model.
 pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
-    let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
+    let Some(mining_field) = choose_mining_field(terrain)? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes, mining_field)? else { return Ok(None); };
     let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
     let Some(objective) = choose_objective()? else { return Ok(None); };
@@ -296,7 +300,7 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, mix, terrain, fog_of_war, arena_size, lethal_borders,
+        player_side: None, fleet_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
         ai_both: false,
         ai_tactics: AiTactics::Aggressive,
         objective, reinforcements, objective_side,
@@ -308,8 +312,9 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
 /// exactly the same collision, command and ship code used in windowed play.
 pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
-    let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
+    let Some(mining_field) = choose_mining_field(terrain)? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes, mining_field)? else { return Ok(None); };
     let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
     let Some(ai_tactics) = choose_ai_tactics()? else { return Ok(None); };
@@ -338,7 +343,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(threads) = choose_resource("CPU physics workers", &workers)?
         else { return Ok(None); };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, mix, terrain, fog_of_war, arena_size, lethal_borders,
+        player_side: None, fleet_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
         ai_both: true,
         ai_tactics, objective, objective_side,
         reinforcements, benchmark_worlds: worlds, benchmark_workers: threads,
@@ -358,6 +363,22 @@ fn choose_visibility() -> Result<Option<bool>, Box<dyn Error>> {
     }).collect::<Vec<_>>();
     let mut selected = 0_usize;
     Ok(select_library(&rows, &mut selected, false)?.map(|choice| choice == 1))
+}
+
+/// Use genuine mineral asteroids only where the physical prefab cannot
+/// overlap the authored central obstacle geometry at scene creation.
+fn choose_mining_field(terrain: Terrain) -> Result<Option<bool>, Box<dyn Error>> {
+    if !matches!(terrain, Terrain::Open | Terrain::Original) {
+        return Ok(Some(false));
+    }
+    let rows = [
+        BattleMenuRow { title: "Combat only", status: "  [No mineral deposits]",
+            unlocked: true },
+        BattleMenuRow { title: "Mineral field", status: "  [Physical mineable asteroid]",
+            unlocked: true },
+    ];
+    let mut selected = 0_usize;
+    Ok(select_library(&rows, &mut selected, false)?.map(|index| index == 1))
 }
 
 fn choose_resource(label: &str, options: &[usize]) -> Result<Option<usize>, Box<dyn Error>> {
@@ -389,7 +410,7 @@ fn choose_sizes() -> Result<Option<[usize; 2]>, Box<dyn Error>> {
     Ok(Some(fleet_sizes))
 }
 
-fn choose_mix(fleet_sizes: [usize; 2])
+fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool)
     -> Result<Option<[FleetMix; 2]>, Box<dyn Error>>
 {
     let mut choices = [FleetMix::Fighters; 2];
@@ -401,7 +422,7 @@ fn choose_mix(fleet_sizes: [usize; 2])
         // physical overlap. Keep that benchmark honest and deterministic.
         if total == 1 || total > 64 { continue; }
         let support_name = if side == 0 { "Beehives" } else { "Carriers" };
-        let options = [
+        let mut options = vec![
             (FleetMix::Fighters, format!("{total} fighters  |  No support")),
             (FleetMix::Balanced, format!(
                 "{} fighters, {} {support_name}  |  Balanced",
@@ -420,6 +441,12 @@ fn choose_mix(fleet_sizes: [usize; 2])
                 FleetMix::Specialists.support_count(total),
             )),
         ];
+        if side == 0 && mining_field {
+            options.push((FleetMix::Miners, format!(
+                "{} fighters, 1 Carpenter Bee  |  Source mineral miner",
+                total - 1,
+            )));
+        }
         let rows = options.iter().map(|(_, title)| BattleMenuRow {
             title, status: "  [Real source hulls]", unlocked: true,
         }).collect::<Vec<_>>();
@@ -560,7 +587,8 @@ fn mixed_fleet_offsets(
     let fighters = total - support - specialist;
     let fighter_kind = if side == 0 { 21 } else { 13 };
     let support_kind = if side == 0 { 2 } else { 5 };
-    let specialist_kind = if side == 0 { 18 } else { 10 };
+    let specialist_kind = if matches!(mix, FleetMix::Miners) { 4 }
+        else if side == 0 { 18 } else { 10 };
     let fighter_size = catalog.sprite_size(fighter_kind)
         .ok_or_else(|| invalid("source fighter has no sprite extents"))?;
     let home = if side == 0 { -75.0 } else { 75.0 };
