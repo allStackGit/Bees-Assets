@@ -60,6 +60,7 @@ const TINYBRAINS_METRIC_CATALOG={
         'update_wall_time','elapsed_training_seconds',
         'collection_seconds','optimization_seconds','overlap_seconds',
         'policy_lag_mean','policy_lag_min','policy_lag_max','policy_version_count',
+        'policy_stale_decisions','policy_stale_fraction',
         'rollout_model_refresh_seconds','rollout_engine_step_seconds',
         'rollout_learner_inference_seconds','rollout_observation_encode_seconds',
         'rollout_opponent_inference_seconds','rollout_result_processing_seconds',
@@ -275,6 +276,23 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'collector_balance_trial_sps_gain','policy_lag_mean'])
         add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
+    // A bounded async PPO batch can contain several immutable behavior
+    // versions. Only report stale experience when the source lag histogram
+    // accounts exactly for every delivered decision.
+    const lags=row.policy_lag_decisions;
+    if(lags&&typeof lags==='object'&&!Array.isArray(lags)&&
+        Number.isSafeInteger(row.ant_decisions)&&row.ant_decisions>0) {
+        const bins=Object.entries(lags);
+        if(bins.length&&bins.length<=5&&bins.every(([lag,count])=>
+            /^(?:0|[1-4])$/.test(lag)&&
+            Number.isSafeInteger(count)&&count>=0)&&
+            bins.reduce((total,[,count])=>total+count,0)===row.ant_decisions) {
+            const stale=bins.reduce((total,[lag,count])=>
+                total+(lag==='0'?0:count),0);
+            add('policy_stale_decisions',stale,'count');
+            add('policy_stale_fraction',stale/row.ant_decisions,'ratio');
+        }
+    }
     add('rollout_board_packed_bytes',row.rollout_board_packed_bytes,'bytes');
     // Bytes actually staged into one grouped frozen-opponent H2D input.
     // This is neither physical bus throughput nor device utilization.
