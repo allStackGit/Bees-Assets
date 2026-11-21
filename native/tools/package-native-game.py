@@ -619,11 +619,13 @@ def verify_native_package(directory: Path) -> dict:
         elif kind == "campaign":
             for item in data["battles"]:
                 pending.append((owned_link(file, item["config"], "mission"), "run"))
-                route = (item.get("mission") or {}).get("on_victory")
-                if route is not None:
-                    pending.append((
-                        owned_link(file, route["config"], "victory route"), "run",
-                    ))
+                mission = item.get("mission") or {}
+                for outcome in ("on_victory", "on_defeat"):
+                    route = mission.get(outcome)
+                    if route is not None:
+                        pending.append((
+                            owned_link(file, route["config"], outcome + " route"), "run",
+                        ))
         elif kind == "run":
             count_runs += 1
             if data.get("hivemind") or data.get("model_updates") or data.get("policy_capture"):
