@@ -696,6 +696,7 @@ struct UnityTurret {
     slot: usize,
     weapon_type: u8,
     projectile_type: u8,
+    weapon_sound_type: Option<u8>,
     power: i32,
     mount_offset: UnityVec2,
     left_offset: UnityVec2,
@@ -3969,6 +3970,7 @@ impl NativePhysicalScene {
                     spec: NativeTurretSpec {
                         weapon_type: weapon.weapon_type,
                         projectile_type: weapon.projectile_type,
+                        weapon_sound_type: weapon.weapon_sound_type,
                         mount_offset: mount,
                         initial_rotation_degrees: weapon.initial_rotation_degrees,
                         rotation_rate: weapon.rotation_rate,
