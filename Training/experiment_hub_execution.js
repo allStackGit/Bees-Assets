@@ -41,6 +41,8 @@ class LocalExecution {
         }));
     }
     advertisement(){
+        const windowsMultiGpu=this.supervisor instanceof WindowsSupervisor&&
+            this.supervisor.multiGpuQualified===true;
         return {local_executor:true,installed_projects:this.projects.slice(),
             evaluation_suites:structuredClone(this.evaluationSuites),
             design_catalog:Object.assign({},...this.projects.map(project=>
@@ -78,11 +80,11 @@ class LocalExecution {
             courier_lineage_key_fingerprint:this.supervisor.adapters?.courier_lineage?.courier_lineage_key_fingerprint||null,
             courier_lineage_max_shards:this.supervisor.adapters?.courier_lineage?.courier_lineage_max_shards||0,
             tinybrains_dual_gpu_profiles:this.supervisor.gpuEnabled===true&&
-                dockerCapable(this.supervisor)&&
+                (dockerCapable(this.supervisor)||windowsMultiGpu)&&
                 this.supervisor.adapters?.tinybrains?.gpu_dual_execution==='split-ppo'
                 ?[...(this.supervisor.adapters.tinybrains.tinybrains_dual_gpu_profiles||[])]:[],
             tinybrains_multi_gpu_profiles:this.supervisor.gpuEnabled===true&&
-                dockerCapable(this.supervisor)&&
+                (dockerCapable(this.supervisor)||windowsMultiGpu)&&
                 this.supervisor.adapters?.tinybrains?.gpu_multi_execution==='split-ppo-collectors'
                 ?[...(this.supervisor.adapters.tinybrains.tinybrains_multi_gpu_profiles||[])]:[],
             tinybrains_imports:{...this.supervisor.adapters?.tinybrains?.tinybrains_imports},
