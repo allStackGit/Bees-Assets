@@ -1599,6 +1599,10 @@ struct CampaignMission<'a> {
     bank_player_minerals: bool,
     lost_fleet_ids: Option<&'a HashSet<i64>>,
     purchased_ships: Option<&'a [NativePurchasedShip]>,
+    /// Full owner ledger, including valid reserve hulls not installed in
+    /// this battle. Source Neptune 3 defeats retire them as well.
+    owned_purchases: Option<&'a [NativePurchasedShip]>,
+    retire_on_defeat_types: &'a [u8],
     created_squads: Option<&'a [NativeCreatedSquad]>,
     tactics: Option<&'a [NativeSavedSquadTactics]>,
     authored_roster: Option<&'a [(i64, i64, i64)]>,
@@ -1638,6 +1642,10 @@ struct CampaignReplaySetup {
     bank_player_minerals: bool,
     lost_fleet_ids: Option<HashSet<i64>>,
     purchased_ships: Option<Vec<NativePurchasedShip>>,
+    #[serde(default)]
+    owned_purchases: Option<Vec<NativePurchasedShip>>,
+    #[serde(default)]
+    retire_on_defeat_types: Vec<u8>,
     created_squads: Option<Vec<NativeCreatedSquad>>,
     tactics: Option<Vec<NativeSavedSquadTactics>>,
     authored_roster: Option<Vec<(i64, i64, i64)>>,
@@ -1672,6 +1680,8 @@ impl CampaignReplaySetup {
             bank_player_minerals: mission.bank_player_minerals,
             lost_fleet_ids: mission.lost_fleet_ids.cloned(),
             purchased_ships: mission.purchased_ships.map(|ships| ships.to_vec()),
+            owned_purchases: mission.owned_purchases.map(|ships| ships.to_vec()),
+            retire_on_defeat_types: mission.retire_on_defeat_types.to_vec(),
             created_squads: mission.created_squads.map(|squads| squads.to_vec()),
             tactics: mission.tactics.map(|tactics| tactics.to_vec()),
             authored_roster: mission.authored_roster.map(|roster| roster.to_vec()),
@@ -1710,6 +1720,8 @@ impl CampaignReplaySetup {
             bank_player_minerals: self.bank_player_minerals,
             lost_fleet_ids: self.lost_fleet_ids.as_ref(),
             purchased_ships: self.purchased_ships.as_deref(),
+            owned_purchases: self.owned_purchases.as_deref(),
+            retire_on_defeat_types: &self.retire_on_defeat_types,
             created_squads: self.created_squads.as_deref(),
             tactics: self.tactics.as_deref(),
             authored_roster: self.authored_roster.as_deref(),
@@ -1749,6 +1761,10 @@ struct CampaignOutcome {
     awarded_ships: Vec<NativePurchasedShip>,
     #[serde(default)]
     awarded_squads: Vec<NativeCreatedSquad>,
+    /// One permanent source campaign action, committed with this battle's
+    /// successful run_final rather than written as a separate career edit.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    retired_fleet_ids: Vec<i64>,
 }
 
 impl CampaignOutcome {
@@ -2924,8 +2940,9 @@ fn launch_catalog_battle(
             return Ok(output);
         }
     }
-    let mut purchased = entry.mission.as_ref()
+    let owned_purchases = entry.mission.as_ref()
         .map(|mission| progress.purchases_for_side(mission.player_side));
+    let mut purchased = owned_purchases.clone();
     let created = entry.mission.as_ref()
         .map(|mission| progress.created_squads_for_side(mission.player_side));
     let tactics = entry.mission.as_ref()
@@ -2988,6 +3005,8 @@ fn launch_catalog_battle(
             bank_player_minerals: mission.bank_player_minerals,
             lost_fleet_ids: lost.as_ref(),
             purchased_ships: purchased.as_deref(),
+            owned_purchases: owned_purchases.as_deref(),
+            retire_on_defeat_types: &mission.retire_on_defeat_types,
             created_squads: created.as_deref(),
             tactics: tactics.as_deref(),
             authored_roster: authored.as_deref(),
