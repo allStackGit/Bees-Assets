@@ -564,6 +564,7 @@ impl NativeGameAudio {
         ) else { return };
         let scope = (WorldId(world), revision);
         if self.current_episode != Some(scope) {
+            self.reset_warp_gate_audio();
             self.current_episode = Some(scope);
             self.last_tick = None;
             self.seen_projectiles.clear();
@@ -648,6 +649,24 @@ impl NativeGameAudio {
         for effect in effects[..effects_len].iter().flatten().copied() {
             self.play(effect);
         }
+        // Ship records were filtered by the host's fog and the player's
+        // current viewport. A hidden or retired gate cannot keep an
+        // unauthorized local loop playing after its physical session ends.
+        for ship in state["ships"].as_array().into_iter().flatten() {
+            if ship["ship_type"].as_u64() != Some(20) { continue; }
+            let (Some(id), Some(x), Some(y), Some(variant), Some(elapsed)) = (
+                ship["id"].as_i64(), ship["x"].as_f64(),
+                ship["y"].as_f64(), ship["animation_variant"].as_u64(),
+                ship["animation_seconds"].as_f64(),
+            ) else { continue };
+            if !(0..=1).contains(&variant) ||
+                !x.is_finite() || !y.is_finite() ||
+                !elapsed.is_finite() || elapsed < 0.0 ||
+                !on_screen(visible, Vec2::new(x as f32, y as f32))
+            { continue; }
+            self.sync_warp_gate(id, elapsed as f32, variant == 1, tick);
+        }
+        self.finish_warp_gate_audio(tick);
     }
 
     /// Presentation-only projection of current canonical physical events.
@@ -658,6 +677,7 @@ impl NativeGameAudio {
     ) {
         let scope = (view.world_id, view.episode_revision);
         if self.current_episode != Some(scope) {
+            self.reset_warp_gate_audio();
             self.current_episode = Some(scope);
             self.last_tick = None;
             self.seen_projectiles.clear();
