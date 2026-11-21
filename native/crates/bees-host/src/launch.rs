@@ -5681,6 +5681,20 @@ fn run_battle(
     // physical collider catalogs remain Arc-shared. This avoids repeating
     // JSON decoding and native layout construction at every episode reset.
     let mut source_scene_templates = Vec::with_capacity(config.levels.len());
+    // Permanent campaign losses are a terminal source mission action,
+    // not combat deaths. Snapshot the complete pre-battle career roster,
+    // including purchased hulls held in reserve, before modifying the
+    // shared playable Level for deployment.
+    let mut defeat_retirement_ids = HashSet::<i64>::new();
+    if let Some(mission) = mission {
+        for purchase in mission.owned_purchases.unwrap_or(&[]) {
+            if mission.retire_on_defeat_types.contains(&purchase.ship_type) &&
+                mission.lost_fleet_ids.is_none_or(|lost|
+                    !lost.contains(&purchase.fleet_ship_id)) {
+                defeat_retirement_ids.insert(purchase.fleet_ship_id);
+            }
+        }
+    }
     let mut source_documents: HashMap<PathBuf, (Arc<str>, String)> = HashMap::new();
     let mut source_templates: HashMap<(PathBuf, Option<String>), Arc<NativePhysicalScene>> =
         HashMap::new();
@@ -5738,6 +5752,22 @@ fn run_battle(
         source_template_clone_count += 1;
         source_template_clone_wall += started.elapsed();
         source_scene_templates.push(Arc::clone(&template));
+        if let Some(mission) = mission {
+            if !mission.retire_on_defeat_types.is_empty() {
+                for entity in &template.entities {
+                    let NativeAuthoredEntity::Ship(ship) = entity else { continue };
+                    if ship.side != mission.player_side ||
+                        !mission.retire_on_defeat_types.contains(&ship.ship_type) ||
+                        !template.fleet.get(ship.entity_id).is_some_and(|fleet|
+                            fleet.has_persistent_fleet_value) { continue; }
+                    if let Some(id) = ship.fleet_ship_id {
+                        if mission.lost_fleet_ids.is_none_or(|lost| !lost.contains(&id)) {
+                            defeat_retirement_ids.insert(id);
+                        }
+                    }
+                }
+            }
+        }
         for squad in &template.source_squads {
             highest_authored_squad_item_id = highest_authored_squad_item_id.max(squad.item_id);
         }
@@ -8169,6 +8199,11 @@ fn run_battle(
                 awarded_squads: if mission_success {
                     mission.victory_squads.to_vec()
                 } else { Vec::new() },
+                retired_fleet_ids: if mission_success { Vec::new() } else {
+                    let mut ids = defeat_retirement_ids.iter().copied().collect::<Vec<_>>();
+                    ids.sort_unstable();
+                    ids
+                },
             })
         });
     // RecordStats and CollectMinedMineralsForPlayer are independent source
