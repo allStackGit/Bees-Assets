@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use bees_gameplay::level_events::NativeLevelEventProcessor;
+use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
 use bees_gameplay::level_host::NativeLevelActivationContext;
 use bees_gameplay::level_rules::NativeLevelStepError;
 use bees_gameplay::player_inputs::NativeLevelPlayerContext;
@@ -403,11 +404,21 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                     ReinforcementDue::Event(event)
                 }
             };
-            if plan.squad_item_ids.is_empty() ||
+            // Uranus II's authored timers still announce each wave when
+            // CurrentShips has no eligible SavedSquad of a requested type.
+            // Represent that real timer as an empty admission, never as
+            // invented combat ships. All other gameplay requires a real
+            // source squad before scheduling a reinforcement wave.
+            let empty_uranus_timer = matches!(
+                (self.campaign_dialogue, plan.activation),
+                (Some(CampaignDialogueSpec::UranusDefensive { .. }),
+                 NativeReinforcementActivation::AfterSeconds(_))
+            );
+            if (plan.squad_item_ids.is_empty() && !empty_uranus_timer) ||
                 plan.spawn.is_some_and(|spawn| !spawn.is_finite()) ||
                 plan.entry.is_some_and(|entry| !entry.is_finite())
             {
-                return Err("Reinforcements need nonempty squads and finite spawn/entry coordinates");
+                return Err("Reinforcements need authored squads and finite spawn/entry coordinates");
             }
             // A source plan preserves AddReinforcementSquads order.
             // Independent SavedSquads each get a constructor call; only
@@ -423,7 +434,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             // Never create an empty wave or a phantom pending faction.
             // Unknown identities still fail the normal source validation.
             plan.squad_item_ids.retain(|id| !vacant_squads.contains_key(id));
-            if plan.squad_item_ids.is_empty() { continue; }
+            if plan.squad_item_ids.is_empty() && !empty_uranus_timer { continue; }
             for &id in &plan.squad_item_ids {
                 squad_waves.insert(id, waves.len());
             }
