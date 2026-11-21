@@ -3053,6 +3053,13 @@ impl NativePhysicalScene {
                 if player_side != human_side ||
                     self.activate_mining != Some(true) ||
                     self.activate_hivemind != Some(true) ||
+                    // Every source Bee squad has exclusive server
+                    // command authority, even while its hulls remain
+                    // deferred in an as-yet-unfired physical wave.
+                    self.source_squads.iter().any(|squad|
+                        squad.side == bee_side && !squad.members.is_empty() &&
+                        !squad.hivemind.is_some_and(|owner|
+                            owner.hivemind_controlled)) ||
                     !setup.extraction.is_some_and(|zone|
                         zone.player_side == player_side && zone.retreat_on_exit &&
                         zone.layer == 20 &&
