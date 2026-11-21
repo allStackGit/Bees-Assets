@@ -345,6 +345,11 @@ pub struct RemotePlayMeasurements {
     pub fog_fading_sources_peak: usize,
     pub audio_events_queued: u64,
     pub audio_events_dropped: u64,
+    /// Physical WeaponFired events whose shots had already retired before
+    /// the host projected the current tick. These preserve a real launch
+    /// cue without resurrecting a projectile or fabricating an impact.
+    #[serde(default)]
+    pub retired_weapon_launch_cues: u64,
     /// A real ship death displaced one cosmetic projectile cue when a
     /// busy battle had already filled its fixed outbound event budget.
     pub ship_deaths_prioritized: u64,
@@ -1551,6 +1556,7 @@ fn collect_remote_audio(
 ) {
     for event in view.combat.events() {
         let mut launched = None;
+        let mut retired_launch = false;
         let mut impact = None;
         let (effect, point) = match event {
             CombatEvent::Hit(hit) if hit.delta.applied_damage > 0 => {
@@ -1589,9 +1595,20 @@ fn collect_remote_audio(
             // Captures real launches even when a shot dies between two
             // five-tick presentation snapshots. The existing client sound
             // table remains the one authority for projectile sound families.
-            CombatEvent::GameWeaponFired { projectile_id, .. } |
-            CombatEvent::PolicyWeaponFired { projectile_id, .. } => {
-                let Some(&(kind, point)) = shots.get(projectile_id) else { continue };
+            CombatEvent::GameWeaponFired { ship_id, slot, projectile_id } |
+            CombatEvent::PolicyWeaponFired { ship_id, slot, projectile_id } => {
+                // The same fixed tick can fire and destroy a small shot.
+                // Its physical launch is already in CombatEvent, but the
+                // living projectile inventory cannot supply its type/pose.
+                // Resolve the installed authentic turret rather than
+                // losing this cue or inventing a projectile in the world.
+                let source = shots.get(projectile_id).copied();
+                let Some((kind, point)) = source.or_else(|| {
+                    let kind = view.combat.weapon_projectile_type(*ship_id, *slot)?;
+                    let point = view.combat.ship_body(*ship_id)?.motion.position;
+                    Some((kind, point))
+                }) else { continue };
+                retired_launch = source.is_none();
                 launched = Some((*projectile_id, kind));
                 ("projectile", Some(point))
             },
@@ -1624,7 +1641,9 @@ fn collect_remote_audio(
             CombatEvent::Hit(hit) => Some(hit.target_id),
             CombatEvent::ShipDied { victim_id, .. } => Some(*victim_id),
             CombatEvent::StrikerBombDropped { ship_id, .. } |
-            CombatEvent::ShipWarped { ship_id, .. } => Some(*ship_id),
+            CombatEvent::ShipWarped { ship_id, .. } |
+            CombatEvent::GameWeaponFired { ship_id, .. } |
+            CombatEvent::PolicyWeaponFired { ship_id, .. } => Some(*ship_id),
             _ => None,
         };
         let own_ship_event = affected_ship
@@ -1709,6 +1728,7 @@ fn collect_remote_audio(
             }
             pending.push(cue);
             measurements.audio_events_queued += 1;
+            measurements.retired_weapon_launch_cues += u64::from(retired_launch);
             if impact.is_some() { measurements.combat_impacts_queued += 1; }
         } else {
             measurements.audio_events_dropped += 1;
