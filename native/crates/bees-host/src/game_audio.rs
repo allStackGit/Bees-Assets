@@ -378,7 +378,10 @@ impl NativeGameAudio {
         self.last_tick = Some(tick);
         self.voices.retain(|sink| !sink.empty());
         let mut budget = MAX_NEW_EFFECTS_PER_FRAME;
-        let mut effects = Vec::new();
+        // At most eight sounds can be admitted per frame: keep the
+        // mixing queue on the stack, including during large battles.
+        let mut effects = [None; MAX_NEW_EFFECTS_PER_FRAME];
+        let mut effects_len = 0;
         // Explicit server launch events take precedence over observing the
         // corresponding still-live shot in the same snapshot. No double
         // weapon sound when both forms of evidence are present.
@@ -405,7 +408,8 @@ impl NativeGameAudio {
             }
             if budget > 0 {
                 budget -= 1;
-                effects.push(effect);
+                effects[effects_len] = Some(effect);
+                effects_len += 1;
             } else { self.measurements.sound_effects_dropped += 1; }
         }
         // The fallback still supports earlier hosts that only transmit
@@ -424,11 +428,14 @@ impl NativeGameAudio {
                 else { continue };
             if budget > 0 {
                 budget -= 1;
-                effects.push(effect);
+                effects[effects_len] = Some(effect);
+                effects_len += 1;
             } else { self.measurements.sound_effects_dropped += 1; }
         }
         self.seen_projectiles.retain(|_, seen| *seen == tick);
-        for effect in effects { self.play(effect); }
+        for effect in effects[..effects_len].iter().flatten().copied() {
+            self.play(effect);
+        }
     }
 
     /// Presentation-only projection of current canonical physical events.
@@ -455,7 +462,8 @@ impl NativeGameAudio {
         self.last_tick = Some(view.tick);
         self.voices.retain(|sink| !sink.empty());
         let mut budget = MAX_NEW_EFFECTS_PER_FRAME;
-        let mut new_effects = Vec::new();
+        let mut new_effects = [None; MAX_NEW_EFFECTS_PER_FRAME];
+        let mut new_effects_len = 0;
         for (projectile, body) in view.combat.render_projectiles() {
             if self.seen_projectiles.insert(projectile.entity_id, view.tick).is_some() {
                 continue;
@@ -464,7 +472,8 @@ impl NativeGameAudio {
             if let Some(effect) = Effect::projectile(projectile.projectile_type) {
                 if budget > 0 {
                     budget -= 1;
-                    new_effects.push(effect);
+                    new_effects[new_effects_len] = Some(effect);
+                    new_effects_len += 1;
                 } else {
                     self.measurements.sound_effects_dropped += 1;
                 }
@@ -506,11 +515,14 @@ impl NativeGameAudio {
             }
             if budget > 0 {
                 budget -= 1;
-                new_effects.push(effect);
+                new_effects[new_effects_len] = Some(effect);
+                new_effects_len += 1;
             } else {
                 self.measurements.sound_effects_dropped += 1;
             }
         }
-        for effect in new_effects { self.play(effect); }
+        for effect in new_effects[..new_effects_len].iter().flatten().copied() {
+            self.play(effect);
+        }
     }
 }
