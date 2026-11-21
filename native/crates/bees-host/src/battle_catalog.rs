@@ -751,6 +751,7 @@ impl BattleCatalog {
             .ok_or_else(|| invalid("saved tactics require a campaign"))?;
         if !matches!(entry.side, 1 | 2) || entry.saved_squad_id <= 0 ||
             !(1..=40).contains(&entry.shooting_strategy_id) ||
+            entry.formation.is_some_and(|formation| !formation.is_valid()) ||
             progress.tactics_for_squad(entry.side, entry.saved_squad_id) == Some(entry) ||
             progress.squads.get(&entry.saved_squad_id)
                 .is_some_and(|squad| squad.side != entry.side) ||
@@ -1081,6 +1082,7 @@ impl BattleCatalog {
             if edit.campaign_id != *campaign ||
                 !matches!(entry.side, 1 | 2) || entry.saved_squad_id <= 0 ||
                 !(1..=40).contains(&entry.shooting_strategy_id) ||
+                entry.formation.is_some_and(|formation| !formation.is_valid()) ||
                 progress.tactics_for_squad(entry.side, entry.saved_squad_id) == Some(entry) ||
                 progress.squads.get(&entry.saved_squad_id)
                     .is_some_and(|squad| squad.side != entry.side) ||
@@ -1421,6 +1423,7 @@ impl BattleCatalog {
                 "cease_fire": entry.cease_fire,
                 "match_speed": entry.match_speed,
                 "color_setting": entry.color_setting,
+                "formation": entry.formation,
             })).collect::<Vec<_>>(),
             "original_fleet_transfers": progress.authored_transfer_count,
             "original_roster_overrides": progress.authored_roster_for_all(),
