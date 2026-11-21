@@ -2562,7 +2562,11 @@ class ExperimentHub {
         const resetNativeRounds=(s.native_round_plans||[]).some(plan=>
             ['pending_collectors','awaiting_collectors',
              'pending_optimizer','awaiting_optimizer'].includes(plan.status));
-        if(resetBundles||resetDistributed||resetQueuedDistributed||resetNativeRounds) {
+        const resetEvaluators=(s.evaluator_actions||[]).some(action=>
+            ['pending','dispatched'].includes(action.status));
+        const resetInstallStarts=s.jobs.some(job=>job.pending_install_start);
+        if(resetBundles||resetDistributed||resetQueuedDistributed||
+            resetNativeRounds||resetEvaluators||resetInstallStarts) {
             const next=copy(s);
             for(const job of next.jobs)
                 if(job.pending_install_start) {
@@ -6870,7 +6874,7 @@ class ExperimentHub {
         // carried-over IDs if *all* outstanding claims no longer fit.
         const withinCapacity=claimsFitCpuRam(next.reservations,machine,report.cpus,report.ram_mb);
         const acknowledgedIds=new Set();
-        let changed=newEvaluatorReport;
+        let changed=Boolean(restartApproval)||newEvaluatorReport;
         for (const id of ids) {
             if(!withinCapacity)break;
             const lease=next.reservations.find(x=>x.id===id &&
@@ -7228,11 +7232,11 @@ class ExperimentHub {
         this.advanceDistributedLaunches();
         this.advancePendingResourceBundles();
         this.advancePendingInstallStarts();
+        this.advanceNativeBeesRounds();
         const nativeOrders=value.request_execution_orders===false
             ?[]:this.executionOrders(machine.id);
         const evaluatorOrders=value.request_execution_orders===false||nativeOrders.length
             ?[]:this.offerEvaluatorAction(machine,instance);
-        this.advanceNativeBeesRounds();
         // An agent awaiting a slow native Start/Stop/probe can renew
         // authenticated liveness without receiving a second instruction.
         // This does not close the session or release native ownership.
@@ -7247,8 +7251,8 @@ class ExperimentHub {
                 // a process launch token. The agent checks it against sysfs.
                 gpu_bindings:physicalGpuBindings(machine,report,x.resources,x.gpu_bindings)||[],
             })),
-            execution_orders:value.request_execution_orders===false
-                ?[]:this.executionOrders(machine.id),
+            execution_orders:nativeOrders,
+            evaluator_orders:evaluatorOrders,
             evaluator_service_command:value.request_execution_orders===false
                 ?null:(()=>{
                     const command=(this.state.evaluator_services||[]).find(item=>
