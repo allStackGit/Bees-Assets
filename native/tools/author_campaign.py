@@ -817,7 +817,7 @@ def mission_advance(value: str) -> tuple[int, str]:
 
 def mission_unlock_any(value: str) -> tuple[int, int, str]:
     """MISSION:PRIOR:finished|victory|defeat; alternative forward mission gate."""
-    match = re.fullmatch(r"(\\d+):(\\d+):(finished|victory|defeat)", value)
+    match = re.fullmatch(r"(\d+):(\d+):(finished|victory|defeat)", value)
     if match is None:
         raise argparse.ArgumentTypeError(
             "--mission-unlock-any needs MISSION:PRIOR:finished|victory|defeat"
