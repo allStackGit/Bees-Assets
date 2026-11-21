@@ -4547,6 +4547,39 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
+    // The browser's datalist autocomplete is inconsistent across browsers.
+    // Build an explicit selector using authenticated worker-advertised suite IDs.
+    function advertisedEvaluationSuites() {
+        const suites=new Map();
+        for(const machine of state?.machines||[]) {
+            if(machine.status!=='connected')continue;
+            for(const id of machine.evaluation_suites?.[project]||[]) {
+                if(typeof id!=='string'||!id)continue;
+                if(!suites.has(id))suites.set(id,new Set());
+                suites.get(id).add(machine.name||machine.id);
+            }
+        }
+        return suites;
+    }
+    function evaluationSuiteLabel(id,machines) {
+        const match=project==='tinybrains'
+            ?/^tinybrains_(nano|micro)_tiny_v(\d+)$/.exec(id):null;
+        const name=match?match[1][0].toUpperCase()+match[1].slice(1)+
+            ' · Tiny v'+match[2]+' — '+id:id;
+        return name+(machines?.size?' ('+[...machines].join(', ')+')':'');
+    }
+    function fillEvaluationSuiteSelect(select,chosen=select.value,available=advertisedEvaluationSuites()) {
+        const options=[new Option('Select an approved suite…','')];
+        for(const [id,machines] of [...available].sort(([a],[b])=>a.localeCompare(b)))
+            options.push(new Option(evaluationSuiteLabel(id,machines),id));
+        if(chosen&&!available.has(chosen)) {
+            // A saved draft must survive a temporarily disconnected worker.
+            // This fallback is only created for an existing selected suite.
+            options.push(new Option(chosen+' (saved; not currently advertised)',chosen));
+        }
+        select.replaceChildren(...options);
+        select.value=chosen||'';
+    }
     function appendEvaluationSuite(rule={}) {
         const container=$('hub-evaluation-more-suites');
         if(container.children.length>=7)
@@ -4557,19 +4590,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const field=(title,className,value,type='text')=>{
             const label=document.createElement('label');
             label.textContent=title;
-            const input=document.createElement('input');
+            const suiteField=className==='hub-evaluation-extra-suite-id';
+            const input=document.createElement(suiteField?'select':'input');
             input.className=className;
-            input.type=type;
-            input.value=String(value??'');
+            if(suiteField)fillEvaluationSuiteSelect(input,String(value??''));
+            else {
+                input.type=type;
+                input.value=String(value??'');
+            }
             if(type==='number') {
                 input.min=className==='hub-evaluation-extra-rate'?'0':'1';
                 input.max=className==='hub-evaluation-extra-rate'?'1':
                     className==='hub-evaluation-extra-minutes'?'10080':'1000000';
                 input.step=className==='hub-evaluation-extra-rate'?'any':'1';
-            }
-            if(className==='hub-evaluation-extra-suite-id') {
-                input.maxLength=48;
-                input.setAttribute('list','hub-evaluation-suite-options');
             }
             if(className==='hub-evaluation-extra-digest') {
                 input.maxLength=64;
@@ -4580,7 +4613,7 @@ document.addEventListener('DOMContentLoaded', () => {
             label.append(input);
             row.append(label);
         };
-        field('Suite ID','hub-evaluation-extra-suite-id',rule.suite_id);
+        field('Approved evaluation suite','hub-evaluation-extra-suite-id',rule.suite_id);
         field('Suite SHA-256 (optional)','hub-evaluation-extra-digest',rule.suite_sha256);
         field('Minimum trials','hub-evaluation-extra-trials',rule.min_trials,'number');
         field('Every N updates (optional, overrides shared interval)',
@@ -4613,7 +4646,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const stopBySuite=new Map(stopped.map(rule=>[rule.suite_id,rule]));
         $('hub-evaluation-mode').value=monitor?'monitor':'stop';
         $('hub-evaluation-optional-stop').checked=Boolean(monitor&&stopPolicy);
-        $('hub-evaluation-suite').value=first?.suite_id??'';
+        fillEvaluationSuiteSelect($('hub-evaluation-suite'),first?.suite_id??'');
         $('hub-evaluation-digest').value=first?.suite_sha256??'';
         $('hub-evaluation-trials').value=first?.min_trials??'';
         $('hub-evaluation-rate').value=stopBySuite.get(first?.suite_id)
@@ -4766,17 +4799,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Worker-advertised suite names are suggestions, not execution authority.
     // A disconnected worker must not erase a saved suite ID or its fingerprint.
     function renderEvaluationSuiteChoices() {
-        const available=new Map();
-        for(const machine of state?.machines||[]) {
-            if(machine.status!=='connected')continue;
-            for(const id of machine.evaluation_suites?.[project]||[]) {
-                if(!available.has(id))available.set(id,[]);
-                available.get(id).push(machine.name||machine.id);
-            }
+        const available=advertisedEvaluationSuites();
+        fillEvaluationSuiteSelect($('hub-evaluation-suite'),
+            $('hub-evaluation-suite').value,available);
+        for(const row of $('hub-evaluation-more-suites').children) {
+            const select=row.querySelector('.hub-evaluation-extra-suite-id');
+            fillEvaluationSuiteSelect(select,select.value,available);
         }
-        $('hub-evaluation-suite-options').replaceChildren(
-            ...[...available].sort(([a],[b])=>a.localeCompare(b)).map(
-                ([id,machines])=>new Option(machines.join(', '),id)));
         const running=state?.machines.filter(machine=>machine.status==='connected')
             .flatMap(machine=>(machine.evaluator_services||[])
                 .filter(service=>service.project===project&&
@@ -4791,13 +4820,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         ' ('+cpu+'; '+ram+')';
                 }))||[];
         $('hub-evaluation-available-suites').textContent=available.size
-            ?available.size+' suite IDs advertised by connected '+project+
-                ' workers. '+(running.length
+            ?available.size+' approved suite IDs available in the dropdown. '+(running.length
                     ?'Observed evaluator services: '+running.slice(0,4).join('; ')+'.'
                     :'No active evaluator scheduler confirmed for this project.')+
                 ' Evaluator CPU/RAM ceilings are independent service limits, not training-job allocations. Service observation does not prove frozen-suite compatibility or successful evaluations.'
             :'No connected machine currently advertises '+project+
-                ' evaluation suites. Existing approved suite IDs remain editable.';
+                ' evaluation suites. Editing a saved configuration retains its suite IDs; new suites require a connected evaluator.';
         const defaults=state?.projects.find(p=>p.id===project)
             ?.default_evaluation_monitor;
         $('hub-evaluation-default-status').textContent=defaults
