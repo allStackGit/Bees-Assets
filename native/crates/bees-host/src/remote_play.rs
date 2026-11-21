@@ -1642,19 +1642,14 @@ fn collect_remote_audio(
                 ("projectile", Some(point))
             },
             CombatEvent::FireTankExploded {
-                object_id, explosion_projectile_id, ..
+                origin, explosion_projectile_id, ..
             } => (
                 "huge_explosion",
-                view.combat.render_projectile(*explosion_projectile_id)
-                    .map(|(_, body)| body.motion.position)
-                    .or_else(|| view.combat.events().iter().find_map(|event| {
-                        match event {
-                            CombatEvent::FireTankObstacleBrokenApart {
-                                object_id: broken_id, origin, ..
-                            } if broken_id == object_id => Some(*origin),
-                            _ => None,
-                        }
-                    })),
+                // New events carry the physical source spawn directly;
+                // old persisted events may still need a live shot lookup.
+                (*origin).or_else(|| view.combat.render_projectile(
+                    *explosion_projectile_id,
+                ).map(|(_, body)| body.motion.position)),
             ),
             CombatEvent::BombDetonated { projectile_id, target_id } => (
                 "huge_explosion",
