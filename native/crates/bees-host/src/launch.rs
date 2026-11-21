@@ -4300,43 +4300,18 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     // applies unlocks, persistent fleet edits and durable battle receipts.
     // Do not turn a campaign into a stateless quick battle.
     let campaign = if let Some(index) = campaign_index {
-        use bees_host::presentation::{BattleMenuRow, select_library};
-        let catalog: battle_catalog::BattleCatalog =
-            serde_json::from_slice(&fs::read(&games[index])?)?;
-        catalog.validate()?;
         let career_root = save_root.join("campaigns").join(&settings.game_id);
-        let pending = pending_saved_campaign_mission(&catalog, &career_root)?;
-        let progress = catalog.load_progress(&career_root)?;
-        let available = catalog.battles.iter().filter_map(|entry| {
-            let mission = entry.mission.as_ref()?;
-            (if let Some(original) = pending.as_deref() {
-                mission.id == original
-            } else {
-                mission.requires.iter().all(|id| progress.completed(id))
-            }).then_some((entry, mission))
-        }).collect::<Vec<_>>();
-        if available.is_empty() {
-            return Err(invalid(if pending.is_some() {
-                "interrupted native campaign mission is missing from its authored catalog"
-            } else {
-                "no unlocked native campaign mission can be hosted"
-            }).into());
-        }
-        let rows = available.iter().map(|(entry, mission)| BattleMenuRow {
-            title: entry.title.trim(),
-            status: if pending.is_some() { "  [Resume original World]" }
-                else if progress.completed(&mission.id) { "  [Complete]" }
-                else { "" },
-            unlocked: true,
-        }).collect::<Vec<_>>();
-        let mut selected = 0_usize;
-        let Some(choice) = select_library(&rows, &mut selected, false)?
-            else { return Ok(()) };
-        let mission = available[choice].1;
-        if !tokens.contains_key(&mission.player_side.to_string()) {
+        // Hosting uses the SAME native campaign menu as local play, including
+        // persistent ship purchases, transfers, saved squad editing, mission
+        // unlocks and interrupted-World recovery. It returns a mission ID,
+        // never starts another physics simulation in the parent window.
+        let Some((mission_id, side)) =
+            run_campaign_game_menu(&games[index], &career_root, true)?
+        else { return Ok(()) };
+        if !tokens.contains_key(&side.to_string()) {
             return Err(invalid("multiplayer host has no token for the campaign player side").into());
         }
-        Some((games[index].clone(), career_root, mission.id.clone()))
+        Some((games[index].clone(), career_root, mission_id))
     } else { None };
     // The authoritative host reads its existing protected environment
     // configuration. A child avoids process-global env mutations in the
@@ -4871,6 +4846,18 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
 
 #[cfg(feature = "client")]
 fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error>> {
+    run_campaign_game_menu(catalog_path, output_root, false)?;
+    Ok(())
+}
+
+/// The local and hosted campaign launchers share the entire original
+/// player fleet editor. A hosted selection returns its authorized mission
+/// and side without ever advancing a World; only the child --serve runtime
+/// may simulate and publish that campaign battle.
+#[cfg(feature = "client")]
+fn run_campaign_game_menu(
+    catalog_path: &Path, output_root: &Path, hosted: bool,
+) -> Result<Option<(String, i32)>, Box<dyn Error>> {
     use bees_host::presentation::{
         BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
         NativeTransferMenuRow, NativeCreateSquadMenuRow,
@@ -4911,6 +4898,11 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             if select_library(&rows, &mut resume_selected, launch_failed)?.is_none() {
                 break;
             }
+            if hosted {
+                let mission = entry.mission.as_ref().ok_or_else(||
+                    invalid("interrupted multiplayer campaign lacks its original mission"))?;
+                return Ok(Some((mission.id.clone(), mission.player_side)));
+            }
             let result = launch_catalog_battle(
                 &catalog, entry, root, output_root, &mut number, true,
             );
@@ -4922,9 +4914,11 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             continue;
         }
         let rows = catalog.battles.iter().map(|entry| {
-            let unlocked = entry.mission.as_ref().is_none_or(|mission|
-                mission.requires.iter().all(|id| progress.completed(id)));
-            let status = if !unlocked { "  [Locked]" }
+            let unlocked = (!hosted || entry.mission.is_some()) &&
+                entry.mission.as_ref().is_none_or(|mission|
+                    mission.requires.iter().all(|id| progress.completed(id)));
+            let status = if hosted && entry.mission.is_none() { "  [No campaign mission]" }
+                else if !unlocked { "  [Locked]" }
                 else if entry.mission.as_ref().is_some_and(|mission| progress.completed(&mission.id)) {
                     "  [Complete]"
                 } else { "" };
@@ -5225,6 +5219,11 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             }
         };
         let entry = &catalog.battles[index];
+        if hosted {
+            let mission = entry.mission.as_ref().ok_or_else(||
+                invalid("multiplayer host selected a non-campaign battle"))?;
+            return Ok(Some((mission.id.clone(), mission.player_side)));
+        }
         let result = launch_catalog_battle(
             &catalog, entry, root, output_root, &mut number, true,
         );
@@ -5234,7 +5233,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             eprintln!("Could not play {}: {error}", entry.title);
         }
     }
-    Ok(())
+    Ok(None)
 }
 
 /// Inform authenticated peers that finalization failed. No terminal
