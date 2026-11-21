@@ -125,7 +125,15 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         job.frozen_parameters?.optimizer_group!==true||
         !UUID.test(String(oldOptimizer))||oldOptimizer===job.id||
         !UUID.test(String(job.optimizer_restart_of_bundle_id||''))||
-        !job.resource_bundle||predecessor!==null||replacement!==null))
+        !job.resource_bundle||replacement!==null||
+        // Rank zero may continue the original, verified model source.
+        // Hub's failed-group restart freezes this exact predecessor;
+        // workers never own a checkpoint continuation of their own.
+        (predecessor!==null&&(
+            job.project_id!=='bees_native'||
+            predecessor!==job.model_source_job_id||
+            !/^[a-f0-9]{64}$/.test(
+                String(job.expected_parent_model_sha256||''))))))
         throw Error('Windows synchronized optimizer restart needs new leased ranks and a pinned original group.');
     if(!UUID.test(String(root))||
         (predecessor!==null&&(!UUID.test(String(predecessor))||
