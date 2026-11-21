@@ -5129,11 +5129,14 @@ fn run_campaign_game_menu(
             for squad in progress.created_squads_for_side(side) {
                 if progress.can_retire_saved_squad(side, squad.saved_squad_id) &&
                     !catalog.battles.iter().filter_map(|entry| entry.mission.as_ref())
-                        .any(|mission| mission.victory_squads.iter().any(|grant|
-                            grant.template_saved_squad_id == squad.saved_squad_id))
+                        .any(|mission|
+                            mission.victory_squads.iter().any(|grant|
+                                grant.template_saved_squad_id == squad.saved_squad_id) ||
+                            mission.victory_grants.iter().any(|grant|
+                                grant.saved_squad_id == squad.saved_squad_id))
                 {
                     delete_rows.push(NativeDeleteSquadMenuRow {
-                        title: format!("Side {}  SavedSquad #{}  [Empty - delete]",
+                        title: format!("Side {}  SavedSquad #{}  [Return fleet to reserve]",
                             side, squad.saved_squad_id),
                         side, saved_squad_id: squad.saved_squad_id,
                     });
