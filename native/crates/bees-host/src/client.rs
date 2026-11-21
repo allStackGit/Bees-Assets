@@ -490,7 +490,8 @@ impl NativeClient {
         let dialogue = view.campaign_dialogue
             .filter(|_| dialogue_for_viewer)
             .and_then(|(sequence, cue)| {
-            if self.dialogue_sequence != Some(sequence) {
+            let first_presentation = self.dialogue_sequence != Some(sequence);
+            if first_presentation {
                 self.dialogue_sequence = Some(sequence);
                 self.dialogue_line = 0;
             }
@@ -499,6 +500,13 @@ impl NativeClient {
                 self.dialogue_line = lines.len();
             } else if self.dialogue_line < lines.len() && self.window.is_key_pressed(Key::L, KeyRepeat::No) {
                 self.dialogue_line += 1;
+            }
+            // Source DialogueManager plays the intercom once, on the
+            // first visible line of each newly presented section. A
+            // skipped section makes no sound, and advancing within the
+            // same section never repeats the cue.
+            if first_presentation && self.dialogue_line < lines.len() {
+                self.audio.campaign_dialogue_presented();
             }
             lines.get(self.dialogue_line).map(|&(speaker, line)| (cue, speaker, line))
         });
