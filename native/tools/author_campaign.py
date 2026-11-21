@@ -816,6 +816,44 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     "the fleet withdrawal trigger and its exact escalating "
                     "physical Bee wave schedule"
                 )
+            # Neptune2.StartNeptune2Waves installs a real repeating
+            # sixty-second ScaledTimer after the fourth wave. Even when
+            # every source SavedSquad has been consumed, that timer still
+            # invokes its arrival dialogue. Materialize only the empty
+            # tail, bounded by this native run's fixed-step duration; do
+            # not fabricate new ships or maintain another gameplay timer.
+            duration_ticks = run.get("max_rounds")
+            fixed_dt = scene.get("fixed_dt_seconds")
+            if (type(duration_ticks) is not int or duration_ticks <= 0 or
+                    type(fixed_dt) not in (float, int) or
+                    not float("inf") > fixed_dt > 0):
+                raise ValueError("Neptune production needs a positive finite fixed-step battle duration")
+            horizon = duration_ticks * fixed_dt
+            last_authored_time = max(wave["after_seconds"]
+                                    for wave in level["reinforcements"])
+            if horizon <= last_authored_time:
+                raise ValueError(
+                    "Neptune mining mission ends before its last actual Bee wave"
+                )
+            late_count = 0
+            next_due = 540
+            while next_due <= last_authored_time + 0.0001:
+                next_due += 60
+            ai_side = scene["bee_side"]
+            home = scene["starting_positions"][ai_side - 1]
+            if isinstance(home, dict):
+                home = [home["x"], home["y"]]
+            while next_due < horizon - 0.0001:
+                if late_count >= 4096:
+                    raise ValueError("Neptune mining battle exceeds 4096 source timer callbacks")
+                level["reinforcements"].append({
+                    "after_seconds": next_due,
+                    "squad_item_ids": [],
+                    "spawn": [home[0] + 100, home[1]],
+                    "entry": home,
+                })
+                late_count += 1
+                next_due += 60
             level["campaign_dialogue"] = {
                 "neptune_production": {"player_side": args.player_side}
             }
