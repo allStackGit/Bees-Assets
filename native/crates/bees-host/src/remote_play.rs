@@ -1957,6 +1957,14 @@ fn current_state(
         let collider_bounds = body.primary_bounds().map(|bounds| [
             [bounds.min.x, bounds.min.y], [bounds.max.x, bounds.max.y],
         ]);
+        let range_visible = map.is_some() && if fog {
+            view.combat.range_visible_map_objects_for_side(side)
+                .is_some_and(|visible| visible.contains(&object.entity_id))
+        } else {
+            // Source no-fog games use one global weapon-trigger union.
+            // Keep the LAN view consistent with the local renderer.
+            view.combat.range_visible_map_object_ids().contains(&object.entity_id)
+        };
         Some(json!({
             "id": object.entity_id,
             "kind": object.kind as u8,
@@ -1977,9 +1985,7 @@ fn current_state(
             // health bars follow the source weapon-range visibility union.
             "map_object_kind": map.map(|object| object.kind as u8),
             "max_health": map.map(|object| object.max_health),
-            "range_visible": map.is_some() &&
-                view.combat.range_visible_map_objects_for_side(side)
-                    .is_some_and(|visible| visible.contains(&object.entity_id)),
+            "range_visible": range_visible,
         }))
     }).collect();
     // Active non-colliding fragments already have authoritative IDs,
