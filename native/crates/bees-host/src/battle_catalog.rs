@@ -241,6 +241,10 @@ impl Mission {
         matches!(self.grant_on, AdvanceOn::Finished)
     }
 
+    pub fn advances_on_finished(&self) -> bool {
+        matches!(self.advance_on, AdvanceOn::Finished)
+    }
+
     pub fn unlocked(&self, progress: &CampaignProgress<'_>) -> bool {
         self.requires.iter().all(|id| progress.completed(id)) &&
             (self.unlock_if_any.is_empty() ||
