@@ -1849,6 +1849,27 @@ function exactResourceBundle(snapshot,value,confirmation) {
     return members;
 }
 
+// Distributed execution roles retain their existing IDs for leases, journals
+// and historical jobs. They are owned by the parent project, not a separate
+// project an operator needs to register.
+function ensureDistributedRoles(state) {
+    let changed=false;
+    for(const [parent,id,roleName] of [
+        ['tinybrains','tinybrains_rollout','TinyBrains rollout collectors'],
+        ['courier','courier_lineage','Courier remote lineages'],
+    ]) {
+        if(!state.projects.some(p=>p.id===parent&&p.adapter==='unconfigured')||
+            state.projects.some(p=>p.id===id))continue;
+        state.projects.push({
+            id,name:roleName,adapter:'unconfigured',
+            description:'Internal distributed execution role of '+parent,
+            created_at:now(),
+        });
+        changed=true;
+    }
+    return changed;
+}
+
 class ExperimentHub {
     constructor(root) {
         this.file = path.join(root, 'hub-v1.json');
@@ -1965,6 +1986,10 @@ class ExperimentHub {
                 }
             this.commit(next);
         }
+        // Repair existing registries as well as new deployments without
+        // modifying existing project definitions, frozen jobs or leases.
+        const withRoles=copy(this.state);
+        if(ensureDistributedRoles(withRoles))this.commit(withRoles);
     }
     // Durable transitions are observational. A missing heartbeat cannot
     // authorize native Stop, release capacity, or mark a job terminal.
@@ -6035,6 +6060,7 @@ class ExperimentHub {
         };
         const next = copy(this.state);
         next.projects.push(project);
+        ensureDistributedRoles(next);
         this.commit(next);
         return copy(project);
     }
@@ -6762,7 +6788,7 @@ class ExperimentHub {
             throw Error('The selected native learner must approve this profile, device allocation and collector count.');
         const rolloutProject=snapshot.projects.find(p=>p.id==='tinybrains_rollout');
         if(rolloutProject?.adapter!=='unconfigured')
-            throw Error('Register the TinyBrains rollout project before creating a distributed group.');
+            throw Error('TinyBrains internal collector role is unavailable; verify the Hub project registry.');
         const next=copy(this.state);
         const learner=this.queueIn(next,value.learner,
             byMachine?{rollout_endpoints:endpoints}:undefined);
@@ -6975,7 +7001,7 @@ class ExperimentHub {
             throw Error('Choose approved Courier workers within the selected training mode and capacity.');
         const sidecarProject=snapshot.projects.find(project=>project.id==='courier_lineage');
         if(sidecarProject?.adapter!=='unconfigured')
-            throw Error('Register the native courier_lineage project before allocating the group.');
+            throw Error('Courier internal execution role is unavailable; verify the Hub project registry.');
         const next=copy(this.state);
         const learner=this.queueIn(next,value.learner,
             shared?{remote_lineage_plan:remotePlan,
