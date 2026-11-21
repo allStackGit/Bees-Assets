@@ -3591,9 +3591,11 @@ fn run_create_saved_squad(
     Ok(())
 }
 
-/// Remove a vacant native SavedSquad across every authored campaign
-/// route, without orphaning FleetShips or mutating previous battle records.
-/// The immutable receipt keeps its ID permanently unavailable for reuse.
+/// Retire a generated SavedSquad using the ordinary career transfer
+/// ledger. Its FleetShips return to reserve, never vanish or mint TSV.
+/// Every authored route is preflighted before the first durable mutation.
+/// If interrupted between per-ship receipts, those earlier reserve moves
+/// remain valid and the player can repeat deletion to complete the edit.
 fn run_retire_saved_squad(
     catalog_path: &Path, output_root: &Path, side: i32, saved_squad_id: i64,
 ) -> Result<(), Box<dyn Error>> {
@@ -3606,10 +3608,13 @@ fn run_retire_saved_squad(
     let progress = catalog.load_progress(output_root)?;
     if !progress.can_retire_saved_squad(side, saved_squad_id) ||
         catalog.battles.iter().filter_map(|entry| entry.mission.as_ref())
-            .any(|mission| mission.victory_squads.iter()
-                .any(|grant| grant.template_saved_squad_id == saved_squad_id))
+            .any(|mission|
+                mission.victory_squads.iter()
+                    .any(|grant| grant.template_saved_squad_id == saved_squad_id) ||
+                mission.victory_grants.iter()
+                    .any(|grant| grant.saved_squad_id == saved_squad_id))
     {
-        return Err(invalid("delete only a vacant SavedSquad not required by other squad templates or mission rewards").into());
+        return Err(invalid("SavedSquad cannot be deleted while needed by a template or campaign reward").into());
     }
     let remaining = progress.created_squads_for_side(side).into_iter()
         .filter(|squad| squad.saved_squad_id != saved_squad_id)
@@ -3617,37 +3622,97 @@ fn run_retire_saved_squad(
     let tactics = progress.tactics_for_side(side).into_iter()
         .filter(|row| row.saved_squad_id != saved_squad_id)
         .collect::<Vec<_>>();
+    // Purchased and earned persistent hulls have the same transfer owner.
+    // Never remove the physical hull, its lifelong FleetShip identity, or
+    // its historical career record when its saved squad is deleted.
+    let mut purchases = progress.purchases_for_side(side);
+    let mut purchased_to_reserve = Vec::new();
+    for ship in &mut purchases {
+        if ship.saved_squad_id == saved_squad_id {
+            purchased_to_reserve.push(ship.fleet_ship_id);
+            ship.saved_squad_id = 0;
+        }
+    }
+    let mut authored = progress.authored_roster_for_side(side);
+    let mut authored_to_reserve = Vec::new();
+    for (fleet_id, _, current) in &mut authored {
+        if *current == saved_squad_id {
+            authored_to_reserve.push(*fleet_id);
+            *current = 0;
+        }
+    }
+    let dead = progress.lost_player_fleet_ids(side)?;
+    let no_casualties = HashSet::new();
     let root = catalog_path.parent().ok_or_else(||
         invalid("missing campaign catalog directory"))?;
     let mut checked = 0_usize;
     for battle in &catalog.battles {
         let Some(mission) = battle.mission.as_ref().filter(|mission|
             mission.player_side == side) else { continue };
+        let casualties = if mission.persist_fleet_losses {
+            &dead
+        } else { &no_casualties };
+        let deployed = purchases.iter().copied().filter(|ship|
+            ship.saved_squad_id > 0 &&
+                (!mission.persist_fleet_losses || !dead.contains(&ship.fleet_ship_id))
+        ).collect::<Vec<_>>();
+        let surviving_authored = authored.iter().copied().filter(|(id, _, _)|
+            !mission.persist_fleet_losses || !dead.contains(id)
+        ).collect::<Vec<_>>();
         for config in battle.configurations() {
             let path = resolve(root, config).canonicalize()?;
-            let mut scene = load_native_fleet_edit_scene(&path)?;
-            // Other fleet and combat projections are unaffected: this
-            // generated squad has no physical members or assigned hulls.
-            // Confirm the remaining source templates and tactical edits
-            // still resolve on every replayable mission variant.
+            let (original, mut level) = load_native_fleet_edit_scene_with_level(&path)?;
+            let mut scene = original.clone();
+            // Match campaign game construction exactly, including purchased
+            // Carrier dependents and durable original-squad reassignment.
+            // The retiring squad is absent before any fleet installation.
             scene.install_created_squads(side, &remaining)
                 .map_err(|error| contextual("remaining SavedSquad templates", error))?;
             scene.apply_saved_squad_tactics(side, &tactics)
                 .map_err(|error| contextual("remaining SavedSquad tactics", error))?;
+            scene.apply_authored_fleet_roster(
+                &original, side, &surviving_authored, casualties,
+            ).map_err(|error| contextual("retired squad original roster", error))?;
+            scene.install_purchased_ships(
+                &original, side, &deployed, casualties,
+            ).map_err(|error| contextual("retired squad purchased fleet", error))?;
+            scene.omit_killed_fleet_ships(side, casualties)
+                .map_err(|error| contextual("retired squad saved casualties", error))?;
+            scene.validate_campaign_deployment(side)
+                .map_err(|error| contextual("retired squad final deployment", error))?;
+            scene.finalize_campaign_squad_tactics(side, &tactics)
+                .map_err(|error| contextual("retired squad matching speed", error))?;
+            reconcile_campaign_carrier_deployment(&mut level, &original, &scene, side)?;
             checked += 1;
         }
     }
     if checked == 0 {
         return Err(invalid("no authored campaign Level can own the deleted SavedSquad").into());
     }
-    catalog.retire_saved_squad(&progress, output_root, side, saved_squad_id)?;
+
+    // The current transfer and authored-assignment ledgers already own
+    // exactly these operations. Use them rather than inventing a second
+    // fleet roster or an alternative replay format for squad deletion.
+    for id in &purchased_to_reserve {
+        catalog.transfer_purchased_ship(&progress, output_root, *id, 0)?;
+    }
+    for id in &authored_to_reserve {
+        catalog.reassign_authored_ship(
+            &progress, output_root, side, *id, saved_squad_id, 0,
+        )?;
+    }
+    // Reconstruct the committed receipts under the same exclusive lease.
+    // Retirement is published only after none of the original owned ships
+    // still claims the removed SavedSquad.
+    let updated = catalog.load_progress(output_root)?;
+    catalog.retire_saved_squad(&updated, output_root, side, saved_squad_id)?;
     println!("{}", json!({
         "kind": "native_campaign_saved_squad_deleted",
         "campaign_id": catalog.campaign_id,
         "player_side": side,
         "saved_squad_id": saved_squad_id,
         "validated_configs": checked,
-        "ships_removed": 0,
+        "ships_moved_to_reserve": purchased_to_reserve.len() + authored_to_reserve.len(),
         "cost_tsv": 0,
     }));
     Ok(())
