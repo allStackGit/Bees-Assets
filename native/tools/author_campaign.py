@@ -527,6 +527,12 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             "record_fleet_stats": True, "persist_fleet_losses": True,
             "bank_player_minerals": True,
         }
+        if mission_stories.get(index) == "neptune_pressing_forward":
+            # Level.Campaign.Endings.Neptune3Ending permanently marks all
+            # Factory FleetShips dead on a loss, including owned reserves.
+            # The host freezes their IDs from the complete original fleet
+            # and commits the action with the ordinary terminal result.
+            mission["retire_on_defeat_types"] = [9]
         prerequisites = mission_dependencies.get(
             index, [index - 1] if index > 1 else []
         )
