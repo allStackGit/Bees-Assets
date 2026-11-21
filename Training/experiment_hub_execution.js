@@ -344,7 +344,7 @@ class LocalExecution {
                         {parent_collection_selection:structuredClone(job.parent_collection_selection)}:{}),
                     ...(lease.gpu_bindings?.length===1?
                         {gpu_pci_address:lease.gpu_bindings[0].pci_address}:
-                        lease.gpu_bindings?.length===2?
+                        lease.gpu_bindings?.length>=2?
                         {gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}:{}),
                 });
                 if(typeof localAdapter?.optimizer_recovery_ready==='function') {
@@ -378,7 +378,7 @@ class LocalExecution {
                         {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
                     ...(lease.gpu_bindings?.length===1
                         ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
-                        :lease.gpu_bindings?.length===2
+                        :lease.gpu_bindings?.length>=2
                             ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
                             :{}),
                 });
@@ -499,7 +499,7 @@ class LocalExecution {
                             {parent_collection_selection:structuredClone(job.parent_collection_selection)}:{}),
                         ...(lease.gpu_bindings?.length===1
                             ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
-                            :lease.gpu_bindings?.length===2
+                            :lease.gpu_bindings?.length>=2
                                 ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
                                 :{}),
                     }))!==true)
@@ -533,7 +533,7 @@ class LocalExecution {
                         {parent_collection_selection:structuredClone(job.parent_collection_selection)}:{}),
                     ...(lease.gpu_bindings?.length===1
                         ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
-                        :lease.gpu_bindings?.length===2
+                        :lease.gpu_bindings?.length>=2
                             ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
                             :{}),
                 }));
@@ -571,7 +571,7 @@ class LocalExecution {
                             {parent_collection_selection:structuredClone(job.parent_collection_selection)}:{}),
                         ...(lease.gpu_bindings?.length===1
                             ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
-                            :lease.gpu_bindings?.length===2
+                            :lease.gpu_bindings?.length>=2
                                 ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
                                 :{}),
                     }));
@@ -609,7 +609,7 @@ class LocalExecution {
                     // machine/GPU count during recovery or progress export.
                     ...(lease.gpu_bindings?.length===1
                         ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
-                        :lease.gpu_bindings?.length===2
+                        :lease.gpu_bindings?.length>=2
                             ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
                             :{}),
                 }));
