@@ -820,7 +820,11 @@ class LinuxSupervisor {
             throw Error('Job already has a local launch record; reconcile rather than restart.');
         const invocation=validateLocalInput(job,lease,this.machineId,
             this.adapters,this.hostOs,this.gpuEnabled);
-        if(job.resources?.gpu_count===2)
+        // TinyBrains' split-PPO mode still uses its qualified Docker
+        // backend. Native Bees has a separate already-authorized dual-GPU
+        // path with exact PCI leases, device containment and model ranks;
+        // do not reject those jobs after validating their allocation.
+        if(job.resources?.gpu_count===2&&job.project_id==='tinybrains')
             throw Error('Two-GPU TinyBrains needs the locally qualified Docker backend.');
         const cpuSlots=typeof this.hostOs.availableParallelism==='function'
             ?this.hostOs.availableParallelism():this.hostOs.cpus().length;
