@@ -155,7 +155,7 @@ def input_mission(run_path: Path, player_side: int,
         # enabled Stage.ActivateHiveMind. The native launcher explicitly
         # releases the same post-briefing gate, with source squad ownership.
         prelude = (story in ("uranus_new_threat", "uranus_on_the_offensive",
-                            "uranus_on_the_defensive") and
+                            "uranus_on_the_defensive", "neptune_seize_means") and
                    scene.get("activate_hivemind") is False and
                    (scene.get("native_game_schema") == 1 or
                     scene.get("schema_version") == 35))
@@ -431,14 +431,19 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     mission_outcomes = {}
     for index, prior, result in args.mission_unlock_any:
         mission_outcomes.setdefault(index, []).append((prior, result))
-    # The original Uranus I defeat skips On the Defensive entirely and
-    # proceeds to A New Threat. Represent that as authenticated completed
-    # outcome gates, not a fabricated victory or a skipped battle receipt.
-    # Explicit author-specified routes still take precedence.
+    # Source Neptune I failure skips Of Production, just as Uranus I
+    # failure skips On the Defensive. The later Level requires a genuine
+    # prior defeat OR a genuine completed intermediate mission receipt.
+    # Never fake the skipped stage as an authored success.
+    source_skips = {
+        ("neptune_seize_means", "neptune_of_production",
+         "neptune_pressing_forward"),
+        ("uranus_on_the_offensive", "uranus_on_the_defensive",
+         "uranus_new_threat"),
+    }
     for index, story in mission_stories.items():
-        if (story == "uranus_on_the_offensive" and
-                mission_stories.get(index + 1) == "uranus_on_the_defensive" and
-                mission_stories.get(index + 2) == "uranus_new_threat" and
+        if ((story, mission_stories.get(index + 1),
+             mission_stories.get(index + 2)) in source_skips and
                 index + 2 not in mission_dependencies and
                 index + 2 not in mission_outcomes):
             mission_dependencies[index + 2] = []
@@ -465,7 +470,28 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         if story is None:
             return
         level = run["levels"][0]
-        if story == "neptune_pressing_forward":
+        if story == "neptune_seize_means":
+            # Original Neptune I starts with no HiveMind command requests,
+            # then releases them on emergency-rescue briefing completion.
+            # Its five ore-rich asteroids remain real physical economy
+            # objects in the common simulation and learning environment.
+            if (scene.get("human_side") != args.player_side or
+                    scene.get("activate_hivemind") is not False or
+                    scene.get("activate_mining") is not True or
+                    len(scene.get("mining_asteroids") or []) != 5 or
+                    not isinstance(run.get("hivemind"), dict) or
+                    run["hivemind"].get("issue_source_commands") is not True or
+                    level.get("campaign_dialogue") is not None or
+                    any(level.get(name) is not None for name in
+                        ("survival", "demolition", "escort", "extraction", "groups"))):
+                raise ValueError(
+                    "Neptune Seize the Means needs five real mining fields, "
+                    "a source pre-briefing HiveMind gate and military elimination"
+                )
+            level["campaign_dialogue"] = {
+                "neptune_seize_means": {"player_side": args.player_side}
+            }
+        elif story == "neptune_pressing_forward":
             # This authored story accompanies ordinary original elimination.
             # Its Factory dialogue choice is resolved after the native
             # launcher restores actual purchased/lost persistent FleetShips.
@@ -832,7 +858,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         # blockade invokes CollectMinedMineralsForPlayer.
         if mission_stories.get(index) in (
                 "pluto_bluer_pastures", "neptune_pressing_forward",
-                "uranus_on_the_offensive", "uranus_new_threat"):
+                "neptune_seize_means", "uranus_on_the_offensive",
+                "uranus_new_threat"):
             mission["bank_player_minerals"] = False
         if mission_stories.get(index) == "uranus_new_threat":
             # Source Uranus3Ending finishes the campaign on either outcome;
@@ -938,6 +965,14 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 {"ship_type": kind, "count": count, "saved_squad_id": saved_id}
                 for _, kind, count, saved_id in grants
             ]
+        if mission_stories.get(index) == "neptune_seize_means":
+            # Source Neptune1Ending grants exactly five Factory FleetShips
+            # to the unassigned CurrentShips reserve ONLY on victory.
+            if grants != [(index, 9, 5, 0)] or 9 not in args.shop_types:
+                raise ValueError(
+                    "Neptune Seize the Means requires --shop-types 9 and "
+                    "--victory-grant MISSION:9:5:0"
+                )
         if mission_stories.get(index) == "pluto_bluer_pastures":
             quotas = {18: 5, 13: 8, 12: 4, 7: 2}
             counts = {kind: sum(count for _, actual, count, _ in grants
@@ -1032,6 +1067,10 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     if len(uranus_finales) > 1:
         raise ValueError("the original Uranus III finale may occur only once per campaign")
     uranus_unlock_types = {0, 5, 10, 11, 20}
+    neptune_factory_missions = [index for index, story in mission_stories.items()
+                                if story == "neptune_seize_means"]
+    if len(neptune_factory_missions) > 1:
+        raise ValueError("Neptune Seize the Means grants Factories only once")
     for ship_type in classes:
         prices = shop_catalog.get(ship_type)
         specs = [items.get(ship_type) for items in per_mission_class_contracts]
@@ -1054,7 +1093,9 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 f"mission-{required:03d}" for required in
                 shop_unlocks.get(
                     ship_type,
-                    (uranus_finales if ship_type in uranus_unlock_types
+                    (neptune_factory_missions if ship_type == 9
+                     and neptune_factory_missions else
+                     uranus_finales if ship_type in uranus_unlock_types
                      and uranus_finales else [1]) if purchasable else [],
                 )
             ],
@@ -1273,12 +1314,12 @@ def mission_advance(value: str) -> tuple[int, str]:
 
 def mission_story(value: str) -> tuple[int, str]:
     match = re.fullmatch(
-        r"(\d+):(neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_offensive|uranus_on_the_defensive|uranus_new_threat)",
+        r"(\d+):(neptune_seize_means|neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_offensive|uranus_on_the_defensive|uranus_new_threat)",
         value,
     )
     if match is None or not 1 <= int(match.group(1)) <= 40:
         raise argparse.ArgumentTypeError(
-            "--mission-story needs MISSION:neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures, uranus_on_the_offensive, uranus_on_the_defensive or uranus_new_threat"
+            "--mission-story needs MISSION:neptune_seize_means, neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures, uranus_on_the_offensive, uranus_on_the_defensive or uranus_new_threat"
         )
     return int(match.group(1)), match.group(2)
 
