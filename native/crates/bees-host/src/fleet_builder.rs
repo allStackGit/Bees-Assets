@@ -654,6 +654,41 @@ fn mixed_fleet_offsets(
     Ok(offsets)
 }
 
+/// Placement is resolved once at authoring time against all selected real
+/// ship extents. A free Striker must begin inside the same Level, separate
+/// from its Carrier and every other authored ship; the shared game will
+/// handle its flight, bombing, rearming, and eventual retirement.
+fn place_free_striker(
+    parent: [f32; 2], size: [f32; 2],
+    occupied: &mut Vec<(f32, f32, f32, f32)>,
+) -> Result<[f32; 2], Box<dyn Error>> {
+    let (half_x, half_y) = (size[0] * 0.5, size[1] * 0.5);
+    let mut best: Option<(f32, [f32; 2])> = None;
+    for x in (35..=151).step_by(4) {
+        let x = x as f32;
+        if x - half_x < 30.0 || x + half_x > 158.0 { continue; }
+        for y in (-92..=92).step_by(4) {
+            let y = y as f32;
+            if y.abs() + half_y > 96.0 { continue; }
+            if occupied.iter().any(|&(other_x, other_y, other_half_x, other_half_y)|
+                (x - other_x).abs() < half_x + other_half_x + 2.0 &&
+                (y - other_y).abs() < half_y + other_half_y + 2.0
+            ) {
+                continue;
+            }
+            let score = (x - (parent[0] - 31.0)).powi(2) +
+                (y - parent[1]).powi(2);
+            if best.is_none_or(|(prior, _)| score < prior) {
+                best = Some((score, [x, y]));
+            }
+        }
+    }
+    let (_, position) = best.ok_or_else(||
+        invalid("no unobstructed source-sized space for the Carrier's Striker deck"))?;
+    occupied.push((position[0], position[1], half_x, half_y));
+    Ok(position)
+}
+
 fn cover_box(id: i64, position: [f32; 2]) -> NativePlacedStaticBox {
     NativePlacedStaticBox {
         entity_id: id, prefab_name: "Box".to_owned(),
@@ -1146,6 +1181,73 @@ pub(super) fn archive(
             });
             squad_ids[side].push(new_squad);
             if supporting { support_squads.push(new_squad); }
+        }
+    }
+    let mut carrier_children = HashMap::<i64, i64>::new();
+    let mut free_striker_squads = Vec::<(i64, bool)>::new();
+    if !carrier_parents.is_empty() {
+        let striker_template = available.iter().find(|ship|
+            ship["side"] == 2 && ship["ship_type"] == 19
+        ).ok_or_else(|| invalid("authored Carrier has no original Striker child template"))?;
+        if striker_template["special"]["kind"] != "striker" ||
+            !striker_template["special_weapon"].is_object()
+        {
+            return Err(invalid("authored Carrier Striker has no physical Bomb weapon").into());
+        }
+        let striker_size = catalog.sprite_size(19)
+            .ok_or_else(|| invalid("original Striker sprite extents are missing"))?;
+        // All allocated source hulls and stage clones are placed according
+        // to these exact offsets. Reserve their extents before choosing
+        // the free child's new physical position.
+        let mut occupied = Vec::new();
+        for side in 0..2_usize {
+            for index in 0..selected.fleet_sizes[side] {
+                let kind = if index >= fighter_count[side] + specialist_count[side] {
+                    if side == 0 { 2 } else { 5 }
+                } else if index >= fighter_count[side] {
+                    if matches!(selected.mix[side], FleetMix::Miners) { 4 }
+                    else if matches!(selected.mix[side], FleetMix::Chargers) { 0 }
+                    else if side == 0 { 18 } else { 10 }
+                } else if side == 0 { 21 } else { 13 };
+                let extents = catalog.sprite_size(kind)
+                    .ok_or_else(|| invalid("native Carrier fleet has no source sprite extents"))?;
+                let offset = offsets[side][index];
+                let x = (if side == 0 { -75.0 } else { 75.0 }) + offset[0];
+                occupied.push((x, offset[1], extents.x * 0.5, extents.y * 0.5));
+            }
+        }
+        for (parent_id, parent_squad, index, parent_position, controlled)
+            in carrier_parents
+        {
+            // These authored IDs stay below native layout clone IDs and
+            // above the source's original weapon IDs; no relationship is
+            // cloned without its owning parent or unique Bomb mount.
+            let child_id = 5_000 + index as i64;
+            let child_weapon_id = 6_000 + index as i64;
+            let child_squad_id = 500 + index as i64;
+            let position = place_free_striker(parent_position,
+                [striker_size.x, striker_size.y], &mut occupied)?;
+            let mut striker = striker_template.clone();
+            striker["entity_id"] = json!(child_id);
+            striker["position"] = json!(position);
+            striker["user_controlled"] = json!(controlled);
+            striker["persistent_fleet"] = json!(false);
+            striker["fleet_ship_id"] = json!(parent_id);
+            striker["is_carrier_ship"] = json!(true);
+            striker["formation_offset"] = json!([0.0, 0.0]);
+            striker["special"]["carrier_id"] = json!(parent_id);
+            striker["special_weapon"]["weapon_id"] = json!(child_weapon_id);
+            scene["ships"].as_array_mut().ok_or_else(||
+                invalid("native Carrier source lost its ship registry"))?.push(striker);
+            scene["squads"].as_array_mut().ok_or_else(||
+                invalid("native Carrier source lost its squad registry"))?.push(json!({
+                    "item_id": child_squad_id, "side": 2,
+                    "members": [child_id], "shooting_strategy_id": 1,
+                    "user_controlled": controlled, "can_accept_input": controlled,
+                    "is_carrier_squad": true, "command_bans": [],
+                }));
+            carrier_children.insert(parent_squad, child_squad_id);
+            free_striker_squads.push((child_squad_id, controlled));
         }
     }
     let level_name = scene["level_name"].as_str()
