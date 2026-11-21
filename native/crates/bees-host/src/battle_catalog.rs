@@ -185,6 +185,10 @@ enum RequiredOutcome {
 }
 
 impl Mission {
+    pub fn has_outcome_alternatives(&self) -> bool {
+        !self.unlock_if_any.is_empty()
+    }
+
     pub fn unlocked(&self, progress: &CampaignProgress<'_>) -> bool {
         self.requires.iter().all(|id| progress.completed(id)) &&
             (self.unlock_if_any.is_empty() || self.unlock_if_any.iter().any(|route|
