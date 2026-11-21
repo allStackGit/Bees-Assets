@@ -469,7 +469,10 @@ impl NativeEpisodeTerminal {
         world.extraction_objective().map(|(objective_side, _, _)| EpisodeMissionOutcome {
             kind: EpisodeMissionKind::Extraction,
             objective_side,
-            completed: result.extraction_victory,
+            // Uranus II withdraws the final physical ship without awarding a
+            // combat victory. Its objective still completed; an exterminated
+            // faction that never reached the exit did not withdraw.
+            completed: result.extraction_victory || world.extraction_retreat_completed(),
         })
     }
 
