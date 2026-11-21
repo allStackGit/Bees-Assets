@@ -4,6 +4,7 @@
 //! source-authored two-player hulls and NativeLevelLayout's validated clone
 //! operation, then run the ordinary native Level and replay pipeline.
 
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -68,7 +69,7 @@ impl ReinforcementPattern {
 }
 
 #[derive(Clone, Copy)]
-enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners }
+enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Chargers }
 
 #[derive(Clone, Copy)]
 enum AiTactics { Aggressive, Circle, RightSwipe, LeftSwipe, InAndOut, Mixed }
@@ -169,12 +170,12 @@ impl FleetMix {
             Self::Balanced => total.div_ceil(4).min(8),
             Self::SupportHeavy => (total / 2).min(12),
             Self::Specialists => if total >= 4 { total.div_ceil(4).min(8) } else { 0 },
-            Self::Miners => 0,
+            Self::Miners | Self::Chargers => 0,
         }).min(total.saturating_sub(1 + self.specialist_count(total)))
     }
 
     fn specialist_count(self, total: usize) -> usize {
-        usize::from(matches!(self, Self::Specialists | Self::Miners) && total >= 2)
+        usize::from(matches!(self, Self::Specialists | Self::Miners | Self::Chargers) && total >= 2)
     }
 }
 
@@ -446,6 +447,11 @@ fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool)
                 "{} fighters, 1 Carpenter Bee  |  Source mineral miner",
                 total - 1,
             )));
+        } else if side == 1 {
+            options.push((FleetMix::Chargers, format!(
+                "{} fighters, 1 Barge  |  Source charge specialist",
+                total - 1,
+            )));
         }
         let rows = options.iter().map(|(_, title)| BattleMenuRow {
             title, status: "  [Real source hulls]", unlocked: true,
@@ -588,6 +594,7 @@ fn mixed_fleet_offsets(
     let fighter_kind = if side == 0 { 21 } else { 13 };
     let support_kind = if side == 0 { 2 } else { 5 };
     let specialist_kind = if matches!(mix, FleetMix::Miners) { 4 }
+        else if matches!(mix, FleetMix::Chargers) { 0 }
         else if side == 0 { 18 } else { 10 };
     let fighter_size = catalog.sprite_size(fighter_kind)
         .ok_or_else(|| invalid("source fighter has no sprite extents"))?;
@@ -916,8 +923,10 @@ pub(super) fn archive(
     let mut cloned = NativeLevelLayout::default();
     let mut squad_ids = [vec![101_i64], vec![102_i64]];
     let mut support_squads = Vec::new();
-    let mut scout_squads = Vec::new();
+    let mut scout_squads = HashMap::<i64, f64>::new();
     let mut miner_squads = Vec::new();
+    let mut bombing_squads = Vec::new();
+    let mut charger_squads = Vec::new();
     let catalog = ShipAssetCatalog::embedded()
         .map_err(|_| invalid("native source ship collider catalogue is incomplete"))?;
     let offsets = [
@@ -1005,6 +1014,7 @@ pub(super) fn archive(
         if specialist_count[side] == 0 { continue; }
         let side_id = side as i64 + 1;
         let specialist_type = if matches!(selected.mix[side], FleetMix::Miners) { 4 }
+            else if matches!(selected.mix[side], FleetMix::Chargers) { 0 }
             else if side == 0 { 18 } else { 10 };
         let template = available.iter().find(|ship|
             ship["side"].as_i64() == Some(side_id) &&
@@ -1035,8 +1045,15 @@ pub(super) fn archive(
             }));
         if matches!(selected.mix[side], FleetMix::Miners) {
             miner_squads.push(squad_id);
+        } else if matches!(selected.mix[side], FleetMix::Chargers) {
+            charger_squads.push(squad_id);
         } else if side == 0 {
-            scout_squads.push(squad_id);
+            let sight = template["sight"]["source_sight"].as_f64()
+                .filter(|v| v.is_finite() && *v > 0.0)
+                .ok_or_else(|| invalid("authored Scout has no source sight range"))?;
+            scout_squads.insert(squad_id, sight);
+        } else {
+            bombing_squads.push(squad_id);
         }
     }
     for side in 0..2_usize {
@@ -1300,9 +1317,10 @@ pub(super) fn archive(
         }
         for (position, &owner) in squad_ids[side].iter().enumerate() {
             let supporting = support_squads.contains(&owner);
-            let scout = scout_squads.contains(&owner);
+            let scout = scout_squads.get(&owner).copied();
             let miner = miner_squads.contains(&owner);
-            let start = offsets[side][position];
+            let bomber = bombing_squads.contains(&owner);
+            let charger = charger_squads.contains(&owner);
             // A source-authored Aggressive lifetime still owns all
             // physical movement, weapon targeting and enemy deaths.
             // Do not store O(allies * enemies) scripted target lists
@@ -1365,7 +1383,8 @@ pub(super) fn archive(
                     json!({"kind": "hold"}),
                 ]
             } else if mission_owner &&
-                matches!(selected.objective, Objective::Demolition) && !scout && !miner
+                matches!(selected.objective, Objective::Demolition) &&
+                    scout.is_none() && !miner && !bomber && !charger
             {
                 // Approach within the actual turret firing range, then
                 // use the source point-fire controller against the live
@@ -1381,14 +1400,19 @@ pub(super) fn archive(
                 // authored mining order; on depletion it selects the next
                 // visible physical ore body rather than minting minerals.
                 vec![json!({"kind": "mining_nearest"})]
-            } else if scout {
+            } else if let Some(max_sight) = scout {
+                // The real Scouting command owns vision, discovery and
+                // Beacon deployment. Moving to one arbitrary waypoint
+                // would skip its distinctive physical mechanics.
                 vec![json!({
-                    "kind": "move_to_point",
-                    "destination": [
-                        (if side == 0 { -30.0 } else { 30.0 }) + start[0] * 0.25,
-                        start[1],
-                    ],
+                    "kind": "scouting",
+                    "max_sight": max_sight,
+                    "human_side": scene["human_side"],
                 })]
+            } else if bomber {
+                vec![json!({"kind": "bombing_nearest"})]
+            } else if charger {
+                vec![json!({"kind": "charge_nearest"})]
             } else {
                 vec![json!({"kind": selected.ai_tactics.source_order(position)})]
             };
@@ -1399,7 +1423,8 @@ pub(super) fn archive(
             let one_shot_goal = mission_owner && match selected.objective {
                 Objective::Extraction => true,
                 Objective::Escort | Objective::Survival => position == 0,
-                Objective::Demolition => !supporting && !scout && !miner,
+                Objective::Demolition =>
+                    !supporting && scout.is_none() && !miner && !bomber && !charger,
                 _ => false,
             };
             let mut queue = json!({
