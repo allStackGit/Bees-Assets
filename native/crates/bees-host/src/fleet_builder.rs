@@ -1659,12 +1659,15 @@ pub(super) fn archive(
         for (parent_id, parent_squad, index, parent_position, controlled)
             in carrier_parents
         {
+            let mut children = Vec::with_capacity(selected.carrier_deck * 2);
+            for deck_slot in 0..selected.carrier_deck {
+            let child_index = index * selected.carrier_deck + deck_slot;
             // These authored IDs stay below native layout clone IDs and
             // above the source's original weapon IDs; no relationship is
             // cloned without its owning parent or unique Bomb mount.
-            let child_id = 5_000 + index as i64;
-            let child_weapon_id = 6_000 + index as i64;
-            let child_squad_id = 500 + index as i64;
+            let child_id = 5_000 + child_index as i64;
+            let child_weapon_id = 6_000 + child_index as i64;
+            let child_squad_id = 1_400 + child_index as i64;
             let position = place_free_carrier_child(parent_position,
                 [striker_size.x, striker_size.y], &mut occupied)?;
             let mut striker = striker_template.clone();
@@ -1693,8 +1696,8 @@ pub(super) fn archive(
             // both free complements; child deaths never purchase or
             // deduct a new fleet hull. Drone's original turret enters
             // CombatWorld directly and uses its source weapon timings.
-            let drone_id = 4_000 + index as i64;
-            let drone_squad_id = 400 + index as i64;
+            let drone_id = 4_000 + child_index as i64;
+            let drone_squad_id = 400 + child_index as i64;
             let drone_position = place_free_carrier_child(parent_position,
                 [drone_size.x, drone_size.y], &mut occupied)?;
             let mut drone = drone_template.clone();
@@ -1715,8 +1718,10 @@ pub(super) fn archive(
                     "user_controlled": controlled, "can_accept_input": controlled,
                     "is_carrier_squad": true, "command_bans": [],
                 }));
-            carrier_children.insert(parent_squad, vec![drone_squad_id, child_squad_id]);
+            children.extend([drone_squad_id, child_squad_id]);
             free_drone_squads.push((drone_squad_id, controlled));
+            }
+            carrier_children.insert(parent_squad, children);
         }
     }
     if let Some(hivemind) = &selected.hivemind {
@@ -2024,6 +2029,11 @@ pub(super) fn archive(
         selected.objective_side.unwrap_or(0),
         u8::from(selected.mining_field), u8::from(selected.fog_of_war),
     ));
+    if support_count[1] > 0 && !matches!(selected.mix[1], FleetMix::Queen) {
+        let id = run["run_id"].as_str()
+            .ok_or_else(|| invalid("Carrier fleet is missing its saved source ID"))?;
+        run["run_id"] = json!(format!("{id}-deck{}", selected.carrier_deck));
+    }
     if let Some(hivemind) = &selected.hivemind {
         let id = run["run_id"].as_str()
             .ok_or_else(|| invalid("HiveMind battle is missing its run identity"))?;
