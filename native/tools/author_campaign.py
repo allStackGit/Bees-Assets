@@ -793,8 +793,20 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     not isinstance(zone, dict) or
                     zone.get("player_side") != args.player_side or
                     zone.get("retreat_on_exit") is not True or
+                    zone.get("layer") != 20 or
+                    not same_point(zone.get("center"), [-512, 0]) or
+                    not same_point(zone.get("half_extents"), [25, 128]) or
                     scene.get("activate_mining") is not True or
+                    scene.get("activate_hivemind") is not True or
+                    not isinstance(run.get("hivemind"), dict) or
+                    run["hivemind"].get("issue_source_commands") is not True or
                     len(scene.get("mining_asteroids") or []) != 5 or
+                    not all(any(same_point(asteroid.get("position"), expected)
+                                    for asteroid in scene["mining_asteroids"]
+                                    if isinstance(asteroid, dict))
+                            for expected in (
+                                [80, 300], [-320, -245], [-270, 390],
+                                [-20, -175], [155, -120])) or
                     not neptune_production_waves_match_source(scene, level) or
                     level.get("campaign_dialogue") is not None or
                     any(level.get(name) is not None for name in
