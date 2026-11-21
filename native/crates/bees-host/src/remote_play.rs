@@ -1588,6 +1588,7 @@ fn collect_remote_audio(
         }
         let mut launched = None;
         let mut source_sound_type = None;
+        let mut source_sound_variant = false;
         let mut retired_launch = false;
         let mut impact = None;
         let (effect, point) = match event {
@@ -1642,6 +1643,9 @@ fn collect_remote_audio(
                 }) else { continue };
                 retired_launch = source.is_none();
                 source_sound_type = view.combat.weapon_sound_type(*ship_id, *slot);
+                source_sound_variant = crate::presentation::mounted_weapon_clip_variant(
+                    *ship_id, *slot, view.world_id.0, view.episode_revision,
+                );
                 launched = Some((*projectile_id, kind));
                 ("projectile", Some(point))
             },
@@ -1708,6 +1712,7 @@ fn collect_remote_audio(
             if let Some((id, kind)) = launched {
                 cue["projectile_id"] = json!(id);
                 cue["projectile_type"] = json!(kind);
+                cue["weapon_sound_variant"] = json!(source_sound_variant);
                 if let Some(sound) = source_sound_type {
                     // Presentation metadata from the same physical weapon
                     // installation, never an independent client guess.
