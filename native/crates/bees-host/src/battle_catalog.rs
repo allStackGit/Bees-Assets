@@ -714,19 +714,27 @@ impl BattleCatalog {
                     mission.id,
                 )));
             }
-            if mission.on_victory.iter().chain(mission.on_defeat.iter()).any(|route|
-                (!mission.requires.contains(&route.mission) &&
-                    !mission.unlock_if_any.iter().any(|condition|
-                        condition.mission == route.mission)) ||
-                route.config.as_os_str().is_empty()
-            ) || mission.on_defeat.as_ref().is_some_and(|route|
-                !((mission.requires.contains(&route.mission) &&
-                    advances_on_finish.contains(route.mission.as_str())) ||
-                    mission.unlock_if_any.iter().any(|condition|
-                        condition.mission == route.mission &&
-                        (condition.result == RequiredOutcome::Defeat ||
-                            condition.result == RequiredOutcome::Finished &&
-                            advances_on_finish.contains(route.mission.as_str()))))) ||
+            // Conditional scenarios must have a realizable path for their
+            // named outcome. A defeat-only gate cannot activate a victory
+            // scenario, and a victory-only advancement cannot unlock a
+            // first-attempt defeat. No separate campaign state is needed.
+            let route_reachable = |route: &MissionRoute, victory: bool| {
+                let prior_finishes = advances_on_finish.contains(route.mission.as_str());
+                let required = mission.requires.contains(&route.mission) &&
+                    (victory || prior_finishes);
+                let alternative = mission.unlock_if_any.iter().any(|condition|
+                    condition.mission == route.mission &&
+                    match condition.result {
+                        RequiredOutcome::Victory => victory,
+                        RequiredOutcome::Defeat => !victory,
+                        RequiredOutcome::Finished => victory || prior_finishes,
+                    });
+                !route.config.as_os_str().is_empty() && (required || alternative)
+            };
+            if mission.on_victory.as_ref().is_some_and(|route|
+                !route_reachable(route, true)) ||
+                mission.on_defeat.as_ref().is_some_and(|route|
+                    !route_reachable(route, false)) ||
                 mission.on_victory.as_ref().zip(mission.on_defeat.as_ref())
                     .is_some_and(|(win, defeat)| win.mission != defeat.mission) {
                 return Err(invalid(format!(
