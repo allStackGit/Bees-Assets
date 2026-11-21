@@ -202,6 +202,18 @@ def package_game_library(
             raise ValueError(f"Unsafe native {label} configuration: {value!r}")
         return path.as_posix()
 
+    def source_asset_path(run_source: Path, value: str, kind: str) -> Path:
+        if not isinstance(value, str) or not value or "\0" in value:
+            raise ValueError(f"Invalid native {kind} asset path")
+        # Authored relative paths can come from Windows or Linux regardless
+        # of the packaging host. Absolute Windows source references require
+        # their native OS because a Unix machine cannot resolve that drive.
+        path_text = value.replace("\\", "/")
+        if os.name != "nt" and (re.match(r"^[A-Za-z]:/", path_text) or
+                                path_text.startswith("//")):
+            raise ValueError(f"Windows native {kind} asset requires a Windows source host")
+        return (run_source.parent / path_text).resolve(strict=True)
+    
     def game_asset(run_source: Path, run_destination: Path,
                    value: str, kind: str) -> str:
         """Copy a run's authored scene/Stage asset into the portable tree.
@@ -212,16 +224,7 @@ def package_game_library(
         original machine. Shared in-root assets keep their original
         names; external inputs receive a content-addressed name.
         """
-        if not isinstance(value, str) or not value or "\0" in value:
-            raise ValueError(f"Invalid native {kind} asset path")
-        # Authored relative paths can come from Windows or Linux regardless
-        # of the packaging host. Absolute Windows source references require
-        # their native OS because a Unix machine cannot resolve that drive.
-        path_text = value.replace("\\", "/")
-        if os.name != "nt" and (re.match(r"^[A-Za-z]:/", path_text) or
-                                path_text.startswith("//")):
-            raise ValueError(f"Windows native {kind} asset requires a Windows source host")
-        file = (run_source.parent / path_text).resolve(strict=True)
+        file = source_asset_path(run_source, value, kind)
         if file.suffix != ".json" or not file.is_file():
             raise ValueError(f"Native {kind} must reference a JSON file")
         within_root = file.is_relative_to(source_root)
@@ -300,7 +303,7 @@ def package_game_library(
                     )
                 if not isinstance(manifest, str) or not manifest.strip():
                     raise ValueError("model_manifest must name a native manifest")
-                original = (source.parent / manifest).resolve(strict=True)
+                original = source_asset_path(source, manifest, "model manifest")
                 if not original.is_file():
                     raise ValueError("trained policy manifest must be a regular file")
                 digest = hashlib.sha256(original.read_bytes()).hexdigest()
