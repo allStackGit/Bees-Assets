@@ -1000,6 +1000,30 @@ def prepare_optimizer_attempt(args, output, trainer_config, result):
             optimizer_attempt_identity(args, trainer_config, result),
             announce=False,
         )
+    # The attempt is the immutable optimizer owner, not an advisory launch
+    # hint. Bind the final rank/round receipt to the exact bytes which
+    # authorized this checkpoint generation, including on a recovered run.
+    result["optimizer_attempt_sha256"] = file_sha256(receipt)
+
+
+def require_optimizer_attempt(output, result):
+    expected = result.get("optimizer_attempt_sha256")
+    if expected is None:
+        # Ordinary one-machine rollouts have no separate optimizer attempt:
+        # their own run receipt already owns the model generation.
+        return
+    receipt = output / "optimizer-attempt.json"
+    if (receipt.is_symlink() or not receipt.is_file() or
+            file_sha256(receipt) != expected):
+        raise ValueError("optimizer attempt identity changed before final checkpoint publication")
+    attempt = json.loads(receipt.read_text(encoding="utf-8"))
+    if (attempt.get("kind") != "native_optimizer_attempt" or
+            attempt.get("run_id") != result.get("run_id") or
+            attempt.get("input_manifest_sha256") != result.get("input_manifest_sha256") or
+            attempt.get("input_checkpoint_sha256") != result.get("input_checkpoint_sha256") or
+            attempt.get("learner_group_id") != result.get("optimizer_group_id") or
+            attempt.get("collection_orders_sha256") != result.get("collection_orders_sha256")):
+        raise ValueError("optimizer completion no longer belongs to the original attempt")
 
 
 def optimize(args, output, python, manifest, checkpoint, trainer_config, result, rollout_args):
@@ -1081,6 +1105,7 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
                 file_sha256(checkpoint) != result["input_checkpoint_sha256"] or
                 file_sha256(manifest) != result["input_manifest_sha256"]):
             raise ValueError("native optimizer worker has no agreed multi-machine model and input identity")
+        require_optimizer_attempt(output, result)
         publish_receipt(output, "round-worker-result.json", {
             **result,
             **worker,
@@ -1143,6 +1168,7 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
                     for rank, row in enumerate(metrics["optimizer_gpu_per_device"]))
             ))):
         raise ValueError("native learner completion receipt disagrees with its model artifacts or actual GPU ranks")
+    require_optimizer_attempt(output, result)
     publish_receipt(output, "round-result.json", {
         "schema_version": 1,
         "kind": "native_training_round_complete",
