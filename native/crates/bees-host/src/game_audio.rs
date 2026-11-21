@@ -78,8 +78,31 @@ impl Effect {
         }
     }
 
+    /// Exact ConfigData.WeaponSoundTypes -> AudioController.WeaponSounds.
+    /// Other source values have no registered clip (including None and
+    /// FlagshipChargingLaser), so do not invent sound at shot release.
+    fn source_weapon_sound(kind: u8) -> Option<Self> {
+        match kind {
+            0 => Some(Self::SmallLaser),
+            1 => Some(Self::BigLaser),
+            3 => Some(Self::FlagshipLaser),
+            4 => Some(Self::QueenLaser),
+            5 => Some(Self::BeamCannon),
+            7 => Some(Self::LightLaser),
+            8 => Some(Self::RocketLaunch),
+            _ => None,
+        }
+    }
+
+    fn weapon(sound: Option<u8>, projectile: u8) -> Option<Self> {
+        // A captured explicit silence is different from missing source
+        // metadata in an older native scene. Only legacy scenes fall back
+        // to the original approximate projectile-family lookup.
+        sound.map_or_else(|| Self::projectile(projectile), Self::source_weapon_sound)
+    }
+
     /// The source AudioController assigns weapon sound families, while
-    /// the native renderer only sees actual live projectile types. These
+    /// historical native scenes only stored actual live projectile types. These
     /// classes identify a sound without creating another shot event in
     /// the shared headless simulation. Explosions instead use gameplay
     /// events so one lethal explosion is not sounded twice.
@@ -444,7 +467,11 @@ impl NativeGameAudio {
                 Some("warp") => Some(Effect::Warp),
                 Some("projectile") => event["projectile_type"].as_u64()
                     .and_then(|kind| u8::try_from(kind).ok())
-                    .and_then(Effect::projectile),
+                    .and_then(|kind| Effect::weapon(
+                        event["weapon_sound_type"].as_u64()
+                            .and_then(|sound| u8::try_from(sound).ok()),
+                        kind,
+                    )),
                 _ => None,
             };
             let (Some(effect), Some(x), Some(y)) =
@@ -537,7 +564,9 @@ impl NativeGameAudio {
                 first_snapshot || second_barrel { continue; }
             let Some(kind) = view.combat.weapon_projectile_type(ship_id, slot)
                 else { continue };
-            let Some(effect) = Effect::projectile(kind) else { continue };
+            let Some(effect) = Effect::weapon(
+                view.combat.weapon_sound_type(ship_id, slot), kind,
+            ) else { continue };
             let Some(point) = view.combat.ship_body(ship_id)
                 .map(|body| body.motion.position) else { continue };
             if !on_screen(visible, point) { continue; }
