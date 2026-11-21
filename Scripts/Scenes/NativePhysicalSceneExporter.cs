@@ -175,7 +175,7 @@ internal static class NativePhysicalSceneExporter
         public int range_layer;
         public bool range_enabled;
         public int slot;
-        public int weapon_type, projectile_type, power;
+        public int weapon_type, projectile_type, weapon_sound_type, power;
         public Vector2 mount_offset, left_offset, right_offset;
         public float initial_rotation_degrees, rotation_rate, range;
         public float rate_of_fire, projectile_value;
@@ -1481,6 +1481,7 @@ internal static class NativePhysicalSceneExporter
                 slot = slot,
                 weapon_type = (int)turret.Type,
                 projectile_type = (int)turret.ProjectileType,
+                weapon_sound_type = (int)turret.WeaponSoundType,
                 mount_offset = new Vector2(localMount.x, localMount.y),
                 left_offset = left,
                 right_offset = right,
