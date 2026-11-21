@@ -981,10 +981,15 @@ def main() -> None:
             if measurements["gpu_forward_rows"] > 0:
                 reported_first_gpu_forward = True
         writer.write(HEADER.pack(b"BTRN" if behavior is not None else b"BOUT", VERSION, request_id, rows))
-        writer.write(continuous.tobytes(order="C"))
-        writer.write(discrete.tobytes(order="C"))
+        # The reusable action/behavior arrays are C-contiguous, little
+        # endian and remain immutable until this frame is flushed. Write
+        # their buffer protocol views directly; NumPy .tobytes() made an
+        # additional full-sized allocation for every forward, including
+        # the much larger MA-POCA behavior capture.
+        writer.write(memoryview(continuous).cast("B"))
+        writer.write(memoryview(discrete).cast("B"))
         if behavior is not None:
-            writer.write(behavior.tobytes(order="C"))
+            writer.write(memoryview(behavior).cast("B"))
         writer.flush()
         # Release NumPy/memoryview references before expanding the next
         # batch's storage; smaller/equal batches reuse the same allocation.
