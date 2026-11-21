@@ -221,8 +221,7 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
                 len(donor_ids) > 1023 or primary_id in used):
             raise ValueError("native merged squad has invalid original command ownership")
         primary = squad_by_id.get(primary_id)
-        if primary is None or primary.get("hivemind") is not None or (
-                primary.get("is_carrier_squad", False)):
+        if primary is None or primary.get("is_carrier_squad", False):
             raise ValueError("native primary squad must be an ordinary game command owner")
         used.add(primary_id)
         members = list(primary["members"])
@@ -233,7 +232,7 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
             donor = squad_by_id.get(donor_id)
             if donor is None or donor.get("saved_squad_id") is not None or (
                     donor.get("is_carrier_squad", False)) or (
-                    donor.get("hivemind") is not None) or (
+                    donor.get("hivemind") != primary.get("hivemind")) or (
                     donor.get("hotkey_number") is not None) or (
                     donor.get("original_squad_count") is not None) or any(
                         donor.get(field) != primary.get(field)
