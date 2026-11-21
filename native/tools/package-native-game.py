@@ -123,7 +123,7 @@ def package_native_training_runtime(
                 (source.suffix == ".js" or
                  (source.suffix == ".py" and
                   not source.name.endswith("_tests.py")) or
-                 source.name == "rl_1v1_config.yaml")):
+                 source.name in ("rl_1v1_config.yaml", "continual_learning_config.json"))):
             shutil.copy2(source, training / source.name)
     if rollout_binary is not None:
         target_name = "policy_rollout.exe" if (

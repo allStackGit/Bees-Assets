@@ -667,9 +667,21 @@ class ContinualLearningStore:
         model_id = f"bees-rl-v{self.compatibility.policy_abi_version}-{artifact_hash[:24]}"
         cfg_hash = config_hash(training_config_path)
         created_at = utc_now()
-        destination_dir = self.models_dir / self._directory_for_status(status)
-        destination = destination_dir / f"{model_id}{source.suffix.lower() or '.model'}"
         metadata_dict = dict(metadata or {})
+        native_policy = metadata_dict.get("native_policy")
+        if native_policy is not None:
+            if (source.suffix.lower() != ".pt" or not isinstance(native_policy, dict) or
+                    native_policy.get("backend") != "mlagents" or
+                    native_policy.get("sha256") != artifact_hash or
+                    "path" in native_policy or "slot" in native_policy):
+                raise ValidationError("Invalid native policy checkpoint registration.")
+            # Status lives in SQLite. A native model also backs pinned
+            # evaluation manifests and playable publications: relocating
+            # its bytes on promotion would invalidate those references.
+            destination_dir = self.models_dir / "native-checkpoints"
+        else:
+            destination_dir = self.models_dir / self._directory_for_status(status)
+        destination = destination_dir / f"{model_id}{source.suffix.lower() or '.model'}"
         metadata_dict.setdefault("registered_from", str(source))
         metadata_dict.setdefault("artifact_size", source.stat().st_size)
 
@@ -689,7 +701,10 @@ class ContinualLearningStore:
                     training_config_hash=cfg_hash,
                     source_checkpoint=source_checkpoint,
                 )
-                return self._row_dict(existing)
+                registered = self._row_dict(existing)
+                if registered.get("metadata", {}).get("native_policy") != native_policy:
+                    raise ValidationError("The same bytes have conflicting native policy metadata.")
+                return registered
 
             if parent_model_id is not None:
                 parent = self._model_row(db, parent_model_id)
@@ -826,6 +841,9 @@ class ContinualLearningStore:
     def _stage_artifact_for_status(self, row: sqlite3.Row, status: str) -> str:
         current = Path(row["artifact_path"])
         expected_sha256 = row["artifact_sha256"]
+        if current.parent == self.models_dir / "native-checkpoints":
+            self._assert_artifact_hash(current, expected_sha256)
+            return str(current)
         target_dir = self.models_dir / self._directory_for_status(status)
         target_dir.mkdir(parents=True, exist_ok=True)
         target = target_dir / current.name

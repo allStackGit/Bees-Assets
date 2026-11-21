@@ -134,7 +134,8 @@ def terminal_matchup(directory, result, candidate_slot, incumbent_slot):
 
 def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
          incumbent_manifest, incumbent_checkpoint, incumbent_slot,
-         promotion_config, output, binary, seed, physics_workers, device):
+         promotion_config, output, binary, seed, physics_workers, device,
+         *, minimum_matches=None):
     source, candidate_manifest, candidate_checkpoint, incumbent_manifest, incumbent_checkpoint, promotion_config = (
         path.resolve(strict=True) for path in (
             source, candidate_manifest, candidate_checkpoint, incumbent_manifest,
@@ -150,7 +151,8 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
     if (config["policy_signature"] != candidate_doc["policy_signature"] or
             config["policy_abi_version"] != candidate_doc["abi_version"]):
         raise ValueError("continual-learning promotion policy has a different ABI")
-    minimum = config["promotion"]["min_matches_vs_champion"]
+    minimum = (config["promotion"]["min_matches_vs_champion"]
+               if minimum_matches is None else minimum_matches)
     threshold = config["promotion"]["min_win_rate_vs_champion"]
     latency_limit = config["promotion"]["max_inference_batch_milliseconds"]
     if (type(minimum) is not int or minimum < 1 or
