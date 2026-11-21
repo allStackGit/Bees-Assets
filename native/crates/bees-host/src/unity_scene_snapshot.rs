@@ -150,6 +150,15 @@ fn authored_reinforcement_matches(
     let Some(actual) = authored_reinforcement_types(
         wave, bee_side, squads, ships,
     ) else { return false };
+    authored_type_sequence_matches(&actual, required, veterans)
+}
+
+/// Source GetSquadByComposition may skip depleted selections or select a
+/// differently sized homogeneous SavedSquad; only ship class order is
+/// fixed. A veteran prelude is allowed for explicitly authored old squads.
+fn authored_type_sequence_matches(
+    actual: &[Option<u8>], required: &[u8], veterans: bool,
+) -> bool {
     let in_source_order = |actual: &[Option<u8>]| {
         let mut next = 0;
         for kind in actual {
@@ -166,7 +175,7 @@ fn authored_reinforcement_matches(
         actual.is_empty() ||
             (0..actual.len()).any(|start| in_source_order(&actual[start..]))
     } else {
-        in_source_order(&actual)
+        in_source_order(actual)
     }
 }
 
