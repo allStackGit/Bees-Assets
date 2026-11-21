@@ -438,6 +438,23 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     "player_side": args.player_side, "has_factory": False,
                 }
             }
+        elif story == "neptune_of_production":
+            # The original mission mines real asteroids under attack and
+            # permits retreat through the same physical extraction trigger
+            # used by playable battles and native policy episodes.
+            zone = level.get("extraction")
+            if (scene.get("native_game_schema") != 1 or
+                    scene.get("human_side") != args.player_side or
+                    not isinstance(zone, dict) or
+                    zone.get("player_side") != args.player_side or
+                    not scene.get("mining_asteroids") or
+                    level.get("campaign_dialogue") is not None or
+                    any(level.get(name) is not None for name in
+                        ("survival", "demolition", "escort"))):
+                raise ValueError(
+                    "Neptune Of Production requires real mineable asteroids "
+                    "and an authored native fleet extraction Level"
+                )
         elif story == "pluto_bluer_pastures":
             objective = level.get("survival")
             target = next((ship for ship in scene["ships"]
@@ -592,6 +609,10 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             mission["evacuation_rewards"] = True
             mission["advance_on"] = "finished"
             mission["grant_on"] = "finished"
+        if mission_stories.get(index) == "neptune_of_production":
+            mission["advance_on"] = "finished"
+            mission["bank_player_minerals"] = True
+            mission["bank_on_finished"] = True
         if mission_stories.get(index) == "neptune_pressing_forward":
             # Level.Campaign.Endings.Neptune3Ending permanently marks all
             # Factory FleetShips dead on a loss, including owned reserves.
@@ -609,7 +630,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             mission["advance_on"] = "finished"
         if mission_grants.get(index) == "finished":
             if mission_advances.get(index, "victory") != "finished" and \
-                    mission_stories.get(index) != "pluto_bluer_pastures":
+                    mission_stories.get(index) not in (
+                        "pluto_bluer_pastures", "neptune_of_production"):
                 raise ValueError(
                     f"mission {index} completion-based rewards require --mission-advance {index}:finished"
                 )
@@ -946,10 +968,10 @@ def mission_advance(value: str) -> tuple[int, str]:
 
 
 def mission_story(value: str) -> tuple[int, str]:
-    match = re.fullmatch(r"(\d+):(neptune_pressing_forward|pluto_bluer_pastures)", value)
+    match = re.fullmatch(r"(\d+):(neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures)", value)
     if match is None or not 1 <= int(match.group(1)) <= 40:
         raise argparse.ArgumentTypeError(
-            "--mission-story needs MISSION:neptune_pressing_forward or MISSION:pluto_bluer_pastures"
+            "--mission-story needs MISSION:neptune_pressing_forward, neptune_of_production or pluto_bluer_pastures"
         )
     return int(match.group(1)), match.group(2)
 
