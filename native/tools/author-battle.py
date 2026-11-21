@@ -14,6 +14,8 @@ import math
 import re
 from pathlib import Path
 
+from carrier_family import carrier_parent_id, source_carrier_groups
+
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 MAX_SQUAD_MEMBERS = 10
 SHIP_ID_START = 10_000
@@ -344,6 +346,8 @@ def author(args) -> tuple[dict, dict, dict]:
     # The primary scene remains authoritative for any shared class, so
     # authoring an unrelated class cannot silently alter existing combat.
     blueprints: dict[tuple[int, int], dict] = {}
+    carrier_blueprints: dict[int, tuple[dict, list]] = {}
+
     def register_archetypes(source: dict) -> None:
         # Ordinary existing source FleetShips are preferred. A reserve
         # template is already a fully validated standalone physical hull;
@@ -357,8 +361,20 @@ def author(args) -> tuple[dict, dict, dict]:
             key = (reserve["side"], reserve["ship_type"])
             if key not in blueprints:
                 source_ship = copy.deepcopy(reserve)
-                source_ship["persistent_fleet"] = True
+                source_ship["persistent_fleet"] = carrier_parent_id(reserve) is None
                 blueprints[key] = source_ship
+        for inert, ships in ((False, source.get("ships", ())),
+                             (True, source.get("fleet_templates", ()))):
+            for parent in ships:
+                if (parent["ship_type"] != 5 or
+                        parent["side"] in carrier_blueprints or
+                        not inert and not parent.get("persistent_fleet") or
+                        parent["health"] != parent["max_health"] or
+                        parent.get("mined_cargo", 0)):
+                    continue
+                groups = source_carrier_groups(source, parent, inert=inert)
+                if groups is not None:
+                    carrier_blueprints[parent["side"]] = (parent, groups)
 
     register_archetypes(scene)
     source_archetypes = getattr(args, "archetype_scenes", ())
@@ -782,36 +798,80 @@ def author(args) -> tuple[dict, dict, dict]:
     # training Worlds until a campaign FleetShip is awarded or purchased.
     # These identities never enter a player squad or active policy pool.
     reserve_templates = []
+    reserve_squads = []
     requested_templates = getattr(args, "fleet_templates", ())
     if len(set(requested_templates)) != len(requested_templates):
         raise ValueError("reserve FleetShip templates must be unique by side and class")
-    reserve_id_base = weapon_base + 3 * side_span
-    for index, (side, kind) in enumerate(requested_templates):
+    next_reserve_id = weapon_base + 3 * side_span
+    next_reserve_squad = max(squad["item_id"] for squad in new_squads) + 1
+    center = [(scene["bounds"]["min"][axis] + scene["bounds"]["max"][axis]) / 2
+              for axis in range(2)]
+
+    def reserve_hull(template: dict, position: list[float],
+                     parent: int | None = None) -> dict:
+        nonlocal next_reserve_id
+        ship = copy.deepcopy(template)
+        ship["entity_id"] = next_reserve_id
+        next_reserve_id += 2
+        ship["persistent_fleet"] = False
+        ship.pop("fleet_ship_id", None)
+        ship["user_controlled"] = False
+        ship["position"] = position
+        if parent is None:
+            ship["formation_offset"] = [0.0, 0.0]
+        else:
+            ship["is_carrier_ship"] = True
+            if ship["ship_type"] == 8:
+                ship["drone_carrier_id"] = parent
+            else:
+                ship["special"]["carrier_id"] = parent
+        if ship.get("special_weapon") is not None:
+            ship["special_weapon"]["weapon_id"] = ship["entity_id"] + 1
+        reserve_templates.append(ship)
+        return ship
+
+    for side, kind in requested_templates:
         template = blueprints.get((side, kind))
         if template is None:
             raise ValueError(
                 f"reserve FleetShip class {kind} for side {side} has no authentic "
                 "native source archetype"
             )
-        if (template.get("policy") is not None or
-                template.get("drone_carrier_id") is not None or
-                kind in (5, 8, 19)):
-            raise ValueError(
-                "reserve FleetShip template needs a standalone, non-policy source hull"
-            )
-        ship = copy.deepcopy(template)
-        ship["entity_id"] = reserve_id_base + index * 2
-        ship["persistent_fleet"] = False
-        ship.pop("fleet_ship_id", None)
-        ship["user_controlled"] = False
-        ship["position"] = [(scene["bounds"]["min"][axis] +
-                             scene["bounds"]["max"][axis]) / 2
-                            for axis in range(2)]
-        ship["formation_offset"] = [0.0, 0.0]
-        if ship.get("special_weapon") is not None:
-            ship["special_weapon"]["weapon_id"] = ship["entity_id"] + 1
-        reserve_templates.append(ship)
+        if kind == 5:
+            family = carrier_blueprints.get(side)
+            if family is None:
+                raise ValueError("reserve Carrier needs a complete source-authored family")
+            root, groups = family
+            parent = reserve_hull(root, center.copy())
+            for source_squad, children in groups:
+                squad = copy.deepcopy(source_squad)
+                squad.update({
+                    "item_id": next_reserve_squad, "members": [],
+                    "user_controlled": False, "can_accept_input": False,
+                    "locked_on": False, "is_carrier_squad": True,
+                })
+                next_reserve_squad += 1
+                for field in ("saved_squad_id", "hotkey_number",
+                              "original_squad_count", "hivemind"):
+                    squad.pop(field, None)
+                for child in children:
+                    position = [center[axis] + child["position"][axis] -
+                                root["position"][axis] for axis in range(2)]
+                    ship = reserve_hull(child, position, parent["entity_id"])
+                    squad["members"].append(ship["entity_id"])
+                reserve_squads.append(squad)
+        else:
+            if (template.get("policy") is not None or
+                    carrier_parent_id(template) is not None or kind in (8, 19)):
+                raise ValueError(
+                    "reserve FleetShip template needs a standalone, non-policy source hull"
+                )
+            reserve_hull(template, center.copy())
     scene["fleet_templates"] = reserve_templates
+    if reserve_squads:
+        scene["fleet_template_squads"] = reserve_squads
+    else:
+        scene.pop("fleet_template_squads", None)
     if args.arena_size is not None:
         # Border IDs must be allocated AFTER all real battle ships and
         # reinforcements. The common native layout installer requires each

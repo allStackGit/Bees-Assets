@@ -20,6 +20,7 @@ from portable_policy_bundle import (
     package_model_manifest, package_stage_assets, write_pinned_policy_assets,
 )
 from challenge_policy import existing_path, selected_run
+from carrier_family import carrier_parent_id, source_carrier_groups
 
 
 def read(path: Path) -> dict:
@@ -237,6 +238,8 @@ def native_fleet_class_sha256(ship: dict) -> str:
         source["sight"].setdefault("fog_radius", None)
     if isinstance(source["special_weapon"], dict):
         source["special_weapon"].pop("weapon_id", None)
+    if isinstance(source["special"], dict) and source["special"].get("kind") == "striker":
+        source["special"].pop("carrier_id", None)
     payload = json.dumps(source, sort_keys=True, separators=(",", ":"),
                          allow_nan=False).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
@@ -276,20 +279,34 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         class_prices = {}
         class_contracts = {}
         candidates = (
-            (ship for ship in scene["ships"] if ship.get("persistent_fleet")),
-            iter(scene.get("fleet_templates", [])),
+            (False, (ship for ship in scene["ships"] if ship.get("persistent_fleet"))),
+            (True, iter(scene.get("fleet_templates", []))),
         )
-        for group in candidates:
+        for inert, group in candidates:
             for ship in group:
                 if (ship["side"] != args.player_side or
                         ship["health"] != ship["max_health"] or
-                        ship["max_tsv"] <= 0):
+                        ship["max_tsv"] <= 0 or
+                        ship.get("policy") is not None or ship.get("mined_cargo", 0) or
+                        carrier_parent_id(ship) is not None):
                     continue
                 ship_type = ship["ship_type"]
+                contract = native_fleet_class_sha256(ship)
+                if ship_type == 5:
+                    family = source_carrier_groups(scene, ship, inert=inert)
+                    if family is None:
+                        continue
+                    # A Carrier shop class includes the exact source
+                    # complement composition as well as the root hull.
+                    # Runtime IDs and mission-specific positions are not
+                    # part of the immutable purchased class.
+                    contract = hashlib.sha256(json.dumps([
+                        contract,
+                        [[native_fleet_class_sha256(child) for child in children]
+                         for _, children in family],
+                    ], separators=(",", ":")).encode("utf-8")).hexdigest()
                 class_prices.setdefault(ship_type, set()).add(ship["max_tsv"])
-                class_contracts.setdefault(ship_type, set()).add(
-                    native_fleet_class_sha256(ship)
-                )
+                class_contracts.setdefault(ship_type, set()).add(contract)
         for ship_type, prices in class_prices.items():
             shop_catalog.setdefault(ship_type, set()).update(prices)
         per_mission_sources.append(class_prices)

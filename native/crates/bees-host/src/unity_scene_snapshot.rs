@@ -1379,7 +1379,7 @@ impl NativePhysicalScene {
                 (entry.ship.ship_type != 5 || source_archetypes
                     .campaign_carrier_groups(entry.ship.entity_id, player_side).is_some()) &&
                 entry.ship.policy.is_none() &&
-                entry.ship.drone_carrier_id.is_none() &&
+                Self::authored_carrier_parent(&entry.ship).is_none() &&
                 !entry.ship.motion.is_policy_controlled &&
                 !entry.ship.motion.is_moving &&
                 !entry.ship.motion.has_target_coordinates &&
