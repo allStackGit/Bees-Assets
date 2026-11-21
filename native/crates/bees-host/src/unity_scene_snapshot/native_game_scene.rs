@@ -240,6 +240,9 @@ struct GameTurret {
     slot: usize,
     weapon_type: u8,
     projectile_type: u8,
+    /// Original WeaponSoundTypes; older native scene blueprints omit it.
+    #[serde(default)]
+    weapon_sound_type: Option<u8>,
     mount_offset: [f32; 2],
     initial_rotation_degrees: f32,
     rotation_rate: f32,
@@ -1065,6 +1068,7 @@ impl NativePhysicalScene {
                 let spec = NativeTurretSpec {
                     weapon_type: turret.weapon_type,
                     projectile_type: turret.projectile_type,
+                    weapon_sound_type: turret.weapon_sound_type,
                     mount_offset: Vec2::new(turret.mount_offset[0], turret.mount_offset[1]),
                     initial_rotation_degrees: turret.initial_rotation_degrees,
                     rotation_rate: turret.rotation_rate, range: turret.range,
