@@ -66,7 +66,7 @@ function gpuRuntimeProof(adapter,parameters,context) {
     const ids=context?.gpu_pci_addresses;
     const dual=Array.isArray(ids)&&ids.length===2&&
         new Set(ids).size===2&&ids.every(p=>pci.test(String(p)))&&
-        adapter?.gpu_dual_execution==='split-ppo';
+        ['split-ppo','native-rollouts'].includes(adapter?.gpu_dual_execution);
     const multi=Array.isArray(ids)&&ids.length>=2&&ids.length<=8&&
         new Set(ids).size===ids.length&&ids.every(p=>pci.test(String(p)))&&
         (adapter?.gpu_multi_execution==='independent-ppo'||
@@ -75,8 +75,7 @@ function gpuRuntimeProof(adapter,parameters,context) {
     if(!adapter||typeof adapter.executable!=='string'||
         !path.isAbsolute(adapter.executable)||
         !SAFE_ARG.test(adapter.executable)||
-        !(dual&&['split-ppo','native-rollouts'].includes(adapter.gpu_dual_execution)||
-            !context?.gpu_pci_addresses&&pci.test(String(context?.gpu_pci_address||''))))
+        !(dual||multi||single))
         throw Error('Invalid local ROCm runtime or leased PCI identity.');
     // TinyBrains verifies HIP physical PCI identities for the complete
     // leased set under the kernel device filter, like its existing dual
@@ -115,13 +114,13 @@ function gpuRuntimeProof(adapter,parameters,context) {
             parameters,verifierContext),
         rocrUuid,...(singleProofs?{singleProofs}:{})};
 }
-// Freeze exactly the PCI/VRAM bindings and ordered local device identity
-// into the same pre-start attestation used for single- and dual-GPU jobs.
 function gpuAttestationArgs(bindings,plan,proof) {
-    if(!Array.isArray(bindings)||![1,2].includes(bindings.length))
-        throw Error('Native GPU launch needs one or two frozen physical device bindings.');
+    if(!Array.isArray(bindings)||bindings.length<1||bindings.length>8)
+        throw Error('Native GPU launch needs 1–8 frozen physical device bindings.');
+    const multi=bindings.length>2||Array.isArray(proof.rocrUuid);
     return [
-        ...(bindings.length===2?['--dual']:[]),
+        ...(multi?['--multi',bindings.length]:
+            bindings.length===2?['--dual']:[]),
         ...bindings.flatMap(bound=>[bound.id,bound.pci_address,String(bound.vram_mb)]),
         deviceIdentity(plan),proof.executable,...proof.verifyArgs,
     ];
