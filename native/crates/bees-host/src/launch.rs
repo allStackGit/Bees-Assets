@@ -1605,6 +1605,7 @@ struct CampaignMission<'a> {
     owned_purchases: Option<&'a [NativePurchasedShip]>,
     retire_on_defeat_types: &'a [u8],
     grants_on_finished: bool,
+    evacuation_rewards: bool,
     created_squads: Option<&'a [NativeCreatedSquad]>,
     tactics: Option<&'a [NativeSavedSquadTactics]>,
     authored_roster: Option<&'a [(i64, i64, i64)]>,
@@ -1652,6 +1653,8 @@ struct CampaignReplaySetup {
     retire_on_defeat_types: Vec<u8>,
     #[serde(default)]
     grants_on_finished: bool,
+    #[serde(default)]
+    evacuation_rewards: bool,
     created_squads: Option<Vec<NativeCreatedSquad>>,
     tactics: Option<Vec<NativeSavedSquadTactics>>,
     authored_roster: Option<Vec<(i64, i64, i64)>>,
@@ -1690,6 +1693,7 @@ impl CampaignReplaySetup {
             owned_purchases: mission.owned_purchases.map(|ships| ships.to_vec()),
             retire_on_defeat_types: mission.retire_on_defeat_types.to_vec(),
             grants_on_finished: mission.grants_on_finished,
+            evacuation_rewards: mission.evacuation_rewards,
             created_squads: mission.created_squads.map(|squads| squads.to_vec()),
             tactics: mission.tactics.map(|tactics| tactics.to_vec()),
             authored_roster: mission.authored_roster.map(|roster| roster.to_vec()),
@@ -1732,6 +1736,7 @@ impl CampaignReplaySetup {
             owned_purchases: self.owned_purchases.as_deref(),
             retire_on_defeat_types: &self.retire_on_defeat_types,
             grants_on_finished: self.grants_on_finished,
+            evacuation_rewards: self.evacuation_rewards,
             created_squads: self.created_squads.as_deref(),
             tactics: self.tactics.as_deref(),
             authored_roster: self.authored_roster.as_deref(),
@@ -1775,6 +1780,10 @@ struct CampaignOutcome {
     /// successful run_final rather than written as a separate career edit.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     retired_fleet_ids: Vec<i64>,
+    /// Count from the same authoritative physical survival episode that
+    /// supplied mission terminal state, not a separate campaign timer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    evacuated_personnel: Option<u32>,
 }
 
 impl CampaignOutcome {
@@ -3023,6 +3032,7 @@ fn launch_catalog_battle(
             owned_purchases: owned_purchases.as_deref(),
             retire_on_defeat_types: &mission.retire_on_defeat_types,
             grants_on_finished: mission.grants_on_finished(),
+            evacuation_rewards: mission.evacuation_rewards,
             created_squads: created.as_deref(),
             tactics: tactics.as_deref(),
             authored_roster: authored.as_deref(),
@@ -8239,13 +8249,36 @@ fn run_battle(
                 finalized.mission.is_none_or(|objective|
                     objective.completed ==
                         (objective.objective_side == mission.player_side));
+            // The authored Pluto IV evacuation awards hulls according to
+            // how many five-second evacuations completed before the real
+            // HumanTarget defense ended. Its single shared survival clock
+            // also drives playable combat, terminal outcome and RL rewards.
+            let evacuated_personnel = mission.evacuation_rewards.then(|| {
+                let status = host.simulation().world(0)
+                    .expect("finalized campaign World")
+                    .state.events.survival_status()
+                    .expect("evacuation campaign requires armed physical survival");
+                (status.elapsed_seconds / 5.0).floor().clamp(0.0, 60.0) as u32
+            });
+            let awarded_ships = if let Some(evacuated) = evacuated_personnel {
+                let mut awarded = HashMap::<u8, u32>::new();
+                mission.victory_grants.iter().copied().filter(|ship| {
+                    let count = awarded.entry(ship.ship_type).or_default();
+                    if *count >= battle_catalog::pluto_evacuation_reward_count(
+                        ship.ship_type, evacuated,
+                    ) { return false; }
+                    *count += 1;
+                    true
+                }).collect()
+            } else if mission_success || mission.grants_on_finished {
+                mission.victory_grants.to_vec()
+            } else { Vec::new() };
             Some(CampaignOutcome {
                 campaign_id: mission.campaign_id.to_owned(), mission_id: mission.mission_id.to_owned(),
                 player_side: mission.player_side, winner_side: result.winner_side,
                 mission_success: Some(mission_success),
-                awarded_ships: if mission_success || mission.grants_on_finished {
-                    mission.victory_grants.to_vec()
-                } else { Vec::new() },
+                evacuated_personnel,
+                awarded_ships,
                 awarded_squads: if mission_success || mission.grants_on_finished {
                     mission.victory_squads.to_vec()
                 } else { Vec::new() },
