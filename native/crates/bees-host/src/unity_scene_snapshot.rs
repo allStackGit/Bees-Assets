@@ -1359,18 +1359,10 @@ impl NativePhysicalScene {
                         !matches!(&ship.special,
                             Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
                             if carrier.carrier_id.is_some()) &&
-                        // An authored carrier with dependent Strikers or
-                        // Drones cannot be purchased as a bare hull: its
-                        // source scene describes an owned family, not a
-                        // factory for orphaned single-ship clones.
-                        !source_archetypes.entities.iter().any(|entity| match entity {
-                            NativeAuthoredEntity::Ship(child) =>
-                                child.drone_carrier_id == Some(ship.entity_id) ||
-                                matches!(&child.special,
-                                    Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
-                                    if carrier.carrier_id == Some(ship.entity_id)),
-                            _ => false,
-                        }) &&
+                        source_archetypes.fleet.get(ship.entity_id)
+                            .is_some_and(|value| value.has_persistent_fleet_value) &&
+                        (ship.ship_type != 5 || source_archetypes
+                            .campaign_carrier_groups(ship.entity_id, player_side).is_some()) &&
                         !ship.motion.is_moving && !ship.motion.has_target_coordinates &&
                         ship.motion.body_velocity.length_squared() == 0.0 &&
                         ship.vitals.health() == ship.vitals.max_health() &&
@@ -1380,6 +1372,9 @@ impl NativePhysicalScene {
             }).or_else(|| source_archetypes.fleet_templates.iter().find(|entry|
                 entry.ship.side == player_side &&
                 entry.ship.ship_type == purchase.ship_type &&
+                // A reserved Carrier hull alone is insufficient: its
+                // actual free-child construction must also be authored.
+                entry.ship.ship_type != 5 &&
                 entry.ship.policy.is_none() &&
                 entry.ship.drone_carrier_id.is_none() &&
                 !entry.ship.motion.is_policy_controlled &&
@@ -1395,6 +1390,10 @@ impl NativePhysicalScene {
             {
                 return Err(invalid("purchase price must equal the authored full-health ship TSV"));
             }
+            let carrier_groups = if template.ship_type == 5 {
+                source_archetypes.campaign_carrier_groups(template.entity_id, player_side)
+                    .ok_or(invalid("Carrier purchase requires its authored free child squads"))?
+            } else { Vec::new() };
             // Unity ReplaceDeadShipsInSquad preserves the dead
             // SquadShip.Offset when installing a matching-class
             // replacement. Prefer the exact authored casualty slot
@@ -1414,15 +1413,51 @@ impl NativePhysicalScene {
                     let offset = self.source_formation.get(&id)?.offset;
                     Some((id, ship.motion.position, offset))
                 });
-            let half_size = template.game_movement.half_width.max(
-                template.game_movement.half_height).max(1.0);
+            let radius = |ship: &NativeAuthoredShip|
+                ship.game_movement.half_width.max(ship.game_movement.half_height).max(1.0);
+            let half_size = radius(&template);
             let spacing = half_size * 3.0;
-            let mut placement = casualty_slot.map(|(_, position, _)| position);
+            let family = std::iter::once(&template)
+                .chain(carrier_groups.iter().flat_map(|(_, children)| children.iter()))
+                .map(|ship| (ship.motion.position - template.motion.position, radius(ship)))
+                .collect::<Vec<_>>();
+            // Old casualties and their free children will not be deployed.
+            // Ignore those physical records when choosing a replacement pose.
+            let lost_parents = self.entities.iter().filter_map(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship)
+                    if self.fleet.get(ship.entity_id)
+                        .is_some_and(|value| value.has_persistent_fleet_value) &&
+                        ship.fleet_ship_id.is_some_and(|id| permanently_lost.contains(&id)) =>
+                    Some(ship.entity_id),
+                _ => None,
+            }).collect::<HashSet<_>>();
+            let clear = |candidate: Vec2| family.iter().all(|&(relative, half)| {
+                let position = candidate + relative;
+                position.is_finite() &&
+                    position.x - half >= self.bounds.min.x &&
+                    position.x + half <= self.bounds.max.x &&
+                    position.y - half >= self.bounds.min.y &&
+                    position.y + half <= self.bounds.max.y &&
+                    !self.entities.iter().any(|entity| match entity {
+                        NativeAuthoredEntity::Ship(other)
+                            if !lost_parents.contains(&other.entity_id) &&
+                                !Self::authored_carrier_parent(other)
+                                    .is_some_and(|id| lost_parents.contains(&id)) =>
+                        {
+                            let combined = half + radius(other);
+                            (other.motion.position - position).length_squared() <
+                                combined * combined
+                        }
+                        _ => false,
+                    })
+            });
+            let mut placement = casualty_slot.map(|(_, position, _)| position)
+                .filter(|&position| clear(position));
             // Local squad-relative grid search, performed once at game
             // setup. Compare actual authored hull extents against every
             // live ship; never teleport active gameplay or simulate fake
             // ship movement in the inventory layer.
-            if casualty_slot.is_none() {
+            if placement.is_none() {
                 'location: for ring in 1_i32..=32 {
                 for x in -ring..=ring {
                     for y in -ring..=ring {
@@ -1430,21 +1465,7 @@ impl NativePhysicalScene {
                         let candidate = anchor_position + Vec2::new(
                             x as f32 * spacing, y as f32 * spacing,
                         );
-                        if !candidate.is_finite() ||
-                            candidate.x - half_size < self.bounds.min.x ||
-                            candidate.x + half_size > self.bounds.max.x ||
-                            candidate.y - half_size < self.bounds.min.y ||
-                            candidate.y + half_size > self.bounds.max.y
-                        { continue; }
-                        if self.entities.iter().any(|entity| match entity {
-                            NativeAuthoredEntity::Ship(other) => {
-                                let radius = half_size + other.game_movement
-                                    .half_width.max(other.game_movement.half_height);
-                                (other.motion.position - candidate).length_squared() <
-                                    (radius * radius)
-                            }
-                            _ => false,
-                        }) { continue; }
+                        if !clear(candidate) { continue; }
                         placement = Some(candidate);
                         break 'location;
                     }
@@ -1454,78 +1475,185 @@ impl NativePhysicalScene {
             let position = placement.ok_or(invalid(
                 "no clear authored map placement near the purchased ship's saved squad",
             ))?;
+            // Keep the exact source formation slot only when the
+            // replacement actually fits there.
+            let casualty_slot = casualty_slot.filter(|&(_, old_position, _)|
+                old_position == position);
             if let Some((id, ..)) = casualty_slot {
                 filled_casualty_slots.insert(id);
             }
-            next_entity = next_entity.checked_add(1)
-                .ok_or(invalid("purchased ship entity identities exhausted"))?;
-            let ship_entity_id = next_entity;
-            let mut ship = template.clone();
-            ship.entity_id = ship_entity_id;
-            ship.fleet_ship_id = Some(purchase.fleet_ship_id);
-            if let Some(weapon) = &mut ship.special_weapon {
-                // Never copy the immutable authored weapon ID: the native
-                // special-contact map treats that as a unique physical
-                // identity separate from the owning ship.
-                next_entity = next_entity.checked_add(1)
-                    .ok_or(invalid("native special weapon IDs exhausted"))?;
-                weapon.weapon_id = next_entity;
-            }
-            ship.motion.position = position;
-            // A source archetype may have belonged to a speed-matched
-            // squad. Newly installed hulls start at their own speed; the
-            // destination's final MatchSpeed pass owns any reduction.
-            ship.motion.current_speed = ship.motion.base_speed;
-            ship.motion.user_controlled =
-                self.source_squads[owner].player_permissions.user_controlled;
-            // The saved squad owns its cease-fire order; a prefab from
-            // another squad must not silently restore independent fire.
-            ship.cease_fire = self.source_squads[owner]
-                .cease_fire.unwrap_or(template.cease_fire);
-            if let Some(bounds) = &mut ship.target_geometry {
-                bounds.bounds_latched = false;
-            }
-            if let Some(activity) = &mut ship.combat_activity {
-                activity.elapsed_seconds = None;
-            }
-            if let Some(rank) = &mut ship.weapon_rank_source {
-                rank.stats.ship_id = ship_entity_id;
-                rank.stats.last_killed = 0;
-                rank.stats.fleet_damage_done = 0;
-                rank.fleet_owner_ship_id = ship_entity_id;
-            }
-            let template_id = template.entity_id;
-            let reserved = source_archetypes.fleet_templates.iter()
-                .find(|entry| entry.ship.entity_id == template_id);
-            let mut perception = source_archetypes.authored_ship_perceptions.get(&template_id)
-                .copied().or_else(|| reserved.map(|entry| entry.perception))
-                .ok_or(invalid("purchased ship template lacks authored perception"))?;
-            perception.minerals_mined_this_level = 0;
-            if let Some(message) = &mut perception.allied_communication {
-                *message = [0.0; 4];
-            }
-            let vision = source_archetypes.source_vision.get(&template_id)
-                .copied().or_else(|| reserved.map(|entry| entry.vision))
-                .ok_or(invalid("purchased ship template lacks vision"))?;
-            let mut formation = source_archetypes.source_formation.get(&template_id)
-                .copied().or_else(|| reserved.map(|entry| entry.formation))
-                .ok_or(invalid("purchased ship template lacks formation"))?;
-            formation.offset = casualty_slot.map_or(
+            let offset = casualty_slot.map_or(
                 anchor_offset + (position - anchor_position),
                 |(_, _, dead_offset)| dead_offset,
             );
-            self.fleet.register_spawned_ship(NativeFleetShipValue {
-                ship_id: ship_entity_id,
-                has_persistent_fleet_value: true,
-                minerals_mined_this_level: 0,
-            }).map_err(NativeSnapshotError::Fleet)?;
-            self.authored_ship_perceptions.insert(ship_entity_id, perception);
-            self.source_vision.insert(ship_entity_id, vision);
-            self.source_formation.insert(ship_entity_id, formation);
-            self.entities.push(NativeAuthoredEntity::Ship(ship));
-            self.source_squads[owner].members.push(ship_entity_id);
+            let parent_id = self.install_campaign_hull(
+                source_archetypes, &template, &mut next_entity, owner,
+                position, offset, purchase.fleet_ship_id, None,
+            )?;
+            // The free complements are physical ships, but not new owned
+            // FleetShips. Preserve the source type-specific squad grouping
+            // and translate its authored formation with the parent.
+            for (source_squad, children) in carrier_groups {
+                let mut squad = source_squad;
+                let next_item = self.source_squads.iter()
+                    .map(|squad| squad.item_id).max().unwrap_or(0)
+                    .checked_add(1).filter(|&id| id < i64::MAX)
+                    .ok_or(invalid("Carrier complement squad IDs exhausted"))?;
+                squad.item_id = next_item;
+                squad.saved_squad_id = None;
+                squad.members.clear();
+                squad.hotkey_number = None;
+                squad.original_squad_count = None;
+                squad.is_carrier_squad = Some(true);
+                squad.hivemind = None;
+                let child_owner = self.source_squads.len();
+                self.source_squads.push(squad);
+                for child in children {
+                    let child_offset = source_archetypes.source_formation
+                        .get(&child.entity_id)
+                        .ok_or(invalid("Carrier complement lacks source formation"))?.offset;
+                    let child_position = position +
+                        (child.motion.position - template.motion.position);
+                    self.install_campaign_hull(
+                        source_archetypes, &child, &mut next_entity, child_owner,
+                        child_position, child_offset, purchase.fleet_ship_id,
+                        Some(parent_id),
+                    )?;
+                }
+            }
         }
         Ok(purchases.len())
+    }
+
+    fn authored_carrier_parent(ship: &NativeAuthoredShip) -> Option<i64> {
+        match ship.ship_type {
+            8 => ship.drone_carrier_id,
+            19 => match &ship.special {
+                Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) => carrier.carrier_id,
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// An ordinary source Carrier's free complement is a set of real,
+    /// independently registered single-type squads. The immutable template
+    /// supplies their own physics, weapons, formation and command metadata.
+    /// No training cap or guessed deck count is used for a campaign purchase.
+    fn campaign_carrier_groups(&self, parent: i64, side: i32)
+        -> Option<Vec<(NativeSourceSquad, Vec<NativeAuthoredShip>)>>
+    {
+        let mut children = self.entities.iter().filter_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship)
+                if Self::authored_carrier_parent(ship) == Some(parent) =>
+                    Some((ship.entity_id, ship)),
+            _ => None,
+        }).collect::<HashMap<_, _>>();
+        if children.is_empty() { return None; }
+        let mut groups = Vec::new();
+        for squad in &self.source_squads {
+            if !squad.members.iter().any(|id| children.contains_key(id)) { continue; }
+            if squad.side != side || squad.saved_squad_id.is_some() ||
+                !squad.player_permissions.user_controlled ||
+                squad.is_carrier_squad != Some(true)
+            {
+                return None;
+            }
+            let mut ships = Vec::with_capacity(squad.members.len());
+            for id in &squad.members {
+                let ship = children.remove(id)?;
+                if ship.side != side ||
+                    !self.fleet.get(*id)
+                        .is_some_and(|value| !value.has_persistent_fleet_value) ||
+                    ship.policy.is_some() || ship.motion.is_policy_controlled ||
+                    ship.motion.is_moving || ship.motion.has_target_coordinates ||
+                    ship.motion.body_velocity.length_squared() != 0.0 ||
+                    ship.vitals.health() != ship.vitals.max_health() ||
+                    ship.vitals.mined_cargo() != 0 ||
+                    ships.first().is_some_and(|first: &NativeAuthoredShip|
+                        first.ship_type != ship.ship_type)
+                {
+                    return None;
+                }
+                ships.push(ship.clone());
+            }
+            groups.push((squad.clone(), ships));
+        }
+        children.is_empty().then_some(groups)
+    }
+
+    /// Clone a persistent hull or its free CarrierShip from an immutable
+    /// physical source and enroll it in the normal native scene registries.
+    /// Both use this same creation path; only a Carrier child shares the
+    /// parent's FleetShip and weapon-ranking owner.
+    fn install_campaign_hull(
+        &mut self, source: &Self, template: &NativeAuthoredShip,
+        next_entity: &mut i64, owner: usize, position: Vec2, offset: Vec2,
+        fleet_id: i64, parent: Option<i64>,
+    ) -> Result<i64, NativeSnapshotError> {
+        let invalid = NativeSnapshotError::InvalidNativeLayout;
+        *next_entity = next_entity.checked_add(1)
+            .filter(|&id| id < i64::MAX)
+            .ok_or(invalid("purchased ship entity identities exhausted"))?;
+        let id = *next_entity;
+        let mut ship = template.clone();
+        ship.entity_id = id;
+        ship.fleet_ship_id = Some(fleet_id);
+        if let Some(parent_id) = parent {
+            match ship.ship_type {
+                8 => ship.drone_carrier_id = Some(parent_id),
+                19 => match &mut ship.special {
+                    Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) =>
+                        carrier.carrier_id = Some(parent_id),
+                    _ => return Err(invalid("purchased Striker lacks its source carrier contract")),
+                },
+                _ => return Err(invalid("invalid purchased Carrier complement")),
+            }
+        }
+        if let Some(weapon) = &mut ship.special_weapon {
+            *next_entity = next_entity.checked_add(1)
+                .filter(|&id| id < i64::MAX)
+                .ok_or(invalid("native special weapon identities exhausted"))?;
+            weapon.weapon_id = *next_entity;
+        }
+        ship.motion.position = position;
+        ship.motion.current_speed = ship.motion.base_speed;
+        ship.motion.user_controlled = self.source_squads[owner]
+            .player_permissions.user_controlled;
+        ship.cease_fire = self.source_squads[owner].cease_fire.unwrap_or(template.cease_fire);
+        if let Some(bounds) = &mut ship.target_geometry { bounds.bounds_latched = false; }
+        if let Some(activity) = &mut ship.combat_activity { activity.elapsed_seconds = None; }
+        if let Some(rank) = &mut ship.weapon_rank_source {
+            rank.stats.ship_id = id;
+            rank.stats.last_killed = 0;
+            rank.stats.fleet_damage_done = 0;
+            rank.fleet_owner_ship_id = parent.unwrap_or(id);
+        }
+        let source_id = template.entity_id;
+        let reserved = source.fleet_templates.iter()
+            .find(|entry| entry.ship.entity_id == source_id);
+        let mut perception = source.authored_ship_perceptions.get(&source_id)
+            .copied().or_else(|| reserved.map(|entry| entry.perception))
+            .ok_or(invalid("purchased hull lacks authored perception"))?;
+        perception.minerals_mined_this_level = 0;
+        if let Some(message) = &mut perception.allied_communication { *message = [0.0; 4]; }
+        let vision = source.source_vision.get(&source_id)
+            .copied().or_else(|| reserved.map(|entry| entry.vision))
+            .ok_or(invalid("purchased hull lacks authored vision"))?;
+        let mut formation = source.source_formation.get(&source_id)
+            .copied().or_else(|| reserved.map(|entry| entry.formation))
+            .ok_or(invalid("purchased hull lacks authored formation"))?;
+        formation.offset = offset;
+        self.fleet.register_spawned_ship(NativeFleetShipValue {
+            ship_id: id, has_persistent_fleet_value: parent.is_none(),
+            minerals_mined_this_level: 0,
+        }).map_err(NativeSnapshotError::Fleet)?;
+        self.authored_ship_perceptions.insert(id, perception);
+        self.source_vision.insert(id, vision);
+        self.source_formation.insert(id, formation);
+        self.entities.push(NativeAuthoredEntity::Ship(ship));
+        self.source_squads[owner].members.push(id);
+        Ok(id)
     }
 
     /// Resolve a complete, source-authenticated carrier family. A dependent
