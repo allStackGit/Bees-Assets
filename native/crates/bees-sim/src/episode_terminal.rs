@@ -67,6 +67,9 @@ pub struct EpisodeTerminalMeasurements {
     pub demolition_failures: u64,
     pub escorts_delivered: u64,
     pub escorts_lost: u64,
+    /// Actual surviving-fleet withdrawal, not combat defeat or a draw.
+    #[serde(default)]
+    pub withdrawals_completed: u64,
 }
 
 /// Per-side RecordShipDeathAttribution from the Unity coordinator.
@@ -807,6 +810,8 @@ impl NativeEpisodeTerminal {
                 };
                 self.completed = Some(outcome);
                 self.measurements.eliminations += 1;
+                self.measurements.withdrawals_completed +=
+                    u64::from(world.extraction_retreat_completed());
                 self.measurements.draws += u64::from(winner == 0);
                 world.frozen_after_elimination = true;
                 return Ok(Some(outcome));
