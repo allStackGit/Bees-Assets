@@ -2926,7 +2926,7 @@ class ExperimentHub {
     }
 
     authorizeStart(value,origin='operator') {
-        if(!['operator','automation','distributed'].includes(origin))
+        if(!['operator','automation','distributed','native_round_release'].includes(origin))
             throw Error('Unknown native Start authorization source.');
         if(!object(value)||value.confirm_start!==true||
             typeof value.job_id!=='string')
@@ -2944,8 +2944,20 @@ class ExperimentHub {
         const job=snapshot.jobs.find(j=>j.id===value.job_id);
         if(job?.frozen_parameters?.optimizer_group===true&&!job.native_release_recovery)
             throw Error('Synchronized native optimizer nodes must start together through their exact approved resource bundle.');
-        if(job?.native_release_recovery&&origin!=='operator')
-            throw Error('A release-only recovery requires an explicit owner Start.');
+        if(origin==='native_round_release') {
+            const plan=(this.state.native_round_plans||[]).find(item=>
+                item.status==='awaiting_optimizer'&&
+                item.optimizer_job_ids?.[0]===job?.id&&
+                item.optimizer_bundle_id===job?.resource_bundle?.id);
+            if(!plan||job?.native_release_recovery?.round_plan_id!==plan.id||
+                Object.entries(plan.agent_instances).some(([id,instance])=>
+                    this.agentReports.get(id)?.instance_id!==instance||
+                    snapshot.machines.find(machine=>machine.id===id)?.status!=='connected')||
+                !this.state.bundle_start_plans?.some(launch=>
+                    launch.bundle_id===plan.optimizer_bundle_id&&launch.status==='authorized'))
+                throw Error('Release-only Start requires the current authorized native round and original agent sessions.');
+        }else if(job?.native_release_recovery&&origin!=='operator')
+            throw Error('A release-only recovery requires its authorized round or explicit owner Start.');
         const readiness=nativeStartReadiness(snapshot,job);
         if(!readiness.eligible)
             throw Error(readiness.reason);
@@ -3804,7 +3816,7 @@ class ExperimentHub {
         this.commit(next);
         return {id:job.id,status:job.status};
     }
-    prepareNativeReleaseRecovery(value) {
+    prepareNativeReleaseRecovery(value,roundPlanId=null) {
         if(!object(value)||value.confirm_recover!==true||
             !UUID.test(String(value.job_id||''))||
             Object.keys(value).some(key=>!['job_id','confirm_recover'].includes(key)))
@@ -3839,6 +3851,18 @@ class ExperimentHub {
         }
         const previous=job.native_release_recovery;
         const attempts=job.native_release_attempts||[];
+        if(roundPlanId!==null) {
+            const plan=(next.native_round_plans||[]).find(item=>
+                item.id===roundPlanId&&item.status==='awaiting_optimizer'&&
+                item.optimizer_job_ids?.[0]===job.id&&
+                item.optimizer_bundle_id===job.resource_bundle?.id);
+            if(!plan||attempts.length||
+                !next.bundle_start_plans?.some(launch=>
+                    launch.bundle_id===plan.optimizer_bundle_id&&launch.status==='authorized')||
+                Object.entries(plan.agent_instances).some(([id,instance])=>
+                    this.agentReports.get(id)?.instance_id!==instance))
+                throw Error('Unattended release recovery requires an original approved round with no previous recovery attempt.');
+        }
         if(attempts.length>=16)
             throw Error('Native generation recovery attempt history is full.');
         const attempt={attempt_id:crypto.randomUUID(),
@@ -3849,6 +3873,7 @@ class ExperimentHub {
             previous_dispatch_id:job.dispatch_id,
             previous_start_first_offered_at:job.start_first_offered_at,
             previous_resource_usage:job.final_resource_usage||null,
+            ...(roundPlanId!==null?{round_plan_id:roundPlanId}:{}),
             prepared_at:now()};
         if(lease.status==='released') {
             // Recovery may need to reacquire capacity after an operator
@@ -3866,7 +3891,9 @@ class ExperimentHub {
         job.native_release_attempts=[...attempts,attempt];
         job.native_release_recovery=attempt;
         job.status='waiting_adapter';
-        job.status_reason='Committed training round retained; release-only recovery is queued for explicit Start.';
+        job.status_reason=roundPlanId!==null
+            ?'Committed training round retained; original native round authorizes one release-only recovery.'
+            :'Committed training round retained; release-only recovery is queued for explicit Start.';
         delete job.dispatch_id;
         delete job.start_requested_at;
         delete job.start_first_offered_at;
@@ -3935,6 +3962,17 @@ class ExperimentHub {
             seen.add(report.job_id);
             const job=next.jobs.find(j=>j.id===report.job_id);
             const lease=next.reservations.find(l=>l.id===report.lease_id);
+            // A lost heartbeat response may replay the failed dispatch
+            // after its logical job has acquired a new physical attempt.
+            // Acknowledge only that exact retired terminal report; it must
+            // never mutate the new lease, progress or execution state.
+            if(job?.native_release_attempts?.some(attempt=>
+                    attempt.previous_dispatch_id===report.dispatch_id&&
+                    attempt.previous_lease_id===report.lease_id)&&
+                lease?.job_id===job.id&&lease.machine_id===machine.id&&
+                lease.project_id===job.project_id&&
+                job.assigned_machine_id===machine.id&&report.state==='failed'&&
+                job.dispatch_id!==report.dispatch_id)continue;
             if(!job||job.start_first_offered_at===null||!lease||
                 job.dispatch_id!==report.dispatch_id||
                 job.lease_id!==lease.id||lease.job_id!==job.id||
@@ -5461,6 +5499,61 @@ class ExperimentHub {
     // An authenticated agent heartbeat advances at most one stage per plan.
     // The queue transaction also commits its stage ID, so a crash between
     // reserving GPUs and the next heartbeat cannot create duplicate jobs.
+    advanceNativeReleaseRecovery(plan,owner,members,snapshot) {
+        // All recovery actions are part of the existing authorized native
+        // round. Only the original rank zero may run, and only after the
+        // other ranks have durably finished the same optimizer collective.
+        if(Object.entries(plan.agent_instances).some(([id,instance])=>{
+            const live=this.agentReports.get(id);
+            return live?.instance_id&&live.instance_id!==instance;
+        }))throw Error('A native round agent changed; release recovery requires renewed authorization.');
+        if(Object.keys(plan.agent_instances).some(id=>
+            snapshot.machines.find(machine=>machine.id===id)?.status!=='connected'))
+            return 'Awaiting original authenticated machines before release recovery.';
+        if(!this.state.bundle_start_plans?.some(launch=>
+            launch.bundle_id===plan.optimizer_bundle_id&&launch.status==='authorized'))
+            return 'Original optimizer Start authorization is unavailable; manual release recovery is required.';
+        const proof=owner.native_release_pending;
+        if(members.slice(1).some(worker=>worker.status!=='finished'||!worker.capacity_released_at))
+            return 'Committed PPO checkpoint retained; awaiting terminal proof and released worker capacity.';
+        if(members.slice(1).some(worker=>
+            worker.optimizer_completion?.input_sha256!==proof.input_sha256||
+            worker.optimizer_completion?.model_consensus_sha256!==proof.model_consensus_sha256))
+            throw Error('Original optimizer workers disagree with the committed checkpoint; automatic release recovery is forbidden.');
+        if(owner.status==='failed') {
+            // A bounded retry handles interruption, not persistent release
+            // errors. Further attempts remain an explicit operator decision.
+            if(owner.native_release_attempts?.length)
+                return 'Release-only recovery failed; committed PPO checkpoint retained for manual recovery.';
+            try {
+                this.prepareNativeReleaseRecovery({job_id:owner.id,confirm_recover:true},plan.id);
+            }catch(error) {
+                return 'Release recovery awaiting original ownership or capacity: '+String(error.message||error).slice(0,140);
+            }
+            return null;
+        }
+        if(owner.native_release_recovery?.round_plan_id!==plan.id)
+            return 'Committed PPO checkpoint retained; awaiting manually prepared release recovery Start.';
+        const lease=snapshot.reservations.find(item=>item.id===owner.lease_id);
+        const host=snapshot.machines.find(item=>item.id===owner.assigned_machine_id);
+        if(host?.agent_platform==='linux'&&owner.resources.gpu_count>0&&
+            owner.gpu_qualification?.current!==true) {
+            if(owner.gpu_qualification?.status==='requested')
+                return 'Awaiting GPU access proof for the release-only recovery.';
+            if(owner.gpu_qualification?.status==='rejected'||
+                owner.gpu_qualification?.cleanup_required)
+                return 'Release recovery GPU qualification requires operator review.';
+            const block=gpuProbeBlock(owner,lease,host);
+            if(block)return 'Release recovery: '+block;
+            this.requestGpuQualification({job_id:owner.id,confirm_qualify:true});
+            return null;
+        }
+        const readiness=nativeStartReadiness(snapshot,owner);
+        if(!readiness.eligible)return 'Release recovery: '+readiness.reason;
+        this.authorizeStart({job_id:owner.id,confirm_start:true,release_on_terminal:true},
+            'native_round_release');
+        return null;
+    }
     advanceNativeBeesRounds() {
         const ids=(this.state.native_round_plans||[])
             .filter(plan=>['pending_collectors','awaiting_collectors',
@@ -5620,8 +5713,9 @@ class ExperimentHub {
                     if(phase==='optimizer'&&members[0].native_release_pending&&
                         ['failed','waiting_adapter'].includes(members[0].status)&&
                         members.slice(1).every(job=>!['failed','unverified','stopped','cancelled'].includes(job.status))) {
-                        const reason='Committed PPO checkpoint is retained; awaiting checkpoint-owner release recovery, not another optimizer group.';
-                        if(plan.reason!==reason)update(plan.status,reason);
+                        const owner=members[0];
+                        const reason=this.advanceNativeReleaseRecovery(plan,owner,members,snapshot);
+                        if(reason&&plan.reason!==reason)update(plan.status,reason);
                         continue;
                     }
                     if(members.some(job=>['failed','unverified','stopped','cancelled']
