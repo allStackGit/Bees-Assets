@@ -38,6 +38,15 @@ pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
 pub use selection::{NativeSquadSelection, NativeSupportMode};
 pub use tactical_hud::HudAction;
 
+/// Exact original four-stage FireTank sprite selection. Remote players may
+/// see the visible smoke/damage stage without receiving undiscovered HP.
+pub(crate) fn fire_tank_sprite_stage(health: i32, max_health: i32) -> Option<u8> {
+    if max_health <= 0 { return None; }
+    let lost = i64::from(max_health) - i64::from(health.max(0));
+    Some(((lost * 4) / i64::from(max_health)).clamp(0, 3) as u8)
+}
+
+
 /// Source Prefabs.LoadConversions maps each ship type to one explosion
 /// prefab. The prefab AudioSource clips (or lack thereof for Queen) are
 /// presentation-only; neither headless simulation nor training infers
