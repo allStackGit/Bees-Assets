@@ -1840,9 +1840,14 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             if objective.get("kind").and_then(Value::as_str) == Some("extraction") {
                 let escaping = objective.get("exiting_side")
                     .and_then(Value::as_i64) == Some(i64::from(side));
-                let label = if escaping {
-                    "Extract your fleet to the marked exit"
-                } else { "Intercept enemy fleet before extraction" };
+                let retreat = objective.get("retreat_on_exit")
+                    .and_then(Value::as_bool).unwrap_or(false);
+                let label = match (escaping, retreat) {
+                    (true, true) => "Withdraw surviving fleet through the marked retreat zone",
+                    (false, true) => "Intercept enemy fleet before its withdrawal",
+                    (true, false) => "Extract your fleet to the marked exit",
+                    (false, false) => "Intercept enemy fleet before extraction",
+                };
                 text::draw_at(pixels,WIDTH,16,23,
                     text::fit(label,FIELD-32),1,[255,211,130]);
             }
