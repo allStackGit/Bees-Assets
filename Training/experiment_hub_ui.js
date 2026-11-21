@@ -3725,7 +3725,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsDevice=document.createElement('select');
     const tinyBrainsStage=document.createElement('select');
     tinyBrainsStage.append(
-        new Option('Existing maps (no stage change)',''),
+        new Option('Keep checkpoint maps and turn limit (no stage override)',''),
         new Option('Stage 1 — Basic tiny, two players','basic_tiny'),
         new Option('Stage 2 — Tiny two-player maps','tiny_two_player'),
         new Option('Stage 3 — Small two-player maps','small_two_player'),
@@ -3876,6 +3876,12 @@ document.addEventListener('DOMContentLoaded', () => {
             label.className='hub-toggle-row hub-tinybrains-remote';
             label.append(control,document.createTextNode(caption.trim()));
         }else label.append(caption,control);
+        if(control===tinyBrainsStage) {
+            const hint=document.createElement('small');
+            hint.className='muted';
+            hint.textContent='Without a stage override, training uses the map list and max-turn limit stored in the imported checkpoint. Stages select approved subsets of the original source map inventory.';
+            label.append(hint);
+        }
         tinyBrainsFields.append(label);
     }
     const tinyBrainsActions=document.createElement('div');
@@ -4212,6 +4218,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     :'This installed adapter has no independently editable simulation controls.';
                 target.append(note);
             }
+        }
+        if(project==='tinybrains') {
+            const note=document.createElement('p');
+            note.className='muted hub-design-note';
+            note.textContent='Persistent colony PPO uses training.colony_batch_size (default 16) for optimizer minibatches. The legacy training.batch_size is ignored by this runtime and is not editable.';
+            $('hub-design-training').append(note);
         }
     }
     $('hub-design-reset').addEventListener('click',()=>{
