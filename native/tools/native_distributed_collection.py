@@ -854,6 +854,19 @@ def aggregate_collection_metrics(bundles):
                 proof["resumed_collection"] for proof in accelerator_rows
             )} if all(type(proof.get("resumed_collection")) is bool for proof in accelerator_rows) else {}),
         }
+        staging = [
+            proof["accelerator_input_staging"] for proof in accelerator_rows
+            if isinstance(proof.get("accelerator_input_staging"), dict)
+        ]
+        if staging:
+            # Coverage is explicit: mixed historical and current collectors
+            # must not pretend they all reported their device allocations.
+            result["gpu_inference"]["accelerator_input_staging"] = {
+                "collectors_observed": len(staging),
+                **{key: sum(observed[key] for observed in staging)
+                   for key in ("workers_observed", "device_buffer_growths",
+                               "device_input_reused_forwards", "device_rows_staged")},
+            }
         forwards = result["gpu_inference"]["model_forwards"]
         if forwards:
             result["gpu_inference"]["agent_rows_per_model_forward"] = (
