@@ -388,6 +388,10 @@ function boundedReport(value) {
     if(typeof linuxSingleGpu!=='boolean'||(linuxSingleGpu&&
         (!localExecutor||value.platform!=='linux')))
         throw Error('Single-GPU Linux qualification requires a local Linux executor.');
+    const windowsMulti=value.windows_cuda_multi_qualified??false;
+    if(typeof windowsMulti!=='boolean'||(windowsMulti&&
+        (!localExecutor||value.platform!=='win32'||!preflight)))
+        throw Error('Windows multi-GPU capability needs a preflight-qualified Job Object helper.');
     const gpuDualNative=value.gpu_dual_native_projects??[];
     if(!Array.isArray(gpuDualNative)||gpuDualNative.length>3||
         new Set(gpuDualNative).size!==gpuDualNative.length||
@@ -497,6 +501,7 @@ function boundedReport(value) {
         tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
         linux_single_gpu_qualification:linuxSingleGpu,
+        windows_cuda_multi_qualified:windowsMulti,
         gpu_shared_projects:gpuShared.slice(),
         gpu_dual_native_projects:gpuDualNative.slice(),
         installed_projects:['linux','win32'].includes(value.platform)&&
@@ -600,6 +605,8 @@ function gpuStartBlock(job,lease,machine) {
     if(!machine.gpu_projects?.includes(job.project_id))
         return 'The local adapter has not opted into native GPU execution.';
     if(machine.agent_platform==='win32') {
+        if(r.gpu_count>=2&&machine.windows_cuda_multi_qualified!==true)
+            return 'Windows native multi-GPU Start requires a proven ordered CUDA UUID selector.';
         if(machine.gpu_inventory_source!=='nvidia-smi-v1'||
             physicalGpuBindings(machine,{
                 gpu_inventory_source:machine.gpu_inventory_source,
@@ -2323,6 +2330,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
                 (machine.agent_platform==='win32'
                     ?machine.gpu_inventory_source==='nvidia-smi-v1'&&
                         machine.observed_gpus?.length>=r.gpu_count&&
+                        (r.gpu_count===1||machine.windows_cuda_multi_qualified===true)&&
                         (r.gpu_count===1||courierMulti||
                             dualGpu&&machine.tinybrains_dual_gpu_profiles
                                 ?.includes(selected.frozen_parameters.profile)||
@@ -2905,6 +2913,7 @@ class ExperimentHub {
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
                 machine.linux_single_gpu_qualification=report.linux_single_gpu_qualification;
+                machine.windows_cuda_multi_qualified=report.windows_cuda_multi_qualified;
                 machine.gpu_shared_projects=report.gpu_shared_projects.slice();
                 machine.gpu_dual_native_projects=report.gpu_dual_native_projects.slice();
             }

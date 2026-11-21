@@ -97,6 +97,10 @@ class LocalExecution {
                 (this.supervisor.gpuExecution==='cuda'
                     ?this.supervisor.adapters?.[project]?.gpu_execution==='cuda'
                     :typeof this.supervisor.adapters?.[project]?.gpu_verify_args==='function')),
+            // Multi-device Windows starts need a proven ordered CUDA UUID
+            // selector, not just a visible NVIDIA GPU inventory.
+            windows_cuda_multi_qualified:this.supervisor.gpuEnabled===true&&
+                windowsMultiGpu,
             gpu_shared_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
                 this.supervisor.adapters?.[project]?.gpu_execution==='cuda'&&
