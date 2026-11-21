@@ -1418,6 +1418,60 @@ impl NativePhysicalScene {
     /// A source type provides its collider, turret mounts, sight, movement
     /// and perception; no alternate training or gameplay constructor is
     /// needed. This is setup-only, never in the simulation hot path.
+    /// Shared authoritative source-hull prototype for a purchased or
+    /// reserved FleetShip. This is not an extra gameplay implementation:
+    /// it uses the original collision, weapon, movement and Carrier data.
+    fn campaign_source_ship_template(
+        &self, player_side: i32, ship_type: u8,
+    ) -> Option<NativeAuthoredShip> {
+        self.entities.iter().find_map(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship)
+                    if ship.side == player_side &&
+                        ship.ship_type == ship_type &&
+                        ship.fleet_ship_id.is_some() &&
+                        ship.policy.is_none() && !ship.motion.is_policy_controlled &&
+                        ship.drone_carrier_id.is_none() &&
+                        !matches!(&ship.special,
+                            Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
+                            if carrier.carrier_id.is_some()) &&
+                        self.fleet.get(ship.entity_id)
+                            .is_some_and(|value| value.has_persistent_fleet_value) &&
+                        (ship.ship_type != 5 || self
+                            .campaign_carrier_groups(ship.entity_id, player_side).is_some()) &&
+                        !ship.motion.is_moving && !ship.motion.has_target_coordinates &&
+                        ship.motion.body_velocity.length_squared() == 0.0 &&
+                        ship.vitals.health() == ship.vitals.max_health() &&
+                        ship.vitals.mined_cargo() == 0 =>
+                    Some(ship.clone()),
+                _ => None,
+            }).or_else(|| self.fleet_templates.iter().find(|entry|
+                entry.ship.side == player_side &&
+                entry.ship.ship_type == ship_type &&
+                // A reserved Carrier hull must include its complete
+                // source-authored free child formations.
+                (entry.ship.ship_type != 5 || self
+                    .campaign_carrier_groups(entry.ship.entity_id, player_side).is_some()) &&
+                entry.ship.policy.is_none() &&
+                Self::authored_carrier_parent(&entry.ship).is_none() &&
+                !entry.ship.motion.is_policy_controlled &&
+                !entry.ship.motion.is_moving &&
+                !entry.ship.motion.has_target_coordinates &&
+                entry.ship.motion.body_velocity.length_squared() == 0.0 &&
+                entry.ship.vitals.health() == entry.ship.vitals.max_health() &&
+                entry.ship.vitals.mined_cargo() == 0
+            ).map(|entry| entry.ship.clone()))
+    }
+
+    /// An unassigned campaign reward is only a persistent fleet identity.
+    /// Validate its cost against the original complete hull before recording
+    /// it; no phantom actor is constructed in the active CombatWorld.
+    pub fn campaign_reserve_class_tsv(
+        &self, player_side: i32, ship_type: u8,
+    ) -> Option<u64> {
+        let ship = self.campaign_source_ship_template(player_side, ship_type)?;
+        u64::try_from(ship.vitals.tsv()).ok().filter(|value| *value > 0)
+    }
+
     pub fn install_purchased_ships(
         &mut self, source_archetypes: &Self, player_side: i32,
         purchases: &[NativePurchasedShip], permanently_lost: &HashSet<i64>,
@@ -1469,42 +1523,8 @@ impl NativePhysicalScene {
             // Purchase definitions belong to the immutable authored
             // scene. A valid previously purchased class remains available
             // when its entire original fleet is now in reserve.
-            let template = source_archetypes.entities.iter().find_map(|entity| match entity {
-                NativeAuthoredEntity::Ship(ship)
-                    if ship.side == player_side &&
-                        ship.ship_type == purchase.ship_type &&
-                        ship.fleet_ship_id.is_some() &&
-                        ship.policy.is_none() && !ship.motion.is_policy_controlled &&
-                        ship.drone_carrier_id.is_none() &&
-                        !matches!(&ship.special,
-                            Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
-                            if carrier.carrier_id.is_some()) &&
-                        source_archetypes.fleet.get(ship.entity_id)
-                            .is_some_and(|value| value.has_persistent_fleet_value) &&
-                        (ship.ship_type != 5 || source_archetypes
-                            .campaign_carrier_groups(ship.entity_id, player_side).is_some()) &&
-                        !ship.motion.is_moving && !ship.motion.has_target_coordinates &&
-                        ship.motion.body_velocity.length_squared() == 0.0 &&
-                        ship.vitals.health() == ship.vitals.max_health() &&
-                        ship.vitals.mined_cargo() == 0 =>
-                    Some(ship.clone()),
-                _ => None,
-            }).or_else(|| source_archetypes.fleet_templates.iter().find(|entry|
-                entry.ship.side == player_side &&
-                entry.ship.ship_type == purchase.ship_type &&
-                // A reserved Carrier hull must include its complete
-                // source-authored free child formations.
-                (entry.ship.ship_type != 5 || source_archetypes
-                    .campaign_carrier_groups(entry.ship.entity_id, player_side).is_some()) &&
-                entry.ship.policy.is_none() &&
-                Self::authored_carrier_parent(&entry.ship).is_none() &&
-                !entry.ship.motion.is_policy_controlled &&
-                !entry.ship.motion.is_moving &&
-                !entry.ship.motion.has_target_coordinates &&
-                entry.ship.motion.body_velocity.length_squared() == 0.0 &&
-                entry.ship.vitals.health() == entry.ship.vitals.max_health() &&
-                entry.ship.vitals.mined_cargo() == 0
-            ).map(|entry| entry.ship.clone()))
+            let template = source_archetypes
+                .campaign_source_ship_template(player_side, purchase.ship_type)
                 .ok_or(invalid("purchased type has no safe ordinary source ship prefab"))?;
             if template.vitals.tsv() <= 0 ||
                 u64::try_from(template.vitals.tsv()).ok() != Some(purchase.price_tsv)
