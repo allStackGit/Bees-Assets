@@ -18,7 +18,9 @@ from native_mission_contract import level_has_goal, verified_policy_observations
 from native_training_artifacts import (file_sha256, sync_directory, atomic_json,
                                        native_input_dependencies,
                                        check_native_input_dependencies,
-                                       native_headless_environment)
+                                       native_headless_environment,
+                                       native_manifest_model_dependencies,
+                                       check_native_model_dependencies)
 
 
 def resolved(base, path):
@@ -231,6 +233,9 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     manifest_sha = file_sha256(manifest)
     source_sha = file_sha256(source_path)
     source_dependencies = native_input_dependencies({"path": str(source_path)})
+    env = native_headless_environment()
+    model_store = env.get("BEES_NATIVE_MODEL_STORE")
+    model_dependencies = native_manifest_model_dependencies(manifest, model_store)
     if inference_device is not None:
         if inference_device not in ("cpu", "cuda:0"):
             raise ValueError("native evaluation inference device must be cpu or cuda:0")
@@ -277,7 +282,6 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     # Pin the stochastic MA-POCA action sampler across evaluated model
     # generations. The environment seed plans remain fixed in the source
     # Level config; a distinct inference RNG controls policy sampling.
-    env = native_headless_environment()
     # Fixed-reference comparisons must not inherit a shell's unrelated
     # model-placement override. Only the recorded --inference-device
     # may relocate PyTorch weights at evaluation time.
@@ -353,10 +357,13 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     # authoritative. Otherwise a fixed holdout may silently measure another
     # environment while its run.json and policy manifest hashes still match.
     check_native_input_dependencies({"source_dependencies": source_dependencies})
+    check_native_model_dependencies(model_dependencies)
     receipt = {
         "schema_version": 1, "kind": "native_policy_evaluation_complete",
         "source_run_config": str(source_path), "source_run_config_sha256": source_sha,
         "source_dependencies": source_dependencies,
+        "model_dependencies": model_dependencies,
+        **({"model_store": model_store} if model_store else {}),
         "model_manifest": str(manifest), "model_manifest_sha256": manifest_sha,
         "learner_side": learner_side, "policy_sampling_seed": policy_seed,
         **({"inference_device_override": inference_device} if inference_device else {}),
