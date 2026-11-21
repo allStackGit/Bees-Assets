@@ -190,16 +190,12 @@ impl ResidentPolicyProcess {
         }
         let seq = self.sequence.checked_add(1)
             .ok_or(PolicyProcessError::RequestSequenceExhausted)?;
-        self.sequence = seq;
+        // Validate and stage the entire route/mask frame before touching
+        // the resident worker's pipe. Previously the request header was
+        // written first; a later invalid mask stranded Python waiting for
+        // an observation payload and poisoned every subsequent forward.
+        // This retains the original single mask pass and binary ABI.
         let input = self.input.as_mut().ok_or(PolicyProcessError::Unavailable)?;
-        input.write_all(if self.collect_behavior {
-            REQUEST_MAGIC
-        } else {
-            PLAY_REQUEST_MAGIC
-        })?;
-        input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
-        input.write_all(&seq.to_le_bytes())?;
-        input.write_all(&rows32.to_le_bytes())?;
         // One contiguous 16-byte route/mask header per agent. No per-row
         // write calls or heap allocation after the maximum batch grows.
         let header_bytes = rows.checked_mul(PER_ROW_HEADER_BYTES)
@@ -222,6 +218,15 @@ impl ResidentPolicyProcess {
             }
             header[15] = 0;
         }
+        self.sequence = seq;
+        input.write_all(if self.collect_behavior {
+            REQUEST_MAGIC
+        } else {
+            PLAY_REQUEST_MAGIC
+        })?;
+        input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
+        input.write_all(&seq.to_le_bytes())?;
+        input.write_all(&rows32.to_le_bytes())?;
         input.write_all(&self.row_headers)?;
         write_floats(input, observations)?;
         input.flush()?;
