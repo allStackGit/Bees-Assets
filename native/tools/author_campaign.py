@@ -804,7 +804,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
 
                 def source_fleet(wave):
                     squad_ids = wave.get("squad_item_ids")
-                    if not isinstance(squad_ids, list) or not squad_ids:
+                    if not isinstance(squad_ids, list):
                         return None
                     fleet = []
                     for squad_id in squad_ids:
@@ -852,8 +852,9 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     # one surviving newly selected formation so a wholly
                     # arbitrary fleet cannot masquerade as this wave.
                     if (when, lane) == (540, "upper"):
-                        if not any(source_order(actual[start:], required)
-                                   for start in range(len(actual))):
+                        if actual and not any(
+                                source_order(actual[start:], required)
+                                for start in range(len(actual))):
                             valid_waves = False
                             break
                     elif not source_order(actual, required):
