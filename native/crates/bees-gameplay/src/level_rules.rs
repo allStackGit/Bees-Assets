@@ -1486,7 +1486,8 @@ where
                 state.events.queue_campaign_dialogue(completed_tick, cue)?;
             }
             if let Some(finalized) = state.events.latest_finalized_episode() {
-                let cue = dialogue.outcome(finalized.result.winner_side);
+                let cue = dialogue.outcome(finalized.result.winner_side,
+                    &state.combat, state.events.survival_status());
                 dialogue.set_cue(cue);
                 state.events.queue_campaign_dialogue(completed_tick, cue)?;
             } else if let Some(survival) = state.events.survival_status() {
