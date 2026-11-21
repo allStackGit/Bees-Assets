@@ -125,6 +125,12 @@ pub struct Mission {
     pub persist_fleet_losses: bool,
     #[serde(default)]
     pub requires: Vec<String>,
+    /// Optional alternative source campaign routes. Each prerequisite is
+    /// a prior committed mission outcome; at least one must match. This
+    /// supports original defeat-skip branches without fabricating a win
+    /// or marking a skipped Level as played.
+    #[serde(default)]
+    unlock_if_any: Vec<OutcomePrerequisite>,
     /// One-time physical FleetShip rewards for the first verified victory.
     /// Type/TSV and SavedSquad must be supported by the same authored
     /// native scenes as ordinary purchases. No currency is spent.
@@ -161,6 +167,34 @@ pub struct VictorySquadGrant {
 struct MissionRoute {
     mission: String,
     config: PathBuf,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OutcomePrerequisite {
+    mission: String,
+    result: RequiredOutcome,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum RequiredOutcome {
+    Finished,
+    Victory,
+    Defeat,
+}
+
+impl Mission {
+    pub fn unlocked(&self, progress: &CampaignProgress<'_>) -> bool {
+        self.requires.iter().all(|id| progress.completed(id)) &&
+            (self.unlock_if_any.is_empty() || self.unlock_if_any.iter().any(|route|
+                match route.result {
+                    RequiredOutcome::Finished => progress.completed(&route.mission),
+                    RequiredOutcome::Victory => progress.latest_victory(&route.mission),
+                    RequiredOutcome::Defeat => progress.latest_defeat(&route.mission),
+                }
+            ))
+    }
 }
 
 #[derive(Default, Deserialize)]
@@ -624,7 +658,13 @@ impl BattleCatalog {
                 ((mission.persist_fleet_losses || mission.bank_player_minerals) &&
                     !mission.record_fleet_stats) ||
                 earlier.contains(mission.id.as_str()) ||
-                mission.requires.iter().any(|id| !earlier.contains(id.as_str()))
+                mission.requires.iter().any(|id| !earlier.contains(id.as_str())) ||
+                mission.unlock_if_any.len() > 40 ||
+                mission.unlock_if_any.iter().any(|route|
+                    !earlier.contains(route.mission.as_str())) ||
+                mission.unlock_if_any.iter().enumerate().any(|(index, route)|
+                    mission.unlock_if_any[..index].iter().any(|earlier|
+                        earlier.mission == route.mission && earlier.result == route.result))
             {
                 return Err(invalid(format!(
                     "Mission {:?} needs a campaign ID, unique mission ID, player side 1 or 2, and prerequisites listed earlier in the catalog",
@@ -666,7 +706,10 @@ impl BattleCatalog {
                 )));
             }
             if mission.on_victory.iter().chain(mission.on_defeat.iter()).any(|route|
-                !mission.requires.contains(&route.mission) || route.config.as_os_str().is_empty()
+                (!mission.requires.contains(&route.mission) &&
+                    !mission.unlock_if_any.iter().any(|condition|
+                        condition.mission == route.mission)) ||
+                route.config.as_os_str().is_empty()
             ) || mission.on_defeat.as_ref().is_some_and(|route|
                 !advances_on_finish.contains(route.mission.as_str())) ||
                 mission.on_victory.as_ref().zip(mission.on_defeat.as_ref())
@@ -1423,12 +1466,20 @@ impl BattleCatalog {
                 })),
                 
                 "requires": mission.requires,
+                "unlock_if_any": mission.unlock_if_any.iter().map(|condition| json!({
+                    "mission": condition.mission,
+                    "result": match condition.result {
+                        RequiredOutcome::Finished => "finished",
+                        RequiredOutcome::Victory => "victory",
+                        RequiredOutcome::Defeat => "defeat",
+                    },
+                })).collect::<Vec<_>>(),
                 "waiting_for": mission.requires.iter().filter(|id|
                     !progress.completed(id)).collect::<Vec<_>>(),
                 "advance_on": if matches!(mission.advance_on, AdvanceOn::Finished) {
                     "finished"
                 } else { "victory" },
-                "unlocked": mission.requires.iter().all(|id| progress.completed(id)),
+                "unlocked": mission.unlocked(progress),
                 "completed": progress.completed(&mission.id),
                 "attempted": progress.missions.get(mission.id.as_str())
                     .is_some_and(|result| result.attempted),
