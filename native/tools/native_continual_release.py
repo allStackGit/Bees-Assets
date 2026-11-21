@@ -9,15 +9,20 @@ existing release report. No Unity executable or separate league is used.
 import argparse
 import hashlib
 import json
+import os
+import shutil
+import tempfile
 from pathlib import Path
 import sys
 
 from evaluate_native_champion import document, gate, pinned_model
-from native_training_artifacts import atomic_json, file_sha256, native_input_dependencies
+from native_training_artifacts import atomic_json, file_sha256, native_input_dependencies, sync_directory
+from package_policy_manifest import export_model, verify_package
 from train_policy_session import session_lock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "Training"))
-from bees_continual_learning import ContinualLearningStore, canonical_json, load_config
+from bees_continual_learning import ContinualLearningStore, canonical_json, load_config, STATE_CHAMPION
+from bees_continual_deployment import _promotion_evidence
 from bees_continual_bootstrap import bootstrap_champion
 from bees_continual_behavior_sanity import apply_behavior_sanity
 
@@ -288,6 +293,109 @@ def release(store, candidate_id, champion_source, historical_source, competency_
         }
 
 
+def publish_champion(store):
+    """Publish only the approved registry model, using the native portable
+    model package format. Legacy ONNX distribution pointers are untouched.
+    """
+    champion_id = store.current_compatible_champion_id()
+    if champion_id is None:
+        raise ValueError("no compatible native champion to deploy")
+    champion, manifest, checkpoint = native_model(store, champion_id)
+    evidence = _promotion_evidence(store, champion)
+    identity = {
+        "schema_version": 1, "kind": "native_continual_deployment",
+        "model_id": champion_id, "checkpoint_sha256": champion["artifact_sha256"],
+        "model_size_bytes": checkpoint.stat().st_size,
+        "policy_signature": store.config["policy_signature"],
+        "compatibility": store.compatibility.to_dict(),
+        "training_run_id": champion["training_run_id"],
+        "training_step": champion["training_step"],
+        "game_build_version": champion["game_build_version"],
+        "promotion_evidence": evidence,
+    }
+    digest = hashlib.sha256(canonical_json(identity).encode("utf-8")).hexdigest()
+    deployment_id = "native-" + digest[:24]
+    root = store.root / "deployment"
+    packages = root / "packages"
+    packages.mkdir(parents=True, exist_ok=True)
+    package = packages / deployment_id
+    if not package.exists():
+        # Stage beside the destination, then publish the complete directory
+        # atomically. An interrupted copy is never a current deployment.
+        staging = Path(tempfile.mkdtemp(prefix=".native-staging-", dir=packages))
+        try:
+            export_model(manifest, staging / "policy")
+            verified = verify_package(staging / "policy", 0)
+            atomic_json(staging / "deployment.json", {
+                "identity": identity, "identity_sha256": digest,
+                "deployment_id": deployment_id,
+                "policy_manifest_sha256": verified["manifest_sha256"],
+            })
+            sync_directory(staging)
+            os.replace(staging, package)
+            sync_directory(packages)
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging)
+    record = document(package / "deployment.json")
+    verified = verify_package(package / "policy", 0)
+    if (record != {"identity": identity, "identity_sha256": digest,
+                   "deployment_id": deployment_id,
+                   "policy_manifest_sha256": verified["manifest_sha256"]} or
+            file_sha256(Path(verified["learner_checkpoint"])) != identity["checkpoint_sha256"]):
+        raise ValueError("native champion deployment is inconsistent with approved checkpoint")
+    pointer = root / "current-native-deployment.json"
+    value = {
+        "schema_version": 1, "deployment_id": deployment_id,
+        "model_id": champion_id,
+        "deployment_sha256": file_sha256(package / "deployment.json"),
+    }
+    # Recheck under the registry's write transaction, so a concurrent
+    # promotion cannot publish an obsolete champion as the current one.
+    with store._connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        if store._state(db, STATE_CHAMPION) != champion_id:
+            raise ValueError("champion changed while preparing native deployment")
+        if not pointer.exists() or document(pointer) != value:
+            atomic_json(pointer, value)
+    return {
+        **value, "package_dir": str(package),
+        "policy_manifest": verified["manifest"],
+        "checkpoint": verified["learner_checkpoint"],
+        "pointer": str(pointer),
+    }
+
+
+def resolve_deployment(root):
+    """Resolve a locally installed/copied deployment without a registry.
+    The pointer names an immutable package; verify its portable weights.
+    """
+    root = Path(root).resolve(strict=True)
+    pointer = document(root / "current-native-deployment.json")
+    deployment_id = pointer.get("deployment_id")
+    if (pointer.get("schema_version") != 1 or not isinstance(deployment_id, str) or
+            len(deployment_id) != 31 or not deployment_id.startswith("native-") or
+            any(c not in "0123456789abcdef" for c in deployment_id[7:])):
+        raise ValueError("invalid native deployment pointer")
+    package = root / "packages" / deployment_id
+    metadata_path = package / "deployment.json"
+    if file_sha256(metadata_path) != pointer.get("deployment_sha256"):
+        raise ValueError("native deployment pointer does not match its package")
+    record = document(metadata_path)
+    identity = record["identity"]
+    digest = hashlib.sha256(canonical_json(identity).encode("utf-8")).hexdigest()
+    verified = verify_package(package / "policy", 0)
+    if (record["identity_sha256"] != digest or
+            deployment_id != "native-" + digest[:24] or
+            record["deployment_id"] != deployment_id or
+            identity["kind"] != "native_continual_deployment" or
+            identity["model_id"] != pointer.get("model_id") or
+            record["policy_manifest_sha256"] != verified["manifest_sha256"] or
+            file_sha256(Path(verified["learner_checkpoint"])) != identity["checkpoint_sha256"]):
+        raise ValueError("native deployment package identity differs from its pointer")
+    return record, verified
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("registry", type=Path)
@@ -308,6 +416,7 @@ def main():
     bootstrap.add_argument("--reason", required=True)
     pin = commands.add_parser("pin-competencies")
     pin.add_argument("suite", type=Path)
+    commands.add_parser("publish")
     evaluate = commands.add_parser("release")
     evaluate.add_argument("candidate_model_id")
     evaluate.add_argument("champion_suite", type=Path)
@@ -333,11 +442,14 @@ def main():
         elif args.command == "bootstrap":
             native_model(store, args.model_id)
             result = bootstrap_champion(store, args.model_id, reason=args.reason)
+            result = {"model": result, "deployment": publish_champion(store)}
         elif args.command == "pin-competencies":
             contract, _ = competency_contract(args.suite.resolve(strict=True))
             for case in contract["cases"]:
                 native_model(store, case["opponent_model_id"])
             result = store.pin_competency_suite(contract)
+        elif args.command == "publish":
+            result = publish_champion(store)
         else:
             if not 0 <= args.policy_seed < (1 << 63) or not 1 <= args.physics_workers <= 128:
                 parser.error("invalid native evaluation seed or physics allocation")
@@ -345,6 +457,7 @@ def main():
                              args.historical_suite, args.competency_suite, config_path,
                              args.rollout_binary.resolve(strict=True), args.policy_seed,
                              args.physics_workers, args.inference_device)
+            result["deployment"] = publish_champion(store)
     print(json.dumps(result, sort_keys=True), flush=True)
 
 
