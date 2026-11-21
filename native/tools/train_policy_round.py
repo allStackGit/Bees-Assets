@@ -835,6 +835,16 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     work["gpu_agent_rows"] += proof["agent_rows"]
                     work["successful_world_steps"] += metrics[index]["successful_world_steps"]
                     work["successful_policy_rows"] += metrics[index]["successful_policy_rows"]
+                    staging = proof.get("accelerator_input_staging")
+                    if staging is not None:
+                        observed = work.setdefault("accelerator_input_staging", {
+                            "workers_observed": 0, "device_buffer_growths": 0,
+                            "device_input_reused_forwards": 0, "device_rows_staged": 0,
+                        })
+                        observed["workers_observed"] += 1
+                        for key in ("device_buffer_growths",
+                                    "device_input_reused_forwards", "device_rows_staged"):
+                            observed[key] += staging[key]
                 # Count the actual decisions serviced per neural forward.
                 # Unlike GPU busy%, this directly reflects useful model
                 # batching even when CPUs and GPUs overlap in time.
@@ -846,6 +856,16 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                         )
                 model_forwards = sum(p["model_forwards"] for p in gpu_proofs.values())
                 agent_rows = sum(p["agent_rows"] for p in gpu_proofs.values())
+                staging_workers = [
+                    proof["accelerator_input_staging"] for proof in gpu_proofs.values()
+                    if "accelerator_input_staging" in proof
+                ]
+                staging_totals = ({
+                    "workers_observed": len(staging_workers),
+                    **{key: sum(observation[key] for observation in staging_workers)
+                       for key in ("device_buffer_growths",
+                                   "device_input_reused_forwards", "device_rows_staged")},
+                } if staging_workers else None)
                 result["gpu_inference"] = {
                     "verified_workers": len(gpu_proofs),
                     "workers_with_final_counters": sum(
@@ -856,6 +876,8 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     "resumed_collection": resume,
                     "model_forwards": model_forwards,
                     "agent_rows": agent_rows,
+                    **({"accelerator_input_staging": staging_totals}
+                       if staging_totals is not None else {}),
                     "agent_rows_per_model_forward": (
                         agent_rows / model_forwards if model_forwards else None
                     ),
