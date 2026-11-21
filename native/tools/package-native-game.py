@@ -185,6 +185,23 @@ def package_game_library(
     copied_manifests: set[str] = set()
     has_policy = False
 
+    def catalog_config(value: str, label: str) -> str:
+        """Normalize source-authored catalog links for either target OS.
+
+        Catalog links stay within the selected library's owned JSON tree.
+        Unlike a run's external source scene, an absolute/parent catalog
+        link cannot be packaged under a portable, self-contained identity.
+        """
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"Invalid native {label} configuration")
+        normalized = value.replace("\\", "/")
+        path = PurePosixPath(normalized)
+        if (path.is_absolute() or ":" in normalized or ".." in path.parts or
+                len(path.parts) > 8 or len(normalized) > 255 or
+                path.suffix != ".json"):
+            raise ValueError(f"Unsafe native {label} configuration: {value!r}")
+        return path.as_posix()
+
     def game_asset(run_source: Path, run_destination: Path,
                    value: str, kind: str) -> str:
         """Copy a run's authored scene/Stage asset into the portable tree.
@@ -247,11 +264,13 @@ def package_game_library(
             for game in data["games"]:
                 if game["kind"] not in ("campaign", "battle"):
                     raise ValueError("Unknown native game library item")
+                game["config"] = catalog_config(game["config"], "game")
                 pending.append(((PurePosixPath(path.parent.as_posix()) /
                                  game["config"]).as_posix(),
                                 game["kind"] if game["kind"] == "campaign" else "run"))
         elif kind == "campaign":
             for battle in data["battles"]:
+                battle["config"] = catalog_config(battle["config"], "mission")
                 pending.append(((PurePosixPath(path.parent.as_posix()) /
                                  battle["config"]).as_posix(), "run"))
                 # BattleCatalog.configurations() includes BOTH authored
@@ -261,6 +280,7 @@ def package_game_library(
                 for outcome in ("on_victory", "on_defeat"):
                     route = mission.get(outcome)
                     if route is not None:
+                        route["config"] = catalog_config(route["config"], outcome)
                         pending.append(((PurePosixPath(path.parent.as_posix()) /
                                          route["config"]).as_posix(), "run"))
         elif kind == "run":
@@ -333,7 +353,7 @@ def package_game_library(
         output = (destination / "native-library.json"
                   if kind == "library" else destination / path)
         output.parent.mkdir(parents=True, exist_ok=True)
-        if kind == "run":
+        if kind in ("run", "campaign", "library"):
             output.write_text(
                 json.dumps(data, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
