@@ -668,7 +668,9 @@ impl BattleCatalog {
             if mission.on_victory.iter().chain(mission.on_defeat.iter()).any(|route|
                 !mission.requires.contains(&route.mission) || route.config.as_os_str().is_empty()
             ) || mission.on_defeat.as_ref().is_some_and(|route|
-                !advances_on_finish.contains(route.mission.as_str())) {
+                !advances_on_finish.contains(route.mission.as_str())) ||
+                mission.on_victory.as_ref().zip(mission.on_defeat.as_ref())
+                    .is_some_and(|(win, defeat)| win.mission != defeat.mission) {
                 return Err(invalid(format!(
                     "Mission {:?} requires a reachable previous outcome and a native run for its conditional route",
                     mission.id,
