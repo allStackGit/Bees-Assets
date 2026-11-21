@@ -187,17 +187,29 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             if slots.iter().any(|slot| slot.ship_type == HUMAN_TARGET_TYPE) {
                 continue;
             }
-            let (_, width, height) = geometry(&slots);
+            // Placement extents must describe the ACTUAL staged formation,
+            // not the original ships' unrelated map positions. A squad
+            // imported in a widely scattered state may compact here, while
+            // the source adjusted formation of a compact squad may expand.
+            let member_count = slots.len();
+            for slot in &mut slots {
+                slot.position = authored_placement_offset(
+                    slot.ship_type, member_count, slot.source_offset,
+                );
+                if !slot.position.is_finite() {
+                    return Err("Titania II fleet placement is nonfinite");
+                }
+            }
+            let (formation_center, width, height) = geometry(&slots);
             let radius = width.max(height) * 0.5 + 8.0;
-            if !radius.is_finite() { return Err("Titania II fleet size is nonfinite"); }
+            if !radius.is_finite() || !formation_center.is_finite() {
+                return Err("Titania II fleet size is nonfinite");
+            }
             let chosen = place_at_center(radius, &occupied, &obstacles,
                 bounds.min, bounds.max)
                 .ok_or("Titania II cannot place player fleet inside the physical map")?;
-            let member_count = slots.len();
             for slot in &mut slots {
-                slot.position = chosen + authored_placement_offset(
-                    slot.ship_type, member_count, slot.source_offset,
-                );
+                slot.position = chosen + slot.position - formation_center;
                 if !slot.position.is_finite() {
                     return Err("Titania II fleet placement is nonfinite");
                 }
