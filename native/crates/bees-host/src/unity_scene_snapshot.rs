@@ -2770,6 +2770,19 @@ impl NativePhysicalScene {
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::TitaniaMinesweeper { .. }) if setup.survival.is_some() =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
+            Some(CampaignDialogueSpec::NeptuneSeizeMeans { player_side })
+                if player_side != human_side ||
+                    self.activate_mining != Some(true) ||
+                    // The source rescue protects five actual mining
+                    // asteroid fields. They belong to the common physics
+                    // and economic system used by training and live play.
+                    self.entities.iter().filter(|entity| matches!(
+                        entity, NativeAuthoredEntity::MiningAsteroid { .. }
+                    )).count() != 5 ||
+                    setup.groups.is_some() || setup.survival.is_some() ||
+                    setup.demolition.is_some() || setup.escort.is_some() ||
+                    setup.extraction.is_some() =>
+                return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::NeptunePressingForward { player_side, .. })
                 if ![bee_side, human_side].contains(&player_side) ||
                     setup.survival.is_some() || setup.demolition.is_some() ||
