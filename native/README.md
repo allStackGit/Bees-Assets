@@ -1505,7 +1505,42 @@ survival defense against two genuine deferred enemy waves (35s, 70s).
 **Build Fleet Skirmish** is also available in the native game library,
 including packaged custom libraries. Pick either player faction or two
 local commanders, then independently choose 1, 2, 4, 8, 16, 32, 64
-or 128 ships per side. The dense 128-ship layout admits only original
+or 128 ships per side. The builder now offers source-matched Bee Scouts
+and their real Beacons, independent Human Barges, Fire Barges and Yellow
+Jackets with separately registered physical weapons, and Queens with
+actual timed offspring waves on large maps. Fighters can share real
+2-, 4- or 8-ship command squads; original 1-9/0 selection works on
+player-controlled squads. The same saved physical roster is used for
+campaign packaging and MA-POCA training.
+
+For a **live HiveMind opponent**, put `hivemind-fleet.json` at the
+player save root (or set `BEES_NATIVE_HIVEMIND_FLEET_CONFIG` to its
+path). For example:
+
+```json
+{
+  "opponent_id": 123,
+  "initial_command_delay_seconds": 0,
+  "hivemind": {
+    "endpoint": "wss://your-bees-server.example/socket",
+    "user_id": 1,
+    "version": 1.5,
+    "auth_ticket_env": "BEES_HIVEMIND_TICKET"
+  }
+}
+```
+
+Replace the example server, credentials, source opponent ID and version
+with actual BeesServer-issued values. Keep the ticket itself exclusively
+in the named environment variable, never in this profile or the recorded
+battle. Local play offers player-vs-HiveMind choices; a LAN host offers
+the same mode if exactly one player-side token is configured. The native
+host uses the ordinary durable network session, command scheduler and
+saved World recovery. When the same battle is converted for training,
+the external HiveMind command owner is replaced by model decisions on
+the *unchanged* physical game. Large-map fleets now deploy at their
+side's authored Stage home; extraction targets and scripted movement
+orders scale together with the selected arena. The dense 128-ship layout admits only original
 6x6 Wasp/Gunship fighters; mixed fleets up to 64 ships still offer
 all-fighter, balanced, support-heavy or specialist
 fleets for each faction, and open, classic, flanking-cover or dense-cover
