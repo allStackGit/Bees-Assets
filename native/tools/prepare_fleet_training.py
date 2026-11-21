@@ -456,6 +456,11 @@ def physical_scene_identity(scene: dict) -> str:
     physical = copy.deepcopy(scene)
     physical.pop("policy_episode", None)
     physical.pop("local_player_side", None)
+    # HiveMind activation and per-squad server ownership are external
+    # command policies. CombatWorld, hulls, colliders, movement and weapon
+    # mechanics are identical when an MA-POCA actor owns those decisions.
+    physical.pop("activate_hivemind", None)
+    physical.pop("hivemind_initial_command_delay_seconds", None)
     for ship in physical["ships"]:
         ship.pop("user_controlled", None)
         ship.pop("policy", None)
@@ -472,7 +477,7 @@ def physical_scene_identity(scene: dict) -> str:
                 if isinstance(minion.get("special_weapon"), dict):
                     minion["special_weapon"].pop("observation", None)
     for squad in physical["squads"]:
-        for field in ("user_controlled", "can_accept_input",
+        for field in ("user_controlled", "can_accept_input", "hivemind",
                       "hotkey_number", "original_squad_count"):
             squad.pop(field, None)
     return hashlib.sha256(json.dumps(
@@ -491,6 +496,13 @@ def verify_same_battle(scene: dict, run: dict,
     for value in (expected, trained):
         value.pop("run_id", None)
         value["levels"][0].pop("scene", None)
+    # The frozen playable source can use an external HiveMind opponent.
+    # Policy training deliberately replaces THAT command authority with
+    # native model decisions; a simultaneous socket would compete for
+    # the same physical squad and corrupt learner trajectories.
+    expected.pop("hivemind", None)
+    if trained.get("hivemind") is not None:
+        raise ValueError("native training must not issue live HiveMind commands")
     policy_ships = {ship["entity_id"] for ship in policy_scene["ships"]
                     if isinstance(ship.get("policy"), dict)}
     owned = {squad["item_id"] for squad in policy_scene["squads"]
@@ -598,7 +610,19 @@ def convert(source: Path, destination: Path, archetypes: Path,
             set() if policy_reinforcements else reserved_ships
         ),
     )
-    policy_scene, policy_run = policy_author()(scene, run, args)
+    policy_input_scene, policy_input_run = copy.deepcopy(scene), copy.deepcopy(run)
+    if policy_input_run.get("hivemind") is not None:
+        if (policy_input_scene.get("activate_hivemind") is not True or
+                policy_input_run["hivemind"].get("issue_source_commands") is not True or
+                any(not isinstance(squad.get("hivemind"), dict)
+                    for squad in policy_input_scene["squads"])):
+            raise ValueError("HiveMind fleet training requires an authenticated source command scene")
+        policy_input_run.pop("hivemind")
+        policy_input_scene["activate_hivemind"] = False
+        policy_input_scene["hivemind_initial_command_delay_seconds"] = 0
+        for squad in policy_input_scene["squads"]:
+            squad.pop("hivemind", None)
+    policy_scene, policy_run = policy_author()(policy_input_scene, policy_input_run, args)
     run["levels"][0]["scene"] = "battle.scene.json"
     policy_run["levels"][0]["scene"] = "battle.policy.scene.json"
     physical_identity = verify_same_battle(scene, run, policy_scene, policy_run)
@@ -642,6 +666,7 @@ def convert(source: Path, destination: Path, archetypes: Path,
         ),
         "policy_reinforcements_requested": policy_reinforcements,
         "physical_scene_sha256": physical_identity,
+        "source_hivemind_opponent": run.get("hivemind") is not None,
         "physical_objective": (
             "survival" if "survival" in run["levels"][0]
             else "escort" if "escort" in run["levels"][0]
