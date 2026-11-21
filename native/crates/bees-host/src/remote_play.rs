@@ -1587,6 +1587,7 @@ fn collect_remote_audio(
             }
         }
         let mut launched = None;
+        let mut source_sound_type = None;
         let mut retired_launch = false;
         let mut impact = None;
         let (effect, point) = match event {
@@ -1640,6 +1641,7 @@ fn collect_remote_audio(
                     Some((kind, point))
                 }) else { continue };
                 retired_launch = source.is_none();
+                source_sound_type = view.combat.weapon_sound_type(*ship_id, *slot);
                 launched = Some((*projectile_id, kind));
                 ("projectile", Some(point))
             },
@@ -1706,6 +1708,11 @@ fn collect_remote_audio(
             if let Some((id, kind)) = launched {
                 cue["projectile_id"] = json!(id);
                 cue["projectile_type"] = json!(kind);
+                if let Some(sound) = source_sound_type {
+                    // Presentation metadata from the same physical weapon
+                    // installation, never an independent client guess.
+                    cue["weapon_sound_type"] = json!(sound);
+                }
             }
             if let Some((projectile_id, target_id, fatal)) = impact {
                 cue["combat_impact"] = json!({
