@@ -221,17 +221,21 @@ def download_input_archive(base_url, collector_id, destination, token=None):
     digest = None
     hasher = hashlib.sha256()
     received = 0
+    resumed_prefix_bytes = 0
+    attempts = 0
     try:
         with tempfile.NamedTemporaryFile(mode="w+b", dir=parent,
                 prefix=".native-input-download-", suffix=".partial",
                 delete=False) as output:
             temporary = Path(output.name)
             for attempt in range(MAX_DOWNLOAD_ATTEMPTS):
+                attempts = attempt + 1
                 connection = None
                 try:
                     connection = connection_class(parts.hostname, parts.port, timeout=60)
                     headers = {"Authorization": "Bearer " + auth}
                     if received:
+                        resumed_prefix_bytes = max(resumed_prefix_bytes, received)
                         headers["Range"] = f"bytes={received}-"
                     connection.request("GET", endpoint, headers=headers)
                     response = connection.getresponse()
@@ -283,6 +287,8 @@ def download_input_archive(base_url, collector_id, destination, token=None):
         "collector_id": collector_id, "archive": str(target),
         "archive_bytes": size, "archive_sha256": digest,
         "wall_seconds": time.perf_counter() - started,
+        "download_attempts": attempts,
+        "resumed_prefix_bytes": resumed_prefix_bytes,
     }
 
 
