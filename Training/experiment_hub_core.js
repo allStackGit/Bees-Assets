@@ -2818,6 +2818,8 @@ class ExperimentHub {
             const block=gpuProbeBlock(job,lease,machine);
             if(block)throw Error(block);
         }
+        if(origin==='native_round_release'&&!this.nativeRoundReleaseAuthorized(snapshot,job))
+            throw Error('Release GPU probe requires the current authorized native round.');
         const session=this.automation;
         if(origin==='automation'&&(!session.probe_exclusive_gpu||
             !session.claimed_lease_ids.includes(lease.id)||
@@ -2838,6 +2840,7 @@ class ExperimentHub {
             ...(job.gpu_qualification?.lease_id===lease.id&&job.gpu_qualification.cleanup_required
                 ?{cleanup_required:true}:{}),
             ...(origin==='automation'?{automation_session_id:session.session_id}:{}),
+            ...(origin==='native_round_release'?{native_round_release:true}:{}),
         };
         this.commit(next);
         return {job_id:job.id,lease_id:lease.id,
@@ -2856,6 +2859,8 @@ class ExperimentHub {
             proof.status!=='requested'||proof.first_offered_at!==null)
             throw Error('Only a matching GPU probe that has never been offered can be withdrawn.');
         proof.status='cancelled';
+        if(proof.native_round_release&&job.native_release_recovery)
+            delete job.native_release_recovery.round_plan_id;
         proof.diagnostic='Operator withdrew this undelivered GPU access probe.';
         this.commit(next);
         return {job_id:job.id,request_id:proof.request_id,status:proof.status};
@@ -2925,6 +2930,19 @@ class ExperimentHub {
         return changed;
     }
 
+    nativeRoundReleaseAuthorized(snapshot,job) {
+        const plan=(this.state.native_round_plans||[]).find(item=>
+            item.status==='awaiting_optimizer'&&
+            item.optimizer_job_ids?.[0]===job?.id&&
+            item.optimizer_bundle_id===job?.resource_bundle?.id);
+        return Boolean(plan&&job?.native_release_recovery?.round_plan_id===plan.id&&
+            Object.entries(plan.agent_instances).every(([id,instance])=>
+                this.agentReports.get(id)?.instance_id===instance&&
+                snapshot.machines.find(machine=>machine.id===id)?.status==='connected')&&
+            this.state.bundle_start_plans?.some(launch=>
+                launch.bundle_id===plan.optimizer_bundle_id&&launch.status==='authorized'));
+    }
+
     authorizeStart(value,origin='operator') {
         if(!['operator','automation','distributed','native_round_release'].includes(origin))
             throw Error('Unknown native Start authorization source.');
@@ -2945,16 +2963,7 @@ class ExperimentHub {
         if(job?.frozen_parameters?.optimizer_group===true&&!job.native_release_recovery)
             throw Error('Synchronized native optimizer nodes must start together through their exact approved resource bundle.');
         if(origin==='native_round_release') {
-            const plan=(this.state.native_round_plans||[]).find(item=>
-                item.status==='awaiting_optimizer'&&
-                item.optimizer_job_ids?.[0]===job?.id&&
-                item.optimizer_bundle_id===job?.resource_bundle?.id);
-            if(!plan||job?.native_release_recovery?.round_plan_id!==plan.id||
-                Object.entries(plan.agent_instances).some(([id,instance])=>
-                    this.agentReports.get(id)?.instance_id!==instance||
-                    snapshot.machines.find(machine=>machine.id===id)?.status!=='connected')||
-                !this.state.bundle_start_plans?.some(launch=>
-                    launch.bundle_id===plan.optimizer_bundle_id&&launch.status==='authorized'))
+            if(!this.nativeRoundReleaseAuthorized(snapshot,job))
                 throw Error('Release-only Start requires the current authorized native round and original agent sessions.');
         }else if(job?.native_release_recovery&&origin!=='operator')
             throw Error('A release-only recovery requires its authorized round or explicit owner Start.');
@@ -2977,6 +2986,11 @@ class ExperimentHub {
         selected.status='start_requested';
         if(origin==='automation')
             selected.automation_start_session_id=this.automation.session_id;
+        if(selected.native_release_recovery) {
+            // A manually authorized Start is independent of the original
+            // plan. Unattended Start must remain authorized until offered.
+            selected.native_release_recovery.start_origin=origin;
+        }
         selected.dispatch_id=crypto.randomUUID();
         selected.start_requested_at=now();
         selected.start_first_offered_at=null;
@@ -3791,6 +3805,10 @@ class ExperimentHub {
                 parent.distributed_rollout_managed===true);
         if(!groupOwnedCollector&&!job.native_release_recovery)delete job.release_on_terminal;
         delete job.automation_start_session_id;
+        if(job.native_release_recovery) {
+            delete job.native_release_recovery.round_plan_id;
+            delete job.native_release_recovery.start_origin;
+        }
         job.status_reason='Undelivered Start withdrawn. The queued job retains its existing claim.';
         this.commit(next);
         return {id:job.id,status:job.status,lease_id:job.lease_id};
@@ -4412,7 +4430,9 @@ class ExperimentHub {
                      this.automation.session_id===job.automation_start_session_id&&
                      this.automation.agent_instances[machineId]===
                         this.agentReports.get(machineId)?.instance_id);
-                if(!adapterInstalled||!automationValid||!lease.receipt_fresh||
+                const releaseValid=job.native_release_recovery?.start_origin!=='native_round_release'||
+                    this.nativeRoundReleaseAuthorized(snapshot,job);
+                if(!adapterInstalled||!automationValid||!releaseValid||!lease.receipt_fresh||
                     machine.native_preflight_passed!==true||
                     !supportsEvaluation(machine.evaluation_suites,job)||
                     !supportsTinyBrainsProfile(machine,job)||
@@ -4433,11 +4453,13 @@ class ExperimentHub {
                     !gpuProbeWorkerReady(job,lease,machine))
                     continue;
                 const blocked=gpuProbeBlock(job,lease,machine);
-                if(blocked&&proof.first_offered_at===null&&!proof.cleanup_only)continue;
+                const releaseProbeBlocked=proof.native_round_release===true&&
+                    !this.nativeRoundReleaseAuthorized(snapshot,job);
+                if((blocked||releaseProbeBlocked)&&proof.first_offered_at===null&&!proof.cleanup_only)continue;
                 // An offered probe can still owe a result when its lease
                 // loses eligibility. The worker rejects an order without
                 // a fresh receipt and reports whether cleanup is verified.
-                probeRecoveryOnly=Boolean(blocked||proof.cleanup_only);
+                probeRecoveryOnly=Boolean(blocked||releaseProbeBlocked||proof.cleanup_only);
             }
             if(action==='start'&&job.start_first_offered_at==null) {
                 // Persist the point of no return before the order can leave
@@ -5545,7 +5567,7 @@ class ExperimentHub {
                 return 'Release recovery GPU qualification requires operator review.';
             const block=gpuProbeBlock(owner,lease,host);
             if(block)return 'Release recovery: '+block;
-            this.requestGpuQualification({job_id:owner.id,confirm_qualify:true});
+            this.requestGpuQualification({job_id:owner.id,confirm_qualify:true},'native_round_release');
             return null;
         }
         const readiness=nativeStartReadiness(snapshot,owner);
