@@ -30,7 +30,8 @@ pub use remote_window::connect_remote;
 #[cfg(feature = "client")]
 pub use battle_menu::{
     BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
-    NativeTransferMenuRow, NativeCreateSquadMenuRow, NativeTacticsMenuRow,
+    NativeTransferMenuRow, NativeCreateSquadMenuRow, NativeDeleteSquadMenuRow,
+    NativeTacticsMenuRow,
     select_battle, select_library,
 };
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
