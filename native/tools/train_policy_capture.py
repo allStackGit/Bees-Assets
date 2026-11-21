@@ -1496,8 +1496,8 @@ def main():
             item for item in primary_manifest.get("models", [])
             if item.get("slot") == args.refresh_opponent_slot
         ]
-        if len(candidates) != 1 or candidates[0].get("backend") != "mlagents":
-            parser.error("refreshed opponent must be an existing MA-POCA model slot")
+        if len(candidates) != 1 or candidates[0].get("backend") not in ("mlagents", "onnx"):
+            parser.error("refreshed opponent must be an existing native opponent slot")
     with args.checkpoint.open("rb") as source:
         input_sha = stream_sha256(source)
         source.seek(0)
@@ -1820,7 +1820,16 @@ def main():
     frozen_snapshot_copies = 0
     frozen_snapshot_copy_bytes = 0
     frozen_snapshot_started = time.perf_counter()
+    # After a historical interval, restore the actual learner actor
+    # contract instead of putting a Torch checkpoint in an ONNX slot.
+    refresh_policy = next((
+        dict(entry) for entry in manifest["models"] if entry["slot"] in learner_slots
+    ), None)
     for entry in manifest["models"]:
+        if entry["slot"] == args.refresh_opponent_slot and entry["backend"] != "mlagents":
+            slot = entry["slot"]
+            entry.clear()
+            entry.update(refresh_policy, slot=slot)
         if (entry["slot"] in learner_slots or
                 entry["slot"] == args.refresh_opponent_slot):
             entry["path"] = next_checkpoint.name

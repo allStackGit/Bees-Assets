@@ -7,17 +7,19 @@ loop, process supervisor or scheduler is introduced here.
 """
 import hashlib
 import json
+import random
 from pathlib import Path
 
 from native_continual_release import (
     competency_contract, document, immutable_json, load_config, native_model,
     physical_suite, publish_champion, register, release, ContinualLearningStore,
 )
-from native_training_artifacts import atomic_json, file_sha256
+from native_training_artifacts import atomic_json, file_sha256, check_learner
+from bees_continual_historical import _historical_training_weights, _validate_ratio, HistoricalOpponentScheduler
 from train_policy_session import session_lock
 
 
-def load_plan(path, initial_checkpoint):
+def load_plan(path, initial_checkpoint, self_play):
     path = path.resolve(strict=True)
     source = document(path)
     required = {
@@ -58,7 +60,11 @@ def load_plan(path, initial_checkpoint):
         raise ValueError("native continual plan does not match permanent competency suite")
     if not store.current_compatible_champion_id():
         raise ValueError("native continual training requires an explicit trusted bootstrap")
+    ratio = _validate_ratio(store.config["historical_league"]["training_ratio"])
+    if ratio > 0 and self_play is None:
+        raise ValueError("native continual historical league requires the existing self-play opponent refresh schedule")
     return {
+        "historical_training_ratio": ratio,
         **source, "plan_sha256": file_sha256(path), "plan_path": str(path),
         "initial_parent_model_id": parent["model_id"],
         "initial_parent_training_step": parent["training_step"],
@@ -85,6 +91,92 @@ def check_plan(plan, store):
         raise ValueError("native continual competency contract changed")
 
 
+def select_round_manifest(root, plan, self_play, round_number, previous_manifest,
+                          checkpoint, learner_slot, *, create):
+    """Freeze one historical opponent at the existing self-play swap boundary.
+
+    The original GhostTrainer samples a whole non-learning team queue at
+    a swap, not an independent opponent for each action. Here the native
+    swap interval is the existing completed-round refresh schedule. All
+    local and remote collectors of the interval use the same selected
+    frozen model; the original next refresh restores normal self-play.
+    """
+    if (not plan or not plan["historical_training_ratio"] or not self_play or
+            (round_number - 1) % self_play["every"] != 0):
+        return previous_manifest
+    sidecar = root / f"historical-round-{round_number:05d}.json"
+    effective = root / f"historical-round-{round_number:05d}.manifest.json"
+    previous_manifest = Path(previous_manifest).resolve(strict=True)
+    checkpoint = Path(checkpoint).resolve(strict=True)
+    lineage = {
+        "schema_version": 1, "kind": "native_historical_opponent_selection",
+        "round": round_number, "input_manifest_sha256": file_sha256(previous_manifest),
+        "input_checkpoint_sha256": file_sha256(checkpoint),
+        "opponent_slot": self_play["opponent_slot"],
+    }
+    if sidecar.exists():
+        receipt = document(sidecar)
+        if any(receipt.get(key) != value for key, value in lineage.items()):
+            raise ValueError("historical opponent selection belongs to another native round")
+        selected = effective if receipt["opponent_model_id"] is not None else previous_manifest
+        if file_sha256(selected) != receipt["effective_manifest_sha256"]:
+            raise ValueError("historical opponent selection manifest changed")
+        check_learner(selected, checkpoint, learner_slot)
+        return selected
+    if not create:
+        raise ValueError("completed native historical swap lacks its pinned selection")
+    store = ContinualLearningStore(Path(plan["registry"]), load_config(Path(plan["config"])))
+    lock = store.root / "native-release"
+    lock.mkdir(exist_ok=True)
+    selected_id = None
+    selected_row = None
+    chosen = previous_manifest
+    with session_lock(lock):
+        if file_sha256(Path(plan["config"])) != plan["config_sha256"]:
+            raise ValueError("historical league configuration changed during training")
+        champion_id = store.current_compatible_champion_id()
+        if not champion_id:
+            raise ValueError("historical league has no compatible champion")
+        # Existing draw-aware pressure calculation includes evaluated
+        # regressions of rejected candidates, not only prior champions.
+        weighted = _historical_training_weights(store, champion_id)
+        rng = random.Random(f"{plan['evaluation_seed']}:native-swap:{round_number}")
+        if weighted and rng.random() < plan["historical_training_ratio"]:
+            selected_row = HistoricalOpponentScheduler._choose_weighted(weighted, rng)
+            selected_id = selected_row["model_id"]
+            _, frozen_manifest, frozen_checkpoint = native_model(store, selected_id)
+            policy = document(frozen_manifest)["models"][0]
+            previous = document(previous_manifest)
+            models = []
+            for row in previous["models"]:
+                if row["slot"] == self_play["opponent_slot"]:
+                    # Change only the opponent route; the learner and
+                    # any other permitted slots retain their exact bytes.
+                    models.append({**policy, "slot": row["slot"],
+                                   "path": str(frozen_checkpoint)})
+                else:
+                    models.append({**row, "path": str(
+                        (previous_manifest.parent / row["path"]).resolve(strict=True))})
+            if len([row for row in models if row["slot"] == self_play["opponent_slot"]]) != 1:
+                raise ValueError("historical self-play route is missing")
+            previous["models"] = models
+            # A crash before the small sidecar is committed leaves only
+            # an unissued manifest: it can be replaced before collection.
+            atomic_json(effective, previous)
+            chosen = effective
+        check_learner(chosen, checkpoint, learner_slot)
+        receipt = {
+            **lineage, "champion_model_id": champion_id,
+            "opponent_model_id": selected_id,
+            "selected_weight": selected_row["weight"] if selected_row else None,
+            "selected_regression": selected_row["regression"] if selected_row else None,
+            "effective_manifest_sha256": file_sha256(chosen),
+        }
+        immutable_json(sidecar, receipt)
+        print(json.dumps(receipt, sort_keys=True), flush=True)
+    return chosen
+
+
 def complete_generations(root, recipe, completed, *, final=False):
     """Release every due boundary exactly once before the next optimizer round.
 
@@ -107,7 +199,7 @@ def complete_generations(root, recipe, completed, *, final=False):
     run_id = "native-session-" + hashlib.sha256(
         str(root.resolve()).encode("utf-8")).hexdigest()[:24]
     with session_lock(lock):
-        check_plan(plan, store)
+        checked_plan = False
         for index, (directory, row) in enumerate(completed, 1):
             step += row["learner_metrics"]["optimizer_input_steps"]
             receipt_path = directory / "continual-release.json"
@@ -120,10 +212,13 @@ def complete_generations(root, recipe, completed, *, final=False):
                 if (result["round"] != index or result["checkpoint_sha256"] != checkpoint_sha or
                         result["parent_model_id"] != parent or result["training_step"] != step):
                     raise ValueError("completed native release disagrees with checkpoint lineage")
-                registered, _, _ = native_model(store, result["model_id"])
+                registered = store.get_model(result["model_id"])
                 if registered["artifact_sha256"] != checkpoint_sha:
                     raise ValueError("released checkpoint differs from the registry")
             else:
+                if not checked_plan:
+                    check_plan(plan, store)
+                    checked_plan = True
                 # Immutable optimizer receipts are checked by the caller
                 # before entering this function, including on resume.
                 registered = register(

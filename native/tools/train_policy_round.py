@@ -1368,10 +1368,11 @@ def main() -> None:
             parser.error("opponent refresh requires distinct explicit learner and uint32 opponent slots")
         prior_models = json.loads(manifest.read_text(encoding="utf-8"))["models"]
         if not any(
-            entry.get("slot") == args.refresh_opponent_slot and entry.get("backend") == "mlagents"
+            entry.get("slot") == args.refresh_opponent_slot and
+            entry.get("backend") in ("mlagents", "onnx")
             for entry in prior_models
         ):
-            parser.error("opponent refresh requires an existing native MA-POCA opponent slot")
+            parser.error("opponent refresh requires an existing native opponent slot")
     input_manifest_sha = file_sha256(manifest)
     output = args.output_dir.resolve()
     result = {

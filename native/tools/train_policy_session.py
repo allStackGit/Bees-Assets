@@ -633,7 +633,7 @@ def verify_round(directory, manifest_sha, checkpoint_sha, learner_slot,
 
 
 def existing_rounds(root, initial_manifest, initial_checkpoint, learner_slot,
-                    self_play=None, curriculum=None, base_run=None):
+                    self_play=None, curriculum=None, base_run=None, continual=None):
     attempts = defaultdict(list)
     for path in root.iterdir():
         match = ATTEMPT.fullmatch(path.name)
@@ -680,6 +680,11 @@ def existing_rounds(root, initial_manifest, initial_checkpoint, learner_slot,
             if curriculum is not None else
             base_run["sha256"] if base_run is not None else None
         )
+        if continual is not None:
+            from native_continual_session import select_round_manifest
+            manifest = select_round_manifest(root, continual, self_play, number,
+                                             manifest, checkpoint, learner_slot, create=False)
+            manifest_sha = file_sha256(manifest)
         record, manifest, checkpoint = verify_round(
             valid[0], manifest_sha, checkpoint_sha, learner_slot,
             scheduled_opponent_slot(self_play, number), expected_source,
@@ -2041,7 +2046,7 @@ def main():
             parser.error("continual release requires an explicit learner slot")
         from native_continual_session import load_plan
         recipe["continual_release"] = load_plan(
-            args.continual_release_plan, Path(checkpoint["path"]),
+            args.continual_release_plan, Path(checkpoint["path"]), self_play,
         )
     root = args.output_dir.resolve()
     if args.resume:
@@ -2130,6 +2135,7 @@ def main():
         completed, next_manifest, next_checkpoint, next_attempt = existing_rounds(
             root, Path(manifest["path"]), Path(checkpoint["path"]), args.learner_slot,
             recipe.get("self_play"), recipe.get("curriculum"), run,
+            recipe.get("continual_release"),
         )
         if any(
             (record["learner_metrics"].get("optimizer_gpu_workers") == 2) !=
@@ -2244,6 +2250,12 @@ def main():
                               "directory": str(directory), "seed_offset": seed_offset,
                               "curriculum_stage_start_round": stage_start,
                               "source_run_config_sha256": stage_run["sha256"]}), flush=True)
+            if "continual_release" in recipe:
+                from native_continual_session import select_round_manifest
+                next_manifest = select_round_manifest(
+                    root, recipe["continual_release"], self_play, index,
+                    next_manifest, next_checkpoint, args.learner_slot, create=True,
+                )
             command = [
                 round_python, str(Path(__file__).with_name("train_policy_round.py")),
                 str(template if distributed else stage_run["path"]),
