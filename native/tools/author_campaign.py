@@ -405,6 +405,19 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     mission_grants = dict(args.mission_grant_on)
     mission_banks = dict(args.mission_bank_on)
     mission_stories = dict(args.mission_story)
+    # These source endings advance their campaigns after a completed
+    # battle, including defeat. Share that authored guarantee with route
+    # validation, grant eligibility and downstream prerequisite analysis;
+    # writing only the output JSON flag would incorrectly reject valid
+    # defeat-skip paths later in the same campaign catalog.
+    for index, story in mission_stories.items():
+        if story in ("pluto_bluer_pastures", "neptune_of_production",
+                     "uranus_on_the_defensive", "uranus_new_threat"):
+            if mission_advances.get(index, "finished") != "finished":
+                raise ValueError(
+                    f"mission {index} story always advances on finished, not victory"
+                )
+            mission_advances[index] = "finished"
     mission_outcomes = {}
     for index, prior, result in args.mission_unlock_any:
         mission_outcomes.setdefault(index, []).append((prior, result))
