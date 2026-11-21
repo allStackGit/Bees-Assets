@@ -280,9 +280,18 @@ impl CombatWorld {
             // hull for every observer (quadratic in large sparse battles).
             // The grid includes out-of-bounds and oversized hulls, so no
             // valid edge-of-collider sighting is discarded.
-            self.physics.circle_ship_contact_candidates(
-                origin, range, &mut self.vision_ship_candidates,
-            );
+            let eligible_enemies = self.total_living_ships()
+                .saturating_sub(self.living_ships_on_side(side)) as u64;
+            if eligible_enemies == 0 {
+                // No hostile living collider can contribute a sighting.
+                // Skip the broadphase entirely while preserving obstacle
+                // discovery emission and the per-observer counters below.
+                self.vision_ship_candidates.clear();
+            } else {
+                self.physics.circle_ship_contact_candidates(
+                    origin, range, &mut self.vision_ship_candidates,
+                );
+            }
             // Unity first-sighting credit follows Level.State.Ships order.
             // Grid cells are not ordered that way. For dense queries avoid
             // a costly sort: visiting the complete roster is cheaper.
@@ -299,8 +308,6 @@ impl CombatWorld {
             } else {
                 self.vision_ship_candidates.sort_unstable();
             }
-            let eligible_enemies = self.total_living_ships()
-                .saturating_sub(self.living_ships_on_side(side)) as u64;
             let mut checked_enemies = 0u64;
             for &target in &self.vision_ship_candidates {
                 let other = &self.ships[target];
