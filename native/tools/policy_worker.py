@@ -698,7 +698,7 @@ def main() -> None:
     output_buffers = InferenceOutputBuffers()
     gpu_pci_address = None
 
-    def report_model_residency():
+    def report_model_residency(*, final=False):
         nonlocal gpu_pci_address
         if measurements["gpu_forward_calls"] and gpu_pci_address is None:
             # HIP is already initialized by a successfully completed GPU
@@ -710,6 +710,7 @@ def main() -> None:
         # passes and retained weights without timing the Python hot loop.
         print(json.dumps({
             "kind": "native_policy_inference_efficiency",
+            "final": final,
             **measurements,
             **({"gpu_pci_address": gpu_pci_address} if gpu_pci_address else {}),
             "model_forwards_saved":
@@ -875,7 +876,7 @@ def main() -> None:
         # Release NumPy/memoryview references before expanding the next
         # batch's storage; smaller/equal batches reuse the same allocation.
         del observation, payload, meta, slots, fire, special, allowed
-    report_model_residency()
+    report_model_residency(final=True)
 
 
 if __name__ == "__main__":

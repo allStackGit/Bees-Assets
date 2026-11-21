@@ -7612,7 +7612,14 @@ fn run_battle(
     let policy_generation = host.model_mut().model_generation();
     let policy_manifest_sha256 = host.model_mut().model_manifest_sha256();
     let captured_checkpoints = recorded_physical_checkpoints;
-    drop(host.model_mut().resident.take());
+    let resident_policy_exit_clean = host.model_mut().resident.take().map(|resident| {
+        if failed_window.is_none() && cleanup_errors.is_empty() {
+            resident.finish(std::time::Duration::from_secs(2))
+        } else {
+            drop(resident);
+            false
+        }
+    });
     let run_end = Instant::now();
     let wall_seconds = prior_wall_seconds + run_end.duration_since(run_start).as_secs_f64();
     let execution_wall_seconds = prior_execution_seconds +
@@ -7772,6 +7779,7 @@ fn run_battle(
     let remote_authorized_sides = remote.as_ref().map(|server| server.authorized_sides());
     let mut final_summary = json!({
         "kind": "run_final",
+        "resident_policy_exit_clean": resident_policy_exit_clean,
         "remote_session_id": remote_session_id,
         "remote_authorized_sides": remote_authorized_sides,
         "remote_terminal_receipt": remote_terminal_receipt,

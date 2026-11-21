@@ -827,6 +827,12 @@ def aggregate_collection_metrics(bundles):
                                   for proof in accelerator_rows),
             "agent_rows": sum(proof["agent_rows"]
                               for proof in accelerator_rows),
+            **({"workers_with_final_counters": sum(
+                proof["workers_with_final_counters"] for proof in accelerator_rows
+            )} if all("workers_with_final_counters" in proof for proof in accelerator_rows) else {}),
+            **({"resumed_collection": any(
+                proof["resumed_collection"] for proof in accelerator_rows
+            )} if all(type(proof.get("resumed_collection")) is bool for proof in accelerator_rows) else {}),
         }
     # Do not silently convert a historical unmeasured collector into
     # zero observed parallel work. Metrics describe the entire distributed

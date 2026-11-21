@@ -644,7 +644,8 @@ def verified_gpu_forwards(log_path):
     evidence = None
     with log_path.open("r", encoding="utf-8", errors="replace") as stream:
         for line in stream:
-            if '"native_policy_inference_efficiency"' not in line:
+            if ('"native_policy_inference_efficiency"' not in line and
+                    '"native_rollout_worker_restart"' not in line):
                 continue
             try:
                 row = json.loads(line)
@@ -672,6 +673,7 @@ def verified_gpu_forwards(log_path):
                 evidence = {
                     "model_forwards": calls,
                     "agent_rows": processed,
+                    "final_counters": row.get("final") is True,
                     **({"gpu_pci_address": pci} if pci else {}),
                 }
     if evidence is None:
@@ -802,6 +804,12 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     work["successful_policy_rows"] += metrics[index]["successful_policy_rows"]
                 result["gpu_inference"] = {
                     "verified_workers": len(gpu_proofs),
+                    "workers_with_final_counters": sum(
+                        int(p["final_counters"]) for p in gpu_proofs.values()),
+                    # A restored host may have performed earlier model work
+                    # in a terminated process. These counters cover only
+                    # the final invocation of each worker, not prior work.
+                    "resumed_collection": resume,
                     "model_forwards": sum(p["model_forwards"] for p in gpu_proofs.values()),
                     "agent_rows": sum(p["agent_rows"] for p in gpu_proofs.values()),
                     **({"gpu_pci_addresses": sorted(addresses)} if addresses else {}),

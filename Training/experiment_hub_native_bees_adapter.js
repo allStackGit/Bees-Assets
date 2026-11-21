@@ -502,6 +502,22 @@ function rolloutGpuMeasurements(rollout) {
         rollout_gpu_model_forwards: {value: proof.model_forwards, unit: 'count'},
         rollout_gpu_agent_rows: {value: proof.agent_rows, unit: 'count'},
     };
+    if (proof.workers_with_final_counters !== undefined) {
+        if (!Number.isSafeInteger(proof.workers_with_final_counters) ||
+            proof.workers_with_final_counters < 0 ||
+            proof.workers_with_final_counters > proof.verified_workers)
+            throw Error('Invalid native GPU inference final counter coverage.');
+        metrics.rollout_gpu_workers_with_final_counters = {
+            value:proof.workers_with_final_counters,unit:'count',
+        };
+    }
+    if (proof.resumed_collection !== undefined) {
+        if (typeof proof.resumed_collection !== 'boolean')
+            throw Error('Invalid native GPU inference collection scope.');
+        metrics.rollout_gpu_resumed_collection = {
+            value:Number(proof.resumed_collection),unit:'count',
+        };
+    }
     if (proof.per_device !== undefined) {
         if (!Array.isArray(proof.per_device) ||
             ![1, 2].includes(proof.per_device.length) ||

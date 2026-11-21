@@ -16,6 +16,7 @@ use std::ffi::OsStr;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::path::Path;
+use std::time::{Duration, Instant};
 use sha2::{Digest, Sha256};
 
 use bees_gameplay::inference::{BEHAVIOR_STATS_PER_ROW, NativePolicyInference, NativePolicyRoute};
@@ -69,7 +70,7 @@ impl From<io::Error> for PolicyProcessError {
 /// its whole lifetime; no spawning or loading weights in a simulation tick.
 pub struct ResidentPolicyProcess {
     child: Child,
-    input: BufWriter<ChildStdin>,
+    input: Option<BufWriter<ChildStdin>>,
     output: BufReader<ChildStdout>,
     sequence: u64,
     /// Monotonic process-local model generation. Capture with the run ID
@@ -99,7 +100,7 @@ impl ResidentPolicyProcess {
             .ok_or(PolicyProcessError::MissingPipe("stdout"))?;
         let mut backend = Self {
             child,
-            input: BufWriter::new(input),
+            input: Some(BufWriter::new(input)),
             output: BufReader::new(output),
             sequence: 0,
             model_generation: 0,
@@ -190,14 +191,15 @@ impl ResidentPolicyProcess {
         let seq = self.sequence.checked_add(1)
             .ok_or(PolicyProcessError::RequestSequenceExhausted)?;
         self.sequence = seq;
-        self.input.write_all(if self.collect_behavior {
+        let input = self.input.as_mut().ok_or(PolicyProcessError::Unavailable)?;
+        input.write_all(if self.collect_behavior {
             REQUEST_MAGIC
         } else {
             PLAY_REQUEST_MAGIC
         })?;
-        self.input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
-        self.input.write_all(&seq.to_le_bytes())?;
-        self.input.write_all(&rows32.to_le_bytes())?;
+        input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
+        input.write_all(&seq.to_le_bytes())?;
+        input.write_all(&rows32.to_le_bytes())?;
         // One contiguous 16-byte route/mask header per agent. No per-row
         // write calls or heap allocation after the maximum batch grows.
         let header_bytes = rows.checked_mul(PER_ROW_HEADER_BYTES)
@@ -220,9 +222,9 @@ impl ResidentPolicyProcess {
             }
             header[15] = 0;
         }
-        self.input.write_all(&self.row_headers)?;
-        write_floats(&mut self.input, observations)?;
-        self.input.flush()?;
+        input.write_all(&self.row_headers)?;
+        write_floats(input, observations)?;
+        input.flush()?;
 
         let mut response = [0_u8; 20];
         self.output.read_exact(&mut response)?;
@@ -282,13 +284,14 @@ impl ResidentPolicyProcess {
         let next_generation = self.model_generation.checked_add(1)
             .ok_or(PolicyProcessError::RequestSequenceExhausted)?;
         let exchanged = (|| -> Result<bool, PolicyProcessError> {
-            self.input.write_all(CONTROL_RELOAD_MAGIC)?;
-            self.input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
-            self.input.write_all(&seq.to_le_bytes())?;
-            self.input.write_all(&((bytes.len() + MANIFEST_DIGEST_BYTES) as u32).to_le_bytes())?;
-            self.input.write_all(&expected_digest)?;
-            self.input.write_all(bytes)?;
-            self.input.flush()?;
+            let input = self.input.as_mut().ok_or(PolicyProcessError::Unavailable)?;
+            input.write_all(CONTROL_RELOAD_MAGIC)?;
+            input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
+            input.write_all(&seq.to_le_bytes())?;
+            input.write_all(&((bytes.len() + MANIFEST_DIGEST_BYTES) as u32).to_le_bytes())?;
+            input.write_all(&expected_digest)?;
+            input.write_all(bytes)?;
+            input.flush()?;
             let mut response = [0_u8; 20];
             self.output.read_exact(&mut response)?;
             if u32::from_le_bytes(response[4..8].try_into().unwrap()) !=
@@ -337,11 +340,12 @@ impl ResidentPolicyProcess {
         let seq = self.sequence.checked_add(1)
             .ok_or(PolicyProcessError::RequestSequenceExhausted)?;
         let result = (|| -> Result<Vec<u8>, PolicyProcessError> {
-            self.input.write_all(SAMPLER_SNAPSHOT_REQUEST)?;
-            self.input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
-            self.input.write_all(&seq.to_le_bytes())?;
-            self.input.write_all(&0_u32.to_le_bytes())?;
-            self.input.flush()?;
+            let input = self.input.as_mut().ok_or(PolicyProcessError::Unavailable)?;
+            input.write_all(SAMPLER_SNAPSHOT_REQUEST)?;
+            input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
+            input.write_all(&seq.to_le_bytes())?;
+            input.write_all(&0_u32.to_le_bytes())?;
+            input.flush()?;
             let mut response = [0_u8; 20];
             self.output.read_exact(&mut response)?;
             let length = u32::from_le_bytes(response[16..20].try_into().unwrap()) as usize;
@@ -378,12 +382,13 @@ impl ResidentPolicyProcess {
         let seq = self.sequence.checked_add(1)
             .ok_or(PolicyProcessError::RequestSequenceExhausted)?;
         let result = (|| -> Result<(), PolicyProcessError> {
-            self.input.write_all(SAMPLER_RESTORE_REQUEST)?;
-            self.input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
-            self.input.write_all(&seq.to_le_bytes())?;
-            self.input.write_all(&(snapshot.len() as u32).to_le_bytes())?;
-            self.input.write_all(snapshot)?;
-            self.input.flush()?;
+            let input = self.input.as_mut().ok_or(PolicyProcessError::Unavailable)?;
+            input.write_all(SAMPLER_RESTORE_REQUEST)?;
+            input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
+            input.write_all(&seq.to_le_bytes())?;
+            input.write_all(&(snapshot.len() as u32).to_le_bytes())?;
+            input.write_all(snapshot)?;
+            input.flush()?;
             let mut response = [0_u8; 20];
             self.output.read_exact(&mut response)?;
             if &response[..4] != SAMPLER_RESTORE_RESPONSE ||
@@ -427,6 +432,25 @@ impl ResidentPolicyProcess {
     }
 
     pub fn is_available(&self) -> bool { !self.unavailable }
+
+    /// On a completed frame boundary, EOF lets the resident Python worker
+    /// emit its final counters and exit. No additional wire request or
+    /// simulation step is necessary. Never wait indefinitely for backend
+    /// interpreter/driver teardown; Drop still kills an unresponsive child.
+    pub fn finish(mut self, timeout: Duration) -> bool {
+        if self.unavailable { return false; }
+        drop(self.input.take());
+        let started = Instant::now();
+        loop {
+            match self.child.try_wait() {
+                Ok(Some(status)) => return status.success(),
+                Ok(None) if started.elapsed() < timeout => {
+                    std::thread::sleep(Duration::from_millis(10));
+                },
+                _ => return false,
+            }
+        }
+    }
 }
 
 impl NativePolicyInference for ResidentPolicyProcess {
@@ -485,8 +509,10 @@ impl Drop for ResidentPolicyProcess {
     fn drop(&mut self) {
         // The subprocess may be blocked on a partial frame or accelerator.
         // Do not leave orphaned policy workers when the game shuts down.
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if !matches!(self.child.try_wait(), Ok(Some(_))) {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
     }
 }
 
