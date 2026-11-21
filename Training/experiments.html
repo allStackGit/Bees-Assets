@@ -764,6 +764,88 @@ label.hub-toggle-row > input[type="checkbox"] {
     vertical-align: top;
 }
 #hub-config-rows td:last-child button { margin: 0 9px 9px 0; }
+
+/* Native history is a set of readable records, not a single 1500px table row. */
+.hub-record-table, .hub-record-table > tbody { display: block; width: 100%; }
+.hub-record-table > thead { position: absolute; width: 1px; height: 1px;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.hub-record-table > tbody > tr {
+    display: grid; gap: 10px 14px; align-items: start;
+    border: 2px solid var(--ink); padding: 14px;
+    margin: 12px 0; background: var(--paper);
+}
+.hub-record-table > tbody > tr > td {
+    display: block; min-width: 0; width: 100%; border: 0;
+    padding: 0; overflow-wrap: anywhere; line-height: 1.45;
+}
+.hub-record-table > tbody > tr > td::before {
+    display: block; margin-bottom: 5px;
+    content: attr(data-label); text-transform: uppercase;
+    font: 800 11px/1.35 Arial,Helvetica,sans-serif; letter-spacing: .25px;
+}
+.hub-record-table > tbody > tr > td[colspan] { grid-column: 1 / -1; }
+.hub-record-table details { margin-top: 8px; min-width: 0; }
+.hub-record-table details > summary { cursor: pointer; font-weight: 750; }
+.hub-record-table details > p { margin: 7px 0; font-weight: 400; }
+.hub-record-table td > strong { font-size: 14px; display: block; margin: 1px 0 5px; }
+.hub-record-table .hub-secondary { display: block; font-size: 12px; line-height: 1.5; }
+#hub-job-rows > tr {
+    grid-template-columns: minmax(155px,.9fr) 70px minmax(200px,1.6fr)
+        minmax(190px,1.15fr) minmax(215px,1.35fr);
+}
+#hub-job-rows > tr > td:nth-child(6) {
+    grid-column: 1 / -1; padding-top: 10px; border-top: 1px solid var(--ink);
+}
+.hub-job-action-primary, .hub-job-action-other {
+    display: flex; flex-wrap: wrap; gap: 7px; margin: 6px 0;
+}
+#hub-job-rows td:last-child button, #hub-machine-rows td:last-child button {
+    height: auto; min-height: 34px; margin: 0; padding: 6px 9px;
+    white-space: normal; text-align: left; font-size: 12px;
+}
+#hub-job-rows .hub-job-action-menu { max-width: 100%; }
+#hub-machine-rows > tr { grid-template-columns: repeat(12,minmax(0,1fr)); }
+#hub-machine-rows > tr > td:nth-child(1) { grid-column: span 3; }
+#hub-machine-rows > tr > td:nth-child(2) { grid-column: span 6; }
+#hub-machine-rows > tr > td:nth-child(3) { grid-column: span 3; }
+#hub-machine-rows > tr > td:nth-child(4) { grid-column: span 4; }
+#hub-machine-rows > tr > td:nth-child(5) { grid-column: span 8; }
+#hub-machine-rows > tr > td:nth-child(6) { grid-column: span 6; }
+#hub-machine-rows > tr > td:nth-child(7) { grid-column: span 2; }
+#hub-machine-rows > tr > td:nth-child(8) { grid-column: span 4; }
+#hub-machine-rows > tr > td:nth-child(8) .hub-machine-actions {
+    display: flex; flex-wrap: wrap; gap: 7px; margin-top: 5px;
+}
+.hub-distributed-panel {
+    display: grid; gap: 10px; min-width: 0; width: 100%;
+    margin: 18px 0; padding: 14px;
+}
+.hub-distributed-panel > label { min-width: 0; }
+.hub-distributed-panel textarea { resize: vertical; }
+.hub-distributed-panel > .hub-toggle-row { margin: 0; }
+@media (max-width: 1200px) {
+    #hub-job-rows > tr { grid-template-columns: minmax(130px,.75fr) 60px
+        minmax(220px,1.2fr) minmax(180px,1fr); }
+    #hub-job-rows > tr > td:nth-child(5) { grid-column: 1 / -1; }
+    #hub-machine-rows > tr > td:nth-child(1),
+    #hub-machine-rows > tr > td:nth-child(3) { grid-column: span 4; }
+    #hub-machine-rows > tr > td:nth-child(2) { grid-column: span 8; }
+}
+@media (max-width: 800px) {
+    #hub-job-rows > tr, #hub-machine-rows > tr { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    #hub-job-rows > tr > td, #hub-machine-rows > tr > td { grid-column: auto!important; }
+    #hub-job-rows > tr > td:nth-child(3),
+    #hub-job-rows > tr > td:nth-child(5),
+    #hub-job-rows > tr > td:nth-child(6),
+    #hub-machine-rows > tr > td:nth-child(2),
+    #hub-machine-rows > tr > td:nth-child(5),
+    #hub-machine-rows > tr > td:nth-child(6),
+    #hub-machine-rows > tr > td:nth-child(8) { grid-column: 1 / -1!important; }
+}
+@media (max-width: 500px) {
+    #hub-job-rows > tr, #hub-machine-rows > tr { grid-template-columns: 1fr; }
+    #hub-job-rows > tr > td, #hub-machine-rows > tr > td { grid-column: 1!important; }
+}
 @media (max-width: 1050px) {
     .hub-job-layout { grid-template-columns: minmax(0, 1fr); }
     .hub-job-layout .hub-metric-field { max-width: 780px; }
@@ -869,17 +951,17 @@ label.hub-toggle-row > input[type="checkbox"] {
               <option value="stop">Stop when the evaluation target is met</option>
             </select>
           </label>
-          <label id="hub-evaluation-optional-stop-label"><input id="hub-evaluation-optional-stop" type="checkbox"> Also stop training if all monitored suite success targets pass on one verified checkpoint</label>
+          <label class="hub-toggle-row" id="hub-evaluation-optional-stop-label"><input id="hub-evaluation-optional-stop" type="checkbox"> Also stop training if all monitored suite success targets pass on one verified checkpoint</label>
           <label id="hub-evaluation-frequency-label">Evaluate every N training updates / rounds
             <input id="hub-evaluation-frequency" type="number" min="1" max="1000000" step="1" value="10">
           </label>
           <label id="hub-evaluation-minutes-label">Minimum elapsed minutes between completed evaluations (optional)
             <input id="hub-evaluation-minutes" type="number" min="1" max="10080" step="1" placeholder="No clock limit">
           </label>
-          <label id="hub-evaluation-baseline-label"><input id="hub-evaluation-baseline" type="checkbox" checked> Evaluate first available checkpoint (baseline)</label>
-          <label id="hub-evaluation-final-label"><input id="hub-evaluation-final" type="checkbox" checked> Evaluate verified final checkpoint (if available)</label>
-          <label id="hub-evaluation-regression-enable-label"><input id="hub-evaluation-regression-enable" type="checkbox"> Detect sustained regression in independent success rate</label>
-          <label id="hub-evaluation-regression-stop-label"><input id="hub-evaluation-regression-stop" type="checkbox"> Stop training on confirmed independent regression (explicit opt-in; requires verified checkpoint history)</label>
+          <label class="hub-toggle-row" id="hub-evaluation-baseline-label"><input id="hub-evaluation-baseline" type="checkbox" checked> Evaluate first available checkpoint (baseline)</label>
+          <label class="hub-toggle-row" id="hub-evaluation-final-label"><input id="hub-evaluation-final" type="checkbox" checked> Evaluate verified final checkpoint (if available)</label>
+          <label class="hub-toggle-row" id="hub-evaluation-regression-enable-label"><input id="hub-evaluation-regression-enable" type="checkbox"> Detect sustained regression in independent success rate</label>
+          <label class="hub-toggle-row" id="hub-evaluation-regression-stop-label"><input id="hub-evaluation-regression-stop" type="checkbox"> Stop training on confirmed independent regression (explicit opt-in; requires verified checkpoint history)</label>
           <label id="hub-evaluation-regression-window-label">Compare first and latest N independently evaluated checkpoints per suite
             <input id="hub-evaluation-regression-window" type="number" min="2" max="20" step="1" value="3">
           </label>
@@ -1122,7 +1204,7 @@ label.hub-toggle-row > input[type="checkbox"] {
       <p id="hub-automation-status" class="hub-notice" role="status">Automation disarmed.</p>
     </div>
   </div>
-  <div class="tablewrap hub-table"><table>
+  <div class="tablewrap hub-table"><table class="hub-record-table">
     <thead><tr><th>Configuration</th><th>Revision</th><th>Status</th><th>Resources</th><th>Learning progress</th><th>Action</th></tr></thead>
     <tbody id="hub-job-rows"></tbody>
   </table></div>
@@ -1288,7 +1370,7 @@ label.hub-toggle-row > input[type="checkbox"] {
     </form>
     <p id="hub-gpu-bind-message" class="hub-notice"></p>
   </div>
-  <div class="tablewrap hub-table"><table>
+  <div class="tablewrap hub-table"><table class="hub-record-table">
     <thead><tr><th>Machine</th><th>Agent</th><th>CPU slots</th><th>RAM MiB</th><th>GPUs</th><th>Native controls</th><th>Last seen</th><th>Credentials</th></tr></thead>
     <tbody id="hub-machine-rows"></tbody>
   </table></div>

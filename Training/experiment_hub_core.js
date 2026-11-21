@@ -7394,6 +7394,105 @@ class ExperimentHub {
         this.commit(next);
         return copy(item);
     }
+    // Delete only a saved definition with no frozen or pending users.
+    // Completed experiment records embed their original inputs, but removing
+    // the definition while an old job still refers to it is surprising.
+    deleteConfiguration(value) {
+        if(!object(value)||value.confirm_delete!==true||
+            !UUID.test(String(value.configuration_id||''))||
+            !Number.isSafeInteger(value.expected_revision)||
+            Object.keys(value).some(key=>![
+                'configuration_id','expected_revision','confirm_delete'].includes(key)))
+            throw Error('Confirm the exact saved configuration revision.');
+        const next=copy(this.state);
+        const item=next.configurations.find(c=>c.id===value.configuration_id);
+        if(!item||item.revision!==value.expected_revision)
+            throw Error('Configuration changed or no longer exists; reload Design.');
+        if(next.jobs.some(j=>j.configuration_id===item.id)||
+            (next.candidate_selections||[]).some(plan=>
+                plan.configuration_id===item.id)||
+            (next.tinybrains_preparations||[]).some(plan=>
+                plan.status==='pending'&&plan.learner?.configuration_id===item.id))
+            throw Error('This configuration is still referenced by saved jobs or selection/preparation plans. Remove those records first.');
+        next.configurations=next.configurations.filter(c=>c.id!==item.id);
+        this.commit(next);
+        return {configuration_id:item.id,deleted:true};
+    }
+    // Delete released, terminal job ledger entries only. A distributed
+    // learner and all of its sidecars are removed together; an independently
+    // running collector can never be orphaned by deleting only the learner.
+    // Trainer artifacts, exported histories and evaluator archives are not
+    // filesystem-owned by the registry and are deliberately preserved.
+    deleteJob(value) {
+        if(!object(value)||value.confirm_delete!==true||
+            !UUID.test(String(value.job_id||''))||
+            !Array.isArray(value.expected_job_ids)||
+            value.expected_job_ids.length<1||value.expected_job_ids.length>17||
+            value.expected_job_ids.some(id=>!UUID.test(String(id)))||
+            new Set(value.expected_job_ids).size!==value.expected_job_ids.length||
+            Object.keys(value).some(key=>![
+                'job_id','expected_job_ids','confirm_delete'].includes(key)))
+            throw Error('Confirm the exact completed job or distributed group.');
+        if(this.automation.enabled||this.state.automation_restart)
+            throw Error('Disarm scheduling or restart recovery before deleting job history.');
+        const next=copy(this.state);
+        const root=next.jobs.find(j=>j.id===value.job_id);
+        if(!root)throw Error('Job not found; refresh Train.');
+        if(root.adapter!=='unconfigured'||root.project_id==='ants')
+            throw Error('Only native Experiment Hub job records can be deleted here.');
+        if(['tinybrains_rollout','courier_lineage'].includes(root.project_id))
+            throw Error('Delete a remote collector through its original learner group.');
+        const sidecars=next.jobs.filter(j=>
+            ['tinybrains_rollout','courier_lineage'].includes(j.project_id)&&
+            j.frozen_parameters?.learner_job_id===root.id);
+        const selected=[root,...sidecars],ids=new Set(selected.map(j=>j.id));
+        if(ids.size!==value.expected_job_ids.length||
+            value.expected_job_ids.some(id=>!ids.has(id)))
+            throw Error('Distributed group membership changed; review the refreshed job list.');
+        if(selected.some(j=>!['cancelled','finished','failed','stopped'].includes(j.status)||
+            j.pending_install_start||
+            (j.dispatch_id&&!j.capacity_released_at)||
+            j.gpu_qualification?.cleanup_required===true||
+            j.checkpoint_reinspection_requested_at))
+            throw Error('Only fully terminal jobs with verified released capacity and resolved native ownership can be deleted.');
+        if(next.reservations.some(lease=>ids.has(lease.job_id)&&lease.status!=='released'))
+            throw Error('Release every reserved machine/GPU claim before deleting a job.');
+        if(selected.some(j=>j.resource_bundle&&
+            next.jobs.some(other=>other.resource_bundle?.id===j.resource_bundle.id&&!ids.has(other.id))))
+            throw Error('Resource bundle members are linked; do not delete one member independently.');
+        if(next.jobs.some(j=>!ids.has(j.id)&&(
+            ids.has(j.continuation_of_job_id)||ids.has(j.after_job_id)||
+            ids.has(j.frozen_parameters?.learner_job_id)||
+            ids.has(j.candidate_selection?.winner_job_id)||
+            j.candidate_selection?.candidate_job_ids?.some(id=>ids.has(id)))))
+            throw Error('Another job depends on this checkpoint or historical group. Remove dependent jobs first.');
+        if((next.candidate_selections||[]).some(plan=>
+            plan.candidate_job_ids?.some(id=>ids.has(id))||
+            ids.has(plan.winner_job_id)))
+            throw Error('A candidate selection still references this job. Retain its provenance.');
+        const affected=(plan,related)=>related.some(id=>ids.has(id));
+        for(const [field,related] of [
+            ['bundle_start_plans',plan=>plan.member_job_ids||[]],
+            ['distributed_group_plans',plan=>[
+                plan.learner_job_id,...(plan.collector_job_ids||[])]],
+            ['distributed_launch_plans',plan=>[
+                plan.learner_job_id,...Object.keys(plan.collector_dispatches||{})]],
+        ]) {
+            for(const plan of next[field]||[]) {
+                const members=related(plan);
+                if(!affected(plan,members))continue;
+                if(['pending','needs_review','unverified'].includes(plan.status)||
+                    members.some(id=>!ids.has(id)))
+                    throw Error('A linked '+field+' plan still needs its original job records.');
+            }
+            next[field]=(next[field]||[]).filter(plan=>!affected(plan,related(plan)));
+        }
+        next.jobs=next.jobs.filter(j=>!ids.has(j.id));
+        next.reservations=next.reservations.filter(lease=>!ids.has(lease.job_id));
+        this.commit(next);
+        return {deleted_job_ids:[...ids],deleted_count:ids.size,
+            artifacts_preserved:true};
+    }
     queueConfiguration(value) {
         const next=copy(this.state);
         const job=this.queueIn(next,value);

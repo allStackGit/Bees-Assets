@@ -92,8 +92,19 @@ function renderPage(html,runtime={}) {
         throw Error('Experiment Hub HTML script boundary changed; review before serving.');
     const versionAttributes=' data-generation="'+(runtime.generation||'')+
         '" data-commit="'+(runtime.source_commit||'')+'"';
+    // Render the running version immediately. The browser poll enhances this
+    // label but must not be required to make the build identity visible.
+    const updated=runtime.updated_at&&Number.isFinite(Date.parse(runtime.updated_at))
+        ?new Date(runtime.updated_at).toISOString().replace('T',' ').slice(0,16)+' UTC'
+        :null;
+    const versionLabel='Hub '+(runtime.source_commit?.slice(0,12)||'version unknown')+
+        (updated
+            ?runtime.timestamp_kind==='activated'
+                ?' · Last updated: '+updated
+                :' · Source committed: '+updated
+            :' · Update time unavailable');
     const versionPanel='<div class="hub-version" id="hub-version-status"'+
-        versionAttributes+' role="status">Hub version: checking…</div>';
+        versionAttributes+' role="status">'+versionLabel+'</div>';
     const panel='<div class="hub-standalone" id="hub-local-service-controls">'+
         '<h3>Local service control</h3>'+
         '<p class="muted">Restart the coordinator or agent on this computer. '+

@@ -298,7 +298,10 @@ class DockerSupervisor {
             '--cpus='+invocation.cpus,
             '--memory='+invocation.ram_mb+'m',
             '--memory-swap='+invocation.ram_mb+'m',
-            '--pids-limit=512','--network='+(record.network_mode||'none'),'--restart=no',
+            // TinyBrains' persistent native engine pools and PyTorch both own threads.
+            // Give its learners a bounded task envelope above the old 512 ceiling.
+            '--pids-limit='+(record.project_id==='tinybrains'?1024:512),
+            '--network='+(record.network_mode||'none'),'--restart=no',
             '--read-only','--cap-drop=ALL','--security-opt=no-new-privileges',
             // Full ROCm training may need substantial LLVM compilation scratch.
             // tmpfs remains capped and charged to the job's memory cgroup.

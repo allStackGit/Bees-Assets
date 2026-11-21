@@ -20,40 +20,6 @@
     const remoteRows=$('hub-remote-evaluator-rows');
     const remoteMessage=$('hub-remote-evaluator-message');
     let state=null,busy=false;
-    const versionStatus=$('hub-version-status');
-    // These attributes describe the HTML generation actually loaded by the
-    // browser. The endpoint can already be serving newer JS after a restart.
-    const servedGeneration=versionStatus?.dataset.generation||null;
-    const servedCommit=versionStatus?.dataset.commit||null;
-
-    async function checkHubVersion() {
-        if(!versionStatus)return;
-        try {
-            const response=await fetch('/api/hub/software/version',{cache:'no-store'});
-            if(!response.ok)return; // Coordinator may be restarting.
-            const data=await response.json();
-            if(data.generation!==servedGeneration||
-                (data.source_commit||null)!==servedCommit) {
-                window.location.reload();
-                return;
-            }
-            let label='Hub '+(data.source_commit?.slice(0,12)||'version unknown');
-            if(data.updated_at&&Number.isFinite(Date.parse(data.updated_at))) {
-                const updated=new Date(data.updated_at).toLocaleString();
-                label+=data.timestamp_kind==='activated'
-                    ?' · Last updated: '+updated
-                    :' · Source committed: '+updated;
-            }else label+=' · Update time unavailable';
-            if(data.pending_commit)
-                label+=' · New version waiting to activate ('+
-                    data.pending_commit.slice(0,12)+')';
-            versionStatus.textContent=label;
-        }catch {
-            // A deployment temporarily interrupts the loopback server.
-            // Retain the visible version until the next successful poll.
-        }
-    }
-
     const label=(name,service)=>{
         if(!service)return name+': unknown';
         if(!service.managed)return name+': '+(service.reason||'not managed');
@@ -433,6 +399,4 @@
     coordinator.addEventListener('click',()=>restart('coordinator'));
     agent.addEventListener('click',()=>restart('agent'));
     update();
-    checkHubVersion();
-    setInterval(checkHubVersion,10000);
 })();

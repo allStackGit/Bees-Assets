@@ -1,7 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Experiment Hub beaker">
   <path d="M25 8h14v16l15 27c1.5 2.7-.5 5-3.5 5h-37c-3 0-5-2.3-3.5-5L25 24Z" fill="#fff" stroke="#000" stroke-width="4" stroke-linejoin="round"/>
   <path d="M22 8h20" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round"/>
-  <path d="M16 43c6 3 10 3 16 0s10-4 16-1l5 10c.4.8-.1 1.5-1.5 1.5h-39c-1.4 0-1.9-.7-1.5-1.5Z" fill="#000"/>
+  <defs><clipPath id="beaker-interior"><path d="M25 8h14v16l15 27c1.5 2.7-.5 5-3.5 5h-37c-3 0-5-2.3-3.5-5L25 24Z"/></clipPath></defs>
+  <path d="M10 43c7 4 14 3 22 0s11-4 16-1l16 24H0Z" fill="#000" clip-path="url(#beaker-interior)"/>
   <circle cx="29" cy="35" r="2.7"/>
   <circle cx="35" cy="29" r="2.7"/>
 </svg>

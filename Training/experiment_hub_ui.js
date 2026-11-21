@@ -1111,10 +1111,78 @@ function approvedTinyBrainsProfiles(machines) {
     return [...profiles.entries()].sort(([a],[b])=>a.localeCompare(b));
 }
 
+// Version polling is intentionally independent of the local service controls
+// and the larger Hub UI initializer. A missing service panel or a later UI
+// exception must not leave the running version stuck at "checking".
+(function observeHubVersion() {
+    const status=document.getElementById('hub-version-status');
+    if(!status)return; // The production Bees page has no standalone version.
+    const generation=status.dataset.generation||null;
+    const commit=status.dataset.commit||null;
+    const initial=status.textContent;
+    async function checkVersion() {
+        try {
+            const response=await fetch('/api/hub/software/version',{cache:'no-store'});
+            if(!response.ok)
+                throw Error('HTTP '+response.status);
+            const data=await response.json();
+            if(!data||typeof data!=='object'||
+                typeof data.generation!=='string'||!data.generation)
+                throw Error('Invalid version response');
+            if(data.generation!==generation||
+                (data.source_commit||null)!==commit) {
+                window.location.reload();
+                return;
+            }
+            const updated=data.updated_at&&Number.isFinite(Date.parse(data.updated_at))
+                ?new Date(data.updated_at).toLocaleString():null;
+            status.textContent='Hub '+(data.source_commit?.slice(0,12)||'version unknown')+
+                (updated
+                    ?data.timestamp_kind==='activated'
+                        ?' · Last updated: '+updated
+                        :' · Source committed: '+updated
+                    :' · Update time unavailable')+
+                (data.pending_commit
+                    ?' · New version waiting to activate ('+
+                        data.pending_commit.slice(0,12)+')':'');
+        }catch(error) {
+            // Preserve the server-rendered running version, and surface the
+            // failed check rather than hiding it behind a permanent spinner.
+            status.textContent=initial+' · Update check unavailable: '+
+                String(error.message||error);
+        }
+    }
+    checkVersion();
+    setInterval(checkVersion,10000);
+})();
+
 document.addEventListener('DOMContentLoaded', () => {
     const $ = id => document.getElementById(id);
-    let project = document.documentElement.dataset.hubDefaultProject || 'bees';
-    let tab = 'monitor', state = null, editing = null;
+    // One browser tab keeps its own navigation and Compare selections across
+    // coordinator restarts; saved data never changes experiment state.
+    const viewKey='experiment-hub-view-v1';
+    let savedView={};
+    try {
+        const parsed=JSON.parse(sessionStorage.getItem(viewKey)||'{}');
+        if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))savedView=parsed;
+    }catch {}
+    const tabs=['design','train','monitor','compare','machines'];
+    let project=typeof savedView.project==='string'?
+        savedView.project:document.documentElement.dataset.hubDefaultProject||'bees';
+    let tab=tabs.includes(savedView.tab)?savedView.tab:'monitor';
+    let state=null,editing=null;
+    const savedCompareRuns=new Map(
+        Object.entries(savedView.compareRuns||{}).filter(([key,ids])=>
+            /^[a-z][a-z0-9_-]{0,47}$/.test(key)&&Array.isArray(ids)&&
+            ids.length<=16&&ids.every(id=>typeof id==='string'&&
+                /^[0-9a-f-]{36}$/.test(id))));
+    function saveView() {
+        try {
+            sessionStorage.setItem(viewKey,JSON.stringify({
+                project,tab,compareRuns:Object.fromEntries(savedCompareRuns),
+            }));
+        }catch {} // Private browsing can disable session storage.
+    }
     let initialDesignLoaded=false;
     let comparisonData = null,comparisonProject = null,comparisonError = null;
     let comparisonRequest = 0,selectionProject = null,previewCandidateKey = null;
@@ -1137,6 +1205,26 @@ document.addEventListener('DOMContentLoaded', () => {
         return data;
     };
     const feedback=(id,message)=>{ $(id).textContent=message; };
+    const expandedRecordDetails=new Set();
+    function recordDetail(key,label,message) {
+        const details=document.createElement('details');
+        if(expandedRecordDetails.has(key))details.open=true;
+        details.addEventListener('toggle',()=>{
+            if(details.open)expandedRecordDetails.add(key);
+            else expandedRecordDetails.delete(key);
+        });
+        const summary=document.createElement('summary');
+        summary.textContent=label;
+        const description=document.createElement('p');
+        description.textContent=message;
+        details.append(summary,description);
+        return details;
+    }
+    function recordHeading(text) {
+        const strong=document.createElement('strong');
+        strong.textContent=text;
+        return strong;
+    }
     function placementObservedLoad(place) {
         if(!place.capacity_fits)return '';
         if(place.suggested_gpus?.length===1) {
@@ -2013,6 +2101,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function selectTab(next) {
         if (!['design','train','monitor','compare','machines'].includes(next)) return;
         tab=next;
+        saveView();
         for(const section of document.querySelectorAll('section[data-hub-tab]')) {
             const scope=section.dataset.project;
             const shouldHide=section.dataset.hubTab!==tab ||
@@ -2122,11 +2211,12 @@ document.addEventListener('DOMContentLoaded', () => {
         select.id='hub-compare-'+slot;
         label.htmlFor=select.id;
         label.textContent='Run '+compareSerial;
-        select.addEventListener('change',renderComparison);
+        select.addEventListener('change',()=>{renderComparison();saveComparisonRuns();});
         const remove=button('Remove',()=>{
             compareSlots.splice(compareSlots.indexOf(slot),1);
             row.remove();
             renderComparison();
+            saveComparisonRuns();
         });
         remove.title='Remove from comparison (does not modify the job)';
         const controls=document.createElement('div');
@@ -2135,6 +2225,15 @@ document.addEventListener('DOMContentLoaded', () => {
         row.append(label,controls);
         $('hub-compare-run-list').append(row);
         return slot;
+    }
+    function saveComparisonRuns() {
+        const selected=compareSlots.map(slot=>$('hub-compare-'+slot)?.value||'');
+        // An empty project with no selectable jobs must not become an
+        // explicit 'select nothing' preference, masking future new runs.
+        if(selected.some(Boolean)||savedCompareRuns.has(project)) {
+            savedCompareRuns.set(project,selected);
+            saveView();
+        }
     }
     // Keep the native multi-select as the single source of selected IDs.
     // This searchable panel changes only its options, not the job/export API.
@@ -2422,9 +2521,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 .includes(j.status)).reverse();
         const chartable=selectable.filter(hasSamples);
         const defaults=[...chartable,...selectable.filter(j=>!hasSamples(j))];
+        const remembered=savedCompareRuns.get(project);
+        while(remembered&&compareSlots.length<remembered.length)
+            addComparisonSlot();
         const previous=compareSlots.map(slot=>$('hub-compare-'+slot).value);
         const changedProject=selectionProject!==project;
-        if(changedProject)comparisonDefaultsApplied=false;
+        if(changedProject)comparisonDefaultsApplied=Boolean(remembered);
         selectionProject=project;
         const chooseDefaults=!comparisonDefaultsApplied&&defaults.length>0;
         const selected=new Set();
@@ -2444,7 +2546,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' · '+j.status+
                     ' · '+new Date(j.created_at).toLocaleDateString(),j.id)));
             const desired=chooseDefaults&&i<2
-                ?defaults[i]?.id:(!changedProject?previous[i]:null);
+                ?defaults[i]?.id:(changedProject?remembered?.[i]:previous[i]);
             if(desired&&selectable.some(j=>j.id===desired)&&
                 !selected.has(desired)){
                 select.value=desired;
@@ -2452,6 +2554,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         if(chooseDefaults)comparisonDefaultsApplied=true;
+        saveComparisonRuns();
         const configs=(state.configurations||[]).filter(c=>c.project_id===project);
         const configSelect=$('hub-compare-selection-config'),previousConfig=configSelect.value;
         configSelect.replaceChildren(...configs.map(c=>
@@ -5768,6 +5871,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderDesignEditor(true);
                 feedback('hub-config-message','Duplicated into a new unsaved draft. Select Save draft to retain it.');
             }));
+            const configurationDelete=button('Delete configuration',async()=>{
+                if(!confirm('Delete saved configuration "'+c.name+'" revision '+
+                    c.revision+' from the Hub? This cannot be undone. Referencing jobs '+
+                    'and pending selection plans must be removed first.'))return;
+                try {
+                    await action('hub/configurations/delete',{
+                        configuration_id:c.id,expected_revision:c.revision,
+                        confirm_delete:true,
+                    });
+                    if(editing?.id===c.id)resetEditor();
+                    feedback('hub-config-message','Deleted configuration '+c.name+'.');
+                    await reload();
+                }catch(error){feedback('hub-config-message',error.message);}
+            });
+            configurationDelete.className='danger';
+            configurationDelete.title='Removes only this saved configuration, never a training job.';
+            actions.append(configurationDelete);
             if(project==='bees') {
                 actions.append(button('Queue for Bees',async()=>{
                     if(!confirm('Freeze and queue "'+c.name+'"? Training will not start until the queue is armed.'))return;
@@ -6157,10 +6277,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?' · Resource bundle '+j.resource_bundle.id.slice(-8)+
                     ' ('+j.resource_bundle.index+'/'+j.resource_bundle.size+')'
                 :'';
-            const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
-                checkpointRecovery+noTrainer+distributedSummary+launchText+scheduleText+abortText+bundleLabel+
+            const statusCell=cell(tr,'');
+            statusCell.append(recordHeading(labels[j.status]||j.status));
+            const statusBrief=document.createElement('div');
+            statusBrief.className='hub-secondary';
+            statusBrief.textContent=waitingOnParent||
+                (readiness&&!readiness.eligible?'Start blocked: '+readiness.reason:status);
+            statusCell.append(statusBrief);
+            const fullStatus=status+lineage+promoted+gpuProof+readinessText+
+                checkpointRecovery+noTrainer+distributedSummary+launchText+scheduleText+
+                abortText+bundleLabel+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
-                    ?' · Cancel downstream stage first':''));
+                    ?' · Cancel downstream stage first':'')+
+                (detail?' · '+detail:'')+
+                (j.status_reason?' · '+j.status_reason:'');
+            if(fullStatus!==statusBrief.textContent)
+                statusCell.append(recordDetail('job-status:'+j.id,
+                    'Full status and eligibility',fullStatus));
 
             statusCell.title=readiness?.reason||
                 proof?.diagnostic||detail||j.status_reason||status;
@@ -6190,7 +6323,20 @@ document.addEventListener('DOMContentLoaded', () => {
                                 j.resources.gpu_compute_pct+'% advisory compute':'')+
                         (pinnedGpuDevices.length?' · '+pinnedGpuDevices.join(', '):' · awaiting binding')+')'
                     :'');
-            const resourceCell=cell(tr,resourceText);
+            const resourceCell=cell(tr,'');
+            resourceCell.append(recordHeading(j.resources.cpus+' CPU · '+
+                j.resources.ram_mb.toLocaleString()+' MiB RAM · '+
+                j.resources.gpu_count+' GPU'+(j.resources.gpu_count===1?'':'s')));
+            if(j.resources.gpu_count) {
+                const allocation=document.createElement('div');
+                allocation.className='hub-secondary';
+                allocation.textContent='GPU '+j.resources.gpu_mode+
+                    (j.resources.gpu_mode==='shared'
+                        ?' · '+j.resources.gpu_vram_mb+' MiB VRAM budget / '+
+                            j.resources.gpu_compute_pct+'% advisory compute':'');
+                resourceCell.append(allocation,recordDetail('job-gpu:'+j.id,
+                    'GPU bindings and host observations',resourceText));
+            }
             if(j.resources.gpu_count)
                 resourceCell.title='GPU budget reservations and observed host telemetry are separate. Shared Windows PyTorch limits do not enforce GPU compute time or non-PyTorch memory.';
             const policy=j.evaluation_monitor||j.evaluation_stop;
@@ -6277,7 +6423,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 :regressionSignals.some(row=>row.status==='regressed')
                     ?' · Independent evaluation regression detected (inspect details)'
                     :'';
-            const learningCell=cell(tr,learningSummary(j)+evaluation+availability+regressionText);
+            const learningCell=cell(tr,'');
+            const progress=j.live_execution?.progress||j.final_progress;
+            const update=progress?.steps_completed;
+            const rate=progress?.metrics?.ant_decisions_per_second?.value;
+            const winRate=progress?.metrics?.training_win_rate?.value;
+            const measuredProgress=[
+                Number.isSafeInteger(update)?'Update / step '+update.toLocaleString():null,
+                Number.isFinite(rate)?rate.toFixed(1)+' decisions/s':null,
+                Number.isFinite(winRate)?(winRate*100).toFixed(1)+'% wins':null,
+            ].filter(Boolean);
+            learningCell.append(recordHeading(measuredProgress.join(' · ')||
+                'No progress reported'));
+            const fullLearning=learningSummary(j)+evaluation+availability+regressionText;
+            if(fullLearning&&fullLearning!=='—')
+                learningCell.append(recordDetail('job-progress:'+j.id,
+                    'Training, evaluation and diagnostics',fullLearning));
             if(policy) {
                 const details=document.createElement('details');
                 const summary=document.createElement('summary');
@@ -7122,6 +7283,66 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(error){feedback('hub-job-message',error.message);}
                 }));
             }
+            const groupForDeletion=state.jobs.filter(worker=>
+                ['tinybrains_rollout','courier_lineage'].includes(worker.project_id)&&
+                worker.frozen_parameters?.learner_job_id===j.id);
+            if(j.adapter==='unconfigured'&&
+                !['tinybrains_rollout','courier_lineage'].includes(j.project_id)&&
+                [j,...groupForDeletion].every(item=>
+                    ['cancelled','finished','failed','stopped'].includes(item.status)&&
+                    (!item.dispatch_id||Boolean(item.capacity_released_at)))) {
+                const remove=button(groupForDeletion.length
+                    ?'Delete completed group':'Delete old job',async()=>{
+                    const groupIds=[j.id,...groupForDeletion.map(worker=>worker.id)];
+                    if(!confirm('Permanently remove '+groupIds.length+' completed Hub job '+
+                        (groupIds.length===1?'record':'records')+
+                        ' and released claim history? Training artifacts, evaluator '+
+                        'archives and downloaded exports are NOT deleted. Active or '+
+                        'referenced jobs will be refused by the server.'))return;
+                    try {
+                        const result=await action('hub/jobs/delete',{
+                            job_id:j.id,expected_job_ids:groupIds,
+                            confirm_delete:true,
+                        });
+                        feedback('hub-job-message',
+                            'Deleted '+result.deleted_count+' completed Hub job records. '+
+                            'Native artifacts and evaluation archives were preserved.');
+                        await reload();
+                    }catch(error){feedback('hub-job-message',error.message);}
+                });
+                remove.className='danger';
+                actions.append(remove);
+            }
+            // Most actions are intentionally behind one expandable control.
+            // Starts, Stops and capacity actions remain immediately visible.
+            const buttons=[...actions.querySelectorAll(':scope > button')];
+            const primaryTitles=/^(Start native job|Stop managed job|Start coordinated group|Start recoverable coordinated group|Schedule full group when ready|Schedule recoverable group|Start Courier distributed group|Start recoverable Courier group|Schedule Courier group when ready|Schedule recoverable Courier group|Coordinate capacity|Release completed capacity)$/;
+            const important=buttons.filter(b=>primaryTitles.test(b.textContent)).slice(0,2);
+            const primary=document.createElement('div');
+            primary.className='hub-job-action-primary';
+            for(const item of important)primary.append(item);
+            const more=document.createElement('div');
+            more.className='hub-job-action-other';
+            more.append(...[...actions.childNodes]);
+            actions.replaceChildren();
+            if(primary.childNodes.length)actions.append(primary);
+            if(more.childNodes.length) {
+                const menu=document.createElement('details');
+                menu.className='hub-job-action-menu';
+                if(expandedRecordDetails.has('job-actions:'+j.id))menu.open=true;
+                menu.addEventListener('toggle',()=>{
+                    if(menu.open)expandedRecordDetails.add('job-actions:'+j.id);
+                    else expandedRecordDetails.delete('job-actions:'+j.id);
+                });
+                const heading=document.createElement('summary');
+                const count=more.querySelectorAll('button').length;
+                heading.textContent='More actions'+(count?' ('+count+')':'');
+                menu.append(heading,more);
+                actions.append(menu);
+            }
+            const columnNames=['Configuration','Revision','Status','Resources',
+                'Learning progress','Actions'];
+            [...tr.children].forEach((td,index)=>td.dataset.label=columnNames[index]);
             $('hub-job-rows').append(tr);
         }
         if(!records.length) {
@@ -7279,12 +7500,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const observedRam=sampledRam.reduce((sum,j)=>
                 sum+j.live_execution.memory_current_mb,0);
             const overClaimed=m.capacity_overcommitted===true;
-            cell(tr,m.name+' ('+m.id+')');
+            const machineName=cell(tr,'');
+            machineName.append(recordHeading(m.name),
+                Object.assign(document.createElement('span'),{
+                    className:'hub-secondary',textContent:m.id}));
             const reports=state.machine_software?.[m.id]||{};
             const active=state.machine_active_software?.[m.id]||{};
             const releases=state.software_release_catalog;
-            const status=cell(tr,m.status+
-                (overClaimed?' · Claims exceed reported capacity':''));
+            const status=cell(tr,'');
+            status.append(recordHeading(m.status==='connected'?'Connected':m.status),
+                ...(overClaimed?[Object.assign(document.createElement('span'),{
+                    className:'hub-secondary',textContent:'Claims exceed reported capacity'})]:[]));
             const names=[...new Set([...Object.keys(active),...Object.keys(reports)])];
             for(const name of names) {
                 const report=reports[name];
@@ -7343,16 +7569,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' average cores from '+sampledCpu.length+'/'+activeJobs.length+
                     ' Hub native jobs':''));
             cpuCell.title='Host busy percentage includes Bees, external training and the OS; Hub native job samples are a subset and must not be added to it.';
-            cell(tr,m.ram_mb+' MiB configured'+
-                (m.reported_ram_mb!=null?' / '+m.reported_ram_mb+' MiB reported':'')+
-                ' / '+claimedRam+' MiB claimed'+
+            const cpuSummary=recordHeading(m.cpus+' configured / '+
+                (m.reported_cpus??'unreported')+' reported');
+            const cpuDetail=document.createElement('span');
+            cpuDetail.className='hub-secondary';
+            cpuDetail.textContent=claimedCpus+' reserved'+
+                (m.status==='connected'&&m.host_cpu_busy_pct!=null
+                    ?' · '+m.host_cpu_busy_pct.toFixed(1)+'% host busy':'')+
+                (sampledCpu.length?' · '+observedCpu.toFixed(2)+
+                    ' cores used by sampled Hub jobs':'');
+            cpuCell.replaceChildren(cpuSummary,cpuDetail);
+            const ramCell=cell(tr,'');
+            ramCell.append(recordHeading(m.ram_mb.toLocaleString()+
+                ' MiB configured / '+(m.reported_ram_mb?.toLocaleString()??'unreported')+
+                ' MiB reported'));
+            const ramDetail=document.createElement('span');
+            ramDetail.className='hub-secondary';
+            ramDetail.textContent=claimedRam.toLocaleString()+' MiB reserved'+
                 (m.status==='connected'&&m.reported_available_ram_mb!=null
-                    ?' · '+m.reported_available_ram_mb+' MiB currently available (all processes)':
+                    ?' · '+m.reported_available_ram_mb.toLocaleString()+' MiB host available':
                     m.status==='connected'&&m.reported_free_ram_mb!=null
-                        ?' · '+m.reported_free_ram_mb+' MiB host free (all processes)':'')+
+                        ?' · '+m.reported_free_ram_mb.toLocaleString()+' MiB host free':'')+
                 (sampledRam.length?' · '+Math.round(observedRam).toLocaleString()+
-                    ' MiB observed from '+sampledRam.length+'/'+activeJobs.length+
-                    ' Hub native jobs':''));
+                    ' MiB from sampled Hub jobs':'');
+            ramCell.append(ramDetail);
             const verified=new Map((m.verified_gpus||[]).map(g=>[g.id,g]));
             const configured=(m.gpus||[]).map(g=>{
                 const matched=verified.get(g.id);
@@ -7372,9 +7612,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 (g.temperature_c==null?'':', '+g.temperature_c+'°C GPU')+
                 (g.hotspot_temperature_c==null?'':', '+g.hotspot_temperature_c+
                     '°C hotspot')+')');
-            cell(tr,(configured.join(' / ')||'No configured GPUs')+
-                (discovered.length?' · Detected '+(m.agent_platform==='win32'?'NVIDIA':'AMD')+' GPUs: '+
-                    discovered.join(', '):''));
+            const gpuCell=cell(tr,'');
+            if(!configured.length)gpuCell.append(recordHeading('No configured GPUs'));
+            else for(const description of configured) {
+                const line=document.createElement('div');
+                line.className='hub-secondary';
+                line.textContent=description;
+                gpuCell.append(line);
+            }
+            if(discovered.length)
+                gpuCell.append(recordDetail('machine-gpu:'+m.id,
+                    'Detected host GPU telemetry ('+discovered.length+')',
+                    discovered.join(' · ')));
             const capability=m.execution_capabilities;
             const recoveryOnly=m.local_executor_enabled&&!m.installed_projects?.length;
             const evaluator=(state.evaluator_services||[]).find(item=>
@@ -7522,6 +7771,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     actions.append(btn);
                 }
             }
+            const machineButtons=[...actions.querySelectorAll(':scope > button')];
+            const machineActions=document.createElement('div');
+            machineActions.className='hub-machine-actions';
+            machineActions.append(...machineButtons);
+            actions.append(machineActions);
+            [...tr.children].forEach((td,index)=>td.dataset.label=[
+                'Machine','Agent and software','CPU capacity','RAM capacity',
+                'GPUs','Native controls','Last seen','Machine actions'][index]);
             $('hub-machine-rows').append(tr);
         }
         if(!state.machines.length) {
@@ -7723,6 +7980,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-compare-add-run').addEventListener('click',()=>{
         addComparisonSlot();
         renderComparison();
+        saveComparisonRuns();
     });
     $('hub-historical-import-submit').addEventListener('click',async()=>{
         const input=$('hub-historical-audit-file'),file=input.files?.[0];
@@ -7910,7 +8168,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     $('hub-project').addEventListener('change',()=>{
-        project=$('hub-project').value;resetEditor();display();selectTab(tab);
+        project=$('hub-project').value;saveView();resetEditor();display();selectTab(tab);
     });
     $('hub-config-cancel').addEventListener('click',resetEditor);
     $('hub-copy-bees-form').addEventListener('click',()=>{
@@ -8463,6 +8721,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const input=document.createElement('input');
         input.type='checkbox';
         const label=document.createElement('label');
+        label.className='hub-toggle-row';
         label.append(input,' Match budgets across the selected machines');
         return {input,label};
     }
@@ -8483,6 +8742,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // chooses the CPU/RAM/GPU budgets; endpoint-to-machine identity is never
     // entered by the browser and comes from connected native agents instead.
     const distributedPanel=document.createElement('fieldset');
+    distributedPanel.className='hub-distributed-panel';
     const distributedLegend=document.createElement('legend');
     distributedLegend.textContent='Distributed TinyBrains learner + remote collectors';
     const distributedMachine=document.createElement('select');
@@ -8616,10 +8876,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     distributedPanel.append(distributedLegend,distributedMachineLabel,preparePanel,
         distributedBudgetsLabel,distributedMatch.label,distributedDetails,distributedQueue,distributedFeedback);
-    $('hub-job-queue').insertAdjacentElement('afterend',distributedPanel);
+    $('hub-job-queue-actions').insertAdjacentElement('afterend',distributedPanel);
     // Courier reuses the same native group claims, but unlike TinyBrains
     // each remote process trains its own immutable recurrent PPO lineage.
     const courierPanel=document.createElement('fieldset');
+    courierPanel.className='hub-distributed-panel';
     const courierLegend=document.createElement('legend');
     courierLegend.textContent='Distributed Courier training';
     const courierMachine=document.createElement('select');
@@ -9285,7 +9546,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'update-workers',{confirm_update:true},
         'Publish updated remote worker software for this stopped Bees run? The worker release and run identity are verified by the existing operator.'));
 
-    selectTab('monitor');
+    selectTab(tab);
     reload();
     setInterval(()=>{
         reload();

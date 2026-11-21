@@ -167,10 +167,15 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'simulation_inconclusive_trials',
         'simulation_global_cadence_samples','simulation_global_cadence_rejections',
         'simulation_native_engines_admitted','simulation_admission_denied',
+        'simulation_task_limit','simulation_task_current',
+        'simulation_task_headroom','simulation_task_admission_denied',
+        'simulation_kernel_task_denials',
         'simulation_completed_retirements','simulation_draining_matches',
         'simulation_layout_matches','simulation_layout_changing',
         'local_lease_ram_admission_denials',
         'local_lease_admission_denials_delta',
+        'local_lease_task_admission_denials',
+        'local_lease_task_denials_delta',
         'local_lease_native_engines_admitted',
         'local_lease_engines_admitted_delta',
         'local_lease_active_native_pools',
@@ -458,6 +463,13 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             ['sim_inconclusive_trials','simulation_inconclusive_trials'],
             ['sim_memory_rejections','simulation_memory_rejected_trials']])
             if(worker[name]>0)add('collector_'+i+'_'+suffix,worker[name],'count');
+        for(const [suffix,name] of [
+            ['sim_task_limit','simulation_task_limit'],
+            ['sim_task_current','simulation_task_current'],
+            ['sim_task_headroom','simulation_task_headroom'],
+            ['sim_task_denied','simulation_task_admission_denied'],
+            ['sim_kernel_task_denials','simulation_kernel_task_denials']])
+            add('collector_'+i+'_'+suffix,worker[name],'count');
         add('collector_'+i+'_sim_engine_charged_mb',
             worker.simulation_engine_memory_mb,'mb');
         for(const [suffix,name] of [
