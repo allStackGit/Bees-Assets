@@ -2086,8 +2086,9 @@ fn current_state(
             view.campaign_dialogue.map(|(sequence, cue)| json!({
                 "sequence": sequence,
                 "cue": cue,
-                "line_count": crate::presentation::campaign_dialogue::lines(cue).len(),
-                "lines": crate::presentation::campaign_dialogue::lines(cue),
+                "line_count": crate::presentation::campaign_dialogue::line_count(cue),
+                "lines": crate::presentation::campaign_dialogue::
+                    displayed_lines(cue).collect::<Vec<_>>(),
             }))
         } else { None },
         // Mission rules and target IDs are public to both authenticated
