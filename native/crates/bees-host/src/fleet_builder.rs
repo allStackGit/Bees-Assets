@@ -18,7 +18,7 @@ use bees_host::unity_scene_snapshot::{
 use bees_sim::ship_assets::ShipAssetCatalog;
 use serde_json::{json, Value};
 
-use super::RunConfig;
+use super::{HiveMindConfig, RunConfig};
 
 const SOURCE_SCENE: &str = include_str!("../../../examples/native-two-player.scene.json");
 const SOURCE_RUN: &str = include_str!("../../../examples/native-two-player.run.json");
@@ -235,7 +235,54 @@ impl Objective {
     }
 }
 
-#[derive(Clone, Copy)]
+/// Existing durable network source configuration, supplied by the
+/// operator as BEES_NATIVE_HIVEMIND_FLEET_CONFIG. Authentication secrets
+/// remain environment-owned and are never included in the battle archive.
+#[derive(Clone)]
+struct NativeHiveMindFleet {
+    network: Value,
+    opponent_id: u64,
+    initial_delay_seconds: i32,
+    controlled_side: i32,
+}
+
+fn configured_hivemind_fleet() -> Result<Option<NativeHiveMindFleet>, Box<dyn Error>> {
+    let Some(path) = std::env::var_os("BEES_NATIVE_HIVEMIND_FLEET_CONFIG") else {
+        return Ok(None);
+    };
+    let config: Value = serde_json::from_slice(&fs::read(PathBuf::from(path))?)?;
+    let opponent_id = config["opponent_id"].as_u64()
+        .filter(|id| *id > 0)
+        .ok_or_else(|| invalid("HiveMind fleet needs a source opponent_id"))?;
+    let initial_delay_seconds = config.get("initial_command_delay_seconds")
+        .map(|value| value.as_i64().and_then(|n| i32::try_from(n).ok()))
+        .unwrap_or(Some(0))
+        .filter(|&seconds| seconds >= 0)
+        .ok_or_else(|| invalid("HiveMind initial command delay must be a nonnegative int32"))?;
+    let mut network = config.get("hivemind").cloned()
+        .ok_or_else(|| invalid("HiveMind fleet config needs an existing HiveMind run configuration"))?;
+    if !config.as_object().is_some_and(|obj|
+            obj.keys().all(|key| matches!(key.as_str(),
+                "hivemind" | "opponent_id" | "initial_command_delay_seconds")))
+    {
+        return Err(invalid("HiveMind fleet has unknown configuration fields").into());
+    }
+    network.as_object_mut()
+        .ok_or_else(|| invalid("HiveMind network settings must be an object"))?
+        .insert("issue_source_commands".to_owned(), json!(true));
+    let validated: HiveMindConfig = serde_json::from_value(network.clone())?;
+    if validated.endpoint.trim().is_empty() || validated.user_id == 0 ||
+        !validated.version.is_finite() || validated.version <= 0.0 ||
+        validated.reconnect_game_id.is_some()
+    {
+        return Err(invalid("new HiveMind fleet needs a valid endpoint, user and fresh server Game").into());
+    }
+    Ok(Some(NativeHiveMindFleet {
+        network, opponent_id, initial_delay_seconds, controlled_side: 0,
+    }))
+}
+
+#[derive(Clone)]
 pub(super) struct FleetChoice {
     /// None preserves the source's two human-controlled factions.
     player_side: Option<i32>,
@@ -250,6 +297,7 @@ pub(super) struct FleetChoice {
     lethal_borders: bool,
     ai_both: bool,
     ai_tactics: AiTactics,
+    hivemind: Option<NativeHiveMindFleet>,
     objective: Objective,
     reinforcements: ReinforcementPattern,
     /// Mission ownership is independent of whose input commands this host
@@ -264,11 +312,18 @@ fn invalid(message: &'static str) -> io::Error {
 }
 
 pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
-    let choices = [
+    let network = configured_hivemind_fleet()?;
+    let mut choices = vec![
         ("Bees commander vs Human AI", "  [Player side 1]"),
         ("Humans commander vs Bee AI", "  [Player side 2]"),
         ("Two local commanders", "  [Both factions]"),
     ];
+    if network.is_some() {
+        choices.extend([
+            ("Bees commander vs Human HiveMind", "  [Live network command AI]"),
+            ("Humans commander vs Bee HiveMind", "  [Live network command AI]"),
+        ]);
+    }
     let rows = choices.iter().map(|(title, status)| BattleMenuRow {
         title, status, unlocked: true,
     }).collect::<Vec<_>>();
@@ -289,12 +344,23 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
         let Some(enabled) = choose_visibility()? else { return Ok(None); };
         enabled
     };
-    let ai_tactics = if mode == 2 { AiTactics::Aggressive } else {
+    let ai_tactics = if mode >= 2 { AiTactics::Aggressive } else {
         let Some(value) = choose_ai_tactics()? else { return Ok(None); };
         value
     };
     let Some(objective) = choose_objective()? else { return Ok(None); };
-    let player_side = match mode { 0 => Some(1), 1 => Some(2), _ => None };
+    let player_side = match mode {
+        0 | 3 => Some(1),
+        1 | 4 => Some(2),
+        _ => None,
+    };
+    let hivemind = match mode {
+        3 | 4 => Some(NativeHiveMindFleet {
+            controlled_side: if mode == 3 { 2 } else { 1 },
+            ..network.expect("HiveMind menu option requires pinned network source")
+        }),
+        _ => None,
+    };
     let objective_side = match objective {
         Objective::Elimination => None,
         _ => {
@@ -316,7 +382,7 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     };
     Ok(Some(FleetChoice {
         player_side, fleet_sizes, squad_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
-        ai_both: false, ai_tactics, objective,
+        ai_both: false, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
@@ -351,7 +417,7 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
         player_side: None, fleet_sizes, squad_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
         ai_both: false,
         ai_tactics: AiTactics::Aggressive,
-        objective, reinforcements, objective_side,
+        hivemind: None, objective, reinforcements, objective_side,
         benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
@@ -394,7 +460,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     Ok(Some(FleetChoice {
         player_side: None, fleet_sizes, squad_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
         ai_both: true,
-        ai_tactics, objective, objective_side,
+        ai_tactics, hivemind: None, objective, objective_side,
         reinforcements, benchmark_worlds: worlds, benchmark_workers: threads,
     }))
 }
