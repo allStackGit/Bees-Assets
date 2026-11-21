@@ -179,6 +179,80 @@ fn authored_type_sequence_matches(
     }
 }
 
+/// Neptune II's original 120/240/360/480-second waves and growing
+/// 60-second reinforcements. Every arrival uses the SAME physical source
+/// squads and AI home entry point as ordinary playable combat.
+fn neptune_production_waves_match_source(
+    waves: &[crate::reinforcements::NativeReinforcementPlan],
+    ai_home: Vec2,
+    bee_side: i32,
+    squads: &[NativeSourceSquad],
+    entities: &[NativeAuthoredEntity],
+) -> bool {
+    use crate::reinforcements::NativeReinforcementActivation::AfterSeconds;
+    if waves.len() < 4 { return false; }
+    let by_squad: HashMap<_, _> = squads.iter()
+        .map(|squad| (squad.item_id, squad)).collect();
+    let by_ship: HashMap<_, _> = entities.iter().filter_map(|entity| match entity {
+        NativeAuthoredEntity::Ship(ship) => Some((ship.entity_id, ship)),
+        _ => None,
+    }).collect();
+    let mut arrivals: Vec<(u32, Vec<Option<u8>>)> = Vec::new();
+    for wave in waves {
+        let AfterSeconds(seconds) = wave.activation else { return false };
+        if !seconds.is_finite() || seconds <= 0.0 ||
+            seconds > u32::MAX as f32 ||
+            (seconds - seconds.round()).abs() > 0.0001 ||
+            !wave.spawn.is_some_and(|p|
+                p.unity_equal(ai_home + Vec2::new(100.0, 0.0))) ||
+            !wave.entry.is_some_and(|p| p.unity_equal(ai_home))
+        {
+            return false;
+        }
+        let second = seconds as u32;
+        let Some(types) = authored_reinforcement_types(
+            wave, bee_side, &by_squad, &by_ship,
+        ) else { return false };
+        if let Some((prior, actual)) = arrivals.last_mut() {
+            if second == *prior {
+                actual.extend(types);
+                continue;
+            }
+            if second < *prior { return false; }
+        }
+        arrivals.push((second, types));
+    }
+    if arrivals.len() < 4 { return false; }
+    const INITIAL: [&[u8]; 4] = [
+        &[14, 14, 15, 15],
+        &[14, 21, 15, 15],
+        &[14, 21, 21, 15, 15, 22, 22, 22],
+        &[14, 21, 21, 15, 15, 22, 22, 22, 16, 16],
+    ];
+    const LATE: &[u8] = &[14, 21, 21, 15, 15, 22, 22, 22, 16, 16];
+    const EXTRA: &[u8] = &[21, 21, 15, 22, 22, 16, 16];
+    for (index, (second, actual)) in arrivals.iter().enumerate() {
+        let due = if index < 4 {
+            120_u64 * (index as u64 + 1)
+        } else {
+            480_u64 + 60 * (index as u64 - 3)
+        };
+        if u64::from(*second) != due { return false; }
+        let required = if index < 4 {
+            INITIAL[index].to_vec()
+        } else {
+            let mut types = LATE.to_vec();
+            for _ in 4..index { types.extend_from_slice(EXTRA); }
+            types
+        };
+        // Only wave four prefixes previously fought saved squads.
+        if !authored_type_sequence_matches(actual, &required, index == 3) {
+            return false;
+        }
+    }
+    true
+}
+
 /// The Uranus III 60-second follow-up timer introduces the exact original
 /// Bee classes from AIStartingPosition + (100,0), with an approach to the
 /// original AI home. The real source can omit depleted squad types.
