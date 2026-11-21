@@ -1614,10 +1614,12 @@ fn collect_remote_audio(
         };
         let Some(point) = point.filter(|point| point.is_finite()) else { continue };
         // A player must see effects on their own last vision-providing
-        // ship. Death, damage or departure may remove the live sight source
-        // in this very physics tick. Authenticate ownership through the
-        // source roster, never the client's old discovery or visibility data.
-        // Unowned and enemy effects still require the current fog predicate.
+        // ship. Death or departure may retire its roster membership and
+        // vision during this exact tick. The canonical world preserves the
+        // physical ship's side after retirement, so the authenticated side
+        // can still receive its own effect without restoring dead roster
+        // entries or leaking any enemy's hidden position.
+        // Enemy effects still require the current fog predicate.
         let affected_ship = match event {
             CombatEvent::Hit(hit) => Some(hit.target_id),
             CombatEvent::ShipDied { victim_id, .. } => Some(*victim_id),
@@ -1626,8 +1628,8 @@ fn collect_remote_audio(
             _ => None,
         };
         let own_ship_event = affected_ship
-            .and_then(|id| view.roster.owning_squad(id))
-            .is_some_and(|owner| owns_player_side(view, owner, side));
+            .and_then(|id| view.combat.ship(id))
+            .is_some_and(|ship| ship.side == side);
         if !own_ship_event && view.player_authority.player_fog_of_war_enabled() &&
             !sources.covers(point, measurements) { continue; }
         if let Some((id, _)) = launched {
