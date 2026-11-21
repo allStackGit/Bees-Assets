@@ -110,8 +110,8 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
     layout = level.pop("native_layout", {})
     if not isinstance(layout, dict):
         raise ValueError("native layout must be an object")
-    supported = {"clone_squads", "merge_squads", "remove_static_ids",
-                 "add_static_boxes", "add_map_borders"}
+    supported = {"clone_squads", "merge_squads", "number_squads",
+                 "remove_static_ids", "add_static_boxes", "add_map_borders"}
     if any(key not in supported and value not in ([], None)
            for key, value in layout.items()):
         raise ValueError("unsupported fleet layout operation; refusing a changed physical battle")
@@ -130,8 +130,8 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
     if not isinstance(scene_layout, dict):
         raise ValueError("native scene layout must be an object")
     if any(scene_layout.get(key) for key in
-           ("clone_squads", "merge_squads", "translate_squads",
-            "remove_squads", "remove_static_ids")):
+           ("clone_squads", "merge_squads", "number_squads",
+            "translate_squads", "remove_squads", "remove_static_ids")):
         raise ValueError("source scene already changes its native squad roster or removes terrain")
     source_entities = [
         *ships, *scene.get("mining_asteroids", []),
@@ -277,6 +277,37 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
                   for donor_id in donor_ids}
         scene["squads"] = [squad for squad in squads
                            if squad["item_id"] not in donors]
+
+    shortcuts = layout.get("number_squads", [])
+    if not isinstance(shortcuts, list):
+        raise ValueError("native numbered squad shortcuts must be a list")
+    used_shortcuts, assigned_squads = set(), set()
+    for row in shortcuts:
+        if not isinstance(row, dict) or set(row) != {
+                "squad_item_id", "side", "number", "original_squad_count"}:
+            raise ValueError("native squad shortcut has invalid source fields")
+        squad_id, side = row["squad_item_id"], row["side"]
+        number, count = row["number"], row["original_squad_count"]
+        if (type(squad_id) is not int or squad_id <= 0 or
+                type(side) is not int or side not in (1, 2) or
+                type(number) is not int or not 0 <= number <= 9 or
+                type(count) is not int or count <= 0 or
+                (side, number) in used_shortcuts or squad_id in assigned_squads):
+            raise ValueError("duplicate or invalid native squad hotkey source identity")
+        squad = next((item for item in scene["squads"]
+                      if item["item_id"] == squad_id), None)
+        if (squad is None or squad["side"] != side or
+                not squad.get("user_controlled") or
+                not squad.get("can_accept_input") or
+                squad.get("hivemind") is not None or
+                squad.get("is_carrier_squad", False) or
+                squad.get("hotkey_number") is not None or
+                squad.get("original_squad_count") is not None):
+            raise ValueError("native numbered squad must have a unique player command owner")
+        used_shortcuts.add((side, number))
+        assigned_squads.add(squad_id)
+        squad["hotkey_number"] = number
+        squad["original_squad_count"] = count
 
     removed = layout.get("remove_static_ids", [])
     added = layout.get("add_static_boxes", [])
@@ -532,6 +563,9 @@ def convert(source: Path, destination: Path, archetypes: Path,
         "source_squad_clones": clone_count,
         "source_squad_merges": len(
             read_json(source)["levels"][0].get("native_layout", {}).get("merge_squads", [])
+        ),
+        "source_numbered_squads": len(
+            read_json(source)["levels"][0].get("native_layout", {}).get("number_squads", [])
         ),
         "scripted_reinforcement_ships": sum(
             "policy" not in ship for ship in policy_scene["ships"]
