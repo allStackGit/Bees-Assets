@@ -164,6 +164,17 @@ fn choose_ai_tactics() -> Result<Option<AiTactics>, Box<dyn Error>> {
 }
 
 impl FleetMix {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Fighters => "fighters",
+            Self::Balanced => "balanced",
+            Self::SupportHeavy => "support-heavy",
+            Self::Specialists => "specialists",
+            Self::Miners => "miners",
+            Self::Chargers => "chargers",
+        }
+    }
+
     fn support_count(self, total: usize) -> usize {
         (match self {
             Self::Fighters => 0,
@@ -1418,8 +1429,9 @@ pub(super) fn archive(
     }
     run["next_squad_item_id"] = json!(3_000);
     run["run_id"] = json!(format!(
-        "native-fleet-{}v{}-support-{}v{}-specialist-{}v{}-{}-{}-owner{}-ore{}-fog{}",
+        "native-fleet-{}v{}-mix-{}v{}-support-{}v{}-specialist-{}v{}-{}-{}-owner{}-ore{}-fog{}",
         selected.fleet_sizes[0], selected.fleet_sizes[1],
+        selected.mix[0].label(), selected.mix[1].label(),
         support_count[0], support_count[1],
         specialist_count[0], specialist_count[1],
         if selected.ai_both { "benchmark" }
@@ -1574,7 +1586,16 @@ pub(super) fn archive(
             } else if charger {
                 vec![json!({"kind": "charge_nearest"})]
             } else {
-                vec![json!({"kind": selected.ai_tactics.source_order(position)})]
+                // Between real combat orders, allied fighter squads can
+                // repair at an existing Beehive. An unavailable heal never
+                // grants health; the scripted director advances to the
+                // ordinary source maneuver on its next fixed tick.
+                let mut orders = Vec::new();
+                if side == 0 && support_count[side] > 0 {
+                    orders.push(json!({"kind": "heal_available"}));
+                }
+                orders.push(json!({"kind": selected.ai_tactics.source_order(position)}));
+                orders
             };
             // Only commands that physically complete a one-shot goal
             // terminate their script. Escort defenders and ordinary
