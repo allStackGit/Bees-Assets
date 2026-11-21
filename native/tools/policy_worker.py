@@ -133,6 +133,60 @@ def restore_sampler_state(data: bytes) -> None:
             ])
 
 
+class DeviceInferenceInputs:
+    """Reusable per-model accelerator inputs, not a second policy batch.
+
+    The Rust Level continues to own world state, observations and action
+    decisions. Each resident PyTorch actor borrows its current binary
+    request, stages precisely those rows, completes its forward/readback,
+    then may safely overwrite the same device tensors on the next call.
+    CPU inference keeps the existing zero-copy NumPy-backed tensors.
+    """
+
+    def __init__(self, torch, device):
+        self.torch = torch
+        self.device = device
+        self.capacity = 0
+        self.observations = None
+        self.allowed = None
+        self.allocations = 0
+        self.staged_rows = 0
+        self.reused_forwards = 0
+
+    def prepare(self, observations, allowed):
+        torch = self.torch
+        source = torch.from_numpy(np.ascontiguousarray(observations))
+        mask = torch.from_numpy(np.ascontiguousarray(allowed))
+        if self.device.type == "cpu":
+            return source, mask
+        rows = source.shape[0]
+        reused = self.capacity >= rows
+        if not reused:
+            # Geometric growth suppresses allocator churn as environments
+            # and simultaneous policy agents are added to the live game.
+            # Never reserve beyond the existing binary ABI's row limit.
+            self.capacity = min(MAX_BATCH_ROWS, max(
+                rows, 16, self.capacity * 2,
+            ))
+            self.observations = torch.empty(
+                (self.capacity, OBS_FLOATS), device=self.device, dtype=torch.float32,
+            )
+            self.allowed = torch.empty(
+                (self.capacity, MASK_WIDTH), device=self.device, dtype=torch.float32,
+            )
+            self.allocations += 1
+        else:
+            self.reused_forwards += 1
+        device_obs = self.observations[:rows]
+        device_mask = self.allowed[:rows]
+        # Both copies use the actor's normal default device stream. No
+        # external CUDA event or unsynchronized buffer lifetime is added.
+        device_obs.copy_(source)
+        device_mask.copy_(mask)
+        self.staged_rows += rows
+        return device_obs, device_mask
+
+
 class TorchScriptPolicy:
     def __init__(self, model_file: Path, config: dict):
         # PyTorch is imported only when a TorchScript model is configured;
@@ -146,11 +200,11 @@ class TorchScriptPolicy:
         self.device = torch.device(device)
         self.model = torch.jit.load(str(model_file), map_location=self.device)
         self.model.eval()
+        self.input_staging = DeviceInferenceInputs(torch, self.device)
 
     def predict(self, observations: np.ndarray, allowed: np.ndarray):
         torch = self.torch
-        source = torch.from_numpy(np.ascontiguousarray(observations)).to(self.device)
-        mask = torch.from_numpy(np.ascontiguousarray(allowed)).to(self.device)
+        source, mask = self.input_staging.prepare(observations, allowed)
         with torch.inference_mode():
             result = self.model(source, mask)
         if not isinstance(result, (list, tuple)) or len(result) != 2:
@@ -307,11 +361,11 @@ class MlagentsPolicy:
         checkpoint = torch.load(model_file, map_location="cpu", weights_only=True)
         self.actor.load_state_dict(checkpoint["Policy"], strict=True)
         self.actor.eval()
+        self.input_staging = DeviceInferenceInputs(torch, self.device)
 
     def predict(self, observations, allowed, capture_behavior=True):
         torch = self.torch
-        observations = torch.from_numpy(np.ascontiguousarray(observations)).to(self.device)
-        allowed = torch.from_numpy(np.ascontiguousarray(allowed)).to(self.device)
+        observations, allowed = self.input_staging.prepare(observations, allowed)
         with torch.inference_mode():
             action, stats, _ = self.actor.get_action_and_stats([observations], masks=allowed)
             applied = stats["env_action"]
