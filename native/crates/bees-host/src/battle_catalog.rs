@@ -771,7 +771,11 @@ impl BattleCatalog {
                 !mission.record_fleet_stats || !mission.persist_fleet_losses ||
                 mission.victory_grants.iter().any(|grant|
                     grant.count == 0 || grant.count > 1024 ||
-                    grant.saved_squad_id <= 0 ||
+                    // Zero is an unassigned permanent FleetShip in
+                    // the source account, not an instantiated game squad.
+                    // Players may later assign it using the existing
+                    // authoritative purchased-hull transfer transaction.
+                    grant.saved_squad_id < 0 ||
                     !self.buildable_ships.iter().any(|shop|
                         shop.player_side == mission.player_side &&
                         shop.ship_type == grant.ship_type)) ||
