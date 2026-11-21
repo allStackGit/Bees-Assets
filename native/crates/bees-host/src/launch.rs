@@ -1574,6 +1574,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees transfer <catalog.json> --output-dir <battle-runs> --ship <fleet-id> --squad <saved-id>
        bees reassign <catalog.json> --output-dir <battle-runs> --side <n> --ship <fleet-id> --from <saved-id> --squad <saved-id>
        bees squad-create <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
+       bees squad-delete <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id>
        bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false> [--match-speed <true|false>] [--color <inherit|clear|RRGGBB>]
   play  Open the native battle window (requires the client feature)
   serve  Host headless authenticated multiplayer with deterministic input recording
@@ -1918,6 +1919,25 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             .to_string_lossy().parse()?;
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
         return run_create_saved_squad(&catalog, &output, side, template);
+    }
+    if first == "squad-delete" {
+        let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--side") {
+            return Err(invalid(USAGE).into());
+        }
+        let side: i32 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--squad") {
+            return Err(invalid(USAGE).into());
+        }
+        let saved_squad_id: i64 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_some() { return Err(invalid(USAGE).into()); }
+        return run_retire_saved_squad(&catalog, &output, side, saved_squad_id);
     }
     if first == "tactics" {
         let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
