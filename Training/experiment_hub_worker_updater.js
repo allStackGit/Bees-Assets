@@ -10,6 +10,7 @@ const http=require('node:http');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const net=require('node:net');
+const {discoverNvidiaGpus}=require('./experiment_hub_gpu_inventory');
 const isTailnetIPv4=value=>{
     if(net.isIP(value)!==4)return false;
     const octets=value.split('.').map(Number);
@@ -510,8 +511,21 @@ function preparePythonRuntimes(root,changes) {
                 cwd:changes.courier,env:{...env,PYTHONPATH:changes.courier}});
         }else {
             const project=path.join(changes.tinybrains,'Ants-MAPOCA');
+            // One pinned CUDA-capable runtime also runs ordinary CPU jobs.
+            // Do not switch the existing active environment until the new
+            // one passes its native engine and (where applicable) CUDA probes.
+            let cuda=false;
+            if(windows) {
+                try {cuda=discoverNvidiaGpus().length>0;}
+                catch(error) {console.warn('TinyBrains NVIDIA inventory unavailable: '+error.message);}
+            }
             exec(command,[...prefix,'pip','install','--python',python,
-                '--index-url','https://download.pytorch.org/whl/cpu','torch==2.6.0'],{env});
+                '--index-url','https://download.pytorch.org/whl/'+(cuda?'cu124':'cpu'),
+                'torch==2.6.0+'+(cuda?'cu124':'cpu')],{env,timeout:cuda?1200000:240000});
+            if(cuda)exec(python,['-B','-c',
+                'import torch; assert torch.version.cuda and torch.cuda.is_available(); assert torch.ones(16, device="cuda").sum().item() == 16; torch.cuda.synchronize()'],
+                {env,timeout:120000});
+            pythonPaths.tinybrainsCuda=cuda;
             const requirements=path.join(project,'requirements-lock.txt');
             if(fs.existsSync(requirements))
                 exec(command,[...prefix,'pip','install','--python',python,
@@ -633,7 +647,10 @@ async function apply(root,envFile,previous,changes,confirmReplacement=null,rollo
     // Previously running jobs keep their old Python executable and imports.
     const pythonPaths=preparePythonRuntimes(root,changes);
     if(pythonPaths.courier)entries.EXPERIMENT_HUB_COURIER_PYTHON=pythonPaths.courier;
-    if(pythonPaths.tinybrains)entries.EXPERIMENT_HUB_TINYBRAINS_PYTHON=pythonPaths.tinybrains;
+    if(pythonPaths.tinybrains) {
+        entries.EXPERIMENT_HUB_TINYBRAINS_PYTHON=pythonPaths.tinybrains;
+        entries.EXPERIMENT_HUB_TINYBRAINS_CUDA=pythonPaths.tinybrainsCuda?'1':'0';
+    }
     let rollbackService=null,original=null,wasRunning=false,shouldStart=false;
     try {
         wasRunning=runningService();

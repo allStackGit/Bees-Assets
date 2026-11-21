@@ -8233,7 +8233,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 item.hosts[0].id+' ['+item.endpoint+']').join(', ')+
                 (subset?'. One free listener per selected machine is proposed. ':
                     '. All approved endpoints must be reserved. ')+
-                'Adjust CPU/RAM budgets; different learners can reserve other free ports on the same host.'
+                'Adjust CPU/RAM/GPU budgets; different learners can reserve other free ports on the same host.'+
+                ' '+available.map(({hosts:[host]})=>{
+                    const gpuIds=(host.gpus||[]).map(g=>g.id);
+                    return host.gpu_projects?.includes('tinybrains_rollout')&&gpuIds.length
+                        ?host.id+' GPU inference available: '+gpuIds.join(', ')+
+                            ' (set gpu_count: 1, gpu_mode: "exclusive" and optionally gpus: ["'+gpuIds[0]+'"]).'
+                        :host.id+' currently has no eligible configured TinyBrains collector GPU.';
+                }).join(' ')
             :'No eligible unreserved TinyBrains collector listener. Check the rollout project, enrolled workers, endpoints and existing group reservations.';
     }
     function duplicateJobIntoTrain(job,workers) {

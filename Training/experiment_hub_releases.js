@@ -22,7 +22,9 @@ const CLI_ASSETS=[
     'tinybrains-x86_64-unknown-linux-gnu.tar.gz',
     'tinybrains-x86_64-pc-windows-msvc.zip',
 ];
-const TINYBRAINS_PACKAGE_FORMAT='pinned-upstream-cli-and-cartridge-v2';
+// Runtime provisioning changed too: force an immutable new release/venv
+// even for workers that already installed this exact TinyBrains source.
+const TINYBRAINS_PACKAGE_FORMAT='pinned-upstream-cli-cartridge-windows-cuda-v3';
 
 function git(args,cwd,timeout=120000) {
     return new Promise((resolve,reject)=>{

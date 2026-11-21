@@ -88,7 +88,9 @@ if(enabled('tinybrains')) {
         listenIp:required('EXPERIMENT_HUB_TAILNET_IP'),
         port:slots[0],slotPorts:slots,
         threads:Number(required('EXPERIMENT_HUB_TINYBRAINS_THREAD_LIMIT')),
-        enableCuda:false,enableRocm:false,
+        enableCuda:process.platform==='win32'&&
+            process.env.EXPERIMENT_HUB_TINYBRAINS_CUDA==='1',
+        enableRocm:false,
     });
 }
 if(enabled('courier')) {
