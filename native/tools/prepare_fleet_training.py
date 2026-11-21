@@ -290,7 +290,7 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
         number, count = row["number"], row["original_squad_count"]
         if (type(squad_id) is not int or squad_id <= 0 or
                 type(side) is not int or side not in (1, 2) or
-                type(number) is not int or not 0 <= number <= 9 or
+                type(number) is not int or not 1 <= number <= 10 or
                 type(count) is not int or count <= 0 or
                 (side, number) in used_shortcuts or squad_id in assigned_squads):
             raise ValueError("duplicate or invalid native squad hotkey source identity")
