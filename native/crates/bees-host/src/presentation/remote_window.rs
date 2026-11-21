@@ -76,6 +76,9 @@ struct WireCounts {
     ship_sprite_draws: u64,
     projectile_sprite_draws: u64,
     asteroid_sprite_draws: u64,
+    asteroid_piece_sprite_draws: u64,
+    asteroid_piece_fallback_draws: u64,
+    asteroid_pieces_viewport_culled: u64,
     fire_tank_sprite_draws: u64,
     obstacle_debris_events_received: u64,
     obstacle_debris_sprite_draws: u64,
@@ -209,10 +212,30 @@ impl RemoteArtwork {
                 }
             } else if let Some(prefab) = obstacle["asteroid_prefab"].as_u64()
                 .and_then(|id| u8::try_from(id).ok()) {
-                if self.raster.remote_asteroid_art(prefab, point, angle) {
+                if self.raster.draw_asteroid_art(prefab, point, angle, 1.0) {
                     self.asteroids.insert(id);
                     stats.asteroid_sprite_draws += 1;
                 }
+            }
+        }
+        for piece in state["asteroid_pieces"].as_array().into_iter().flatten() {
+            let (Some(prefab), Some(point), Some(opacity)) = (
+                piece["prefab"].as_u64().and_then(|v| u8::try_from(v).ok()),
+                visual.position(piece, 3, fraction),
+                piece["opacity"].as_f64().map(|v| v as f32)
+                    .filter(|v| v.is_finite() && *v > 0.0),
+            ) else { continue };
+            let (x,y)=screen(camera,point);
+            if x<0 || x>=FIELD as i32 || y<0 || y>=HEIGHT as i32 {
+                stats.asteroid_pieces_viewport_culled += 1;
+                continue;
+            }
+            if self.raster.draw_asteroid_piece(prefab, Pose {
+                position: point, rotation_degrees: visual.heading_for(piece, 3, fraction),
+            }, opacity) {
+                stats.asteroid_piece_sprite_draws += 1;
+            } else {
+                stats.asteroid_piece_fallback_draws += 1;
             }
         }
         if self.raster.begin_obstacle_debris_frame(WorldId(episode.0), episode.1, tick) {
@@ -385,7 +408,8 @@ impl RemoteVisual {
         let seconds = (delta as f64 * dt).min(0.30);
         if seconds < 0.005 || seconds > 0.30 { return false; }
         self.duration = Duration::from_secs_f64(seconds);
-        for (kind, field) in [(0, "ships"), (1, "projectiles"), (2, "obstacles")] {
+        for (kind, field) in [(0, "ships"), (1, "projectiles"), (2, "obstacles"),
+            (3, "asteroid_pieces")] {
             for item in previous[field].as_array().into_iter().flatten() {
                 if let (Some(id), Some(position)) =
                     (item["id"].as_i64(), position(item)) {
@@ -1563,6 +1587,18 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                         }
                     }
                 }
+            }
+        }
+        if !show_art {
+            for piece in state["asteroid_pieces"].as_array().into_iter().flatten() {
+                let (Some(point), Some(opacity)) = (visual.position(piece, 3, fraction),
+                    piece["opacity"].as_f64().filter(|v| v.is_finite() && *v > 0.0))
+                    else { continue };
+                let (x,y)=screen(camera,point);
+                if x<0 || x>=FIELD as i32 || y<0 || y>=HEIGHT as i32 { continue; }
+                let color=(opacity.clamp(0.0,1.0)*160.0) as u32 * 0x010101;
+                line(pixels,(x-1,y),(x+1,y),color);
+                line(pixels,(x,y-1),(x,y+1),color);
             }
         }
         for shot in state["projectiles"].as_array().into_iter().flatten() {
@@ -3120,6 +3156,9 @@ pub fn connect_remote(
         "ship_explosion_visual_draws":peer.metrics.ship_explosion_visual_draws,
         "projectile_sprite_draws":peer.metrics.projectile_sprite_draws,
         "asteroid_sprite_draws":peer.metrics.asteroid_sprite_draws,
+        "asteroid_piece_sprite_draws":peer.metrics.asteroid_piece_sprite_draws,
+        "asteroid_piece_fallback_draws":peer.metrics.asteroid_piece_fallback_draws,
+        "asteroid_pieces_viewport_culled":peer.metrics.asteroid_pieces_viewport_culled,
         "fire_tank_sprite_draws":peer.metrics.fire_tank_sprite_draws,
         "obstacle_debris_events_received":peer.metrics.obstacle_debris_events_received,
         "obstacle_debris_sprite_draws":peer.metrics.obstacle_debris_sprite_draws,

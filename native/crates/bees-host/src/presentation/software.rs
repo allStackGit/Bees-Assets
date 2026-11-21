@@ -1099,9 +1099,10 @@ impl NativeSoftwareRenderer {
         )
     }
 
-    #[cfg(feature = "client")]
-    pub(super) fn remote_asteroid_art(
-        &mut self, prefab: u8, point: Vec2, rotation_degrees: f32,
+    /// Source collision-asteroid and fragment art share atlas identity,
+    /// pivot, physical scale and the authoritative fragment opacity.
+    pub(super) fn draw_asteroid_art(
+        &mut self, prefab: u8, point: Vec2, rotation_degrees: f32, opacity: f32,
     ) -> bool {
         let Some(art) = source_asteroid_art()
             .and_then(|atlas| atlas.sprites.get(usize::from(prefab)))
@@ -1109,8 +1110,20 @@ impl NativeSoftwareRenderer {
         else { return false };
         self.draw_sprite(
             &art.sprite, point, rotation_degrees.to_radians(),
-            self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
+            self.camera.pixels_per_unit / art.pixels_per_unit, opacity,
         )
+    }
+
+    /// Draw the original fragment fallback only when texture art is not
+    /// available. This is render-only; no client-side fragment motion.
+    pub(super) fn draw_asteroid_piece(&mut self, prefab: u8, pose: Pose,
+        opacity: f32) -> bool {
+        if !opacity.is_finite() || opacity <= 0.0 { return false; }
+        if self.draw_asteroid_art(prefab, pose.position, pose.rotation_degrees,
+            opacity.clamp(0.0, 1.0)) { return true; }
+        let c = (opacity.clamp(0.0, 1.0) * 160.0) as u32;
+        self.cross(pose.position, 1.0, c * 0x010101);
+        false
     }
 
     /// Resize presentation storage only. Preserve camera world scale and
@@ -1596,18 +1609,9 @@ impl NativeSoftwareRenderer {
                 counts.culled_pieces += 1;
                 continue;
             }
-            let art = asteroid_art
-                .and_then(|atlas| atlas.sprites.get(usize::from(piece.prototype.prefab_number)))
-                .and_then(Option::as_ref);
-            if art.is_some_and(|art| self.draw_sprite(
-                &art.sprite, piece.pose.position, piece.pose.rotation_degrees.to_radians(),
-                self.camera.pixels_per_unit / art.pixels_per_unit,
-                piece.sprite_opacity(),
-            )) {
+            if self.draw_asteroid_piece(piece.prototype.prefab_number, piece.pose,
+                piece.sprite_opacity()) {
                 counts.asteroid_piece_sprite_draws += 1;
-            } else {
-                let c = (piece.sprite_opacity() * 160.0) as u32;
-                self.cross(position, 1.0, c * 0x010101);
             }
         }
         self.render_obstacle_debris(view, &mut counts);

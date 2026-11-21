@@ -283,6 +283,10 @@ pub struct RemotePlayMeasurements {
     /// Count one projection/JSON encoding per distinct authenticated side,
     /// never once per cooperative peer who consumes the same bytes.
     pub snapshot_unique_encoded_bytes: u64,
+    #[serde(default)]
+    pub asteroid_pieces_projected: u64,
+    #[serde(default)]
+    pub asteroid_pieces_fog_culled: u64,
     pub snapshot_projection_wall_seconds: f64,
     #[serde(default)]
     pub weapon_status_slots_projected: u64,
@@ -1897,6 +1901,26 @@ fn current_state(
                 view.combat.range_visible_map_object_ids().contains(&object.entity_id),
         }))
     }).collect();
+    // Active non-colliding fragments already have authoritative IDs,
+    // pooled prefab identities, poses and fade state. Do not send their
+    // velocities, RNG, parents or hidden positions to the presentation.
+    // Colliding child shards remain in the existing obstacle projection.
+    let asteroid_pieces: Vec<_> = view.combat.render_asteroid_pieces()
+        .filter_map(|piece| {
+            let point = piece.pose.position;
+            if fog && !sources.covers(point, measurements) {
+                measurements.asteroid_pieces_fog_culled += 1;
+                return None;
+            }
+            measurements.asteroid_pieces_projected += 1;
+            Some(json!({
+                "id": piece.entity_id,
+                "prefab": piece.prototype.prefab_number,
+                "x": point.x, "y": point.y,
+                "rotation": piece.pose.rotation_degrees,
+                "opacity": piece.sprite_opacity(),
+            }))
+        }).collect();
     // Visual-only projectiles are sampled from the authoritative physical
     // world after the completed step, never simulated by the remote client.
     // The source fog restricts shots just as it restricts enemy hulls.
@@ -2076,5 +2100,6 @@ fn current_state(
         })),
         "ships": ships, "squads": squads, "obstacles": obstacles,
         "projectiles": projectiles,
+        "asteroid_pieces": asteroid_pieces,
     })
 }
