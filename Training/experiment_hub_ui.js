@@ -1113,8 +1113,31 @@ function approvedTinyBrainsProfiles(machines) {
 
 document.addEventListener('DOMContentLoaded', () => {
     const $ = id => document.getElementById(id);
-    let project = document.documentElement.dataset.hubDefaultProject || 'bees';
-    let tab = 'monitor', state = null, editing = null;
+    // One browser tab keeps its own navigation and Compare selections across
+    // coordinator restarts; saved data never changes experiment state.
+    const viewKey='experiment-hub-view-v1';
+    let savedView={};
+    try {
+        const parsed=JSON.parse(sessionStorage.getItem(viewKey)||'{}');
+        if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))savedView=parsed;
+    }catch {}
+    const tabs=['design','train','monitor','compare','machines'];
+    let project=typeof savedView.project==='string'?
+        savedView.project:document.documentElement.dataset.hubDefaultProject||'bees';
+    let tab=tabs.includes(savedView.tab)?savedView.tab:'monitor';
+    let state=null,editing=null;
+    const savedCompareRuns=new Map(
+        Object.entries(savedView.compareRuns||{}).filter(([key,ids])=>
+            /^[a-z][a-z0-9_-]{0,47}$/.test(key)&&Array.isArray(ids)&&
+            ids.length<=16&&ids.every(id=>typeof id==='string'&&
+                /^[0-9a-f-]{36}$/.test(id))));
+    function saveView() {
+        try {
+            sessionStorage.setItem(viewKey,JSON.stringify({
+                project,tab,compareRuns:Object.fromEntries(savedCompareRuns),
+            }));
+        }catch {} // Private browsing can disable session storage.
+    }
     let initialDesignLoaded=false;
     let comparisonData = null,comparisonProject = null,comparisonError = null;
     let comparisonRequest = 0,selectionProject = null,previewCandidateKey = null;
@@ -1551,6 +1574,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function selectTab(next) {
         if (!['design','train','monitor','compare','machines'].includes(next)) return;
         tab=next;
+        saveView();
         for(const section of document.querySelectorAll('section[data-hub-tab]')) {
             const scope=section.dataset.project;
             const shouldHide=section.dataset.hubTab!==tab ||
@@ -1660,11 +1684,12 @@ document.addEventListener('DOMContentLoaded', () => {
         select.id='hub-compare-'+slot;
         label.htmlFor=select.id;
         label.textContent='Run '+compareSerial;
-        select.addEventListener('change',renderComparison);
+        select.addEventListener('change',()=>{renderComparison();saveComparisonRuns();});
         const remove=button('Remove',()=>{
             compareSlots.splice(compareSlots.indexOf(slot),1);
             row.remove();
             renderComparison();
+            saveComparisonRuns();
         });
         remove.title='Remove from comparison (does not modify the job)';
         const controls=document.createElement('div');
@@ -1673,6 +1698,11 @@ document.addEventListener('DOMContentLoaded', () => {
         row.append(label,controls);
         $('hub-compare-run-list').append(row);
         return slot;
+    }
+    function saveComparisonRuns() {
+        savedCompareRuns.set(project,compareSlots
+            .map(slot=>$('hub-compare-'+slot)?.value||''));
+        saveView();
     }
     // Keep the native multi-select as the single source of selected IDs.
     // This searchable panel changes only its options, not the job/export API.
@@ -1960,9 +1990,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 .includes(j.status)).reverse();
         const chartable=selectable.filter(hasSamples);
         const defaults=[...chartable,...selectable.filter(j=>!hasSamples(j))];
+        const remembered=savedCompareRuns.get(project);
+        while(remembered&&compareSlots.length<remembered.length)
+            addComparisonSlot();
         const previous=compareSlots.map(slot=>$('hub-compare-'+slot).value);
         const changedProject=selectionProject!==project;
-        if(changedProject)comparisonDefaultsApplied=false;
+        if(changedProject)comparisonDefaultsApplied=Boolean(remembered);
         selectionProject=project;
         const chooseDefaults=!comparisonDefaultsApplied&&defaults.length>0;
         const selected=new Set();
@@ -1982,7 +2015,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' · '+j.status+
                     ' · '+new Date(j.created_at).toLocaleDateString(),j.id)));
             const desired=chooseDefaults&&i<2
-                ?defaults[i]?.id:(!changedProject?previous[i]:null);
+                ?defaults[i]?.id:(changedProject?remembered?.[i]:previous[i]);
             if(desired&&selectable.some(j=>j.id===desired)&&
                 !selected.has(desired)){
                 select.value=desired;
@@ -1990,6 +2023,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         if(chooseDefaults)comparisonDefaultsApplied=true;
+        saveComparisonRuns();
         const configs=(state.configurations||[]).filter(c=>c.project_id===project);
         const configSelect=$('hub-compare-selection-config'),previousConfig=configSelect.value;
         configSelect.replaceChildren(...configs.map(c=>
@@ -7028,6 +7062,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-compare-add-run').addEventListener('click',()=>{
         addComparisonSlot();
         renderComparison();
+        saveComparisonRuns();
     });
     $('hub-historical-import-submit').addEventListener('click',async()=>{
         const input=$('hub-historical-audit-file'),file=input.files?.[0];
@@ -7215,7 +7250,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     $('hub-project').addEventListener('change',()=>{
-        project=$('hub-project').value;resetEditor();display();selectTab(tab);
+        project=$('hub-project').value;saveView();resetEditor();display();selectTab(tab);
     });
     $('hub-config-cancel').addEventListener('click',resetEditor);
     $('hub-copy-bees-form').addEventListener('click',()=>{
@@ -7875,7 +7910,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     distributedPanel.append(distributedLegend,distributedMachineLabel,preparePanel,
         distributedBudgetsLabel,distributedMatch.label,distributedDetails,distributedQueue,distributedFeedback);
-    $('hub-job-queue').insertAdjacentElement('afterend',distributedPanel);
+    $('hub-job-queue-actions').insertAdjacentElement('afterend',distributedPanel);
     // Courier reuses the same native group claims, but unlike TinyBrains
     // each remote process trains its own immutable recurrent PPO lineage.
     const courierPanel=document.createElement('fieldset');
@@ -8534,7 +8569,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'update-workers',{confirm_update:true},
         'Publish updated remote worker software for this stopped Bees run? The worker release and run identity are verified by the existing operator.'));
 
-    selectTab('monitor');
+    selectTab(tab);
     reload();
     setInterval(()=>{
         reload();
