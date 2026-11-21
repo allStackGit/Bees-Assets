@@ -395,6 +395,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     mission_dependencies = dict(args.mission_requires)
     mission_advances = dict(args.mission_advance)
     mission_grants = dict(args.mission_grant_on)
+    mission_banks = dict(args.mission_bank_on)
     mission_stories = dict(args.mission_story)
     mission_outcomes = {}
     for index, prior, result in args.mission_unlock_any:
@@ -607,6 +608,13 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     f"mission {index} completion-based rewards require --mission-advance {index}:finished"
                 )
             mission["grant_on"] = "finished"
+        if mission_banks.get(index) == "finished":
+            if mission_advances.get(index, "victory") != "finished" and \
+                    mission_stories.get(index) != "pluto_bluer_pastures":
+                raise ValueError(
+                    f"mission {index} completion-based income requires --mission-advance {index}:finished"
+                )
+            mission["bank_on_finished"] = True
         alternatives = mission_outcomes.get(index, [])
         if alternatives:
             mission["unlock_if_any"] = [
@@ -798,6 +806,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             "requires": missions[index - 1]["mission"].get("requires", []),
             "advance_on": missions[index - 1]["mission"].get("advance_on", "victory"),
             "grant_on": missions[index - 1]["mission"].get("grant_on", "victory"),
+            "bank_on_finished": missions[index - 1]["mission"].get("bank_on_finished", False),
             "on_victory": missions[index - 1]["mission"].get("on_victory"),
             "on_defeat": missions[index - 1]["mission"].get("on_defeat"),
             "unlock_if_any": missions[index - 1]["mission"].get("unlock_if_any", []),
@@ -994,6 +1003,9 @@ def main() -> None:
     parser.add_argument("--mission-grant-on", action="append", type=mission_advance,
                         default=[], metavar="MISSION:victory|finished",
                         help="award the mission's authored FleetShips and SavedSquads after a committed finish, including a defeat")
+    parser.add_argument("--mission-bank-on", action="append", type=mission_advance,
+                        default=[], metavar="MISSION:victory|finished",
+                        help="bank surviving ships' real mined TSV after a committed finish, including defeat")
     parser.add_argument("--mission-unlock-any", action="append", type=mission_unlock_any,
                         default=[], metavar="MISSION:PRIOR:OUTCOME",
                         help="unlock a mission through any listed earlier finished, victory or defeat outcome; use --mission-requires MISSION:none for a full alternative route")
@@ -1040,6 +1052,7 @@ def main() -> None:
         ("--mission-requires", args.mission_requires),
         ("--mission-advance", args.mission_advance),
         ("--mission-grant-on", args.mission_grant_on),
+        ("--mission-bank-on", args.mission_bank_on),
         ("--mission-variant", [(mission, path) for mission, _, path
                               in args.mission_variant]),
         ("--mission-defeat-variant", [(mission, path) for mission, _, path
