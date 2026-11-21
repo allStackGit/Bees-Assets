@@ -375,6 +375,16 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Read the projectile class from the real installed weapon mount.
+    /// A shot may collide and retire before the client presents its first
+    /// snapshot. Presentation can still sound its canonical WeaponFired
+    /// event without inventing or persisting a second projectile.
+    pub fn weapon_projectile_type(&self, ship_id: i64, slot: u8) -> Option<u8> {
+        self.ship_weapons.get(&ship_id)?
+            .turrets.get(usize::from(slot))?
+            .as_ref().map(|mount| mount.spec.projectile_type)
+    }
+
     /// Read-only geometry for both presentation and future automatic targeting.
     /// Legacy scenes may fire manually but must not invent a range collider.
     pub fn weapon_range(&self, ship_id: i64, slot: usize)
