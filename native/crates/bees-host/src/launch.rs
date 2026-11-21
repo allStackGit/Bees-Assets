@@ -6077,6 +6077,25 @@ fn run_battle(
                 return Err(invalid("Extraction requires a deployed player, policy or scripted controller on its objective side").into());
             }
         }
+        if mission.is_some_and(|mission| mission.evacuation_rewards) {
+            let required = level.survival.as_ref();
+            if !single_level || !required.is_some_and(|objective|
+                    objective.defending_side == mission.expect("evacuation mission").player_side &&
+                    (objective.seconds - 300.49).abs() <= 0.01 &&
+                    source.entities.iter().any(|entity| matches!(entity,
+                        NativeAuthoredEntity::Ship(ship)
+                            if ship.entity_id == objective.protected_ship_id &&
+                            ship.ship_type == bees_sim::ship_assets::HUMAN_TARGET_TYPE &&
+                            ship.side == objective.defending_side && !ship.vitals.is_dead()
+                    ))) ||
+                level.demolition.is_some() || level.extraction.is_some() ||
+                level.escort.is_some()
+            {
+                return Err(invalid(
+                    "Pluto evacuation requires the original 300.49-second HumanTarget survival World",
+                ).into());
+            }
+        }
         if let Some(objective) = &level.survival {
             if mission.is_some_and(|mission| mission.player_side != objective.defending_side) ||
                 !objective_has_controller(objective.defending_side)
