@@ -565,6 +565,38 @@ def verify_round(directory, manifest_sha, checkpoint_sha, learner_slot,
             raise ValueError(f"round receipt points outside its own learner: {receipt_path}")
         if file_sha256(path) != record[key + "_sha256"]:
             raise ValueError(f"round completion artifact changed: {path}")
+    # For new distributed optimizer results, the final published checkpoint
+    # is not authoritative without the exact durable attempt which launched
+    # its ranks. Older already-committed rounds have no attempt digest and
+    # retain their original lineage validation.
+    attempt_sha = record.get("optimizer_attempt_sha256")
+    if attempt_sha is not None:
+        attempt_path = directory / "optimizer-attempt.json"
+        if (not isinstance(attempt_sha, str) or
+                re.fullmatch(r"[0-9a-f]{64}", attempt_sha) is None or
+                attempt_path.is_symlink() or not attempt_path.is_file() or
+                file_sha256(attempt_path) != attempt_sha):
+            raise ValueError(f"optimizer attempt ownership changed: {receipt_path}")
+        attempt = read_json(attempt_path)
+        if (not isinstance(attempt, dict) or
+                attempt.get("schema_version") != 1 or
+                attempt.get("kind") != "native_optimizer_attempt" or
+                attempt.get("run_id") != record.get("run_id") or
+                attempt.get("run_config_sha256") != record.get("run_config_sha256") or
+                attempt.get("source_run_config_sha256") != record.get("source_run_config_sha256") or
+                attempt.get("input_checkpoint_sha256") != checkpoint_sha or
+                attempt.get("input_manifest_sha256") != manifest_sha or
+                attempt.get("learner_slot") != learner_slot or
+                attempt.get("refresh_opponent_slot") != refresh_opponent_slot or
+                attempt.get("learner_group_id") != record.get("optimizer_group_id") or
+                attempt.get("learner_node_rank") != 0 or
+                attempt.get("collection_orders_sha256") !=
+                    record.get("collection_orders_sha256") or
+                attempt.get("rollout_receipts") != [
+                    [bundle["sha256"], Path(bundle["path"]).parent.name]
+                    for bundle in record.get("rollout_bundles", [])
+                ]):
+            raise ValueError(f"completed optimizer belongs to another original attempt: {receipt_path}")
     metrics = record["learner_metrics"]
     verified_optimizer_group(record)
     if (metrics.get("next_checkpoint_sha256") != record["next_checkpoint_sha256"] or
