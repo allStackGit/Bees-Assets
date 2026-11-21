@@ -1546,7 +1546,8 @@ impl NativeSoftwareRenderer {
             let visible = view.combat.range_visible_map_object_ids().contains(&obstacle.entity_id);
             let is_fire_tank = object.is_some_and(|object| object.kind == bees_sim::map_object::MapObjectKind::FireTank);
             if let Some(tank) = object.filter(|_| is_fire_tank) {
-                self.draw_fire_tank(tank, body.pose, view.tick as f32 * view.fixed_step_seconds);
+                self.draw_fire_tank(tank.entity_id, tank.health, tank.max_health,
+                    body.pose, view.tick as f32 * view.fixed_step_seconds);
             } else if let Some(art) = asteroid_art
                 .filter(|_| obstacle.kind == bees_sim::obstacle::ObstacleKind::CollisionAsteroid)
                 .and_then(|atlas| body.source_asteroid_prefab_number
@@ -2812,76 +2813,102 @@ impl NativeSoftwareRenderer {
         &mut self, view: &NativeRenderWorldView<'_>, counts: &mut NativeRenderCounts,
     ) {
         use bees_sim::combat_world::CombatEvent;
-        let frame = (view.world_id, view.episode_revision, view.tick);
-        if self.debris_frame != Some(frame) {
-            if self.debris_frame.is_some_and(|previous| (previous.0, previous.1) != (frame.0, frame.1)) {
-                self.obstacle_debris.clear();
-            }
-            self.debris_frame = Some(frame);
+        if self.begin_obstacle_debris_frame(view.world_id, view.episode_revision, view.tick) {
             for event in view.combat.events() {
-                let CombatEvent::FireTankObstacleBrokenApart { obstacle_id, origin, bounds, .. } = *event else { continue };
-                // Fire Tank prefab defaults. This stream belongs exclusively
-                // to the tactical renderer and never touches world RNG.
-                let mut random = RandomStream::new((obstacle_id as u64).wrapping_mul(397) ^
-                    u64::from(origin.x.to_bits()) ^ u64::from(origin.y.to_bits()));
-                let mut unit = || (random.next_u64() >> 40) as f32 / 16_777_216.0;
-                let sprite_count = fire_tank_debris_atlas().sprites.len();
-                for _ in 0..24 {
-                    let sprite = (unit() * sprite_count as f32) as usize;
-                    let position = bounds.min + Vec2::new(
-                        (bounds.max.x - bounds.min.x) * unit(),
-                        (bounds.max.y - bounds.min.y) * unit(),
-                    );
-                    let radial = position - origin;
-                    let direction = if radial.length_squared() < 0.01 {
-                        let angle = unit() * std::f32::consts::TAU;
-                        Vec2::new(angle.cos(), angle.sin())
-                    } else {
-                        radial * radial.length_squared().sqrt().recip()
-                    };
-                    let spread = Vec2::new(unit() * 2.0 - 1.0, unit() * 2.0 - 1.0) * 0.35;
-                    let direction = direction + spread;
-                    let velocity = direction * ((4.0 + 7.0 * unit()) * direction.length_squared().sqrt().recip());
-                    self.obstacle_debris.push(ObstacleDebris {
-                        born: view.tick, position, velocity,
-                        rotation: unit() * 360.0, spin: (2.0 * unit() - 1.0) * 360.0,
-                        lifetime: 1.5 * (0.8 + 0.4 * unit()), scale: 3.0 + 3.0 * unit(),
-                        sprite,
-                    });
+                if let CombatEvent::FireTankObstacleBrokenApart { obstacle_id, origin, bounds, .. } = *event {
+                    self.record_obstacle_debris(view.tick, obstacle_id, origin, bounds);
                 }
             }
         }
-        let age = |born| view.tick.saturating_sub(born) as f32 * view.fixed_step_seconds;
+        let (pieces, culled) = self.draw_obstacle_debris(view.tick, view.fixed_step_seconds);
+        counts.pieces += pieces;
+        counts.culled_pieces += culled;
+    }
+
+    /// Once per source frame, not once per rendered/interpolated frame.
+    pub(super) fn begin_obstacle_debris_frame(&mut self, world: WorldId,
+        revision: u64, tick: u64) -> bool {
+        let frame = (world, revision, tick);
+        if self.debris_frame == Some(frame) { return false; }
+        if self.debris_frame.is_some_and(|previous| (previous.0, previous.1) != (world, revision)) {
+            self.obstacle_debris.clear();
+        }
+        self.debris_frame = Some(frame);
+        true
+    }
+
+    pub(super) fn record_obstacle_debris(&mut self, born: u64, obstacle_id: i64,
+        origin: Vec2, bounds: Aabb) {
+        if !origin.is_finite() || !bounds.min.is_finite() || !bounds.max.is_finite() ||
+            bounds.min.x > bounds.max.x || bounds.min.y > bounds.max.y { return; }
+        // Fire Tank prefab defaults, using cosmetic RNG only.
+        let mut random = RandomStream::new((obstacle_id as u64).wrapping_mul(397) ^
+            u64::from(origin.x.to_bits()) ^ u64::from(origin.y.to_bits()));
+        let mut unit = || (random.next_u64() >> 40) as f32 / 16_777_216.0;
+        let sprite_count = fire_tank_debris_atlas().sprites.len();
+        for _ in 0..24 {
+            let sprite = (unit() * sprite_count as f32) as usize;
+            let position = bounds.min + Vec2::new(
+                (bounds.max.x - bounds.min.x) * unit(),
+                (bounds.max.y - bounds.min.y) * unit(),
+            );
+            let radial = position - origin;
+            let direction = if radial.length_squared() < 0.01 {
+                let angle = unit() * std::f32::consts::TAU;
+                Vec2::new(angle.cos(), angle.sin())
+            } else {
+                radial * radial.length_squared().sqrt().recip()
+            };
+            let spread = Vec2::new(unit() * 2.0 - 1.0, unit() * 2.0 - 1.0) * 0.35;
+            let direction = direction + spread;
+            let velocity = direction * ((4.0 + 7.0 * unit()) * direction.length_squared().sqrt().recip());
+            self.obstacle_debris.push(ObstacleDebris {
+                born, position, velocity,
+                rotation: unit() * 360.0, spin: (2.0 * unit() - 1.0) * 360.0,
+                lifetime: 1.5 * (0.8 + 0.4 * unit()), scale: 3.0 + 3.0 * unit(),
+                sprite,
+            });
+        }
+    }
+
+    pub(super) fn draw_obstacle_debris(&mut self, tick: u64, dt: f32) -> (usize, usize) {
+        let age = |born| tick.saturating_sub(born) as f32 * dt;
         self.obstacle_debris.retain(|piece| age(piece.born) < piece.lifetime);
+        let mut culled = 0;
         for index in 0..self.obstacle_debris.len() {
             let piece = &self.obstacle_debris[index];
             let seconds = age(piece.born);
             let position = piece.position + piece.velocity * (-(-1.25 * seconds).exp_m1() / 1.25);
-            counts.pieces += 1;
             let alpha = ((1.0 - seconds / piece.lifetime) / 0.4).min(1.0);
             let angle = (piece.rotation + piece.spin * seconds).to_radians();
             let atlas = fire_tank_debris_atlas();
             let scale = piece.scale * self.camera.pixels_per_unit / atlas.pixels_per_unit;
             if !self.draw_sprite(&atlas.sprites[piece.sprite], position, angle, scale, alpha) {
-                counts.culled_pieces += 1;
+                culled += 1;
             }
         }
+        (self.obstacle_debris.len(), culled)
     }
 
-    fn draw_fire_tank(&mut self, tank: &bees_sim::map_object::CombatMapObject, pose: Pose, seconds: f32) {
+    /// Presentation uses only the visible damage state; no FireTankConfig
+    /// or replica of the authoritative MapObject is needed on a LAN peer.
+    pub(super) fn draw_fire_tank(&mut self, entity_id: i64, health: i32,
+        max_health: i32, pose: Pose, seconds: f32) -> bool {
+        if entity_id <= 0 || max_health <= 0 || !pose.position.is_finite() ||
+            !pose.rotation_degrees.is_finite() || !seconds.is_finite() { return false; }
         static BODY: OnceLock<SpriteAtlas> = OnceLock::new();
         static SMOKE: OnceLock<SpriteAtlas> = OnceLock::new();
         let body = BODY.get_or_init(|| SpriteAtlas::decode(include_bytes!("../../../../assets/fire-tank-body.rgba")));
         const STAGES: usize = 4;
-        let lost = i64::from(tank.max_health) - i64::from(tank.health.max(0));
-        let stage = ((lost * STAGES as i64) / i64::from(tank.max_health))
+        let lost = i64::from(max_health) - i64::from(health.max(0));
+        let stage = ((lost * STAGES as i64) / i64::from(max_health))
             .clamp(0, STAGES as i64 - 1) as usize;
         // Stable cosmetic variation across frames, independent of gameplay RNG.
-        let variant = tank.entity_id as usize % (body.sprites.len() / STAGES);
+        let variant = entity_id as usize % (body.sprites.len() / STAGES);
         let angle = pose.rotation_degrees.to_radians();
-        self.draw_sprite(&body.sprites[variant * STAGES + stage], pose.position, angle,
+        let drawn = self.draw_sprite(&body.sprites[variant * STAGES + stage], pose.position, angle,
             self.camera.pixels_per_unit / body.pixels_per_unit, 1.0);
-        if stage == 0 { return; }
+        if stage == 0 { return drawn; }
 
         let smoke = SMOKE.get_or_init(|| SpriteAtlas::decode(include_bytes!("../../../../assets/fire-tank-smoke.rgba")));
         let frame = (seconds * 5.0) as usize;
@@ -2891,6 +2918,7 @@ impl NativeSoftwareRenderer {
             self.draw_sprite(&smoke.sprites[(frame + plume) % smoke.sprites.len()],
                 pose.transform_point(offset), angle, self.camera.pixels_per_unit / smoke.pixels_per_unit, 1.0);
         }
+        drawn
     }
 
     fn draw_sprite(&mut self, sprite: &NativeSprite, position: Vec2, angle: f32, scale: f32, alpha: f32) -> bool {

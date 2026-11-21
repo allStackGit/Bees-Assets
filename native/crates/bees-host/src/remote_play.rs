@@ -1599,6 +1599,13 @@ fn collect_remote_audio(
                 "huge_explosion",
                 shots.get(projectile_id).map(|shot| shot.1),
             ),
+            CombatEvent::FireTankObstacleBrokenApart { origin, bounds, .. } => {
+                // Never disclose a hidden tank through a visible wall or
+                // a hidden wall through an explosion at a visible tank.
+                if view.player_authority.player_fog_of_war_enabled() &&
+                    !sources.covers(*origin, measurements) { continue; }
+                ("obstacle_debris", Some((bounds.min + bounds.max) * 0.5))
+            },
             _ => continue,
         };
         let Some(point) = point.filter(|point| point.is_finite()) else { continue };
@@ -1677,6 +1684,12 @@ fn collect_remote_audio(
                                 view.player_authority.player_squad_color_rgb(owner)),
                     });
                 }
+            }
+            if let CombatEvent::FireTankObstacleBrokenApart { obstacle_id, origin, bounds, .. } = event {
+                cue["obstacle_debris"] = json!({
+                    "id": obstacle_id, "origin": [origin.x, origin.y],
+                    "bounds": [[bounds.min.x, bounds.min.y], [bounds.max.x, bounds.max.y]],
+                });
             }
             if let Some(index) = displaced {
                 let removed = pending.remove(index);
@@ -1876,6 +1889,12 @@ fn current_state(
             } else { None },
             "health": object.vitals.map(|v| v.health)
                 .or_else(|| map.map(|v| v.health)),
+            // Only center-visible objects reach this projection, and
+            // health bars follow the source weapon-range visibility union.
+            "map_object_kind": map.map(|object| object.kind as u8),
+            "max_health": map.map(|object| object.max_health),
+            "range_visible": map.is_some() &&
+                view.combat.range_visible_map_object_ids().contains(&object.entity_id),
         }))
     }).collect();
     // Visual-only projectiles are sampled from the authoritative physical

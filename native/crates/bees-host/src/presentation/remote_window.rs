@@ -76,6 +76,11 @@ struct WireCounts {
     ship_sprite_draws: u64,
     projectile_sprite_draws: u64,
     asteroid_sprite_draws: u64,
+    fire_tank_sprite_draws: u64,
+    obstacle_debris_events_received: u64,
+    obstacle_debris_sprite_draws: u64,
+    obstacle_debris_culled: u64,
+    map_object_health_bars: u64,
     sprite_candidate_pixels: u64,
     sprite_opaque_pixels: u64,
     sprite_blended_pixels: u64,
@@ -119,6 +124,7 @@ struct RemoteArtwork {
     ships: HashSet<i64>,
     projectiles: HashSet<i64>,
     asteroids: HashSet<i64>,
+    fire_tanks: HashSet<i64>,
     shot_first_seen: HashMap<i64, (u64, u64)>,
     episode: Option<(u64, u64)>,
     fog_enabled: bool,
@@ -134,7 +140,8 @@ impl RemoteArtwork {
         Ok(Self {
             raster: NativeSoftwareRenderer::new(FIELD, HEIGHT, map)?,
             ships: HashSet::new(), projectiles: HashSet::new(),
-            asteroids: HashSet::new(), shot_first_seen: HashMap::new(),
+            asteroids: HashSet::new(), fire_tanks: HashSet::new(),
+            shot_first_seen: HashMap::new(),
             episode: None, fog_enabled: false,
             fog_coverage: vec![0; FIELD * HEIGHT],
         })
@@ -150,6 +157,7 @@ impl RemoteArtwork {
         self.ships.clear();
         self.projectiles.clear();
         self.asteroids.clear();
+        self.fire_tanks.clear();
         self.fog_enabled = state["fog_enabled"] == true;
         if self.fog_enabled {
             self.fog_coverage.fill(0);
@@ -183,17 +191,50 @@ impl RemoteArtwork {
         let tick = state["tick"].as_u64().unwrap_or(0);
         let dt = state["fixed_step_seconds"].as_f64().unwrap_or(0.0) as f32;
         for obstacle in state["obstacles"].as_array().into_iter().flatten() {
-            let (Some(id), Some(prefab), Some(point)) = (
-                obstacle["id"].as_i64(),
-                obstacle["asteroid_prefab"].as_u64().and_then(|id| u8::try_from(id).ok()),
-                visual.position(obstacle, 2, fraction),
+            let (Some(id), Some(point)) = (
+                obstacle["id"].as_i64(), visual.position(obstacle, 2, fraction),
             ) else { continue };
             let angle = visual.heading_for(obstacle, 2, fraction);
-            if self.raster.remote_asteroid_art(prefab, point, angle) {
-                self.asteroids.insert(id);
-                stats.asteroid_sprite_draws += 1;
+            if obstacle["map_object_kind"].as_u64() ==
+                Some(bees_sim::map_object::MapObjectKind::FireTank as u64)
+            {
+                let (Some(health), Some(max_health)) = (
+                    obstacle["health"].as_i64().and_then(|v| i32::try_from(v).ok()),
+                    obstacle["max_health"].as_i64().and_then(|v| i32::try_from(v).ok()),
+                ) else { continue };
+                if self.raster.draw_fire_tank(id, health, max_health,
+                    Pose { position: point, rotation_degrees: angle }, tick as f32 * dt) {
+                    self.fire_tanks.insert(id);
+                    stats.fire_tank_sprite_draws += 1;
+                }
+            } else if let Some(prefab) = obstacle["asteroid_prefab"].as_u64()
+                .and_then(|id| u8::try_from(id).ok()) {
+                if self.raster.remote_asteroid_art(prefab, point, angle) {
+                    self.asteroids.insert(id);
+                    stats.asteroid_sprite_draws += 1;
+                }
             }
         }
+        if self.raster.begin_obstacle_debris_frame(WorldId(episode.0), episode.1, tick) {
+            for cue in state["audio_events"].as_array().into_iter().flatten() {
+                let debris = &cue["obstacle_debris"];
+                let (Some(id), Some(origin), Some(bounds), Some(born)) = (
+                    debris["id"].as_i64(), point_from_wire(&debris["origin"]),
+                    debris["bounds"].as_array().filter(|v| v.len()==2),
+                    cue["tick"].as_u64(),
+                ) else { continue };
+                let (Some(min), Some(max)) =
+                    (point_from_wire(&bounds[0]), point_from_wire(&bounds[1]))
+                    else { continue };
+                if born<=tick && tick.saturating_sub(born) as f32 * dt < 1.8 {
+                    self.raster.record_obstacle_debris(born, id, origin, Aabb { min, max });
+                    stats.obstacle_debris_events_received += 1;
+                }
+            }
+        }
+        let (pieces, culled) = self.raster.draw_obstacle_debris(tick, dt);
+        stats.obstacle_debris_sprite_draws += pieces.saturating_sub(culled) as u64;
+        stats.obstacle_debris_culled += culled as u64;
         for shot in state["projectiles"].as_array().into_iter().flatten() {
             let (Some(id), Some(kind), Some(point)) = (
                 shot["id"].as_i64(),
@@ -1458,6 +1499,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     visual: &RemoteVisual, fraction: f32,
     artwork: &RemoteArtwork, show_art: bool, show_weapon_ranges: bool,
     combat_hud_draws: &mut [u64; 7], obstacle_hull_draws: &mut u64,
+    map_object_health_bars: &mut u64,
     minimap_ship_markers: &mut u64, minimap_objective_markers: &mut u64,
     fog_masked_pixels: &mut u64) {
     // F6 avoids allocating or clearing a second per-frame art layer,
@@ -1489,18 +1531,36 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         }
         for obj in state["obstacles"].as_array().into_iter().flatten() {
             if let Some(point)=visual.position(obj, 2, fraction) {
-                if artwork.asteroids.contains(&obj["id"].as_i64().unwrap_or(-1)) {
-                    continue;
+                let id = obj["id"].as_i64().unwrap_or(-1);
+                if !artwork.asteroids.contains(&id) && !artwork.fire_tanks.contains(&id) {
+                    match draw_remote_primary_hull(
+                        pixels, obj, camera, point,
+                        visual.heading_for(obj, 2, fraction),
+                    ) {
+                        Some(true) => *obstacle_hull_draws += 1,
+                        Some(false) => {},
+                        None => {
+                            let coord=screen(camera,point);
+                            circle(pixels,coord,5,if obj["mining"]==true {GOLD} else {0x7d92aa});
+                        }
+                    }
                 }
-                match draw_remote_primary_hull(
-                    pixels, obj, camera, point,
-                    visual.heading_for(obj, 2, fraction),
-                ) {
-                    Some(true) => *obstacle_hull_draws += 1,
-                    Some(false) => {}, // collider wholly offscreen
-                    None => {
-                        let coord=screen(camera,point);
-                        circle(pixels,coord,5,if obj["mining"]==true {GOLD} else {0x7d92aa});
+                if obj["range_visible"] == true {
+                    if let (Some(hp), Some(max)) =
+                        (obj["health"].as_f64(), obj["max_health"].as_f64())
+                    {
+                        if hp.is_finite() && max.is_finite() && max > 0.0 {
+                            let (x,y)=screen(camera,point);
+                            if x>=-10 && x<FIELD as i32+10 && y>=12 && y<HEIGHT as i32+12 {
+                                let color=if obj["map_object_kind"].as_u64() ==
+                                    Some(bees_sim::map_object::MapObjectKind::FireTank as u64)
+                                    {0xe1a34b} else {0x9bd2ae};
+                                line(pixels,(x-10,y-12),(x+10,y-12),0x3c2837);
+                                line(pixels,(x-10,y-12),
+                                    (x-10+(20.0*(hp/max).clamp(0.0,1.0)) as i32,y-12),color);
+                                *map_object_health_bars+=1;
+                            }
+                        }
                     }
                 }
             }
@@ -1772,11 +1832,16 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                             .and_then(Value::as_i64).unwrap_or(0);
                         let attacking = objective.get("attacking_side")
                             .and_then(Value::as_i64) == Some(i64::from(side));
-                        let health = state["obstacles"].as_array().into_iter().flatten()
-                            .find(|item| item["id"].as_i64() == Some(id))
-                            .and_then(|item| item["health"].as_i64())
-                            .map(|hp| format!("  {hp} HP")).unwrap_or_default();
-                        format!("{} object #{}{}  {:02}:{:02}",
+                        let target = state["obstacles"].as_array().into_iter().flatten()
+                            .find(|item| item["id"].as_i64() == Some(id));
+                        let health = target.and_then(|item|
+                            Some((item["health"].as_i64()?, item["max_health"].as_i64()?)))
+                            .map(|(hp,max)| format!("  {hp}/{max} HP")).unwrap_or_default();
+                        let name = if target.is_some_and(|item| item["map_object_kind"].as_u64()
+                            == Some(bees_sim::map_object::MapObjectKind::FireTank as u64)) {
+                            "Fire Tank"
+                        } else { "object" };
+                        format!("{} {name} #{}{}  {:02}:{:02}",
                             if attacking { "Destroy" } else { "Defend" },
                             id, health, seconds / 60, seconds % 60)
                     },
@@ -2970,6 +3035,7 @@ pub fn connect_remote(
                 &mut peer.metrics,show_art);
         }
         let mut hulls = 0_u64;
+        let mut map_object_health_bars = 0_u64;
         let mut map_ships = 0_u64;
         let mut map_objectives = 0_u64;
         let mut fog_masked = 0_u64;
@@ -2978,7 +3044,9 @@ pub fn connect_remote(
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
             held_fire_active,shooting_menu,shooting_focus,
             &peer.visual,visual_fraction,&artwork,show_art,show_weapon_ranges,
-            &mut combat_hud_draws, &mut hulls, &mut map_ships, &mut map_objectives, &mut fog_masked);
+            &mut combat_hud_draws, &mut hulls, &mut map_object_health_bars,
+            &mut map_ships, &mut map_objectives, &mut fog_masked);
+        peer.metrics.map_object_health_bars += map_object_health_bars;
         peer.metrics.weapon_range_draws += combat_hud_draws[0];
         peer.metrics.weapon_charge_draws += combat_hud_draws[1];
         peer.metrics.weapon_aim_draws += combat_hud_draws[2];
@@ -3052,6 +3120,11 @@ pub fn connect_remote(
         "ship_explosion_visual_draws":peer.metrics.ship_explosion_visual_draws,
         "projectile_sprite_draws":peer.metrics.projectile_sprite_draws,
         "asteroid_sprite_draws":peer.metrics.asteroid_sprite_draws,
+        "fire_tank_sprite_draws":peer.metrics.fire_tank_sprite_draws,
+        "obstacle_debris_events_received":peer.metrics.obstacle_debris_events_received,
+        "obstacle_debris_sprite_draws":peer.metrics.obstacle_debris_sprite_draws,
+        "obstacle_debris_culled":peer.metrics.obstacle_debris_culled,
+        "map_object_health_bars":peer.metrics.map_object_health_bars,
         "sprite_candidate_pixels":peer.metrics.sprite_candidate_pixels,
         "sprite_opaque_pixels":peer.metrics.sprite_opaque_pixels,
         "sprite_blended_pixels":peer.metrics.sprite_blended_pixels,
