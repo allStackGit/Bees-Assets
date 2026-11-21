@@ -231,7 +231,13 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
-    let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
+    // A single local window cannot present two opposing, independently
+    // fog-filtered viewpoints. LAN commanders have separate viewers and
+    // may enable authentic fog independently.
+    let fog_of_war = if mode == 2 { false } else {
+        let Some(enabled) = choose_visibility()? else { return Ok(None); };
+        enabled
+    };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
     let ai_tactics = if mode == 2 { AiTactics::Aggressive } else {
         let Some(value) = choose_ai_tactics()? else { return Ok(None); };
