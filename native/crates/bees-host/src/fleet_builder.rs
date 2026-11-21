@@ -1585,8 +1585,9 @@ pub(super) fn archive(
             if supporting { support_squads.push(new_squad); }
         }
     }
-    let mut carrier_children = HashMap::<i64, i64>::new();
+    let mut carrier_children = HashMap::<i64, Vec<i64>>::new();
     let mut free_striker_squads = Vec::<(i64, bool)>::new();
+    let mut free_drone_squads = Vec::<(i64, bool)>::new();
     if !carrier_parents.is_empty() {
         let striker_template = available.iter().find(|ship|
             ship["side"] == 2 && ship["ship_type"] == 19
@@ -1598,6 +1599,17 @@ pub(super) fn archive(
         }
         let striker_size = catalog.sprite_size(19)
             .ok_or_else(|| invalid("original Striker sprite extents are missing"))?;
+        let drone_template = available.iter().find(|ship|
+            ship["side"] == 2 && ship["ship_type"] == 8
+        ).ok_or_else(|| invalid("authored Carrier has no original Drone child template"))?;
+        if drone_template["drone_carrier_id"].as_i64().is_none() ||
+            !drone_template["turrets"].as_array().is_some_and(|weapons| !weapons.is_empty()) ||
+            drone_template.get("policy").is_some()
+        {
+            return Err(invalid("native Carrier Drone needs an original, non-policy turret and parent source").into());
+        }
+        let drone_size = catalog.sprite_size(8)
+            .ok_or_else(|| invalid("original Drone sprite extents are missing"))?;
         // All allocated source hulls and stage clones are placed according
         // to these exact offsets. Reserve their extents before choosing
         // the free child's new physical position.
@@ -1625,7 +1637,7 @@ pub(super) fn archive(
             let child_id = 5_000 + index as i64;
             let child_weapon_id = 6_000 + index as i64;
             let child_squad_id = 500 + index as i64;
-            let position = place_free_striker(parent_position,
+            let position = place_free_carrier_child(parent_position,
                 [striker_size.x, striker_size.y], &mut occupied)?;
             let mut striker = striker_template.clone();
             striker["entity_id"] = json!(child_id);
@@ -1646,8 +1658,37 @@ pub(super) fn archive(
                     "user_controlled": controlled, "can_accept_input": controlled,
                     "is_carrier_squad": true, "command_bans": [],
                 }));
-            carrier_children.insert(parent_squad, child_squad_id);
             free_striker_squads.push((child_squad_id, controlled));
+
+            // Separate real ship, weapon-turret, squad and formation
+            // identities. The same Carrier's persistent FleetShip owns
+            // both free complements; child deaths never purchase or
+            // deduct a new fleet hull. Drone's original turret enters
+            // CombatWorld directly and uses its source weapon timings.
+            let drone_id = 4_000 + index as i64;
+            let drone_squad_id = 400 + index as i64;
+            let drone_position = place_free_carrier_child(parent_position,
+                [drone_size.x, drone_size.y], &mut occupied)?;
+            let mut drone = drone_template.clone();
+            drone["entity_id"] = json!(drone_id);
+            drone["position"] = json!(drone_position);
+            drone["user_controlled"] = json!(controlled);
+            drone["persistent_fleet"] = json!(false);
+            drone["fleet_ship_id"] = json!(parent_id);
+            drone["is_carrier_ship"] = json!(true);
+            drone["drone_carrier_id"] = json!(parent_id);
+            drone["formation_offset"] = json!([0.0, 0.0]);
+            scene["ships"].as_array_mut().ok_or_else(||
+                invalid("native Carrier source lost its ship registry"))?.push(drone);
+            scene["squads"].as_array_mut().ok_or_else(||
+                invalid("native Carrier source lost its squad registry"))?.push(json!({
+                    "item_id": drone_squad_id, "side": 2,
+                    "members": [drone_id], "shooting_strategy_id": 1,
+                    "user_controlled": controlled, "can_accept_input": controlled,
+                    "is_carrier_squad": true, "command_bans": [],
+                }));
+            carrier_children.insert(parent_squad, vec![drone_squad_id, child_squad_id]);
+            free_drone_squads.push((drone_squad_id, controlled));
         }
     }
     if let Some(hivemind) = &selected.hivemind {
