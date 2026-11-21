@@ -45,6 +45,7 @@ function safeNativeCollectorPath(relative) {
 function safeNativeModelPath(relative) {
     return relative==='learner/checkpoint.pt'||
         relative==='learner/manifest.json'||
+        relative==='learner/collection-manifest.json'||
         /^learner\/opponents\/[a-f0-9]{64}\.model$/.test(relative);
 }
 function fail(message,status=400) {

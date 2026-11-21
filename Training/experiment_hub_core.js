@@ -12,6 +12,7 @@ const {evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,su
     require('./experiment_hub_evaluation');
 const {ProgressHistory}=require('./experiment_hub_history');
 const {ObservationArchive}=require('./experiment_hub_observations');
+const {validateSelection}=require('./experiment_hub_native_historical');
 const {verifiedNativeCollectorPin,verifiedNativeModelMirror}=
     require('./experiment_hub_native_bundle_transfer');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
@@ -846,7 +847,8 @@ function verifiedOptimizerCompletion(job,raw,state) {
         const release=raw.continual_release;
         const fields=['checkpoint_sha256','parent_model_id','model_id','training_step',
             'evaluation_report_id','passed','deployment_id','deployed_model_id',
-            ...(release?.release_attempt_wall_seconds!==undefined?['release_attempt_wall_seconds']:[])];
+            ...(release?.release_attempt_wall_seconds!==undefined?['release_attempt_wall_seconds']:[]),
+            ...(release?.collection_selection!==undefined?['collection_selection']:[])];
         const modelId=/^bees-rl-v[0-9]+-[0-9a-f]{24}$/;
         if(!requiresRelease||bundle.index!==1||!object(release)||
             Object.keys(release).sort().join(',')!==fields.sort().join(',')||
@@ -861,6 +863,12 @@ function verifiedOptimizerCompletion(job,raw,state) {
                 (!Number.isFinite(release.release_attempt_wall_seconds)||
                  release.release_attempt_wall_seconds<0||release.release_attempt_wall_seconds>1e12)))
             throw Error('Native optimizer completion lacks the exact authorized generation release.');
+        if(release.collection_selection!==undefined) {
+            const selection=validateSelection(release.collection_selection);
+            if(selection.input_checkpoint_sha256!==release.checkpoint_sha256||
+                selection.opponent_slot!==job.frozen_parameters.refresh_opponent_slot)
+                throw Error('Native historical selection differs from the frozen self-play route.');
+        }
     }
     return copy(raw);
 }
@@ -875,6 +883,7 @@ function nativeBeesRoundTrainingSummary(plan) {
     let optimizerRows=0,learnerSeconds=0,ppoSeconds=0,processingSeconds=0;
     let learnerCpuSeconds=0,collectorCoverage=0,learnerCoverage=0;
     let releaseCoverage=0,promotions=0,releaseSeconds=0,releaseTimingCoverage=0;
+    let historicalSelections=0,historicalOpponents=0;
     const evaluations=new Map();
     for(const entry of rounds) {
         const work=entry.collector_work_totals;
@@ -898,6 +907,10 @@ function nativeBeesRoundTrainingSummary(plan) {
         if(release) {
             releaseCoverage++;
             if(release.passed)promotions++;
+            if(release.collection_selection) {
+                historicalSelections++;
+                if(release.collection_selection.opponent_model_id!==null)historicalOpponents++;
+            }
             if(Number.isFinite(release.release_attempt_wall_seconds)) {
                 releaseSeconds+=release.release_attempt_wall_seconds;
                 releaseTimingCoverage++;
@@ -952,6 +965,8 @@ function nativeBeesRoundTrainingSummary(plan) {
             ppoSeconds>0?optimizerRows/ppoSeconds:null,
         continual_generations_released:releaseCoverage,
         continual_promotions_passed:promotions,
+        continual_historical_selections:historicalSelections,
+        continual_historical_opponents_selected:historicalOpponents,
         continual_release_attempts_timed:releaseTimingCoverage,
         sum_completed_continual_release_attempt_wall_seconds:releaseSeconds,
         independent_evaluations:[...evaluations.values()],

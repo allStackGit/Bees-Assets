@@ -1416,6 +1416,10 @@ def main() -> None:
             parser.error("GPU release evaluation requires a GPU learner allocation")
         result["continual_release_plan"] = args.continual_plan
         result["continual_trainer_sha256"] = file_sha256(trainer_config)
+        if args.continual_plan["historical_training_ratio"] > 0:
+            if args.refresh_opponent_slot is None:
+                parser.error("Hub continual historical league requires the existing self-play opponent refresh slot")
+            result["hub_historical_selection"] = True
         if args.resume_continual_release:
             from train_policy_session import verify_round
             record, _, _ = verify_round(output, input_manifest_sha, input_checkpoint_sha,

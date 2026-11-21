@@ -8,6 +8,8 @@ const {promisify, isDeepStrictEqual} = require('node:util');
 const execFileAsync = promisify(execFile);
 const {validateProgress} = require('./experiment_hub_progress');
 const {evaluationReader} = require('./experiment_hub_evaluation');
+const {validateCollectionSelection, validateCollectionManifest} =
+    require('./experiment_hub_native_historical');
 
 const PROJECT = 'bees_native';
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -1317,6 +1319,7 @@ function createNativeBeesAdapter({
                     (!Number.isFinite(receipt.release_attempt_wall_seconds)||
                      receipt.release_attempt_wall_seconds<0)))
             throw Error('Continual release does not identify this learner checkpoint and lineage.');
+        validateCollectionSelection(round.receipt,receipt);
         return release;
     }
 
@@ -1330,7 +1333,19 @@ function createNativeBeesAdapter({
         if (!round) throw Error('Native Bees continuation needs a completed round.');
         if (!releaseReady(round, output))
             throw Error('Native Bees continual generation release is not complete.');
-        return verifiedRoundArtifacts(round, output);
+        const base=verifiedRoundArtifacts(round, output);
+        const selection=completedRelease(round,output)?.receipt.collection_selection;
+        if (!selection || selection.opponent_model_id===null) return base;
+        const manifest=path.join(output,'learner','collection-manifest.json');
+        if(trustedFile(manifest)!==manifest ||
+            sha256(fs.readFileSync(manifest))!==selection.effective_manifest_sha256)
+            throw Error('Native historical collection manifest changed after release.');
+        validateCollectionManifest(
+            JSON.parse(fs.readFileSync(base.manifest,'utf8')),
+            JSON.parse(fs.readFileSync(manifest,'utf8')),selection);
+        return {...base,manifest,manifestDigest:selection.effective_manifest_sha256,
+            ...verifyModelDependencies(manifest,
+                new Map([[base.checkpoint,base.checkpointDigest]]),base.checkpoint,learnerSlot)};
     }
 
     function verifiedRoundArtifacts(round, output) {
@@ -1681,6 +1696,9 @@ function createNativeBeesAdapter({
                         passed:release.receipt.passed,
                         deployment_id:release.receipt.deployment_id,
                         deployed_model_id:release.receipt.deployed_model_id,
+                        ...(release.receipt.collection_selection?{
+                            collection_selection:release.receipt.collection_selection,
+                        }:{}),
                         ...(release.receipt.release_attempt_wall_seconds!==undefined?{
                             release_attempt_wall_seconds:release.receipt.release_attempt_wall_seconds,
                         }:{}),
@@ -1852,7 +1870,7 @@ function createNativeBeesAdapter({
                     throw Error('Native Bees self-play requires a distinct existing uint32 opponent and explicit learner slot.');
                 const current = JSON.parse(fs.readFileSync(inputs.manifest, 'utf8'));
                 const opponents = current.models.filter(model => model.slot === refresh_opponent_slot);
-                if (opponents.length !== 1 || opponents[0].backend !== 'mlagents')
+                if (opponents.length !== 1 || !['mlagents','onnx'].includes(opponents[0].backend))
                     throw Error('Native Bees self-play promotion requires an existing MA-POCA opponent slot.');
                 if (!activeConfig.levels?.some(level =>
                     [learnerSlot, refresh_opponent_slot].every(slot =>
@@ -2175,6 +2193,12 @@ function createNativeBeesAdapter({
                     ...(release ? {
                         continual_promotion_passed: {value: Number(release.receipt.passed), unit: 'count'},
                         continual_training_step: {value: release.receipt.training_step, unit: 'count'},
+                        ...(release.receipt.collection_selection?{
+                            continual_historical_opponent_selected:{
+                                value:Number(release.receipt.collection_selection.opponent_model_id!==null),
+                                unit:'count',
+                            },
+                        }:{}),
                         ...(release.receipt.release_attempt_wall_seconds!==undefined?{
                             continual_release_attempt_wall_seconds: {
                                 value:release.receipt.release_attempt_wall_seconds,unit:'seconds',

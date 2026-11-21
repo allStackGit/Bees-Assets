@@ -9,13 +9,20 @@ import hashlib
 import json
 import random
 import time
+import os
+import shutil
+import tempfile
+from contextlib import nullcontext
 from pathlib import Path
 
 from native_continual_release import (
     competency_contract, document, immutable_json, load_config, native_model,
     physical_suite, publish_champion, register, release, ContinualLearningStore,
 )
-from native_training_artifacts import atomic_json, file_sha256, check_learner
+from native_training_artifacts import (
+    atomic_json, file_sha256, check_learner, sync_directory,
+    native_manifest_model_dependencies,
+)
 from bees_continual_historical import _historical_training_weights, _validate_ratio, HistoricalOpponentScheduler
 from train_policy_session import session_lock
 
@@ -95,7 +102,8 @@ def check_plan(plan, store):
 
 
 def select_round_manifest(root, plan, self_play, round_number, previous_manifest,
-                          checkpoint, learner_slot, *, create):
+                          checkpoint, learner_slot, *, create,
+                          portable=False, registry_locked=False):
     """Freeze one historical opponent at the existing self-play swap boundary.
 
     The original GhostTrainer samples a whole non-learning team queue at
@@ -108,7 +116,8 @@ def select_round_manifest(root, plan, self_play, round_number, previous_manifest
             (round_number - 1) % self_play["every"] != 0):
         return previous_manifest
     sidecar = root / f"historical-round-{round_number:05d}.json"
-    effective = root / f"historical-round-{round_number:05d}.manifest.json"
+    effective = (Path(previous_manifest).parent / "collection-manifest.json"
+                 if portable else root / f"historical-round-{round_number:05d}.manifest.json")
     previous_manifest = Path(previous_manifest).resolve(strict=True)
     checkpoint = Path(checkpoint).resolve(strict=True)
     lineage = {
@@ -116,6 +125,7 @@ def select_round_manifest(root, plan, self_play, round_number, previous_manifest
         "round": round_number, "input_manifest_sha256": file_sha256(previous_manifest),
         "input_checkpoint_sha256": file_sha256(checkpoint),
         "opponent_slot": self_play["opponent_slot"],
+        **({"plan_sha256": plan["plan_sha256"]} if portable else {}),
     }
     if sidecar.exists():
         receipt = document(sidecar)
@@ -125,6 +135,8 @@ def select_round_manifest(root, plan, self_play, round_number, previous_manifest
         if file_sha256(selected) != receipt["effective_manifest_sha256"]:
             raise ValueError("historical opponent selection manifest changed")
         check_learner(selected, checkpoint, learner_slot)
+        if portable:
+            native_manifest_model_dependencies(selected)
         return selected
     if not create:
         raise ValueError("completed native historical swap lacks its pinned selection")
@@ -134,7 +146,7 @@ def select_round_manifest(root, plan, self_play, round_number, previous_manifest
     selected_id = None
     selected_row = None
     chosen = previous_manifest
-    with session_lock(lock):
+    with (nullcontext() if registry_locked else session_lock(lock)):
         if file_sha256(Path(plan["config"])) != plan["config_sha256"]:
             raise ValueError("historical league configuration changed during training")
         champion_id = store.current_compatible_champion_id()
@@ -143,7 +155,12 @@ def select_round_manifest(root, plan, self_play, round_number, previous_manifest
         # Existing draw-aware pressure calculation includes evaluated
         # regressions of rejected candidates, not only prior champions.
         weighted = _historical_training_weights(store, champion_id)
-        rng = random.Random(f"{plan['evaluation_seed']}:native-swap:{round_number}")
+        seed = f"{plan['evaluation_seed']}:native-swap:{round_number}"
+        if portable:
+            # Every Hub job owns one round. Include immutable model identity
+            # so independent generations do not repeat the round-one draw.
+            seed += ":" + lineage["input_checkpoint_sha256"]
+        rng = random.Random(seed)
         if weighted and rng.random() < plan["historical_training_ratio"]:
             selected_row = HistoricalOpponentScheduler._choose_weighted(weighted, rng)
             selected_id = selected_row["model_id"]
@@ -155,10 +172,12 @@ def select_round_manifest(root, plan, self_play, round_number, previous_manifest
                 if row["slot"] == self_play["opponent_slot"]:
                     # Change only the opponent route; the learner and
                     # any other permitted slots retain their exact bytes.
-                    models.append({**policy, "slot": row["slot"],
-                                   "path": str(frozen_checkpoint)})
+                    location = (portable_opponent(previous_manifest.parent, frozen_checkpoint,
+                                                  policy["sha256"])
+                                if portable else str(frozen_checkpoint))
+                    models.append({**policy, "slot": row["slot"], "path": location})
                 else:
-                    models.append({**row, "path": str(
+                    models.append(dict(row) if portable else {**row, "path": str(
                         (previous_manifest.parent / row["path"]).resolve(strict=True))})
             if len([row for row in models if row["slot"] == self_play["opponent_slot"]]) != 1:
                 raise ValueError("historical self-play route is missing")
@@ -168,6 +187,8 @@ def select_round_manifest(root, plan, self_play, round_number, previous_manifest
             atomic_json(effective, previous)
             chosen = effective
         check_learner(chosen, checkpoint, learner_slot)
+        if portable:
+            native_manifest_model_dependencies(chosen)
         receipt = {
             **lineage, "champion_model_id": champion_id,
             "opponent_model_id": selected_id,
@@ -178,6 +199,42 @@ def select_round_manifest(root, plan, self_play, round_number, previous_manifest
         immutable_json(sidecar, receipt)
         print(json.dumps(receipt, sort_keys=True), flush=True)
     return chosen
+
+
+def portable_opponent(directory, source, digest):
+    """Publish the registry-selected policy in the existing SHA-addressed
+    learner package. Never put registry-local absolute paths on the wire.
+    """
+    opponents = directory / "opponents"
+    opponents.mkdir(exist_ok=True)
+    target = opponents / (digest + ".model")
+    if not target.exists():
+        try:
+            os.link(source, target)
+        except OSError:
+            # A cross-volume publication is atomic and durable, including
+            # recovery after interrupted copies on Windows.
+            with tempfile.NamedTemporaryFile(dir=opponents, delete=False) as stream:
+                pending = Path(stream.name)
+                try:
+                    with source.open("rb") as original:
+                        shutil.copyfileobj(original, stream)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                except BaseException:
+                    stream.close()
+                    pending.unlink(missing_ok=True)
+                    raise
+            try:
+                if file_sha256(pending) != digest:
+                    raise ValueError("historical opponent changed during copy")
+                os.replace(pending, target)
+            finally:
+                pending.unlink(missing_ok=True)
+        sync_directory(opponents)
+    if target.is_symlink() or file_sha256(target) != digest:
+        raise ValueError("published historical opponent does not match registry")
+    return "opponents/" + digest + ".model"
 
 
 def complete_generations(root, recipe, completed, *, final=False):
@@ -252,6 +309,16 @@ def complete_generations(root, recipe, completed, *, final=False):
                 else:
                     raise ValueError("native generation has unexpected registry status")
                 deployment = publish_champion(store)
+                selection = None
+                if row.get("hub_historical_selection"):
+                    slot = row["learner_metrics"]["refreshed_opponent_slot"]
+                    select_round_manifest(
+                        directory, plan, {"every": 1, "opponent_slot": slot},
+                        1, Path(row["next_manifest"]), Path(row["next_checkpoint"]),
+                        recipe["learner_slot"], create=True, portable=True,
+                        registry_locked=True,
+                    )
+                    selection = document(directory / "historical-round-00001.json")
                 result = {
                     "schema_version": 1, "kind": "native_continual_generation_complete",
                     "round": index, "training_step": step,
@@ -261,6 +328,7 @@ def complete_generations(root, recipe, completed, *, final=False):
                     "passed": passed, "deployment_id": deployment["deployment_id"],
                     "deployed_model_id": deployment["model_id"],
                     "release_attempt_wall_seconds": time.perf_counter() - release_started,
+                    **({"collection_selection": selection} if selection is not None else {}),
                 }
                 immutable_json(receipt_path, result)
                 print(json.dumps(result, sort_keys=True), flush=True)

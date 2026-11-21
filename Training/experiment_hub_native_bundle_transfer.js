@@ -9,6 +9,8 @@ const path=require('node:path');
 const http=require('node:http');
 const crypto=require('node:crypto');
 const {isDeepStrictEqual}=require('node:util');
+const {validateCollectionSelection,validateCollectionManifest}=
+    require('./experiment_hub_native_historical');
 const {safeLogPath,safeNativeCollectorPath,safeNativeModelPath,MAX_FILE,MAX_CHUNK}=
     require('./experiment_hub_artifact_sync');
 
@@ -106,10 +108,14 @@ function authorizedBundleFile(hub,machineId,token,learnerId,collectorId,relative
     try{receipt=JSON.parse(fs.readFileSync(verified.file,'utf8'));}
     catch{fail('Invalid verified collector receipt JSON.');}
     const files=capturePaths(receipt);
-    if(collector.model_source_job_id&&(
-        !SHA.test(String(collector.expected_parent_model_sha256||''))||
-        receipt.input_checkpoint_sha256!==collector.expected_parent_model_sha256))
-        fail('Collector experience differs from its exact Hub predecessor checkpoint.');
+    if(collector.model_source_job_id) {
+        const source=hub.state.jobs.find(job=>job.id===collector.model_source_job_id);
+        const model=nativeModelPackage(hub,source);
+        if(!SHA.test(String(collector.expected_parent_model_sha256||''))||
+            receipt.input_checkpoint_sha256!==collector.expected_parent_model_sha256||
+            receipt.input_manifest_sha256!==model.collectionManifestSha256)
+            fail('Collector experience differs from its exact Hub predecessor model and selected opponent routes.');
+    }
     if(collector.frozen_parameters?.collection_id!==undefined&&
         receipt.collection_id!==collector.frozen_parameters.collection_id)
         fail('Collector bundle differs from its frozen work order.');
@@ -248,6 +254,7 @@ function nativeModelPackage(hub,source) {
     // A continual learner's optimizer output is not the whole generation.
     // The exact release decision must survive the authenticated mirror
     // before remote collectors can consume the next checkpoint.
+    let selection=null;
     if(source.frozen_parameters?.continual_release===true||
         receipt.continual_release_plan!==undefined) {
         const plan=receipt.continual_release_plan;
@@ -268,13 +275,15 @@ function nativeModelPackage(hub,source) {
             !Number.isSafeInteger(step)||step<1||release.training_step!==step||
             typeof release.passed!=='boolean')
             fail('Mirrored native generation release disagrees with the committed checkpoint and training lineage.');
+        selection=validateCollectionSelection(receipt,release);
         if(source.frozen_parameters?.optimizer_group===true) {
             const proof=source.optimizer_completion?.continual_release;
             const keys=['checkpoint_sha256','parent_model_id','model_id','training_step',
                 'evaluation_report_id','passed','deployment_id','deployed_model_id',
                 ...(release.release_attempt_wall_seconds!==undefined?
                     ['release_attempt_wall_seconds']:[])];
-            if(!proof||keys.some(key=>release[key]!==proof[key]))
+            if(!proof||keys.some(key=>release[key]!==proof[key])||
+                !isDeepStrictEqual(release.collection_selection,proof.collection_selection))
                 fail('Mirrored native generation release disagrees with the authenticated optimizer owner.');
         }
     }
@@ -289,7 +298,19 @@ function nativeModelPackage(hub,source) {
     // purported completed checkpoint as a transferable Hub model source.
     const included=modelDependencies(document,source.checkpoint_model_sha256);
     included.set('learner/manifest.json',receipt.next_manifest_sha256);
-    return {root,jobId,included};
+    let transferManifest='learner/manifest.json';
+    if(selection?.opponent_model_id!=null) {
+        transferManifest='learner/collection-manifest.json';
+        const file=mirroredFile(root,jobId,transferManifest,selection.effective_manifest_sha256);
+        if(file.size>1024*1024)fail('Native historical collection manifest exceeds its bounded size.');
+        const selected=JSON.parse(fs.readFileSync(file.file,'utf8'));
+        validateCollectionManifest(document,selected,selection);
+        for(const [relative,digest] of modelDependencies(selected,source.checkpoint_model_sha256))
+            included.set(relative,digest);
+        included.set(transferManifest,selection.effective_manifest_sha256);
+    }
+    return {root,jobId,included,transferManifest,
+        collectionManifestSha256:included.get(transferManifest)};
 }
 
 // A completed optimizer model must be fully mirrored before any remote
@@ -466,9 +487,12 @@ function authorizedModelFile(hub,machineId,token,recipientId,sourceId,relative) 
         recipient.expected_parent_model_sha256!==source?.checkpoint_model_sha256)
         fail('Native recipient does not hold this exact checkpoint handoff.');
     const packageFiles=nativeModelPackage(hub,source);
-    const expected=packageFiles.included.get(relative);
+    // Remote caches retain their existing manifest.json contract. The
+    // coordinator serves the exact selected generation's immutable bytes.
+    const actual=relative==='learner/manifest.json'?packageFiles.transferManifest:relative;
+    const expected=packageFiles.included.get(actual);
     if(!expected)fail('Requested native model is not part of the original checkpoint manifest.');
-    return mirroredFile(packageFiles.root,sourceId,relative,expected);
+    return mirroredFile(packageFiles.root,sourceId,actual,expected);
 }
 
 function bundleUrl(endpoint,machineId,learnerId,sourceId,relative,kind='bundle') {
