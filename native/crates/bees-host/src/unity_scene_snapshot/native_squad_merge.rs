@@ -25,7 +25,7 @@ impl NativePhysicalScene {
             if !matches!(row.side, 1 | 2) ||
                 row.squad_item_id <= 0 ||
                 row.original_squad_count == 0 ||
-                row.number > 9 ||
+                !(1..=10).contains(&row.number) ||
                 !used.insert((row.side, row.number)) ||
                 !squad_ids.insert(row.squad_item_id)
             {
