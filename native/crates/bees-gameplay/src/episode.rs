@@ -279,7 +279,7 @@ impl NativeEpisodeRewardCoordinator {
     pub fn defer_side_elimination_until_after(
         &mut self, side: i32, seconds: f32, fixed_dt_seconds: f32,
     ) -> Result<(), NativeEpisodeRewardError> {
-        if !matches!(self.mode, EpisodeMode::Game(_)) {
+        if !matches!(&self.mode, EpisodeMode::Game(_)) {
             return Err(NativeEpisodeRewardError::Terminal(
                 EpisodeTerminalError::InvalidEliminationGate,
             ));
