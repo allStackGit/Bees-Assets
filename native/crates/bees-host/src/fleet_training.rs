@@ -63,7 +63,7 @@ fn archived_battles(save_root: &Path) -> Result<Vec<(PathBuf, String)>, Box<dyn 
             }
         };
         let Some(levels) = run["levels"].as_array() else { continue };
-        if run["episodes_per_world"].as_u64() != Some(1) ||
+        if !matches!(run["episodes_per_world"].as_u64(), Some(1..=64)) ||
             !run["run_id"].as_str().is_some_and(|id| id.starts_with("native-fleet-")) ||
             levels.len() != 1 ||
             (!levels[0]["reinforcements"].is_null() &&
