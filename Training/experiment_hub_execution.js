@@ -460,7 +460,9 @@ function fromEnvironment(env=process.env,options={}) {
             !/^[a-f0-9]{64}$/.test(String(helperSha256||'')))
             throw Error('Specify a locally installed absolute Windows owner path and its SHA-256.');
         const local={root,machineId,adapters,helperPath,helperSha256,
-            gpuEnabled:env.EXPERIMENT_HUB_ENABLE_CUDA==='1'};
+            gpuEnabled:env.EXPERIMENT_HUB_ENABLE_CUDA==='1'||
+                (env.EXPERIMENT_HUB_TINYBRAINS_CUDA==='1'&&
+                    adapters.tinybrains_rollout?.gpu_execution==='cuda')};
         supervisor=options.createSupervisor
             ?options.createSupervisor(local)
             :new WindowsSupervisor(local);

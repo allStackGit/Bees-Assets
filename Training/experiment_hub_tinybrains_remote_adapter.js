@@ -110,6 +110,13 @@ function createTinyBrainsRemoteRolloutAdapter({
         if(check.status!==0)
             throw Error('Remote GPU collection requires the installed verified CUDA/ROCm TinyBrains backend.');
     }
+    // The adapter advertises sharing only after the installed collector
+    // implements the allocator ceiling. A staged worker update may precede
+    // the simulation update, so retain exclusive CUDA compatibility.
+    const supportsCudaSharing=enableCuda&&spawnSync(pythonPath,['-B','-c',
+        'import inspect; from ants_mapoca.remote_rollout import RemoteRolloutService; assert "gpu_vram_mb" in inspect.signature(RemoteRolloutService).parameters'],{
+        cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
+    }).status===0;
     return {
         executable:pythonPath,cwd:project,stop_policy:'terminate-group',
         tinybrains_rollout_endpoint:host+':'+port,
@@ -117,6 +124,7 @@ function createTinyBrainsRemoteRolloutAdapter({
         tinybrains_rollout_key_fingerprint:fingerprint,
         tinybrains_rollout_thread_limit:threads,
         ...(enableCuda?{gpu_execution:'cuda'}:{}),
+        ...(supportsCudaSharing?{gpu_sharing:'cooperative-pytorch'}:{}),
         ...(enableRocm?{
             rocr_gpu_uuids:approvedRocr,
             // Executed only through the Hub's qualified, device-filtered
@@ -153,18 +161,24 @@ function createTinyBrainsRemoteRolloutAdapter({
             const hasGpu=Boolean(context.gpu_pci_address);
             const cudaGpu=context.gpu_cuda_uuid!==undefined;
             const rocmGpu=hasGpu&&!cudaGpu;
+            const sharedCuda=cudaGpu&&context.gpu_mode==='shared';
             if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
                 Object.keys(parameters).some(key=>!['learner_job_id','threads','listener_slot'].includes(key))||
                 !UUID.test(String(parameters.learner_job_id||''))||
                 !UUID.test(String(context.job_id||''))||
                 parameters.learner_job_id===context.job_id||
                 (cudaGpu&&(!enableCuda||!CUDA.test(String(context.gpu_cuda_uuid))||
-                    !hasGpu||context.gpu_mode!=='exclusive'))||
+                    !hasGpu||!(context.gpu_mode==='exclusive'||sharedCuda&&supportsCudaSharing&&
+                        Number.isSafeInteger(context.gpu_vram_mb)&&context.gpu_vram_mb>0&&
+                        Number.isSafeInteger(context.gpu_total_vram_mb)&&
+                        context.gpu_vram_mb<=context.gpu_total_vram_mb&&
+                        Number.isSafeInteger(context.gpu_compute_pct)&&
+                        context.gpu_compute_pct>=1&&context.gpu_compute_pct<=100)))||
                 (rocmGpu&&(!enableRocm||!PCI.test(context.gpu_pci_address)||
                     context.gpu_mode!=='exclusive'))||
                 (!hasGpu&&(cudaGpu||context.gpu_pci_addresses!==undefined))||
                 (hasGpu&&context.gpu_pci_addresses!==undefined))
-                throw Error('Remote rollout needs a distinct learner ID and an approved CPU or single exclusive GPU lease.');
+                throw Error('Remote rollout needs a distinct learner ID and an approved CPU or single exclusive/cooperative GPU lease.');
             const scratch=slots.length?path.join(cache,context.job_id):cache;
             if(slots.length) {
                 fs.mkdirSync(scratch,{recursive:true,mode:0o700});
@@ -179,7 +193,8 @@ function createTinyBrainsRemoteRolloutAdapter({
                 ...(supportsAutoPool?['--auto-env-pool',
                     '--ram-budget-mb',String(context.ram_quota_mb)]:[]),
                 ...(cudaGpu
-                    ?['--device','cuda','--cuda-uuid',context.gpu_cuda_uuid]
+                    ?['--device','cuda','--cuda-uuid',context.gpu_cuda_uuid,
+                        ...(sharedCuda?['--gpu-vram-mb',String(context.gpu_vram_mb)]:[])]
                     :rocmGpu
                         ?['--device','cuda','--rocm-pci',context.gpu_pci_address]
                         :['--device','cpu'])];

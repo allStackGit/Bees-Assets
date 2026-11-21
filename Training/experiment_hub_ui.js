@@ -8238,7 +8238,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     const gpuIds=(host.gpus||[]).map(g=>g.id);
                     return host.gpu_projects?.includes('tinybrains_rollout')&&gpuIds.length
                         ?host.id+' GPU inference available: '+gpuIds.join(', ')+
-                            ' (set gpu_count: 1, gpu_mode: "exclusive" and optionally gpus: ["'+gpuIds[0]+'"]).'
+                            ' (set gpu_count: 1, gpu_mode: "exclusive"'+
+                            (host.gpu_shared_projects?.includes('tinybrains_rollout')
+                                ?' or gpu_mode: "shared", gpu_vram_mb: 2048, gpu_compute_pct: 50'
+                                :'')+' and optionally gpus: ["'+gpuIds[0]+'"]).'
                         :host.id+' currently has no eligible configured TinyBrains collector GPU.';
                 }).join(' ')
             :'No eligible unreserved TinyBrains collector listener. Check the rollout project, enrolled workers, endpoints and existing group reservations.';

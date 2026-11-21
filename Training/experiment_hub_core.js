@@ -1066,13 +1066,13 @@ function nativeStartReadiness(snapshot, job) {
             expectedEndpoints.some(endpoint=>!rolloutEndpoint(endpoint))||
             new Set(expectedEndpoints).size!==count||
             !SHA256.test(String(keyFingerprint||'')))
-            return block('The learner has no complete, locally pinned remote CPU collector identities.');
+            return block('The learner has no complete, locally pinned remote collector identities.');
         const workers=snapshot.jobs.filter(worker=>
             worker.project_id==='tinybrains_rollout'&&
             worker.frozen_parameters?.learner_job_id===job.id&&
             worker.status!=='cancelled');
         if(workers.length!==count)
-            return block('The learner requires exactly '+count+' separately reserved remote CPU collector jobs.');
+            return block('The learner requires exactly '+count+' separately reserved remote collector jobs.');
         const hosts=new Set([machine.id]);
         const matchedEndpoints=new Set();
         for(const worker of workers) {
@@ -1082,10 +1082,11 @@ function nativeStartReadiness(snapshot, job) {
                 worker.live_execution.dispatch_id!==worker.dispatch_id||
                 worker.capacity_released_at||
                 !worker.dispatch_id||![0,1].includes(worker.resources?.gpu_count)||
-                (worker.resources.gpu_count===1&&worker.resources.gpu_mode!=='exclusive'))
-                return block('Every remote CPU collector must be running under its own active Hub job.');
+                (worker.resources.gpu_count===1&&
+                    !['exclusive','shared'].includes(worker.resources.gpu_mode)))
+                return block('Every remote collector must be running under its own active Hub job.');
             if(!worker.assigned_machine_id||hosts.has(worker.assigned_machine_id))
-                return block('Every remote CPU collector requires a distinct worker machine.');
+                return block('Every remote collector requires a distinct worker machine.');
             hosts.add(worker.assigned_machine_id);
             const host=snapshot.machines.find(m=>m.id===worker.assigned_machine_id);
             const owned=snapshot.reservations.find(l=>
@@ -1105,7 +1106,7 @@ function nativeStartReadiness(snapshot, job) {
                 !expectedEndpoints.includes(endpoint)||
                 matchedEndpoints.has(endpoint)||
                 host.tinybrains_rollout_key_fingerprint!==keyFingerprint)
-                return block('Remote CPU collector endpoint or key identity differs from the learner\'s pinned worker set.');
+                return block('Remote collector endpoint or key identity differs from the learner\'s pinned worker set.');
             matchedEndpoints.add(endpoint);
         }
     }
@@ -1326,9 +1327,13 @@ function readySidecar(host,project,budget) {
             host.execution_capabilities?.cgroup_v2_detected===true&&
             ['cpu','memory'].every(c=>host.execution_capabilities.cgroup_controllers?.includes(c)))&&
         (!budget.gpu_count||host.gpu_projects?.includes(project)&&(
-            host.agent_platform==='win32'&&host.gpu_inventory_source==='nvidia-smi-v1'||
-            host.agent_platform==='linux'&&host.gpu_inventory_source==='amdgpu-sysfs-v1'&&
-                linuxGpuQualificationSupported(host,budget.gpu_count)));
+            budget.gpu_mode==='shared'
+                ?project==='tinybrains_rollout'&&host.agent_platform==='win32'&&
+                    host.gpu_inventory_source==='nvidia-smi-v1'&&
+                    host.gpu_shared_projects?.includes(project)
+                :host.agent_platform==='win32'&&host.gpu_inventory_source==='nvidia-smi-v1'||
+                    host.agent_platform==='linux'&&host.gpu_inventory_source==='amdgpu-sysfs-v1'&&
+                        linuxGpuQualificationSupported(host,budget.gpu_count)));
 }
 
 function sidecarBudget(selection,threadOverride=false) {
@@ -1336,10 +1341,13 @@ function sidecarBudget(selection,threadOverride=false) {
         ['resources','machine_id','endpoint'];
     if(!object(selection)||Object.keys(selection).some(key=>!keys.includes(key))||
         (selection.endpoint!==undefined&&!rolloutEndpoint(selection.endpoint)))
-        throw Error('Each remote worker needs a CPU/RAM budget and optionally one approved Courier endpoint and exclusive GPU.');
+        throw Error('Each remote worker needs a CPU/RAM budget and optionally an approved endpoint and GPU.');
     const budget=resourceRequest(selection.resources);
-    if(budget.gpu_count>1||budget.gpu_count===1&&budget.gpu_mode!=='exclusive')
-        throw Error('A remote worker may use CPU only or one exclusively leased CUDA/ROCm GPU.');
+    // Only TinyBrains collectors (the thread-override form) currently
+    // support cooperative Windows CUDA shares. Courier stays exclusive.
+    if(budget.gpu_count>1||budget.gpu_count===1&&
+        !(budget.gpu_mode==='exclusive'||threadOverride&&budget.gpu_mode==='shared'))
+        throw Error('A remote worker may use CPU only or one approved GPU; sharing requires a qualified TinyBrains CUDA collector.');
     return budget;
 }
 
@@ -7569,9 +7577,9 @@ class ExperimentHub {
                 learner.frozen_parameters?.remote_rollouts!==true||
                 ['finished','stopped','failed','cancelled'].includes(learner.status)||
                 (resources.gpu_count!==0&&
-                    (resources.gpu_count!==1||resources.gpu_mode!=='exclusive'))||
+                    (resources.gpu_count!==1||!['exclusive','shared'].includes(resources.gpu_mode)))||
                 ancestorId!==null||afterId!==null)
-                throw Error('Remote collector requires an active or queued distributed TinyBrains learner, CPU-only or one exclusive GPU, and no separate predecessor.');
+                throw Error('Remote collector requires an active or queued distributed TinyBrains learner, CPU-only or one approved GPU, and no separate predecessor.');
             if(next.jobs.filter(j=>j.project_id==='tinybrains_rollout'&&
                 j.status!=='cancelled'&&
                 j.frozen_parameters?.learner_job_id===learner.id).length>=8)
