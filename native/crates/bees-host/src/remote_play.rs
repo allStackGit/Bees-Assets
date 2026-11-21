@@ -340,6 +340,12 @@ pub struct RemotePlayMeasurements {
     pub fog_visibility_candidate_checks: u64,
     pub fog_visibility_sources_indexed: u64,
     pub fog_visibility_grid_queries: u64,
+    /// Measured CPU wall time and construction calls for source-vision
+    /// query views (not a derived utilization estimate).
+    #[serde(default)]
+    pub fog_query_views_built: u64,
+    #[serde(default)]
+    pub fog_query_view_build_wall_seconds: f64,
     /// Actual side-scoped visibility views omitted on quiet physical ticks.
     /// Counts skipped allocations/index preparations, not estimated time.
     #[serde(default)]
@@ -1476,6 +1482,7 @@ impl RemoteFogSources {
     }
 
     fn new(mut sources: Vec<(Vec2, f32)>, stats: &mut RemotePlayMeasurements) -> Self {
+        let started = Instant::now();
         // Non-finite source positions never covered a physical target in
         // the original squared-distance predicate either.
         sources.retain(|(point, _)| point.is_finite());
@@ -1506,6 +1513,8 @@ impl RemoteFogSources {
             }
             valid.then_some(buckets)
         } else { None };
+        stats.fog_query_views_built += 1;
+        stats.fog_query_view_build_wall_seconds += started.elapsed().as_secs_f64();
         Self { sources, largest_radius, indexed, grid }
     }
 
