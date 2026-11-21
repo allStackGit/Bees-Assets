@@ -156,6 +156,11 @@ def input_mission(run_path: Path, player_side: int,
         if (scene.get("native_game_schema") != 1 or
                 scene.get("local_player_side") is not None or
                 scene.get("activate_hivemind") is not True or
+                scene.get("activate_fog_of_war") is True or
+                not isinstance(scene.get("starting_positions"), list) or
+                len(scene["starting_positions"]) != 2 or
+                type(scene.get("hivemind_initial_command_delay_seconds", 0)) is not int or
+                scene.get("hivemind_initial_command_delay_seconds", 0) < 0 or
                 scene.get("policy_gameplay") is True or
                 scene.get("policy_episode") is not None or
                 run.get("model_manifest") is not None or
@@ -1210,7 +1215,9 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         game_run["policy_capture"] = None
         outputs.extend(((scene_file, game_scene), (run_file, game_run)))
         library["games"].append({
-            "id": game_id, "title": game_scene["level_name"],
+            "id": game_id,
+            "title": ("Fish Tank: " if side == 0 else "") +
+                game_scene["level_name"],
             "kind": "battle", "config": run_file,
             "unlock_after": {
                 "campaign_id": slug[:40],
