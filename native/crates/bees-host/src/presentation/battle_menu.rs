@@ -3,7 +3,7 @@
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 
 use super::text;
-use crate::unity_scene_snapshot::NativeSquadColorSetting;
+use crate::unity_scene_snapshot::{NativeSquadColorSetting, NativeSavedSquadFormation};
 
 /// The on-screen palette is a convenience; the CLI accepts any RGB.
 /// Presets affect artwork only, never ship ownership or physics.
@@ -84,6 +84,7 @@ pub struct NativeTacticsMenuRow {
     pub cease_fire: bool,
     pub match_speed: bool,
     pub color_setting: NativeSquadColorSetting,
+    pub formation: NativeSavedSquadFormation,
 }
 
 pub enum NativeBattleMenuAction {
@@ -92,7 +93,8 @@ pub enum NativeBattleMenuAction {
     DeleteSquad { side: i32, saved_squad_id: i64 },
     Tactics { side: i32, saved_squad_id: i64,
         shooting_strategy_id: u8, should_chase: bool, cease_fire: bool,
-        match_speed: bool, color_setting: NativeSquadColorSetting },
+        match_speed: bool, color_setting: NativeSquadColorSetting,
+        formation: NativeSavedSquadFormation },
     Buy { side: i32, ship_type: u8, saved_squad_id: i64 },
     Transfer { fleet_ship_id: i64, to_saved_squad_id: i64 },
     Reassign { side: i32, fleet_ship_id: i64,
@@ -163,12 +165,14 @@ fn select_battle_inner(
     let mut tactic_cease_fire = false;
     let mut tactic_match_speed = false;
     let mut tactic_color = NativeSquadColorSetting::Inherit;
+    let mut tactic_formation = NativeSavedSquadFormation::authored();
     let mut shop_selected = 0_usize;
     let mut shop_first = 0_usize;
     let mut fleet_selected = 0_usize;
     let mut fleet_first = 0_usize;
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        if !library_mode && window.is_key_pressed(Key::F, KeyRepeat::No) {
+        if !library_mode && !show_tactics &&
+            window.is_key_pressed(Key::F, KeyRepeat::No) {
             career_view = if career_view == Some(false) && !show_shop && !show_transfer && !show_create {
                 None
             } else { Some(false) };
@@ -237,7 +241,8 @@ fn select_battle_inner(
                 else { shop_rows.len() };
             let choose = |index: usize, edit_index: Option<usize>,
                           strategy: u8, chase: bool, cease_fire: bool,
-                          match_speed: bool, color_setting: NativeSquadColorSetting| {
+                          match_speed: bool, color_setting: NativeSquadColorSetting,
+                          formation: NativeSavedSquadFormation| {
                 if show_transfer {
                     transfer_rows.get(index).map(|row| match row.authored_from {
                         Some((side, from_saved_squad_id)) => NativeBattleMenuAction::Reassign {
@@ -279,6 +284,9 @@ fn select_battle_inner(
                         color_setting: if edit_index == Some(index) {
                             color_setting
                         } else { row.color_setting },
+                        formation: if edit_index == Some(index) {
+                            formation
+                        } else { row.formation },
                     })
                 } else {
                     shop_rows.get(index).filter(|row| row.unlocked)
@@ -311,6 +319,7 @@ fn select_battle_inner(
                         tactic_cease_fire = row.cease_fire;
                         tactic_match_speed = row.match_speed;
                         tactic_color = row.color_setting;
+                        tactic_formation = row.formation;
                     }
                     if window.is_key_pressed(Key::Left, KeyRepeat::Yes) {
                         tactic_strategy = if tactic_strategy == 1 { 40 }
@@ -332,12 +341,20 @@ fn select_battle_inner(
                     if window.is_key_pressed(Key::R, KeyRepeat::No) {
                         tactic_color = cycle_squad_color(tactic_color);
                     }
+                    if window.is_key_pressed(Key::F, KeyRepeat::No) {
+                        tactic_formation = tactic_formation.cycle_kind();
+                    }
+                    if window.is_key_pressed(Key::W, KeyRepeat::No) {
+                        tactic_formation.max_width = if tactic_formation.max_width >= 16 {
+                            1
+                        } else { tactic_formation.max_width + 1 };
+                    }
                 }
             }
             if window.is_key_pressed(Key::Enter, KeyRepeat::No) {
                 if let Some(action) = choose(shop_selected, tactic_edit_index,
                         tactic_strategy, tactic_chase, tactic_cease_fire,
-                        tactic_match_speed, tactic_color) {
+                        tactic_match_speed, tactic_color, tactic_formation) {
                     return Ok(Some(action));
                 }
             }
@@ -358,7 +375,7 @@ fn select_battle_inner(
                                     if show_tactics { tactic_edit_index = None; }
                                 } else if let Some(action) = choose(index, tactic_edit_index,
                                     tactic_strategy, tactic_chase, tactic_cease_fire,
-                                    tactic_match_speed, tactic_color)
+                                    tactic_match_speed, tactic_color, tactic_formation)
                                 {
                                     return Ok(Some(action));
                                 }
@@ -411,13 +428,13 @@ fn select_battle_inner(
                 } else { (shop_rows[index].title.as_str(), shop_rows[index].unlocked) };
                 let tactical_label = if show_tactics {
                     let row = &tactics_rows[index];
-                    let (strategy, chase, cease, match_speed, color_setting) =
+                    let (strategy, chase, cease, match_speed, color_setting, formation) =
                         if tactic_edit_index == Some(index) {
                             (tactic_strategy, tactic_chase, tactic_cease_fire,
-                                tactic_match_speed, tactic_color)
+                                tactic_match_speed, tactic_color, tactic_formation)
                         } else {
                             (row.shooting_strategy_id, row.should_chase,
-                                row.cease_fire, row.match_speed, row.color_setting)
+                                row.cease_fire, row.match_speed, row.color_setting, row.formation)
                         };
                     let name = bees_hivemind::protocol::SHOOTING_STRATEGIES[
                         usize::from(strategy - 1)
@@ -428,10 +445,11 @@ fn select_battle_inner(
                         NativeSquadColorSetting::Custom(rgb) =>
                             format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]),
                     };
-                    format!("{} | {} | Chase {} | Fire {} | Speed {} | RGB {}",
+                    format!("{} | {} | Chase {} | Fire {} | Speed {} | RGB {} | Form {}:{}",
                         row.title, name, if chase { "on" } else { "off" },
                         if cease { "hold" } else { "auto" },
-                        if match_speed { "matched" } else { "normal" }, color)
+                        if match_speed { "matched" } else { "normal" }, color,
+                        formation.label(), formation.max_width)
                 } else { String::new() };
                 let title = text::fit(if show_tactics { &tactical_label } else { label }, 560);
                 text::draw_centered(&mut pixels, WIDTH, top + 8, &title, 1,
@@ -444,7 +462,7 @@ fn select_battle_inner(
             }
             text::draw_centered(&mut pixels, WIDTH, 441,
                 if show_tactics {
-                    "Left/Right strategy   C chase   V fire   M speed   R color   Enter save   P close"
+                    "Left/Right strategy   C chase   V fire   M speed   R color   F formation   W width   Enter save"
                 } else if show_delete {
                     "Up/Down select   Enter delete   D close   Esc exit"
                 } else {
