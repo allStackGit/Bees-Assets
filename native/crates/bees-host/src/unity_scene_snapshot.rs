@@ -238,6 +238,11 @@ fn neptune_production_waves_match_source(
             480_u64 + 60 * (index as u64 - 3)
         };
         if u64::from(*second) != due { return false; }
+        // The source repeating ScaledTimer continues after the finite
+        // SavedSquad fleet is exhausted. Empty waves have no composition
+        // to verify; avoid allocating an O(wave_number) template for
+        // every subsequent story-only tick.
+        if actual.is_empty() { continue; }
         let required = if index < 4 {
             INITIAL[index].to_vec()
         } else {
