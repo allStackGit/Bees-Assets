@@ -22,6 +22,7 @@ from portable_policy_bundle import (
 from challenge_policy import existing_path, selected_run
 from carrier_family import (
     carrier_parent_id, source_carrier_groups, squad_members, has_policy,
+    stationary_fleet_source,
 )
 
 
@@ -361,7 +362,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 if (ship["side"] != args.player_side or
                         ship["health"] != ship["max_health"] or
                         ship["max_tsv"] <= 0 or
-                        has_policy(ship) or ship.get("mined_cargo", 0) or
+                        not stationary_fleet_source(ship) or
+                        ship.get("mined_cargo", 0) or
                         carrier_parent_id(ship) is not None):
                     continue
                 ship_type = ship["ship_type"]

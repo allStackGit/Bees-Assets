@@ -15,6 +15,24 @@ def has_policy(ship: dict) -> bool:
             ship.get("is_rl_policy_controlled") is True)
 
 
+def stationary_fleet_source(ship: dict) -> bool:
+    """Match the native campaign installer's stationary source-hull rule.
+
+    A moving source cannot safely be cloned into a newly purchased FleetShip;
+    the native scene schema omits these fields when its authored motion is zero.
+    """
+    if (has_policy(ship) or ship.get("is_moving", False) or
+            ship.get("has_target_coordinates", False)):
+        return False
+    velocity = ship.get("body_velocity")
+    if velocity is None:
+        return True
+    if isinstance(velocity, dict):
+        return velocity.get("x") == 0 and velocity.get("y") == 0
+    return (isinstance(velocity, list) and len(velocity) == 2 and
+            velocity[0] == 0 and velocity[1] == 0)
+
+
 def carrier_parent_id(ship: dict) -> int | None:
     if ship["ship_type"] not in (8, 19):
         return None
@@ -36,7 +54,7 @@ def source_carrier_groups(scene: dict, parent: dict, *, inert: bool = False):
     A bare hull, mixed squad, or incomplete/missing family is not a
     purchase blueprint. Never infer a missing deck count from ship type.
     """
-    if parent["ship_type"] != 5 or has_policy(parent):
+    if parent["ship_type"] != 5 or not stationary_fleet_source(parent):
         return None
     ships = scene.get("fleet_templates" if inert else "ships", ())
     squads = scene.get("fleet_template_squads" if inert else "squads", ())
@@ -46,11 +64,16 @@ def source_carrier_groups(scene: dict, parent: dict, *, inert: bool = False):
     }
     if not children:
         return None
+    original_child_ids = set(children)
     groups = []
     for squad in squads:
         members = squad_members(squad)
-        if not any(member in children for member in members):
+        if not any(member in original_child_ids for member in members):
             continue
+        # An already-consumed child appearing in a second squad is an
+        # ambiguous physical command owner, not a second free deck.
+        if not any(member in children for member in members):
+            return None
         # The Rust campaign installer accepts live Carrier decks only
         # under the original player command owner, and reserved decks only
         # as inactive (non-player) templates. Do not publish a shop class
@@ -69,7 +92,8 @@ def source_carrier_groups(scene: dict, parent: dict, *, inert: bool = False):
         hulls = [children.pop(member) for member in members]
         if any(ship["side"] != parent["side"] or
                ship["ship_type"] != hulls[0]["ship_type"] or
-               ship.get("persistent_fleet") or has_policy(ship) or
+               ship.get("persistent_fleet") or
+               not stationary_fleet_source(ship) or
                ship["health"] != ship["max_health"] or ship.get("mined_cargo", 0)
                for ship in hulls):
             return None
