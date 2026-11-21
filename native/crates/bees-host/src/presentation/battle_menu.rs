@@ -705,7 +705,7 @@ fn select_battle_inner(
         }
         text::draw_centered(&mut pixels, WIDTH, 441,
             if library_mode { "Enter open   Up / Down navigate   Esc exit" }
-            else { "Enter play   B build   T transfer   N new   D delete   P tactics   F fleet   S squads" },
+            else { "Enter play   B build   T transfer   N new   D delete   P tactics   R name   F fleet   S squads" },
             1, MUTED);
         if launch_failed {
             text::draw_centered(&mut pixels, WIDTH, 468,
