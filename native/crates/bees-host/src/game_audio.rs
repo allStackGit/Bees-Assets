@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bees_sim::collision::Aabb;
-use bees_sim::combat_world::CombatEvent;
+use bees_sim::combat_world::{CombatEvent, WARP_GATE_OPENING_SECONDS};
 use bees_sim::geometry::Vec2;
 use bees_sim::simulation::WorldId;
 use serde_json::Value;
@@ -478,7 +478,13 @@ impl NativeGameAudio {
         let sink = Sink::try_new(handle).ok()?;
         sink.set_volume(if self.muted { 0.0 } else { EFFECT_VOLUME });
         if effect == Effect::WarpGateLoop {
-            sink.append(source.repeat_infinite());
+            // A reconnecting spectator joins the gate's existing loop
+            // phase, not a fresh loop at the beginning of the recording.
+            // Source ChangeSpriteLoop fires at the same physical threshold.
+            let phase = (elapsed - WARP_GATE_OPENING_SECONDS).max(0.0);
+            sink.append(source.repeat_infinite().skip_duration(
+                Duration::from_secs_f32(phase),
+            ));
         } else {
             // A spectator attaching while the gate is already opening
             // hears the remaining original clip, not a restarted gate.
@@ -660,7 +666,7 @@ impl NativeGameAudio {
             let (Some(id), Some(x), Some(y), Some(variant), Some(elapsed)) = (
                 ship["id"].as_i64(), ship["x"].as_f64(),
                 ship["y"].as_f64(), ship["animation_variant"].as_u64(),
-                ship["animation_seconds"].as_f64(),
+                ship["warp_audio_elapsed_seconds"].as_f64(),
             ) else { continue };
             if !(0..=1).contains(&variant) ||
                 !x.is_finite() || !y.is_finite() ||
