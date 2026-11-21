@@ -57,6 +57,7 @@ function fieldsFor(config,project) {
                 'training.gae_lambda':[0,1],
                 'training.ppo_clip':[0.000000001,0.999999],
                 'training.learning_rate':[0.000000001,1],
+                'training.colony_batch_size':[1,65536],
                 'training.max_grad_norm':[0.000000001,1000000],
                 'training.entropy_coefficient':[0,1000000],
                 'training.value_coefficient':[0,1000000],
