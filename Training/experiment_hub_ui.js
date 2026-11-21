@@ -5272,17 +5272,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Worker-advertised suite names are suggestions, not execution authority.
     // A disconnected worker must not erase a saved suite ID or its fingerprint.
     function renderEvaluationSuiteChoices() {
-        const available=new Map();
-        for(const machine of state?.machines||[]) {
-            if(machine.status!=='connected')continue;
-            for(const id of machine.evaluation_suites?.[project]||[]) {
-                if(!available.has(id))available.set(id,[]);
-                available.get(id).push(machine.name||machine.id);
-            }
+        const available=advertisedEvaluationSuites();
+        fillEvaluationSuiteSelect($('hub-evaluation-suite'),
+            $('hub-evaluation-suite').value,available);
+        for(const row of $('hub-evaluation-more-suites').children) {
+            const select=row.querySelector('.hub-evaluation-extra-suite-id');
+            fillEvaluationSuiteSelect(select,select.value,available);
         }
-        $('hub-evaluation-suite-options').replaceChildren(
-            ...[...available].sort(([a],[b])=>a.localeCompare(b)).map(
-                ([id,machines])=>new Option(machines.join(', '),id)));
         const running=state?.machines.filter(machine=>machine.status==='connected')
             .flatMap(machine=>(machine.evaluator_services||[])
                 .filter(service=>service.project===project&&
@@ -5297,13 +5293,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         ' ('+cpu+'; '+ram+')';
                 }))||[];
         $('hub-evaluation-available-suites').textContent=available.size
-            ?available.size+' suite IDs advertised by connected '+project+
-                ' workers. '+(running.length
+            ?available.size+' approved suite IDs available in the dropdown. '+(running.length
                     ?'Observed evaluator services: '+running.slice(0,4).join('; ')+'.'
                     :'No active evaluator scheduler confirmed for this project.')+
                 ' Evaluator CPU/RAM ceilings are independent service limits, not training-job allocations. Service observation does not prove frozen-suite compatibility or successful evaluations.'
             :'No connected machine currently advertises '+project+
-                ' evaluation suites. Existing approved suite IDs remain editable.';
+                ' evaluation suites. Editing a saved configuration retains its suite IDs; new suites require a connected evaluator.';
         const defaults=state?.projects.find(p=>p.id===project)
             ?.default_evaluation_monitor;
         $('hub-evaluation-default-status').textContent=defaults
