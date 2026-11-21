@@ -407,6 +407,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                    for mission, previous, run_path in args.mission_defeat_variant},
     }
     stable_roster = None
+    enemy_fleet_contract = {}
     granted_squad_origin = {}
     required_ancestors = {}
     shop_catalog = {}
@@ -436,6 +437,28 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     "player_side": args.player_side, "has_factory": False,
                 }
             }
+
+    def record_enemy_fleet_source(scene: dict) -> None:
+        if not args.persist_enemy_losses:
+            return
+        if scene.get("policy_episode") is not None:
+            raise ValueError(
+                "persistent enemy FleetShips require source-owned AI or HiveMind, not policy agents"
+            )
+        unique = set()
+        for ship in scene["ships"]:
+            if ship.get("side") != 3 - args.player_side or not ship.get("persistent_fleet"):
+                continue
+            fleet_id = ship.get("fleet_ship_id")
+            if type(fleet_id) is not int or fleet_id <= 0 or fleet_id in unique:
+                raise ValueError("enemy FleetShips need unique positive persistent IDs per encounter")
+            unique.add(fleet_id)
+            contract = (ship["ship_type"], ship["max_tsv"], ship["max_health"])
+            previous = enemy_fleet_contract.setdefault(fleet_id, contract)
+            if previous != contract:
+                raise ValueError(
+                    f"enemy FleetShip {fleet_id} changed identity across native campaign missions"
+                )
 
     def record_class_source(scene: dict) -> None:
         """Require each selectable game variant to supply real identical hulls."""
@@ -499,6 +522,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         # campaign player fleet and source-priced hull class contract.
         # Any variant lacking a purchasable/earned hull is rejected before
         # publication, never at the next attempted mission launch.
+        record_enemy_fleet_source(scene)
         record_class_source(scene)
         ident = f"mission-{index:03d}"
         scene_file = f"{ident}.scene.json"
@@ -528,6 +552,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             "record_fleet_stats": True, "persist_fleet_losses": True,
             "bank_player_minerals": True,
         }
+        if args.persist_enemy_losses:
+            mission["persist_enemy_fleet_losses"] = True
         if mission_stories.get(index) == "neptune_pressing_forward":
             # Level.Campaign.Endings.Neptune3Ending permanently marks all
             # Factory FleetShips dead on a loss, including owned reserves.
@@ -645,6 +671,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     f"mission {index} conditional {outcome} battle changes the "
                     "saved player FleetShip identities or squad memberships"
                 )
+            record_enemy_fleet_source(variant_scene)
             record_class_source(variant_scene)
             variant_scene_file = f"{ident}.{outcome}.scene.json"
             variant_run_file = f"{ident}.{outcome}.run.json"
@@ -753,6 +780,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             for index, new_id, template_id in args.victory_squad
         ],
         "mission_count": len(missions),
+        **({"persistent_enemy_fleet_ids": sorted(enemy_fleet_contract)}
+           if args.persist_enemy_losses else {}),
     }
     receipt["packaged_model_files"] = [
         {"file": name, "sha256": name.split("/")[-1].removesuffix(".model")}
@@ -909,6 +938,8 @@ def main() -> None:
                         help="authored game-only battle.run.json; repeat in mission order")
     parser.add_argument("--player-side", type=int, choices=(1, 2), default=1)
     parser.add_argument("--title", default="Native Fleet Campaign")
+    parser.add_argument("--persist-enemy-losses", action="store_true",
+                        help="carry permanent, source-authored enemy FleetShip casualties between all campaign missions; temporary reinforcement ships are excluded")
     parser.add_argument("--shop-types", type=ship_types, default=[],
                         help="optional purchasable hull classes: comma-separated ship types")
     parser.add_argument("--grant-only-types", type=ship_types, default=[],
