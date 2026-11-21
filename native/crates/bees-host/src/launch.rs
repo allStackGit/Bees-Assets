@@ -3571,6 +3571,68 @@ fn run_create_saved_squad(
     Ok(())
 }
 
+/// Remove a vacant native SavedSquad across every authored campaign
+/// route, without orphaning FleetShips or mutating previous battle records.
+/// The immutable receipt keeps its ID permanently unavailable for reuse.
+fn run_retire_saved_squad(
+    catalog_path: &Path, output_root: &Path, side: i32, saved_squad_id: i64,
+) -> Result<(), Box<dyn Error>> {
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: battle_catalog::BattleCatalog =
+        serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
+    let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
+    let progress = catalog.load_progress(output_root)?;
+    if !progress.can_retire_saved_squad(side, saved_squad_id) ||
+        catalog.battles.iter().filter_map(|entry| entry.mission.as_ref())
+            .any(|mission| mission.victory_squads.iter()
+                .any(|grant| grant.template_saved_squad_id == saved_squad_id))
+    {
+        return Err(invalid("delete only a vacant SavedSquad not required by other squad templates or mission rewards").into());
+    }
+    let remaining = progress.created_squads_for_side(side).into_iter()
+        .filter(|squad| squad.saved_squad_id != saved_squad_id)
+        .collect::<Vec<_>>();
+    let tactics = progress.tactics_for_side(side).into_iter()
+        .filter(|row| row.saved_squad_id != saved_squad_id)
+        .collect::<Vec<_>>();
+    let root = catalog_path.parent().ok_or_else(||
+        invalid("missing campaign catalog directory"))?;
+    let mut checked = 0_usize;
+    for battle in &catalog.battles {
+        let Some(mission) = battle.mission.as_ref().filter(|mission|
+            mission.player_side == side) else { continue };
+        for config in battle.configurations() {
+            let path = resolve(root, config).canonicalize()?;
+            let mut scene = load_native_fleet_edit_scene(&path)?;
+            // Other fleet and combat projections are unaffected: this
+            // generated squad has no physical members or assigned hulls.
+            // Confirm the remaining source templates and tactical edits
+            // still resolve on every replayable mission variant.
+            scene.install_created_squads(side, &remaining)
+                .map_err(|error| contextual("remaining SavedSquad templates", error))?;
+            scene.apply_saved_squad_tactics(side, &tactics)
+                .map_err(|error| contextual("remaining SavedSquad tactics", error))?;
+            checked += 1;
+        }
+    }
+    if checked == 0 {
+        return Err(invalid("no authored campaign Level can own the deleted SavedSquad").into());
+    }
+    catalog.retire_saved_squad(&progress, output_root, side, saved_squad_id)?;
+    println!("{}", json!({
+        "kind": "native_campaign_saved_squad_deleted",
+        "campaign_id": catalog.campaign_id,
+        "player_side": side,
+        "saved_squad_id": saved_squad_id,
+        "validated_configs": checked,
+        "ships_removed": 0,
+        "cost_tsv": 0,
+    }));
+    Ok(())
+}
+
 /// Accept all user RGB colors (rather than constraining persisted fleets to
 /// a renderer/UI preset). `inherit` restores each mission's source color;
 /// `clear` explicitly disables sprite recoloring.
@@ -4812,7 +4874,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
     use bees_host::presentation::{
         BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
         NativeTransferMenuRow, NativeCreateSquadMenuRow,
-        NativeTacticsMenuRow, select_battle, select_library,
+        NativeDeleteSquadMenuRow, NativeTacticsMenuRow, select_battle, select_library,
     };
 
     let catalog_path = catalog_path.canonicalize()?;
@@ -4828,7 +4890,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
     // A victory route can change those source squads without creating any
     // new SavedSquad. Keep the parsed menu cache until either the player's
     // squad roster or the selected mission routes actually change.
-    let mut tactic_source_cache: Option<(usize, Vec<bool>, Vec<NativeSavedSquadTactics>)> = None;
+    let mut tactic_source_cache: Option<(Vec<(i32, i64)>, Vec<bool>, Vec<NativeSavedSquadTactics>)> = None;
     loop {
         // The interrupted physical World owns the original HiveMind
         // requests, fleet inventory and frozen victory rewards. Offer one
@@ -4983,6 +5045,22 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                 });
             }
         }
+        let mut delete_rows = Vec::new();
+        for side in [1, 2] {
+            for squad in progress.created_squads_for_side(side) {
+                if progress.can_retire_saved_squad(side, squad.saved_squad_id) &&
+                    !catalog.battles.iter().filter_map(|entry| entry.mission.as_ref())
+                        .any(|mission| mission.victory_squads.iter().any(|grant|
+                            grant.template_saved_squad_id == squad.saved_squad_id))
+                {
+                    delete_rows.push(NativeDeleteSquadMenuRow {
+                        title: format!("Side {}  SavedSquad #{}  [Empty - delete]",
+                            side, squad.saved_squad_id),
+                        side, saved_squad_id: squad.saved_squad_id,
+                    });
+                }
+            }
+        }
         let create_rows = squad_templates.into_iter().map(|(side, template)| {
             NativeCreateSquadMenuRow {
                 title: format!("New player Squad (Side {}) from SavedSquad #{}",
@@ -4994,15 +5072,18 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
         // Read actual source squad preferences rather than inventing
         // defaults for a campaign that has not yet recorded a battle.
         // The saved edit, when present, supersedes the scene default.
-        let created_count = progress.created_squads_for_side(1).len() +
-            progress.created_squads_for_side(2).len();
+        let mut created_ids = [1, 2].into_iter().flat_map(|side|
+            progress.created_squads_for_side(side).into_iter().map(move |squad|
+                (side, squad.saved_squad_id))
+        ).collect::<Vec<_>>();
+        created_ids.sort_unstable();
         let selected_routes = catalog.battles.iter().filter_map(|entry|
             entry.mission.as_ref()?.on_victory.as_ref().map(|route|
                 progress.latest_victory(&route.mission))
         ).collect::<Vec<_>>();
         if tactic_source_cache.as_ref()
-            .is_none_or(|(count, routes, _)|
-                *count != created_count || *routes != selected_routes)
+            .is_none_or(|(ids, routes, _)|
+                *ids != created_ids || *routes != selected_routes)
         {
             let mut tactic_defaults = HashMap::new();
             for entry in &catalog.battles {
@@ -5035,7 +5116,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
             }
             let mut tactic_defaults = tactic_defaults.into_values().collect::<Vec<_>>();
             tactic_defaults.sort_unstable_by_key(|row| (row.side, row.saved_squad_id));
-            tactic_source_cache = Some((created_count, selected_routes, tactic_defaults));
+            tactic_source_cache = Some((created_ids, selected_routes, tactic_defaults));
         }
         let tactics_rows = tactic_source_cache.as_ref()
             .expect("saved tactics source cache initialized").2
@@ -5060,7 +5141,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
         }).collect::<Vec<_>>();
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
             &fleet_rows, &squad_rows, &shop_rows, available, &transfer_rows,
-            &create_rows, &tactics_rows)?
+            &create_rows, &tactics_rows, &delete_rows)?
             else { break };
         let index = match action {
             NativeBattleMenuAction::Play(index) => index,
@@ -5072,6 +5153,17 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                 launch_failed = result.is_err();
                 if let Err(error) = result {
                     eprintln!("Could not create SavedSquad from #{template_saved_squad_id}: {error}");
+                }
+                continue;
+            }
+            NativeBattleMenuAction::DeleteSquad { side, saved_squad_id } => {
+                let result = run_retire_saved_squad(
+                    &catalog_path, output_root, side, saved_squad_id,
+                );
+                progress = catalog.load_progress(output_root)?;
+                launch_failed = result.is_err();
+                if let Err(error) = result {
+                    eprintln!("Could not delete SavedSquad #{saved_squad_id}: {error}");
                 }
                 continue;
             }
