@@ -41,7 +41,7 @@ impl NativeMissionCue {
             Some(CampaignDialogueSpec::TitaniaBeenoculars { .. }) =>
                 matches!(self, Self::UploadTen | Self::UploadTwentyFour |
                     Self::UploadFifty | Self::UploadSeventyFive | Self::UploadNinety),
-            None => false,
+            Some(CampaignDialogueSpec::NeptunePressingForward { .. }) | None => false,
         }
     }
 }
