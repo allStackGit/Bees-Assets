@@ -773,28 +773,25 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                         for due, _ in expected
                     )
                 )
-                # Unity's six timers deploy these physical SavedSquad
-                # compositions, not arbitrary units at matching times.
-                # The 540s upper route also takes previously fought Bee
-                # squads from the real career fleet before its fixed list.
-                # Those veteran squads may vary, but the authored suffix
-                # must always remain intact and in source order.
-                ordinary = [(16, 1), (14, 2), (21, 2), (15, 4), (15, 4)]
-                late_upper = [(14, 2), (21, 6), (15, 8), (3, 2), (16, 4)]
-                lower = [(14, 2), (21, 6), (15, 8),
-                         (22, 4), (22, 4), (16, 4)]
+                # Source GetSquadByComposition(..., canHaveFewerShips,
+                # canHaveMoreShips) accepts varying positive member counts
+                # for every Uranus II call. Preserve ordered ship *types*
+                # and independent squad identities; don't require ideal
+                # sizes that the original surviving SavedSquads may lack.
+                # The fifth upper route also prefixes veteran squads.
+                ordinary = [16, 14, 21, 15, 15]
+                late_upper = [14, 21, 15, 3, 16]
+                lower = [14, 21, 15, 22, 22, 16]
                 formations = {
                     (120, "upper"): ordinary,
                     (240, "upper"): ordinary,
-                    (360, "upper"): [(22, 4), (22, 4), (14, 2),
-                                      (21, 4), (15, 4)],
-                    (480, "upper"): [(22, 6), (22, 6), (14, 2), (16, 4)],
-                    (480, "lower"): [(21, 4), (14, 2), (21, 4)],
+                    (360, "upper"): [22, 22, 14, 21, 15],
+                    (480, "upper"): [22, 22, 14, 16],
+                    (480, "lower"): [21, 14, 21],
                     (540, "upper"): late_upper,
                     (540, "lower"): lower,
                     (600, "upper"): late_upper,
-                    (600, "lower"): [(14, 2), (21, 6), (15, 8),
-                                     (22, 4), (22, 4), (3, 2), (16, 4)],
+                    (600, "lower"): [14, 21, 15, 22, 22, 3, 16],
                 }
                 source_squads = {
                     squad["item_id"]: squad for squad in scene.get("squads", [])
@@ -826,8 +823,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                         # The optional veteran squads can contain mixed
                         # historical fleets; the source's newly generated
                         # compositions are uniformly typed.
-                        fleet.append((next(iter(types)) if len(types) == 1
-                                      else None, len(ships)))
+                        fleet.append(next(iter(types)) if len(types) == 1
+                                     else None)
                     return fleet
 
                 for wave in waves:
