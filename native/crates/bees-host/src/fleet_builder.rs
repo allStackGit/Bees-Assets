@@ -22,6 +22,7 @@ use super::RunConfig;
 const SOURCE_SCENE: &str = include_str!("../../../examples/native-two-player.scene.json");
 const SOURCE_RUN: &str = include_str!("../../../examples/native-two-player.run.json");
 const SOURCE_ARCHETYPES: &str = include_str!("../../../examples/native-skirmish.scene.json");
+const SOURCE_QUEEN: &str = include_str!("../../../examples/native-queen.scene.json");
 const FLEET_SIZES: [usize; 8] = [1, 2, 4, 8, 16, 32, 64, 128];
 pub(super) const GAME_ID: &str = "fleet-skirmish";
 
@@ -69,7 +70,7 @@ impl ReinforcementPattern {
 }
 
 #[derive(Clone, Copy)]
-enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Chargers, Gate, Detonators }
+enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Chargers, Gate, Detonators, Queen }
 
 #[derive(Clone, Copy)]
 enum AiTactics { Aggressive, Circle, RightSwipe, LeftSwipe, InAndOut, Mixed }
@@ -174,6 +175,7 @@ impl FleetMix {
             Self::Chargers => "chargers",
             Self::Gate => "warp-gate",
             Self::Detonators => "yellow-jackets",
+            Self::Queen => "queen",
         }
     }
 
@@ -182,6 +184,8 @@ impl FleetMix {
     fn support_type(self, side: usize) -> u8 {
         if side == 0 {
             if matches!(self, Self::Gate) { 20 } else { 2 }
+        } else if matches!(self, Self::Queen) {
+            17
         } else {
             5
         }
@@ -203,7 +207,7 @@ impl FleetMix {
             Self::Balanced => total.div_ceil(4).min(8),
             Self::SupportHeavy => (total / 2).min(12),
             Self::Specialists => if total >= 4 { total.div_ceil(4).min(8) } else { 0 },
-            Self::Gate => usize::from(total >= 2),
+            Self::Gate | Self::Queen => usize::from(total >= 2),
             Self::Miners | Self::Chargers | Self::Detonators => 0,
         }).min(total.saturating_sub(1 + self.specialist_count(total)))
     }
@@ -273,7 +277,8 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
     let Some(mining_field) = choose_mining_field(terrain)? else { return Ok(None); };
-    let Some(mix) = choose_mix(fleet_sizes, mining_field)? else { return Ok(None); };
+    let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes, mining_field, arena_size)? else { return Ok(None); };
     // A single local window cannot present two opposing, independently
     // fog-filtered viewpoints. LAN commanders have separate viewers and
     // may enable authentic fog independently.
@@ -281,7 +286,6 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
         let Some(enabled) = choose_visibility()? else { return Ok(None); };
         enabled
     };
-    let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
     let ai_tactics = if mode == 2 { AiTactics::Aggressive } else {
         let Some(value) = choose_ai_tactics()? else { return Ok(None); };
         value
@@ -320,9 +324,9 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
     let Some(mining_field) = choose_mining_field(terrain)? else { return Ok(None); };
-    let Some(mix) = choose_mix(fleet_sizes, mining_field)? else { return Ok(None); };
-    let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes, mining_field, arena_size)? else { return Ok(None); };
+    let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
     let Some(objective) = choose_objective()? else { return Ok(None); };
     let objective_side = match objective {
         Objective::Elimination => None,
@@ -354,9 +358,9 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
     let Some(mining_field) = choose_mining_field(terrain)? else { return Ok(None); };
-    let Some(mix) = choose_mix(fleet_sizes, mining_field)? else { return Ok(None); };
-    let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes, mining_field, arena_size)? else { return Ok(None); };
+    let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
     let Some(ai_tactics) = choose_ai_tactics()? else { return Ok(None); };
     let Some(objective) = choose_objective()? else { return Ok(None); };
     let objective_side = match objective {
@@ -450,7 +454,7 @@ fn choose_sizes() -> Result<Option<[usize; 2]>, Box<dyn Error>> {
     Ok(Some(fleet_sizes))
 }
 
-fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool)
+fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool, arena_size: Option<u32>)
     -> Result<Option<[FleetMix; 2]>, Box<dyn Error>>
 {
     let mut choices = [FleetMix::Fighters; 2];
@@ -502,6 +506,12 @@ fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool)
                 "{} fighters, 1 Yellow Jacket  |  Source physical detonation",
                 total - 1,
             )));
+            if arena_size.is_some_and(|size| size >= 1024) {
+                options.push((FleetMix::Queen, format!(
+                    "{} fighters, 1 Queen  |  Source Yellow Jacket waves",
+                    total - 1,
+                )));
+            }
         }
         let rows = options.iter().map(|(_, title)| BattleMenuRow {
             title, status: "  [Real source hulls]", unlocked: true,
