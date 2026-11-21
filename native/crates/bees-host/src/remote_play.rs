@@ -1965,6 +1965,11 @@ fn current_state(
             // Keep the LAN view consistent with the local renderer.
             view.combat.range_visible_map_object_ids().contains(&object.entity_id)
         };
+        // The original mission banner exposes a center-visible demolition
+        // target's HP even without weapon-range contact. This objective
+        // disclosure is distinct from the ordinary MapObject health bar.
+        let disclose_health = range_visible || view.demolition
+            .is_some_and(|objective| objective.target_map_object_id == object.entity_id);
         Some(json!({
             "id": object.entity_id,
             "kind": object.kind as u8,
@@ -1988,13 +1993,13 @@ fn current_state(
                 .and_then(|object| crate::presentation::fire_tank_sprite_stage(
                     object.health, object.max_health,
                 )),
-            "health": if map.is_some() && !range_visible {
+            "health": if map.is_some() && !disclose_health {
                 None
             } else {
                 object.vitals.map(|v| v.health).or_else(|| map.map(|v| v.health))
             },
             "map_object_kind": map.map(|object| object.kind as u8),
-            "max_health": map.filter(|_| range_visible).map(|object| object.max_health),
+            "max_health": map.filter(|_| disclose_health).map(|object| object.max_health),
             "range_visible": range_visible,
         }))
     }).collect();
