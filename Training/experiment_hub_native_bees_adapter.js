@@ -1628,9 +1628,15 @@ function createNativeBeesAdapter({
                     bundle.size<2||bundle.size>8||
                     (bundle.index===1)!==(distributedOptimizer.role==='owner'))
                     throw Error('Native distributed optimizer receipt has no authorized Hub node identity.');
+                const ownerRound=distributedOptimizer.role==='owner'
+                    ?jobRound(context):null;
                 const evidence=distributedOptimizer.role==='worker'
                     ?completedWorker(context)?.receipt
-                    :jobRound(context)?.metrics;
+                    :ownerRound?.metrics;
+                const release=context.frozen_parameters?.continual_release===true
+                    ?completedRelease(ownerRound,jobRoot(context)):null;
+                if(context.frozen_parameters?.continual_release===true&&!release)
+                    throw Error('Native optimizer owner has not completed the required generation release.');
                 if(!evidence)throw Error('Native distributed optimizer exited without its local synchronized receipt.');
                 const inputSha=distributedOptimizer.role==='worker'
                     ?evidence.global_input_sha256
@@ -1657,7 +1663,17 @@ function createNativeBeesAdapter({
                 return {group_id:bundle.id,node_rank:bundle.index-1,
                     node_count:bundle.size,input_sha256:inputSha,
                     model_consensus_sha256:modelSha,
-                    ...(measured?{learner_work:measured}:{})};
+                    ...(measured?{learner_work:measured}:{}),
+                    ...(release?{continual_release:{
+                        checkpoint_sha256:release.receipt.checkpoint_sha256,
+                        parent_model_id:release.receipt.parent_model_id,
+                        model_id:release.receipt.model_id,
+                        training_step:release.receipt.training_step,
+                        evaluation_report_id:release.receipt.evaluation_report_id,
+                        passed:release.receipt.passed,
+                        deployment_id:release.receipt.deployment_id,
+                        deployed_model_id:release.receipt.deployed_model_id,
+                    }}:{})};
             },
         }:{}),
         args(parameters, context) {

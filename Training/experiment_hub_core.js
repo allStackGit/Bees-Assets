@@ -796,7 +796,8 @@ function verifiedOptimizerCompletion(job,raw,state) {
     const bundle=job?.resource_bundle;
     const keys=['group_id','node_rank','node_count','input_sha256',
         'model_consensus_sha256',
-        ...(raw?.learner_work!==undefined?['learner_work']:[])];
+        ...(raw?.learner_work!==undefined?['learner_work']:[]),
+        ...(raw?.continual_release!==undefined?['continual_release']:[])];
     if(state!=='finished'||job?.frozen_parameters?.optimizer_group!==true||
         !bundle||!object(raw)||
         Object.keys(raw).sort().join(',')!==keys.sort().join(',')||
@@ -824,6 +825,24 @@ function verifiedOptimizerCompletion(job,raw,state) {
             work.trajectory_processing_wall_seconds+
                 work.optimizer_update_wall_seconds>work.learner_wall_seconds+0.01)
             throw Error('Native publishing learner measurements differ from its synchronized completion.');
+    }
+    const requiresRelease=job.project_id==='bees_native'&&
+        job.frozen_parameters?.continual_release===true;
+    if(requiresRelease||raw.continual_release!==undefined) {
+        const release=raw.continual_release;
+        const fields=['checkpoint_sha256','parent_model_id','model_id','training_step',
+            'evaluation_report_id','passed','deployment_id','deployed_model_id'];
+        const modelId=/^bees-rl-v[0-9]+-[0-9a-f]{24}$/;
+        if(!requiresRelease||bundle.index!==1||!object(release)||
+            Object.keys(release).sort().join(',')!==fields.sort().join(',')||
+            !SHA256.test(String(release.checkpoint_sha256||''))||
+            ![release.parent_model_id,release.model_id,release.deployed_model_id]
+                .every(id=>modelId.test(String(id||'')))||
+            !/^eval-[0-9a-f]{24}$/.test(String(release.evaluation_report_id||''))||
+            !/^native-[0-9a-f]{24}$/.test(String(release.deployment_id||''))||
+            !Number.isSafeInteger(release.training_step)||release.training_step<1||
+            typeof release.passed!=='boolean')
+            throw Error('Native optimizer completion lacks the exact authorized generation release.');
     }
     return copy(raw);
 }
@@ -917,7 +936,10 @@ function nativeOptimizerTerminalProof(job) {
     if(!job.optimizer_completion)return false;
     return job.project_id!=='bees_native'||
         job.checkpoint_ready_verified===true&&
-        SHA256.test(String(job.checkpoint_model_sha256||''));
+        SHA256.test(String(job.checkpoint_model_sha256||''))&&
+        (job.frozen_parameters?.continual_release!==true||
+            job.optimizer_completion.continual_release?.checkpoint_sha256===
+                job.checkpoint_model_sha256);
 }
 
 // A distributed Bees checkpoint is suitable for continuation only after
@@ -935,7 +957,8 @@ function nativeOptimizerGroupBlock(snapshot,parent) {
         .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
     const owner=members[0]?.optimizer_completion;
     if(members.length!==group.size||
-        !owner||!SHA256.test(String(owner.input_sha256||''))||
+        !owner||!nativeOptimizerTerminalProof(parent)||
+        !SHA256.test(String(owner.input_sha256||''))||
         !SHA256.test(String(owner.model_consensus_sha256||''))||
         members.some((job,index)=>job.resource_bundle.index!==index+1||
             job.project_id!==(index===0?'bees_native':'bees_native_optimizer_worker')||
@@ -3756,6 +3779,11 @@ class ExperimentHub {
             const optimizerCompletion=verifiedOptimizerCompletion(
                 job,report.optimizer_completion,report.state);
             if(optimizerCompletion) {
+                if(optimizerCompletion.continual_release&&
+                    (report.checkpoint_ready_verified!==true||
+                     optimizerCompletion.continual_release.checkpoint_sha256!==
+                        report.checkpoint_model_sha256))
+                    throw Error('Native generation release must identify the verified terminal model.');
                 if(['failed','stopped','cancelled'].includes(job.status)||
                     job.optimizer_completion&&
                     JSON.stringify(job.optimizer_completion)!==
@@ -4896,6 +4924,8 @@ class ExperimentHub {
                     config.project_id===expected);
                 const parameters=configuration?.parameters;
                 if(!configuration||
+                    (parameters.continual_release!==undefined&&
+                        (expected!=='bees_native'||parameters.continual_release!==true))||
                     (kind==='collector'&&(
                         parameters.optimizer_group===true||
                         parameters.collection_id!==undefined||
@@ -5620,6 +5650,9 @@ class ExperimentHub {
                         collector_bundle_id:plan.collectors_bundle_id,
                         optimizer_bundle_id:bundleId,
                         optimizer_group:optimizerGroup,
+                        ...(optimizerConsensus.continual_release?{
+                            continual_release:copy(optimizerConsensus.continual_release),
+                        }:{}),
                         checkpoint_job_id:owner.id,
                         checkpoint_sha256:owner.checkpoint_model_sha256,
                         ...(receipts.length?{
@@ -5994,6 +6027,8 @@ class ExperimentHub {
                 jobs.some((job,index)=>
                     job.project_id!==(index===0?'bees_native':'bees_native_optimizer_worker')||
                     job.frozen_parameters?.optimizer_group!==true||
+                    (job.frozen_parameters.continual_release!==undefined&&
+                        (index!==0||job.frozen_parameters.continual_release!==true))||
                     job.frozen_parameters.optimizer_inputs_sha256!==inputIdentity||
                     JSON.stringify(job.frozen_parameters.rollout_bundles??null)!==pins||
                     job.frozen_parameters.seed_offset!==0||
