@@ -1554,7 +1554,30 @@ fn collect_remote_audio(
     shots: &HashMap<i64, (u8, Vec2)>, sources: &RemoteFogSources,
     pending: &mut Vec<Value>, measurements: &mut RemotePlayMeasurements,
 ) {
+    // Track at most the previous admitted source turret volley. The
+    // canonical firing loop emits DualCannon barrels consecutively;
+    // this avoids a per-tick allocation for an audio-only hash set.
+    let mut last_mount_launch: Option<(i64, u8, i64, usize)> = None;
     for event in view.combat.events() {
+        if let CombatEvent::GameWeaponFired { ship_id, slot, projectile_id } |
+            CombatEvent::PolicyWeaponFired { ship_id, slot, projectile_id } = event
+        {
+            if let Some((prior_ship, prior_slot, prior_id, index)) = last_mount_launch {
+                if prior_ship == *ship_id && prior_slot == *slot &&
+                    prior_id.checked_add(1) == Some(*projectile_id) &&
+                    view.combat.weapon_is_dual_cannon(*ship_id, *slot)
+                {
+                    // One source sound covers both real barrels. Keep the
+                    // second projectile identity on the same side-filtered
+                    // cue so the LAN client's live-shot fallback cannot
+                    // replay it as a separate sound on the next snapshot.
+                    if let Some(cue) = pending.get_mut(index) {
+                        cue["paired_projectile_id"] = json!(projectile_id);
+                    }
+                    continue;
+                }
+            }
+        }
         let mut launched = None;
         let mut retired_launch = false;
         let mut impact = None;
@@ -1727,6 +1750,12 @@ fn collect_remote_audio(
                 }
             }
             pending.push(cue);
+            if let CombatEvent::GameWeaponFired { ship_id, slot, projectile_id } |
+                CombatEvent::PolicyWeaponFired { ship_id, slot, projectile_id } = event
+            {
+                last_mount_launch = Some((*ship_id, *slot, *projectile_id,
+                    pending.len() - 1));
+            }
             measurements.audio_events_queued += 1;
             measurements.retired_weapon_launch_cues += u64::from(retired_launch);
             if impact.is_some() { measurements.combat_impacts_queued += 1; }
