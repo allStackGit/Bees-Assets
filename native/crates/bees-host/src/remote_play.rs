@@ -1997,7 +1997,7 @@ fn current_state(
         // disclosure is distinct from the ordinary MapObject health bar.
         let disclose_health = range_visible || view.demolition
             .is_some_and(|objective| objective.target_map_object_id == object.entity_id);
-        Some(json!({
+        let mut projection = json!({
             "id": object.entity_id,
             "kind": object.kind as u8,
             "collider": hull,
@@ -2011,15 +2011,6 @@ fn current_state(
             "asteroid_prefab": if object.kind == ObstacleKind::CollisionAsteroid {
                 body.source_asteroid_prefab_number
             } else { None },
-            // The source art exposes one of four smoke/damage stages.
-            // Exact MapObject HP is private until the viewing faction's
-            // real weapon trigger discovers it; renderer and objectives
-            // still receive the authentic visible damage-stage sprite.
-            "fire_tank_stage": map
-                .filter(|object| object.kind == bees_sim::map_object::MapObjectKind::FireTank)
-                .and_then(|object| crate::presentation::fire_tank_sprite_stage(
-                    object.health, object.max_health,
-                )),
             "health": if map.is_some() && !disclose_health {
                 None
             } else {
@@ -2028,7 +2019,18 @@ fn current_state(
             "map_object_kind": map.map(|object| object.kind as u8),
             "max_health": map.filter(|_| disclose_health).map(|object| object.max_health),
             "range_visible": range_visible,
-        }))
+        });
+        // Only FireTanks need the optional source damage frame; omit
+        // the key for thousands of ordinary rocks/walls in large maps.
+        if let Some(stage) = map
+            .filter(|object| object.kind == bees_sim::map_object::MapObjectKind::FireTank)
+            .and_then(|object| crate::presentation::fire_tank_sprite_stage(
+                object.health, object.max_health,
+            ))
+        {
+            projection["fire_tank_stage"] = json!(stage);
+        }
+        Some(projection)
     }).collect();
     // Active non-colliding fragments already have authoritative IDs,
     // pooled prefab identities, poses and fade state. Do not send their
