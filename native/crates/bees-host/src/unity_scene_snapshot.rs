@@ -72,6 +72,8 @@ use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate, Nati
 use crate::durable_connection::DurableHiveMindConnection;
 
 mod native_game_scene;
+mod saved_squad_formation;
+pub use saved_squad_formation::{NativeSavedSquadFormation, NativeSquadFormationKind};
 
 const SNAPSHOT_VERSION: u32 = 35;
 
@@ -979,6 +981,10 @@ pub struct NativeSavedSquadTactics {
     pub match_speed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color_setting: Option<NativeSquadColorSetting>,
+    /// Original SquadMaker formation applied only after the saved physical
+    /// fleet's purchases, reassignments and losses are resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formation: Option<NativeSavedSquadFormation>,
 }
 
 
@@ -1282,7 +1288,10 @@ impl NativePhysicalScene {
                 ship.cease_fire = enabled;
             }
         }
-        Ok(updates.len())
+        // Source formations change physical placement and command offsets,
+        // so the rendered and headless game receive precisely the same fleet.
+        let formed = self.apply_campaign_formations(player_side, settings)?;
+        Ok(updates.len() + formed)
     }
 
     /// Resolve a destination's current physical anchor, or its immutable
