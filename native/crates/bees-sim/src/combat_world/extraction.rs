@@ -58,7 +58,12 @@ impl CombatWorld {
             return Err(CombatWorldError::InvalidExtractionZone);
         }
         self.extraction = Some(ExtractionState {
-            zone, active: false, last_mobile_extracted: false,
+            // Uranus II creates its full-height retreat trigger before
+            // combat and never hides it behind a proximity activation.
+            // Ordinary extraction/escort still use their source activation
+            // radius and first-contact delay.
+            active: zone.retreat_on_exit, zone,
+            last_mobile_extracted: false,
             escort_ship_id: None, escort_delivered: false,
         });
         Ok(())
