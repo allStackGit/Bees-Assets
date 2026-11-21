@@ -124,27 +124,47 @@ impl NativePhysicalScene {
                 return Err(invalid("merged squad exceeds source squad member capacity or duplicates ships"));
             }
             let mut sum = Vec2::ZERO;
+            let mut special_type = None;
+            let mut ordinary_members = false;
             for &ship_id in &all_members {
                 let ship = self.entities.iter().find_map(|entity| match entity {
                     NativeAuthoredEntity::Ship(ship) if ship.entity_id == ship_id =>
                         Some(ship),
                     _ => None,
                 }).ok_or(invalid("grouped squad lacks a real physical ship"))?;
+                // Unlike a generic clone, a grouping keeps every
+                // physical special-weapon ID and ship-owned ability intact.
+                // Only single-class original Scout/Barge/Bomb crews may
+                // share a squad command; never merge a Carrier child,
+                // group policy controllers, or disparate special roles.
+                let special = ship.special.is_some() || ship.special_weapon.is_some();
+                if special {
+                    if !matches!(ship.ship_type, 0 | 10 | 18 | 22) ||
+                        special_type.is_some_and(|kind| kind != ship.ship_type)
+                    {
+                        return Err(invalid("source specialist squad requires one original ship class"));
+                    }
+                    special_type = Some(ship.ship_type);
+                } else {
+                    ordinary_members = true;
+                }
                 if ship.side != leader.side || ship.ship_type == 5 ||
                     !ship.motion.base_speed.is_finite() ||
                     ship.motion.base_speed <= 0.0 ||
                     ship.policy.is_some() ||
                     ship.motion.is_policy_controlled ||
-                    ship.special.is_some() || ship.special_weapon.is_some() ||
                     ship.drone_carrier_id.is_some() ||
                     ship.vitals.is_dead() ||
                     ship.motion.is_moving || ship.motion.has_target_coordinates ||
                     ship.motion.body_velocity.length_squared() != 0.0 ||
                     !self.source_formation.contains_key(&ship_id)
                 {
-                    return Err(invalid("native groups require stationary ordinary source ships"));
+                    return Err(invalid("native groups require stationary source-owned physical ships"));
                 }
                 sum += ship.motion.position;
+            }
+            if special_type.is_some() && ordinary_members {
+                return Err(invalid("specialist group cannot combine unrelated source command roles"));
             }
             let center = sum * (all_members.len() as f32).recip();
             revisions.push((primary, all_members, center));
