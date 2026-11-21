@@ -343,7 +343,7 @@ pub(super) struct FleetChoice {
     carrier_deck: usize,
     terrain: Terrain,
     fog_of_war: bool,
-    mining_field: bool,
+    ore_count: usize,
     /// None preserves the original authored 320x200 map.
     arena_size: Option<u32>,
     lethal_borders: bool,
@@ -391,9 +391,9 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
     };
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
-    let Some(mining_field) = choose_mining_field(terrain)? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
-    let Some(mix) = choose_mix(fleet_sizes, mining_field, arena_size)? else { return Ok(None); };
+    let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(specialist_squad_sizes) =
@@ -454,7 +454,7 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
+        player_side, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, ore_count, arena_size, lethal_borders,
         ai_both: mode == 3, benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
@@ -493,9 +493,9 @@ pub(super) fn choose_multiplayer(
     } else { None };
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
-    let Some(mining_field) = choose_mining_field(terrain)? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
-    let Some(mix) = choose_mix(fleet_sizes, mining_field, arena_size)? else { return Ok(None); };
+    let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(specialist_squad_sizes) =
@@ -519,7 +519,7 @@ pub(super) fn choose_multiplayer(
     };
     Ok(Some(FleetChoice {
         player_side: if use_hivemind { authenticated_side } else { None },
-        fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
+        fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, ore_count, arena_size, lethal_borders,
         ai_both: false,
         benchmark: false,
         spectator_episodes: 1,
@@ -534,9 +534,9 @@ pub(super) fn choose_multiplayer(
 pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
-    let Some(mining_field) = choose_mining_field(terrain)? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
-    let Some(mix) = choose_mix(fleet_sizes, mining_field, arena_size)? else { return Ok(None); };
+    let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(specialist_squad_sizes) =
@@ -572,7 +572,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(threads) = choose_resource("CPU physics workers", &workers)?
         else { return Ok(None); };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
+        player_side: None, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, ore_count, arena_size, lethal_borders,
         ai_both: true,
         benchmark: true,
         spectator_episodes: 1,
@@ -596,20 +596,30 @@ fn choose_visibility() -> Result<Option<bool>, Box<dyn Error>> {
     Ok(select_library(&rows, &mut selected, false)?.map(|choice| choice == 1))
 }
 
-/// Use genuine mineral asteroids only where the physical prefab cannot
-/// overlap the authored central obstacle geometry at scene creation.
-fn choose_mining_field(terrain: Terrain) -> Result<Option<bool>, Box<dyn Error>> {
+/// Instantiate actual original mineral asteroid colliders from the same
+/// source GameScene. Compact arenas preserve their two safe deposits;
+/// larger maps may host substantial neutral ore without intersecting the
+/// faction spawn lanes or authored cover.
+fn choose_mining_field(
+    terrain: Terrain, arena_size: Option<u32>,
+) -> Result<Option<usize>, Box<dyn Error>> {
     if !matches!(terrain, Terrain::Open | Terrain::Original) {
-        return Ok(Some(false));
+        return Ok(Some(0));
     }
-    let rows = [
-        BattleMenuRow { title: "Combat only", status: "  [No mineral deposits]",
-            unlocked: true },
-        BattleMenuRow { title: "Mineral field", status: "  [Two physical mineable asteroids]",
-            unlocked: true },
+    let mut choices = vec![
+        (0_usize, "Combat only  |  No mineral deposits".to_owned()),
+        (2, "Two real mineable asteroids".to_owned()),
     ];
+    if arena_size.is_some_and(|size| size >= 512) {
+        choices.push((8, "Eight original mineable asteroids".to_owned()));
+        choices.push((16, "Sixteen original mineable asteroids".to_owned()));
+    }
+    let rows = choices.iter().map(|(_, title)| BattleMenuRow {
+        title, status: "  [Shared game and RL mineral economy]", unlocked: true,
+    }).collect::<Vec<_>>();
     let mut selected = 0_usize;
-    Ok(select_library(&rows, &mut selected, false)?.map(|index| index == 1))
+    Ok(select_library(&rows, &mut selected, false)?
+        .map(|index| choices[index].0))
 }
 
 fn choose_resource(label: &str, options: &[usize]) -> Result<Option<usize>, Box<dyn Error>> {
@@ -1411,7 +1421,7 @@ pub(super) fn archive(
             .ok_or_else(|| invalid("native Carrier archetypes lost their ship list"))?
             .push(drone);
     }
-    if selected.mining_field {
+    if selected.ore_count > 0 {
         // Duplicate the original authenticated physical mining collider
         // into a new, nonconflicting native scene identity. Its ore/health,
         // collision layer, and eventual depletion are handled by the shared
@@ -1871,7 +1881,7 @@ pub(super) fn archive(
         if matches!(selected.mix[1], FleetMix::Queen) { "Queens" } else { "Carriers" },
         specialist_count[0], specialist_count[1],
     ));
-    if selected.mining_field {
+    if selected.ore_count > 0 {
         let title = scene["level_name"].as_str().unwrap_or("Fleet Skirmish");
         scene["level_name"] = json!(format!("{title}  |  Physical mineral field"));
     }
@@ -2156,7 +2166,7 @@ pub(super) fn archive(
             Objective::Demolition => "demolition",
         },
         selected.objective_side.unwrap_or(0),
-        u8::from(selected.mining_field), u8::from(selected.fog_of_war),
+        selected.ore_count, u8::from(selected.fog_of_war),
     ));
     if selected.ai_both || !matches!(selected.ai_tactics,
         [AiTactics::Aggressive, AiTactics::Aggressive])
