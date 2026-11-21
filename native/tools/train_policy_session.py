@@ -733,6 +733,14 @@ def verify_evaluation(directory, manifest_sha, source_sha, learner_side, policy_
             result.get("side_victories") != summary.get("evaluation", {}).get(
                 "victories_by_side", {}).get(str(learner_side), 0)):
         raise ValueError(f"holdout summary differs from published evaluation: {directory}")
+    if "policy_forward_latency" in result:
+        from evaluate_policy import evaluation_forward_latency
+        timing = evaluation_forward_latency(
+            directory / "evaluation.log", manifest_sha,
+            summary.get("resident_policy_exit_clean"),
+        )
+        if timing != result["policy_forward_latency"]:
+            raise ValueError(f"holdout backend latency differs from completed log: {directory}")
     # New native summaries contain authoritative per-scene terminal
     # counters. Verify the published rates from those counters, rather
     # than accepting a standalone receipt's self-reported averages.

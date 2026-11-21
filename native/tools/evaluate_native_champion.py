@@ -140,9 +140,12 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
         raise ValueError("continual-learning promotion policy has a different ABI")
     minimum = config["promotion"]["min_matches_vs_champion"]
     threshold = config["promotion"]["min_win_rate_vs_champion"]
+    latency_limit = config["promotion"]["max_inference_batch_milliseconds"]
     if (type(minimum) is not int or minimum < 1 or
             type(threshold) not in (int, float) or not math.isfinite(threshold) or
-            not 0 <= threshold <= 1):
+            not 0 <= threshold <= 1 or
+            type(latency_limit) not in (int, float) or not math.isfinite(latency_limit) or
+            latency_limit <= 0):
         raise ValueError("invalid continual-learning incumbent gate")
     run = document(source)
     allocations = [set(level.get("model_slots", {}).values()) for level in run["levels"]]
@@ -165,6 +168,7 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
         "incumbent_checkpoint_sha256": incumbent["sha256"],
         "promotion_config_sha256": file_sha256(promotion_config),
         "minimum_matches": minimum, "minimum_score_rate": threshold,
+        "maximum_inference_batch_milliseconds": latency_limit,
         "policy_seed": seed, "physics_workers": physics_workers, "device": device,
         "rollout_binary_sha256": file_sha256(binary) if binary else None,
     }
@@ -178,6 +182,8 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
         total = Counter()
         scenes = {}
         comparisons = []
+        latency_calls = 0
+        latency_max = 0
         for index, (candidate_route, incumbent_route) in enumerate(((first, second), (second, first))):
             home = output / f"assignment-{index}"
             home.mkdir(exist_ok=True)
@@ -209,6 +215,11 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
             if native_manifest_model_dependencies(manifest) != weights:
                 raise ValueError("native champion assignment weights changed")
             counts, per_scene = terminal_matchup(directory, result, candidate_route, incumbent_route)
+            timing = result.get("policy_forward_latency", {}).get("by_slot", {}).get(str(candidate_route))
+            if not timing:
+                raise ValueError("native champion gate has no complete candidate inference latency")
+            latency_calls += timing["calls"]
+            latency_max = max(latency_max, timing["max_nanoseconds"])
             total.update(counts)
             for scene, row in per_scene.items():
                 scenes.setdefault(scene, Counter()).update(row)
@@ -218,6 +229,7 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
                 "receipt_sha256": file_sha256(directory / "evaluation-result.json"),
                 "journal_sha256": file_sha256(directory / "events.jsonl"),
                 "counts": dict(counts),
+                "candidate_forward_latency": timing,
             })
         if (total["matches"] != expected or total["matches"] < minimum or
                 any(row["candidate_as_bee"] != row["candidate_as_human"]
@@ -229,6 +241,9 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
             "assignments": comparisons, "counts": dict(total),
             "by_scene_sha256": {key: dict(row) for key, row in scenes.items()},
             "score_rate": score, "head_to_head_passed": score >= threshold,
+            "candidate_inference_calls": latency_calls,
+            "candidate_max_inference_batch_milliseconds": latency_max / 1e6,
+            "runtime_latency_passed": latency_calls > 0 and latency_max / 1e6 <= latency_limit,
         }
         atomic_json(output / "incumbent-gate.json", receipt)
         return receipt

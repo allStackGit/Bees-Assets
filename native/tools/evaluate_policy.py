@@ -225,6 +225,45 @@ def per_scene_results(score, learner_side, episodes):
     return results
 
 
+def evaluation_forward_latency(log_path, manifest_sha, clean_exit):
+    """Read complete per-slot backend timing, never a periodic/partial sample."""
+    if clean_exit is not True:
+        return None
+    final = []
+    with log_path.open("r", encoding="utf-8", errors="replace") as stream:
+        for line in stream:
+            if '"native_policy_inference_efficiency"' not in line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (row.get("kind") == "native_policy_inference_efficiency" and
+                    row.get("final") is True and
+                    row.get("manifest_sha256") == manifest_sha and
+                    "forward_latency_by_slot" in row):
+                final.append(row)
+    if not final:
+        return None
+    if len(final) != 1:
+        raise ValueError("native evaluation has ambiguous final inference measurements")
+    timings = final[0]["forward_latency_by_slot"]
+    if not isinstance(timings, dict) or not timings:
+        raise ValueError("native evaluation has no completed slot latency observations")
+    for slot, row in timings.items():
+        if (not slot.isdecimal() or not isinstance(row, dict) or
+                any(type(row.get(key)) is not int or row[key] <= 0
+                    for key in ("calls", "total_nanoseconds", "max_nanoseconds")) or
+                not row["max_nanoseconds"] <= row["total_nanoseconds"] <=
+                    row["calls"] * row["max_nanoseconds"]):
+            raise ValueError("invalid native evaluation slot latency observations")
+    return {
+        "scope": "completed_backend_predict_calls_including_action_readback",
+        "log_sha256": file_sha256(log_path),
+        "by_slot": timings,
+    }
+
+
 def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
              physics_workers=None, inference_device=None):
     manifest = manifest.resolve(strict=True)
@@ -358,8 +397,12 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     check_native_input_dependencies({"source_dependencies": source_dependencies})
     if native_manifest_model_dependencies(manifest, model_store) != model_dependencies:
         raise ValueError("native evaluation model paths changed during the holdout")
+    latency = evaluation_forward_latency(
+        output / "evaluation.log", manifest_sha, summary.get("resident_policy_exit_clean"),
+    )
     receipt = {
         "schema_version": 1, "kind": "native_policy_evaluation_complete",
+        **({"policy_forward_latency": latency} if latency is not None else {}),
         "source_run_config": str(source_path), "source_run_config_sha256": source_sha,
         "source_dependencies": source_dependencies,
         "model_dependencies": model_dependencies,

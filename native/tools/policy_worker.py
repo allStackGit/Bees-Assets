@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import struct
 import sys
+from time import perf_counter_ns
 
 import numpy as np
 
@@ -562,7 +563,7 @@ class InferenceOutputBuffers:
 
 def collect_predictions(
     policy_map, slots, observations, fire, special, allowed, measurements=None,
-    output_buffers=None, capture_behavior=True,
+    output_buffers=None, capture_behavior=True, forward_timings=None,
 ):
     rows = len(slots)
     if output_buffers is None:
@@ -625,9 +626,25 @@ def collect_predictions(
             if last - first + 1 == count:
                 indices = slice(first, last + 1)
             sub_obs, sub_mask = observations[indices], allowed[indices]
+        # Only fixed evaluation requests full latency coverage. Ordinary
+        # gameplay and training do not time every individual model call.
+        started = perf_counter_ns() if forward_timings is not None else None
         prediction = (model.predict(sub_obs, sub_mask, capture_behavior)
                       if isinstance(model, MlagentsPolicy)
                       else model.predict(sub_obs, sub_mask))
+        if started is not None:
+            elapsed = perf_counter_ns() - started
+            # The backend returns CPU action arrays. Timing includes model
+            # execution, sampling and readback, not merely GPU submission.
+            # Shared checkpoint routes each observe the same call, never
+            # sum these per-slot counts to infer total backend work.
+            for slot in model_slots:
+                timing = forward_timings.setdefault(str(slot), {
+                    "calls": 0, "total_nanoseconds": 0, "max_nanoseconds": 0,
+                })
+                timing["calls"] += 1
+                timing["total_nanoseconds"] += elapsed
+                timing["max_nanoseconds"] = max(timing["max_nanoseconds"], elapsed)
         if measurements is not None and model._gpu_execution:
             # Count completed genuine forwards, not allocated devices or
             # loaded-but-never-used policy slots. Shared-model batches count
@@ -696,6 +713,7 @@ def main() -> None:
         "behavior_bytes_avoided": 0,
     }
     output_buffers = InferenceOutputBuffers()
+    forward_timings = {} if os.environ.get("BEES_NATIVE_EVALUATION_SEED") is not None else None
     gpu_pci_address = None
 
     def report_model_residency(*, final=False):
@@ -711,6 +729,9 @@ def main() -> None:
         print(json.dumps({
             "kind": "native_policy_inference_efficiency",
             "final": final,
+            "manifest_sha256": manifest_digest.hex(),
+            **({"forward_latency_by_slot": forward_timings}
+               if final and forward_timings is not None else {}),
             **measurements,
             **({"gpu_pci_address": gpu_pci_address} if gpu_pci_address else {}),
             "model_forwards_saved":
@@ -857,7 +878,7 @@ def main() -> None:
             raise ValueError("nonfinite policy observation")
         continuous, discrete, behavior = collect_predictions(
             policy_map, slots, observation, fire, special, allowed, measurements,
-            output_buffers, capture_behavior,
+            output_buffers, capture_behavior, forward_timings,
         )
         if ((measurements["gpu_forward_rows"] > 0 and not reported_first_gpu_forward)
                 or measurements["batches"] % 2048 == 0):
