@@ -3323,6 +3323,15 @@ fn preflight_native_fleet_edit_with_squads(
         invalid("native shop needs the source's maximum squad size"))? as usize;
     let dead = progress.lost_player_fleet_ids(side)?;
     let no_casualties = HashSet::new();
+    // A reserve hull is not deployed, but its permanent fleet identity,
+    // source price and class still need the same verification as purchases.
+    let mut identities = HashSet::new();
+    if projected.iter().any(|ship|
+        ship.fleet_ship_id <= 0 || ship.saved_squad_id < 0 ||
+        ship.price_tsv == 0 || !identities.insert(ship.fleet_ship_id)
+    ) {
+        return Err(invalid("invalid or duplicate projected FleetShip identity").into());
+    }
     let active = projected.iter().copied()
         .filter(|ship| ship.saved_squad_id > 0).collect::<Vec<_>>();
     let surviving_purchases = active.iter().copied()
@@ -3355,6 +3364,22 @@ fn preflight_native_fleet_edit_with_squads(
         for config in entry.configurations() {
             let run_path = resolve(root, config).canonicalize()?;
             let (source_archetypes, mut level) = load_native_fleet_edit_scene_with_level(&run_path)?;
+            // Source Neptune I awards Factory hulls directly to CurrentShips
+            // without a SavedSquad. Check their true complete original
+            // archetype and TSV in every playable mission configuration,
+            // but do not spawn a ship in this scene before assignment.
+            for reserve in projected.iter().filter(|ship| ship.saved_squad_id == 0) {
+                if source_archetypes.campaign_reserve_class_tsv(side, reserve.ship_type)
+                    != Some(reserve.price_tsv) ||
+                    source_archetypes.entities.iter().any(|entity|
+                        matches!(entity, NativeAuthoredEntity::Ship(ship)
+                            if ship.fleet_ship_id == Some(reserve.fleet_ship_id)))
+                {
+                    return Err(invalid(
+                        "unassigned campaign FleetShip has no matching source hull, TSV or unique identity",
+                    ).into());
+                }
+            }
             let mut source = source_archetypes.clone();
             // Purchase and victory-grant FleetShip IDs remain unique across
             // replayable completed missions and alternate victory routes.
