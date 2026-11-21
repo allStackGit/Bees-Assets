@@ -1140,21 +1140,18 @@ impl NativePhysicalScene {
         Ok(settings.len())
     }
 
-    /// Recompute an explicitly saved match-speed preference only AFTER
-    /// purchased FleetShips, transfers, and permanent casualties are applied.
-    /// Unity Squad.MatchSpeed uses the slowest current member's base Speed,
-    /// not the original squad's composition or its previous CurrentSpeed.
-    /// This changes the same ShipMotion owned by combat and the same
-    /// source Squad metadata consumed by the real game level. Running
-    /// missions never keep a separate training-only speed override.
-    pub fn apply_saved_squad_matching_speeds(
+    /// Finish campaign squad settings against the deployed roster. Source
+    /// LevelConstructor gives free Carrier squads the parent's initial
+    /// tactics, and MatchSpeed uses each squad's own slowest live member.
+    /// Apply cease-fire to the actual ship state as well as squad metadata.
+    pub fn finalize_campaign_squad_tactics(
         &mut self, player_side: i32, settings: &[NativeSavedSquadTactics],
     ) -> Result<usize, NativeSnapshotError> {
         let invalid = NativeSnapshotError::InvalidNativeLayout;
         if !matches!(player_side, 1 | 2) ||
             !self.allows_campaign_fleet_edit(player_side)
         {
-            return Err(invalid("saved matching-speed owner must be an ordinary player faction"));
+            return Err(invalid("saved squad tactics require an ordinary player faction"));
         }
         let mut overrides = HashMap::new();
         for entry in settings {
@@ -1170,11 +1167,65 @@ impl NativePhysicalScene {
                 return Err(invalid("duplicate saved matching-speed squad"));
             }
         }
-        // MatchSpeed is also an authored persistent preference. Recompute
-        // it against the final roster even if the player has never edited
-        // that preference (a transferred hull or casualty changes the min).
-        // Preflight all affected members before modifying physics or metadata.
-        let mut updates = Vec::new();
+        let ships = self.entities.iter().filter_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) => Some((ship.entity_id, ship)),
+            _ => None,
+        }).collect::<HashMap<_, _>>();
+        let owners = self.source_squads.iter().enumerate().flat_map(|(index, squad)|
+            squad.members.iter().map(move |&id| (id, index))
+        ).collect::<HashMap<_, _>>();
+        let carrier_parent = |id: &i64| -> Option<i64> {
+            let ship = ships.get(id)?;
+            if ship.side != player_side ||
+                self.fleet.get(*id)?.has_persistent_fleet_value
+            {
+                return None;
+            }
+            match ship.ship_type {
+                8 => ship.drone_carrier_id,
+                19 => match &ship.special {
+                    Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) =>
+                        carrier.carrier_id,
+                    _ => None,
+                },
+                _ => None,
+            }
+        };
+        // Inherit from actual source links, never from a guessed name,
+        // ordinal or ship class alone. A custom mixed-parent squad does
+        // not have the single Carrier owner of a source CarrierSquad.
+        let mut inherited = Vec::new();
+        for (index, squad) in self.source_squads.iter().enumerate() {
+            if squad.side != player_side || !squad.player_permissions.user_controlled ||
+                squad.saved_squad_id.is_some()
+            {
+                continue;
+            }
+            let Some(parent_id) = squad.members.first().and_then(|id| carrier_parent(id))
+                else { continue };
+            if !squad.members.iter().all(|id| carrier_parent(id) == Some(parent_id)) ||
+                !ships.get(&parent_id).is_some_and(|ship|
+                    ship.ship_type == 5 && ship.side == player_side) ||
+                !self.fleet.get(parent_id)
+                    .is_some_and(|value| value.has_persistent_fleet_value)
+            {
+                continue;
+            }
+            let Some(&parent_index) = owners.get(&parent_id) else { continue };
+            let parent = &self.source_squads[parent_index];
+            if parent_index == index || parent.side != player_side ||
+                parent.saved_squad_id.is_none() || !parent.player_permissions.user_controlled
+            {
+                continue;
+            }
+            let enabled = overrides.get(&parent_index).copied()
+                .unwrap_or(parent.matching_speed.is_some());
+            overrides.insert(index, enabled);
+            inherited.push((index, parent_index));
+        }
+        // Preflight the final speed reductions before modifying any ship
+        // or squad. The explicit disable case restores true BaseSpeed.
+        let mut updates = HashMap::new();
         for (index, squad) in self.source_squads.iter().enumerate() {
             if squad.side != player_side || !squad.player_permissions.user_controlled {
                 continue;
@@ -1186,30 +1237,42 @@ impl NativePhysicalScene {
             };
             let mut slowest = None::<f32>;
             for &ship_id in &squad.members {
-                let ship = self.entities.iter().find_map(|entity| match entity {
-                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == ship_id =>
-                        Some(ship),
-                    _ => None,
-                }).ok_or(invalid("matching-speed squad contains a missing ship"))?;
+                let ship = ships.get(&ship_id)
+                    .ok_or(invalid("matching-speed squad contains a missing ship"))?;
                 if !ship.motion.base_speed.is_finite() || ship.motion.base_speed < 0.0 {
                     return Err(invalid("matching-speed ship lacks a valid authored base speed"));
                 }
                 slowest = Some(slowest.map_or(ship.motion.base_speed,
                     |existing| existing.min(ship.motion.base_speed)));
             }
-            // Unity's empty Squad.GetSlowestShipSpeed is zero.
-            updates.push((index, enabled.then_some(slowest.unwrap_or(0.0))));
+            updates.insert(index, enabled.then_some(slowest.unwrap_or(0.0)));
         }
-        for (index, speed) in &updates {
-            for &ship_id in &self.source_squads[*index].members {
-                let ship = self.entities.iter_mut().find_map(|entity| match entity {
-                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == ship_id =>
-                        Some(ship),
-                    _ => None,
-                }).expect("preflighted saved-squad ship");
+        for (index, parent_index) in inherited {
+            let parent = &self.source_squads[parent_index];
+            let (shooting, should_chase, cease_fire, color) =
+                (parent.shooting, parent.should_chase, parent.cease_fire, parent.custom_color_rgb);
+            let child = &mut self.source_squads[index];
+            child.shooting = shooting;
+            child.should_chase = should_chase;
+            child.cease_fire = cease_fire;
+            child.custom_color_rgb = color;
+        }
+        for (&index, &speed) in &updates {
+            self.source_squads[index].matching_speed = speed;
+        }
+        for entity in &mut self.entities {
+            let NativeAuthoredEntity::Ship(ship) = entity else { continue };
+            let Some(&index) = owners.get(&ship.entity_id) else { continue };
+            let squad = &self.source_squads[index];
+            if squad.side != player_side || !squad.player_permissions.user_controlled {
+                continue;
+            }
+            if let Some(&speed) = updates.get(&index) {
                 ship.motion.current_speed = speed.unwrap_or(ship.motion.base_speed);
             }
-            self.source_squads[*index].matching_speed = *speed;
+            if let Some(enabled) = squad.cease_fire {
+                ship.cease_fire = enabled;
+            }
         }
         Ok(updates.len())
     }

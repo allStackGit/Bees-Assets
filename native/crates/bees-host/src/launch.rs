@@ -3203,7 +3203,7 @@ fn preflight_native_fleet_edit_with_squads(
                 .map_err(|error| contextual("shop saved-fleet casualties", error))?;
             source.validate_campaign_deployment(side)
                 .map_err(|error| contextual("shop final campaign deployment", error))?;
-            source.apply_saved_squad_matching_speeds(
+            source.finalize_campaign_squad_tactics(
                 side, &progress.tactics_for_side(side),
             ).map_err(|error| contextual("shop saved matching speed", error))?;
             if target_saved_squad_id > 0 {
@@ -3572,7 +3572,7 @@ fn run_set_saved_squad_tactics(
                 .map_err(|error| contextual("tactics saved casualties preflight", error))?;
             scene.validate_campaign_deployment(entry.side)
                 .map_err(|error| contextual("tactics final campaign deployment", error))?;
-            scene.apply_saved_squad_matching_speeds(entry.side, &effective)
+            scene.finalize_campaign_squad_tactics(entry.side, &effective)
                 .map_err(|error| contextual("tactics matching-speed preflight", error))?;
             checked += 1;
         }
@@ -5348,9 +5348,9 @@ fn run_battle(
         // Applying it to the unmodified scene would make a slow replacement
         // ship move faster than the source's MatchSpeed permits.
         if let Some(mission) = mission {
-            source.apply_saved_squad_matching_speeds(
+            source.finalize_campaign_squad_tactics(
                 mission.player_side, mission.tactics.unwrap_or(&[]),
-            ).map_err(|error| contextual("restored SavedSquad matching speed", error))?;
+            ).map_err(|error| contextual("restored SavedSquad tactics", error))?;
         }
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
