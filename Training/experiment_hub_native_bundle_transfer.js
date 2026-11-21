@@ -11,6 +11,7 @@ const crypto=require('node:crypto');
 const {isDeepStrictEqual}=require('node:util');
 const {validateCollectionSelection,validateCollectionManifest}=
     require('./experiment_hub_native_historical');
+const {validateReleaseMeasurements}=require('./experiment_hub_native_release_metrics');
 const {safeLogPath,safeNativeCollectorPath,safeNativeModelPath,MAX_FILE,MAX_CHUNK}=
     require('./experiment_hub_artifact_sync');
 
@@ -280,6 +281,7 @@ function nativeModelPackage(hub,source) {
             typeof release.passed!=='boolean')
             fail('Mirrored native generation release disagrees with the committed checkpoint and training lineage.');
         selection=validateCollectionSelection(receipt,release);
+        validateReleaseMeasurements(release);
         if(source.frozen_parameters?.optimizer_group===true) {
             const proof=source.optimizer_completion?.continual_release;
             const keys=['checkpoint_sha256','parent_model_id','model_id','training_step',
@@ -287,7 +289,8 @@ function nativeModelPackage(hub,source) {
                 ...(release.release_attempt_wall_seconds!==undefined?
                     ['release_attempt_wall_seconds']:[])];
             if(!proof||keys.some(key=>release[key]!==proof[key])||
-                !isDeepStrictEqual(release.collection_selection,proof.collection_selection))
+                !isDeepStrictEqual(release.collection_selection,proof.collection_selection)||
+                !isDeepStrictEqual(release.evaluation_summary,proof.evaluation_summary))
                 fail('Mirrored native generation release disagrees with the authenticated optimizer owner.');
         }
     }

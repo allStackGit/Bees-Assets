@@ -8,6 +8,8 @@ const {promisify, isDeepStrictEqual} = require('node:util');
 const execFileAsync = promisify(execFile);
 const {validateProgress} = require('./experiment_hub_progress');
 const {evaluationReader} = require('./experiment_hub_evaluation');
+const {validateReleaseMeasurements,releaseProgressMetrics}=
+    require('./experiment_hub_native_release_metrics');
 const {validateSelection, validateCollectionSelection, validateCollectionManifest} =
     require('./experiment_hub_native_historical');
 
@@ -1347,6 +1349,7 @@ function createNativeBeesAdapter({
                      receipt.release_attempt_wall_seconds<0)))
             throw Error('Continual release does not identify this learner checkpoint and lineage.');
         validateCollectionSelection(round.receipt,receipt);
+        validateReleaseMeasurements(receipt);
         return release;
     }
 
@@ -1870,6 +1873,9 @@ function createNativeBeesAdapter({
                         passed:release.receipt.passed,
                         deployment_id:release.receipt.deployment_id,
                         deployed_model_id:release.receipt.deployed_model_id,
+                        ...(release.receipt.evaluation_summary?{
+                            evaluation_summary:release.receipt.evaluation_summary,
+                        }:{}),
                         ...(release.receipt.collection_selection?{
                             collection_selection:release.receipt.collection_selection,
                         }:{}),
@@ -2394,6 +2400,7 @@ function createNativeBeesAdapter({
                     ...(release ? {
                         continual_promotion_passed: {value: Number(release.receipt.passed), unit: 'count'},
                         continual_training_step: {value: release.receipt.training_step, unit: 'count'},
+                        ...releaseProgressMetrics(release.receipt),
                         ...(release.receipt.collection_selection?{
                             continual_historical_opponent_selected:{
                                 value:Number(release.receipt.collection_selection.opponent_model_id!==null),

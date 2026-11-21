@@ -1108,6 +1108,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         measured.optimizer_input_rows_per_ppo_update_second.toFixed(1)+
                         ' input rows per PPO update second.',
                     ]:[]),
+                    ...(measured?.latest_continual_evaluation?[
+                        'Latest continual release vs '+measured.latest_continual_evaluation.evaluated_champion_model_id+
+                        ': '+(100*measured.latest_continual_evaluation.champion_score_rate).toFixed(2)+
+                        '% score over '+measured.latest_continual_evaluation.champion_matches+
+                        ' matches; promotion '+(measured.latest_continual_evaluation.passed?'passed':'failed')+
+                        '. '+measured.continual_evaluations_measured+' measured generation evaluations, '+
+                        measured.continual_champion_evaluation_matches+' champion matches and '+
+                        measured.continual_historical_candidate_evaluation_matches+
+                        ' historical candidate matches. Incumbents may differ across rounds.',
+                    ]:[]),
                     ...(measured?.continual_historical_selections?[
                         'Historical opponent draws: '+measured.continual_historical_opponents_selected+
                         '/'+measured.continual_historical_selections+' selections for subsequent collection.',

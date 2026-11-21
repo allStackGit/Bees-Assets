@@ -18,6 +18,7 @@ from pathlib import Path
 from native_continual_release import (
     competency_contract, document, immutable_json, load_config, native_model,
     physical_suite, publish_champion, register, release, ContinualLearningStore,
+    canonical_json,
 )
 from native_training_artifacts import (
     atomic_json, file_sha256, check_learner, sync_directory,
@@ -247,6 +248,45 @@ def portable_opponent(directory, source, digest):
     return "opponents/" + digest + ".model"
 
 
+def release_measurements(store, report_id, model_id, passed):
+    """Project actual immutable registry evidence, never re-evaluate a model
+    or infer success from the promotion decision alone.
+    """
+    report = document(store.evaluation_dir / "reports" / (report_id + ".json"))
+    digest = hashlib.sha256(canonical_json(report).encode("utf-8")).hexdigest()
+    if (report_id != "eval-" + digest[:24] or
+            report["candidate_model_id"] != model_id or
+            report["decision"]["passed"] is not passed):
+        raise ValueError("native release measurement belongs to another registry decision")
+    comparison = report["candidate_vs_champion"]
+    historical = report["historical"]
+    competencies = report["competencies"]
+    latency = report["evaluator"]["runtime_latency"]
+    result = {
+        "report_sha256": digest,
+        "evaluated_champion_model_id": report["champion_model_id"],
+        "champion_matches": comparison["matches"],
+        "champion_wins": comparison["wins"],
+        "champion_losses": comparison["losses"],
+        "champion_draws": comparison["draws"],
+        "champion_timeouts": comparison["timeouts"],
+        "historical_opponents": len(historical),
+        "historical_candidate_matches": sum(row["matches"] for row in historical),
+        "competency_cases": len(competencies),
+        "competency_cases_passed": sum(row["score"] >= row["minimum"] for row in competencies),
+        "candidate_inference_calls": latency["candidate_inference_calls"],
+        "candidate_max_inference_milliseconds": latency["observed_candidate_max_milliseconds"],
+        "latency_passed": latency["passed"],
+        "champion_gate_short_circuited": "short_circuit" in report["evaluator"],
+    }
+    if historical:
+        result["historical_min_score_delta"] = min(
+            row["candidate_score_rate"] - row["baseline_score_rate"]
+            for row in historical
+        )
+    return result
+
+
 def complete_generations(root, recipe, completed, *, final=False):
     """Release every due boundary exactly once before the next optimizer round.
 
@@ -285,6 +325,11 @@ def complete_generations(root, recipe, completed, *, final=False):
                 registered = store.get_model(result["model_id"])
                 if registered["artifact_sha256"] != checkpoint_sha:
                     raise ValueError("released checkpoint differs from the registry")
+                if ("evaluation_summary" in result and
+                        result["evaluation_summary"] != release_measurements(
+                            store, result["evaluation_report_id"], result["model_id"],
+                            result["passed"])):
+                    raise ValueError("committed release measurements differ from the registry")
             else:
                 release_started = time.perf_counter()
                 if not checked_plan:
@@ -318,6 +363,7 @@ def complete_generations(root, recipe, completed, *, final=False):
                     passed = response["evaluation"]["passed"]
                 else:
                     raise ValueError("native generation has unexpected registry status")
+                measurements = release_measurements(store, decision_id, model_id, passed)
                 deployment = publish_champion(store)
                 selection = None
                 if row.get("hub_historical_selection"):
@@ -335,7 +381,8 @@ def complete_generations(root, recipe, completed, *, final=False):
                     "checkpoint_sha256": checkpoint_sha,
                     "parent_model_id": parent, "model_id": model_id,
                     "evaluation_report_id": decision_id,
-                    "passed": passed, "deployment_id": deployment["deployment_id"],
+                    "passed": passed, "evaluation_summary": measurements,
+                    "deployment_id": deployment["deployment_id"],
                     "deployed_model_id": deployment["model_id"],
                     "release_attempt_wall_seconds": time.perf_counter() - release_started,
                     **({"collection_selection": selection} if selection is not None else {}),

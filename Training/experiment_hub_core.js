@@ -13,6 +13,7 @@ const {evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,su
 const {ProgressHistory}=require('./experiment_hub_history');
 const {ObservationArchive}=require('./experiment_hub_observations');
 const {validateSelection}=require('./experiment_hub_native_historical');
+const {validateReleaseMeasurements,championScore}=require('./experiment_hub_native_release_metrics');
 const {nativeRecovery,nativeRecoveryAttempts}=require('./experiment_hub_native_release_recovery');
 const {verifiedNativeCollectorPin,verifiedNativeModelMirror,verifiedNativeModelPin}=
     require('./experiment_hub_native_bundle_transfer');
@@ -899,7 +900,8 @@ function verifiedOptimizerCompletion(job,raw,state) {
         const fields=['checkpoint_sha256','parent_model_id','model_id','training_step',
             'evaluation_report_id','passed','deployment_id','deployed_model_id',
             ...(release?.release_attempt_wall_seconds!==undefined?['release_attempt_wall_seconds']:[]),
-            ...(release?.collection_selection!==undefined?['collection_selection']:[])];
+            ...(release?.collection_selection!==undefined?['collection_selection']:[]),
+            ...(release?.evaluation_summary!==undefined?['evaluation_summary']:[])];
         const modelId=/^bees-rl-v[0-9]+-[0-9a-f]{24}$/;
         if(!requiresRelease||bundle.index!==1||!object(release)||
             Object.keys(release).sort().join(',')!==fields.sort().join(',')||
@@ -914,6 +916,7 @@ function verifiedOptimizerCompletion(job,raw,state) {
                 (!Number.isFinite(release.release_attempt_wall_seconds)||
                  release.release_attempt_wall_seconds<0||release.release_attempt_wall_seconds>1e12)))
             throw Error('Native optimizer completion lacks the exact authorized generation release.');
+        validateReleaseMeasurements(release);
         if(release.collection_selection!==undefined) {
             const selection=validateSelection(release.collection_selection);
             if(selection.input_checkpoint_sha256!==release.checkpoint_sha256||
@@ -938,6 +941,8 @@ function nativeBeesRoundTrainingSummary(plan) {
     let interruptedOptimizerCpuSeconds=0,interruptedOptimizerCpuCoverage=0;
     let interruptedCollectorCpuSeconds=0,interruptedCollectorCpuCoverage=0;
     let releaseCoverage=0,promotions=0,releaseSeconds=0,releaseTimingCoverage=0;
+    let releaseMeasurementCoverage=0,releaseChampionMatches=0,releaseHistoricalMatches=0;
+    let releaseCompetencyCases=0,releaseShortCircuits=0,latestReleaseEvaluation=null;
     let historicalSelections=0,historicalOpponents=0;
     let historicalRoundsMeasured=0,historicalRoundsPlayed=0,historicalRows=0,historicalTotalRows=0;
     const evaluations=new Map();
@@ -990,6 +995,28 @@ function nativeBeesRoundTrainingSummary(plan) {
         if(release) {
             releaseCoverage++;
             if(release.passed)promotions++;
+            const measured=release.evaluation_summary;
+            if(measured) {
+                releaseMeasurementCoverage++;
+                releaseChampionMatches+=measured.champion_matches;
+                releaseHistoricalMatches+=measured.historical_candidate_matches;
+                releaseCompetencyCases+=measured.competency_cases;
+                if(measured.champion_gate_short_circuited)releaseShortCircuits++;
+                // Different incumbent identities are not interchangeable
+                // baselines. Keep latest comparison identity, not a pooled
+                // score presented as fixed-reference learning progress.
+                latestReleaseEvaluation={
+                    round:entry.round,model_id:release.model_id,
+                    evaluation_report_id:release.evaluation_report_id,
+                    evaluated_champion_model_id:measured.evaluated_champion_model_id,
+                    champion_score_rate:championScore(measured),
+                    champion_matches:measured.champion_matches,
+                    historical_opponents:measured.historical_opponents,
+                    competency_cases:measured.competency_cases,
+                    competency_cases_passed:measured.competency_cases_passed,
+                    passed:release.passed,
+                };
+            }
             if(release.collection_selection) {
                 historicalSelections++;
                 if(release.collection_selection.opponent_model_id!==null)historicalOpponents++;
@@ -1056,6 +1083,12 @@ function nativeBeesRoundTrainingSummary(plan) {
             ppoSeconds>0?optimizerRows/ppoSeconds:null,
         continual_generations_released:releaseCoverage,
         continual_promotions_passed:promotions,
+        continual_evaluations_measured:releaseMeasurementCoverage,
+        continual_champion_evaluation_matches:releaseChampionMatches,
+        continual_historical_candidate_evaluation_matches:releaseHistoricalMatches,
+        continual_competency_cases_evaluated:releaseCompetencyCases,
+        continual_champion_gate_short_circuits:releaseShortCircuits,
+        latest_continual_evaluation:latestReleaseEvaluation,
         continual_historical_selections:historicalSelections,
         continual_historical_opponents_selected:historicalOpponents,
         historical_opponent_rounds_measured:historicalRoundsMeasured,
