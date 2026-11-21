@@ -770,8 +770,18 @@ fn choose_specialist_squad_sizes(
     for side in 0..2_usize {
         let count = mix[side].specialist_count(fleet_sizes[side]);
         if count < 2 { continue; }
+        // Mixed compositions may contain only one hull of each original
+        // class. Do not offer a command-group size which cannot actually
+        // merge two compatible ships.
+        let largest_cohort = (0..count).map(|slot|
+            mix[side].specialist_type_at(side, slot)
+        ).fold(HashMap::<u8, usize>::new(), |mut counts, kind| {
+            *counts.entry(kind).or_default() += 1;
+            counts
+        }).into_values().max().unwrap_or(0);
+        if largest_cohort < 2 { continue; }
         let options = [1_usize, 2, 4].into_iter()
-            .filter(|&size| size <= count).collect::<Vec<_>>();
+            .filter(|&size| size <= largest_cohort).collect::<Vec<_>>();
         let titles = options.iter().map(|&width| format!(
             "{width} same-class specialist{} per squad  |  {} total physical specialists",
             if width == 1 { "" } else { "s" }, count,
