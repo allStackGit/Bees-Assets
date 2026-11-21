@@ -255,7 +255,8 @@ fn configured_hivemind_fleet(save_root: &Path)
     // profile for automation, Windows services and external launchers.
     let override_path = std::env::var_os("BEES_NATIVE_HIVEMIND_FLEET_CONFIG");
     let path = override_path.as_ref().map_or_else(
-        || save_root.join("hivemind-fleet.json"), PathBuf::from);
+        || save_root.join("hivemind-fleet.json"),
+        |path| PathBuf::from(path.as_os_str()));
     if !path.exists() && override_path.is_none() { return Ok(None); }
     let metadata = fs::symlink_metadata(&path)?;
     if !metadata.is_file() || metadata.file_type().is_symlink() ||
