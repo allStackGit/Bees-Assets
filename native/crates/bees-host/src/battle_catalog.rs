@@ -184,6 +184,16 @@ enum RequiredOutcome {
     Defeat,
 }
 
+impl OutcomePrerequisite {
+    fn satisfied(&self, progress: &CampaignProgress<'_>) -> bool {
+        match self.result {
+            RequiredOutcome::Finished => progress.completed(&self.mission),
+            RequiredOutcome::Victory => progress.latest_victory(&self.mission),
+            RequiredOutcome::Defeat => progress.latest_defeat(&self.mission),
+        }
+    }
+}
+
 impl Mission {
     pub fn has_outcome_alternatives(&self) -> bool {
         !self.unlock_if_any.is_empty()
@@ -191,13 +201,8 @@ impl Mission {
 
     pub fn unlocked(&self, progress: &CampaignProgress<'_>) -> bool {
         self.requires.iter().all(|id| progress.completed(id)) &&
-            (self.unlock_if_any.is_empty() || self.unlock_if_any.iter().any(|route|
-                match route.result {
-                    RequiredOutcome::Finished => progress.completed(&route.mission),
-                    RequiredOutcome::Victory => progress.latest_victory(&route.mission),
-                    RequiredOutcome::Defeat => progress.latest_defeat(&route.mission),
-                }
-            ))
+            (self.unlock_if_any.is_empty() ||
+                self.unlock_if_any.iter().any(|route| route.satisfied(progress)))
     }
 }
 
@@ -1509,6 +1514,7 @@ impl BattleCatalog {
                             RequiredOutcome::Victory => "victory",
                             RequiredOutcome::Defeat => "defeat",
                         },
+                        "satisfied": condition.satisfied(progress),
                     })).collect::<Vec<_>>());
             }
             if let Some(route) = &mission.on_defeat {
