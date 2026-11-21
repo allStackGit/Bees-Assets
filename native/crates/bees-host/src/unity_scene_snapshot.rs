@@ -155,8 +155,28 @@ fn uranus_defensive_waves_match_source(
             }
             actual.push(if mixed { None } else { uniform });
         }
-        let fixed = required.iter().copied().map(Some).collect::<Vec<_>>();
-        if veterans { actual.ends_with(&fixed) } else { actual == fixed }
+        // The source can omit an unavailable SavedSquad rather than
+        // fabricate the requested ship count. Present squads must still
+        // follow their original ordered types, including repeated types.
+        let matches_order = |actual: &[Option<u8>]| {
+            let mut next = 0;
+            for kind in actual {
+                let Some(kind) = kind else { return false };
+                let Some(offset) = required[next..].iter()
+                    .position(|expected| expected == kind) else {
+                    return false;
+                };
+                next += offset + 1;
+            }
+            true
+        };
+        if veterans {
+            // The fifth upper wave can prefix historic mixed squads.
+            // Keep at least one newly selected source formation.
+            (0..actual.len()).any(|start| matches_order(&actual[start..]))
+        } else {
+            matches_order(&actual)
+        }
     };
     let Some(initial) = waves.iter().find(|wave| timed(wave, 120.0)) else {
         return false;
