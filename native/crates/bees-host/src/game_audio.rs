@@ -374,6 +374,9 @@ impl NativeGameAudio {
     /// soundtrack phase continuous; changing location stops the old stems.
     pub fn select_location(&mut self, location: Option<NativeMusicLocation>) {
         if self.location == location { return; }
+        // A location transition removes the old Level's attached gate
+        // sounds immediately; no menu frame can inherit an offscreen loop.
+        self.reset_warp_gate_audio();
         self.location = location;
         for sink in self.music.drain(..) { sink.stop(); }
         let (Some(root), Some(location)) = (self.root.clone(), location) else { return };
