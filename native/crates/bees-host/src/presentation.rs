@@ -38,6 +38,46 @@ pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
 pub use selection::{NativeSquadSelection, NativeSupportMode};
 pub use tactical_hud::HudAction;
 
+/// Source Prefabs.LoadConversions maps each ship type to one explosion
+/// prefab. The prefab AudioSource clips (or lack thereof for Queen) are
+/// presentation-only; neither headless simulation nor training infers
+/// ship explosions from size or network ownership.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NativeShipExplosionSound {
+    Tiny, Small, Medium, Large, Nuclear, Silent,
+}
+
+impl NativeShipExplosionSound {
+    pub(crate) fn for_ship_type(kind: u8) -> Self {
+        match kind {
+            // Tiny Ship Explosion.prefab -> Ship Explosion.mp3
+            1 | 8 | 14 | 15 | 18 | 19 | 22 => Self::Tiny,
+            // Small Explosion.prefab -> Smaller Explosion.mp3
+            12 | 13 | 21 => Self::Small,
+            // Medium Explosion.prefab -> Medium Explosion.mp3
+            2 | 6 | 7 | 16 => Self::Medium,
+            // Large and Huge Explosion.prefabs -> Larger Explosion.mp3
+            0 | 3 | 4 | 5 | 9 | 11 | 20 | 23 => Self::Large,
+            // Fire Barge Explosion.prefab -> Largest Explosion.mp3
+            10 => Self::Nuclear,
+            // Queen Explosion.prefab has no AudioSource.
+            17 => Self::Silent,
+            _ => Self::Silent,
+        }
+    }
+
+    pub(crate) fn wire_name(self) -> &'static str {
+        match self {
+            Self::Tiny => "explosion",
+            Self::Small => "small_explosion",
+            Self::Medium => "medium_explosion",
+            Self::Large => "large_explosion",
+            Self::Nuclear => "huge_explosion",
+            Self::Silent => "silent_explosion",
+        }
+    }
+}
+
 /// Presentation-only FogOfWarVision death mask shared by local and remote
 /// viewers. It never affects combat visibility, decisions or simulation.
 #[derive(Clone, Copy)]
