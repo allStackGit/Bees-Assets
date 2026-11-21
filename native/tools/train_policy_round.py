@@ -1006,7 +1006,7 @@ def prepare_optimizer_attempt(args, output, trainer_config, result):
     result["optimizer_attempt_sha256"] = file_sha256(receipt)
 
 
-def require_optimizer_attempt(output, result):
+def require_optimizer_attempt(output, result, trainer_config):
     expected = result.get("optimizer_attempt_sha256")
     if expected is None:
         # Ordinary one-machine rollouts have no separate optimizer attempt:
@@ -1022,8 +1022,25 @@ def require_optimizer_attempt(output, result):
             attempt.get("input_manifest_sha256") != result.get("input_manifest_sha256") or
             attempt.get("input_checkpoint_sha256") != result.get("input_checkpoint_sha256") or
             attempt.get("learner_group_id") != result.get("optimizer_group_id") or
-            attempt.get("collection_orders_sha256") != result.get("collection_orders_sha256")):
+            attempt.get("collection_orders_sha256") != result.get("collection_orders_sha256") or
+            attempt.get("trainer_sha256") != file_sha256(trainer_config) or
+            attempt.get("run_config_sha256") != file_sha256(Path(result["run_config"])) or
+            attempt.get("rollout_receipts") != [
+                [item["sha256"], Path(item["path"]).parent.name]
+                for item in result.get("rollout_bundles", [])
+            ]):
         raise ValueError("optimizer completion no longer belongs to the original attempt")
+    # An external collector or Hub work order may still be present while
+    # gradients run. Preserve the exact verified bytes through publication
+    # on every node, not only when rank zero finally writes the model.
+    if "collection_orders" in result and (
+            file_sha256(Path(result["collection_orders"])) !=
+            attempt["collection_orders_sha256"]
+    ):
+        raise ValueError("original optimizer collection order changed during learning")
+    for bundle in result.get("rollout_bundles", []):
+        if file_sha256(Path(bundle["path"])) != bundle["sha256"]:
+            raise ValueError("original optimizer rollout receipts changed during learning")
 
 
 def optimize(args, output, python, manifest, checkpoint, trainer_config, result, rollout_args):
@@ -1105,7 +1122,7 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
                 file_sha256(checkpoint) != result["input_checkpoint_sha256"] or
                 file_sha256(manifest) != result["input_manifest_sha256"]):
             raise ValueError("native optimizer worker has no agreed multi-machine model and input identity")
-        require_optimizer_attempt(output, result)
+        require_optimizer_attempt(output, result, trainer_config)
         publish_receipt(output, "round-worker-result.json", {
             **result,
             **worker,
@@ -1168,7 +1185,7 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
                     for rank, row in enumerate(metrics["optimizer_gpu_per_device"]))
             ))):
         raise ValueError("native learner completion receipt disagrees with its model artifacts or actual GPU ranks")
-    require_optimizer_attempt(output, result)
+    require_optimizer_attempt(output, result, trainer_config)
     publish_receipt(output, "round-result.json", {
         "schema_version": 1,
         "kind": "native_training_round_complete",
