@@ -195,7 +195,12 @@ def main():
     # not the newer conservative balancing runtime. Preserve their existing
     # launch behavior until that trainer version is installed.
     auto_balance = False
-    if (args.remote_rollout_endpoint or local_gpu_collectors) and not args.remote_rollout_weight:
+    asynchronous_collection = bool(args.remote_rollout_endpoint) and (
+        find_spec("ants_mapoca.async_rollout") is not None)
+    if asynchronous_collection:
+        print("TinyBrains asynchronous remote collection enabled; "
+              "PPO batches are not gated on individual collector quotas.", flush=True)
+    elif (args.remote_rollout_endpoint or local_gpu_collectors) and not args.remote_rollout_weight:
         auto_balance = find_spec("ants_mapoca.rollout_balance") is not None
         if not auto_balance:
             print("TinyBrains backend lacks automatic collector balancing; "
