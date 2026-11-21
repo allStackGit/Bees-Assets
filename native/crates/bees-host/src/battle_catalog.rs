@@ -425,6 +425,7 @@ struct MissionProgress {
     attempted: bool,
     latest_victory: bool,
     grants_claimed: bool,
+    evacuated_personnel: Option<u32>,
 }
 
 impl CampaignProgress<'_> {
@@ -1079,6 +1080,7 @@ impl BattleCatalog {
                 let state = progress.missions.entry(&mission.id).or_default();
                 state.attempted = true;
                 state.latest_victory = outcome.mission_victory();
+                state.evacuated_personnel = outcome.evacuated_personnel;
                 state.completed |= matches!(mission.advance_on, AdvanceOn::Finished) || state.latest_victory;
                 // Awarded hulls and SavedSquads are one atomic campaign
                 // outcome. They are reconstructed together from this
@@ -1640,6 +1642,9 @@ impl BattleCatalog {
             }
             if mission.evacuation_rewards {
                 row["evacuation_rewards"] = json!(true);
+                row["evacuated_personnel"] = json!(progress.missions
+                    .get(mission.id.as_str())
+                    .and_then(|result| result.evacuated_personnel));
             }
             if has_defeat_conditions {
                 row["attempted"] = json!(progress.missions.get(mission.id.as_str())
