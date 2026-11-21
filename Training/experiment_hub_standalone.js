@@ -4,6 +4,7 @@
 // Native-only Experiment Hub coordinator. This entrypoint deliberately never
 // imports the Bees operator, Unity build, Bees queue, or training control plane.
 const fs=require('node:fs');
+const crypto=require('node:crypto');
 const http=require('node:http');
 const path=require('node:path');
 const {spawn,spawnSync}=require('node:child_process');
@@ -18,6 +19,54 @@ const {createAgentServer,AGENT_HOST,AGENT_PORT,activeTailnetAddress}=
 const HOST='127.0.0.1';
 const PORT=7148;
 const BODY_LIMIT=65536;
+const SHA=/^[a-f0-9]{40}$/;
+const VERSION_FILE='hub-software-activation.json';
+
+// Snapshot the running source at process start, rather than showing a newer
+// checkout while the old coordinator generation is still serving requests.
+function activeHubVersion(root,checkout=path.resolve(__dirname,'..')) {
+    function gitValue(args) {
+        const result=spawnSync('git',args,{
+            cwd:checkout,encoding:'utf8',timeout:3000,windowsHide:true,
+        });
+        return result.status===0?result.stdout.trim():null;
+    }
+    const sourceCommit=gitValue(['rev-parse','HEAD']);
+    const commit=SHA.test(sourceCommit||'')?sourceCommit:null;
+    const sourceDate=commit?gitValue(['show','-s','--format=%cI','HEAD']):null;
+    let updatedAt=sourceDate&&Number.isFinite(Date.parse(sourceDate))?sourceDate:null;
+    let timestampKind=updatedAt?'commit':null;
+    try {
+        const marker=path.join(root,VERSION_FILE);
+        const stat=fs.lstatSync(marker);
+        if(stat.isFile()&&!stat.isSymbolicLink()&&stat.size>0&&stat.size<1024) {
+            const item=JSON.parse(fs.readFileSync(marker,'utf8'));
+            if(item.source_commit===commit&&
+                typeof item.activated_at==='string'&&
+                Number.isFinite(Date.parse(item.activated_at))) {
+                updatedAt=item.activated_at;
+                timestampKind='activated';
+            }
+        }
+    }catch(error) {
+        if(error.code!=='ENOENT')
+            console.warn('[hub-updates] Ignoring invalid Hub activation receipt: '+error.message);
+    }
+    return {source_commit:commit,updated_at:updatedAt,
+        timestamp_kind:timestampKind,generation:crypto.randomUUID()};
+}
+
+function recordHubActivation(root,sourceCommit) {
+    if(!SHA.test(sourceCommit||''))throw Error('Invalid activated Hub revision.');
+    const marker=path.join(root,VERSION_FILE);
+    const temporary=marker+'.'+crypto.randomUUID()+'.tmp';
+    try {
+        fs.writeFileSync(temporary,JSON.stringify({
+            source_commit:sourceCommit,activated_at:new Date().toISOString(),
+        })+'\n',{flag:'wx',mode:0o600});
+        fs.renameSync(temporary,marker);
+    }finally {try{fs.unlinkSync(temporary);}catch{}}
+}
 
 function dataRoot(arg,fsApi=fs) {
     if(typeof arg!=='string'||!path.isAbsolute(arg)||arg==='/'||
@@ -32,7 +81,7 @@ function dataRoot(arg,fsApi=fs) {
     return fsApi.realpathSync(arg);
 }
 
-function renderPage(html) {
+function renderPage(html,runtime={}) {
     // Reuse the production Hub markup/client, but never ship the embedded
     // legacy Bees browser controller or its Unity/Bees action buttons.
     const script='<script src="/experiment-hub-ui.js"></script>';
@@ -41,6 +90,10 @@ function renderPage(html) {
     if(at<0||normalized.indexOf(script,at+script.length)>=0||
         !normalized.slice(at+script.length).startsWith('\n<script>'))
         throw Error('Experiment Hub HTML script boundary changed; review before serving.');
+    const versionAttributes=' data-generation="'+(runtime.generation||'')+
+        '" data-commit="'+(runtime.source_commit||'')+'"';
+    const versionPanel='<div class="hub-version" id="hub-version-status"'+
+        versionAttributes+' role="status">Hub version: checking…</div>';
     const panel='<div class="hub-standalone" id="hub-local-service-controls">'+
         '<h3>Local service control</h3>'+
         '<p class="muted">Restart the coordinator or agent on this computer. '+
@@ -84,7 +137,10 @@ function renderPage(html) {
             '<html lang="en" data-hub-default-project="tinybrains">')
         .replace('</style>',
             '#bees-controls,[data-hub-tab][data-project="bees"],'+
-            '#hub-copy-bees-form,#hub-save-bees-draft{display:none!important}\n</style>')
+            '#hub-copy-bees-form,#hub-save-bees-draft{display:none!important}\n'+
+            '.hub-version{font-size:12px;font-weight:700;line-height:1.5;'+
+            'max-width:400px;overflow-wrap:anywhere;color:#333}\n</style>')
+        .replace('</header>',versionPanel+'</header>')
         .replace('<h2>Machine inventory and resource admission</h2>',
             '<h2>Machine inventory and resource admission</h2>'+panel)
         .replace('<body>','<body>\n<div class="hub-standalone" role="status">'+
@@ -137,7 +193,7 @@ async function readJson(req) {
     return JSON.parse(raw||'{}');
 }
 
-function createAdminServer(hub,{html,ui,dataRoot,releases=null}={}) {
+function createAdminServer(hub,{html,ui,dataRoot,releases=null,runtime=null}={}) {
     const exporter=new JobExporter(dataRoot,hub);
     const servicesUi=fs.readFileSync(path.join(__dirname,'experiment_hub_local_services_ui.js'),'utf8');
     const beakerIcon=fs.readFileSync(path.join(__dirname,'experiment_hub_beaker.svg'),'utf8');
@@ -160,6 +216,14 @@ function createAdminServer(hub,{html,ui,dataRoot,releases=null}={}) {
                 return sendFile(res,ui,'text/javascript; charset=utf-8');
             if(req.method==='GET'&&route==='/experiment-hub-services.js')
                 return sendFile(res,servicesUi,'text/javascript; charset=utf-8');
+            if(req.method==='GET'&&route==='/api/hub/software/version') {
+                const candidate=releases?.latest?.worker?.source_commit;
+                return json(res,200,{
+                    ...runtime,
+                    pending_commit:SHA.test(candidate||'')&&
+                        candidate!==runtime?.source_commit?candidate:null,
+                });
+            }
             if(req.method==='GET'&&route==='/api/hub/software/releases')
                 return json(res,200,{
                     components:releases?.latest||{},
@@ -243,10 +307,12 @@ async function main(argv=process.argv.slice(2)) {
         hub.addProject({id:'tinybrains',name:'TinyBrains Ants-MAPOCA'});
         hub.addProject({id:'courier',name:'Courier Ants'});
     }
-    const html=renderPage(fs.readFileSync(path.join(__dirname,'experiments.html'),'utf8'));
+    const runtime=activeHubVersion(root);
+    const html=renderPage(fs.readFileSync(path.join(__dirname,'experiments.html'),'utf8'),
+        runtime);
     const ui=fs.readFileSync(path.join(__dirname,'experiment_hub_ui.js'),'utf8');
     const releases=new ReleaseStore(root);
-    const admin=createAdminServer(hub,{html,ui,dataRoot:root,releases});
+    const admin=createAdminServer(hub,{html,ui,dataRoot:root,releases,runtime});
     const worker=createAgentServer(()=>hub,AGENT_HOST,releases);
     const remoteWorker=tailnet?createAgentServer(()=>hub,tailnet,releases,root):null;
     async function listen(server,port,host) {
@@ -290,6 +356,14 @@ async function main(argv=process.argv.slice(2)) {
             if(!result.changed.length)return;
             console.log('[hub-updates] Local fast-forwarded software: '+
                 result.changed.join(', '));
+            if(result.changed.includes('worker')) {
+                try {recordHubActivation(root,releases.localVersions.worker);}
+                catch(error) {
+                    // Version reporting must never hold back an otherwise
+                    // successful, safe software activation.
+                    console.error('[hub-updates] Activation timestamp: '+error.message);
+                }
+            }
             // A service restart refreshes adapter catalogs and protocol
             // modules after safe local source activation. No native job is
             // stopped; this path runs only with no unresolved native jobs.
