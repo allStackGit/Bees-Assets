@@ -896,6 +896,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     zone.get("player_side") != args.player_side or
                     zone.get("retreat_on_exit") is not True or
                     zone.get("center") != [-512, 0] or
+                    zone.get("half_extents") != [25, 128] or
+                    zone.get("layer") != 20 or
                     not valid_waves or
                     level.get("campaign_dialogue") is not None or
                     any(level.get(name) is not None for name in
