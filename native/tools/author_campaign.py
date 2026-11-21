@@ -103,7 +103,8 @@ def trained_opponent(run_path: Path, run: dict, scene_path: Path,
 
 
 
-def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
+def input_mission(run_path: Path, player_side: int,
+                  story: str | None = None) -> tuple[dict, dict, dict]:
     run = read(run_path)
     levels = run.get("levels")
     inline_stage = (
@@ -149,11 +150,18 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
     # without introducing a scripted stand-in or duplicate simulation.
     hivemind = run.get("hivemind")
     if hivemind is not None:
-        if (scene.get("native_game_schema") != 1 or
+        # Uranus III is captured before its Carrier introduction has
+        # enabled Stage.ActivateHiveMind. The native launcher explicitly
+        # releases the same post-briefing gate, with source squad ownership.
+        prelude = (story == "uranus_new_threat" and
+                   scene.get("activate_hivemind") is False and
+                   (scene.get("native_game_schema") == 1 or
+                    scene.get("schema_version") == 35))
+        if ((scene.get("native_game_schema") != 1 and not prelude) or
                 not isinstance(hivemind, dict) or
                 hivemind.get("issue_source_commands") is not True or
                 hivemind.get("reconnect_game_id") is not None or
-                scene.get("activate_hivemind") is not True or
+                (scene.get("activate_hivemind") is not True and not prelude) or
                 not isinstance(scene.get("squads"), list) or
                 not isinstance(scene.get("ships"), list) or
                 any(isinstance(ship.get("policy"), dict)
@@ -455,6 +463,50 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     "Neptune Of Production requires real mineable asteroids "
                     "and an authored native fleet extraction Level"
                 )
+        elif story == "uranus_new_threat":
+            # The original Level builds a new three-hull Barge SavedSquad
+            # before combat. These are real persistent FleetShips, not
+            # victory prizes or a synthetic training-only rescue target.
+            ships = {ship["entity_id"]: ship for ship in scene["ships"]
+                     if isinstance(ship, dict) and
+                     type(ship.get("entity_id")) is int}
+            candidates = [
+                squad for squad in scene["squads"]
+                if isinstance(squad, dict) and squad.get("side") == args.player_side
+                and len(squad_members(squad)) == 3
+                and len(set(squad_members(squad))) == 3
+                and all(ships.get(ship_id, {}).get("ship_type") == 0 and
+                        ships[ship_id].get("persistent_fleet") is True
+                        for ship_id in squad_members(squad))
+            ]
+            waves = level.get("reinforcements")
+            follows_60 = isinstance(waves, list) and any(
+                isinstance(wave, dict) and
+                type(wave.get("after_seconds")) in (int, float) and
+                abs(wave["after_seconds"] - 60.0) < 0.0001
+                for wave in waves
+            )
+            if (scene.get("human_side") != args.player_side or
+                    scene.get("activate_hivemind") is not False or
+                    not isinstance(run.get("hivemind"), dict) or
+                    run["hivemind"].get("issue_source_commands") is not True or
+                    len(candidates) != 1 or not follows_60 or
+                    level.get("campaign_dialogue") is not None or
+                    any(level.get(name) is not None for name in
+                        ("survival", "demolition", "escort", "extraction", "groups"))):
+                raise ValueError(
+                    "Uranus A New Threat needs the real three-Barge SavedSquad, "
+                    "pre-intro HiveMind authority and the physical 60-second wave"
+                )
+            level["campaign_dialogue"] = {
+                "uranus_new_threat": {
+                    "player_side": args.player_side,
+                    "barges": squad_members(candidates[0]),
+                    # The launcher resolves current surviving or reserved
+                    # Cruiser ownership from the one career ledger.
+                    "has_cruiser": False,
+                }
+            }
         elif story == "uranus_on_the_defensive":
             # Uranus II is a real mining/withdrawal encounter with six
             # timed physical Bee waves; attach its shared Level story only
@@ -463,8 +515,10 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             zone = level.get("extraction")
             waves = level.get("reinforcements")
             expected = (120.0, 240.0, 360.0, 480.0, 540.0, 600.0)
-            times = sorted(wave.get("after_seconds") for wave in waves
-                           if isinstance(wave, dict)) if isinstance(waves, list) else []
+            times = [wave.get("after_seconds") for wave in waves
+                     if isinstance(wave, dict)] if isinstance(waves, list) else []
+            if all(type(time) in (int, float) for time in times):
+                times.sort()
             if (scene.get("human_side") != args.player_side or
                     scene.get("activate_mining") is not True or
                     not scene.get("mining_asteroids") or
@@ -591,15 +645,39 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
 
     for index, source in enumerate(args.mission, 1):
         source_path = source.resolve(strict=True)
-        scene, run, provenance = input_mission(source_path, args.player_side)
+        scene, run, provenance = input_mission(
+            source_path, args.player_side, mission_stories.get(index),
+        )
         apply_story(index, scene, run)
         if stable_roster is None:
             stable_roster = provenance["player_fleet_contract"]
         elif provenance["player_fleet_contract"] != stable_roster:
-            raise ValueError(
-                f"mission {index} changes authored player FleetShip or SavedSquad identities; "
-                "use the same player fleet and squad membership in every native mission"
-            )
+            # Source Uranus III executes AddShipsToFleet(Barge,3) followed
+            # by BuildNewSquad at mission start. Accept only this exact
+            # monotonic physical fleet addition, preserving all earlier
+            # career IDs and squad memberships without replay-only grants.
+            old = stable_roster
+            current = provenance["player_fleet_contract"]
+            prior_ships = dict((row[0], row) for row in old["ships"])
+            current_ships = dict((row[0], row) for row in current["ships"])
+            prior_squads = dict(old["squads"])
+            current_squads = dict(current["squads"])
+            added_ships = set(current_ships) - set(prior_ships)
+            added_squads = set(current_squads) - set(prior_squads)
+            if (mission_stories.get(index) != "uranus_new_threat" or
+                    len(added_ships) != 3 or len(added_squads) != 1 or
+                    not all(current_ships.get(ship_id) == ship
+                            for ship_id, ship in prior_ships.items()) or
+                    not all(current_squads.get(saved_id) == members
+                            for saved_id, members in prior_squads.items()) or
+                    any(current_ships[ship_id][1] != 0
+                        for ship_id in added_ships) or
+                    set(current_squads[next(iter(added_squads))]) != added_ships):
+                raise ValueError(
+                    f"mission {index} changes the persistent player roster "
+                    "outside Uranus III's original three-Barge squad addition"
+                )
+            stable_roster = current
         # Both ordinary and conditional battles have the same persistent
         # campaign player fleet and source-priced hull class contract.
         # Any variant lacking a purchasable/earned hull is rejected before
@@ -640,8 +718,13 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         # consequence of a victory. Neither Pluto IV nor the Neptune
         # blockade invokes CollectMinedMineralsForPlayer.
         if mission_stories.get(index) in (
-                "pluto_bluer_pastures", "neptune_pressing_forward"):
+                "pluto_bluer_pastures", "neptune_pressing_forward",
+                "uranus_new_threat"):
             mission["bank_player_minerals"] = False
+        if mission_stories.get(index) == "uranus_new_threat":
+            # Source Uranus3Ending finishes the campaign on either outcome;
+            # it unlocks hulls/modes but does not mint mined TSV rewards.
+            mission["advance_on"] = "finished"
         if mission_stories.get(index) == "pluto_bluer_pastures":
             mission["evacuation_rewards"] = True
             mission["advance_on"] = "finished"
@@ -781,6 +864,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 )
             variant_scene, variant_run, provenance_variant = input_mission(
                 variant_path.resolve(strict=True), args.player_side,
+                mission_stories.get(index),
             )
             apply_story(index, variant_scene, variant_run)
             if provenance_variant["player_fleet_contract"] != stable_roster:
@@ -1009,12 +1093,12 @@ def mission_advance(value: str) -> tuple[int, str]:
 
 def mission_story(value: str) -> tuple[int, str]:
     match = re.fullmatch(
-        r"(\d+):(neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_defensive)",
+        r"(\d+):(neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_defensive|uranus_new_threat)",
         value,
     )
     if match is None or not 1 <= int(match.group(1)) <= 40:
         raise argparse.ArgumentTypeError(
-            "--mission-story needs MISSION:neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures or uranus_on_the_defensive"
+            "--mission-story needs MISSION:neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures, uranus_on_the_defensive or uranus_new_threat"
         )
     return int(match.group(1)), match.group(2)
 
