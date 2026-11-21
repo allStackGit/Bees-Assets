@@ -335,6 +335,7 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
         ("Bees commander vs Human AI", "  [Player side 1]"),
         ("Humans commander vs Bee AI", "  [Player side 2]"),
         ("Two local commanders", "  [Both factions]"),
+        ("Watch AI vs AI battle", "  [Original physical game; spectator view]"),
     ];
     if network.is_some() {
         choices.extend([
@@ -358,23 +359,25 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
     // A single local window cannot present two opposing, independently
     // fog-filtered viewpoints. LAN commanders have separate viewers and
     // may enable authentic fog independently.
-    let fog_of_war = if mode == 2 { false } else {
+    let fog_of_war = if matches!(mode, 2 | 3) { false } else {
         let Some(enabled) = choose_visibility()? else { return Ok(None); };
         enabled
     };
-    let ai_tactics = if mode >= 2 { AiTactics::Aggressive } else {
+    let ai_tactics = if mode == 2 || mode >= 4 {
+        AiTactics::Aggressive
+    } else {
         let Some(value) = choose_ai_tactics()? else { return Ok(None); };
         value
     };
     let Some(objective) = choose_objective()? else { return Ok(None); };
     let player_side = match mode {
-        0 | 3 => Some(1),
-        1 | 4 => Some(2),
+        0 | 4 => Some(1),
+        1 | 5 => Some(2),
         _ => None,
     };
     let hivemind = match mode {
-        3 | 4 => Some(NativeHiveMindFleet {
-            controlled_side: if mode == 3 { 2 } else { 1 },
+        4 | 5 => Some(NativeHiveMindFleet {
+            controlled_side: if mode == 4 { 2 } else { 1 },
             ..network.expect("HiveMind menu option requires pinned network source")
         }),
         _ => None,
@@ -400,7 +403,7 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
     };
     Ok(Some(FleetChoice {
         player_side, fleet_sizes, squad_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
-        ai_both: false, ai_tactics, hivemind, objective,
+        ai_both: mode == 3, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
