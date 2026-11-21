@@ -489,7 +489,7 @@ impl NativeGameAudio {
 
     fn sync_warp_gate(&mut self, gate_id: i64, elapsed: f32, ready: bool, tick: u64) {
         if !elapsed.is_finite() || elapsed < 0.0 { return; }
-        self.seen_warp_gates.insert(gate_id, tick);
+        let first_seen = self.seen_warp_gates.insert(gate_id, tick).is_none();
         if ready {
             if let Some(starting) = self.warp_gate_openings.remove(&gate_id) {
                 starting.stop();
@@ -505,7 +505,9 @@ impl NativeGameAudio {
         }
         if self.warp_gate_openings.len() + self.warp_gate_loops.len() >= MAX_ACTIVE_WARP_AUDIO {
             // No unbounded per-ship audio sources in a large battle.
-            self.measurements.warp_gate_voices_dropped += 1;
+            // Count distinct rejected gate appearances, not a
+            // frame-rate-dependent estimate of missing sound events.
+            self.measurements.warp_gate_voices_dropped += u64::from(first_seen);
             return;
         }
         let effect = if ready { Effect::WarpGateLoop } else { Effect::WarpGateStarting };
