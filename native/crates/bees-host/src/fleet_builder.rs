@@ -1363,13 +1363,10 @@ pub(super) fn archive(
                 if index == fighter_count[side] {
                     // The first specialty hull is the source template.
                     squad_ids[side].push(105 + side as i64);
-                } else {
-                    // Only the ordinary Carpenter Bee can safely multiply
-                    // through NativeSquadClone. Scout/Charge/Bomb abilities
-                    // retain separate special-weapon and lifecycle owners.
-                    if !matches!(selected.mix[side], FleetMix::Miners) {
-                        return Err(invalid("specialist replication needs a native source clone-safe miner").into());
-                    }
+                } else if matches!(selected.mix[side], FleetMix::Miners) {
+                    // A Carpenter Bee has no source-owned child, active
+                    // special weapon or lifecycle contract. It is safe to
+                    // use the shared clone path for this ordinary miner.
                     let side_base = (side as i64 + 1) * 100;
                     let new_squad = 2_000 + side_base + index as i64;
                     let new_ship = 10_000 + side_base + index as i64;
@@ -1384,6 +1381,66 @@ pub(super) fn archive(
                     });
                     squad_ids[side].push(new_squad);
                     miner_squads.push(new_squad);
+                } else {
+                    // Every Barge and Yellow Jacket has a physically
+                    // registered Bomb/Charge weapon identity. Generic
+                    // NativeSquadClone correctly refuses those actors:
+                    // materialize independent source-authored FleetShips
+                    // with distinct weapons and ordinary command squads.
+                    if side != 1 || !matches!(selected.mix[side],
+                        FleetMix::Chargers | FleetMix::FireBarges | FleetMix::Detonators)
+                    {
+                        return Err(invalid("source specialist replication is unsupported").into());
+                    }
+                    let ship_type = selected.mix[side].specialist_type(side);
+                    let template = available.iter().find(|ship|
+                        ship["side"] == 2 && ship["ship_type"] == ship_type
+                    ).ok_or_else(|| invalid("multi-specialist fleet lacks physical source class"))?;
+                    let expected_special = match selected.mix[side] {
+                        FleetMix::Chargers => "barge",
+                        FleetMix::FireBarges => "fire_barge",
+                        FleetMix::Detonators => "yellow_jacket",
+                        _ => unreachable!("validated native special fleet mix"),
+                    };
+                    if template["special"]["kind"] != expected_special ||
+                        !template["special_weapon"].is_object()
+                    {
+                        return Err(invalid("native specialist lacks its source Bomb weapon contract").into());
+                    }
+                    // Under 10,000 so native clone IDs remain above all
+                    // original entities. Weapon IDs are globally distinct
+                    // from the source special mounts and Carrier decks.
+                    let ship_id = 600_i64 + index as i64;
+                    let squad_id = 700_i64 + index as i64;
+                    let weapon_id = 7_000_i64 + index as i64;
+                    let offset = offsets[side][index];
+                    let controlled = !selected.ai_both &&
+                        selected.player_side.is_none_or(|player| player == 2);
+                    let mut ship = template.clone();
+                    ship["entity_id"] = json!(ship_id);
+                    ship["fleet_ship_id"] = json!(ship_id);
+                    ship["special_weapon"]["weapon_id"] = json!(weapon_id);
+                    ship["position"] = json!([75.0 + offset[0], offset[1]]);
+                    ship["formation_offset"] = json!([0.0, 0.0]);
+                    ship["user_controlled"] = json!(controlled);
+                    scene["ships"].as_array_mut()
+                        .ok_or_else(|| invalid("native specialist scene lost ship roster"))?
+                        .push(ship);
+                    scene["squads"].as_array_mut()
+                        .ok_or_else(|| invalid("native specialist scene lost squad roster"))?
+                        .push(json!({
+                            "item_id": squad_id, "side": 2, "members": [ship_id],
+                            "shooting_strategy_id": 1,
+                            "user_controlled": controlled,
+                            "can_accept_input": controlled,
+                            "command_bans": [],
+                        }));
+                    squad_ids[side].push(squad_id);
+                    if matches!(selected.mix[side], FleetMix::Chargers) {
+                        charger_squads.push(squad_id);
+                    } else {
+                        bombing_squads.push(squad_id);
+                    }
                 }
                 continue;
             }
