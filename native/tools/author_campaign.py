@@ -457,6 +457,51 @@ def native_fleet_class_sha256(ship: dict) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def uranus_defensive_mining_source(scene: dict) -> bool:
+    """Source Uranus2 manually places six original physical mining hulls.
+
+    The original captured schema stores them as Obstacle.kind=mining;
+    natively authored games store the same colliders as mining_asteroids.
+    Both feed the ONE native MiningAsteroid world implementation.
+    """
+    if scene.get("native_game_schema") == 1:
+        asteroids = scene.get("mining_asteroids")
+    else:
+        obstacles = scene.get("obstacles")
+        asteroids = ([obstacle for obstacle in obstacles
+                      if isinstance(obstacle, dict) and
+                      obstacle.get("kind") == "mining"]
+                     if isinstance(obstacles, list) else None)
+    if not isinstance(asteroids, list) or len(asteroids) != 6:
+        return False
+    authored = [
+        (235.0, -105.0), (0.0, -300.0), (20.0, -400.0),
+        (-80.0, -370.0), (-350.0, 80.0), (-200.0, 200.0),
+    ]
+    locations = []
+    seen = set()
+    for asteroid in asteroids:
+        if not isinstance(asteroid, dict) or                 type(asteroid.get("entity_id")) is not int or                 asteroid["entity_id"] <= 0 or asteroid["entity_id"] in seen:
+            return False
+        seen.add(asteroid["entity_id"])
+        position = asteroid.get("position")
+        if isinstance(position, dict):
+            position = [position.get("x"), position.get("y")]
+        if (not isinstance(position, list) or len(position) != 2 or
+                any(type(number) not in (int, float)
+                    for number in position)):
+            return False
+        locations.append(tuple(position))
+    for location in locations:
+        matched = next((index for index, target in enumerate(authored)
+                        if all(abs(a - b) <= 0.001
+                               for a, b in zip(location, target))), None)
+        if matched is None:
+            return False
+        authored.pop(matched)
+    return not authored
+
+
 def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict, dict]:
     title = args.title.strip()
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
@@ -725,10 +770,11 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     not isinstance(run.get("hivemind"), dict) or
                     run["hivemind"].get("issue_source_commands") is not True or
                     scene.get("activate_mining") is not True or
-                    not scene.get("mining_asteroids") or
+                    not uranus_defensive_mining_source(scene) or
                     not isinstance(zone, dict) or
                     zone.get("player_side") != args.player_side or
                     zone.get("retreat_on_exit") is not True or
+                    zone.get("center") != [-512, 0] or
                     not valid_waves or
                     level.get("campaign_dialogue") is not None or
                     any(level.get(name) is not None for name in
