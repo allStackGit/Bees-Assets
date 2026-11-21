@@ -25,7 +25,8 @@ from urllib.request import urlopen
 
 from native_training_artifacts import (atomic_json, check_learner, file_sha256,
                                        native_input_dependencies,
-                                       check_native_input_dependencies)
+                                       check_native_input_dependencies,
+                                       native_manifest_model_dependencies)
 from native_bundle_receiver import BundleReceiver
 from transfer_policy_inputs import export_inputs
 from native_distributed_collection import (
@@ -715,6 +716,15 @@ def verify_evaluation(directory, manifest_sha, source_sha, learner_side, policy_
         current = native_input_dependencies({"path": source_path})
         if result["source_dependencies"] != current:
             raise ValueError(f"holdout source assets differ from committed evaluation: {directory}")
+    if "model_dependencies" in result:
+        manifest_path = result.get("model_manifest")
+        if not isinstance(manifest_path, str) or not manifest_path:
+            raise ValueError(f"holdout has no original model manifest: {directory}")
+        expected_weights = native_manifest_model_dependencies(
+            Path(manifest_path), result.get("model_store")
+        )
+        if expected_weights != result["model_dependencies"]:
+            raise ValueError(f"holdout model weights differ from committed evaluation: {directory}")
     summary = read_json(summary_path)
     if (summary.get("run_id") != result.get("run_id") or
             summary.get("policy_manifest_sha256") != manifest_sha or
