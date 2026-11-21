@@ -1430,7 +1430,10 @@ impl BattleCatalog {
                 } else { "victory" },
                 "unlocked": mission.requires.iter().all(|id| progress.completed(id)),
                 "completed": progress.completed(&mission.id),
+                "attempted": progress.missions.get(mission.id.as_str())
+                    .is_some_and(|result| result.attempted),
                 "latest_victory": progress.latest_victory(&mission.id),
+                "latest_defeat": progress.latest_defeat(&mission.id),
                 "victory_grants_claimed": progress.grants_claimed(&mission.id),
                 "victory_squads": mission.victory_squads.iter().map(|grant| json!({
                     "saved_squad_id": grant.saved_squad_id,
