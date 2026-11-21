@@ -1914,6 +1914,12 @@ fn current_state(
             ]),
             "animation_variant": animation.map(|(variant, _)| variant),
             "animation_seconds": animation.map(|(_, seconds)| seconds),
+            // The looping sprite intentionally follows the Level clock,
+            // while WarpGate sound must resume at the physical gate's own
+            // opening/ready timeline after a remote peer joins mid-battle.
+            "warp_audio_elapsed_seconds": if ship.ship_type == bees_sim::combat_world::WARP_GATE_TYPE {
+                view.combat.game_warp_gate_animation_elapsed(ship.entity_id)
+            } else { None },
             "destination": if owned {
                 view.combat.ship_game_destination(ship.entity_id)
                     .map(|destination| [destination.x, destination.y])
