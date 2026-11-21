@@ -41,7 +41,9 @@ def source_battle(run_path: Path) -> tuple[dict, dict]:
     if (not isinstance(run.get("run_id"), str) or
             not run["run_id"].startswith("native-fleet-") or
             not isinstance(levels, list) or len(levels) != 1 or
-            run.get("episodes_per_world") != 1):
+            type(run.get("episodes_per_world")) is not int or
+            not 1 <= run["episodes_per_world"] <= 64):
+
         raise ValueError("requires one archived native fleet-builder skirmish, not a benchmark")
     level = levels[0]
     if not isinstance(level, dict):
@@ -100,6 +102,12 @@ def source_battle(run_path: Path) -> tuple[dict, dict]:
             "policy_episode" in scene or
             any("policy" in ship for ship in scene.get("ships", []))):
         raise ValueError("source must be an ordinary native physical scene, not an existing policy episode")
+    # A playable FishTank spectator may run 4-64 consecutive physical
+    # episodes with distinct native Level seeds. MA-POCA allocates its own
+    # episode lifecycle; normalize only the number of repeats, not the
+    # original hulls, world geometry, weapons, objective or commands.
+    # Its archived source bytes and hash remain unchanged.
+    run["episodes_per_world"] = 1
     return scene, run
 
 
@@ -674,6 +682,7 @@ def convert(source: Path, destination: Path, archetypes: Path,
         "source_scene": str(scene_path),
         "source_scene_sha256": scene_sha,
         "policy_archetypes_sha256": archetypes_sha,
+        "source_spectator_episodes": read_json(source)["episodes_per_world"],
         "source_squad_clones": clone_count,
         "source_squad_merges": len(
             read_json(source)["levels"][0].get("native_layout", {}).get("merge_squads", [])
