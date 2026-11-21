@@ -122,15 +122,13 @@ fn uranus_defensive_waves_match_source(
     let timed = |wave: &crate::reinforcements::NativeReinforcementPlan, at: f32|
         matches!(wave.activation, AfterSeconds(seconds)
             if (seconds - at).abs() <= 0.0001);
-    // All three wave families consist of genuine source SavedSquads.
-    // The fifth upper wave may prefix surviving mixed veteran squads,
-    // but its newly generated formations must retain the source suffix.
-    const ORDINARY: &[(u8, usize)] =
-        &[(16, 1), (14, 2), (21, 2), (15, 4), (15, 4)];
-    const LATE_UPPER: &[(u8, usize)] =
-        &[(14, 2), (21, 6), (15, 8), (3, 2), (16, 4)];
-    const LOWER: &[(u8, usize)] =
-        &[(14, 2), (21, 6), (15, 8), (22, 4), (22, 4), (16, 4)];
+    // GetSquadByComposition accepts fewer or more ships when the source
+    // roster cannot supply the ideal count. Validate the exact ordered
+    // ship types and real nonempty squads, not unattainable ideal sizes.
+    // The fifth upper wave may prefix surviving mixed veteran squads.
+    const ORDINARY: &[u8] = &[16, 14, 21, 15, 15];
+    const LATE_UPPER: &[u8] = &[14, 21, 15, 3, 16];
+    const LOWER: &[u8] = &[14, 21, 15, 22, 22, 16];
     let by_squad: HashMap<_, _> = squads.iter()
         .map(|squad| (squad.item_id, squad)).collect();
     let by_ship: HashMap<_, _> = entities.iter().filter_map(|entity| match entity {
@@ -138,7 +136,7 @@ fn uranus_defensive_waves_match_source(
         _ => None,
     }).collect();
     let composition = |wave: &crate::reinforcements::NativeReinforcementPlan,
-                       required: &[(u8, usize)], veterans: bool| -> bool {
+                       required: &[u8], veterans: bool| -> bool {
         let mut actual = Vec::with_capacity(wave.squad_item_ids.len());
         let mut seen = HashSet::new();
         for squad_id in &wave.squad_item_ids {
@@ -155,10 +153,9 @@ fn uranus_defensive_waves_match_source(
                 if uniform.is_some_and(|kind| kind != ship.ship_type) { mixed = true; }
                 uniform = Some(ship.ship_type);
             }
-            actual.push((if mixed { None } else { uniform }, squad.members.len()));
+            actual.push(if mixed { None } else { uniform });
         }
-        let fixed = required.iter().map(|&(kind, count)|
-            (Some(kind), count)).collect::<Vec<_>>();
+        let fixed = required.iter().copied().map(Some).collect::<Vec<_>>();
         if veterans { actual.ends_with(&fixed) } else { actual == fixed }
     };
     let Some(initial) = waves.iter().find(|wave| timed(wave, 120.0)) else {
@@ -189,18 +186,13 @@ fn uranus_defensive_waves_match_source(
                 entry.unity_equal(lower_entry);
             let (required, veterans) = match (at as u32, route_upper, route_lower) {
                 (120 | 240, true, false) => (ORDINARY, false),
-                (360, true, false) =>
-                    (&[(22, 4), (22, 4), (14, 2), (21, 4), (15, 4)][..], false),
-                (480, true, false) =>
-                    (&[(22, 6), (22, 6), (14, 2), (16, 4)][..], false),
-                (480, false, true) =>
-                    (&[(21, 4), (14, 2), (21, 4)][..], false),
+                (360, true, false) => (&[22, 22, 14, 21, 15][..], false),
+                (480, true, false) => (&[22, 22, 14, 16][..], false),
+                (480, false, true) => (&[21, 14, 21][..], false),
                 (540, true, false) => (LATE_UPPER, true),
                 (540, false, true) => (LOWER, false),
                 (600, true, false) => (LATE_UPPER, false),
-                (600, false, true) =>
-                    (&[(14, 2), (21, 6), (15, 8), (22, 4), (22, 4),
-                       (3, 2), (16, 4)][..], false),
+                (600, false, true) => (&[14, 21, 15, 22, 22, 3, 16][..], false),
                 _ => return false,
             };
             if !composition(wave, required, veterans) { return false; }
