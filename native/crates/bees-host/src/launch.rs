@@ -6043,7 +6043,8 @@ fn run_battle(
                 // should not carry a meaningless empty deployment.
                 let preserve_timed_story = matches!(level.campaign_dialogue,
                     Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusDefensive { .. } |
-                         bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusNewThreat { .. })
+                         bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusNewThreat { .. } |
+                         bees_gameplay::campaign_dialogue::CampaignDialogueSpec::NeptuneProduction { .. })
                 );
                 level.reinforcements.retain(|wave|
                     !wave.squad_item_ids.is_empty() ||
