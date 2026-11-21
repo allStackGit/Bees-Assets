@@ -188,6 +188,14 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
             adapter.gpu_dual_execution==='native-rollouts';
     const dual=r.gpu_count===2&&lr.gpu_count===2&&
         r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'&&dualProject;
+    const multi=r.gpu_count>=2&&r.gpu_count<=8&&
+        lr.gpu_count===r.gpu_count&&
+        r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'&&
+        (job.project_id==='courier'&&
+            adapter.gpu_multi_execution==='independent-ppo'||
+         job.project_id==='tinybrains'&&r.gpu_count>=3&&
+            job.frozen_parameters?.device==='multi'&&
+            adapter.gpu_multi_execution==='split-ppo-collectors');
     if(!cpuOnly&&(!gpuEnabled||typeof adapter.gpu_verify_args!=='function'||
         !(single||dual||multi)||bindings.length!==r.gpu_count||
         lr.gpus?.length!==r.gpu_count||
@@ -199,6 +207,11 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
     if(!['terminate-group','interrupt-main'].includes(stopPolicy))
         throw Error('Unknown locally installed native stop policy.');
     const predecessor=job.continuation_of_job_id||null;
+    const continuationMode=job.continuation_mode??'exact';
+    if(!['exact','curriculum'].includes(continuationMode)||
+        (continuationMode==='curriculum'&&
+            (job.project_id!=='courier'||!predecessor)))
+        throw Error('Unsupported native curriculum continuation mode.');
     const replaced=job.collector_replacement_of_job_id||null;
     const oldOptimizer=job.optimizer_restart_of_job_id||null;
     const logicalId=logicalJobId(job);
@@ -250,7 +263,7 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
             {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
         ...(job.parent_collection_selection?
             {parent_collection_selection:structuredClone(job.parent_collection_selection)}:{}),
-        ...(!cpuOnly?(dual
+        ...(!cpuOnly?(dual||multi
             ?{gpu_pci_addresses:bindings.map(bound=>bound.pci_address),
                 gpu_mode:'exclusive'}
             :{gpu_pci_address:binding.pci_address,
@@ -334,7 +347,7 @@ function launchArguments(record,invocation,gpuPlan) {
             '--property=ExecStartPre='+[
                 process.execPath,check,
                 ...gpuAttestationArgs(bindings,gpuPlan,{
-                    executable:invocation.executable,verifyArgs,
+                    executable:invocation.executable,verifyArgs,rocrUuid,
                 }),
             ].join(' '));
     }else {
@@ -509,7 +522,8 @@ class LinuxSupervisor {
             throw Error('CPU/RAM preflight must pass before GPU device checks.');
         if(this.gpuProbeCleanupPending())
             throw Error('Previous GPU access probe cleanup unconfirmed; inspect the recorded local service before retry.');
-        if(Array.isArray(bindings)&&bindings.length>1) {
+        if(Array.isArray(bindings)&&bindings.length>1&&
+            Array.isArray(runtimeProof?.singleProofs)) {
             // A union of N GPUs can have no unselected render nodes on a
             // two-GPU host. Prove kernel allow/deny and HIP PCI identity
             // for *each* GPU separately before authorizing the union.
@@ -562,7 +576,7 @@ class LinuxSupervisor {
         verifyUnconfinedDeviceAccess(plan,this.fs);
         if(!plan.unselected.length)
             await this.runGpuDeviceProbe(plan,bindings[0],null,{denySelected:true});
-        await this.runGpuDeviceProbe(plan,bindings[0],runtimeProof);
+        await this.runGpuDeviceProbe(plan,bindings,runtimeProof);
         const observed=resolveRocmDevices(bindings,{fsApi:this.fs});
         if(deviceIdentity(plan)!==deviceIdentity(observed))
             throw Error('GPU device identity changed during the access probe.');
@@ -572,6 +586,7 @@ class LinuxSupervisor {
     }
 
     async runGpuDeviceProbe(plan,binding,runtimeProof,{denySelected=false}={}) {
+        const bindings=Array.isArray(binding)?binding:[binding];
         if(denySelected&&runtimeProof!==null)
             throw Error('The GPU denial control must run without a HIP workload.');
         if(this.gpuProbeCleanupPending())
