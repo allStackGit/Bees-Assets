@@ -1525,7 +1525,10 @@ impl NativePhysicalScene {
                 return Err(invalid("invalid original FleetShip reassignment"));
             }
             let parent = self.entities.iter().find_map(|entity| match entity {
-                NativeAuthoredEntity::Ship(ship) if ship.fleet_ship_id == Some(fleet_id) =>
+                NativeAuthoredEntity::Ship(ship)
+                    if ship.fleet_ship_id == Some(fleet_id) &&
+                        self.fleet.get(ship.entity_id)
+                            .is_some_and(|value| value.has_persistent_fleet_value) =>
                     Some((ship.side, ship.entity_id)),
                 _ => None,
             });
@@ -1688,8 +1691,8 @@ impl NativePhysicalScene {
     /// Apply previously saved campaign casualties to the actual authored
     /// game Level before constructing CombatWorld or allocating squads.
     /// FleetShip identities (not dense physics/entity IDs) survive across
-    /// different missions. Enemy fleets, nonpersistent minions, policies
-    /// and explicitly authored unrelated ships are not modified.
+    /// different missions. Free carrier complements are generated only
+    /// for surviving parent hulls; unrelated ships remain unchanged.
     pub fn omit_killed_fleet_ships(
         &mut self, player_side: i32, lost_fleet_ids: &HashSet<i64>,
     ) -> Result<usize, NativeSnapshotError> {
@@ -1700,9 +1703,11 @@ impl NativePhysicalScene {
         if !matches!(player_side, 1 | 2) {
             return Err(invalid("campaign casualties require a valid player side"));
         }
-        let removed: HashSet<i64> = self.entities.iter().filter_map(|entity| match entity {
+        let mut removed: HashSet<i64> = self.entities.iter().filter_map(|entity| match entity {
             NativeAuthoredEntity::Ship(ship) if ship.side == player_side &&
-                ship.fleet_ship_id.is_some_and(|id| lost_fleet_ids.contains(&id)) =>
+                ship.fleet_ship_id.is_some_and(|id| lost_fleet_ids.contains(&id)) &&
+                self.fleet.get(ship.entity_id)
+                    .is_some_and(|value| value.has_persistent_fleet_value) =>
                 Some(ship.entity_id),
             _ => None,
         }).collect();
@@ -1719,6 +1724,30 @@ impl NativePhysicalScene {
                 return Err(invalid("a casualty is not a persistent FleetShip"));
             }
         }
+        // LevelConstructor creates the free CarrierSquads only after it
+        // has instantiated surviving persistent FleetShips. This is a
+        // fresh campaign deployment, not Carrier.Kill during combat:
+        // children of a previously lost carrier must never spawn.
+        let mut children = Vec::new();
+        for entity in &self.entities {
+            let NativeAuthoredEntity::Ship(ship) = entity else { continue };
+            if removed.contains(&ship.entity_id) { continue; }
+            let attached_to_lost_carrier =
+                ship.drone_carrier_id.is_some_and(|id| removed.contains(&id)) ||
+                matches!(&ship.special,
+                    Some(NativeAuthoredShipSpecial::Striker { carrier, .. })
+                        if carrier.carrier_id.is_some_and(|id| removed.contains(&id)));
+            if !attached_to_lost_carrier { continue; }
+            if ship.side != player_side ||
+                !matches!(ship.ship_type, 8 | 19) ||
+                !self.fleet.get(ship.entity_id)
+                    .is_some_and(|value| !value.has_persistent_fleet_value)
+            {
+                return Err(invalid("invalid free carrier complement in saved campaign deployment"));
+            }
+            children.push(ship.entity_id);
+        }
+        removed.extend(children);
         if !self.source_squads.iter().any(|squad| {
             squad.side == player_side && squad.player_permissions.user_controlled &&
             squad.members.iter().any(|id| !removed.contains(id))
@@ -1726,26 +1755,6 @@ impl NativePhysicalScene {
             return Err(invalid(
                 "the saved campaign fleet has no surviving player-controlled squad",
             ));
-        }
-        // A surviving Striker or Drone may be orphaned by the loss of its
-        // Carrier in a previous mission. The normal game already supports
-        // carrier death; detach the historical relationship here, rather
-        // than resurrecting a carrier or leaving a dangling live link.
-        for entity in &mut self.entities {
-            if let NativeAuthoredEntity::Ship(ship) = entity {
-                if !removed.contains(&ship.entity_id) {
-                    if ship.drone_carrier_id.is_some_and(|id| removed.contains(&id)) {
-                        ship.drone_carrier_id = None;
-                    }
-                    if let Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) =
-                        &mut ship.special
-                    {
-                        if carrier.carrier_id.is_some_and(|id| removed.contains(&id)) {
-                            carrier.carrier_id = None;
-                        }
-                    }
-                }
-            }
         }
         self.entities.retain(|entity| !removed.contains(&entity.entity_id()));
         for squad in &mut self.source_squads {
