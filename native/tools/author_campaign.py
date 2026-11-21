@@ -972,10 +972,62 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             "kind": "campaign", "config": "campaign.json",
         }],
     }
+    # No game mode is invented by publication: every post-campaign entry
+    # references an independently authored native game with authentic
+    # scene, original FleetShip identities and (if learned) a fully pinned
+    # evaluation-selected opponent model. The exact original Uranus III
+    # finale owns the playable unlock receipt.
+    postcampaign_sources = []
+    if args.postcampaign_game and not uranus_finales:
+        raise ValueError(
+            "post-campaign games require the authored Uranus III finale"
+        )
+    for game_id, side, run_source in args.postcampaign_game:
+        source_path = run_source.resolve(strict=True)
+        game_scene, game_run, provenance = input_mission(source_path, side)
+        if game_scene.get("native_game_schema") != 1:
+            raise ValueError(
+                f"post-campaign game {game_id} requires a complete native game scene"
+            )
+        prefix = f"postcampaign-{game_id}"
+        scene_file = f"{prefix}.scene.json"
+        run_file = f"{prefix}.run.json"
+        game_run = copy.deepcopy(game_run)
+        provenance["stage_assets"] = package_stage_assets(
+            source_path, game_run, stage_files,
+        )
+        if game_run.get("model_manifest") is not None:
+            provenance["packaged_model"] = package_model_manifest(
+                source_path, game_run, prefix, outputs, model_files,
+                runtime_files, provenance,
+            )
+        game_run["levels"][0]["scene"] = scene_file
+        game_run["run_id"] = f"{slug}-{prefix}"
+        game_run["connection_checkpoint"] = f"{prefix}-connection.json"
+        game_run["host_recovery_checkpoint"] = "native-host-checkpoint.json"
+        game_run["notifications"] = f"{prefix}-notifications.jsonl"
+        game_run["rollout_summary"] = f"{prefix}-summary.json"
+        game_run["policy_capture"] = None
+        outputs.extend(((scene_file, game_scene), (run_file, game_run)))
+        library["games"].append({
+            "id": game_id, "title": game_scene["level_name"],
+            "kind": "battle", "config": run_file,
+            "unlock_after": {
+                "campaign_id": slug[:40],
+                "mission_id": f"mission-{uranus_finales[0]:03d}",
+            },
+        })
+        postcampaign_sources.append({
+            "game_id": game_id,
+            "player_side": side,
+            "unlocked_by": f"mission-{uranus_finales[0]:03d}",
+            **provenance,
+        })
     receipt = {
         "schema_version": 1, "kind": "native_authored_campaign",
         "campaign_id": slug, "player_side": args.player_side,
         "missions": sources,
+        "postcampaign_games": postcampaign_sources,
         "shop_types": args.shop_types,
         "grant_only_types": args.grant_only_types,
         "mission_progression": [{
@@ -1141,6 +1193,17 @@ def mission_unlock_any(value: str) -> tuple[int, int, str]:
     return mission, prior, result
 
 
+def postcampaign_game(value: str) -> tuple[str, int, Path]:
+    """GAME_ID:PLAYER_SIDE:AUTHORED_RUN, with no synthetic scene fallback."""
+    pieces = value.split(":", 2)
+    if (len(pieces) != 3 or not re.fullmatch(r"[a-z][a-z0-9_-]{0,39}", pieces[0])
+            or pieces[1] not in ("1", "2") or not pieces[2]):
+        raise argparse.ArgumentTypeError(
+            "--postcampaign-game needs GAME_ID:PLAYER_SIDE:AUTHORED_RUN"
+        )
+    return pieces[0], int(pieces[1]), Path(pieces[2])
+
+
 def shop_unlock(value: str) -> tuple[int, list[int]]:
     """SHIP_TYPE:MISSION[,MISSION] or SHIP_TYPE:none for initial availability."""
     match = re.fullmatch(r"(\d+):(none|\d+(?:,\d+)*)", value)
@@ -1195,6 +1258,10 @@ def main() -> None:
     parser.add_argument("--mission-scientists-met", type=int, action="append",
                         default=[], metavar="MISSION",
                         help="source Uranus II dialogue flag: Alejandra and Emilia were previously met on this campaign route")
+    parser.add_argument("--postcampaign-game", action="append",
+                        type=postcampaign_game, default=[],
+                        metavar="ID:PLAYER_SIDE:RUN",
+                        help="package a real native playable mode or verified challenge, locked until the authored Uranus III campaign finale finishes")
     parser.add_argument("--mission-variant", action="append", type=mission_variant,
                         default=[], metavar="MISSION:PREVIOUS:RUN",
                         help="use another native battle if the required previous mission's latest result was victory")
@@ -1217,6 +1284,12 @@ def main() -> None:
             len({mission for mission, _ in args.mission_story}) != len(args.mission_story)):
         parser.error("--mission-story needs distinct existing mission indices")
     story_by_index = dict(args.mission_story)
+    game_ids = [game_id for game_id, _, _ in args.postcampaign_game]
+    if len(set(game_ids)) != len(game_ids) or any(
+        game_id == re.sub(r"[^a-z0-9]+", "-", args.title.strip().lower()).strip("-")[:40]
+        for game_id in game_ids
+    ):
+        parser.error("--postcampaign-game needs distinct IDs separate from the campaign")
     if (len(set(args.mission_scientists_met)) != len(args.mission_scientists_met) or
             any(story_by_index.get(index) != "uranus_on_the_defensive"
                 for index in args.mission_scientists_met)):
