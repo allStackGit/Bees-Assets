@@ -123,6 +123,11 @@ pub struct Mission {
     /// opposing authored forces remain owned by their scenario.
     #[serde(default)]
     pub persist_fleet_losses: bool,
+    /// Source mission-ending action that permanently sacrifices every
+    /// currently owned FleetShip of the listed classes on defeat,
+    /// including ships in reserve rather than deployed in the last Level.
+    #[serde(default)]
+    pub retire_on_defeat_types: Vec<u8>,
     #[serde(default)]
     pub requires: Vec<String>,
     /// Optional alternative source campaign routes. Each prerequisite is
@@ -669,6 +674,11 @@ impl BattleCatalog {
                 earlier.contains(mission.id.as_str()) ||
                 mission.requires.iter().any(|id| !earlier.contains(id.as_str())) ||
                 mission.unlock_if_any.len() > 40 ||
+                (!mission.retire_on_defeat_types.is_empty() &&
+                    (!mission.record_fleet_stats || !mission.persist_fleet_losses)) ||
+                mission.retire_on_defeat_types.iter().any(|&kind| kind >= 32) ||
+                mission.retire_on_defeat_types.iter().enumerate().any(|(index, kind)|
+                    mission.retire_on_defeat_types[..index].contains(kind)) ||
                 mission.unlock_if_any.iter().any(|route|
                     !earlier.contains(route.mission.as_str())) ||
                 mission.unlock_if_any.iter().enumerate().any(|(index, route)|
@@ -1517,6 +1527,9 @@ impl BattleCatalog {
                 "bank_player_minerals": mission.bank_player_minerals,
                 "persist_fleet_losses": mission.persist_fleet_losses,
             });
+            if !mission.retire_on_defeat_types.is_empty() {
+                row["retire_on_defeat_types"] = json!(mission.retire_on_defeat_types);
+            }
             if has_defeat_conditions {
                 row["attempted"] = json!(progress.missions.get(mission.id.as_str())
                     .is_some_and(|result| result.attempted));
