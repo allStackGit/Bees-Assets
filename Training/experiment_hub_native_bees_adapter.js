@@ -1300,8 +1300,33 @@ function createNativeBeesAdapter({
         return {receipt, metrics, stat};
     }
 
+    function completedRelease(round, output) {
+        if (!round?.receipt.continual_release_plan) return null;
+        const release = completionReceipt(output, 'continual-release.json');
+        if (!release) return null;
+        const {receipt} = release;
+        const plan = round.receipt.continual_release_plan;
+        const step = plan.initial_parent_training_step + round.metrics.optimizer_input_steps;
+        if (receipt.kind !== 'native_continual_generation_complete' ||
+                receipt.schema_version !== 1 || receipt.round !== 1 ||
+                receipt.checkpoint_sha256 !== round.receipt.next_checkpoint_sha256 ||
+                receipt.parent_model_id !== plan.initial_parent_model_id ||
+                typeof receipt.passed !== 'boolean' ||
+                !Number.isSafeInteger(step) || step < 1 || receipt.training_step !== step)
+            throw Error('Continual release does not identify this learner checkpoint and lineage.');
+        return release;
+    }
+
+    function releaseReady(round, output, required = false) {
+        if (required && !round?.receipt.continual_release_plan)
+            throw Error('Native Bees round lacks its authorized continual release plan.');
+        return !round?.receipt.continual_release_plan || completedRelease(round, output) !== null;
+    }
+
     function verifiedOutput(round, output) {
         if (!round) throw Error('Native Bees continuation needs a completed round.');
+        if (!releaseReady(round, output))
+            throw Error('Native Bees continual generation release is not complete.');
         const {receipt, metrics} = round;
         const checkpoint = path.join(output, 'learner', 'checkpoint.pt');
         const manifest = path.join(output, 'learner', 'manifest.json');
@@ -1897,7 +1922,10 @@ function createNativeBeesAdapter({
             ...(distributedOptimizer?.role==='worker'?{}:{
             async checkpoint_ready(context) {
                 const output = jobRoot(context);
-                const verified = verifiedOutput(jobRound(context), output);
+                const round = jobRound(context);
+                if (!round || !releaseReady(round, output,
+                    context.frozen_parameters?.continual_release === true)) return false;
+                const verified = verifiedOutput(round, output);
                 if (gallery) {
                     // The verified learner checkpoint is already resumable.
                     // A player-save permission error must never make the
@@ -1932,7 +1960,12 @@ function createNativeBeesAdapter({
                 return true;
             },
             model_checkpoint_sha256(context) {
-                return verifiedOutput(jobRound(context), jobRoot(context)).checkpointDigest;
+                const output = jobRoot(context);
+                const round = jobRound(context);
+                if (!round || !releaseReady(round, output,
+                    context.frozen_parameters?.continual_release === true))
+                    throw Error('Native Bees generation is not ready for model handoff.');
+                return verifiedOutput(round, output).checkpointDigest;
             },
             }),
         }),
@@ -2078,14 +2111,10 @@ function createNativeBeesAdapter({
             const {receipt, metrics, stat} = round;
             const rollout = receipt.rollout_metrics;
             const modelTiming = rollout?.sampled_model_timing;
-            const release = context.frozen_parameters?.continual_release === true
-                ? completionReceipt(jobRoot(context), 'continual-release.json') : null;
-            if (release && (release.receipt.kind !== 'native_continual_generation_complete' ||
-                    release.receipt.schema_version !== 1 || release.receipt.round !== 1 ||
-                    release.receipt.checkpoint_sha256 !== receipt.next_checkpoint_sha256 ||
-                    typeof release.receipt.passed !== 'boolean' ||
-                    !Number.isSafeInteger(release.receipt.training_step) || release.receipt.training_step < 1))
-                throw Error('Continual release does not identify this learner checkpoint.');
+            if (context.frozen_parameters?.continual_release === true &&
+                    !receipt.continual_release_plan)
+                throw Error('Native Bees round lacks its authorized continual release plan.');
+            const release = completedRelease(round, jobRoot(context));
             return validateProgress({
                 schema_version: 1, source: 'hub-metrics-v1',
                 experiment_id: context.job_id, segment_id: 'training',
