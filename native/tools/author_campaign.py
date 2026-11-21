@@ -574,7 +574,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     # writing only the output JSON flag would incorrectly reject valid
     # defeat-skip paths later in the same campaign catalog.
     for index, story in mission_stories.items():
-        if story in ("pluto_bluer_pastures", "neptune_of_production",
+        if story in ("pluto_pushback", "pluto_bluer_pastures", "neptune_of_production",
                      "uranus_on_the_defensive", "uranus_new_threat"):
             if mission_advances.get(index, "finished") != "finished":
                 raise ValueError(
@@ -623,7 +623,50 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         if story is None:
             return
         level = run["levels"][0]
-        if story == "neptune_seize_means":
+        if story == "pluto_pushback":
+            # Pluto III's authentic five-squad opponent wave has already
+            # deployed when the intro releases gameplay. Require actual
+            # source hulls and HiveMind rather than constructing a stand-in.
+            physical = {
+                ship.get("entity_id"): ship for ship in scene.get("ships", [])
+                if isinstance(ship, dict) and type(ship.get("entity_id")) is int
+            }
+            opponent = 3 - args.player_side
+            source_groups = []
+            for squad in scene.get("squads", []):
+                if not isinstance(squad, dict) or squad.get("side") != opponent:
+                    continue
+                members = squad_members(squad)
+                types = {physical.get(ship_id, {}).get("ship_type")
+                         for ship_id in members}
+                source_groups.append((next(iter(types)), len(members))
+                                     if len(types) == 1 and members else None)
+            authentic_wave = [
+                (14, 2), (15, 4), (15, 6), (21, 4), (21, 4),
+            ]
+            if (scene.get("native_game_schema") != 1 or
+                    scene.get("human_side") != args.player_side or
+                    scene.get("activate_hivemind") is not True or
+                    not isinstance(run.get("hivemind"), dict) or
+                    run["hivemind"].get("issue_source_commands") is not True or
+                    not any(source_groups[start:start + len(authentic_wave)] ==
+                            authentic_wave for start in range(len(source_groups))) or
+                    level.get("campaign_dialogue") is not None or
+                    level.get("reinforcements") not in (None, []) or
+                    any(level.get(name) is not None for name in (
+                        "survival", "demolition", "escort", "extraction", "groups"
+                    ))):
+                raise ValueError(
+                    "Pluto Pushback requires the original deployed five-squad "
+                    "Bee wave, live HiveMind authority and ordinary elimination"
+                )
+            # Launcher resolves officers after persistent fleet restoration.
+            level["campaign_dialogue"] = {
+                "pluto_pushback": {
+                    "player_side": args.player_side, "speaker_mask": 0,
+                }
+            }
+        elif story == "neptune_seize_means":
             # Original Neptune I starts with no HiveMind command requests,
             # then releases them on emergency-rescue briefing completion.
             # Its five ore-rich asteroids remain real physical economy
@@ -1088,10 +1131,15 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         # consequence of a victory. Neither Pluto IV nor the Neptune
         # blockade invokes CollectMinedMineralsForPlayer.
         if mission_stories.get(index) in (
-                "pluto_bluer_pastures", "neptune_pressing_forward",
+                "pluto_pushback", "pluto_bluer_pastures", "neptune_pressing_forward",
                 "neptune_seize_means", "uranus_on_the_offensive",
                 "uranus_new_threat"):
             mission["bank_player_minerals"] = False
+        if mission_stories.get(index) == "pluto_pushback":
+            # Pluto3Ending always advances and grants its FleetShips,
+            # regardless of the ordinary physical elimination result.
+            mission["advance_on"] = "finished"
+            mission["grant_on"] = "finished"
         if mission_stories.get(index) == "uranus_new_threat":
             # Source Uranus3Ending finishes the campaign on either outcome;
             # it unlocks hulls/modes but does not mint mined TSV rewards.
@@ -1196,6 +1244,16 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 {"ship_type": kind, "count": count, "saved_squad_id": saved_id}
                 for _, kind, count, saved_id in grants
             ]
+        if mission_stories.get(index) == "pluto_pushback":
+            if sorted(grants) != sorted([
+                (index, 12, 2, 0), (index, 7, 1, 0),
+            ]):
+                raise ValueError(
+                    "Pluto Pushback awards two unassigned Frigates and "
+                    "one unassigned Dreadnought on finished: use "
+                    "--victory-grant MISSION:12:2:0 and "
+                    "--victory-grant MISSION:7:1:0"
+                )
         if mission_stories.get(index) == "neptune_seize_means":
             # Source Neptune1Ending grants exactly five Factory FleetShips
             # to the unassigned CurrentShips reserve ONLY on victory.
@@ -1547,12 +1605,12 @@ def mission_advance(value: str) -> tuple[int, str]:
 
 def mission_story(value: str) -> tuple[int, str]:
     match = re.fullmatch(
-        r"(\d+):(neptune_seize_means|neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_offensive|uranus_on_the_defensive|uranus_new_threat)",
+        r"(\d+):(pluto_pushback|neptune_seize_means|neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_offensive|uranus_on_the_defensive|uranus_new_threat)",
         value,
     )
     if match is None or not 1 <= int(match.group(1)) <= 40:
         raise argparse.ArgumentTypeError(
-            "--mission-story needs MISSION:neptune_seize_means, neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures, uranus_on_the_offensive, uranus_on_the_defensive or uranus_new_threat"
+            "--mission-story needs MISSION:pluto_pushback, neptune_seize_means, neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures, uranus_on_the_offensive, uranus_on_the_defensive or uranus_new_threat"
         )
     return int(match.group(1)), match.group(2)
 
