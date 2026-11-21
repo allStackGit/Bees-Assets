@@ -1191,7 +1191,7 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
             ))):
         raise ValueError("native learner completion receipt disagrees with its model artifacts or actual GPU ranks")
     require_optimizer_attempt(output, result, trainer_config)
-    publish_receipt(output, "round-result.json", {
+    completed = {
         "schema_version": 1,
         "kind": "native_training_round_complete",
         **result,
@@ -1204,7 +1204,20 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
         "next_checkpoint_sha256": checkpoint_sha,
         "next_manifest": str(next_manifest),
         "next_manifest_sha256": manifest_sha,
-    })
+    }
+    publish_receipt(output, "round-result.json", completed)
+    release_completed_round(args, output, trainer_config, completed)
+
+
+def release_completed_round(args, output, trainer_config, completed):
+    if args.continual_plan is None:
+        return
+    from native_continual_session import complete_generations
+    complete_generations(output, {
+        "continual_release": args.continual_plan,
+        "learner_slot": args.learner_slot,
+        "trainer_config": {"path": str(trainer_config)},
+    }, [(output, completed)], final=True)
 
 
 def main() -> None:
@@ -1213,6 +1226,10 @@ def main() -> None:
     parser.add_argument("checkpoint", type=Path)
     parser.add_argument("trainer_config", type=Path)
     parser.add_argument("output_dir", type=Path)
+    parser.add_argument("--continual-release-plan", type=Path,
+                        help="release the committed learner checkpoint within this job allocation")
+    parser.add_argument("--resume-continual-release", action="store_true",
+                        help="resume only the authorized release of an already committed round")
     parser.add_argument("--model-manifest", type=Path,
                         help="override the run configuration's manifest for the next round")
     parser.add_argument("--learner-slot", type=int)
@@ -1383,6 +1400,37 @@ def main() -> None:
         "input_checkpoint_sha256": input_checkpoint_sha,
         "input_manifest_sha256": input_manifest_sha,
     }
+    args.continual_plan = None
+    if args.resume_continual_release and args.continual_release_plan is None:
+        parser.error("release-only recovery requires the original continual release plan")
+    if args.continual_release_plan is not None:
+        if args.collect_only or args.learner_node_rank != 0 or args.learner_slot is None:
+            parser.error("only the checkpoint-owning learner may release a native generation")
+        if args.resume_continual_release and args.resume_optimizer:
+            parser.error("release-only and optimizer recovery are distinct boundaries")
+        from native_continual_session import load_plan
+        args.continual_plan = load_plan(args.continual_release_plan, checkpoint, None,
+                                       standalone_round=True)
+        if (args.continual_plan["evaluation_device"] == "cuda:0" and
+                not args.device.startswith("cuda")):
+            parser.error("GPU release evaluation requires a GPU learner allocation")
+        result["continual_release_plan"] = args.continual_plan
+        result["continual_trainer_sha256"] = file_sha256(trainer_config)
+        if args.resume_continual_release:
+            from train_policy_session import verify_round
+            record, _, _ = verify_round(output, input_manifest_sha, input_checkpoint_sha,
+                                        args.learner_slot, args.refresh_opponent_slot)
+            if (record.get("continual_release_plan") != args.continual_plan or
+                    record.get("continual_trainer_sha256") != result["continual_trainer_sha256"]):
+                raise ValueError("release recovery differs from the original authorized plan or trainer")
+            if "rollout_bundles" in run_document:
+                if record["run_config_sha256"] != hashlib.sha256(run_bytes).hexdigest():
+                    raise ValueError("release recovery belongs to a different bundle round")
+            elif record["source_run_config_sha256"] != result["source_run_config_sha256"]:
+                raise ValueError("release recovery belongs to a different source round")
+            require_optimizer_attempt(output, record, trainer_config)
+            release_completed_round(args, output, trainer_config, record)
+            return
     if "rollout_bundles" in run_document:
         if (args.rollout_workers is not None or args.physics_workers is not None or
                 rollout_gpus is not None or args.rollout_gpu_mask is not None or

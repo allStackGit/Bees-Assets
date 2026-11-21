@@ -19,7 +19,7 @@ from bees_continual_historical import _historical_training_weights, _validate_ra
 from train_policy_session import session_lock
 
 
-def load_plan(path, initial_checkpoint, self_play):
+def load_plan(path, initial_checkpoint, self_play, *, standalone_round=False):
     path = path.resolve(strict=True)
     source = document(path)
     required = {
@@ -61,7 +61,9 @@ def load_plan(path, initial_checkpoint, self_play):
     if not store.current_compatible_champion_id():
         raise ValueError("native continual training requires an explicit trusted bootstrap")
     ratio = _validate_ratio(store.config["historical_league"]["training_ratio"])
-    if ratio > 0 and self_play is None:
+    if standalone_round and source["rounds_per_generation"] != 1:
+        raise ValueError("a Hub learner release owns exactly one completed round per generation")
+    if ratio > 0 and self_play is None and not standalone_round:
         raise ValueError("native continual historical league requires the existing self-play opponent refresh schedule")
     return {
         "historical_training_ratio": ratio,

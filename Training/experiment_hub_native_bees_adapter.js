@@ -909,7 +909,7 @@ function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
     learnerSlot, collectOnly = false, bundleInbox, modelInbox, rocrGpuUuids = {},
     evaluationRoot, evaluationSuites, gameLibrarySaveRoot, distributedOptimizer,
-    curriculumPlan,
+    curriculumPlan, continualReleasePlan,
 }) {
     if (typeof collectOnly !== 'boolean') throw Error('Invalid native Bees collection mode.');
     // Local operator-owned PCI to ROCr UUID mappings are never job parameters.
@@ -943,6 +943,28 @@ function createNativeBeesAdapter({
     const trainer = trustedFile(trainerConfig);
     const input = trustedFile(checkpoint);
     const runner = trustedFile(path.resolve(__dirname, '../native/tools/train_policy_round.py'));
+    const releasePlan = continualReleasePlan == null ? null : trustedFile(continualReleasePlan);
+    if (releasePlan && (project !== PROJECT || !Number.isSafeInteger(learnerSlot)))
+        throw Error('Only the checkpoint-owning learner can install continual release.');
+    const releaseConfig = releasePlan ? JSON.parse(fs.readFileSync(releasePlan, 'utf8')) : null;
+    if (releaseConfig && (releaseConfig.schema_version !== 1 ||
+            releaseConfig.rounds_per_generation !== 1 ||
+            !Number.isSafeInteger(releaseConfig.evaluation_physics_workers) ||
+            releaseConfig.evaluation_physics_workers < 1 || releaseConfig.evaluation_physics_workers > 128 ||
+            !['cpu', 'cuda:0'].includes(releaseConfig.evaluation_device)))
+        throw Error('A Hub release plan must specify one generation per learner job and bounded evaluation resources.');
+    const releaseSources = releasePlan ? [releasePlan,
+        ...['native_continual_session.py', 'native_continual_release.py', 'native_deployed_game.py',
+            'evaluate_native_champion.py', 'evaluate_policy.py', 'train_policy_session.py',
+            'native_session_selection.py', 'native_game_registration.py', 'native_curriculum.py',
+            'package_policy_manifest.py', 'native_bundle_receiver.py', 'transfer_policy_inputs.py']
+            .map(name => trustedFile(path.resolve(__dirname, '../native/tools', name))),
+        ...['bees_continual_learning.py', 'bees_continual_deployment.py', 'bees_continual_bootstrap.py',
+            'bees_continual_behavior_sanity.py', 'bees_continual_historical.py']
+            .map(name => trustedFile(path.resolve(__dirname, name))),
+        ...['config', 'champion_suite', 'historical_suite', 'competency_suite', 'evaluation_binary']
+            .map(key => trustedFile(path.resolve(path.dirname(releasePlan), releaseConfig[key])))
+    ] : [];
     const gpuAllocationScript = trustedFile(path.resolve(__dirname,
         '../native/tools/native_gpu_allocation.py'));
     const contractScript = trustedFile(path.resolve(__dirname,
@@ -1123,7 +1145,7 @@ function createNativeBeesAdapter({
         ...sourcePins,
         ...curriculumPins,
         ...[runner, contractScript, gpuAllocationScript,
-            ...trainingSources, ...(binary ? [binary] : []), ...gallerySources]
+            ...trainingSources, ...releaseSources, ...(binary ? [binary] : []), ...gallerySources]
             .map(file => [file, sha256(fs.readFileSync(file))]),
     ]);
     const initialGpuSupport = verifyModelDependencies(
@@ -1137,6 +1159,7 @@ function createNativeBeesAdapter({
         ...sourcePins.values(), ...curriculumPins.values()];
     if (collectOnly || distributedOptimizer?.role === 'worker') configIdentity.push(project);
     if (inbox) configIdentity.push(inbox);
+    if (releasePlan) configIdentity.push({continual_release: pins.get(releasePlan)});
     const configSha256 = sha256(JSON.stringify(configIdentity));
     // Machine-independent identity for the installed MA-POCA source contract.
     // The installed baseline checkpoint and manifest establish which native
@@ -1618,7 +1641,7 @@ function createNativeBeesAdapter({
                 optimizer_group, optimizer_inputs_sha256,
                 physics_workers, collection_id, rollout_world_start, rollout_worlds,
                 bundle_directory, refresh_opponent_slot,
-                source_run_contract_sha256, native_round_number} = parameters;
+                source_run_contract_sha256, native_round_number, continual_release} = parameters;
             if(native_round_number!==undefined&&
                 (!collectOnly||collection_id===undefined||
                  !Number.isSafeInteger(native_round_number)||
@@ -1642,6 +1665,9 @@ function createNativeBeesAdapter({
                             'native_round_number']
                         : ['config_sha256', 'seed_offset', 'optimizer_threads', 'rollout_workers',
                             'physics_workers', 'rollout_worlds', 'refresh_opponent_slot'];
+            if (releasePlan) allowed.push('continual_release');
+            if (continual_release !== undefined && (continual_release !== true || !releasePlan))
+                throw Error('Continual release requires a locally installed plan and explicit authorization.');
             if (Object.keys(parameters).some(key => !allowed.includes(key)) ||
                 config_sha256 !== configSha256 || !Number.isSafeInteger(seed_offset) || seed_offset < 0 ||
                 (bundleRound && seed_offset !== 0))
@@ -1797,7 +1823,11 @@ function createNativeBeesAdapter({
             if (context.continuation_of_job_id &&
                 context.expected_parent_model_sha256 !== inputs.checkpointDigest)
                 throw Error('Native Bees predecessor differs from the verified Hub checkpoint.');
+            if (continual_release && (releaseConfig.evaluation_physics_workers > context.cpu_quota ||
+                    (releaseConfig.evaluation_device === 'cuda:0' && !gpu)))
+                throw Error('Continual evaluation must fit the checkpoint-owner CPU and GPU lease.');
             return ['-B', runner, activeRun, inputs.checkpoint, trainer, output,
+                ...(continual_release ? ['--continual-release-plan', releasePlan] : []),
                 '--model-manifest', inputs.manifest, ...(binary ? ['--rollout-binary', binary] : []),
                 '--stage-diagnostics',
                 // Supervisor-owned exclusive GPU selection is already verified.
@@ -2042,12 +2072,24 @@ function createNativeBeesAdapter({
             const {receipt, metrics, stat} = round;
             const rollout = receipt.rollout_metrics;
             const modelTiming = rollout?.sampled_model_timing;
+            const release = context.frozen_parameters?.continual_release === true
+                ? completionReceipt(jobRoot(context), 'continual-release.json') : null;
+            if (release && (release.receipt.kind !== 'native_continual_generation_complete' ||
+                    release.receipt.schema_version !== 1 || release.receipt.round !== 1 ||
+                    release.receipt.checkpoint_sha256 !== receipt.next_checkpoint_sha256 ||
+                    typeof release.receipt.passed !== 'boolean' ||
+                    !Number.isSafeInteger(release.receipt.training_step) || release.receipt.training_step < 1))
+                throw Error('Continual release does not identify this learner checkpoint.');
             return validateProgress({
                 schema_version: 1, source: 'hub-metrics-v1',
                 experiment_id: context.job_id, segment_id: 'training',
-                source_modified_at: stat.mtime.toISOString(),
+                source_modified_at: new Date(Math.max(stat.mtimeMs, release?.stat.mtimeMs ?? 0)).toISOString(),
                 steps_completed: metrics.optimizer_input_steps,
                 metrics: {
+                    ...(release ? {
+                        continual_promotion_passed: {value: Number(release.receipt.passed), unit: 'count'},
+                        continual_training_step: {value: release.receipt.training_step, unit: 'count'},
+                    } : {}),
                     ...(rollout ? {
                         ...rolloutPhysicsMeasurements(rollout),
                         ...rolloutResourceMeasurements(rollout),
