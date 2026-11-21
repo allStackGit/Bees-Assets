@@ -1557,12 +1557,12 @@ fn collect_remote_audio(
     // Track at most the previous admitted source turret volley. The
     // canonical firing loop emits DualCannon barrels consecutively;
     // this avoids a per-tick allocation for an audio-only hash set.
-    let mut last_mount_launch: Option<(i64, u8, i64, usize)> = None;
+    let mut last_mount_launch: Option<(i64, u8, i64)> = None;
     for event in view.combat.events() {
         if let CombatEvent::GameWeaponFired { ship_id, slot, projectile_id } |
             CombatEvent::PolicyWeaponFired { ship_id, slot, projectile_id } = event
         {
-            if let Some((prior_ship, prior_slot, prior_id, index)) = last_mount_launch {
+            if let Some((prior_ship, prior_slot, prior_id)) = last_mount_launch {
                 if prior_ship == *ship_id && prior_slot == *slot &&
                     prior_id.checked_add(1) == Some(*projectile_id) &&
                     view.combat.weapon_is_dual_cannon(*ship_id, *slot)
@@ -1571,10 +1571,18 @@ fn collect_remote_audio(
                     // second projectile identity on the same side-filtered
                     // cue so the LAN client's live-shot fallback cannot
                     // replay it as a separate sound on the next snapshot.
-                    if let Some(cue) = pending.get_mut(index) {
+                    // Other high-priority cues may have displaced the
+                    // first barrel's buffered event. Only pair with that
+                    // exact surviving projectile ID; never attach the
+                    // second barrel to an unrelated cue at a stale index.
+                    if let Some(cue) = pending.iter_mut().rev().find(|cue|
+                        cue["projectile_id"].as_i64() == Some(prior_id))
+                    {
                         cue["paired_projectile_id"] = json!(projectile_id);
+                        continue;
                     }
-                    continue;
+                    // The first cue was dropped. Fall through and allow
+                    // this real second launch to play its one volley sound.
                 }
             }
         }
@@ -1753,8 +1761,7 @@ fn collect_remote_audio(
             if let CombatEvent::GameWeaponFired { ship_id, slot, projectile_id } |
                 CombatEvent::PolicyWeaponFired { ship_id, slot, projectile_id } = event
             {
-                last_mount_launch = Some((*ship_id, *slot, *projectile_id,
-                    pending.len() - 1));
+                last_mount_launch = Some((*ship_id, *slot, *projectile_id));
             }
             measurements.audio_events_queued += 1;
             measurements.retired_weapon_launch_cues += u64::from(retired_launch);
