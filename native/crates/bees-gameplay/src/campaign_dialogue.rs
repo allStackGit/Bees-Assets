@@ -259,13 +259,19 @@ impl CampaignDialogue {
                 CampaignCue::NeptunePressingForwardDefeat { has_factory: *has_factory },
             (DialogueMode::PlutoEvacuation { protected_ship_id }, _) => {
                 let status = survival.expect("Pluto evacuation requires survival");
-                let ship = world.ship(*protected_ship_id)
-                    .expect("Pluto evacuation has an authoritative HumanTarget");
+                // The protected hull may already have been retired from
+                // the active World when its lethal terminal event closed
+                // the mission. That is a destroyed shield, not a story
+                // checkpoint failure or a reason to fabricate a victory.
+                let (shield_health, shield_max) = world.ship(*protected_ship_id)
+                    .map(|ship| (ship.vitals.health().max(0),
+                        ship.vitals.max_health()))
+                    .unwrap_or((0, 3000));
                 CampaignCue::PlutoEvacuationComplete {
                     personnel_saved: (status.elapsed_seconds / 5.0)
                         .floor().clamp(0.0, 60.0) as u32,
-                    shield_health: ship.vitals.health(),
-                    shield_max: ship.vitals.max_health(),
+                    shield_health,
+                    shield_max,
                 }
             },
         }
