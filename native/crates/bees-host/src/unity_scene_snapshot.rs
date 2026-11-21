@@ -113,12 +113,54 @@ fn uranus_defensive_mining_matches_source(
 fn uranus_defensive_waves_match_source(
     waves: &[crate::reinforcements::NativeReinforcementPlan],
     ai_home: Vec2,
+    bee_side: i32,
+    squads: &[NativeSourceSquad],
+    entities: &[NativeAuthoredEntity],
 ) -> bool {
     use crate::reinforcements::NativeReinforcementActivation::AfterSeconds;
     if waves.len() != 9 { return false; }
     let timed = |wave: &crate::reinforcements::NativeReinforcementPlan, at: f32|
         matches!(wave.activation, AfterSeconds(seconds)
             if (seconds - at).abs() <= 0.0001);
+    // All three wave families consist of genuine source SavedSquads.
+    // The fifth upper wave may prefix surviving mixed veteran squads,
+    // but its newly generated formations must retain the source suffix.
+    const ORDINARY: &[(u8, usize)] =
+        &[(16, 1), (14, 2), (21, 2), (15, 4), (15, 4)];
+    const LATE_UPPER: &[(u8, usize)] =
+        &[(14, 2), (21, 6), (15, 8), (3, 2), (16, 4)];
+    const LOWER: &[(u8, usize)] =
+        &[(14, 2), (21, 6), (15, 8), (22, 4), (22, 4), (16, 4)];
+    let by_squad: HashMap<_, _> = squads.iter()
+        .map(|squad| (squad.item_id, squad)).collect();
+    let by_ship: HashMap<_, _> = entities.iter().filter_map(|entity| match entity {
+        NativeAuthoredEntity::Ship(ship) => Some((ship.entity_id, ship)),
+        _ => None,
+    }).collect();
+    let composition = |wave: &crate::reinforcements::NativeReinforcementPlan,
+                       required: &[(u8, usize)], veterans: bool| -> bool {
+        let mut actual = Vec::with_capacity(wave.squad_item_ids.len());
+        let mut seen = HashSet::new();
+        for squad_id in &wave.squad_item_ids {
+            let Some(squad) = by_squad.get(squad_id) else { return false };
+            if squad.side != bee_side || squad.members.is_empty() {
+                return false;
+            }
+            let mut uniform = None;
+            let mut mixed = false;
+            for id in &squad.members {
+                if !seen.insert(*id) { return false; }
+                let Some(ship) = by_ship.get(id) else { return false };
+                if ship.side != bee_side { return false; }
+                if uniform.is_some_and(|kind| kind != ship.ship_type) { mixed = true; }
+                uniform = Some(ship.ship_type);
+            }
+            actual.push((if mixed { None } else { uniform }, squad.members.len()));
+        }
+        let fixed = required.iter().map(|&(kind, count)|
+            (Some(kind), count)).collect::<Vec<_>>();
+        if veterans { actual.ends_with(&fixed) } else { actual == fixed }
+    };
     let Some(initial) = waves.iter().find(|wave| timed(wave, 120.0)) else {
         return false;
     };
@@ -141,15 +183,28 @@ fn uranus_defensive_waves_match_source(
         for wave in waves.iter().filter(|wave| timed(wave, at)) {
             let (Some(start), Some(entry)) = (wave.spawn, wave.entry)
                 else { return false };
-            if start.unity_equal(upper_start) && entry.unity_equal(upper_entry) {
-                upper += 1;
-            } else if start.unity_equal(lower_start) &&
-                entry.unity_equal(lower_entry)
-            {
-                lower += 1;
-            } else {
-                return false;
-            }
+            let route_upper = start.unity_equal(upper_start) &&
+                entry.unity_equal(upper_entry);
+            let route_lower = start.unity_equal(lower_start) &&
+                entry.unity_equal(lower_entry);
+            let (required, veterans) = match (at as u32, route_upper, route_lower) {
+                (120 | 240, true, false) => (ORDINARY, false),
+                (360, true, false) =>
+                    (&[(22, 4), (22, 4), (14, 2), (21, 4), (15, 4)][..], false),
+                (480, true, false) =>
+                    (&[(22, 6), (22, 6), (14, 2), (16, 4)][..], false),
+                (480, false, true) =>
+                    (&[(21, 4), (14, 2), (21, 4)][..], false),
+                (540, true, false) => (LATE_UPPER, true),
+                (540, false, true) => (LOWER, false),
+                (600, true, false) => (LATE_UPPER, false),
+                (600, false, true) =>
+                    (&[(14, 2), (21, 6), (15, 8), (22, 4), (22, 4),
+                       (3, 2), (16, 4)][..], false),
+                _ => return false,
+            };
+            if !composition(wave, required, veterans) { return false; }
+            if route_upper { upper += 1; } else { lower += 1; }
         }
         if (upper, lower) != (upper_count, lower_count) { return false; }
     }
@@ -2863,7 +2918,9 @@ impl NativePhysicalScene {
                     usize::try_from(bee_side - 1).ok()
                         .and_then(|index| home.get(index))
                         .is_some_and(|ai|
-                            uranus_defensive_waves_match_source(&setup.reinforcements, *ai))) =>
+                            uranus_defensive_waves_match_source(
+                                &setup.reinforcements, *ai, bee_side,
+                                &self.source_squads, &self.entities))) =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::UranusNewThreat {
                 player_side, barges, ..
