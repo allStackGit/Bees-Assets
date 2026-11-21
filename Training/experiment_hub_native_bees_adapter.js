@@ -270,8 +270,10 @@ function optimizerResourceMeasurements(report, prefix, resources) {
         // Driver-backed ROCm card sensors, scoped to the actual HIP PCI
         // device. Missing Windows/NVIDIA counters remain unreported.
         ['physical_gpu_hwmon_power_watts','physical_gpu_power_watts','watts'],
-        ['physical_gpu_hwmon_temp1_celsius','physical_gpu_temp1_celsius','scalar'],
+        ['physical_gpu_hwmon_temp1_celsius','physical_gpu_temperature_celsius','scalar'],
         ['physical_gpu_hwmon_junction_celsius','physical_gpu_junction_celsius','scalar'],
+        ['physical_gpu_nvml_power_watts','physical_gpu_power_watts','watts'],
+        ['physical_gpu_nvml_temp_celsius','physical_gpu_temperature_celsius','scalar'],
     ]) {
         const sample = resources.samples[source];
         if (sample == null) continue;
