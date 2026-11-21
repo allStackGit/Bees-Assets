@@ -16,6 +16,7 @@ pub enum EpisodeTerminalError {
     InvalidSurvivalObjective,
     InvalidDemolitionObjective,
     InvalidEscortObjective,
+    InvalidEliminationGate,
     InvalidStep,
 }
 
@@ -292,6 +293,11 @@ pub struct NativeEpisodeTerminal {
     survival: Option<ArmedSurvival>,
     demolition: Option<ArmedDemolition>,
     escort: Option<ArmedEscort>,
+    /// A source Level may enable victory on a side's elimination only
+    /// after a timed final reinforcement callback. The underlying
+    /// CombatWorld remains authoritative for live and reserved ships.
+    #[serde(default)]
+    delayed_elimination: Option<(i32, u64)>,
     elapsed_seconds: f32,
     completed: Option<EpisodeTerminalResult>,
     /// A SquadRetired event would have eliminated an active side, but
@@ -309,6 +315,7 @@ impl NativeEpisodeTerminal {
         self.bee_side == recovered.bee_side &&
         self.human_side == recovered.human_side &&
         self.timeout_seconds == recovered.timeout_seconds &&
+        self.delayed_elimination == recovered.delayed_elimination &&
         self.survival.as_ref().map(|v| (
             v.objective.defending_side, v.objective.protected_ship_id,
             v.objective.seconds, v.deadline_tick,
@@ -336,6 +343,9 @@ impl NativeEpisodeTerminal {
         self.elapsed_seconds.is_finite() &&
         self.elapsed_seconds >= 0.0 &&
         self.measurements.ticks_observed <= completed_ticks &&
+        self.delayed_elimination.is_none_or(|(side, tick)|
+            [self.bee_side, self.human_side].contains(&side) && tick > 0 &&
+            tick < u64::MAX) &&
         self.completed.is_none_or(|result|
             result.duration_seconds.is_finite() &&
             result.duration_seconds >= 0.0 &&
@@ -364,11 +374,35 @@ impl NativeEpisodeTerminal {
         }
         Ok(Self {
             bee_side, human_side, timeout_seconds, survival: None, demolition: None,
-            escort: None,
+            escort: None, delayed_elimination: None,
             elapsed_seconds: 0.0, completed: None,
             deferred_elimination: false,
             measurements: EpisodeTerminalMeasurements::default(),
         })
+    }
+
+    /// The authored campaign can arm a victory trigger only after its
+    /// last reinforcement callback. Ordinary elimination still resolves
+    /// the *other* side immediately, and extraction always takes priority.
+    /// This suppresses the selected side's early elimination without
+    /// reserving fictitious ships or altering physical combat.
+    pub fn defer_side_elimination_until_after(
+        &mut self, side: i32, seconds: f32, fixed_dt_seconds: f32,
+    ) -> Result<(), EpisodeTerminalError> {
+        let tick = (f64::from(seconds) / f64::from(fixed_dt_seconds)).floor() + 1.0;
+        if self.delayed_elimination.is_some() || self.survival.is_some() ||
+            self.demolition.is_some() || self.escort.is_some() ||
+            self.measurements.ticks_observed != 0 ||
+            ![self.bee_side, self.human_side].contains(&side) ||
+            self.timeout_seconds.is_some_and(|timeout| seconds >= timeout) ||
+            !seconds.is_finite() || seconds <= 0.0 ||
+            !fixed_dt_seconds.is_finite() || fixed_dt_seconds <= 0.0 ||
+            !tick.is_finite() || tick < 1.0 || tick >= (u64::MAX - 1) as f64
+        {
+            return Err(EpisodeTerminalError::InvalidEliminationGate);
+        }
+        self.delayed_elimination = Some((side, tick as u64));
+        Ok(())
     }
 
     pub fn arm_survival(
@@ -785,9 +819,19 @@ impl NativeEpisodeTerminal {
         // conditions; only ordinary SquadRetired elimination is deferred.
         let bee_waiting = world.has_reserved_future_ships_on_side(self.bee_side);
         let human_waiting = world.has_reserved_future_ships_on_side(self.human_side);
-        let bee_eliminated = bee_dead && !bee_waiting;
-        let human_eliminated = human_dead && !human_waiting;
-        if squad_was_retired || self.deferred_elimination || extraction_outcome.is_some() {
+        // An authored victory trigger may not exist until the final wave
+        // has been constructed. Evaluate after that wave's admission tick:
+        // the Level deploys reinforcements after this terminal pass.
+        let gate_due = self.delayed_elimination.is_some_and(|(_, last_wave_tick)|
+            self.measurements.ticks_observed == last_wave_tick + 1);
+        let suppressed = |side| self.delayed_elimination.is_some_and(
+            |(gated_side, last_wave_tick)|
+                gated_side == side && self.measurements.ticks_observed <= last_wave_tick
+        );
+        let bee_eliminated = bee_dead && !bee_waiting && !suppressed(self.bee_side);
+        let human_eliminated = human_dead && !human_waiting && !suppressed(self.human_side);
+        if squad_was_retired || self.deferred_elimination ||
+            extraction_outcome.is_some() || gate_due {
             self.measurements.elimination_checks += 1;
             // Recheck on subsequent ticks only while a currently empty
             // faction waits for its real reserved hulls. Once they arrive,
