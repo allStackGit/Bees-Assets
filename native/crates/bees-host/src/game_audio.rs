@@ -23,6 +23,7 @@ use crate::presentation::{NativeRenderWorldView, NativeShipExplosionSound};
 use crate::unity_scene_snapshot::NativeMusicLocation;
 
 const MAX_EFFECT_VOICES: usize = 16;
+const MAX_ACTIVE_WARP_AUDIO: usize = 16;
 const MAX_NEW_EFFECTS_PER_FRAME: usize = 8;
 const MUSIC_VOLUME: f32 = 0.14;
 const EFFECT_VOLUME: f32 = 0.30;
@@ -34,18 +35,20 @@ enum Effect {
     LightLaser, LightLaserAlt, SmallLaser, SmallLaserAlt,
     BigLaser, BigLaserAlt, BeamCannon, FlagshipLaser, QueenLaser,
     RocketLaunch, StrikerBomb, Explosion, SmallExplosion, MediumExplosion,
-    LargeExplosion, HugeExplosion, Warp, Button, FireBargeClick, Intercom,
+    LargeExplosion, HugeExplosion, Warp, WarpGateStarting, WarpGateLoop,
+    Button, FireBargeClick, Intercom,
 }
 
 impl Effect {
-    const ALL: [Self; 20] = [
+    const ALL: [Self; 22] = [
         Self::LightLaser, Self::LightLaserAlt,
         Self::SmallLaser, Self::SmallLaserAlt,
         Self::BigLaser, Self::BigLaserAlt,
         Self::BeamCannon, Self::FlagshipLaser, Self::QueenLaser, Self::RocketLaunch,
         Self::StrikerBomb, Self::Explosion, Self::SmallExplosion,
         Self::MediumExplosion, Self::LargeExplosion, Self::HugeExplosion,
-        Self::Warp, Self::Button, Self::FireBargeClick, Self::Intercom,
+        Self::Warp, Self::WarpGateStarting, Self::WarpGateLoop,
+        Self::Button, Self::FireBargeClick, Self::Intercom,
     ];
 
     fn file(self) -> &'static str {
@@ -67,6 +70,8 @@ impl Effect {
             Self::LargeExplosion => "Larger Explosion.mp3",
             Self::HugeExplosion => "Largest Explosion.mp3",
             Self::Warp => "Enter The Warp.mp3",
+            Self::WarpGateStarting => "Warp Gate Opening.mp3",
+            Self::WarpGateLoop => "Warp Gate Loop.mp3",
             Self::Button => "Beez Button Click.mp3",
             Self::FireBargeClick => "Fire Barge Detonation Click.mp3",
             Self::Intercom => "Intercom Notification Sound Effect.mp3",
@@ -170,6 +175,11 @@ pub struct NativeAudioMeasurements {
     pub sound_clips_missing: usize,
     pub sound_effects_started: u64,
     pub sound_effects_dropped: u64,
+    /// Real source WarpGate activation and ChangeSpriteLoop playback.
+    pub warp_gate_openings_started: u64,
+    pub warp_gate_loops_started: u64,
+    pub warp_gate_voices_stopped: u64,
+    pub warp_gate_voices_dropped: u64,
     pub music_tracks_started: u64,
     pub music_tracks_missing: u64,
     pub missed_visualized_ticks: u64,
@@ -187,6 +197,11 @@ pub struct NativeGameAudio {
     last_tick: Option<u64>,
     // Last seen physical tick, not a second projectile identity allocator.
     seen_projectiles: HashMap<i64, u64>,
+    // UI-only WarpGate opening/looping clips, bound to the actual
+    // CombatWorld gate lifetime. Never stored in a policy/checkpoint.
+    seen_warp_gates: HashMap<i64, u64>,
+    warp_gate_openings: HashMap<i64, Sink>,
+    warp_gate_loops: HashMap<i64, Sink>,
     paused: bool,
     muted: bool,
     measurements: NativeAudioMeasurements,
@@ -223,7 +238,11 @@ impl NativeGameAudio {
             handle, root, effects,
             voices: Vec::new(), music: Vec::new(), location: None,
             current_episode: None, last_tick: None,
-            seen_projectiles: HashMap::new(), paused: false, muted: false,
+            seen_projectiles: HashMap::new(),
+            seen_warp_gates: HashMap::new(),
+            warp_gate_openings: HashMap::new(),
+            warp_gate_loops: HashMap::new(),
+            paused: false, muted: false,
             measurements, _stream: stream,
         }
     }
@@ -241,6 +260,12 @@ impl NativeGameAudio {
         let effect_volume = if self.muted { 0.0 } else { EFFECT_VOLUME };
         for sink in &self.music { sink.set_volume(music_volume); }
         for sink in &self.voices { sink.set_volume(effect_volume); }
+        for sink in self.warp_gate_openings.values() {
+            sink.set_volume(effect_volume);
+        }
+        for sink in self.warp_gate_loops.values() {
+            sink.set_volume(effect_volume);
+        }
         self.muted
     }
 
@@ -250,6 +275,10 @@ impl NativeGameAudio {
         // Unity's AudioController pauses its soundtrack while gameplay is
         // paused. Short sound effects finish independently of the clock.
         for sink in &self.music {
+            if paused { sink.pause(); } else { sink.play(); }
+        }
+        for sink in self.warp_gate_openings.values()
+            .chain(self.warp_gate_loops.values()) {
             if paused { sink.pause(); } else { sink.play(); }
         }
     }
