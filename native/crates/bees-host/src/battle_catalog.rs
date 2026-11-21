@@ -459,6 +459,14 @@ impl CampaignProgress<'_> {
         self.squad_names.get(&saved_squad_id).map(String::as_str)
     }
 
+    pub fn squad_label(&self, saved_squad_id: i64) -> String {
+        let label = format!("Squad #{saved_squad_id}");
+        match self.squad_name(saved_squad_id) {
+            Some(name) => format!("{label} ({name})"),
+            None => label,
+        }
+    }
+
     pub fn created_squads_for_side(&self, side: i32) -> Vec<NativeCreatedSquad> {
         self.created_squads.iter().copied().filter(|squad|
             squad.side == side).collect()
