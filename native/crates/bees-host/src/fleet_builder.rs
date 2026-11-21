@@ -1682,6 +1682,31 @@ pub(super) fn archive(
     ));
     if let Some(size) = selected.arena_size {
         apply_native_arena(&mut scene, &mut run, &mut cloned, size)?;
+        // Move the original physical fleet and free Carrier complements
+        // together, maintaining all authored relative hull/weapon offsets.
+        // Clones resolve against these shifted source ships in the SAME
+        // native layout installer. The shared Stage homes now match real
+        // initial player/HiveMind positions rather than empty map space.
+        let target_home = size as f64 * 0.25;
+        for ship in scene["ships"].as_array_mut()
+            .ok_or_else(|| invalid("native arena lost its physical ship list"))?
+        {
+            let side = ship["side"].as_i64()
+                .ok_or_else(|| invalid("native arena hull has no faction"))?;
+            let shift = match side {
+                1 => 75.0 - target_home,
+                2 => target_home - 75.0,
+                _ => return Err(invalid("native arena contains an unknown faction").into()),
+            };
+            let position = ship["position"].as_array_mut()
+                .ok_or_else(|| invalid("native arena hull lacks a physical position"))?;
+            let x = position.first().and_then(Value::as_f64)
+                .ok_or_else(|| invalid("native arena hull has no valid X coordinate"))?;
+            if !x.is_finite() {
+                return Err(invalid("native arena hull has invalid position").into());
+            }
+            position[0] = json!(x + shift);
+        }
         // Both modes are physical Level rules; saved fleet training
         // materializes exactly these game scene bytes before PPO ownership.
         scene["lethal_map_borders"] = json!(selected.lethal_borders);
@@ -1737,6 +1762,8 @@ pub(super) fn archive(
         }
     }
     run["levels"][0]["native_layout"] = serde_json::to_value(&cloned)?;
+    let extraction_x = selected.arena_size
+        .map_or(125.0, |size| size as f32 * 0.25 + 50.0);
     let mut deferred_squads = Vec::new();
     if matches!(selected.objective, Objective::Survival) {
         let defender = selected.objective_side.ok_or_else(||
@@ -1752,7 +1779,7 @@ pub(super) fn archive(
             invalid("extraction and escort require a real objective faction"))?;
         run["levels"][0]["extraction"] = json!({
             "player_side": player,
-            "center": [if player == 1 { 125.0 } else { -125.0 }, 0.0],
+            "center": [if player == 1 { extraction_x } else { -extraction_x }, 0.0],
             "half_extents": [6.0, 6.0],
             "activation_radius": 10.0,
             "layer": 19,
@@ -1958,7 +1985,7 @@ pub(super) fn archive(
                 // exact Level move command and extraction trigger, rather
                 // than awarding the benchmark an artificial win.
                 vec![json!({"kind": "move_to_point", "destination": [
-                    if side == 0 { 125.0 } else { -125.0 }, 0.0,
+                    if side == 0 { extraction_x } else { -extraction_x }, 0.0,
                 ]})]
             } else if mission_owner &&
                 matches!(selected.objective, Objective::Escort) &&
@@ -1968,7 +1995,7 @@ pub(super) fn archive(
                 // Its remaining allies protect it using the original
                 // squad combat strategies.
                 vec![json!({"kind": "move_to_point", "destination": [
-                    if side == 0 { 125.0 } else { -125.0 }, 0.0,
+                    if side == 0 { extraction_x } else { -extraction_x }, 0.0,
                 ]})]
             } else if mission_owner &&
                 matches!(selected.objective, Objective::Escort)
