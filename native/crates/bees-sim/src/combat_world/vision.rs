@@ -89,16 +89,30 @@ impl CombatWorld {
             self.obstacles.len() != self.physics.obstacles().len() {
             return Err(VisionError::StorageMismatch);
         }
-        for (ship, body) in self.ships.iter().zip(self.physics.ships()) {
-            if ship.entity_id != body.id {
+        // CombatWorld appends both authoritative hull and physics body
+        // under the same slot at spawn, and retirement leaves historical
+        // slots inactive. Rechecking EVERY dead lifetime here each fixed
+        // tick made long HiveMind/MA-POCA battles progressively slower.
+        // Keep a strict identity check for every currently active physical
+        // slot; the immutable retired history is checked on restore.
+        for &index in self.physics.active_ship_indices() {
+            let (Some(ship), Some(body)) =
+                (self.ships.get(index), self.physics.ships().get(index))
+                else { return Err(VisionError::StorageMismatch) };
+            if !body.active || ship.entity_id != body.id {
                 return Err(VisionError::StorageMismatch);
             }
         }
-        for (obstacle, body) in self.obstacles.iter().zip(self.physics.obstacles()) {
-            if obstacle.entity_id != body.id {
+        for &index in self.physics.active_obstacle_indices() {
+            let (Some(obstacle), Some(body)) =
+                (self.obstacles.get(index), self.physics.obstacles().get(index))
+                else { return Err(VisionError::StorageMismatch) };
+            if !body.active || obstacle.entity_id != body.id {
                 return Err(VisionError::StorageMismatch);
             }
         }
+        let live_storage_checks = self.physics.active_ship_indices().len()
+            + self.physics.active_obstacle_indices().len();
         self.vision_observer_ids.clear();
         for observer in observers {
             if observer.ship_id <= 0 {
@@ -123,6 +137,7 @@ impl CombatWorld {
         self.vision_live_enemy_sides.clear();
         let mut counts = VisionSweepCounts::default();
         counts.completed_sweeps = 1;
+        counts.live_storage_identity_checks = live_storage_checks as u64;
         // An observer's ship and obstacle discovery sets are independent.
         // Process all obstacles while the ONE grid owns obstacle hulls,
         // then all ship sightings while it owns ship hulls. Only genuine
