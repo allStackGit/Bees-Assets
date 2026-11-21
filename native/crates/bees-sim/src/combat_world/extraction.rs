@@ -95,6 +95,10 @@ impl CombatWorld {
         ))
     }
 
+    pub fn extraction_is_withdrawal(&self) -> bool {
+        self.extraction.as_ref().is_some_and(|state| state.zone.retreat_on_exit)
+    }
+
     /// Read-only physical withdrawal outcome for campaign progression.
     /// A military defeat with no actual extraction never qualifies.
     pub fn extraction_retreat_completed(&self) -> bool {
