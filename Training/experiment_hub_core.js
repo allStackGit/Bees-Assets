@@ -6209,6 +6209,8 @@ class ExperimentHub {
         const next=copy(this.state);
         const root=next.jobs.find(j=>j.id===value.job_id);
         if(!root)throw Error('Job not found; refresh Train.');
+        if(root.adapter!=='unconfigured'||root.project_id==='ants')
+            throw Error('Only native Experiment Hub job records can be deleted here.');
         if(['tinybrains_rollout','courier_lineage'].includes(root.project_id))
             throw Error('Delete a remote collector through its original learner group.');
         const sidecars=next.jobs.filter(j=>
