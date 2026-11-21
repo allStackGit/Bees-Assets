@@ -2200,6 +2200,24 @@ pub(super) fn archive(
         selected.objective_side.unwrap_or(0),
         selected.ore_count, u8::from(selected.fog_of_war),
     ));
+    // A change in terrain, physical border rules or map scale changes
+    // gameplay and training outcomes. Keep those source parameters in
+    // the saved run identity for comparable replays and experiments.
+    let arena_label = selected.arena_size
+        .map_or_else(|| "source".to_owned(), |size| size.to_string());
+    let terrain_label = match selected.terrain {
+        Terrain::Open => "open",
+        Terrain::Original => "original",
+        Terrain::Cover => "cover",
+        Terrain::DenseCover => "dense-cover",
+    };
+    let run_id = run["run_id"].as_str()
+        .ok_or_else(|| invalid("native fleet has no saved run identity"))?;
+    run["run_id"] = json!(format!(
+        "{run_id}-arena{arena_label}-{terrain_label}-borders{}",
+        if selected.arena_size.is_none() { "source" }
+        else if selected.lethal_borders { "lethal" } else { "solid" },
+    ));
     if selected.ai_both || !matches!(selected.ai_tactics,
         [AiTactics::Aggressive, AiTactics::Aggressive])
     {
