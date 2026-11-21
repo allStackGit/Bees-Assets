@@ -437,6 +437,25 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     "player_side": args.player_side, "has_factory": False,
                 }
             }
+        elif story == "pluto_bluer_pastures":
+            objective = level.get("survival")
+            target = next((ship for ship in scene["ships"]
+                           if isinstance(objective, dict) and
+                           ship.get("entity_id") == objective.get("protected_ship_id")), None)
+            if (scene.get("native_game_schema") != 1 or
+                    scene.get("human_side") != args.player_side or
+                    not isinstance(objective, dict) or
+                    objective.get("defending_side") != args.player_side or
+                    not isinstance(objective.get("seconds"), (int, float)) or
+                    abs(objective["seconds"] - 300.49) > 0.01 or
+                    target is None or target.get("ship_type") != 23 or
+                    target.get("side") != args.player_side or
+                    any(level.get(name) is not None for name in
+                        ("demolition", "escort", "extraction"))):
+                raise ValueError(
+                    "Pluto evacuation requires the native 300.49-second "
+                    "physical HumanTarget survival mission"
+                )
 
     def record_enemy_fleet_source(scene: dict) -> None:
         if not args.persist_enemy_losses:
@@ -554,6 +573,10 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         }
         if args.persist_enemy_losses:
             mission["persist_enemy_fleet_losses"] = True
+        if mission_stories.get(index) == "pluto_bluer_pastures":
+            mission["evacuation_rewards"] = True
+            mission["advance_on"] = "finished"
+            mission["grant_on"] = "finished"
         if mission_stories.get(index) == "neptune_pressing_forward":
             # Level.Campaign.Endings.Neptune3Ending permanently marks all
             # Factory FleetShips dead on a loss, including owned reserves.
@@ -570,7 +593,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         if mission_advances.get(index, "victory") == "finished":
             mission["advance_on"] = "finished"
         if mission_grants.get(index) == "finished":
-            if mission_advances.get(index, "victory") != "finished":
+            if mission_advances.get(index, "victory") != "finished" and \
+                    mission_stories.get(index) != "pluto_bluer_pastures":
                 raise ValueError(
                     f"mission {index} completion-based rewards require --mission-advance {index}:finished"
                 )
@@ -634,6 +658,15 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 {"ship_type": kind, "count": count, "saved_squad_id": saved_id}
                 for _, kind, count, saved_id in grants
             ]
+        if mission_stories.get(index) == "pluto_bluer_pastures":
+            quotas = {18: 5, 13: 8, 12: 4, 7: 2}
+            counts = {kind: sum(count for _, actual, count, _ in grants
+                                if actual == kind) for kind in quotas}
+            if counts != quotas or any(kind not in quotas for _, kind, _, _ in grants):
+                raise ValueError(
+                    "Pluto evacuation must source its maximum Scout 5, "
+                    "Gunship 8, Frigate 4, Dreadnought 2 rewards"
+                )
         for new_id in awarded_this_mission:
             granted_squad_origin[new_id] = index
         variant_provenance = {}
@@ -890,10 +923,10 @@ def mission_advance(value: str) -> tuple[int, str]:
 
 
 def mission_story(value: str) -> tuple[int, str]:
-    match = re.fullmatch(r"(\d+):(neptune_pressing_forward)", value)
+    match = re.fullmatch(r"(\d+):(neptune_pressing_forward|pluto_bluer_pastures)", value)
     if match is None or not 1 <= int(match.group(1)) <= 40:
         raise argparse.ArgumentTypeError(
-            "--mission-story needs MISSION:neptune_pressing_forward"
+            "--mission-story needs MISSION:neptune_pressing_forward or MISSION:pluto_bluer_pastures"
         )
     return int(match.group(1)), match.group(2)
 
