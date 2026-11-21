@@ -417,6 +417,21 @@ impl CampaignProgress<'_> {
         self.authored_roster.get(&fleet_id).map(|owner| owner.current_saved_squad_id)
     }
 
+    /// Deletion affects only vacant generated SavedSquads, never original
+    /// authored squads or the identities of their career records.
+    pub fn can_retire_saved_squad(&self, side: i32, id: i64) -> bool {
+        matches!(side, 1 | 2) && id > 0 &&
+        self.created_squads.iter().any(|squad|
+            squad.side == side && squad.saved_squad_id == id) &&
+        !self.retired_squad_ids.contains(&id) &&
+        !self.created_squads.iter().any(|squad|
+            squad.template_saved_squad_id == id) &&
+        !self.purchases.iter().any(|(_, ship)|
+            ship.saved_squad_id == id) &&
+        !self.authored_roster.values().any(|owner|
+            owner.current_saved_squad_id == id)
+    }
+
     pub fn created_squads_for_side(&self, side: i32) -> Vec<NativeCreatedSquad> {
         self.created_squads.iter().copied().filter(|squad|
             squad.side == side).collect()
@@ -713,17 +728,7 @@ impl BattleCatalog {
     ) -> io::Result<()> {
         let campaign_id = self.campaign_id.as_deref()
             .ok_or_else(|| invalid("SavedSquad deletion requires a native campaign"))?;
-        if !matches!(side, 1 | 2) || saved_squad_id <= 0 ||
-            !progress.created_squads.iter().any(|squad|
-                squad.side == side && squad.saved_squad_id == saved_squad_id) ||
-            progress.retired_squad_ids.contains(&saved_squad_id) ||
-            progress.created_squads.iter().any(|squad|
-                squad.template_saved_squad_id == saved_squad_id) ||
-            progress.purchases.iter().any(|(_, ship)|
-                ship.saved_squad_id == saved_squad_id) ||
-            progress.authored_roster.values().any(|owner|
-                owner.current_saved_squad_id == saved_squad_id)
-        {
+        if !progress.can_retire_saved_squad(side, saved_squad_id) {
             return Err(invalid("delete only an empty created SavedSquad not needed by another squad"));
         }
         commit_campaign_edit(output, "squad-retire-", "retirement.json",
