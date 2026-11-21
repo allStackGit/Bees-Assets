@@ -3040,6 +3040,19 @@ impl NativePhysicalScene {
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             _ => {}
         }
+        // Uranus II installs its Bee-defeat victory trigger only after
+        // the sixth 600-second wave. If the Bee fleet is exhausted sooner,
+        // the player can still mine or withdraw, and the native episode
+        // must not end before that final physical callback. The shared
+        // terminal checks the real roster one tick after wave admission.
+        if matches!(setup.campaign_dialogue,
+            Some(CampaignDialogueSpec::UranusDefensive { .. }))
+        {
+            episode.defer_side_elimination_until_after(
+                bee_side, 600.0, self.fixed_dt_seconds,
+            ).map_err(NativeSnapshotError::Episode)
+             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        }
         if let Some(objective) = setup.survival {
             let target_is_live_ally = self.entities.iter().any(|entity| matches!(
                 entity,
