@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit
 
 from package_policy_manifest import (
     export_model, verify_package as verify_policy_package,
@@ -46,6 +47,60 @@ PROTECTED_SOURCE_NAMES = {
     "target", ".git", "__pycache__",
 }
 
+
+
+def validate_portable_hivemind(value: dict | None) -> None:
+    """Permit native gameplay's original HiveMind connection, never a saved session.
+
+    Network commands still run through the real native WebSocket worker and
+    CombatWorld; a release carries no bearer credential or remembered server
+    game identity. Apply the same contract when creating and verifying it.
+    """
+    if value is None:
+        return
+    allowed = {
+        "endpoint", "user_id", "version", "auth_ticket_env",
+        "allow_insecure_loopback", "reconnect_game_id",
+        "issue_source_commands", "shutdown_flush_seconds",
+    }
+    if not isinstance(value, dict) or set(value) - allowed:
+        raise ValueError("invalid native release HiveMind configuration")
+    endpoint = value.get("endpoint")
+    if not isinstance(endpoint, str) or not endpoint or any(
+            ord(char) < 33 for char in endpoint):
+        raise ValueError("native release HiveMind endpoint is invalid")
+    try:
+        url = urlsplit(endpoint)
+        host = url.hostname
+        port = url.port
+    except ValueError as error:
+        raise ValueError("native release HiveMind endpoint is invalid") from error
+    if (not host or url.username is not None or url.password is not None or
+            url.query or url.fragment or
+            (port is not None and port == 0) or
+            (url.path and not url.path.startswith("/"))):
+        raise ValueError("native release must not contain HiveMind endpoint credentials")
+    local = host.lower() in ("localhost", "127.0.0.1", "::1")
+    if url.scheme != "wss" and not (
+            url.scheme == "ws" and local and
+            value.get("allow_insecure_loopback") is True):
+        raise ValueError("native release HiveMind requires verified WSS or explicit loopback WS")
+    if value.get("reconnect_game_id") is not None:
+        raise ValueError("portable HiveMind games cannot reuse a server GameId")
+    ticket = value.get("auth_ticket_env")
+    if ticket is not None and (
+            not isinstance(ticket, str) or
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", ticket) is None):
+        raise ValueError("native release HiveMind ticket must reference an environment variable")
+    if (type(value.get("user_id")) is not int or
+            not 0 < value["user_id"] < 2**64 or
+            type(value.get("version")) not in (float, int) or
+            not 0 < value["version"] < 1e6 or
+            type(value.get("issue_source_commands", False)) is not bool or
+            type(value.get("allow_insecure_loopback", False)) is not bool or
+            type(value.get("shutdown_flush_seconds", 5)) is not int or
+            not 0 <= value.get("shutdown_flush_seconds", 5) <= 3600):
+        raise ValueError("invalid native HiveMind gameplay configuration")
 
 
 def executable_target(source: Path) -> tuple[str, str]:
@@ -289,11 +344,12 @@ def package_game_library(
                         pending.append(((PurePosixPath(path.parent.as_posix()) /
                                          route["config"]).as_posix(), "run"))
         elif kind == "run":
-            if data.get("hivemind") or data.get("model_updates") or (
+            validate_portable_hivemind(data.get("hivemind"))
+            if data.get("model_updates") or (
                     data.get("recover_notifications") or
                     data.get("recover_outcome_journals")):
                 raise ValueError(
-                    f"Desktop release requires an offline, immutable Level: {label}"
+                    f"Desktop release must not depend on a prior training or server session: {label}"
                 )
             manifest = data.get("model_manifest")
             if manifest:
@@ -653,8 +709,11 @@ def verify_native_package(directory: Path) -> dict:
                         ))
         elif kind == "run":
             count_runs += 1
-            if data.get("hivemind") or data.get("model_updates") or data.get("policy_capture"):
-                raise ValueError("packaged native game contains a live training or Hub dependency")
+            validate_portable_hivemind(data.get("hivemind"))
+            if (data.get("model_updates") or data.get("policy_capture") or
+                    data.get("recover_notifications") or
+                    data.get("recover_outcome_journals")):
+                raise ValueError("packaged native game depends on training or prior session state")
             for level in data["levels"]:
                 pending.append((owned_link(file, level["scene"], "scene"), "scene"))
             if data.get("collision_matrix") or data.get("stage_palette"):
