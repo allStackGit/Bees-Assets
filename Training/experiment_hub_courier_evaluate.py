@@ -33,12 +33,13 @@ def read_suite(file):
     return suite
 
 
-def evaluate(project, checkpoint, digest, config_file, suite, work):
+def evaluate(project, checkpoint, digest, config_file, suite, work, *, with_metrics=False):
     with pinned_runtime("courier", suite, project):
-        return _evaluate(project, checkpoint, digest, config_file, suite, work)
+        return _evaluate(project, checkpoint, digest, config_file, suite, work,
+                         with_metrics=with_metrics)
 
 
-def _evaluate(project, checkpoint, digest, config_file, suite, work):
+def _evaluate(project, checkpoint, digest, config_file, suite, work, *, with_metrics=False):
     config = read_bounded(config_file, 256 * 1024)
     if hashlib.sha256(config).hexdigest() != suite["config_sha256"]:
         raise ValueError("Courier environment did not match the suite SHA-256.")
@@ -61,7 +62,29 @@ def _evaluate(project, checkpoint, digest, config_file, suite, work):
     alive = report["alive"]
     if type(alive) is not int or not 0 <= alive <= suite["trials"] or report["trials"] != suite["trials"]:
         raise ValueError("Invalid Courier survival counts.")
-    return alive
+    if not with_metrics:
+        return alive
+    # Both single-courier and colony evaluators publish these report fields;
+    # colony-specific feeding and birth rates are optional.
+    fields = {
+        "survival_rate": "ratio",
+        "mean_lifespan": "scalar",
+        "mean_survival_score": "scalar",
+        "mean_deliveries": "scalar",
+        "total_deliveries": "count",
+        "pickup_rate": "ratio",
+        "mean_steps_per_delivery": "scalar",
+        "gross_energy_per_step": "scalar",
+        "mean_reward": "scalar",
+        "mean_feedings": "scalar",
+        "mean_births": "scalar",
+    }
+    metrics = {}
+    for name, unit in fields.items():
+        value = report.get(name)
+        if value is not None:
+            metrics[name] = {"value": value, "unit": unit}
+    return {"successes": alive, "metrics": metrics}
 
 
 def main():
@@ -84,14 +107,15 @@ def main():
                 raise ValueError("Use evaluator directories separate from the project and policy directory.")
         suite = read_suite(args.suite)
         with tempfile.TemporaryDirectory(prefix="courier-eval-", dir=scratch) as work:
-            alive = evaluate(project, checkpoint, args.checkpoint_sha256, args.config, suite, Path(work))
+            outcome = evaluate(project, checkpoint, args.checkpoint_sha256, args.config,
+                               suite, Path(work), with_metrics=True)
         receipt = {
             "schema_version": 1, "suite_id": suite["suite_id"], "suite_sha256": suite_digest(suite),
             "dispatch_id": args.dispatch_id, "checkpoint_sha256": args.checkpoint_sha256,
-            "trials": suite["trials"], "successes": alive,
+            "trials": suite["trials"], **outcome,
         }
         print(publish(receipts, receipt))
-        print(f"Courier held-out survival: {alive}/{suite['trials']} at {suite['horizon']} ticks")
+        print(f"Courier held-out survival: {outcome['successes']}/{suite['trials']} at {suite['horizon']} ticks")
         return 0
     except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
         print(f"Courier evaluation failed: {exc}", file=sys.stderr)

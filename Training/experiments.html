@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Experiment Hub</title>
+<link rel="icon" type="image/svg+xml" href="/experiment-hub-beaker.svg">
 <style>
 :root {
     color-scheme: light;
@@ -49,6 +50,8 @@ header {
     padding: 2px 0 16px;
     margin-bottom: 14px;
 }
+.hub-brand-title { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.hub-brand-icon { display: block; width: clamp(36px, 5vw, 60px); height: auto; flex: 0 0 auto; }
 header small {
     display: block;
     margin-top: 10px;
@@ -159,13 +162,27 @@ select[multiple].hub-metric-source.is-enhanced { display: none; }
     position: sticky;
     top: 0;
     z-index: 1;
-    padding: 7px 8px;
+    display: block;
+    width: 100%;
+    min-height: 36px;
+    height: auto;
+    padding: 8px 10px;
     margin: 7px 0 3px;
     background: var(--paper);
+    border: 0;
     border-bottom: 1px solid var(--ink);
+    text-align: left;
+    white-space: normal;
     font-size: 13px;
-    font-weight: 900;
+    line-height: 1.45;
+    font-weight: 800;
+    text-transform: none;
+    letter-spacing: normal;
+    cursor: pointer;
 }
+.hub-metric-group-title:hover,
+.hub-metric-group-title:focus-visible { background: #ebebeb; }
+.hub-metric-group-title[aria-pressed="true"] { border-bottom-width: 2px; }
 .hub-metric-choice {
     display: flex;
     align-items: center;
@@ -351,6 +368,8 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 .hub-standalone { border: 2px solid var(--ink); padding: 12px; margin: 14px 0; }
 .hub-standalone h3 { margin: 0 0 8px; font-size: 17px; }
 .hub-table td { white-space: normal; }
+/* Configuration row actions use the same spacing rhythm as the tab and form controls. */
+#hub-config-rows td:last-child button { margin: 0 9px 9px 0; }
 .hub-pipeline-stage {
     display: grid;
     grid-template-columns: minmax(160px, 1fr) minmax(220px, 1fr) auto;
@@ -360,12 +379,46 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 }
 .hub-pipeline-stage label { min-width: 0; }
 .hub-pipeline-stage select, .hub-pipeline-stage input { width: 100%; }
+.hub-pipeline-curriculum-label { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; line-height: 1.4; }
+.hub-pipeline-curriculum-label[hidden] { display: none; }
+.hub-pipeline-stage .hub-pipeline-curriculum { width: auto; flex: 0 0 auto; margin: 0; }
 @media (max-width: 720px) {
     .hub-pipeline-stage { grid-template-columns: 1fr; }
 }
 .hub-notice { font-size: 12px; font-weight: 700; border-bottom: 2px solid var(--ink); padding: 6px 0; }
 .hub-controls { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 10px; }
  .hub-controls button { flex: 0 1 auto; }
+.hub-design-editor { margin: 14px 0; display: grid; gap: 16px; }
+.hub-design-editor fieldset { min-width: 0; margin: 0; padding: 14px; }
+.hub-design-editor legend { font-size: 15px; font-weight: 900; padding: 0 6px; }
+.hub-design-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,240px),1fr)); gap: 14px 18px; }
+.hub-design-grid label { display: block; min-width: 0; }
+.hub-design-grid label small { display: block; margin-top: 4px; font-weight: 400; }
+.hub-design-grid > .hub-design-note { grid-column: 1 / -1; }
+.hub-design-grid label.hub-design-checkbox {
+    display: grid;
+    grid-template-columns: 19px minmax(0, 1fr);
+    column-gap: 10px;
+    row-gap: 4px;
+    align-content: start;
+    cursor: pointer;
+}
+.hub-design-grid .hub-design-checkbox input[type="checkbox"] {
+    grid-column: 1; grid-row: 1;
+    margin: 0; align-self: start;
+}
+.hub-design-checkbox-text {
+    grid-column: 2; grid-row: 1;
+    min-width: 0; line-height: 1.35;
+}
+.hub-design-grid label.hub-design-checkbox small {
+    grid-column: 2; grid-row: 2; margin-top: 0;
+}
+.hub-design-note { margin: 0; padding: 6px 0; }
+#hub-config-advanced { margin: 14px 0; border: 1px solid var(--ink); padding: 12px; }
+#hub-config-advanced summary { font-weight: 800; cursor: pointer; }
+#hub-config-advanced textarea { margin-top: 8px; font-family: monospace; font-size: 13px; }
+#hub-config-rows td:last-child { min-width: 170px; }
 #benchmark-target-controls .benchmark-target-toggle {
     display: flex; flex-direction: row; align-items: flex-start;
     gap: 8px; cursor: pointer;
@@ -434,6 +487,18 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     margin: 0;
     padding: 0;
 }
+.hub-compare-chart-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 20px;
+    margin: 10px 0 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--ink);
+    background: var(--paper);
+}
+.hub-compare-chart-controls-title { font-weight: 800; font-size: 13px; }
+.hub-compare-chart-controls .hub-plot-rolling-size-label { font-size: 12px; font-weight: 700; }
 .hub-progress-plot {
     position: relative;
     min-width: 0;
@@ -446,6 +511,29 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 .hub-progress-plot svg { display: block; width: 100%; height: 330px; max-height: none; }
 .hub-plot-header { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
 .hub-plot-toggles { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+.hub-plot-rolling-controls {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.hub-plot-rolling-size-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    white-space: nowrap;
+}
+.hub-plot-rolling-size-label input[type="number"] {
+    flex: 0 0 68px;
+    width: 68px;
+    min-width: 68px;
+    height: 30px;
+    padding: 4px 6px;
+    margin: 0;
+    font-size: 13px;
+    text-align: right;
+}
 .hub-plot-header h3 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
 .hub-plot-description { margin: 6px 0 10px; font-size: 12px; line-height: 1.45; }
 .hub-plot-average-toggle {
@@ -465,7 +553,18 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     margin: 0;
 }
 .hub-plot-legend { display: flex; gap: 7px 18px; flex-wrap: wrap; font-size: 12px; padding: 5px 0 0; }
-.hub-plot-legend-entry { display: inline-flex; align-items: baseline; gap: 7px; }
+.hub-plot-legend-entry {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    cursor: pointer;
+}
+.hub-plot-legend-entry input[type="checkbox"] {
+    flex: 0 0 19px;
+    width: 19px;
+    height: 19px;
+}
 .hub-plot-legend-swatch { display: inline-block; flex: 0 0 20px; width: 20px; border-top: 4px solid; }
 .hub-plot-tooltip {
     position: absolute;
@@ -473,8 +572,9 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     pointer-events: none;
     width: min(460px, calc(100% - 16px));
     max-width: calc(100% - 16px);
-    max-height: min(65vh, 520px);
+    max-height: min(270px, 44vh);
     overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 9px 12px;
     border: 2px solid var(--ink);
     background: var(--paper);
@@ -483,7 +583,22 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     font: 12px/1.5 Arial, Helvetica, sans-serif;
     overflow-wrap: anywhere;
 }
-.hub-plot-tooltip-heading { font-weight: 900; margin-bottom: 7px; }
+.hub-plot-tooltip-pinned { pointer-events: auto; cursor: auto; }
+.hub-plot-tooltip-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-weight: 900;
+    margin-bottom: 4px;
+}
+.hub-plot-tooltip-unpin {
+    flex: 0 0 auto;
+    min-height: 28px;
+    height: 28px;
+    font-size: 11px;
+    padding: 2px 7px;
+}
 .hub-plot-tooltip-run { padding: 7px 0; border-top: 1px solid var(--ink); }
 .hub-plot-tooltip-run-title {
     display: flex;
@@ -497,8 +612,27 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 .hub-progress-plot .plot-axis { stroke: #000; stroke-width: 2; }
 .hub-progress-plot .plot-grid { stroke: #ddd; stroke-width: 1; }
 .hub-progress-plot .plot-line { fill: none; stroke-width: 3; }
-.hub-progress-plot .plot-average { stroke-width: 2; opacity: .85; }
-.hub-progress-plot .plot-rolling { stroke-width: 2.5; stroke-dasharray: 3 5; fill: none; opacity: .9; }
+.hub-progress-plot .plot-average-halo {
+    stroke: white;
+    stroke-width: 8;
+    stroke-dasharray: 8 5;
+}
+.hub-progress-plot .plot-average {
+    stroke-width: 4;
+    stroke-dasharray: 8 5;
+    opacity: 1;
+}
+.hub-progress-plot .plot-rolling-halo {
+    stroke: white;
+    stroke-width: 7;
+    fill: none;
+}
+.hub-progress-plot .plot-rolling {
+    stroke-width: 3.5;
+    stroke-dasharray: 3 5;
+    fill: none;
+    opacity: 1;
+}
 .hub-progress-plot .plot-rolling-point { stroke: var(--paper); stroke-width: 1.5; }
 .hub-progress-plot .plot-crosshair { stroke: #555; stroke-width: 1.5; stroke-dasharray: 4 4; }
 .hub-progress-plot .plot-hover-area { cursor: crosshair; }
@@ -508,10 +642,182 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     #hub-compare-actions { align-items: stretch; }
     #hub-compare-actions label { width: 100%; }
 }
+
+/* Common rhythm: readable labels and distinct form/action groups. */
+:root { --control-height: 40px; }
+body { font-size: 14px; line-height: 1.5; }
+label { font-size: 13px; line-height: 1.4; }
+small { font-size: 12px; line-height: 1.45; }
+.muted, .hub-notice { font-size: 13px; line-height: 1.5; }
+th { font-size: 12px; }
+button { font-size: 13px; }
+.formgrid { gap: 16px 18px; }
+.formgrid > label { min-width: min(100%, 210px); }
+.formgrid > label.wide { flex-basis: 370px; }
+label input:not([type="checkbox"]), label select, label textarea { margin-top: 7px; }
+label small { display: block; margin-top: 6px; font-weight: 500; }
+.hub-standalone { padding: 18px; margin: 16px 0; }
+.hub-standalone h3 { margin-bottom: 12px; }
+.hub-standalone > p { margin: 10px 0 14px; }
+.hub-standalone > label { margin: 12px 0; }
+.hub-standalone > button { margin: 8px 9px 8px 0; }
+.hub-controls { gap: 10px; margin: 14px 0 4px; }
+fieldset { min-width: 0; }
+fieldset > button { margin: 12px 9px 0 0; }
+fieldset > .formgrid { margin-bottom: 12px; }
+.hub-design-editor { gap: 18px; }
+.hub-design-grid { gap: 16px 20px; }
+.hub-design-grid label { font-size: 13px; }
+.hub-design-grid label small { font-size: 12px; line-height: 1.4; }
+.hub-design-grid .hub-design-checkbox input[type="checkbox"] { margin-top: 1px; }
+
+/* Identity, resources, and the tall metric selector occupy independent columns. */
+.hub-job-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(360px, .9fr);
+    gap: 20px;
+    align-items: start;
+}
+.hub-job-primary { display: grid; gap: 18px; min-width: 0; align-content: start; }
+.hub-job-identifiers {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 14px 18px;
+    align-items: start;
+}
+.hub-job-identifiers > label { min-width: 0; }
+.hub-job-identifiers .hub-curriculum-choice { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 1.4; }
+.hub-job-identifiers .hub-curriculum-choice[hidden] { display: none; }
+.hub-job-identifiers .hub-curriculum-choice input[type="checkbox"] { width: auto; flex: 0 0 auto; margin: 0; }
+.hub-job-json { display: block; min-width: 0; }
+.hub-job-json textarea { min-height: 100px; }
+.hub-resource-builder { min-width: 0; margin: 0; padding: 14px; }
+.hub-resource-builder legend { padding: 0 6px; font-size: 14px; font-weight: 800; }
+.hub-resource-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 205px), 1fr));
+    gap: 16px 18px;
+    align-items: stretch;
+}
+.hub-resource-fields > label {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    justify-content: flex-end;
+    font-size: 13px;
+}
+.hub-resource-fields > label > input, .hub-resource-fields > label > select {
+    flex: none; margin-top: auto; min-width: 0;
+}
+.hub-resource-builder .hub-controls { margin: 14px 0 6px; }
+.hub-resource-builder p { margin: 10px 0; }
+.hub-job-layout .hub-metric-field { min-width: 0; }
+.hub-job-layout .hub-metric-picker { margin-bottom: 10px; }
+#hub-job-queue-actions { margin: 16px 0 10px; }
+
+/* Metric selection stays legible without excessive height or clipped chips. */
+.hub-metric-picker { padding: 14px; font-size: 14px; }
+.hub-metric-toolbar { gap: 9px; }
+.hub-metric-toolbar button { font-size: 12px; }
+.hub-metric-selected-items { gap: 7px; max-height: 220px; }
+.hub-metric-selected-chip {
+    height: auto;
+    min-height: 32px;
+    padding: 6px 9px;
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: normal;
+}
+.hub-metric-options { height: clamp(230px, 32vh, 360px); }
+.hub-metric-choice { gap: 10px; padding: 9px 7px; }
+.hub-metric-count { font-size: 13px; }
+
+/* Explicit checkbox rows and table actions, independent of inline whitespace. */
+.hub-toggle-list { display: grid; gap: 6px; margin: 14px 0 4px; }
+label.hub-toggle-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+    min-height: 30px;
+    margin: 0;
+    padding: 6px 0;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.45;
+    cursor: pointer;
+}
+label.hub-toggle-row > input[type="checkbox"] {
+    flex: 0 0 19px;
+    margin: 1px 0 0;
+}
+#hub-automation-machines { margin: 12px 0; }
+#hub-automation-machines label { font-size: 13px; font-weight: 650; line-height: 1.45; }
+#hub-job-rows td:last-child { min-width: 195px; white-space: normal; }
+#hub-job-rows td:last-child button {
+    height: auto;
+    min-height: 36px;
+    margin: 0 8px 9px 0;
+    padding: 7px 10px;
+    white-space: normal;
+    text-align: left;
+    vertical-align: top;
+}
+#hub-config-rows td:last-child button { margin: 0 9px 9px 0; }
+@media (max-width: 1050px) {
+    .hub-job-layout { grid-template-columns: minmax(0, 1fr); }
+    .hub-job-layout .hub-metric-field { max-width: 780px; }
+}
+@media (max-width: 650px) {
+    .hub-standalone { padding: 12px; }
+    .hub-resource-fields { grid-template-columns: minmax(0, 1fr); }
+    .hub-job-identifiers { grid-template-columns: minmax(0, 1fr); }
+    .hub-metric-picker { padding: 10px; }
+    .hub-controls { gap: 8px; }
+}
+
+/* The TinyBrains editor is generated at runtime, but uses the same form grid. */
+#hub-config-form > .formgrid > label:only-child {
+    flex: 0 1 520px;
+    max-width: 100%;
+}
+.hub-tinybrains-picker {
+    min-width: 0;
+    margin: 0 0 16px;
+    padding: 16px;
+}
+.hub-tinybrains-picker legend {
+    padding: 0 6px;
+    font-size: 15px;
+    font-weight: 800;
+}
+.hub-tinybrains-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: 16px 20px;
+    max-width: 1100px;
+    align-items: start;
+}
+.hub-tinybrains-fields > label { min-width: 0; }
+.hub-tinybrains-fields > label:first-child,
+.hub-tinybrains-fields > label:last-child { grid-column: 1 / -1; }
+.hub-tinybrains-fields > label.hub-tinybrains-remote {
+    grid-column: 1 / -1;
+    padding: 6px 0;
+    align-items: center;
+}
+.hub-tinybrains-fields > label.hub-tinybrains-remote input[type="checkbox"] {
+    margin: 0;
+}
+.hub-tinybrains-picker > .hub-controls { margin: 16px 0 0; }
+/* Project default actions are separate from the crowded search toolbar. */
+.hub-metric-default-actions { margin: 12px 0 8px; gap: 10px; }
+.hub-metric-default-actions button { min-height: var(--control-height); height: auto; }
+#hub-job-metric-default-status { margin: 6px 0 10px; }
 </style>
 </head>
 <body>
-<header><div><h1>Experiment Hub</h1><small>Independent projects · unified training management</small></div>
+<header><div><div class="hub-brand-title"><h1>Experiment Hub</h1><img class="hub-brand-icon" src="/experiment-hub-beaker.svg" width="60" height="60" alt="" aria-hidden="true"></div><small>Independent projects · unified training management</small></div>
 <div class="bar" id="bees-controls"><button id="start" class="primary">Run queue</button><button id="pause">Pause for maintenance</button><button id="update-workers" hidden>Update worker software</button><button id="rebuild-unity" hidden>Rebuild Unity (experimental)</button><button id="resume" class="primary" hidden>Resume training</button><button id="stop" class="danger">Stop safely</button></div></header>
 
 <nav class="hub-tabs" role="tablist" aria-label="Experiment Hub navigation">
@@ -530,18 +836,84 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <h3>Saved configuration</h3>
     <form id="hub-config-form">
       <div class="formgrid">
-        <label>Configuration name<input id="hub-config-name" maxlength="100" required placeholder="Aiming baseline — beta 0.001"></label>
-        <label class="wide">Parameters (JSON)<textarea id="hub-config-json" rows="9" required>{}</textarea></label>
+        <label>Configuration name<input id="hub-config-name" maxlength="100" required placeholder="Experiment configuration"></label>
+      </div>
+      <p id="hub-design-availability" class="muted" role="status"></p>
+      <div class="hub-design-editor" id="hub-design-editor" hidden>
+        <p id="hub-design-source" class="muted hub-design-note"></p>
+        <fieldset id="hub-design-run-panel">
+          <legend>Run settings</legend>
+          <div class="hub-design-grid" id="hub-design-run"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Training hyperparameters</legend>
+          <div class="hub-design-grid" id="hub-design-training"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Training environment parameters</legend>
+          <div class="hub-design-grid" id="hub-design-environment"></div>
+        </fieldset>
+        <div class="hub-controls"><button type="button" id="hub-design-reset">Reset parameters to project defaults</button></div>
+      </div>
+      <details id="hub-config-advanced">
+        <summary>Advanced: view or edit parameters (JSON)</summary>
+        <p class="muted">The typed controls and JSON represent the same frozen configuration. Unsupported or unapproved overrides cannot execute.</p>
+        <label>Parameters (JSON)<textarea id="hub-config-json" rows="9" required>{}</textarea></label>
+      </details>
+      <div class="formgrid">
         <fieldset class="wide" id="hub-config-evaluation" hidden>
-          <legend>Independent evaluation stop (optional)</legend>
-          <label>Approved suite ID <input id="hub-evaluation-suite" maxlength="48" placeholder="heldout"></label>
+          <legend>Independent checkpoint evaluation (optional)</legend>
+          <label>Evaluation mode
+            <select id="hub-evaluation-mode">
+              <option value="monitor">Monitor results without stopping training</option>
+              <option value="stop">Stop when the evaluation target is met</option>
+            </select>
+          </label>
+          <label id="hub-evaluation-optional-stop-label"><input id="hub-evaluation-optional-stop" type="checkbox"> Also stop training if all monitored suite success targets pass on one verified checkpoint</label>
+          <label id="hub-evaluation-frequency-label">Evaluate every N training updates / rounds
+            <input id="hub-evaluation-frequency" type="number" min="1" max="1000000" step="1" value="10">
+          </label>
+          <label id="hub-evaluation-minutes-label">Minimum elapsed minutes between completed evaluations (optional)
+            <input id="hub-evaluation-minutes" type="number" min="1" max="10080" step="1" placeholder="No clock limit">
+          </label>
+          <label id="hub-evaluation-baseline-label"><input id="hub-evaluation-baseline" type="checkbox" checked> Evaluate first available checkpoint (baseline)</label>
+          <label id="hub-evaluation-final-label"><input id="hub-evaluation-final" type="checkbox" checked> Evaluate verified final checkpoint (if available)</label>
+          <label id="hub-evaluation-regression-enable-label"><input id="hub-evaluation-regression-enable" type="checkbox"> Detect sustained regression in independent success rate</label>
+          <label id="hub-evaluation-regression-stop-label"><input id="hub-evaluation-regression-stop" type="checkbox"> Stop training on confirmed independent regression (explicit opt-in; requires verified checkpoint history)</label>
+          <label id="hub-evaluation-regression-window-label">Compare first and latest N independently evaluated checkpoints per suite
+            <input id="hub-evaluation-regression-window" type="number" min="2" max="20" step="1" value="3">
+          </label>
+          <label id="hub-evaluation-regression-drop-label">Minimum absolute success-rate decline (0–1)
+            <input id="hub-evaluation-regression-drop" type="number" min="0.001" max="1" step="any" value="0.15">
+          </label>
+          <small class="muted wide">Regression detection uses complete archived receipts with identical suite and evaluator-runtime fingerprints, a minimum measured drop, and conservative uncertainty bounds. Optional Stop requests native checkpoint verification and never authorizes promotion or continuation by itself. Insufficient or incompatible evidence cannot stop training.</small>
+          <label>Approved suite ID <input id="hub-evaluation-suite" maxlength="48" list="hub-evaluation-suite-options" placeholder="heldout"></label>
+          <datalist id="hub-evaluation-suite-options"></datalist>
+          <small class="muted wide" id="hub-evaluation-available-suites">Connected evaluator suites are listed as suggestions. Enter a known approved suite ID when its worker is offline.</small>
           <label>Suite SHA-256 (optional) <input id="hub-evaluation-digest" maxlength="64" pattern="[0-9a-f]{64}"></label>
           <label>Minimum trials <input id="hub-evaluation-trials" type="number" min="1" max="1000000" step="1" placeholder="100"></label>
-          <label>Minimum success rate (0–1) <input id="hub-evaluation-rate" type="number" min="0" max="1" step="any" placeholder="0.8"></label>
-          <label class="wide">All required benchmark suites (JSON array; use instead of the single-suite fields)
+          <label id="hub-evaluation-rate-label">Minimum success rate (0–1, stop mode only) <input id="hub-evaluation-rate" type="number" min="0" max="1" step="any" placeholder="0.8"></label>
+          <div class="wide" id="hub-evaluation-more-suites"></div>
+          <div class="hub-controls wide">
+            <button id="hub-evaluation-add-suite" type="button">Add another evaluation suite</button>
+          </div>
+          <small class="muted wide">Monitoring can require both new checkpoint updates and a minimum wall-clock interval. The clock interval does not create checkpoints or postpone an eligible final checkpoint. Additional suites can override either the shared update interval or the minimum minutes between evaluations when monitoring without stopping. Differing update or time intervals use independently scheduled one-suite evaluator services. Success-based stopping retains one checkpoint-coherent batch and does not allow per-suite schedule overrides.</small>
+          <fieldset class="wide" id="hub-evaluation-measurements-panel">
+            <legend>Independent evaluation chart priorities</legend>
+            <div id="hub-evaluation-measurements" class="hub-controls"></div>
+            <small class="muted">Choose which validated, project-reported outcomes appear first in Metrics and Compare. Independent evaluators still record every available receipt measurement, even if not selected. This preference does not control evaluation execution, stopping, candidate ranking or promotion.</small>
+          </fieldset>
+          <details class="wide">
+            <summary>Advanced: edit the multi-suite list as JSON instead</summary>
+            <p class="muted">Clear the individual suite fields above when using JSON. The editor uses the same validated suite definitions.</p>
             <textarea id="hub-evaluation-all-of" rows="5" placeholder='[{"suite_id":"short","min_trials":100,"min_success_rate":0.8},{"suite_id":"long","min_trials":100,"min_success_rate":0.7}]'></textarea>
-          </label>
-          <p class="muted wide">All suites must pass independently on the same checkpoint SHA-256. Supply 2–8 distinct suites, with optional per-suite hashes. An unqualified or mismatched checkpoint cannot advance the experiment.</p>
+          </details>
+          <p class="muted wide">Monitoring records results throughout training, with an optional success-based Stop using the same frozen suites and cadence. Disabling baseline skips the first available checkpoint; disabling final evaluation is only allowed without automatic stopping. Stop targets require a success threshold for every suite; all must pass on one verified checkpoint. Use 2–8 distinct suites for a batch. In advanced JSON, include min_success_rate only when stopping is enabled.</p>
+          <div class="hub-controls wide">
+            <button type="button" id="hub-evaluation-save-project-defaults">Save monitoring setup as project default</button>
+            <button type="button" id="hub-evaluation-clear-project-defaults">Clear project evaluation default</button>
+          </div>
+          <p id="hub-evaluation-default-status" class="muted wide" role="status">Project defaults apply only to new configurations. Existing saved configurations and running jobs are unchanged.</p>
         </fieldset>
       </div>
       <div class="hub-controls">
@@ -564,7 +936,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
         <label>Name<input id="hub-new-project-name" required placeholder="Ants"></label>
         <label class="wide">Description<input id="hub-new-project-description" placeholder="Independent simulation and training system"></label>
       </div>
-      <button type="submit">Add project</button>
+      <div class="hub-controls"><button type="submit">Add project</button></div>
       <p class="muted">Project registration does not install executable code. Only trusted server-side adapters may launch jobs.</p>
     </form>
   </div>
@@ -634,19 +1006,17 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
   <p class="hub-notice">Queue frozen configurations, coordinate resource claims, and explicitly start or stop native jobs on supported Linux or Windows machines with a locally installed, opted-in trusted adapter. Real-host native execution requires qualification. CPU jobs can use enforced CPU/RAM limits; opted-in CUDA/ROCm execution requires verified device identity and platform-specific authorization; dual-GPU TinyBrains uses two exclusively pinned devices and the separately qualified split-PPO runtime. Cooperative Windows CUDA and locally approved Linux ROCm GPU sharing use allocator VRAM budgets; GPU compute shares are advisory and neither backend provides hard GPU memory isolation. Bees training stays under its existing operator.</p>
   <div class="hub-standalone">
     <h3>Queue a saved configuration</h3>
-    <div class="formgrid">
+    <div class="hub-job-layout">
+      <div class="hub-job-primary">
+        <div class="hub-job-identifiers">
       <label>Saved configuration<select id="hub-job-configuration"></select></label>
+      <label>Run name (optional)<input id="hub-job-run-name" type="text" maxlength="100" placeholder="e.g. 12 CPUs · gpu1 · baseline" autocomplete="off"><small>Labels this job for Train and Compare. Does not change the saved configuration or training.</small></label>
       <label>Continue previous job (optional)<select id="hub-job-predecessor"></select></label>
-      <div class="hub-metric-field">
-        <label for="hub-job-metrics">Metrics to retain in Hub comparison history (optional)</label>
-        <select id="hub-job-metrics" class="hub-metric-source" multiple size="12" aria-label="Metrics to retain in Hub comparison history"></select>
-        <div id="hub-job-metric-picker" class="hub-metric-picker" aria-label="Search and select job metrics"></div>
-        <small>New jobs start with a project-specific set of learning-quality and training-speed metrics. Adjust them for this job or use <strong>Use project defaults</strong> to restore the preset. Leave all unchecked to prioritize observed host CPU/GPU measurements, followed by project metrics within the 96-field chart limit. Metrics not reported by the trainer remain unavailable; device busy and VRAM are host-wide. The underlying project history is unaffected.</small>
-      </div>
-      <label class="wide">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
-      <fieldset class="wide">
+        </div>
+        <label class="hub-job-json">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
+      <fieldset class="hub-resource-builder">
         <legend>Resource allocation builder (optional)</legend>
-        <div class="formgrid">
+        <div class="hub-resource-fields">
           <label>CPU slots<input id="hub-build-cpus" type="number" min="1" max="4096" step="1" value="2"></label>
           <label>RAM MiB<input id="hub-build-ram" type="number" min="128" max="100000000" step="1" value="2048"></label>
           <label>GPU count (native: 0, 1, or approved 2)<input id="hub-build-gpu-count" type="number" min="0" max="2" step="1" value="0"></label>
@@ -659,13 +1029,27 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
           <label>Shared VRAM per GPU (MiB)<input id="hub-build-share-vram" type="number" min="1" max="1000000" step="1" value="2048" disabled></label>
           <label>Shared GPU compute budget (%)<input id="hub-build-share-compute" type="number" min="1" max="100" step="1" value="50" disabled></label>
         </div>
-        <button type="button" id="hub-build-resources">Fill resource JSON</button>
+        <div class="hub-controls"><button type="button" id="hub-build-resources">Fill resource JSON</button></div>
         <p class="muted">This replaces only the editable JSON above; it does not queue, reserve or start anything. Exact GPU IDs must match the connected machine registration. Shared compute budgets are advisory, not enforced performance guarantees.</p>
         <p class="hub-notice" id="hub-build-message" role="status"></p>
       </fieldset>
+      </div>
+      <div class="hub-metric-field">
+        <label for="hub-job-metrics">Metrics to retain in Hub comparison history (optional)</label>
+        <select id="hub-job-metrics" class="hub-metric-source" multiple size="12" aria-label="Metrics to retain in Hub comparison history"></select>
+        <div id="hub-job-metric-picker" class="hub-metric-picker" aria-label="Search and select job metrics"></div>
+        <div class="hub-controls hub-metric-default-actions">
+          <button type="button" id="hub-job-save-metric-defaults">Save selection as project defaults</button>
+          <button type="button" id="hub-job-reset-metric-defaults">Restore built-in defaults</button>
+        </div>
+        <p id="hub-job-metric-default-status" class="muted" role="status">New jobs use this project's metric defaults.</p>
+        <small>Only metrics supported by the selected configuration and connected trainer, or previously recorded for that revision, are listed. Saving applies to future jobs across the project; unavailable defaults remain saved but are not selectable for this configuration. Use <strong>Use project defaults</strong> to discard one-job changes. An empty selection lets the Hub prioritize available host and trainer measurements. Existing jobs and full project history are unchanged.</small>
+      </div>
     </div>
-    <button type="button" id="hub-job-queue">Queue job</button>
-    <button type="button" id="hub-job-preview">Preview queued placements</button>
+    <div class="hub-controls" id="hub-job-queue-actions">
+      <button type="button" id="hub-job-queue">Queue job</button>
+      <button type="button" id="hub-job-preview">Preview queued placements</button>
+    </div>
     <p id="hub-job-message" class="hub-notice" role="status">No work scheduled or executing.</p>
     <div class="hub-standalone" id="hub-resource-bundle-panel">
       <h3>Reserve a multi-machine resource bundle</h3>
@@ -682,9 +1066,9 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <h3 id="hub-pipeline-title">Queue a multi-job pipeline</h3>
       <label>Relationship between jobs
         <select id="hub-pipeline-kind">
-          <option value="independent">Independent fresh jobs (no shared checkpoint)</option>
-          <option value="batch">Independent trials (no dependency)</option>
-          <option value="continuation">TinyBrains checkpoint-continuation stages</option>
+          <option value="batch">Independent trials (can run concurrently)</option>
+          <option value="independent">Fresh jobs in sequence (wait for predecessor)</option>
+          <option value="continuation">Checkpoint continuation (sequential, inherited model)</option>
         </select>
       </label>
       <p class="muted" id="hub-pipeline-description">Choose two or more saved configurations. Queueing is atomic and does not authorize execution.</p>
@@ -711,8 +1095,8 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <h3>Coordinate queued workload capacity</h3>
       <p class="muted">These operations only claim capacity within the Hub ledger. They do not isolate CPU/RAM/GPUs, launch a process, or guarantee unused resources on the host. Only presently connected machines are eligible for new claims. Claims survive disconnects and restarts.</p>
       <label>Preferred machine for a new or moved claim<select id="hub-job-machine"></select></label>
-      <label><input type="checkbox" id="hub-native-release-on-terminal"> Release the next started job’s claim after verified finish or Stop</label>
-      <button type="button" id="hub-job-allocate-all">Coordinate all eligible queued jobs</button>
+      <label class="hub-toggle-row"><input type="checkbox" id="hub-native-release-on-terminal"> Release the next started job’s claim after verified finish or Stop</label>
+      <div class="hub-controls"><button type="button" id="hub-job-allocate-all">Coordinate all eligible queued jobs</button></div>
       <p class="muted">Use Stage move on each job to review several changes together. Apply staged moves can swap jobs between full hosts.</p>
       <ul id="hub-claim-moves" aria-label="Staged claim moves"></ul>
       <button type="button" id="hub-apply-claim-moves" disabled>Apply staged moves</button>
@@ -723,14 +1107,18 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <p class="muted">Optional, disabled by default. Arm specific enrolled machines to automatically claim CPU/RAM budget, start only jobs with fresh authenticated native readiness, and release capacity after confirmed finished/stopped reports. One durable transition per pass. The scheduler stops on uncertain or failed jobs, agent replacement, or disconnect; restart disarms by default unless explicitly authorized below. GPU Starts require the option below. Linux ROCm requires a current kernel device-access proof and supports locally approved exclusive or cooperative GPU use. Windows CUDA uses a pinned physical UUID. Approved TinyBrains jobs can share a GPU with cooperative PyTorch allocator VRAM ceilings; GPU compute budgets are advisory and neither backend provides hard GPU memory isolation. Bees training stays under its existing operator. The Hub does not measure or reserve capacity consumed by unmanaged workloads on a host.</p>
       <p class="muted">Select only machines where you have accounted for existing Bees workers and other processes. Native service execution requires separately installed and verified adapters, including a completed OS preflight.</p>
       <div id="hub-automation-machines" class="hub-notice">No eligible native machines connected.</div>
-      <label><input type="checkbox" id="hub-automation-adopt-running"> Re-adopt previously automated native jobs after a coordinator restart, only after the current agent freshly verifies a running or terminal dispatch</label>
-      <label><input type="checkbox" id="hub-automation-resume-after-restart"> Automatically restore CPU-only automation after coordinator or agent restart, only after fresh native inspection and lease verification; uncertain jobs require review. This does not enable startup after a machine reboot.</label>
-      <label><input type="checkbox" id="hub-automation-rebalance"> Move this session’s queued CPU and unprobed GPU claims when an armed host loses capacity or job compatibility</label>
-      <label><input type="checkbox" id="hub-automation-gpu-claim"> Claim GPU capacity (exclusive, or approved cooperative shares)</label>
-      <label><input type="checkbox" id="hub-automation-gpu-probe"> Probe approved Linux GPU claims made by this session</label>
-      <label><input type="checkbox" id="hub-automation-gpu"> Start eligible GPU jobs (exclusive or approved cooperative share)</label>
-      <button type="button" id="hub-automation-arm">Arm selected machines</button>
-      <button type="button" id="hub-automation-disarm">Disarm automation</button>
+      <div class="hub-toggle-list">
+      <label class="hub-toggle-row"><input type="checkbox" id="hub-automation-adopt-running"> Re-adopt previously automated native jobs after a coordinator restart, only after the current agent freshly verifies a running or terminal dispatch</label>
+      <label class="hub-toggle-row"><input type="checkbox" id="hub-automation-resume-after-restart"> Automatically restore CPU-only automation after coordinator or agent restart, only after fresh native inspection and lease verification; uncertain jobs require review. This does not enable startup after a machine reboot.</label>
+      <label class="hub-toggle-row"><input type="checkbox" id="hub-automation-rebalance"> Move this session’s queued CPU and unprobed GPU claims when an armed host loses capacity or job compatibility</label>
+      <label class="hub-toggle-row"><input type="checkbox" id="hub-automation-gpu-claim"> Claim GPU capacity (exclusive, or approved cooperative shares)</label>
+      <label class="hub-toggle-row"><input type="checkbox" id="hub-automation-gpu-probe"> Probe approved Linux GPU claims made by this session</label>
+      <label class="hub-toggle-row"><input type="checkbox" id="hub-automation-gpu"> Start eligible GPU jobs (exclusive or approved cooperative share)</label>
+      </div>
+      <div class="hub-controls">
+        <button type="button" id="hub-automation-arm">Arm selected machines</button>
+        <button type="button" id="hub-automation-disarm">Disarm automation</button>
+      </div>
       <p id="hub-automation-status" class="hub-notice" role="status">Automation disarmed.</p>
     </div>
   </div>
@@ -757,6 +1145,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <label for="hub-compare-metric">Chart and export metrics</label>
       <select id="hub-compare-metric" class="hub-metric-source" multiple size="12" aria-label="Metrics to chart and export"></select>
       <div id="hub-compare-metric-picker" class="hub-metric-picker" aria-label="Search and select comparison metrics"></div>
+      <small>Only metrics actually recorded by the runs currently selected for comparison are listed. Select different runs to see their available measurements.</small>
     </div>
     <label>Horizontal axis
       <select id="hub-compare-x-axis">
@@ -769,13 +1158,19 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <button type="button" id="hub-compare-add-run">Add run</button>
     <button type="button" id="hub-compare-export-csv" disabled>Export selected CSV</button>
     <button type="button" id="hub-compare-export-json" disabled>Export selected JSON</button>
-    <button type="button" id="hub-compare-export-full" disabled>Export complete job diagnostics (500 MB ZIP parts)</button>
+    <button type="button" id="hub-compare-export-full" disabled>Export complete job / historical evaluation archives (500 MB ZIP parts)</button>
     <label title="Include locally available replay files only when you run Export complete job diagnostics. Selecting this checkbox does not start an export or generate new replays."><input id="hub-compare-export-replays" type="checkbox"> Include available raw game replays in complete ZIP export</label>
   </div>
   <p id="hub-compare-replays-note" class="muted" role="status">Raw replays are excluded by default. This option only applies when you click Export complete job diagnostics; it cannot create missing replays.</p>
   <p class="muted">Complete diagnostics include original project logs and selected chart metrics. Native jobs also include every locally received Hub observation and a selected-metric CSV at that higher resolution. The Hub cannot reconstruct updates it never received; all large archives are split into individual ZIP parts.</p>
   <p id="hub-compare-export-message" class="muted" role="status"></p>
   <h3>Selected training metric charts</h3>
+  <div id="hub-compare-chart-controls" class="hub-compare-chart-controls" role="group" aria-label="Settings for all metric charts">
+    <span class="hub-compare-chart-controls-title">All charts</span>
+    <label class="hub-plot-average-toggle" title="Show the arithmetic mean of retained samples on every chart."><input id="hub-compare-all-mean" type="checkbox"> Show sample mean</label>
+    <label class="hub-plot-average-toggle" title="Show a rolling average on every chart."><input id="hub-compare-all-rolling" type="checkbox"> Rolling mean</label>
+    <label class="hub-plot-rolling-size-label" title="Set the rolling window on every chart. Use 2–256 recorded samples.">Samples <input id="hub-compare-all-samples" type="number" min="2" max="256" step="1" value="50" aria-label="Rolling mean sample count for all charts"></label>
+  </div>
   <div id="hub-compare-plots" aria-label="Selected training metric charts"></div>
   <p id="hub-compare-chart-note" class="muted">Bounded comparison curves are saved separately from training records. Comparisons are observational, not independent evaluations.</p>
   <h3>Observed resource scaling</h3>
@@ -786,7 +1181,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
   </table></div>
   <div class="hub-standalone" id="hub-compare-selection-panel">
     <h3>Promote the best evaluated model</h3>
-    <p class="muted">Choose 2–16 independent candidate jobs above and an approved next-stage configuration below. The Hub compares only identical frozen benchmark suites and promotes only a resumable model whose exact bytes match its evaluation. Active candidates can be scheduled for automatic selection after completion.</p>
+    <p class="muted">Choose 2–16 independent candidate jobs and an approved next-stage configuration. Monitoring-only runs are eligible when final-checkpoint evaluation is enabled and receipts identify the evaluator runtime. Only matching frozen suites, verified final-checkpoint bytes, trial counts and runtime identities can select a resumable winner. Training curves and imported historical audits cannot authorize promotion. Active candidates can be scheduled for selection after completion.</p>
     <div class="formgrid">
       <label>Next-stage saved configuration<select id="hub-compare-selection-config"></select></label>
       <label>Next-stage CPU/RAM request (JSON)<input id="hub-compare-selection-resources" type="text" value='{"cpus":2,"ram_mb":2048,"gpu_count":0}'></label>
@@ -807,8 +1202,19 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <thead><tr><th>Run</th><th>Status / host</th><th>Project steps</th><th>Selected metric</th><th>Reported metrics</th><th>Segment</th><th>Latest summary</th></tr></thead>
     <tbody id="hub-compare-rows"></tbody>
   </table></div>
-  <p class="muted">CSV/JSON contain bounded Hub chart observations. Complete job diagnostics export the locally available project-owned histories and reports without model checkpoints; offline remote-worker artifacts must be exported from their original host.</p>
+  <p class="muted">Chart CSV/JSON contain bounded Hub observations. Complete ZIP exports include every locally archived independent checkpoint receipt across the original append-only JSONL segments, plus one unsampled evaluation-history CSV with suite, runtime, checkpoint and outcome identities. Historical TinyBrains audits are read-only export sources, not training jobs. Local project-owned reports are included when present; missing remote trainer artifacts must be retrieved from their original host. Model checkpoints are never included.</p>
   <h3>Independent evaluation receipts</h3>
+  <details id="hub-historical-import" class="hub-standalone" hidden>
+    <summary>Import an independently evaluated historical TinyBrains checkpoint audit</summary>
+    <p class="muted">Run experiment_hub_tinybrains_historical.py with --checkpoint-dir /absolute/path and repeated --update values (for example, 73, 100, 200, 350, 440, 558), or supply individual --checkpoint paths. Select the same pinned Nano/Micro suite definitions, private scratch directory and a new JSON output file. This evaluates existing checkpoint bytes without starting a training job. Add --import-to-hub to publish the completed JSON directly to the locally running Hub (default port 7148), or import the file here. Both paths produce read-only Compare observations and cannot authorize model promotion.</p>
+    <div class="hub-controls">
+      <label>Completed historical audit (.json)
+        <input id="hub-historical-audit-file" type="file" accept=".json,application/json">
+      </label>
+      <button type="button" id="hub-historical-import-submit">Import audit into Compare</button>
+    </div>
+    <p id="hub-historical-import-status" class="muted" role="status"></p>
+  </details>
   <p id="hub-compare-evaluation-note" class="muted"></p>
   <div class="tablewrap hub-table"><table>
     <thead><tr><th>Run</th><th>Suite</th><th>Suite SHA-256</th><th>Successes / trials</th><th>Success rate</th><th>Checkpoint SHA-256</th><th>Outcome</th></tr></thead>
@@ -886,6 +1292,15 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <thead><tr><th>Machine</th><th>Agent</th><th>CPU slots</th><th>RAM MiB</th><th>GPUs</th><th>Native controls</th><th>Last seen</th><th>Credentials</th></tr></thead>
     <tbody id="hub-machine-rows"></tbody>
   </table></div>
+  <div class="hub-standalone">
+    <h3>Distributed training readiness</h3>
+    <p class="muted">Reports the enrolled worker capabilities needed for
+      TinyBrains and Courier multi-machine training. Only signed agent
+      advertisements confirm installed adapters; registration alone does
+      not authorize execution. Remote installation still requires
+      permission on each machine.</p>
+    <div id="hub-machine-readiness" class="hub-notice" role="status"></div>
+  </div>
   <div class="hub-standalone">
     <h3>Machine agent enrollment</h3>
     <p class="muted">Enroll a registered machine once, then configure its agent with its machine ID and enrollment token. Rotate invalidates the previous token. Revoke disables access. Only the issued response shows the token; routine dashboard refreshes cannot retrieve it. Run Training/experiment_hub_agent.js on the machine using the restricted agent-only localhost port 7149 (or a trusted SSH tunnel forwarding that port). Never forward the privileged dashboard port 7148 to workers. Agent heartbeats report CPU, memory, and operating system, not physical GPU isolation.</p>

@@ -1,7 +1,7 @@
 'use strict';
 
-// Trusted machine-local CPU rollout service. This is a separate Hub job with
-// its own CPU/RAM lease, not an unaccounted worker of the learner's lease.
+// Trusted machine-local rollout service. This is a separate Hub job with
+// its own CPU/RAM/GPU lease, not an unaccounted worker of the learner's lease.
 // The experiment may choose only a learner job ID; the executable, binding,
 // port, thread budget, cache and secret are installed by the host operator.
 const fs=require('node:fs');
@@ -11,6 +11,8 @@ const {spawnSync}=require('node:child_process');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const CUDA=/^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
+const ROCM_UUID=/^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 const TAILNET=/^100\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 
 function directory(value) {
@@ -43,10 +45,22 @@ function tailnetIp(ip) {
 
 function createTinyBrainsRemoteRolloutAdapter({
     projectRoot,pythonPath,keyPath,cacheRoot,listenIp,port,threads,
-    enableCuda=false,
+    enableCuda=false,enableRocm=false,rocrGpuUuids={},slotPorts={},
 }) {
-    if(typeof enableCuda!=='boolean'||enableCuda&&process.platform!=='win32')
-        throw Error('Remote GPU rollout requires explicit Windows CUDA opt-in.');
+    if(typeof enableCuda!=='boolean'||typeof enableRocm!=='boolean'||
+        (enableCuda&&enableRocm)||
+        (enableCuda&&process.platform!=='win32')||
+        (enableRocm&&process.platform!=='linux'))
+        throw Error('Remote GPU rollout needs exactly one locally opted-in Windows CUDA or Linux ROCm runtime.');
+    if(!rocrGpuUuids||typeof rocrGpuUuids!=='object'||
+        Array.isArray(rocrGpuUuids)||
+        Object.keys(rocrGpuUuids).length>32||
+        (!enableRocm&&Object.keys(rocrGpuUuids).length)||
+        Object.entries(rocrGpuUuids).some(([pci,uuid])=>
+            !PCI.test(pci)||typeof uuid!=='string'||!ROCM_UUID.test(uuid))||
+        new Set(Object.values(rocrGpuUuids)).size!==Object.keys(rocrGpuUuids).length)
+        throw Error('Remote ROCm selector must bind distinct locally approved GPU UUIDs to canonical PCI addresses.');
+    const approvedRocr=Object.freeze({...rocrGpuUuids});
     const project=directory(projectRoot);
     const cache=directory(cacheRoot);
     const secret=keyFile(keyPath);
@@ -55,8 +69,24 @@ function createTinyBrainsRemoteRolloutAdapter({
     if(!Number.isSafeInteger(port)||port<1024||port>65535||
         !Number.isSafeInteger(threads)||threads<1||threads>256)
         throw Error('Remote rollout listener needs an approved non-privileged port and CPU thread count.');
+    // Each native job owns a distinct listener; all possible ports are
+    // authorized by the local administrator before any Hub job is queued.
+    if(!slotPorts||typeof slotPorts!=='object'||Array.isArray(slotPorts)||
+        Object.keys(slotPorts).length>8||
+        Object.keys(slotPorts).some(key=>!/^(?:0|[1-7])$/.test(key))||
+        Object.values(slotPorts).some(value=>!Number.isSafeInteger(value)||
+            value<1024||value>65535)||
+        (Object.keys(slotPorts).length>0&&
+            !Object.values(slotPorts).includes(port)))
+        throw Error('TinyBrains local collector slots require 1–8 approved ports including the base port.');
+    const slots=Object.entries(slotPorts).map(([slot,listenerPort])=>({
+        slot:Number(slot),endpoint:host+':'+listenerPort,
+    })).sort((a,b)=>a.slot-b.slot);
+    if(new Set(slots.map(item=>item.endpoint)).size!==slots.length)
+        throw Error('TinyBrains collector listener ports must be distinct nonprivileged ports.');
+
     if(typeof pythonPath!=='string'||!path.isAbsolute(pythonPath)||
-        !fs.statSync(pythonPath).isFile()||fs.realpathSync(pythonPath)!==pythonPath)
+        !fs.statSync(pythonPath).isFile()||path.resolve(pythonPath)!==pythonPath)
         throw Error('Remote rollout Python must be an installed regular file.');
     const probe=spawnSync(pythonPath,['-B','-c',
         'import ants_mapoca.remote_rollout'],{
@@ -64,46 +94,110 @@ function createTinyBrainsRemoteRolloutAdapter({
     });
     if(probe.status!==0)
         throw Error('Installed TinyBrains worker lacks authenticated remote rollout support.');
-    if(enableCuda) {
-        const check=spawnSync(pythonPath,['-B','-c',
-            'import torch; assert torch.version.cuda and torch.cuda.is_available()'],{
+    // Older installed workers remain runnable with their established fixed
+    // native engine concurrency until they provide the new implementation.
+    const poolProbe=spawnSync(pythonPath,['-B','-c',
+        'import ants_mapoca.engine_pool'],{
+        cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
+    });
+    const supportsAutoPool=poolProbe.status===0;
+    if(enableCuda||enableRocm) {
+        const check=spawnSync(pythonPath,['-B','-c',enableCuda
+            ?'import torch; assert torch.version.cuda and torch.cuda.is_available()'
+            :'import torch, ants_mapoca.remote_rollout as r; assert torch.version.hip and torch.cuda.is_available() and hasattr(r, "linux_rocm_pci_identity")'],{
             cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
         });
         if(check.status!==0)
-            throw Error('Remote CUDA collection requires a locally working NVIDIA PyTorch environment.');
+            throw Error('Remote GPU collection requires the installed verified CUDA/ROCm TinyBrains backend.');
     }
+    // The adapter advertises sharing only after the installed collector
+    // implements the allocator ceiling. A staged worker update may precede
+    // the simulation update, so retain exclusive CUDA compatibility.
+    const supportsCudaSharing=enableCuda&&spawnSync(pythonPath,['-B','-c',
+        'import inspect; from ants_mapoca.remote_rollout import RemoteRolloutService; assert "gpu_vram_mb" in inspect.signature(RemoteRolloutService).parameters'],{
+        cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
+    }).status===0;
     return {
         executable:pythonPath,cwd:project,stop_policy:'terminate-group',
         tinybrains_rollout_endpoint:host+':'+port,
+        tinybrains_rollout_slots:slots.map(item=>({...item})),
         tinybrains_rollout_key_fingerprint:fingerprint,
         tinybrains_rollout_thread_limit:threads,
         ...(enableCuda?{gpu_execution:'cuda'}:{}),
+        ...(supportsCudaSharing?{gpu_sharing:'cooperative-pytorch'}:{}),
+        ...(enableRocm?{
+            rocr_gpu_uuids:approvedRocr,
+            // Executed only through the Hub's qualified, device-filtered
+            // Linux preflight (and again as ExecStartPre). This verifies
+            // the physical HIP PCI identity without starting a collector.
+            gpu_verify_args(_parameters,context) {
+                if(!PCI.test(String(context?.gpu_pci_address||''))||
+                    context.gpu_pci_addresses!==undefined)
+                    throw Error('Remote ROCm verification requires one frozen physical GPU.');
+                return ['-B',path.join(__dirname,
+                    'experiment_hub_tinybrains_rocm_verify.py'),
+                    context.gpu_pci_address];
+            },
+        }:{}),
         args(parameters,context) {
             const desired=parameters?.threads??Math.min(threads,context.cpu_quota);
+            const slot=parameters?.listener_slot;
+            if(slot!==undefined&&(slots.length===0||
+                !Number.isSafeInteger(slot)||slot<0||slot>7))
+                throw Error('TinyBrains collector requires an approved local listener slot.');
+            const selected=slot===undefined?null:slots.find(item=>item.slot===slot);
+            if(slot!==undefined&&!selected)
+                throw Error('TinyBrains listener slot is not installed on this machine.');
+            const listenPort=selected?Number(selected.endpoint.split(':').at(-1)):port;
+            if(supportsAutoPool&&(!Number.isSafeInteger(context.ram_quota_mb)||
+                context.ram_quota_mb<128||context.ram_quota_mb>1000000))
+                throw Error('Automatic remote simulation requires its original RAM lease.');
             if(!Number.isSafeInteger(context.cpu_quota)||context.cpu_quota<1||
                 !Number.isSafeInteger(desired)||desired<1||
                 desired>threads||desired>context.cpu_quota)
                 throw Error('Remote collector threads must fit both its CPU lease and the local approved thread limit.');
             if(crypto.createHash('sha256').update(fs.readFileSync(secret)).digest('hex')!==fingerprint)
                 throw Error('Installed rollout HMAC key differs from its advertised physical worker identity.');
+            const hasGpu=Boolean(context.gpu_pci_address);
+            const cudaGpu=context.gpu_cuda_uuid!==undefined;
+            const rocmGpu=hasGpu&&!cudaGpu;
+            const sharedCuda=cudaGpu&&context.gpu_mode==='shared';
             if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
-                Object.keys(parameters).some(key=>!['learner_job_id','threads'].includes(key))||
+                Object.keys(parameters).some(key=>!['learner_job_id','threads','listener_slot'].includes(key))||
                 !UUID.test(String(parameters.learner_job_id||''))||
                 !UUID.test(String(context.job_id||''))||
                 parameters.learner_job_id===context.job_id||
-                (context.gpu_cuda_uuid!==undefined&&
-                    (!enableCuda||!CUDA.test(String(context.gpu_cuda_uuid))||
-                    context.gpu_mode!=='exclusive'||!context.gpu_pci_address))||
-                (context.gpu_cuda_uuid===undefined&&Boolean(context.gpu_pci_address)))
-                throw Error('Remote CPU worker requires one immutable, different TinyBrains learner job ID.');
+                (cudaGpu&&(!enableCuda||!CUDA.test(String(context.gpu_cuda_uuid))||
+                    !hasGpu||!(context.gpu_mode==='exclusive'||sharedCuda&&supportsCudaSharing&&
+                        Number.isSafeInteger(context.gpu_vram_mb)&&context.gpu_vram_mb>0&&
+                        Number.isSafeInteger(context.gpu_total_vram_mb)&&
+                        context.gpu_vram_mb<=context.gpu_total_vram_mb&&
+                        Number.isSafeInteger(context.gpu_compute_pct)&&
+                        context.gpu_compute_pct>=1&&context.gpu_compute_pct<=100)))||
+                (rocmGpu&&(!enableRocm||!PCI.test(context.gpu_pci_address)||
+                    context.gpu_mode!=='exclusive'))||
+                (!hasGpu&&(cudaGpu||context.gpu_pci_addresses!==undefined))||
+                (hasGpu&&context.gpu_pci_addresses!==undefined))
+                throw Error('Remote rollout needs a distinct learner ID and an approved CPU or single exclusive/cooperative GPU lease.');
+            const scratch=slots.length?path.join(cache,context.job_id):cache;
+            if(slots.length) {
+                fs.mkdirSync(scratch,{recursive:true,mode:0o700});
+                if(fs.realpathSync(scratch)!==scratch||!fs.statSync(scratch).isDirectory())
+                    throw Error('TinyBrains collector scratch directory was redirected.');
+            }
             return ['-B','-m','ants_mapoca.remote_rollout',
-                '--listen',host,'--port',String(port),
+                '--listen',host,'--port',String(listenPort),
                 '--job-id',parameters.learner_job_id,
                 '--threads',String(desired),'--key-file',secret,
-                '--cache-dir',cache,
-                ...(context.gpu_cuda_uuid
-                    ?['--device','cuda','--cuda-uuid',context.gpu_cuda_uuid]
-                    :['--device','cpu'])];
+                '--cache-dir',scratch,
+                ...(supportsAutoPool?['--auto-env-pool',
+                    '--ram-budget-mb',String(context.ram_quota_mb)]:[]),
+                ...(cudaGpu
+                    ?['--device','cuda','--cuda-uuid',context.gpu_cuda_uuid,
+                        ...(sharedCuda?['--gpu-vram-mb',String(context.gpu_vram_mb)]:[])]
+                    :rocmGpu
+                        ?['--device','cuda','--rocm-pci',context.gpu_pci_address]
+                        :['--device','cpu'])];
         },
     };
 }

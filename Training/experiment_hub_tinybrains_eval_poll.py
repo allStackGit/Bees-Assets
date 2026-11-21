@@ -3,15 +3,34 @@
 
 import argparse
 import http.client
+import json
 import re
 import sys
 from pathlib import Path
 
+from experiment_hub_eval_io import read_bounded
 from experiment_hub_eval_poll import final_checkpoint, poll_checkpoint, poll_batch
-from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate, read_suite
+from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate_with_metrics, read_suite
 from experiment_hub_tinybrains_runtime import configure_engine
 
 CHECKPOINT = re.compile(r"update-([0-9]{6,8})\.pt")
+
+
+def checkpoint_update(file):
+    # The trusted persistent trainer reads this same checkpoint format
+    # during restart. The evaluator only inspects its update number;
+    # evaluation itself still uses a separate immutable private copy.
+    import torch
+    try:
+        state = torch.load(file, map_location="cpu", weights_only=False)
+    except Exception as error:
+        # Training may be replacing the file at the scheduled poll instant.
+        # Retry after the next checkpoint without changing the trainer.
+        raise ValueError("TinyBrains checkpoint update is not readable yet.") from error
+    update = state.get("update") if isinstance(state, dict) else None
+    if type(update) is not int or not 1 <= update <= 2**53 - 1:
+        raise ValueError("TinyBrains checkpoint has no valid PPO update identity.")
+    return update
 
 
 def latest_numbered_checkpoint(artifact_root, job):
@@ -24,6 +43,31 @@ def latest_numbered_checkpoint(artifact_root, job):
         raise ValueError("TinyBrains artifact directory is redirected.")
     if not directory.is_dir():
         return None
+    # The installed persistent TinyBrains trainer owns self-play/latest.pt,
+    # not job/latest.pt or job/update-N.pt. Its checkpoint includes an
+    # absolute PPO update; normalize to the Hub job's relative update axis.
+    active = directory / "self-play" / "latest.pt"
+    if active.exists():
+        start_file = directory / "hub-start-update.json"
+        if (active.resolve(strict=True) != active or not active.is_file() or
+            start_file.resolve(strict=True) != start_file or
+            not start_file.is_file()):
+            raise ValueError("TinyBrains persistent checkpoint identity is redirected.")
+        start = json.loads(read_bounded(start_file, 4096))["update"]
+        if type(start) is not int or not 1 <= start <= 2**53 - 1:
+            raise ValueError("TinyBrains imported starting update is invalid.")
+        update = checkpoint_update(active)
+        if update < start:
+            raise ValueError("TinyBrains checkpoint predates the verified starting update.")
+        return update, active, update - start
+    # The standard Windows/Linux adapter instead writes job/latest.pt and
+    # records the job's update counter directly. Keep both layouts working.
+    standard = directory / "latest.pt"
+    if standard.exists():
+        if standard.resolve(strict=True) != standard or not standard.is_file():
+            raise ValueError("TinyBrains checkpoint is redirected or unavailable.")
+        update = checkpoint_update(standard)
+        return update, standard, update
     latest = None
     for file in directory.iterdir():
         match = CHECKPOINT.fullmatch(file.name)
@@ -35,31 +79,45 @@ def latest_numbered_checkpoint(artifact_root, job):
 
 
 def poll(args, suites):
+    def verify_frozen(file, checkpoint):
+        # Terminal snapshots already have a final-model SHA-256 pin.
+        # Running snapshots also need to prove that their update coordinate
+        # still matches the independently copied model bytes.
+        if len(checkpoint) == 3 and checkpoint[0] != 10**16 and checkpoint_update(file) != checkpoint[0]:
+            raise ValueError("TinyBrains checkpoint advanced during private copy; retry a stable snapshot.")
+
     def evaluated(job, file, digest, work, suite):
-        wins, observed = evaluate(file, digest, suite, work)
-        trials = 2 * len(suite["maps"]) * len(suite["seeds"])
-        if observed != trials:
-            raise ValueError("Unexpected TinyBrains evaluation trial count.")
-        return wins
+        return evaluate_with_metrics(file, digest, suite, work)
 
     def find_checkpoint(job):
         if "final_checkpoint_sha256" in job:
-            return final_checkpoint(args.artifact_root, job, "latest.pt")
+            source = args.artifact_root / job["job_id"] / "self-play" / "latest.pt"
+            filename = "self-play/latest.pt" if source.exists() else "latest.pt"
+            final = final_checkpoint(args.artifact_root, job, filename)
+            observed = latest_numbered_checkpoint(args.artifact_root, job)
+            if observed and len(observed) == 3 and observed[1] == final[1]:
+                return final[0], final[1], observed[2]
+            # Older trusted adapters may have a numbered-only layout.
+            # The coordinator's final_steps_completed remains available.
+            return final
         return latest_numbered_checkpoint(args.artifact_root, job)
     pairs = [(suite, {**suite, "trials":
                       2 * len(suite["maps"]) * len(suite["seeds"])}) for suite in suites]
     if len(pairs) == 1:
         poll_checkpoint(args, "tinybrains", *pairs[0], find_checkpoint,
                         lambda job, file, digest, work:
-                            evaluated(job, file, digest, work, suites[0]))
+                            evaluated(job, file, digest, work, suites[0]),
+                        verify_checkpoint=verify_frozen)
     else:
-        poll_batch(args, "tinybrains", pairs, find_checkpoint, evaluated)
+        poll_batch(args, "tinybrains", pairs, find_checkpoint, evaluated,
+                   verify_checkpoint=verify_frozen)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--machine", required=True)
     parser.add_argument("--port", type=int, default=7148)
+    parser.add_argument("--hub-host", default="127.0.0.1")
     parser.add_argument("--engine-path", type=Path)
     parser.add_argument("--suite", required=True, type=Path, action="append",
                         help="Repeat 2–8 times for one same-checkpoint evaluation batch.")
@@ -69,7 +127,7 @@ def main():
     try:
         configure_engine(args.engine_path)
         if not SUITE_ID.fullmatch(args.machine) or not 1 <= args.port <= 65535:
-            raise ValueError("Invalid machine ID or loopback port.")
+            raise ValueError("Invalid machine ID or Hub port.")
         args.artifact_root = args.artifact_root.resolve(strict=True)
         if not args.artifact_root.is_dir():
             raise ValueError("Expected the worker's artifact directory.")

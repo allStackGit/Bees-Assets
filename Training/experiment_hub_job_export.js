@@ -13,15 +13,20 @@ const PROJECT=/^[a-z][a-z0-9_-]{0,47}$/;
 const METRIC=/^[a-z][a-z0-9_]{0,63}$/;
 const KEEP_MS=2*60*60*1000;
 const JOB_FIELDS=[
-    'id','project_id','configuration_name','configuration_sha256',
+    'id','project_id','configuration_id','configuration_revision',
+    'configuration_name','run_name','configuration_sha256',
     'frozen_parameters','metric_selection','resources','resource_bundle',
     'trial_batch','distributed_rollout_managed','status',
     'assigned_machine_id','continuation_of_job_id','artifact_lineage_root_id',
     'checkpoint_model_sha256','checkpoint_ready_verified',
     'checkpoint_stop_verified','created_at','capacity_released_at',
-    'evaluation_stop','evaluation_stop_evidence','evaluation_candidates',
+    'evaluation_stop','evaluation_monitor','evaluation_suite_definitions',
+    'evaluation_stop_evidence',
+    'evaluation_regression_stop_evidence','evaluation_candidates',
     'last_evaluation','final_progress','final_resource_usage',
     'execution_diagnostic','native_bees_run_id',
+    // Historical audits are read-only comparison sources, never native jobs.
+    'evaluation_history_only','source_report_sha256','source_suites',
 ];
 // Exported job metadata is operator-readable but can leave the machine when
 // downloaded. Never copy credential-like configuration fields verbatim.
@@ -185,17 +190,18 @@ class JobExporter {
         const missingLocalRoot=!legacy&&!approvedRoot&&(
             configuredRoot===undefined||
             typeof configuredRoot==='string'&&!fs.existsSync(configuredRoot));
-        const root=approvedRoot||(
-            missingLocalRoot?trustedRoot(this.dataRoot):null);
-        if(!root)
-            throw Error('The approved local artifact directory is unsafe or unavailable. Remote-only exports require a trusted Hub data root.');
         const python=typeof this.pythonExecutable==='function'
             ?this.pythonExecutable():this.pythonExecutable||
                 (process.platform==='win32'?'python':'python3');
         if(typeof python!=='string'||!python.trim())
             throw Error('A trusted Python interpreter is required for ZIP export.');
         const snapshot=legacy?{jobs:this.legacyBees.jobs()}:this.hub.snapshot();
-        const available=new Map(snapshot.jobs.filter(job=>job.project_id===project)
+        const historical=legacy||project!=='tinybrains'?[]:
+            this.hub.historicalEvaluations();
+        if(historical.some(job=>snapshot.jobs.some(native=>native.id===job.id)))
+            throw Error('Historical audit identity conflicts with a native job.');
+        const available=new Map([...snapshot.jobs,...historical]
+            .filter(job=>job.project_id===project)
             .map(job=>[job.id,job]));
         const jobs=value.job_ids.map(id=>{
             const job=available.get(id);
@@ -204,13 +210,32 @@ class JobExporter {
                 JOB_FIELDS.filter(key=>Object.hasOwn(job,key))
                     .map(key=>[key,job[key]])));
         });
+        // A historical-only export reads solely from the private evaluation
+        // archive, never the configured trainer artifact root. It must still
+        // work if that unrelated trainer mount is unavailable or redirected.
+        const onlyHistorical=jobs.every(job=>job.evaluation_history_only===true);
+        const root=onlyHistorical?trustedRoot(this.dataRoot):
+            approvedRoot||(missingLocalRoot?trustedRoot(this.dataRoot):null);
+        if(!root)
+            throw Error('The approved local artifact directory is unsafe or unavailable. Remote-only exports require a trusted Hub data root.');
         const progress=legacy?this.legacyBees.progress():
             this.hub.progressComparison(project);
-        progress.samples=progress.samples.filter(sample=>value.job_ids.includes(sample.job_id));
+        const selectedIds=new Set(value.job_ids);
+        progress.samples=progress.samples.filter(sample=>selectedIds.has(sample.job_id));
+        // Complete ZIP exports retain the raw per-job JSONL below, but the
+        // bounded comparison snapshot must not include unrelated selected
+        // project jobs, historical audits or their evaluator diagnostics.
+        for(const field of ['evaluations','evaluation_regressions',
+            'evaluation_diagnostics']) {
+            if(Array.isArray(progress[field]))
+                progress[field]=progress[field].filter(row=>
+                    selectedIds.has(row.job_id));
+        }
         // Each mounted root is keyed by an already assigned machine and a
         // trusted project ID. Job IDs are UUIDs from the Hub registry, never
         // arbitrary caller path components.
-        const mounted=legacy?[]:jobs.flatMap(job=>{
+        const mounted=legacy?[]:jobs.filter(job=>
+            !job.evaluation_history_only).flatMap(job=>{
             const machine=Object.hasOwn(configured.machineRoots,
                 job.assigned_machine_id)
                 ?configured.machineRoots[job.assigned_machine_id]:null;
@@ -229,6 +254,7 @@ class JobExporter {
         // source for machine-owned text histories. Do not mistake mere
         // Hub heartbeat observations for project-owned artifacts.
         const mirrored=legacy?[]:jobs.filter(job=>
+            !job.evaluation_history_only&&
             !mounted.some(item=>item.job_id===job.id)).flatMap(job=>{
             const folder=path.join(this.dataRoot,'hub-remote-artifacts',job.id);
             if(!fs.existsSync(folder))return [];
@@ -251,7 +277,8 @@ class JobExporter {
         // Include its coordinator-received observations in the learner export,
         // even when no worker-local log directory is mounted. All IDs are
         // frozen Hub UUIDs, not browser-supplied filesystem paths.
-        const linkedCollectorSources=legacy?[]:jobs.flatMap(selected=>{
+        const linkedCollectorSources=legacy?[]:jobs.filter(job=>
+            !job.evaluation_history_only).flatMap(selected=>{
             const learner=snapshot.jobs.find(job=>
                 job.id===selected.id&&job.project_id==='tinybrains'&&
                 job.distributed_rollout_managed===true);
@@ -293,6 +320,27 @@ class JobExporter {
                 ];
             });
         });
+        // Download names describe the selected jobs, not just the project.
+        // Slugs are bounded and reduced to safe ASCII; the UUID makes
+        // repeated exports unique even within the same second.
+        const id=crypto.randomUUID();
+        const slug=value=>String(value||'run').normalize('NFKD')
+            .toLowerCase().replace(/[^a-z0-9]+/g,'-')
+            .replace(/^-+|-+$/g,'').slice(0,32).replace(/-+$/g,'')||'run';
+        const labels=jobs.slice(0,2).map(job=>{
+            const resources=job.resources||{};
+            const cpu=Number.isSafeInteger(resources.cpus)
+                ?resources.cpus+'cpu':null;
+            const gpu=Number.isSafeInteger(resources.gpu_count)
+                ?resources.gpu_count+'gpu':null;
+            return [slug(job.run_name||job.configuration_name),
+                cpu,gpu].filter(Boolean).join('-');
+        });
+        const suffix=jobs.length>2?'-plus-'+(jobs.length-2)+'-more':'';
+        const timestamp=new Date().toISOString()
+            .replace(/[-:.]/g,'').slice(0,15).toLowerCase();
+        const downloadBase=project+'-'+labels.join('-vs-')+suffix+
+            '-'+timestamp+'-'+id.slice(0,12)+'-analysis';
         const dir=fs.mkdtempSync(path.join(this.dataRoot,'job-export-'));
         fs.chmodSync(dir,0o700);
         const spec=path.join(dir,'request.json');
@@ -303,10 +351,29 @@ class JobExporter {
             artifact_root:root,local_artifact_root_missing:missingLocalRoot,
             mounted_artifact_job_ids:[...mounted.map(item=>item.job_id),
                 ...mirrorFallbackIds],
-            resource_provenance:legacy?null:resourceProvenance(snapshot,jobs),
+            resource_provenance:legacy||onlyHistorical?null:
+                resourceProvenance(snapshot,jobs),
             progress,
             additional_sources:legacy?this.legacyBees.sources(jobs):
                 [...jobs.flatMap(job=>{
+                    const archive=this.hub.evaluationHistory.segmentFiles(job.id);
+                    const expected=job.evaluation_history_only||
+                        job.evaluation_monitor||job.evaluation_stop;
+                    // A missing expected archive remains visible as a
+                    // missing-source diagnostic. Otherwise export every
+                    // verified consecutive segment in original append order.
+                    const evidence=(archive.length?archive:
+                        expected?[path.join(this.dataRoot,'hub-evaluations-v1',
+                            job.id+'.jsonl')]:[]).map(file=>({
+                        job_id:job.id,label:'hub-evaluations',path:file,
+                    }));
+                    if(job.evaluation_history_only)
+                        // Historical audits are never trainer or lease jobs.
+                        return [...evidence,{
+                            job_id:job.id,label:'hub-historical-source',
+                            path:path.join(this.dataRoot,'hub-evaluations-v1',
+                                job.id+'.historical.json'),
+                        }];
                     const base=path.join(this.dataRoot,'hub-observations-v1');
                     const hostFile=path.join(base,job.id+'-resources.jsonl');
                     return [{
@@ -315,15 +382,14 @@ class JobExporter {
                     },{
                         job_id:job.id,label:'hub-host-observations',
                         path:hostFile,
-                    }];
+                    },...evidence];
                 }),...linkedCollectorSources,...mounted,...mirrored],
         }),{flag:'wx',mode:0o600});
-        const id=crypto.randomUUID();
         const session={id,dir,project,status:'preparing',parts:[],error:null};
         this.sessions.set(id,session);
         const script=path.join(__dirname,'experiment_hub_job_export.py');
         const child=spawn(python,
-            [script,'--spec',spec,'--output',path.join(dir,project+'-analysis.zip')],
+            [script,'--spec',spec,'--output',path.join(dir,downloadBase+'.zip')],
             {shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});
         let stdout='',stderr='',done=false;
         function cleanupLater() {

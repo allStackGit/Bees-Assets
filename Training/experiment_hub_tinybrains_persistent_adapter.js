@@ -4,17 +4,20 @@
 // A Hub job copies only its seed checkpoint, frozen run spec and gate proof;
 // frozen opponents remain referenced from an immutable, read-only source run.
 const fs=require('node:fs');
+const os=require('node:os');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
-const {validateProgress}=require('./experiment_hub_progress');
-const {fixedCpuParallelism}=require('./experiment_hub_resources');
-const {modelFileSha256}=require('./experiment_hub_evaluation');
+const {validateProgress,MAX_TINYBRAINS_COLLECTORS}=require('./experiment_hub_progress');
+const {fixedCpuParallelism,approvedEndpointSubset}=require('./experiment_hub_resources');
+const {applyOverrides,described}=require('./experiment_hub_design_fields');
+const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROFILE=/^[a-z][a-z0-9_-]{0,47}$/;
 const SHA=/^[0-9a-f]{64}$/;
 const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
+const CUDA_UUID=/^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const TAIL=256*1024;
 const MAX_PROGRESS_ROW_TAIL=8*1024*1024;
 const PROJECT_IN='/workspace/projects/tinybrains/Ants-MAPOCA';
@@ -45,6 +48,47 @@ function previousHistoryRow(fd,endExclusive) {
     return null;
 }
 
+// Capabilities are a subset of the actual committed-update reader below.
+// A capability means this installed runtime can publish the field, not that
+// every update is guaranteed to contain it. Slot-specific fields appear when
+// observed and need not be guessed for nonexistent workers.
+const TINYBRAINS_METRIC_CATALOG={
+    base:[
+        'total_ppo_updates','engine_steps','engine_steps_per_second',
+        'ant_decisions','ant_decisions_per_second',
+        'group_states','group_states_per_second',
+        'update_wall_time','elapsed_training_seconds',
+        'collection_seconds','optimization_seconds','overlap_seconds',
+        'policy_lag_mean','policy_lag_min','policy_lag_max','policy_version_count',
+        'policy_stale_decisions','policy_stale_fraction',
+        'rollout_model_refresh_seconds','rollout_engine_step_seconds',
+        'rollout_learner_inference_seconds','rollout_observation_encode_seconds',
+        'rollout_opponent_inference_seconds','rollout_result_processing_seconds',
+        'collector_wait_seconds','collector_critical_path_seconds',
+        'rollout_engine_cpu_seconds_total','ppo_minibatches','ppo_microbatches',
+        'loss','policy_loss','value_loss','baseline_loss','entropy',
+        'actor_grad_norm','group_grad_norm','baseline_grad_norm',
+        'states_per_microbatch','learning_rate','gae_lambda','rss_mb',
+        'training_wins','training_losses','training_draws',
+        'training_completed_matches','training_win_rate','training_score_rate',
+        'training_mean_score','training_mean_score_margin',
+        'training_scored_matches','training_opponent_margin_matches',
+        'training_mean_match_turns','food_gathered_exact',
+        'food_gathered_verified_matches','combat_kills_exact',
+        'combat_kills_verified_matches','births_observed','deaths_observed',
+        'population_peak','visible_food_mean','combat_exposure_fraction',
+        'episodes_ended','terminal_rewards','carried_matches',
+        'collector_count','ppo_board_pixel_samples','ppo_max_board_cells',
+        'ppo_packed_remote_behavior_states','rollout_onnx_calls',
+        'rollout_onnx_batches','rollout_onnx_batched_states','rollout_onnx_states',
+        'local_engine_count','local_engine_active_count',
+        'local_engine_actions_per_second','local_engine_wall_seconds',
+        'local_engine_critical_seconds',
+    ],
+    remote_rollouts:[
+        'remote_policy_snapshot_seconds','remote_opponent_snapshot_seconds',
+    ],
+};
 // Derive bounded, project-neutral chart measurements from the trainer's
 // committed update, not from GPU utilization guesses or incomplete rollouts.
 // Keep exact game events distinct from observation-based food/combat proxies.
@@ -59,53 +103,251 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     }
     add('total_ppo_updates',row.update,'count');
     add('engine_steps',row.engine_steps,'count');
+    add('simulation_match_steps',row.simulation_match_steps,'count');
     if(updateWall!==null&&updateWall>0) {
         add('update_wall_time',updateWall,'seconds');
         add('engine_steps_per_second',row.engine_steps/updateWall,'rate');
+        add('simulation_match_steps_per_second',
+            row.simulation_match_steps/updateWall,'rate');
         add('ant_decisions_per_second',row.ant_decisions/updateWall,'rate');
         add('group_states_per_second',row.group_states/updateWall,'rate');
     }
     for(const name of ['collection_seconds','rollout_model_refresh_seconds',
-        'rollout_engine_step_seconds','rollout_learner_inference_seconds',
+        'rollout_engine_step_seconds','rollout_observation_prepare_seconds',
+        'rollout_learner_inference_seconds','rollout_learner_gpu_stream_seconds',
+        'rollout_opponent_processing_seconds',
+        'rollout_opponent_gpu_stream_seconds',
+        'rollout_fused_gpu_stream_seconds',
+        'rollout_result_processing_seconds','rollout_bootstrap_seconds',
+        'rollout_returns_seconds',
+        'simulation_engine_roundtrip_seconds','simulation_dispatch_queue_seconds',
+        'simulation_batch_wall_seconds','simulation_last_child_gap_seconds',
+        'simulation_prefetch_overlap_seconds',
+        'optimization_seconds','checkpoint_seconds',
+        'collector_wait_seconds','collector_critical_path_seconds',
+        'collector_dispatch_queue_max_seconds','collector_dispatch_tail_seconds',
+        'gpu_role_startup_seconds',
+        'remote_collector_join_wait_seconds','remote_collector_exposed_wait_seconds',
+        'remote_transport_connect_max_seconds',
+        'remote_connect_exposed_seconds',
+        'collection_merge_seconds','collection_lease_accounting_seconds',
+        'overlap_seconds','local_gpu_join_wait_seconds',
+        'local_gpu_wait_after_local_max_seconds',
+        'remote_policy_snapshot_seconds',
+        'remote_network_launch_delay_seconds',
+        'remote_network_prep_exposed_seconds',
+        'remote_policy_shared_encode_seconds',
         'rollout_observation_encode_seconds','rollout_opponent_inference_seconds',
-        'rollout_result_processing_seconds',
-        'optimization_seconds','collector_wait_seconds',
-        'collector_critical_path_seconds','collector_elapsed_spread_seconds',
-        'rollout_engine_cpu_seconds_total','rollout_engine_cpu_seconds',
-        'checkpoint_write_seconds',
-        'overlap_seconds','remote_policy_snapshot_seconds',
+        'collector_elapsed_spread_seconds','rollout_engine_cpu_seconds_total',
+        'rollout_engine_cpu_seconds','checkpoint_write_seconds',
         'remote_opponent_snapshot_seconds',
         'ppo_profile_host_seconds','ppo_advantages_seconds',
         'ppo_ordering_seconds','ppo_zero_grad_seconds',
         'ppo_grouping_seconds','ppo_data_preparation_seconds',
         'ppo_forward_loss_seconds','ppo_loss_finite_check_seconds',
+        'ppo_finite_gradient_check_seconds',
         'ppo_backward_seconds','ppo_metric_readback_seconds',
+        'ppo_diagnostic_aggregation_seconds',
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
-        'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds'])
+        'ppo_parameter_finite_check_seconds',
+        // CPU preparation may overlap GPU work; only wait is an exposed
+        // learner stall. Pinned transfer enqueue is host wall, not PCIe time.
+        'ppo_prep_cpu_seconds','ppo_prep_wait_seconds',
+        'ppo_prep_background_cpu_seconds',
+        'ppo_prep_background_wait_seconds',
+        'ppo_prep_pin_seconds','ppo_prep_h2d_enqueue_seconds',
+        'ppo_gpu_stream_sync_seconds',
+        'ppo_gpu_stream_interval_seconds'])
         add(name,row[name],'seconds');
-    for(const name of ['ant_decisions','group_states','births','deaths',
+    for(const name of ['simulation_active_matches','simulation_target_matches',
+        'simulation_max_matches',
+        'simulation_concurrency_adjustments','simulation_tuner_accepted',
+        'simulation_tuner_settled','simulation_tuner_trial','simulation_target_restored',
+        'simulation_memory_rejected_trials','simulation_workload_reprobes',
+        'simulation_inconclusive_trials',
+        'simulation_global_cadence_samples','simulation_global_cadence_rejections',
+        'simulation_native_engines_admitted','simulation_admission_denied',
+        'simulation_completed_retirements','simulation_draining_matches',
+        'simulation_layout_matches','simulation_layout_changing',
+        'local_lease_ram_admission_denials',
+        'local_lease_admission_denials_delta',
+        'local_lease_native_engines_admitted',
+        'local_lease_engines_admitted_delta',
+        'local_lease_active_native_pools',
+        'local_lease_cadence_comparable','local_lease_completed_cadence_update',
+        'simulation_proven_target',
+        'ant_decisions','group_states','births','deaths',
         'episodes_ended','multi_ant_states','terminal_rewards',
         'carried_matches','open_matches','peak_live_matches',
         'truncated_groups','terminal_groups','collector_count',
+        'simulation_prefetch_engine_steps',
         'ppo_minibatches','ppo_microbatches',
+        'ppo_prep_batches','ppo_prep_async_h2d_copies',
+        'ppo_prep_background_chunks',
+        'ppo_diagnostic_readbacks','ppo_diagnostic_rows',
+        'ppo_gpu_pixel_budget',
+        'ppo_gpu_batch_target_pixels','ppo_gpu_batch_next_target',
+        'ppo_gpu_batch_adjustments','ppo_gpu_batch_accepted',
+        'ppo_gpu_batch_settled','ppo_gpu_batch_restored',
+        'ppo_gpu_batch_changed_next','ppo_gpu_batch_proven_target',
+        'ppo_gpu_batch_vram_capped',
+        // The integrated learner can evaluate PPO losses on additional
+        // leased GPUs. These are completed backend observations, not
+        // a claim that the GPUs were saturated or improved useful SPS.
+        'ppo_parallel_devices','ppo_parallel_next_devices',
+        'ppo_parallel_adjustments','ppo_parallel_accepted',
+        'ppo_parallel_settled','ppo_parallel_proven_target',
+        'ppo_parallel_batches','ppo_parallel_device_batches',
+        'ppo_parallel_states','ppo_parallel_max_group',
+        'rollout_gpu_batch_target_pixels','rollout_gpu_batch_next_target',
+        'rollout_gpu_batch_adjustments','rollout_gpu_batch_accepted',
+        'rollout_gpu_batch_settled','rollout_gpu_batch_restored',
+        'rollout_gpu_batch_changed_next','rollout_gpu_batch_proven_target',
+        'rollout_gpu_batch_vram_capped',
+        'rollout_inference_pixel_samples',
+        'ppo_prestaged_board_states','ppo_reused_board_states',
+        'rollout_inference_shape_groups','rollout_inference_readbacks',
+        'rollout_inference_forward_chunks','rollout_inference_forward_states',
+        'rollout_opponent_shape_groups','rollout_opponent_readbacks',
+        'rollout_opponent_joined_learner_readbacks',
+        'rollout_opponent_readback_slot_reused',
+        'rollout_opponent_readback_slot_allocated',
+        'rollout_opponent_readback_cached_indices',
+        'rollout_opponent_grouped_calls','rollout_opponent_grouped_models',
+        'rollout_opponent_grouped_states','rollout_opponent_grouped_padding',
+        'rollout_learner_grouped_forwards_saved',
+        'rollout_learner_grouped_states',
+        'rollout_opponent_grouped_fallbacks',
+        'rollout_opponent_grouped_weight_reuses',
+        'rollout_opponent_pixel_samples',
+        'rollout_opponent_max_group_pixels',
+        'rollout_opponent_batch_budget_pixels',
+        'rollout_opponent_wide_forward_chunks',
+        'rollout_opponent_oom_backoffs',
+        'rollout_board_uploads_saved',
+        'remote_collectors_pending_after_local',
+        'remote_collector_co_limiting_count',
+        'remote_collector_exposed_wait_owner',
+        'remote_transport_new_connections',
+        'remote_transport_reused_collectors',
+        'remote_transport_connect_owner',
+        'remote_snapshot_cache_hits',
+        'local_gpu_collector_count',
+        'local_gpu_direct_model_updates',
+        'local_gpu_policy_source_pack_groups',
+        'local_gpu_policy_packed_consumers',
+        'local_lease_native_engines_active',
+        'local_lease_simulation_trial_active',
+        'local_gpu_collectors_ready_at_local_end',
+        'collector_auto_balance_adjustments',
+        'collector_auto_balance_accepted','collector_auto_balance_settled',
+        'collector_balance_changed_next_update',
+        'collector_balance_changed_submission',
+        'collector_balance_layout_rollbacks',
+        'collector_balance_noisy_rollbacks',
+        'collector_balance_drift_reprobes',
+        'collector_dispatch_queue_peak','collector_dispatch_tail_owner',
+        'collector_balance_next_submission_update',
+        'gpu_role_optimizer_lease_index','gpu_role_primary_lease_index','gpu_role_restored',
+        'rollout_model_refresh_groups',
+        'gpu_role_probe_valid',
+        'remote_policy_readback_groups','remote_policy_source_pack_reused',
+        'ppo_gpu_max_group_pixels','rollout_inference_max_group_pixels',
         'ppo_board_pixel_samples','ppo_max_board_cells',
-        'ppo_unique_board_shapes','policy_lag','action_target',
+        'ppo_unique_board_shapes','policy_lag','policy_lag_min',
+        'policy_lag_max','policy_version_count','action_target',
+        'ppo_packed_remote_behavior_states','collector_capacity_bootstrapped',
+        'rollout_opponent_forward_chunks','rollout_opponent_readback_models',
+        'rollout_opponent_readbacks_saved','rollout_onnx_calls',
+        'rollout_onnx_batches','rollout_onnx_batched_states','rollout_onnx_states',
         'automatic_collector_allocation','collector_allocation_rebalanced',
         'rollout_inference_batches','rollout_inference_boards',
         'rollout_inference_max_batch'])
         add(name,row[name],'count');
+    add('local_gpu_pending_at_local_end',
+        row.local_gpu_collectors_pending_at_local_end,'count');
     // These optimizer observations can be negative; they are scalar values,
     // never performance or strength certification.
     for(const name of ['loss','policy_loss','value_loss','baseline_loss',
         'entropy','actor_grad_norm','group_grad_norm',
         'baseline_grad_norm','actor_max_weight_change',
         'critic_max_weight_change','learning_rate','population_mean',
-        'states_per_microbatch','rollout_inference_mean_batch'])
+        'states_per_microbatch','rollout_inference_mean_batch',
+        'collector_balance_trial_sps_gain','policy_lag_mean'])
         add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
+    // A bounded async PPO batch can contain several immutable behavior
+    // versions. Only report stale experience when the source lag histogram
+    // accounts exactly for every delivered decision.
+    const lags=row.policy_lag_decisions;
+    if(lags&&typeof lags==='object'&&!Array.isArray(lags)&&
+        Number.isSafeInteger(row.ant_decisions)&&row.ant_decisions>0) {
+        const bins=Object.entries(lags);
+        if(bins.length&&bins.length<=5&&bins.every(([lag,count])=>
+            /^(?:0|[1-4])$/.test(lag)&&
+            Number.isSafeInteger(count)&&count>=0)&&
+            bins.reduce((total,[,count])=>total+count,0)===row.ant_decisions) {
+            const stale=bins.reduce((total,[lag,count])=>
+                total+(lag==='0'?0:count),0);
+            add('policy_stale_decisions',stale,'count');
+            add('policy_stale_fraction',stale/row.ant_decisions,'ratio');
+        }
+    }
+    add('rollout_board_packed_bytes',row.rollout_board_packed_bytes,'bytes');
+    // Bytes actually staged into one grouped frozen-opponent H2D input.
+    // This is neither physical bus throughput nor device utilization.
+    add('rollout_opponent_grouped_input_bytes',
+        row.rollout_opponent_grouped_input_bytes,'bytes');
+    for(const name of ['pipeline_collection_exposure_fraction',
+        'collector_balance_predicted_gain_ratio',
+        'gpu_role_estimated_gain_ratio',
+        'pipeline_collector_stage_fraction','pipeline_remote_service_fraction',
+        'pipeline_remote_nonservice_fraction'])
+        add(name,row[name],'ratio');
+    add('pipeline_slowest_collector_id',row.pipeline_slowest_collector_id,'count');
+    add('pipeline_slowest_collector_ratio',row.pipeline_slowest_collector_ratio,'scalar');
     add('rss_mb',row.rss_mb,'mb');
     add('rollout_engine_cpu_cores',row.rollout_engine_cpu_cores,'scalar');
     add('rollout_engine_rss_mb',row.rollout_engine_rss_mb,'mb');
+    add('simulation_engine_memory_mb',row.simulation_engine_memory_mb,'mb');
+    add('simulation_learner_memory_mb',row.simulation_learner_memory_mb,'mb');
+    add('simulation_total_charged_memory_mb',
+        row.simulation_total_charged_memory_mb,'mb');
+    add('simulation_ram_lease_headroom_mb',
+        row.simulation_ram_lease_headroom_mb,'mb');
+    // Multiple local native engine pools share ONE Python parent charge.
+    // These values are measured against the same 75% RAM admission cap,
+    // not raw machine RAM utilization or a physical OOM diagnosis.
+    for(const name of ['local_lease_admission_wait_seconds',
+        'local_lease_admission_wait_delta',
+        'local_lease_admission_sample_seconds',
+        'local_lease_admission_sample_delta',
+        'local_lease_admission_spawn_seconds',
+        'local_lease_admission_spawn_delta'])
+        add(name,row[name],'seconds');
+    add('local_lease_ram_charged_mb',row.local_lease_ram_charged_mb,'mb');
+    add('local_lease_ram_headroom_mb',row.local_lease_ram_headroom_mb,'mb');
+    // Actual useful action target divided by completed end-to-end PPO wall.
+    // Mixed simulation/GPU layout rounds are explicitly marked incomparable.
+    add('local_lease_completed_cadence_sps',
+        row.local_lease_completed_cadence_sps,'rate');
+    add('simulation_global_cadence_gain',
+        row.simulation_global_cadence_gain,'scalar');
+    add('ppo_parallel_result_bytes',row.ppo_parallel_result_bytes,'bytes');
+    add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
+    add('ppo_prep_board_bytes',row.ppo_prep_board_bytes,'bytes');
+    add('ppo_prep_async_h2d_bytes',row.ppo_prep_async_h2d_bytes,'bytes');
+    add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
+    add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
+    add('remote_policy_shared_bytes',row.remote_policy_shared_bytes,'bytes');
+    add('remote_snapshot_staged_bytes',row.remote_snapshot_staged_bytes,'bytes');
+    add('remote_snapshot_unstaged_bytes',row.remote_snapshot_unstaged_bytes,'bytes');
+    add('remote_snapshot_unstaged_ratio',row.remote_snapshot_unstaged_ratio,'ratio');
+    // Logical immutable tensor size multiplied by completed on-host
+    // consumers. This is not a physical PCIe bandwidth measurement.
+    add('local_gpu_direct_model_tensor_bytes',
+        row.local_gpu_direct_model_tensor_bytes,'bytes');
+    add('remote_policy_shared_collectors',row.remote_policy_shared_collectors,'count');
     if(Number.isFinite(row.elapsed_seconds))
         add('elapsed_training_seconds',row.elapsed_seconds,'seconds');
 
@@ -187,9 +429,122 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     // Each collector is a separately identified contributor; remote transfer
     // roundtrip includes transmission and worker compute, not network-only time.
     for(const [i,worker] of (Array.isArray(row.collector_samples)
-        ?row.collector_samples:[]).slice(0,17).entries()) {
+        ?row.collector_samples:[]).slice(0,MAX_TINYBRAINS_COLLECTORS).entries()) {
         add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
+        add('collector_'+i+'_simulation_match_steps',
+            worker.simulation_match_steps,'count');
+        for(const [suffix,name] of [
+            ['sim_matches','simulation_active_matches'],
+            ['sim_target','simulation_target_matches'],
+            ['sim_draining','simulation_draining_matches'],
+            ['sim_max','simulation_max_matches'],
+            ['sim_changes','simulation_concurrency_adjustments'],
+            ['sim_global_samples','simulation_global_cadence_samples'],
+            ['sim_global_rejections','simulation_global_cadence_rejections'],
+            ['sim_accepted','simulation_tuner_accepted'],
+            ['sim_settled','simulation_tuner_settled'],
+            ['sim_restored','simulation_target_restored'],
+            ['sim_proven','simulation_proven_target'],
+            ['sim_admitted','simulation_native_engines_admitted'],
+            ['sim_denied','simulation_admission_denied'],
+            ['sim_retired','simulation_completed_retirements']])
+            add('collector_'+i+'_'+suffix,worker[name],'count');
+        add('collector_'+i+'_sim_global_gain',
+            worker.simulation_global_cadence_gain,'scalar');
+        for(const [suffix,name] of [
+            ['sim_trial','simulation_tuner_trial'],
+            ['sim_workload_reprobes','simulation_workload_reprobes'],
+            ['sim_inconclusive_trials','simulation_inconclusive_trials'],
+            ['sim_memory_rejections','simulation_memory_rejected_trials']])
+            if(worker[name]>0)add('collector_'+i+'_'+suffix,worker[name],'count');
+        add('collector_'+i+'_sim_engine_charged_mb',
+            worker.simulation_engine_memory_mb,'mb');
+        for(const [suffix,name] of [
+            ['sim_learner_mb','simulation_learner_memory_mb'],
+            ['sim_charged_mb','simulation_total_charged_memory_mb'],
+            ['sim_ram_headroom_mb','simulation_ram_lease_headroom_mb']])
+            add('collector_'+i+'_'+suffix,worker[name],'mb');
+        add('collector_'+i+'_sim_prefetch_engine_steps',
+            worker.simulation_prefetch_engine_steps,'count');
+        for(const [suffix,name] of [
+            [i<10?'sim_engine_roundtrip_seconds':'sim_engine_reply_seconds',
+                'simulation_engine_roundtrip_seconds'],
+            ['sim_dispatch_queue_seconds','simulation_dispatch_queue_seconds'],
+            ['sim_batch_wall_seconds','simulation_batch_wall_seconds'],
+            ['sim_last_child_gap_seconds','simulation_last_child_gap_seconds'],
+            ['sim_prefetch_overlap_seconds','simulation_prefetch_overlap_seconds']])
+            add('collector_'+i+'_'+suffix,worker[name],'seconds');
+        add('collector_'+i+'_inference_shape_groups',
+            worker.rollout_inference_shape_groups,'count');
+        add('collector_'+i+'_inference_readbacks',
+            worker.rollout_inference_readbacks,'count');
+        add('collector_'+i+'_inference_forward_chunks',
+            worker.rollout_inference_forward_chunks,'count');
+        // Actual unfused actor boards per forward call; fused vmap
+        // forwards are deliberately excluded from BOTH measurements.
+        const calls=worker.rollout_inference_forward_chunks;
+        const states=worker.rollout_inference_forward_states;
+        if(Number.isSafeInteger(calls)&&calls>0&&
+            Number.isSafeInteger(states)&&states>=calls)
+            add('collector_'+i+'_gpu_fwd_batch_mean',
+                states/calls,'scalar');
+        add('collector_'+i+'_board_uploads_saved',worker.rollout_board_uploads_saved,'count');
+        add('collector_'+i+'_board_packed_bytes',worker.rollout_board_packed_bytes,'bytes');
+        add('collector_'+i+'_opponent_shape_groups',
+            worker.rollout_opponent_shape_groups,'count');
+        add('collector_'+i+'_opponent_readbacks',
+            worker.rollout_opponent_readbacks,'count');
+        // Async batches can mix bounded policy versions. Report the actual
+        // per-collector lag rather than assuming every decision used the
+        // learner's latest weights.
+        add('collector_'+i+'_policy_lag_mean',worker.policy_lag_mean,'scalar');
+        add('collector_'+i+'_policy_lag_max',worker.policy_lag_max,'count');
+        for(const name of ['rollout_opponent_forward_chunks',
+            'rollout_opponent_readback_models','rollout_opponent_readbacks_saved',
+            'rollout_onnx_calls','rollout_onnx_batches',
+            'rollout_onnx_batched_states','rollout_onnx_states'])
+            add('collector_'+i+'_'+name,worker[name],'count');
+        add('collector_'+i+'_opp_learner_joined_readbacks',
+            worker.rollout_opponent_joined_learner_readbacks,'count');
+        add('collector_'+i+'_opp_slot_reused',
+            worker.rollout_opponent_readback_slot_reused,'count');
+        add('collector_'+i+'_opp_slot_allocated',
+            worker.rollout_opponent_readback_slot_allocated,'count');
+        add('collector_'+i+'_opp_cached_indices',
+            worker.rollout_opponent_readback_cached_indices,'count');
+        add('collector_'+i+'_opp_group_calls',
+            worker.rollout_opponent_grouped_calls,'count');
+        add('collector_'+i+'_opp_group_models',
+            worker.rollout_opponent_grouped_models,'count');
+        add('collector_'+i+'_opp_group_states',
+            worker.rollout_opponent_grouped_states,'count');
+        add('collector_'+i+'_opp_group_input_bytes',
+            worker.rollout_opponent_grouped_input_bytes,'bytes');
+        add('collector_'+i+'_learner_fused_forwards',
+            worker.rollout_learner_grouped_forwards_saved,'count');
+        add('collector_'+i+'_learner_fused_states',
+            worker.rollout_learner_grouped_states,'count');
+        add('collector_'+i+'_opp_group_padding',
+            worker.rollout_opponent_grouped_padding,'count');
+        add('collector_'+i+'_opp_group_fallbacks',
+            worker.rollout_opponent_grouped_fallbacks,'count');
+        add('collector_'+i+'_opp_gpu_stream_seconds',
+            worker.rollout_opponent_gpu_stream_seconds,'seconds');
+        // A mixed frozen/learner forward cannot be assigned exclusively
+        // to either model. Keep its combined GPU stream timing separate.
+        add('collector_'+i+'_fused_gpu_stream_seconds',
+            worker.rollout_fused_gpu_stream_seconds,'seconds');
+        add('collector_'+i+'_opp_budget_pixels',
+            worker.rollout_opponent_batch_budget_pixels,'count');
+        add('collector_'+i+'_opp_pixel_samples',
+            worker.rollout_opponent_pixel_samples,'count');
+        add('collector_'+i+'_opp_max_group_pixels',
+            worker.rollout_opponent_max_group_pixels,'count');
+        add('collector_'+i+'_opp_wide_chunks',
+            worker.rollout_opponent_wide_forward_chunks,'count');
+        add('collector_'+i+'_opp_oom_backoffs',
+            worker.rollout_opponent_oom_backoffs,'count');
         add('collector_'+i+'_action_target',worker.action_target,'count');
         if(Array.isArray(row.collector_action_weights))
             add('collector_'+i+'_action_weight',
@@ -197,13 +552,124 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         if(Array.isArray(row.next_collector_action_weights))
             add('collector_'+i+'_next_action_weight',
                 row.next_collector_action_weights[i],'count');
+        // Only a verified HIP ordinal/physical PCI mapping may identify
+        // the operator's leased GPU in host observations and comparisons.
+        if(worker.mode==='local_gpu') {
+            add('collector_'+i+'_is_local_gpu',1,'count');
+            add('collector_'+i+'_gpu_ordinal',worker.gpu_ordinal,'count');
+            add('collector_'+i+'_gpu_lease_index',worker.gpu_lease_index,'count');
+        }
+        add('collector_'+i+'_wait_after_local_seconds',
+            worker.learner_wait_after_local_seconds,'seconds');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
+        // Request preparation is local learner CPU work, not wire latency.
+        add('collector_'+i+'_request_prepare_seconds',
+            worker.collector_request_prepare_seconds,'seconds');
+        add('collector_'+i+'_connect_seconds',
+            worker.collector_client_connect_seconds,'seconds');
+        add('collector_'+i+'_connection_reused',
+            worker.collector_client_connection_reused,'count');
         add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
+        add('collector_'+i+'_completion_seconds',worker.learner_completion_seconds,'seconds');
+        add('collector_'+i+'_dispatch_queue_seconds',worker.dispatch_queue_seconds,'seconds');
+        add('collector_'+i+'_service_seconds',worker.collector_service_seconds,'seconds');
+        add('collector_'+i+'_record_encode_seconds',
+            worker.collector_record_encode_seconds,'seconds');
+        add('collector_'+i+'_record_packed',
+            worker.collector_record_packed,'count');
+        add('collector_'+i+'_record_board_groups',
+            worker.collector_record_board_groups,'count');
+        add('collector_'+i+'_supports_weight_blob',
+            worker.collector_supports_weight_blob,'count');
+        add('collector_'+i+'_weight_blob_used',
+            worker.collector_weight_blob_used,'count');
+        add('collector_'+i+'_policy_upload_groups',
+            worker.collector_policy_upload_groups,'count');
+        add('collector_'+i+'_policy_apply_groups',
+            worker.collector_policy_apply_groups,'count');
+        for(const [suffix,name] of [
+            ['gpu_allocated_mb','collector_gpu_allocated_mb'],
+            ['gpu_reserved_mb','collector_gpu_reserved_mb'],
+            ['gpu_peak_allocated_mb','collector_gpu_peak_allocated_mb'],
+            ['gpu_physical_free_mb','collector_gpu_physical_free_mb'],
+            ['gpu_vram_lease_mb','collector_gpu_vram_lease_mb']])
+            add('collector_'+i+'_'+suffix,worker[name],'mb');
+        // Separately timed remote/learner stages are observational; never
+        // treat socket send/receive blocking as measured network bandwidth.
+        for(const [suffix,name] of [
+            ['serialize_seconds','collector_client_serialize_seconds'],
+            ['compress_seconds','collector_client_compress_seconds'],
+            ['send_seconds','collector_client_send_seconds'],
+            ['receive_seconds','collector_client_receive_seconds'],
+            ['decode_seconds','collector_client_decode_seconds'],
+            ['ingestion_seconds','collector_learner_ingestion_seconds'],
+            ['worker_receive_seconds','collector_worker_receive_seconds'],
+            ['worker_decode_seconds','collector_worker_decode_seconds'],
+            ['client_auth_seconds','collector_client_authenticate_seconds'],
+            ['reply_auth_seconds','collector_client_authenticate_reply_seconds'],
+            ['reply_decompress_seconds','collector_client_decompress_seconds'],
+            ['reply_deserialize_seconds','collector_client_deserialize_seconds'],
+            ['worker_auth_seconds','collector_worker_authenticate_seconds'],
+            ['worker_decompress_seconds','collector_worker_decompress_seconds'],
+            ['worker_deserialize_seconds','collector_worker_deserialize_seconds'],
+            ['prev_reply_serial_seconds','collector_worker_previous_reply_serialize_seconds'],
+            ['prev_reply_compress_seconds','collector_worker_previous_reply_compress_seconds'],
+            ['prev_reply_auth_seconds','collector_worker_previous_reply_authenticate_seconds'],
+            ['prev_reply_send_seconds','collector_worker_previous_reply_send_seconds'],
+            ['prev_reply_service_seconds','collector_worker_previous_reply_service_seconds']])
+            add('collector_'+i+'_'+suffix,worker[name],'seconds');
+        // Reply timing from the worker necessarily arrives one PPO update
+        // later; never label these durations as current-update service time.
+        add('collector_'+i+'_prev_reply_update',
+            worker.collector_worker_previous_reply_update,'count');
+        // Preserve two compact summary fields for each previous worker
+        // reply even when the 32-KiB source envelope cannot hold every
+        // optional timing breakdown from many independent collectors.
+        const priorStages=[
+            worker.collector_worker_previous_reply_serialize_seconds,
+            worker.collector_worker_previous_reply_compress_seconds,
+            worker.collector_worker_previous_reply_authenticate_seconds];
+        if(priorStages.every(v=>Number.isFinite(v)&&v>=0))
+            add('collector_'+i+'_prev_reply_prepare_seconds',
+                priorStages.reduce((sum,v)=>sum+v,0),'seconds');
+        add('collector_'+i+'_request_wire_bytes',
+            worker.collector_request_wire_bytes,'bytes');
+        add('collector_'+i+'_response_wire_bytes',
+            worker.collector_response_wire_bytes,'bytes');
         add('collector_'+i+'_rollout_engine_step_seconds',
             worker.rollout_engine_step_seconds,'seconds');
+        add('collector_'+i+'_observation_prepare_seconds',
+            worker.rollout_observation_prepare_seconds,'seconds');
         add('collector_'+i+'_learner_inference_seconds',
             worker.rollout_learner_inference_seconds,'seconds');
+        add('collector_'+i+'_learner_gpu_stream_seconds',
+            worker.rollout_learner_gpu_stream_seconds,'seconds');
+        add('collector_'+i+'_inference_pixel_samples',
+            worker.rollout_inference_pixel_samples,'count');
+        add('collector_'+i+'_inference_max_group_px',
+            worker.rollout_inference_max_group_pixels,'count');
+        add('collector_'+i+'_gpu_batch_used_pixels',
+            worker.rollout_gpu_batch_used_pixels,'count');
+        add('collector_'+i+'_gpu_batch_vram_capped',
+            worker.rollout_gpu_batch_vram_capped,'count');
+        for(const [suffix,name] of [
+            ['gpu_batch_target_pixels','rollout_gpu_batch_target_pixels'],
+            ['gpu_batch_next_target','rollout_gpu_batch_next_target'],
+            ['gpu_batch_adjustments','rollout_gpu_batch_adjustments'],
+            ['gpu_batch_accepted','rollout_gpu_batch_accepted'],
+            ['gpu_batch_settled','rollout_gpu_batch_settled'],
+            ['gpu_batch_restored','rollout_gpu_batch_restored'],
+            ['gpu_batch_changed_next','rollout_gpu_batch_changed_next'],
+            ['gpu_batch_proven_target','rollout_gpu_batch_proven_target']])
+            add('collector_'+i+'_'+suffix,worker[name],'count');
+        add('collector_'+i+'_opponent_processing_seconds',
+            worker.rollout_opponent_processing_seconds,'seconds');
+        for(const [suffix,name] of [
+            ['result_processing_seconds','rollout_result_processing_seconds'],
+            ['bootstrap_seconds','rollout_bootstrap_seconds'],
+            ['returns_seconds','rollout_returns_seconds']])
+            add('collector_'+i+'_'+suffix,worker[name],'seconds');
         add('collector_'+i+'_model_prepare_seconds',
             worker.model_prepare_seconds,'seconds');
         for(const name of ['rollout_inference_batches','rollout_inference_boards',
@@ -224,6 +690,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             'transport_connect_seconds','transport_request_send_seconds',
             'transport_response_receive_seconds','transport_record_decode_seconds'])
             add('collector_'+i+'_'+stage,worker[stage],'seconds');
+        // GPU stream interval around a copied immutable policy version.
+        // Includes stream waits; not measured PCIe/peer bandwidth.
+        add('collector_'+i+'_model_copy_gpu_stream_seconds',
+            worker.model_copy_gpu_stream_seconds,'seconds');
         add('collector_'+i+'_snapshot_cache_files',
             worker.snapshot_cache_files,'count');
         add('collector_'+i+'_snapshot_cache_bytes',
@@ -237,6 +707,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 worker.ant_decisions/elapsed,'rate');
             add('collector_'+i+'_engine_steps_per_second',
                 worker.engine_steps/elapsed,'rate');
+            add('collector_'+i+'_match_steps_per_second',
+                worker.simulation_match_steps/elapsed,'rate');
         }
     }
     // Locally multiplexed engine slots share a leased CPU budget. Stage
@@ -276,6 +748,156 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     for(const event of ['probing','accepted','draining','retired'])
         if(row.local_engine_tune_event===event)
             add('local_engine_tune_'+event,1,'count');
+    // This is only a source-report envelope: the TinyBrains committed row
+    // retains the full transport profile. Never reject a valid many-worker
+    // update merely because optional detailed timings overflow the Hub's
+    // fixed project-neutral 512-field / 32-KiB progress contract.
+    // Keep the compact previous-reply summary for every worker as long as
+    // possible, dropping finer breakdowns across workers before summaries.
+    const optionalSuffixes=[
+        'client_auth_seconds','reply_auth_seconds',
+        'reply_decompress_seconds','reply_deserialize_seconds',
+        'worker_auth_seconds','worker_decompress_seconds',
+        'worker_deserialize_seconds',
+        'prev_reply_serial_seconds','prev_reply_compress_seconds',
+        'prev_reply_auth_seconds'];
+    const collectors=Math.min(MAX_TINYBRAINS_COLLECTORS,Array.isArray(row.collector_samples)
+        ?row.collector_samples.length:0);
+    const fits=()=>Object.keys(metrics).length<=500&&
+        JSON.stringify(metrics).length<=31000;
+    if(!fits()) {
+        for(const suffix of optionalSuffixes) {
+            // Delete a detail for all workers before deleting a more
+            // valuable stage from just one worker.
+            for(let i=collectors-1;i>=0;i--) {
+                delete metrics['collector_'+i+'_'+suffix];
+                if(fits())break;
+            }
+            if(fits())break;
+        }
+        // Previous-reply diagnosis needs all three fields from the same
+        // update. Remove complete per-worker groups rather than publishing
+        // a partial summary that can no longer be interpreted accurately.
+        if(!fits())for(let i=collectors-1;i>=0;i--) {
+            for(const suffix of ['prev_reply_prepare_seconds',
+                                 'prev_reply_send_seconds',
+                                 'prev_reply_service_seconds',
+                                 'prev_reply_update'])
+                delete metrics['collector_'+i+'_'+suffix];
+            if(fits())break;
+        }
+        // With 8 local GPUs plus the learner, a fully populated row can
+        // legitimately contain over 700 independent source measurements.
+        // The fixed neutral Hub transport cannot hold them all at once.
+        // Remove whole optional field COLUMNS across every collector to
+        // preserve comparable per-device coverage and critical-path owner
+        // evidence; never truncate an arbitrary tail of physical GPUs.
+        // The committed native history retains all measurements.
+        if(!fits()) {
+            const deferredDetails=[
+                // Proven batch width and adaptation remain in the backend
+                // row; the Hub retains measured inference work and rates.
+                'gpu_batch_adjustments','gpu_batch_accepted',
+                'gpu_batch_settled','gpu_batch_restored',
+                'gpu_batch_changed_next','gpu_batch_target_pixels',
+                'gpu_batch_next_target','gpu_batch_proven_target',
+                // Keep live/target/max simulation counts and real waits.
+                'sim_changes','sim_accepted','sim_settled',
+                'sim_admitted','sim_denied','sim_retired',
+                'sim_restored','sim_proven',
+                'sim_memory_rejections','sim_trial',
+                'sim_global_samples','sim_global_gain',
+                'inference_shape_groups','inference_readbacks',
+                'inference_forward_chunks','opponent_shape_groups',
+                'board_uploads_saved','board_packed_bytes',
+                'inference_max_group_px','bootstrap_seconds','returns_seconds',
+                'opponent_readbacks','opp_learner_joined_readbacks',
+                'opp_slot_reused',
+                'opp_slot_allocated','opp_cached_indices',
+                'opp_group_calls','opp_group_models',
+                'opp_group_states','opp_group_input_bytes',
+                'learner_fused_forwards','learner_fused_states',
+                'opp_group_padding','opp_group_fallbacks',
+                'fused_gpu_stream_seconds',
+                'snapshot_cache_files','snapshot_cache_bytes',
+                'policy_upload_groups',
+                'record_packed','record_board_groups',
+                'supports_weight_blob','weight_blob_used',
+                'gpu_ordinal','gpu_batch_used_pixels',
+                'gpu_batch_vram_capped','model_prepare_seconds',
+                'opp_pixel_samples','opp_max_group_pixels',
+                'opp_oom_backoffs','opp_budget_pixels',
+                'model_copy_gpu_stream_seconds','policy_apply_groups',
+                // Preserve the physical lease index, live simulation count,
+                // effective throughput, critical stage and join wait ahead
+                // of secondary resource details under maximum fanout.
+                'gpu_reserved_mb','gpu_allocated_mb',
+                'gpu_peak_allocated_mb','gpu_physical_free_mb',
+                'gpu_vram_lease_mb','sim_engine_charged_mb',
+                'sim_learner_mb','sim_charged_mb','sim_ram_headroom_mb',
+                // Retain full remote codec breakdown unless the complete
+                // source envelope still cannot hold a valid update.
+                'serialize_seconds','compress_seconds',
+                'send_seconds','receive_seconds','decode_seconds',
+                'connection_reused','connect_seconds',
+                'ingestion_seconds','worker_receive_seconds',
+                'worker_decode_seconds','record_encode_seconds',
+                'request_wire_bytes','response_wire_bytes',
+                'sim_engine_roundtrip_seconds','sim_engine_reply_seconds',
+                'sim_prefetch_overlap_seconds','sim_prefetch_engine_steps',
+                'sim_last_child_gap_seconds','sim_dispatch_queue_seconds',
+                'sim_batch_wall_seconds','inference_pixel_samples',
+                'learner_gpu_stream_seconds','engine_steps_per_second',
+                'simulation_match_steps','match_steps_per_second','engine_steps',
+                'sim_global_rejections','sim_max','sim_target',
+                'sim_draining',
+                'dispatch_queue_seconds',
+                'sim_workload_reprobes','sim_inconclusive_trials',
+                'request_prepare_seconds','policy_lag_mean','policy_lag_max',
+                'rollout_opponent_forward_chunks',
+                'rollout_opponent_readback_models',
+                'rollout_opponent_readbacks_saved','rollout_onnx_calls',
+                'rollout_onnx_batches','rollout_onnx_batched_states',
+                'rollout_onnx_states',
+            ];
+            for(const suffix of deferredDetails) {
+                for(let i=0;i<collectors;i++)
+                    delete metrics['collector_'+i+'_'+suffix];
+                if(fits())break;
+            }
+        }
+        if(!fits()) {
+            // A fully instrumented seventeen-collector update can still
+            // exceed the fixed wire envelope after ordinary optional
+            // columns are removed. Shed additional columns ACROSS EVERY
+            // collector rather than dropping the last machines altogether.
+            // Retain comparable useful throughput, learner-facing waits,
+            // the principal rollout stage walls, and physical GPU identity.
+            const essential=new Set([
+                'ant_decisions','decisions_per_second','elapsed_seconds',
+                'roundtrip_seconds','service_seconds',
+                'wait_after_local_seconds','learner_inference_seconds',
+                'rollout_engine_step_seconds','observation_prepare_seconds',
+                'opponent_processing_seconds','result_processing_seconds',
+                'is_local_gpu','gpu_lease_index'
+            ]);
+            const columns=new Set();
+            for(const name of Object.keys(metrics)) {
+                const match=/^collector_(?:[0-9]|1[0-6])_(.+)$/.exec(name);
+                if(match&&!essential.has(match[1]))
+                    columns.add(match[1]);
+            }
+            // Deterministic order, with larger optional source columns
+            // removed first. These details remain in native run history.
+            const optional=[...columns].sort((a,b)=>b.length-a.length||
+                a.localeCompare(b));
+            for(const suffix of optional) {
+                for(let i=0;i<collectors;i++)
+                    delete metrics['collector_'+i+'_'+suffix];
+                if(fits())break;
+            }
+        }
+    }
     return metrics;
 }
 
@@ -293,8 +915,10 @@ function fullDir(name) {
     if(typeof name!=='string'||!path.isAbsolute(name)||
         fs.realpathSync(name)!==name||!fs.statSync(name).isDirectory())
         throw Error('Local TinyBrains path must be an existing non-symlink directory.');
-    if(!/^[A-Za-z0-9_./-]+$/.test(name))
-        throw Error('Local TinyBrains paths cannot contain whitespace or shell syntax.');
+    if(process.platform==='win32'
+        ?/[\0\r\n]/.test(name)
+        :!/^[A-Za-z0-9_./-]+$/.test(name))
+        throw Error('Invalid local TinyBrains path.');
     return name;
 }
 function runRelative(folder,filename) {
@@ -310,10 +934,11 @@ function stageFile(source,target) {
 }
 function createTinyBrainsPersistentDockerAdapter({
     projectRoot,hubRoot,artifactRoot,sourceRunRoot,engineCacheRoot,
-    seedCheckpointSha256,seedPpoUpdates,profiles,
+    seedCheckpointSha256,seedPpoUpdates,profiles,checkpointImports={},
+    evaluationRoot,evaluationSuites,
     image='tinybrains-rocm:halifax-node',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
     enableDualGpu=false,remoteCollectors=null,profilePpo=false,
-    cpuParallelism='profile',
+    cpuParallelism='allocation',nativeWindows=false,pythonPath=null,
 }) {
     if(!['profile','allocation'].includes(cpuParallelism))
         throw Error('TinyBrains CPU concurrency must be pinned to its profile or allocated CPU budget.');
@@ -321,6 +946,9 @@ function createTinyBrainsPersistentDockerAdapter({
         throw Error('PPO profiling requires an explicit local boolean opt-in.');
     if(typeof enableDualGpu!=='boolean')
         throw Error('Dual GPU enablement requires an explicit local boolean opt-in.');
+    if(typeof nativeWindows!=='boolean'||
+        (nativeWindows?process.platform!=='win32':process.platform!=='linux'))
+        throw Error('TinyBrains execution must match its installed Windows or Linux owner.');
     let remote=null;
     if(remoteCollectors!==null) {
         if(!remoteCollectors||typeof remoteCollectors!=='object'||
@@ -335,14 +963,15 @@ function createTinyBrainsPersistentDockerAdapter({
         const keyFile=path.join(keyDirectory,'rollout.key');
         const stat=fs.lstatSync(keyFile);
         if(!stat.isFile()||fs.realpathSync(keyFile)!==keyFile||
-            (stat.mode&0o077)!==0||stat.size<32||stat.size>4096)
+            (!nativeWindows&&(stat.mode&0o077)!==0)||
+            stat.size<32||stat.size>4096)
             throw Error('Remote collector rollout.key must be an existing private regular file.');
         remote={keyDirectory,endpoints:remoteCollectors.endpoints.slice(),
             keyFingerprint:crypto.createHash('sha256').update(fs.readFileSync(keyFile)).digest('hex')};
     }
-    if(process.platform!=='linux'||!SHA.test(String(seedCheckpointSha256||''))||
+    if(!SHA.test(String(seedCheckpointSha256||''))||
         !Number.isSafeInteger(seedPpoUpdates)||seedPpoUpdates<1)
-        throw Error('Persistent TinyBrains Docker import requires Linux and a pinned checkpoint hash.');
+        throw Error('Persistent TinyBrains import requires a pinned checkpoint hash.');
     const project=fullDir(projectRoot),hub=fullDir(hubRoot),
         artifacts=fullDir(artifactRoot),source=fullDir(sourceRunRoot),
         cache=fullDir(engineCacheRoot);
@@ -354,12 +983,24 @@ function createTinyBrainsPersistentDockerAdapter({
         remote.keyDirectory.startsWith(folder+path.sep)||
         folder.startsWith(remote.keyDirectory+path.sep)))
         throw Error('Private rollout key directory must not overlap a project, checkpoint, Hub or writable Docker mount.');
-    const engine=path.join(project,'tools/tinybrains-0.5.0/tinybrains');
+    // The same explicit multi-device opt-in used for dual GPUs may
+    // advertise additional independent collector GPUs only when the
+    // mounted backend actually contains that native collector mechanism.
+    const enableMultiGpu=enableDualGpu&&fs.existsSync(
+        path.join(project,'src/ants_mapoca/local_gpu_rollout.py'));
+    const engine=path.join(project,'tools/tinybrains-0.5.0',
+        nativeWindows?'tinybrains.exe':'tinybrains');
     const result=spawnSync(engine,['--version'],{
         timeout:5000,encoding:'utf8',windowsHide:true,
     });
-    if(result.status!==0||result.stdout.trim()!=='tinybrains 0.5.0')
-        throw Error('The Linux TinyBrains 0.5.0 engine is unavailable.');
+    if(result.status!==0||result.stdout?.trim()!=='tinybrains 0.5.0')
+        throw Error('The installed TinyBrains 0.5.0 engine is unavailable.');
+    if(nativeWindows&&
+        (typeof pythonPath!=='string'||!path.isAbsolute(pythonPath)||
+         fs.realpathSync(pythonPath)!==pythonPath||
+         !fs.statSync(pythonPath).isFile()))
+        throw Error('Windows persistent PPO needs an approved local Python executable.');
+    const nativePython=nativeWindows?pythonPath:null;
     const original=path.join(source,'self-play/latest.pt');
     if(modelFileSha256(original)!==seedCheckpointSha256)
         throw Error('Imported Exeter checkpoint differs from operator-pinned SHA-256.');
@@ -387,20 +1028,137 @@ function createTinyBrainsPersistentDockerAdapter({
         const text=JSON.stringify(p,null,2)+'\n';
         return [id,{profile:p,text,sha256:crypto.createHash('sha256').update(text).digest('hex')}];
     }));
+    // Additional, machine-local checkpoint imports do not change the legacy
+    // Exeter seed. Only trusted adapter code can supply paths and hashes.
+    if(!checkpointImports||typeof checkpointImports!=='object'||
+        Array.isArray(checkpointImports)||Object.keys(checkpointImports).length>16)
+        throw Error('TinyBrains checkpoint imports must be a bounded local map.');
+    const extraImports=new Map(Object.entries(checkpointImports).map(([id,entry])=>{
+        if(!PROFILE.test(id)||id.startsWith('exeter_')||
+            !entry||typeof entry!=='object'||Array.isArray(entry)||
+            Object.keys(entry).sort().join(',')!=='checkpoint,profile,sha256,update'||
+            !approved.has(entry.profile)||!SHA.test(entry.sha256)||
+            !Number.isSafeInteger(entry.update)||entry.update<1||
+            typeof entry.checkpoint!=='string'||!path.isAbsolute(entry.checkpoint))
+            throw Error('Invalid operator-approved TinyBrains seed checkpoint.');
+        const checkpoint=fs.realpathSync(entry.checkpoint);
+        const stat=fs.statSync(checkpoint);
+        if(checkpoint!==entry.checkpoint||!stat.isFile()||!stat.size||
+            checkpoint===original||checkpoint.startsWith(artifacts+path.sep)||
+            modelFileSha256(checkpoint)!==entry.sha256)
+            throw Error('TinyBrains seed checkpoint path or SHA-256 changed.');
+        return [id,{checkpoint,profile:entry.profile,sha256:entry.sha256,
+            update:entry.update}];
+    }));
     if(typeof sourceWindowsRoot!=='string'||
-        !/^[A-Za-z]:\/[A-Za-z0-9_./-]+$/.test(sourceWindowsRoot))
+        !/^[A-Za-z]:\/[A-Za-z0-9_./ -]+$/.test(sourceWindowsRoot)||
+        sourceWindowsRoot.split('/').slice(1).some(segment=>
+            !segment||segment==='.'||segment==='..'))
         throw Error('Invalid original Windows project path mapping.');
     const originalSpec=JSON.parse(frozen);
     if(originalSpec?.model_config?.training?.algorithm!=='colony_ppo'||
         !Number.isSafeInteger(originalSpec.self_play_updates))
         throw Error('Original run is not the approved persistent colony-PPO lineage.');
+    // Reuse the exact source-run map inventory. Stages are explicit,
+    // frozen job inputs and never inferred from training reward or evaluation
+    // chart data. Legacy runs without a stage retain their existing maps.
+    function approvedStage(name) {
+        if(name===undefined)return null;
+        const maps=originalSpec.model_config?.environment?.maps;
+        const sourceTurns=originalSpec.model_config?.environment?.max_turns;
+        if(!Array.isArray(maps)||!maps.length||maps.length>128||
+            maps.some(map=>typeof map!=='string'||!map||map.length>512)||
+            new Set(maps).size!==maps.length||
+            !Number.isSafeInteger(sourceTurns)||sourceTurns<1||sourceTurns>1000)
+            throw Error('Original TinyBrains training map inventory is invalid.');
+        const basename=map=>map.replace(/\\/g,'/').split('/').at(-1);
+        const isTwoPlayer=map=>map==='basic-tiny-2p'||
+            /-2p(?:-|\.|$)/.test(basename(map));
+        const isTiny=map=>map==='basic-tiny-2p'||
+            /^tiny(?:wide)?-/.test(basename(map));
+        const isSmall=map=>isTiny(map)||
+            /^small(?:wide)?-/.test(basename(map));
+        const filters={
+            basic_tiny:map=>map==='basic-tiny-2p',
+            tiny_two_player:map=>isTwoPlayer(map)&&isTiny(map),
+            small_two_player:map=>isTwoPlayer(map)&&isSmall(map),
+            all_two_player:isTwoPlayer,
+            full_multiplayer:()=>true,
+        };
+        if(!Object.hasOwn(filters,name))
+            throw Error('Unknown trusted TinyBrains curriculum stage.');
+        const selected=maps.filter(filters[name]);
+        if(!selected.length||name==='basic_tiny'&&selected.length!==1)
+            throw Error('The approved TinyBrains curriculum stage has no matching maps.');
+        const limit={
+            basic_tiny:300,tiny_two_player:300,small_two_player:500,
+            all_two_player:750,full_multiplayer:sourceTurns,
+        }[name];
+        return {name,maps:selected,max_turns:Math.min(sourceTurns,limit)};
+    }
+    // Do not advertise editable hyperparameters unless the installed project
+    // runtime actually consumes overrides from the resumed checkpoint.
+    const learningPath=path.join(project,'src/ants_mapoca/learning_path.py');
+    const installedLearningPath=fs.readFileSync(learningPath,'utf8');
+    const stageSupport=installedLearningPath.includes('--hub-stage-json');
+    const supportedStages=stageSupport?[
+        'basic_tiny','tiny_two_player','small_two_player',
+        'all_two_player','full_multiplayer',
+    ].filter(name=>{
+        try { return Boolean(approvedStage(name)); }
+        catch { return false; }
+    }):[];
+    const designEnabled=installedLearningPath
+        .includes('HUB_DESIGN_OVERRIDES_VERSION = 1');
+    const designFields=described(originalSpec,'tinybrains');
+    const designSourceSha256=crypto.createHash('sha256').update(frozen).digest('hex');
+    function approvedDesign(overrides) {
+        if(overrides!==undefined&&!designEnabled)
+            throw Error('Install a trusted TinyBrains Design-capable runtime before running overrides.');
+        applyOverrides(originalSpec,'tinybrains',overrides);
+    }
+    function checkpointDesign(out,expected,strict=false) {
+        const file=path.join(out,'hub-design-overrides.json');
+        if(!fs.existsSync(file)) {
+            if(strict&&expected!==undefined)throw Error('Missing TinyBrains frozen Design overrides.');
+            return;
+        }
+        const stat=fs.statSync(file);
+        if(!stat.isFile()||stat.size>16384||fs.realpathSync(file)!==file)
+            throw Error('TinyBrains checkpoint Design override manifest is invalid.');
+        const actual=JSON.parse(fs.readFileSync(file,'utf8'));
+        approvedDesign(actual);
+        if(strict&&(expected===undefined||
+            JSON.stringify(actual)!==JSON.stringify(expected)))
+            throw Error('TinyBrains checkpoint Design differs from its frozen job.');
+    }
+
+    function checkpointStage(out,expectedName=undefined) {
+        const file=path.join(out,'hub-curriculum-stage.json');
+        if(!fs.existsSync(file)) {
+            if(typeof expectedName==='string')
+                throw Error('Missing frozen TinyBrains curriculum stage.');
+            return;
+        }
+        const stat=fs.lstatSync(file);
+        if(!stat.isFile()||stat.isSymbolicLink()||
+            fs.realpathSync(file)!==file||stat.size<1||stat.size>16384)
+            throw Error('Invalid TinyBrains frozen curriculum manifest.');
+        const value=JSON.parse(fs.readFileSync(file,'utf8'));
+        if(!value||typeof value!=='object'||Array.isArray(value)||
+            JSON.stringify(value)!==JSON.stringify(approvedStage(value.name))||
+            expectedName===null||typeof expectedName==='string'&&
+                expectedName!==value.name)
+            throw Error('TinyBrains frozen curriculum stage differs from approved inputs.');
+    }
 
     function frozenRemoteKeyIntact() {
         if(!remote)return true;
         const file=path.join(remote.keyDirectory,'rollout.key');
         const stat=fs.lstatSync(file);
         return stat.isFile()&&fs.realpathSync(file)===file&&
-            (stat.mode&0o077)===0&&stat.size>=32&&stat.size<=4096&&
+            (nativeWindows||(stat.mode&0o077)===0)&&
+            stat.size>=32&&stat.size<=4096&&
             crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')===remote.keyFingerprint;
     }
 
@@ -416,7 +1174,7 @@ function createTinyBrainsPersistentDockerAdapter({
             fs.readFileSync(path.join(folder,'gate-passed.json')).equals(evidence)&&
             modelFileSha256(runRelative(folder,gate.checkpoint))===gate.checkpoint_sha256;
     }
-    function checkpointReady(out,text) {
+    function checkpointReady(out,text,overrides,strict=false) {
         const profile=path.join(out,'hub-profile.json');
         const latest=path.join(out,'self-play/latest.pt');
         const stat=fs.statSync(latest);
@@ -424,6 +1182,8 @@ function createTinyBrainsPersistentDockerAdapter({
             fs.readFileSync(profile,'utf8')!==text||
             !frozenEvidenceIntact(out))
             throw Error('Finished TinyBrains job does not have its original frozen lineage and checkpoint.');
+        checkpointDesign(out,overrides,strict);
+        checkpointStage(out);
         const status=JSON.parse(fs.readFileSync(path.join(out,'status.json'),'utf8'));
         const start=JSON.parse(fs.readFileSync(path.join(out,'hub-start-update.json'),'utf8'));
         if(!Number.isSafeInteger(start.update)||start.update<1||
@@ -432,7 +1192,7 @@ function createTinyBrainsPersistentDockerAdapter({
             throw Error('TinyBrains job has no valid checkpoint-boundary status.');
         return latest;
     }
-    const docker={
+    const docker=nativeWindows?null:{
         image,workdir:PROJECT_IN,uid:process.getuid(),gid:process.getgid(),
         remote_host_network:Boolean(remote),
         mounts:[
@@ -458,15 +1218,61 @@ function createTinyBrainsPersistentDockerAdapter({
             ...(profilePpo?{TINYBRAINS_PPO_PROFILE:'1'}:{}),
         },
     };
-    const executable='/opt/tinybrains-venv/bin/python';
-    const runner=HUB_IN+'/Training/experiment_hub_tinybrains_persistent.py';
+    const executable=nativeWindows?nativePython:'/opt/tinybrains-venv/bin/python';
+    const runner=nativeWindows
+        ?path.join(hub,'Training/experiment_hub_tinybrains_persistent.py')
+        :HUB_IN+'/Training/experiment_hub_tinybrains_persistent.py';
+    // A locally confirmed immutable suite upgrade can be advertised after
+    // the agent restarts even when its private adapter map still lists v3.
+    // The original local evaluation opt-in is required; no HTTP-controlled
+    // suite or path can enable evaluation implicitly.
+    let approvedEvaluationSuites=evaluationSuites;
+    if(!nativeWindows&&evaluationRoot!=null&&
+        Array.isArray(evaluationSuites)&&evaluationSuites.length) {
+        const root=path.join(os.homedir(),'evaluation-audits/tinybrains/suites');
+        const marker=path.join(root,'hub-approved-latest.json');
+        if(fs.existsSync(marker)) {
+            const stat=fs.lstatSync(marker);
+            if(!stat.isFile()||stat.isSymbolicLink()||
+                fs.realpathSync(marker)!==marker||
+                stat.uid!==process.getuid()||stat.mode&0o077||stat.size>1024)
+                throw Error('Local TinyBrains evaluator approval changed or is unsafe.');
+            const approval=JSON.parse(fs.readFileSync(marker,'utf8'));
+            if(!approval||approval.version!==1||
+                Object.keys(approval).sort().join(',')!=='micro,nano,version')
+                throw Error('Invalid TinyBrains versioned evaluator approval.');
+            for(const id of ['nano','micro']) {
+                const name=approval[id];
+                if(typeof name!=='string'||
+                    !new RegExp('^tinybrains_'+id+'_tiny_v(?:[3-9]|[1-9][0-9]{1,2})$').test(name))
+                    throw Error('Invalid approved TinyBrains suite identity.');
+                const file=path.join(root,name+'.json');
+                if(fs.realpathSync(file)!==file||
+                    JSON.parse(fs.readFileSync(file,'utf8')).suite_id!==name)
+                    throw Error('Approved TinyBrains suite file is missing or redirected.');
+            }
+            approvedEvaluationSuites=[...new Set([
+                ...evaluationSuites,approval.nano,approval.micro,
+            ])];
+        }
+    }
     return {
-        executable,cwd:PROJECT_IN,docker,stop_policy:'interrupt-main',
+        executable,cwd:nativeWindows?project:PROJECT_IN,
+        ...(docker?{docker}:{}),
+        stop_policy:nativeWindows?'terminate-group':'interrupt-main',
+        ...evaluationReader('tinybrains',evaluationRoot,approvedEvaluationSuites,
+            [project,hub,artifacts,source,cache,
+             ...(remote?[remote.keyDirectory]:[])]),
         artifact_export_dir(jobId) {
             if(!UUID.test(String(jobId||'')))throw Error('Invalid TinyBrains job identity.');
             return path.join(artifacts,jobId);
         },
         gpu_execution:'cuda',
+        ...(designEnabled?{design_catalog:{tinybrains:{...designFields,source_sha256:designSourceSha256,
+            metric_catalog:TINYBRAINS_METRIC_CATALOG,profiles:
+            Object.fromEntries([...approved].map(([id,item])=>[
+                id,{profile_sha256:item.sha256},
+            ]))}}}:{}),
         gpu_sharing:'cooperative-pytorch',
         tinybrains_profiles:Object.fromEntries([...approved].map(([id,p])=>[id,p.sha256])),
         tinybrains_cuda_profiles:[...approved.keys()],
@@ -474,57 +1280,101 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_cpu_fallback_profiles:[...approved.keys()],
         tinybrains_required_import_profiles:[...approved.keys()],
         tinybrains_dual_gpu_profiles:enableDualGpu?[...approved.keys()]:[],
+        tinybrains_multi_gpu_profiles:enableMultiGpu?[...approved.keys()]:[],
         tinybrains_remote_rollout_profiles:remote?[...approved.keys()]:[],
+        tinybrains_curriculum_stages:supportedStages,
         tinybrains_remote_rollout_count:remote?remote.endpoints.length:0,
+        tinybrains_remote_cpu_learner:remote!==null,
+        tinybrains_rollout_subset:remote!==null,
         tinybrains_remote_rollout_endpoints:remote?remote.endpoints.slice():[],
         tinybrains_remote_key_fingerprint:remote?remote.keyFingerprint:null,
         ...(enableDualGpu?{gpu_dual_execution:'split-ppo'}:{}),
-        tinybrains_imports:Object.fromEntries([...approved.keys()].map(id=>[
-            'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
-        ])),
-        checkpoint_stop_file:ctx=>path.join(targetFor(ctx),'STOP'),
-        gpu_verify_args(parameters,context){
-            const item=approved.get(parameters?.profile);
-            const dual=parameters?.device==='dual';
-            const ids=dual?context.gpu_pci_addresses:[context.gpu_pci_address];
-            if(!item||item.sha256!==parameters.profile_sha256||
-                (parameters?.device!==undefined&&parameters.device!=='dual')||
-                !Array.isArray(ids)||ids.length!==(dual?2:1)||
-                ids.some(pci=>!PCI.test(String(pci||'')))||
-                new Set(ids).size!==ids.length)
-                throw Error('Invalid approved TinyBrains ROCm proof.');
-            return ['-B',HUB_IN+'/Training/experiment_hub_tinybrains_rocm_verify.py',...ids];
+        ...(enableMultiGpu?{gpu_multi_execution:'split-ppo-collectors'}:{}),
+        tinybrains_imports:{
+            ...Object.fromEntries([...approved.keys()].map(id=>[
+                'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
+            ])),
+            ...Object.fromEntries([...extraImports].map(([id,seed])=>[
+                id,{profile:seed.profile,sha256:seed.sha256},
+            ])),
         },
+        checkpoint_stop_file:ctx=>path.join(targetFor(ctx),'STOP'),
+        ...(!nativeWindows?{
+            gpu_verify_args(parameters,context){
+                const item=approved.get(parameters?.profile);
+                const dual=parameters?.device==='dual';
+                const multi=parameters?.device==='multi';
+                const ids=context.gpu_pci_addresses??[context.gpu_pci_address];
+                // Verify each leased physical PCI in isolation before Start.
+                const lengthOk=multi
+                    ?enableMultiGpu&&(context.gpu_pci_addresses
+                        ?ids.length>=3&&ids.length<=8:ids.length===1)
+                    :ids.length===(dual?2:1);
+                if(!item||item.sha256!==parameters.profile_sha256||
+                    (parameters?.device!==undefined&&!dual&&!multi)||
+                    !Array.isArray(ids)||!lengthOk||
+                    ids.some(pci=>!PCI.test(String(pci||'')))||
+                    new Set(ids).size!==ids.length)
+                    throw Error('Invalid approved TinyBrains ROCm proof.');
+                return ['-B',HUB_IN+'/Training/experiment_hub_tinybrains_rocm_verify.py',...ids];
+            },
+        }:{}),
         args(parameters,context) {
             const {profile,profile_sha256,updates,threads,device,remote_rollouts,
-                rollout_action_weights,import_checkpoint,import_checkpoint_sha256}=parameters;
+                rollout_action_weights,rollout_endpoints,import_checkpoint,import_checkpoint_sha256,
+                design_overrides,design_source_sha256,training_stage}=parameters;
+            approvedDesign(design_overrides);
+            if(training_stage!==undefined&&!stageSupport)
+                throw Error('Install the approved TinyBrains curriculum-capable runtime before selecting a map stage.');
+            const stage=approvedStage(training_stage);
             const item=approved.get(profile);
+            const endpoints=approvedEndpointSubset(remote?.endpoints,rollout_endpoints);
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
                 throw Error('Remote rollout key was rotated or changed after local adapter approval.');
             if(!item||item.sha256!==profile_sha256||
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
                     'threads','device','remote_rollouts','rollout_action_weights',
-                    'import_checkpoint','import_checkpoint_sha256'].includes(k))||
+                    'import_checkpoint','import_checkpoint_sha256','rollout_endpoints',
+                    'design_overrides','design_source_sha256','training_stage'].includes(k))||
+                (design_overrides===undefined
+                    ?design_source_sha256!==undefined
+                    :design_source_sha256!==designSourceSha256)||
+                (rollout_endpoints!==undefined&&(remote_rollouts!==true||!endpoints))||
                 (remote_rollouts!==undefined&&
-                    (remote_rollouts!==true||!remote||device==='cpu'))||
+                    (remote_rollouts!==true||!remote))||
                 (rollout_action_weights!==undefined&&
                     (remote_rollouts!==true||!Array.isArray(rollout_action_weights)||
-                     rollout_action_weights.length!==remote.endpoints.length+1||
+                     !endpoints||rollout_action_weights.length!==endpoints.length+1||
                      rollout_action_weights.some(w=>
                          !Number.isSafeInteger(w)||w<1||w>1024)))||
-                (device!==undefined&&!['cpu','dual'].includes(device))||
+                (device!==undefined&&!['cpu','dual','multi'].includes(device))||
                 (threads!==undefined&&(!Number.isSafeInteger(threads)||threads<1||threads>256))||
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000||
                 (device==='cpu'?Boolean(context.gpu_pci_address||
-                    context.gpu_pci_addresses||context.gpu_cuda_uuid):
-                    device==='dual'
+                    context.gpu_pci_addresses||context.gpu_cuda_uuid||
+                    context.gpu_cuda_uuids):
+                    device==='dual'||device==='multi'
                         ?context.gpu_mode!=='exclusive'||
+                            (device==='multi'&&!enableMultiGpu)||
                             !Array.isArray(context.gpu_pci_addresses)||
-                            context.gpu_pci_addresses.length!==2||
+                            (device==='dual'
+                                ?context.gpu_pci_addresses.length!==2
+                                :context.gpu_pci_addresses.length<3||
+                                    context.gpu_pci_addresses.length>8)||
                             context.gpu_pci_addresses.some(pci=>!PCI.test(String(pci||'')))||
-                            new Set(context.gpu_pci_addresses).size!==2
+                            new Set(context.gpu_pci_addresses).size!==context.gpu_pci_addresses.length||
+                            (nativeWindows
+                                ?!Array.isArray(context.gpu_cuda_uuids)||
+                                    context.gpu_cuda_uuids.length!==context.gpu_pci_addresses.length||
+                                    context.gpu_cuda_uuids.some(uuid=>!CUDA_UUID.test(String(uuid||'')))||
+                                    new Set(context.gpu_cuda_uuids.map(uuid=>uuid.toLowerCase())).size!==
+                                        context.gpu_cuda_uuids.length
+                                :context.gpu_cuda_uuids!==undefined)
                         :!PCI.test(String(context.gpu_pci_address||''))||
-                            context.gpu_pci_addresses!==undefined)||
+                            context.gpu_pci_addresses!==undefined||
+                            (nativeWindows
+                                ?!CUDA_UUID.test(String(context.gpu_cuda_uuid||''))
+                                :context.gpu_cuda_uuid!==undefined))||
                 (device!=='cpu'&&context.gpu_mode==='shared'&&
                     (!Number.isSafeInteger(context.gpu_vram_mb)||
                         context.gpu_vram_mb<1||
@@ -534,13 +1384,24 @@ function createTinyBrainsPersistentDockerAdapter({
                         context.gpu_compute_pct<1||context.gpu_compute_pct>100)))
                 throw Error('Invalid immutable TinyBrains Hub training request.');
             const parent=context.continuation_of_job_id;
-            if(parent?
-                import_checkpoint!==undefined||import_checkpoint_sha256!==undefined:
-                import_checkpoint!=='exeter_'+profile||
-                    import_checkpoint_sha256!==seedCheckpointSha256)
-                throw Error('A new run must import the pinned Exeter lineage or explicitly continue its parent.');
+            if(parent&&(import_checkpoint!==undefined||
+                import_checkpoint_sha256!==undefined))
+                throw Error('Checkpoint continuations must not import another seed.');
             let sourceCheckpoint=original;
             let startingUpdate=seedPpoUpdates;
+            if(!parent) {
+                const legacy=import_checkpoint==='exeter_'+profile;
+                const additional=extraImports.get(import_checkpoint);
+                if(!legacy&&additional?.profile!==profile)
+                    throw Error('A new run requires a profile-compatible, approved checkpoint import.');
+                const expected=legacy?seedCheckpointSha256:additional.sha256;
+                if(import_checkpoint_sha256!==expected)
+                    throw Error('TinyBrains imported checkpoint SHA-256 does not match the approved seed.');
+                sourceCheckpoint=legacy?original:additional.checkpoint;
+                startingUpdate=legacy?seedPpoUpdates:additional.update;
+                if(modelFileSha256(sourceCheckpoint)!==expected)
+                    throw Error('Approved TinyBrains seed checkpoint changed before launch.');
+            }
             if(parent) {
                 const predecessor=path.join(artifacts,parent);
                 sourceCheckpoint=checkpointReady(predecessor,item.text);
@@ -561,6 +1422,9 @@ function createTinyBrainsPersistentDockerAdapter({
                     JSON.parse(fs.readFileSync(path.join(out,'hub-start-update.json'),'utf8')).update!==startingUpdate||
                     !frozenEvidenceIntact(out))
                     throw Error('Previously launched or changed Hub training output cannot be re-used.');
+                checkpointDesign(out,design_overrides,true);
+                checkpointStage(out,training_stage??null);
+
             }else{
                 fs.mkdirSync(out,{mode:0o700});
                 stageFile(sourceCheckpoint,path.join(out,'self-play/latest.pt'));
@@ -568,6 +1432,12 @@ function createTinyBrainsPersistentDockerAdapter({
                 stageFile(path.join(source,'gate-passed.json'),path.join(out,'gate-passed.json'));
                 stageFile(candidate,runRelative(out,gate.checkpoint));
                 fs.writeFileSync(path.join(out,'hub-profile.json'),item.text,{flag:'wx',mode:0o600});
+                if(design_overrides!==undefined)
+                    fs.writeFileSync(path.join(out,'hub-design-overrides.json'),
+                        JSON.stringify(design_overrides)+'\n',{flag:'wx',mode:0o600});
+                if(stage)
+                    fs.writeFileSync(path.join(out,'hub-curriculum-stage.json'),
+                        JSON.stringify(stage)+'\n',{flag:'wx',mode:0o600});
                 fs.writeFileSync(path.join(out,'hub-start-update.json'),
                     JSON.stringify({update:startingUpdate})+'\n',{flag:'wx',mode:0o600});
             }
@@ -576,23 +1446,50 @@ function createTinyBrainsPersistentDockerAdapter({
             const chosenThreads=threads??(cpuParallelism==='allocation'
                 ?fixedCpuParallelism(context.cpu_quota,256)
                 :item.profile.threads);
-            return ['-B',runner,'--run',JOBS_IN+'/'+context.job_id,
+            if(!Number.isSafeInteger(context.ram_quota_mb)||
+                context.ram_quota_mb<128||context.ram_quota_mb>1000000)
+                throw Error('TinyBrains automatic simulation requires a frozen RAM lease.');
+            return ['-B',runner,'--run',
+                nativeWindows?out:JOBS_IN+'/'+context.job_id,
+                ...(nativeWindows?['--project-root',project,
+                    '--source-windows-root',sourceWindowsRoot,
+                    '--source-run-root',source]:[]),
                 '--updates',String(updates),'--threads',String(chosenThreads),
                 '--ram-mb',String(context.ram_quota_mb),
+                '--ram-budget-mb',String(context.ram_quota_mb),
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
+                ...(stage?['--hub-stage-file',
+                    path.join(nativeWindows?out:JOBS_IN+'/'+context.job_id,
+                        'hub-curriculum-stage.json'),
+                    '--hub-stage-sha256',
+                    crypto.createHash('sha256').update(JSON.stringify(stage)+'\n')
+                        .digest('hex')]:[]),
+                ...(design_overrides===undefined?[]:
+                    ['--hub-design-overrides-file',
+                        path.join(nativeWindows?out:JOBS_IN+'/'+context.job_id,
+                            'hub-design-overrides.json'),
+                        '--hub-design-overrides-sha256',
+                        crypto.createHash('sha256')
+                            .update(JSON.stringify(design_overrides)+'\n')
+                            .digest('hex')]),
                 ...(remote_rollouts===true?[]:['--adaptive-local-engines']),
-                ...(remote_rollouts===true?[...remote.endpoints.flatMap(endpoint=>
+                ...(remote_rollouts===true?[...endpoints.flatMap(endpoint=>
                     ['--remote-rollout-endpoint',endpoint]),
-                    '--remote-rollout-key-file',REMOTE_KEY_IN+'/rollout.key']:[]),
+                    '--remote-rollout-key-file',nativeWindows
+                        ?path.join(remote.keyDirectory,'rollout.key')
+                        :REMOTE_KEY_IN+'/rollout.key']:[]),
                 ...(rollout_action_weights?rollout_action_weights.flatMap(w=>
                     ['--remote-rollout-weight',String(w)]):[]),
                 ...(device==='cpu'?['--device','cpu']:
-                    device==='dual'
-                        ?['--device','dual',...context.gpu_pci_addresses.flatMap(pci=>
-                            ['--rocm-pci',pci])]
-                        :['--rocm-pci',context.gpu_pci_address,
+                    device==='dual'||device==='multi'
+                        ?['--device',device,...context.gpu_pci_addresses.flatMap((pci,i)=>
+                            nativeWindows?['--cuda-uuid',context.gpu_cuda_uuids[i],
+                                '--cuda-pci',pci]:['--rocm-pci',pci])]
+                        :[...(nativeWindows?['--cuda-uuid',context.gpu_cuda_uuid,
+                            '--cuda-pci',context.gpu_pci_address]
+                            :['--rocm-pci',context.gpu_pci_address]),
                             ...(context.gpu_mode==='shared'?
                                 ['--gpu-vram-mb',String(context.gpu_vram_mb)]:[])])];
         },
@@ -600,14 +1497,20 @@ function createTinyBrainsPersistentDockerAdapter({
             const item=approved.get(context.frozen_parameters?.profile);
             if(!item||item.sha256!==context.frozen_parameters?.profile_sha256)
                 throw Error('Unknown approved checkpoint profile.');
-            checkpointReady(targetFor(context),item.text);
+            checkpointReady(targetFor(context),item.text,context.frozen_parameters?.design_overrides,true);
+            checkpointStage(targetFor(context),
+                context.frozen_parameters?.training_stage??null);
             return true;
         },
         model_checkpoint_sha256(context){
             const item=approved.get(context.frozen_parameters?.profile);
             if(!item||item.sha256!==context.frozen_parameters?.profile_sha256)
                 throw Error('Unknown approved checkpoint profile.');
-            return modelFileSha256(checkpointReady(targetFor(context),item.text));
+            const out=targetFor(context);
+            const checkpoint=checkpointReady(out,item.text,
+                context.frozen_parameters?.design_overrides,true);
+            checkpointStage(out,context.frozen_parameters?.training_stage??null);
+            return modelFileSha256(checkpoint);
         },
         readProgress(context){
             const file=path.join(targetFor(context),'self-play/history.jsonl');
@@ -680,4 +1583,12 @@ function createTinyBrainsPersistentDockerAdapter({
         },
     };
 }
-module.exports={createTinyBrainsPersistentDockerAdapter};
+// The same checkpoint, training metrics and PPO pipeline are native on
+// Windows; only the trusted process owner and physical CUDA selectors differ.
+function createTinyBrainsPersistentWindowsAdapter(options) {
+    return createTinyBrainsPersistentDockerAdapter({
+        ...options,nativeWindows:true,
+    });
+}
+module.exports={createTinyBrainsPersistentDockerAdapter,
+    createTinyBrainsPersistentWindowsAdapter};

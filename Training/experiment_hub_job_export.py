@@ -11,6 +11,7 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 import os
 import re
 import stat
@@ -25,7 +26,7 @@ TARGET_BYTES = 450_000_000
 CHUNK_BYTES = 24_000_000
 UUID = re.compile(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
 PROJECT = re.compile(r"^[a-z][a-z0-9_-]{0,47}$")
-METRIC = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
+METRIC = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 COLLECTOR_SOURCE = re.compile(r"^collector_([0-9a-f]{32})_(host|src|logs)$")
 SUFFIXES = {".json", ".jsonl", ".ndjson", ".csv", ".tsv", ".txt", ".log"}
 DENIED_PARTS = {
@@ -58,7 +59,8 @@ def safe_source(root: Path, source: Path, include_replays: bool) -> bool:
     rel = source.relative_to(root)
     if not rel.parts or any(forbidden_part(part) for part in rel.parts):
         return False
-    if not include_replays and any(part.lower() == "replays" for part in rel.parts):
+    if not include_replays and any(part.lower() == "replays"
+                                   for part in (*root.parts, *rel.parts)):
         return False
     if source.suffix.lower() not in SUFFIXES:
         return False
@@ -122,6 +124,95 @@ class SelectedObservationRows:
         return bool(self.pending)
 
 
+class IndependentEvaluationRows(SelectedObservationRows):
+    """Stream the complete, checkpoint-bound independent archive into a CSV.
+
+    Failed and unavailable attempts retain their identity and diagnostic but
+    never receive a fabricated success rate or project outcome measurement.
+    The original receipt JSONL is exported independently and unchanged.
+    """
+
+    def __init__(self, job_id: str, project: str, writer) -> None:
+        super().__init__(job_id, project, None, writer)
+        self.missing_coordinates = 0
+
+    def _line(self, raw: bytes) -> None:
+        if len(raw) > 65536:
+            raise ValueError("Independent evaluation record exceeds 64 KiB")
+        if not raw:
+            return
+        row = json.loads(raw)
+        if (row.get("schema_version") != 1 or
+                row.get("job_id") != self.job_id or
+                row.get("project_id") != self.project):
+            raise ValueError("Independent evaluation archive lineage does not match the selected job")
+        status = row.get("evaluation_status", "complete")
+        if status not in ("complete", "failed", "unavailable"):
+            raise ValueError("Invalid independent evaluation archive status")
+        shared = (
+            self.job_id, self.project, row.get("observed_at"),
+            row.get("evaluated_at"), row.get("attempted_at"),
+            row.get("steps_completed"),
+            ("recorded" if type(row.get("steps_completed")) is int
+             else "unreported" if status == "complete" else "not_scored"),
+            row.get("suite_id"), row.get("suite_sha256"), row.get("runtime_sha256"),
+            row.get("checkpoint_sha256"), row.get("dispatch_id"), status,
+        )
+        provenance = (
+            row.get("source_kind"), row.get("source_report_sha256"),
+            row.get("source_checkpoint_name"),
+        )
+        def write(metric="", value="", unit="", reason="", origin="") -> None:
+            # Evaluator diagnostics can be supplied by a third-party runtime.
+            # Quote them as literal spreadsheet text rather than formulas.
+            safe_reason = ("'" + reason if isinstance(reason, str) and
+                           reason.lstrip().startswith(("=", "+", "-", "@"))
+                           else reason)
+            self.writer.writerow(
+                (*shared, row.get("trials"), row.get("successes"),
+                 metric, origin, value, unit, *provenance, safe_reason)
+            )
+            self.rows += 1
+
+        if status != "complete":
+            if "successes" in row or "trials" in row or "metrics" in row:
+                raise ValueError("Non-scoring evaluator diagnostic contains an outcome")
+            write(reason=row.get("reason") or row.get("issue") or "",
+                  origin="non_scoring_diagnostic")
+            return
+        trials, successes = row.get("trials"), row.get("successes")
+        if (type(trials) is not int or type(successes) is not int or
+                not 1 <= trials <= 1000000 or not 0 <= successes <= trials or
+                (row.get("steps_completed") is not None and
+                 (type(row["steps_completed"]) is not int or
+                  row["steps_completed"] < 0)) or
+                not re.fullmatch(r"[0-9a-f]{64}", str(row.get("suite_sha256", ""))) or
+                not re.fullmatch(r"[0-9a-f]{64}", str(row.get("checkpoint_sha256", "")))):
+            raise ValueError("Incomplete independent checkpoint evaluation identity")
+        if row.get("steps_completed") is None:
+            self.missing_coordinates += 1
+        write("success_rate", successes / trials, "ratio",
+              origin="verified_success_count")
+        metrics = row.get("metrics") or {}
+        if not isinstance(metrics, dict):
+            raise ValueError("Invalid independent evaluation measurements")
+        for name, measurement in sorted(metrics.items()):
+            if (not isinstance(name, str) or
+                    not re.fullmatch(r"[a-z][a-z0-9_]{0,23}", name) or
+                    not isinstance(measurement, dict) or
+                    set(measurement) != {"value", "unit"} or
+                    type(measurement["value"]) not in (int, float) or
+                    not isinstance(measurement["unit"], str) or
+                    measurement["unit"] not in ("count", "ratio", "scalar", "seconds")):
+                raise ValueError("Invalid project evaluation outcome measurement")
+            value, unit = measurement["value"], measurement["unit"]
+            if (not math.isfinite(value) or abs(value) > 1e12 or
+                    unit == "count" and (type(value) is not int or value < 0) or
+                    unit == "ratio" and not 0 <= value <= 1):
+                raise ValueError("Independent evaluation measurement exceeds its unit contract")
+            write(name, value, unit, origin="project_measurement")
+
+
 def export(spec: dict, output: Path) -> dict:
     project = spec["project_id"]
     jobs = spec["jobs"]
@@ -154,6 +245,9 @@ def export(spec: dict, output: Path) -> dict:
     ) or len(set(mounted_ids)) != len(mounted_ids):
         raise ValueError("Invalid selected machine-mounted job IDs")
     mounted = set(mounted_ids)
+    historical_ids = {
+        job["id"] for job in jobs if job.get("evaluation_history_only") is True
+    }
     if not isinstance(additional, list) or len(additional) > 6000 or any(
         not isinstance(entry, dict) or
         set(entry) != {"job_id", "label", "path"} or
@@ -201,6 +295,7 @@ def export(spec: dict, output: Path) -> dict:
         "project_id": project,
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "selected_job_ids": [job["id"] for job in jobs],
+        "historical_evaluation_job_ids": sorted(historical_ids),
         "selected_metrics": metrics,
         "all_recorded_metrics": all_recorded_metrics,
         "full_project_histories": "available local files only",
@@ -399,6 +494,29 @@ def export(spec: dict, output: Path) -> dict:
         observation_rows = 0
         observation_sources = 0
         partial_observation_files = 0
+        evaluation_rows = 0
+        evaluation_sources = 0
+        partial_evaluation_files = 0
+        missing_evaluation_coordinates = 0
+        evaluation_path = None
+        evaluation_stream = None
+        evaluation_writer = None
+        if any(source["label"] == "hub-evaluations" for source in additional):
+            evaluation_stream = tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", newline="", dir=output.parent,
+                prefix="hub-independent-evaluations-", suffix=".csv", delete=False,
+            )
+            evaluation_path = Path(evaluation_stream.name)
+            evaluation_writer = csv.writer(evaluation_stream)
+            evaluation_writer.writerow((
+                "job_id", "project_id", "observed_at", "evaluated_at",
+                "attempted_at", "steps_completed", "coordinate_status",
+                "suite_id", "suite_sha256",
+                "runtime_sha256", "checkpoint_sha256", "dispatch_id",
+                "evaluation_status", "trials", "successes", "metric",
+                "metric_origin", "value", "unit", "source_kind", "source_report_sha256",
+                "source_checkpoint_name", "diagnostic",
+            ))
         selected_observation_path = None
         selected_observation_stream = None
         selected_observation_writer = None
@@ -435,6 +553,10 @@ def export(spec: dict, output: Path) -> dict:
                 })
         def scan_directory(folder: Path, name_prefix: str, job_id: str,
                            counts_as_trainer: bool = True) -> None:
+            if not spec.get("include_replays", False) and any(
+                part.lower() == "replays" for part in folder.parts
+            ):
+                return
             for dirpath, dirs, files in os.walk(folder, followlinks=False):
                 current = Path(dirpath)
                 # Do not traverse sensitive folders at all; the same rule
@@ -448,8 +570,8 @@ def export(spec: dict, output: Path) -> dict:
                         continue
                     add_file(source, name_prefix + "/" +
                              source.relative_to(folder).as_posix())
-                    if any(part.lower() == "replays"
-                           for part in source.relative_to(folder).parts):
+                    if any(part.lower() == "replays" for part in (
+                            *folder.parts, *source.relative_to(folder).parts)):
                         manifest["replay_files_included"] += 1
                     found_by_job[job_id] += 1
                     if counts_as_trainer:
@@ -460,13 +582,15 @@ def export(spec: dict, output: Path) -> dict:
         # Legacy Bees run artifacts live in separately approved named sources,
         # not a job-ID directory under the coordinator data root.
         scanned_jobs = [] if project == "bees" or missing_local_root else [
-            job for job in jobs if job["id"] not in mounted
+            job for job in jobs
+            if job["id"] not in mounted and job["id"] not in historical_ids
         ]
         if missing_local_root:
             missing_sources.extend({
                 "job_id": job["id"], "label": "artifacts",
                 "reason": "not_available",
-            } for job in jobs if job["id"] not in mounted)
+            } for job in jobs
+            if job["id"] not in mounted and job["id"] not in historical_ids)
         for job in scanned_jobs:
             job_id = job["id"]
             folder = root / job_id
@@ -497,20 +621,33 @@ def export(spec: dict, output: Path) -> dict:
                 is_observation = entry["label"] in (
                     "hub-observations", "hub-host-observations"
                 ) or child_id is not None
-                observer = (SelectedObservationRows(
-                    child_id or job_id,
-                    "tinybrains_rollout" if child_id else project,
-                    None if all_recorded_metrics else set(metrics),
-                    selected_observation_writer)
+                observer = (IndependentEvaluationRows(
+                    job_id, project, evaluation_writer)
+                    if entry["label"] == "hub-evaluations" and
+                    evaluation_writer is not None else
+                    SelectedObservationRows(
+                        child_id or job_id,
+                        "tinybrains_rollout" if child_id else project,
+                        None if all_recorded_metrics else set(metrics),
+                        selected_observation_writer)
                     if is_observation and (metrics or all_recorded_metrics)
                     else None)
                 add_file(source, prefix + "/" + source.name, observer)
-                if observer is not None:
+                if isinstance(observer, IndependentEvaluationRows):
+                    evaluation_sources += 1
+                    evaluation_rows += observer.rows
+                    missing_evaluation_coordinates += observer.missing_coordinates
+                    partial_evaluation_files += int(observer.finish())
+                elif observer is not None:
                     observation_sources += 1
                     observation_rows += observer.rows
                     partial_observation_files += int(observer.finish())
                 found_by_job[job_id] += 1
-                if not is_observation:
+                # Hub evaluation histories are independently measured
+                # evidence, not trainer-owned artifact availability.
+                if not is_observation and entry["label"] not in (
+                    "hub-evaluations", "hub-historical-source"
+                ):
                     trainer_files_by_job[job_id] += 1
                 reason = None
             else:
@@ -523,6 +660,20 @@ def export(spec: dict, output: Path) -> dict:
             selected_observation_stream.close()
             selected_observation_stream = None
             add_file(selected_observation_path, "hub-selected-observation-metrics.csv")
+        if evaluation_stream is not None:
+            evaluation_stream.close()
+            evaluation_stream = None
+            add_file(evaluation_path, "hub-independent-evaluation-history.csv")
+        manifest["independent_evaluation_csv_rows"] = evaluation_rows
+        manifest["independent_evaluation_source_files"] = evaluation_sources
+        manifest["incomplete_evaluation_lines"] = partial_evaluation_files
+        manifest["independent_evaluation_missing_checkpoint_coordinates"] = (
+            missing_evaluation_coordinates
+        )
+        manifest["independent_evaluation_csv_scope"] = (
+            "complete archived checkpoint receipts and non-scoring diagnostic events; "
+            "one row per validated outcome, including a measured success rate"
+        )
         manifest["selected_observation_metric_rows"] = observation_rows
         manifest["selected_observation_source_files"] = observation_sources
         manifest["incomplete_observation_lines"] = partial_observation_files
@@ -532,7 +683,8 @@ def export(spec: dict, output: Path) -> dict:
         )
         manifest["missing_sources"] = missing_sources
         manifest["missing_artifact_job_ids"] = [
-            job_id for job_id, found in trainer_files_by_job.items() if not found
+            job_id for job_id, found in trainer_files_by_job.items()
+            if not found and job_id not in historical_ids
         ]
         manifest["exported_segments"] = entry_count
         add_bytes("export-manifest.json", json.dumps(manifest, indent=2).encode("utf-8"))
@@ -555,6 +707,10 @@ def export(spec: dict, output: Path) -> dict:
             selected_observation_stream.close()
         if 'selected_observation_path' in locals() and selected_observation_path is not None:
             selected_observation_path.unlink(missing_ok=True)
+        if 'evaluation_stream' in locals() and evaluation_stream is not None:
+            evaluation_stream.close()
+        if 'evaluation_path' in locals() and evaluation_path is not None:
+            evaluation_path.unlink(missing_ok=True)
 
 
 def main() -> None:

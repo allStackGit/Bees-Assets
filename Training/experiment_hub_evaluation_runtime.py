@@ -57,8 +57,12 @@ def describe(project, project_root=None):
 
         files["experiment_hub_tinybrains_runtime.py"] = file_digest(training / "experiment_hub_tinybrains_runtime.py")
         files["tinybrains-cli"] = file_digest(runtime.CLI)
-        for name in ("model.onnx", "manifest.json"):
-            files["nano/" + name] = file_digest(runtime.STARTER / "models/nano-bc" / name)
+        # Both approved opponents participate in the frozen method identity.
+        # A changed Micro model must be as visible as a changed Nano model.
+        for opponent in ("nano", "micro"):
+            for name in ("model.onnx", "manifest.json"):
+                files[opponent + "/" + name] = file_digest(
+                    runtime.STARTER / ("models/" + opponent + "-bc") / name)
         for package in ("ants_mapoca", "tb_baselines"):
             sources[package] = source_tree(package)
         packages += ["onnx", "onnxruntime"]

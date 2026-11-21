@@ -11,10 +11,17 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && node -e "if (Number(process.versions.node.split('.')[0]) < 18) process.exit(1)"
 
-# The TinyBrains deployment uses ONNX opset 17. Its memory and standard
-# exporters both explicitly use the legacy TorchScript export path, preserving
-# dynamic H/W axes and avoiding unsupported opset conversion in ROCm PyTorch.
-# Check that path in the interpreter used by the Hub without altering ROCm.
+# Install the missing ONNX scripting dependency in the exact interpreter
+# launched by Experiment Hub. A prior approved Halifax base image may predate
+# TinyBrains' dependency additions, even though the current upstream Dockerfile
+# already installs onnxscript. Keep the base image's qualified ROCm PyTorch.
+RUN /opt/tinybrains-venv/bin/python -m pip install --no-cache-dir \
+        'onnxscript==0.7.2'
+
+# TinyBrains exports ONNX opset 17 via the legacy TorchScript path
+# (dynamo=False). Check BOTH the onnxscript import that previously failed
+# and a real opset-17 export; do not invoke the newer exporter path here,
+# which attempts unsupported opset conversion with this ROCm PyTorch.
 RUN /opt/tinybrains-venv/bin/python -c \
-        'import torch, onnx; torch.onnx.export(torch.nn.Identity().eval(), (torch.zeros(1, 2),), "/tmp/tinybrains-onnx-smoke.onnx", opset_version=17, dynamo=False); assert onnx.load("/tmp/tinybrains-onnx-smoke.onnx").opset_import[0].version == 17' \
+        'import torch, onnx, onnxscript; torch.onnx.export(torch.nn.Identity().eval(), (torch.zeros(1, 2),), "/tmp/tinybrains-onnx-smoke.onnx", opset_version=17, dynamo=False); assert onnx.load("/tmp/tinybrains-onnx-smoke.onnx").opset_import[0].version == 17' \
     && rm /tmp/tinybrains-onnx-smoke.onnx
