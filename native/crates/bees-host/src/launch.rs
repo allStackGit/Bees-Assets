@@ -5846,10 +5846,31 @@ fn run_battle(
                 enemy_lost,
             ).map_err(|error| contextual("persistent enemy campaign fleet", error))?;
             if removed != 0 {
+                // The historical FleetShip is gone before this Level begins.
+                // Do not reserve an empty enemy squad's future wave or
+                // execute its obsolete source command queue. Retain all
+                // surviving wave members in their original relative order
+                // and let the existing reinforcement placer recompute the
+                // authentic formation from those members.
+                let active = source.source_squads.iter()
+                    .filter(|squad| !squad.members.is_empty())
+                    .map(|squad| squad.item_id).collect::<HashSet<_>>();
+                let waves_before = level.reinforcements.len();
+                for wave in &mut level.reinforcements {
+                    wave.squad_item_ids.retain(|id| active.contains(id));
+                }
+                level.reinforcements.retain(|wave| !wave.squad_item_ids.is_empty());
+                let queues_before = level.scripted_queues.len();
+                level.scripted_queues.retain(|queue|
+                    active.contains(&queue.squad_item_id));
                 println!("{}", json!({
                     "kind": "native_campaign_enemy_fleet_restored",
                     "level_id": level.level_id,
                     "permanently_lost_enemy_hulls_omitted": removed,
+                    "empty_reinforcement_waves_omitted":
+                        waves_before - level.reinforcements.len(),
+                    "empty_scripted_queues_omitted":
+                        queues_before - level.scripted_queues.len(),
                 }));
             }
         }
