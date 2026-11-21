@@ -5994,6 +5994,45 @@ fn run_battle(
             }
             source.activate_hivemind = Some(true);
         }
+        if let Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusNewThreat {
+            player_side, barges, ..
+        }) = level.campaign_dialogue {
+            // Source Uranus3ANewThreat creates one physical three-Barge
+            // SavedSquad and queues MoveToPoint(0,0). RunCommandQueue is
+            // released by the same Carrier/briefing gate as HiveMind. Keep
+            // this as a normal native scripted command, not a special
+            // movement implementation or a separate mission simulation.
+            let barge_squad_id = source.source_squads.iter()
+                .find(|squad| squad.side == player_side &&
+                    squad.player_permissions.user_controlled &&
+                    barges.iter().all(|id| squad.members.contains(id)))
+                .map(|squad| squad.item_id)
+                .ok_or_else(|| invalid(
+                    "Uranus III requires the original player-controlled three-Barge rescue squad",
+                ))?;
+            let authored_queue = level.scripted_queues.iter()
+                .find(|queue| queue.squad_item_id == barge_squad_id);
+            if let Some(queue) = authored_queue {
+                if queue.repeat ||
+                    !matches!(queue.activation, ScriptedActivationConfig::Immediate) ||
+                    !matches!(queue.orders.as_slice(),
+                        [ScriptedOrderConfig::MoveToPoint { destination }]
+                        if *destination == [0.0, 0.0])
+                {
+                    return Err(invalid(
+                        "Uranus III Barge command queue must match its source MoveToPoint(0,0) order",
+                    ).into());
+                }
+            } else {
+                level.scripted_queues.push(ScriptedQueueConfig {
+                    squad_item_id: barge_squad_id, repeat: false,
+                    activation: ScriptedActivationConfig::Immediate,
+                    orders: vec![ScriptedOrderConfig::MoveToPoint {
+                        destination: [0.0, 0.0],
+                    }],
+                });
+            }
+        }
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
         }
