@@ -5562,6 +5562,14 @@ impl CombatWorld {
         // Reuse the canonical physics live-slot registry. Retired ship
         // arrays remain append-only for attribution, but never impose
         // per-tick steering cost on long Queen/reinforcement battles.
+        // Policy-only training often has thousands of live ships but no
+        // gameplay movement orders. Probe each source map once per tick
+        // instead of hashing every policy ship ID against three empty maps.
+        // This loop only removes entries; none can be added until the next
+        // authoritative command phase, so the hoisted emptiness is stable.
+        let has_pending_game_points = !self.pending_game_point_orders.is_empty();
+        let has_latest_game_points = !self.latest_game_point_orders.is_empty();
+        let has_asteroid_path_refresh = !self.asteroid_navigation_refresh.is_empty();
         let (active_slots, bodies) = self.physics.active_ships_mut();
         for &index in active_slots {
             let ship = &mut bodies[index];
@@ -5571,9 +5579,15 @@ impl CombatWorld {
             // HasTargetCoordinates. Do not stop the ship or clear its
             // policy direction: game and training share this same motion.
             if ship.motion.is_policy_controlled && !ship.motion.user_controlled {
-                self.pending_game_point_orders.remove(&ship.id);
-                self.latest_game_point_orders.remove(&ship.id);
-                self.asteroid_navigation_refresh.remove(&ship.id);
+                if has_pending_game_points {
+                    self.pending_game_point_orders.remove(&ship.id);
+                }
+                if has_latest_game_points {
+                    self.latest_game_point_orders.remove(&ship.id);
+                }
+                if has_asteroid_path_refresh {
+                    self.asteroid_navigation_refresh.remove(&ship.id);
+                }
                 if self.navigation_requests.is_pathfinding(ship.id) {
                     self.navigation_requests.invalidate(ship.id)?;
                 }
