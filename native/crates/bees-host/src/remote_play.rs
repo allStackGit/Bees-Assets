@@ -2075,6 +2075,7 @@ fn current_state(
             (!escort).then(|| json!({
                 "kind": "extraction",
                 "exiting_side": exiting_side,
+                "retreat_on_exit": view.combat.extraction_is_withdrawal(),
             }))
         } else { None },
         // An authored exit is also public to both opponents in the local
