@@ -927,6 +927,9 @@ pub(super) fn archive(
     let mut miner_squads = Vec::new();
     let mut bombing_squads = Vec::new();
     let mut charger_squads = Vec::new();
+    // Carrier roots are source FleetShips; their individual free Strikers
+    // are materialized after every ordinary hull position is known.
+    let mut carrier_parents: Vec<(i64, i64, usize, [f32; 2], bool)> = Vec::new();
     let catalog = ShipAssetCatalog::embedded()
         .map_err(|_| invalid("native source ship collider catalogue is incomplete"))?;
     let offsets = [
@@ -996,6 +999,11 @@ pub(super) fn archive(
         ]);
         ship["user_controlled"] = json!(controlled);
         ship["fleet_ship_id"] = json!(ship_id);
+        if side == 1 {
+            carrier_parents.push((ship_id, squad_id,
+                fighter_count[side] + specialist_count[side],
+                [75.0 + offset[0], offset[1]], controlled));
+        }
         scene["ships"].as_array_mut().ok_or_else(||
             invalid("native mixed fleet scene lost its physical roster"))?
             .push(ship);
@@ -1087,6 +1095,44 @@ pub(super) fn archive(
             let offset = offsets[side][index];
             let base = if supporting { offsets[side][support_origin] }
                 else { [0.0, 0.0] };
+            if supporting && side == 1 {
+                // A Carrier must not be cloned through NativeLevelLayout:
+                // its free Striker deck has real source-owned relationships
+                // and cannot be remapped by a generic single-hull clone.
+                // Materialize this one additional Carrier as a new source
+                // FleetShip, then attach its authentic deck below.
+                let authored_ship_id = 100 + index as i64;
+                let authored_squad_id = 200 + index as i64;
+                let mut carrier = scene["ships"].as_array()
+                    .and_then(|ships| ships.iter().find(|ship|
+                        ship["entity_id"] == 14))
+                    .ok_or_else(|| invalid("native human support Carrier template is missing"))?
+                    .clone();
+                carrier["entity_id"] = json!(authored_ship_id);
+                carrier["fleet_ship_id"] = json!(authored_ship_id);
+                carrier["position"] = json!([75.0 + offset[0], offset[1]]);
+                let controlled = !selected.ai_both &&
+                    selected.player_side.is_none_or(|player| player == 2);
+                carrier["user_controlled"] = json!(controlled);
+                scene["ships"].as_array_mut().ok_or_else(||
+                    invalid("native scene has no physical carrier roster"))?.push(carrier);
+                scene["squads"].as_array_mut().ok_or_else(||
+                    invalid("native scene has no carrier squad registry"))?.push(json!({
+                        "item_id": authored_squad_id,
+                        "side": 2, "members": [authored_ship_id],
+                        "shooting_strategy_id": 1,
+                        "user_controlled": controlled,
+                        "can_accept_input": controlled,
+                        "command_bans": [],
+                    }));
+                carrier_parents.push((
+                    authored_ship_id, authored_squad_id, index,
+                    [75.0 + offset[0], offset[1]], controlled,
+                ));
+                squad_ids[side].push(authored_squad_id);
+                support_squads.push(authored_squad_id);
+                continue;
+            }
             cloned.clone_squads.push(NativeSquadClone {
                 source_squad_item_id: source_squad,
                 new_squad_item_id: new_squad,
