@@ -135,7 +135,8 @@ fn source_formation_slots(
                 if members >= 11 {
                     emit_source_row(&mut pending, &mut positions, width, columns, true, row);
                     row += 1;
-                    emit_source_row(&mut pending, &mut positions, width, pending.len().max(columns), false, row);
+                    let final_width = pending.len().max(columns);
+                    emit_source_row(&mut pending, &mut positions, width, final_width, false, row);
                 } else {
                     emit_source_row(&mut pending, &mut positions, width, columns, false, row);
                 }
@@ -198,9 +199,9 @@ impl NativePhysicalScene {
             }
             let divisor = squad.members.len() as f32;
             let original_center = originals.iter().copied()
-                .fold(Vec2::ZERO, |sum, item| sum + item) / divisor;
+                .fold(Vec2::ZERO, |sum, item| sum + item) * divisor.recip();
             let slot_center = slots.iter().copied()
-                .fold(Vec2::ZERO, |sum, item| sum + item) / divisor;
+                .fold(Vec2::ZERO, |sum, item| sum + item) * divisor.recip();
             for ((&id, original), slot) in squad.members.iter()
                 .zip(originals.into_iter()).zip(slots)
             {
