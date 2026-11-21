@@ -1706,6 +1706,8 @@ def main() -> None:
                                 raise ValueError("original capture differs from delivered bundle")
                     if delivered is not None:
                         if delivered.exists():
+                            if committed != delivered:
+                                verify_bundle_files(delivered)
                             if json.loads(delivered.read_text(encoding="utf-8")) != receipt:
                                 raise ValueError("delivered collection receipt differs from local receipt")
                         else:

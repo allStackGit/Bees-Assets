@@ -1051,6 +1051,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?' · PPO '+measured.optimizer_input_steps_measured.toLocaleString()+
                         ' input rows across '+measured.learner_rounds_measured+' rounds'
                     :'')+
+                (measured?.recovered_collector_jobs
+                    ?' · '+measured.recovered_collector_jobs+' recovered collectors'
+                    :'')+
                 (measured?.historical_opponent_rounds_measured
                     ?' · historical opponents played '+measured.historical_opponent_rounds_played+
                         '/'+measured.historical_opponent_rounds_measured+' measured selected rounds'
@@ -1076,6 +1079,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         ' World steps, '+measured.successful_policy_rows+
                         ' policy rows, '+measured.sum_independent_collector_wall_seconds.toFixed(2)+
                         ' summed overlapping collector seconds (not fleet time).',
+                    ]:[]),
+                    ...(measured?.collector_recovery_attempts?[
+                        'Collector recovery: '+measured.recovered_collector_jobs+
+                        ' completed partitions, '+measured.collector_recovery_attempts+
+                        ' recovery attempts; '+measured.interrupted_collector_process_cpu_seconds.toFixed(2)+
+                        ' interrupted-attempt process CPU seconds across '+
+                        measured.interrupted_collector_attempts_cpu_measured+' measured attempts (not additional rollout steps).',
                     ]:[]),
                     ...(measured?.learner_rounds_measured?[
                         'Measured publishing-learner PPO over '+measured.learner_rounds_measured+
@@ -1193,13 +1203,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const optimizerReplaced=plan.status==='needs_review'&&
                 plan.restart_phase==='awaiting_optimizer'&&
                 plan.reason==='Failed synchronized PPO group replaced with new machine-owned GPU claims; reauthorize the native round before any Start.';
-            if(restartDisarmed||optimizerReplaced)
+            const reviewedRecovery=plan.status==='needs_review'&&
+                (plan.optimizer_job_ids?.[0]&&state.jobs.some(job=>
+                    job.id===plan.optimizer_job_ids[0]&&job.native_release_pending)||
+                 !plan.optimizer_bundle_id&&plan.collectors_job_ids?.some(id=>
+                    state.jobs.some(job=>job.id===id&&
+                        (job.native_collector_failed_dispatch_id||job.native_collector_recovery))));
+            if(restartDisarmed||optimizerReplaced||reviewedRecovery)
                 row.append(button(optimizerReplaced
                     ?'Authorize replacement optimizer'
                     :'Reauthorize remaining rounds',async()=>{
                     const confirmation=optimizerReplaced
                         ?'Authorize the NEW complete synchronized PPO optimizer bundle for this native round? The failed ranks remain terminated, their old leases released, and the replacement keeps the original physical rollout receipts, model, machines, and GPU budgets. This permits only the newly reserved group to start after fresh Hub GPU qualification; no gradient updates are replayed from a partial checkpoint.'
-                        :'Reauthorize the remaining native Bees rounds after coordinator restart? Original model, machines, resource leases and issued jobs are preserved. Fresh GPU Starts are allowed only for entirely unstarted reserved groups; uncertain running jobs require separate manual review.';
+                        :'Reauthorize the remaining native Bees rounds? Original model, machines, resource leases and issued jobs are preserved. Only unstarted groups or verified recovery attempts may receive new Starts; uncertain running jobs require separate manual review.';
                     if(!confirm(confirmation))return;
                     try {
                         const resumed=await action('hub/native-bees/rounds/resume',{
@@ -3903,7 +3919,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     await reload();
                 }));
             if(j.status==='waiting_adapter'&&readiness?.eligible===true)
-                actions.append(button(j.native_release_recovery?'Start release recovery':'Start native job',async()=>{
+                actions.append(button(j.native_release_recovery?'Start release recovery':
+                    j.native_collector_recovery?'Resume collector':'Start native job',async()=>{
                     const windows=machine.agent_platform==='win32';
                     const gpu=j.resources.gpu_count>0;
                     const autoRelease=$('hub-native-release-on-terminal').checked;
@@ -4046,11 +4063,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }));
             }
-            // A failed collector is not a resumable service and cannot
-            // be restarted under its original Hub job/lease. Explicitly
-            // queue a different job against the same frozen collection and
-            // original machine, then claim fresh resources and approve Start.
             if(j.project_id==='bees_native_collect'&&j.status==='failed'&&
+                j.dispatch_id&&j.native_collector_failed_dispatch_id===j.dispatch_id&&
+                j.frozen_parameters?.collection_id)
+                actions.append(button('Recover collector',async()=>{
+                    if(!confirm('Resume the original physical collector on its original machine and resource budget? Completed shards and the original collection identity are retained. Capacity must be available if the old reservation was released. Start after any required GPU qualification.'))return;
+                    try {
+                        await action('hub/jobs/recover-native-collector',{
+                            job_id:j.id,confirm_recover:true,
+                        });
+                        feedback('hub-job-message','Collector recovery prepared; authorize its native Start after resource qualification.');
+                        await reload();
+                    }catch(error){feedback('hub-job-message',error.message);}
+                }));
+            // Unpinned legacy independent collectors have no resumable
+            // work-order identity and can only be replaced as new jobs.
+            if(j.project_id==='bees_native_collect'&&j.status==='failed'&&
+                !j.frozen_parameters?.collection_id&&
                 j.capacity_released_at&&!state.jobs.some(child=>
                     child.collector_replacement_of_job_id===j.id&&
                     child.status!=='cancelled')&&

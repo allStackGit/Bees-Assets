@@ -902,6 +902,8 @@ function nativeBeesRoundTrainingSummary(plan) {
     let worldSteps=0,policyRows=0,collectorSeconds=0,modelForwards=0;
     let optimizerRows=0,learnerSeconds=0,ppoSeconds=0,processingSeconds=0;
     let learnerCpuSeconds=0,collectorCoverage=0,learnerCoverage=0;
+    let collectorRecoveryAttempts=0,recoveredCollectorJobs=0;
+    let interruptedCollectorCpuSeconds=0,interruptedCollectorCpuCoverage=0;
     let releaseCoverage=0,promotions=0,releaseSeconds=0,releaseTimingCoverage=0;
     let historicalSelections=0,historicalOpponents=0;
     let historicalRoundsMeasured=0,historicalRoundsPlayed=0,historicalRows=0,historicalTotalRows=0;
@@ -914,6 +916,16 @@ function nativeBeesRoundTrainingSummary(plan) {
             collectorSeconds+=work.sum_collector_wall_seconds;
             modelForwards+=work.verified_gpu_model_forwards;
             collectorCoverage++;
+        }
+        const attempts=entry.collector_recovery_attempts||[];
+        collectorRecoveryAttempts+=attempts.length;
+        recoveredCollectorJobs+=new Set(attempts.map(attempt=>attempt.job_id)).size;
+        for(const attempt of attempts) {
+            const seconds=attempt.previous_resource_usage?.cpu_time_seconds_high_water;
+            if(Number.isFinite(seconds)&&seconds>=0) {
+                interruptedCollectorCpuSeconds+=seconds;
+                interruptedCollectorCpuCoverage++;
+            }
         }
         const learner=entry.optimizer_group?.learner_work;
         if(learner) {
@@ -975,6 +987,10 @@ function nativeBeesRoundTrainingSummary(plan) {
         target_rounds:plan.round_count,
         latest_checkpoint_sha256:rounds.at(-1)?.checkpoint_sha256||null,
         collector_rounds_measured:collectorCoverage,
+        recovered_collector_jobs:recoveredCollectorJobs,
+        collector_recovery_attempts:collectorRecoveryAttempts,
+        interrupted_collector_attempts_cpu_measured:interruptedCollectorCpuCoverage,
+        interrupted_collector_process_cpu_seconds:interruptedCollectorCpuSeconds,
         learner_rounds_measured:learnerCoverage,
         successful_world_steps:worldSteps,
         successful_policy_rows:policyRows,
@@ -3922,7 +3938,7 @@ class ExperimentHub {
                 throw Error('Unattended native recovery requires an original approved round with no previous recovery attempt.');
         }
         if(attempts.length>=16)
-            throw Error('Native generation recovery attempt history is full.');
+            throw Error('Native recovery attempt history is full.');
         const attempt={attempt_id:crypto.randomUUID(),
             previous_attempt_id:previous?.attempt_id||job.id,
             previous_lease_id:lease.id,
@@ -5674,17 +5690,17 @@ class ExperimentHub {
         if(host?.agent_platform==='linux'&&owner.resources.gpu_count>0&&
             owner.gpu_qualification?.current!==true) {
             if(owner.gpu_qualification?.status==='requested')
-                return 'Awaiting GPU access proof for the release-only recovery.';
+                return 'Awaiting GPU access proof for native recovery.';
             if(owner.gpu_qualification?.status==='rejected'||
                 owner.gpu_qualification?.cleanup_required)
-                return 'Release recovery GPU qualification requires operator review.';
+                return 'Native recovery GPU qualification requires operator review.';
             const block=gpuProbeBlock(owner,lease,host);
-            if(block)return 'Release recovery: '+block;
+            if(block)return 'Native recovery: '+block;
             this.requestGpuQualification({job_id:owner.id,confirm_qualify:true},origin);
             return null;
         }
         const readiness=nativeStartReadiness(snapshot,owner);
-        if(!readiness.eligible)return 'Release recovery: '+readiness.reason;
+        if(!readiness.eligible)return 'Native recovery: '+readiness.reason;
         this.authorizeStart({job_id:owner.id,confirm_start:true,release_on_terminal:true},
             origin);
         return null;
@@ -7353,6 +7369,8 @@ class ExperimentHub {
         let failedCollector=null;
         if(replacementId!==null) {
             failedCollector=next.jobs.find(job=>job.id===replacementId);
+            if(failedCollector?.frozen_parameters?.collection_id)
+                throw Error('A pinned native collector must recover its original logical work order, not create another collector job.');
             if(!failedCollector||
                 failedCollector.project_id!=='bees_native_collect'||
                 failedCollector.configuration_id!==selected.id||
