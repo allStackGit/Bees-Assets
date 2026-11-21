@@ -2975,15 +2975,23 @@ impl NativeSoftwareRenderer {
     /// or replica of the authoritative MapObject is needed on a LAN peer.
     pub(super) fn draw_fire_tank(&mut self, entity_id: i64, health: i32,
         max_health: i32, pose: Pose, seconds: f32) -> bool {
-        if entity_id <= 0 || max_health <= 0 || !pose.position.is_finite() ||
+        let Some(stage) = super::fire_tank_sprite_stage(health, max_health) else {
+            return false;
+        };
+        self.draw_fire_tank_stage(entity_id, stage, pose, seconds)
+    }
+
+    /// A visible damage sprite does not require knowing the physical
+    /// MapObject's exact health. Use the identical artwork in both clients.
+    pub(super) fn draw_fire_tank_stage(&mut self, entity_id: i64, stage: u8,
+        pose: Pose, seconds: f32) -> bool {
+        if entity_id <= 0 || stage > 3 || !pose.position.is_finite() ||
             !pose.rotation_degrees.is_finite() || !seconds.is_finite() { return false; }
         static BODY: OnceLock<SpriteAtlas> = OnceLock::new();
         static SMOKE: OnceLock<SpriteAtlas> = OnceLock::new();
         let body = BODY.get_or_init(|| SpriteAtlas::decode(include_bytes!("../../../../assets/fire-tank-body.rgba")));
         const STAGES: usize = 4;
-        let lost = i64::from(max_health) - i64::from(health.max(0));
-        let stage = ((lost * STAGES as i64) / i64::from(max_health))
-            .clamp(0, STAGES as i64 - 1) as usize;
+        let stage = usize::from(stage);
         // Stable cosmetic variation across frames, independent of gameplay RNG.
         let variant = entity_id as usize % (body.sprites.len() / STAGES);
         let angle = pose.rotation_degrees.to_radians();
