@@ -214,6 +214,8 @@ internal static class NativePhysicalSceneExporter
         // ItemId is the runtime ID allocated by Stage.Pool.ItemCount++ at
         // every Squad.Setup, including reuse of a pooled Squad wrapper.
         public long item_id;
+        // Durable campaign identity; zero denotes a transient or minion squad.
+        public long saved_squad_id;
         public int side;
         public int squad_number;
         public bool is_minion_squad;
@@ -280,7 +282,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 34;
+        public int schema_version = 35;
         public SourceTargetingContext targeting_context;
         public int source_frame_count = Time.frameCount;
         public string level_name;
@@ -713,6 +715,9 @@ internal static class NativePhysicalSceneExporter
                     "Cannot export an empty living Squad " + squad.ItemId);
             var sourceSquad = new SourceSquad {
                 item_id = squad.ItemId, side = squad.Side,
+                saved_squad_id = !squad.IsMinionSquad && squad.SavedSquad != null &&
+                    squad.SavedSquad.HasBeenSavedToStorage && squad.SavedSquad.Id > 0
+                    ? squad.SavedSquad.Id : 0,
                 squad_number = squad.SquadNumber,
                 is_minion_squad = squad.IsMinionSquad,
                 user_controlled = squad.IsUserControlled,

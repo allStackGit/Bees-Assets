@@ -73,7 +73,7 @@ use crate::durable_connection::DurableHiveMindConnection;
 
 mod native_game_scene;
 
-const SNAPSHOT_VERSION: u32 = 34;
+const SNAPSHOT_VERSION: u32 = 35;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -549,6 +549,7 @@ impl UnityColor {
 
 #[derive(Deserialize)]
 struct UnitySquad {
+    saved_squad_id: Option<i64>,
     banned_strategies: Option<Vec<String>>,
     is_carrier_squad: Option<bool>,
     squad_number: Option<i32>,
@@ -3950,6 +3951,7 @@ impl NativePhysicalScene {
         let mut squad_ids = HashSet::with_capacity(raw.squads.len());
         let mut registered_ships = HashSet::with_capacity(live_ships.len());
         let mut used_numbers = HashSet::with_capacity(raw.squads.len());
+        let mut saved_ids = HashSet::new();
         for squad in raw.squads {
             if squad.item_id <= 0 || squad.side <= 0 || squad.member_ids.is_empty() {
                 return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
@@ -3957,6 +3959,13 @@ impl NativePhysicalScene {
             if !squad_ids.insert(squad.item_id) {
                 return Err(NativeSnapshotError::DuplicateSquad(squad.item_id));
             }
+            let saved_squad_id = match squad.saved_squad_id {
+                Some(0) => None,
+                Some(id) if id > 0 && squad.is_minion_squad == Some(false) &&
+                    saved_ids.insert(id) => Some(id),
+                None if raw.schema_version < 35 => None,
+                _ => return Err(NativeSnapshotError::InvalidSquad(squad.item_id)),
+            };
             let (hotkey_number, original_squad_count) =
                 if let Some(counts) = original_squad_counts {
                     let side = usize::try_from(squad.side - 1)
@@ -4065,7 +4074,7 @@ impl NativePhysicalScene {
                 _ => None,
             };
             source_squads.push(NativeSourceSquad {
-                saved_squad_id: None,
+                saved_squad_id,
                 custom_color_rgb,
                 command_bans,
                 hivemind,
