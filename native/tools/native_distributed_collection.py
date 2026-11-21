@@ -287,35 +287,50 @@ def balanced_round_plan(root, baseline, completed, round_number):
     # Median worlds/second is the observed time to complete real arenas,
     # not CPU clock rate or the misleading sum of parallel worker wall times.
     medians = {name: sorted(samples)[1] for name, samples in rates.items()}
-    slow = max(ids, key=lambda name: (by_id[name]["world_count"] / medians[name], name))
-    fast = min(ids, key=lambda name: (by_id[name]["world_count"] / medians[name], name))
-    if slow == fast:
-        return current, {"reason": "balanced"}
-    giver, taker = by_id[slow], by_id[fast]
-    limit = min(
-        giver["world_count"] - giver["rollout_workers"],
-        1024 - taker["world_count"],
-        giver["world_count"] // 10,
-        taker["world_count"] // 10,
-    )
-    if limit < 1:
-        return current, {"reason": "allocation_limits"}
-    old_makespan = max(by_id[name]["world_count"] / medians[name] for name in ids)
-    best_move, best_makespan = 0, old_makespan
-    for moved in range(1, limit + 1):
-        candidate = max(
-            (by_id[name]["world_count"] - (moved if name == slow else 0)
-             + (moved if name == fast else 0)) / medians[name]
-            for name in ids
-        )
-        if candidate < best_makespan:
-            best_move, best_makespan = moved, candidate
-    if best_move == 0 or best_makespan > old_makespan * 0.98:
+    # Consider every feasible donor/recipient pair. The quickest
+    # collector may already be at capacity, and tied stragglers may
+    # require moving work from more than one machine in the same round.
+    counts = {name: by_id[name]["world_count"] for name in ids}
+    remaining_out = {name: min(counts[name] - by_id[name]["rollout_workers"],
+                               max(1, counts[name] // 10)) for name in ids}
+    remaining_in = {name: min(1024 - counts[name],
+                              max(1, counts[name] // 10)) for name in ids}
+    def objective(allocation):
+        return tuple(sorted((allocation[name] / medians[name] for name in ids),
+                            reverse=True))
+
+    old_makespan = objective(counts)[0]
+    transfers = []
+    while True:
+        current_score = objective(counts)
+        best = None
+        best_score = current_score
+        for donor in sorted(ids):
+            if remaining_out[donor] <= 0:
+                continue
+            for recipient in sorted(ids):
+                if donor == recipient or remaining_in[recipient] <= 0:
+                    continue
+                candidate = counts.copy()
+                candidate[donor] -= 1
+                candidate[recipient] += 1
+                score = objective(candidate)
+                if score < best_score:
+                    best = donor, recipient
+                    best_score = score
+        if best is None:
+            break
+        donor, recipient = best
+        counts[donor] -= 1
+        counts[recipient] += 1
+        remaining_out[donor] -= 1
+        remaining_in[recipient] -= 1
+        transfers.append((donor, recipient))
+
+    best_makespan = objective(counts)[0]
+    if not transfers or best_makespan > old_makespan * 0.98:
         return current, {"reason": "insufficient_predicted_improvement"}
 
-    counts = {name: by_id[name]["world_count"] for name in ids}
-    counts[slow] -= best_move
-    counts[fast] += best_move
     # Preserve the full, deterministic global world-index set, even when
     # its original base is nonzero. Only the collector partitions change.
     start = ordered[0]["world_start"]
@@ -330,8 +345,10 @@ def balanced_round_plan(root, baseline, completed, round_number):
     ]}
     _validate_collector_plan(plan)
     return plan, {
-        "reason": "measured_straggler_reduction", "from": slow, "to": fast,
-        "worlds_transferred": best_move,
+        "reason": "measured_straggler_reduction",
+        "worlds_transferred": len(transfers),
+        "world_count_changes": {name: counts[name] - by_id[name]["world_count"]
+                                for name in sorted(ids)},
         "predicted_longest_seconds_before": old_makespan,
         "predicted_longest_seconds_after": best_makespan,
         "collector_worlds_per_second": medians,
