@@ -87,7 +87,7 @@ pub(crate) fn authored_obstacle_bodies(
                     NativeAuthoredEntity::BoxObstacle {
                         entity_id, prefab_name, pose, live_corners,
                     } => {
-                        let asset = &boxes
+                        let asset = boxes
                             .by_name(prefab_name)
                             .ok_or("Titania II obstacle lacks its source prefab")?;
                         if asset.kind != ObstacleKind::StaticObstacle { continue; }
@@ -115,7 +115,7 @@ pub(crate) fn authored_obstacle_bodies(
                         entity_id, profile, pose, velocity,
                         angular_velocity_degrees, effective_max_health,
                     } => {
-                        let (_, body) = &asteroids
+                        let (_, body) = asteroids
                             .prepare_spawn(profile.prefab_number, *entity_id,
                                 *pose, *velocity, *angular_velocity_degrees,
                                 Some(*effective_max_health))
