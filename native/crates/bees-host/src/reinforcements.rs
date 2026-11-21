@@ -505,15 +505,23 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 if !extents.is_finite() || extents.x <= 0.0 || extents.y <= 0.0 {
                     return Err("Reinforcement spawn ship has invalid physical size");
                 }
-                // A conservative original-sprite footprint protects the
-                // genuine ship collider and the pathfinder obstacle hull.
+                // The original source can start a wave outside the map
+                // and order its real squads to enter through a playable
+                // destination (Uranus II's lower flank starts at 600,-512).
+                // Physics explicitly tracks out-of-bounds bodies. Do not
+                // reject or teleport that authentic approach. A wave with
+                // no in-map entry must still fit inside the playable area.
                 let radius = extents.x.max(extents.y) * 0.5 + 2.0;
                 let bounds = self.broadphase_bounds;
-                if !position.is_finite() ||
-                    position.x - radius < bounds.min.x ||
+                let (wave_idx, _) = expected_ships[&ship_id];
+                let enters_map = waves[wave_idx].entry.is_some_and(|entry|
+                    entry.x >= bounds.min.x && entry.x <= bounds.max.x &&
+                    entry.y >= bounds.min.y && entry.y <= bounds.max.y);
+                let outside = position.x - radius < bounds.min.x ||
                     position.x + radius > bounds.max.x ||
                     position.y - radius < bounds.min.y ||
-                    position.y + radius > bounds.max.y ||
+                    position.y + radius > bounds.max.y;
+                if !position.is_finite() || (outside && !enters_map) ||
                     obstacles.iter().any(|obstacle|
                         obstacle.navigation_closest_point(position).is_some_and(|point|
                             (point - position).length_squared() < radius * radius))
