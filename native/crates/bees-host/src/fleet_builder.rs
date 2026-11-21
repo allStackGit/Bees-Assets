@@ -1935,10 +1935,12 @@ pub(super) fn archive(
             } else if index < late.len().div_ceil(2) { 25_u32 } else { 55 };
             wave_times_and_squads.push((seconds, side, squad));
             deferred_squads.push(squad);
-            if let Some(&child) = carrier_children.get(&squad) {
-                // The native Level registers a Carrier's free Striker
-                // complement atomically with its parent's real arrival.
-                deferred_squads.push(child);
+            if let Some(children) = carrier_children.get(&squad) {
+                // Native Level admits both authentic Carrier child
+                // squads with their parent in the same reinforcement
+                // transaction. No orphan Drone or Striker may enter
+                // battle before its actual persistent Carrier.
+                deferred_squads.extend(children.iter().copied());
             }
         }
     }
@@ -1951,8 +1953,8 @@ pub(super) fn archive(
         run["levels"][0]["reinforcements"] = json!(
             wave_times_and_squads.iter().map(|&(seconds, side, squad)| {
                 let mut group = vec![squad];
-                if let Some(&child) = carrier_children.get(&squad) {
-                    group.push(child);
+                if let Some(children) = carrier_children.get(&squad) {
+                    group.extend(children.iter().copied());
                 }
                 if seconds == 0 {
                     // The first source ship (11 Bees / 12 Humans) remains
@@ -2182,23 +2184,28 @@ pub(super) fn archive(
             queues.push(queue);
         }
     }
-    // Free Strikers remain physically real members of the same Carrier
-    // family. The existing scripted BombingRun owns autonomous AI children;
-    // player-controlled decks instead retain their ordinary player input
-    // permissions, so no competing command authority is introduced.
-    for (child_squad, player_controlled) in free_striker_squads {
-        if player_controlled || selected.hivemind.as_ref()
-            .is_some_and(|hivemind| hivemind.controlled_side == 2)
-        { continue; }
-        let mut queue = json!({
-            "squad_item_id": child_squad,
-            "repeat": true,
-            "orders": [{"kind": "bombing_nearest"}],
-        });
-        if deferred_squads.contains(&child_squad) {
-            queue["activation"] = json!({"kind": "on_deployment"});
+    // Free Strikers and Drones remain physically real members of their
+    // Carrier family. Use the existing BombingRun for enemy Strikers and
+    // normal targeting for enemy Drones; player-owned or HiveMind-owned
+    // decks retain their actual command authority without competing AI.
+    for (children, command) in [
+        (free_striker_squads, "bombing_nearest"),
+        (free_drone_squads, "aggressive_nearest"),
+    ] {
+        for (child_squad, player_controlled) in children {
+            if player_controlled || selected.hivemind.as_ref()
+                .is_some_and(|hivemind| hivemind.controlled_side == 2)
+            { continue; }
+            let mut queue = json!({
+                "squad_item_id": child_squad,
+                "repeat": true,
+                "orders": [{"kind": command}],
+            });
+            if deferred_squads.contains(&child_squad) {
+                queue["activation"] = json!({"kind": "on_deployment"});
+            }
+            queues.push(queue);
         }
-        queues.push(queue);
     }
     run["levels"][0]["scripted_queues"] = json!(queues);
     if selected.benchmark {
