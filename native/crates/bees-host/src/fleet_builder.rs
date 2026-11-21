@@ -389,7 +389,34 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
 
 /// The existing private host authenticates a separate remote commander
 /// per side; no new network controller, simulation or permission model.
-pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>> {
+pub(super) fn choose_multiplayer(
+    authenticated_side: Option<i32>,
+) -> Result<Option<FleetChoice>, Box<dyn Error>> {
+    // The existing LAN host's token map is authoritative. A HiveMind
+    // opponent is selectable only when exactly one real remote commander
+    // can authenticate, so two users can never be assigned the same side.
+    let configured = configured_hivemind_fleet()?;
+    let use_hivemind = if configured.is_some() && authenticated_side.is_some() {
+        let rows = [
+            BattleMenuRow { title: "Two remote commanders",
+                status: "  [Side 1 and side 2]", unlocked: true },
+            BattleMenuRow { title: "Remote commander vs HiveMind",
+                status: "  [Existing authenticated socket AI]", unlocked: true },
+        ];
+        let mut selected = 0_usize;
+        match select_library(&rows, &mut selected, false)? {
+            Some(0) => false,
+            Some(1) => true,
+            _ => return Ok(None),
+        }
+    } else { false };
+    let hivemind = if use_hivemind {
+        let side = authenticated_side.expect("one authorized remote commander");
+        Some(NativeHiveMindFleet {
+            controlled_side: 3 - side,
+            ..configured.expect("selected configured network controller")
+        })
+    } else { None };
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
     let Some(mining_field) = choose_mining_field(terrain)? else { return Ok(None); };
@@ -414,10 +441,11 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, squad_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
+        player_side: if use_hivemind { authenticated_side } else { None },
+        fleet_sizes, squad_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
         ai_both: false,
         ai_tactics: AiTactics::Aggressive,
-        hivemind: None, objective, reinforcements, objective_side,
+        hivemind, objective, reinforcements, objective_side,
         benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
