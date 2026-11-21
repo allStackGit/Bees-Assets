@@ -793,6 +793,7 @@ impl DurableDiagnosticNotifications {
                 "timed_out": value.result.timed_out,
                 "extraction_victory": value.result.extraction_victory,
                 "duration_seconds": value.result.duration_seconds,
+                "faction_behavior": value.faction_behavior,
                 "bee_side_eliminated": value.result.bee_side_eliminated,
                 "human_side_eliminated": value.result.human_side_eliminated,
                 "bee_terminal": value.terminal_rewards.bee_terminal,

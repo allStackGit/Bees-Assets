@@ -89,6 +89,18 @@ def terminal_matchup(directory, result, candidate_slot, incumbent_slot):
             winner, timeout = payload["winner_side"], payload["timed_out"]
             if winner not in (0, bee, human) or type(timeout) is not bool:
                 raise ValueError("invalid native champion outcome")
+            behavior = payload.get("faction_behavior")
+            if not isinstance(behavior, list) or len(behavior) != 2:
+                raise ValueError("native champion terminal lacks physical behavior evidence")
+            candidate_behavior = behavior[0 if candidate_side == bee else 1]
+            for field in ("starting_tsv", "final_tsv", "shots", "hits", "damage"):
+                value = candidate_behavior.get(field)
+                if type(value) is not int or value < 0:
+                    raise ValueError("invalid native champion physical behavior counter")
+                counts["candidate_" + field] += value
+            if (candidate_behavior["starting_tsv"] <= 0 or
+                    (candidate_behavior["hits"] == 0) != (candidate_behavior["damage"] == 0)):
+                raise ValueError("inconsistent native champion physical behavior evidence")
             scene = context["scene_sha256"]
             scene_counts = by_scene.setdefault(scene, Counter())
             for row in (counts, scene_counts):

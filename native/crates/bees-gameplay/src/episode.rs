@@ -5,7 +5,7 @@
 //! deaths from killer IDs, or silently emits training examples.
 //! MA-POCA delivery, RL agent groups and persistent TSV are external.
 
-use bees_sim::combat_world::CombatWorld;
+use bees_sim::combat_world::{CombatEvent, CombatWorld};
 use bees_sim::episode_terminal::{
     EpisodeDeathAttribution, EpisodeEconomicError, EpisodeEconomicRewards,
     EpisodeTerminalError, EpisodeTerminalMeasurements, EpisodeTerminalResult,
@@ -69,12 +69,25 @@ impl From<DiscoveryError> for NativeEpisodeRewardError {
     }
 }
 
+/// Physical behavior evidence for the continual-learning release gate.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct NativeFactionBehavior {
+    pub starting_tsv: i64,
+    pub final_tsv: i64,
+    pub shots: u64,
+    pub hits: u64,
+    pub damage: u64,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NativeEpisodeFinal {
     pub result: EpisodeTerminalResult,
     pub terminal_rewards: EpisodeTerminalRewards,
     pub economic_rewards: EpisodeEconomicRewards,
     pub mission: Option<bees_sim::episode_terminal::EpisodeMissionOutcome>,
+    /// Bee then Human, absent on ordinary games or legacy recovered episodes.
+    #[serde(default)]
+    pub faction_behavior: Option<[NativeFactionBehavior; 2]>,
 }
 
 /// Returned slices refer to the adapter's reused scratch memory. Consume
@@ -130,6 +143,8 @@ enum EpisodeMode {
 struct TrainingRewards {
     bee_starting_tsv: i32,
     human_starting_tsv: i32,
+    #[serde(default)]
+    faction_behavior: Option<[NativeFactionBehavior; 2]>,
     attribution: EpisodeDeathAttribution,
     shaping: EpisodeShaping,
     economy: EpisodeEconomicLedger,
@@ -218,6 +233,10 @@ impl NativeEpisodeRewardCoordinator {
             terminal,
             mode: EpisodeMode::Training(Box::new(TrainingRewards {
                 bee_starting_tsv, human_starting_tsv,
+                faction_behavior: Some([
+                    NativeFactionBehavior { starting_tsv: i64::from(bee_starting_tsv), ..Default::default() },
+                    NativeFactionBehavior { starting_tsv: i64::from(human_starting_tsv), ..Default::default() },
+                ]),
                 attribution, shaping, economy,
                 discovery: None,
                 damage_emissions: Vec::new(),
@@ -522,8 +541,35 @@ impl NativeEpisodeRewardCoordinator {
                 terminal_rewards: EpisodeTerminalRewards::default(),
                 economic_rewards: EpisodeEconomicRewards::default(),
                 mission: self.terminal.mission_outcome(world, result),
+                faction_behavior: None,
             }));
         };
+        // Count real physical launches and positive enemy damage, not
+        // policy fire intentions. Only compact counters persist per episode.
+        if let Some(behavior) = training.faction_behavior.as_mut() {
+            let sides = [self.bee_side, self.human_side];
+            for event in world.events() {
+                match event {
+                    CombatEvent::PolicyWeaponFired { ship_id, .. } |
+                    CombatEvent::GameWeaponFired { ship_id, .. } => {
+                        if let Some(side) = world.ship(*ship_id)
+                            .and_then(|ship| sides.iter().position(|&side| ship.side == side))
+                        {
+                            behavior[side].shots = behavior[side].shots.saturating_add(1);
+                        }
+                    }
+                    CombatEvent::Hit(hit) if hit.attacker_side != hit.target_side &&
+                        hit.delta.applied_damage > 0 => {
+                        if let Some(side) = sides.iter().position(|&side| side == hit.attacker_side) {
+                            behavior[side].hits = behavior[side].hits.saturating_add(1);
+                            behavior[side].damage = behavior[side].damage
+                                .saturating_add(hit.delta.applied_damage as u64);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
         // Both consumers inspect the same world-owned event store. Scratch
         // buffers survive across ticks to avoid allocations in quiet steps.
         training.shaping.consume_combat_shaping_events(
@@ -549,11 +595,22 @@ impl NativeEpisodeRewardCoordinator {
                 training.economy.retainable_mined_tsv(self.bee_side),
                 training.economy.retainable_mined_tsv(self.human_side),
             )?.expect("terminal outcome just latched");
+            if let Some(behavior) = training.faction_behavior.as_mut() {
+                let sides = [self.bee_side, self.human_side];
+                // One bounded terminal scan, no per-step fleet traversal.
+                for (ship, _) in world.render_ships() {
+                    if let Some(side) = sides.iter().position(|&side| side == ship.side) {
+                        behavior[side].final_tsv = behavior[side].final_tsv
+                            .saturating_add(i64::from(ship.vitals.tsv()));
+                    }
+                }
+            }
             Some(NativeEpisodeFinal {
                 result: done.outcome,
                 terminal_rewards: done.rewards,
                 economic_rewards: economic,
                 mission: self.terminal.mission_outcome(world, done.outcome),
+                faction_behavior: training.faction_behavior,
             })
         } else {
             None
