@@ -33,16 +33,16 @@ const TITANIA_LOOP_END: f32 = 185.461_18;
 enum Effect {
     LightLaser, SmallLaser, BigLaser, BeamCannon, FlagshipLaser, QueenLaser,
     RocketLaunch, StrikerBomb, Explosion, SmallExplosion, MediumExplosion,
-    LargeExplosion, HugeExplosion, Warp, Button, FireBargeClick,
+    LargeExplosion, HugeExplosion, Warp, Button, FireBargeClick, Intercom,
 }
 
 impl Effect {
-    const ALL: [Self; 16] = [
+    const ALL: [Self; 17] = [
         Self::LightLaser, Self::SmallLaser, Self::BigLaser,
         Self::BeamCannon, Self::FlagshipLaser, Self::QueenLaser, Self::RocketLaunch,
         Self::StrikerBomb, Self::Explosion, Self::SmallExplosion,
         Self::MediumExplosion, Self::LargeExplosion, Self::HugeExplosion,
-        Self::Warp, Self::Button, Self::FireBargeClick,
+        Self::Warp, Self::Button, Self::FireBargeClick, Self::Intercom,
     ];
 
     fn file(self) -> &'static str {
@@ -63,6 +63,7 @@ impl Effect {
             Self::Warp => "Enter The Warp.mp3",
             Self::Button => "Beez Button Click.mp3",
             Self::FireBargeClick => "Fire Barge Detonation Click.mp3",
+            Self::Intercom => "Intercom Notification Sound Effect.mp3",
         }
     }
 
@@ -353,6 +354,11 @@ impl NativeGameAudio {
     /// selected physical Fire Barge before calling FireBarge.Detonate.
     /// It is a local user-command sound, never a fabricated CombatEvent
     /// or a headless training cost. Bound the burst for large selections.
+    pub fn campaign_dialogue_presented(&mut self) {
+        self.voices.retain(|sink| !sink.empty());
+        self.play(Effect::Intercom);
+    }
+
     pub fn click_fire_barge_detonation(&mut self, count: usize) {
         self.voices.retain(|sink| !sink.empty());
         self.measurements.sound_effects_dropped +=
@@ -364,7 +370,14 @@ impl NativeGameAudio {
 
     fn play(&mut self, effect: Effect) {
         let Some(handle) = self.handle.as_ref() else { return };
-        if self.muted || self.paused { return; }
+        // The original UIAudioController is independent of the Level's
+        // paused combat soundtrack. Dialogue and menu clicks remain
+        // audible while a briefing blocks physical gameplay ticks.
+        if self.muted || (self.paused &&
+            !matches!(effect, Effect::Button | Effect::Intercom))
+        {
+            return;
+        }
         if self.voices.len() >= MAX_EFFECT_VOICES {
             self.measurements.sound_effects_dropped += 1;
             return;
