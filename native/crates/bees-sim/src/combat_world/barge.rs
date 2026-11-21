@@ -304,6 +304,7 @@ impl CombatWorld {
                     }
                     motion.current_speed = CHARGE_SPEED;
                     motion.cannot_change_movement_orders = true;
+                    self.events.push(CombatEvent::BargeChargeActivated { ship_id });
                 }
                 3 => self.stop_game_barge_charge(ship_id)?,
                 4 => {
@@ -546,6 +547,7 @@ impl CombatWorld {
                     motion.current_speed = CHARGE_SPEED;
                     motion.movement_direction = barge.heading;
                     motion.cannot_change_movement_orders = true;
+                    self.events.push(CombatEvent::BargeChargeActivated { ship_id });
                 }
                 2 if barge.elapsed >= CHARGING => {
                     // Deferred until outside this mutable policy iteration.

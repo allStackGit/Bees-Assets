@@ -347,7 +347,7 @@ impl CampaignDialogue {
             // Deliver one dialogue cue per fixed step without discarding
             // the other when both happen in the same physics tick.
             *charge_observed |= world.events().iter().any(|event|
-                matches!(event, bees_sim::combat_world::CombatEvent::BargeChargeStarted {
+                matches!(event, bees_sim::combat_world::CombatEvent::BargeChargeActivated {
                     ship_id
                 } if barges.contains(ship_id)));
             let side_alive = |side| world.living_mobile_ships_on_side(side) > 0 ||

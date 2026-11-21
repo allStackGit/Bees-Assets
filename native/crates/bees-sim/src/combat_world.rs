@@ -311,7 +311,11 @@ pub enum CombatEvent {
     FireBargeDetonated { ship_id: i64, projectile_id: i64 },
     /// Yellow Jacket's direct reciprocal Bomb hits have no projectile.
     YellowJacketDetonated { ship_id: i64, target_id: i64 },
+    /// Wind-up was reserved by a policy or source command.
     BargeChargeStarted { ship_id: i64 },
+    /// Wind-up finished and the physical Barge began its charge.
+    /// This is when source Barge.HasStartedCharging first becomes true.
+    BargeChargeActivated { ship_id: i64 },
     BargeChargeHit { ship_id: i64, target_id: i64 },
     BargeChargeStopped { ship_id: i64 },
     /// An authored Beacon ship joined the active roster and inherits
