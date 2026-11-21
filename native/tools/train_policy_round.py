@@ -1045,6 +1045,12 @@ def require_optimizer_attempt(output, result, trainer_config):
 
 
 def optimize(args, output, python, manifest, checkpoint, trainer_config, result, rollout_args):
+    # Pin every model consumed by the native learner, including opponent slots.
+    # Imported rollout bundles bypass local collection, so this boundary must
+    # independently check their model inputs as well.
+    model_dependencies = native_manifest_model_dependencies(
+        manifest, os.environ.get("BEES_NATIVE_MODEL_STORE"),
+    )
     learner_dir = output / "learner"
     primary = [result["capture"], result["journal"]] if "capture" in result else []
     train_command = [
@@ -1098,6 +1104,12 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
             )
     else:
         run_stage(train_command, output / "optimizer.log" if args.stage_diagnostics else None)
+    # A successful optimizer subprocess is not enough if source weights or
+    # their resolved paths changed while gradients were being computed.
+    if native_manifest_model_dependencies(
+        manifest, os.environ.get("BEES_NATIVE_MODEL_STORE"),
+    ) != model_dependencies:
+        raise ValueError("native optimizer model paths changed during learning")
     if args.learner_node_rank != 0:
         worker_file = learner_dir / "node-result.json"
         worker = json.loads(worker_file.read_text(encoding="utf-8"))
