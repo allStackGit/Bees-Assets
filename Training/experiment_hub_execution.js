@@ -82,7 +82,7 @@ class LocalExecution {
                 this.supervisor.adapters?.tinybrains?.gpu_dual_execution==='split-ppo'
                 ?[...(this.supervisor.adapters.tinybrains.tinybrains_dual_gpu_profiles||[])]:[],
             tinybrains_multi_gpu_profiles:this.supervisor.gpuEnabled===true&&
-                this.supervisor instanceof DockerSupervisor&&
+                dockerCapable(this.supervisor)&&
                 this.supervisor.adapters?.tinybrains?.gpu_multi_execution==='split-ppo-collectors'
                 ?[...(this.supervisor.adapters.tinybrains.tinybrains_multi_gpu_profiles||[])]:[],
             tinybrains_imports:{...this.supervisor.adapters?.tinybrains?.tinybrains_imports},
@@ -167,7 +167,7 @@ class LocalExecution {
                     (this.supervisor instanceof LinuxSupervisor&&
                         job.project_id==='courier'&&
                         localAdapter?.gpu_multi_execution==='independent-ppo'||
-                     this.supervisor instanceof DockerSupervisor&&
+                     dockerCapable(this.supervisor)&&
                         job.project_id==='tinybrains'&&count>=3&&
                         job.frozen_parameters?.device==='multi'&&
                         localAdapter?.gpu_multi_execution==='split-ppo-collectors');
