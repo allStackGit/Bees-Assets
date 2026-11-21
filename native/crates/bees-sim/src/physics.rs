@@ -889,7 +889,9 @@ impl ObstacleBody {
         self.collider.bounds
     }
 
-    pub(crate) fn primary_overlaps_circle(&self, center: Vec2, radius: f32) -> bool {
+    /// Read-only primary-collider overlap, also used by the player's
+    /// obstacle hit testing. This never creates physical contact events.
+    pub fn primary_overlaps_circle(&self, center: Vec2, radius: f32) -> bool {
         self.active && self.collider.overlaps_circle(center, radius)
     }
 

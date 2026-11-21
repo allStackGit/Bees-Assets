@@ -1475,15 +1475,15 @@ impl NativeSoftwareRenderer {
         let target = view.combat.map_object(id)?;
         if target.health <= 0 { return None; }
         let body = view.combat.obstacle_body(id).filter(|body| body.active)?;
-        let bounds = body.primary_bounds()?;
-        let tolerance = 6.0 / self.camera.pixels_per_unit;
-        if point.x < bounds.min.x - tolerance ||
-            point.x > bounds.max.x + tolerance ||
-            point.y < bounds.min.y - tolerance ||
-            point.y > bounds.max.y + tolerance
+        // Match the LAN client's visible primary-hull interaction, not an
+        // omniscient objective lookup or a collider's empty AABB corners.
+        if !self.fog_visible_at(view, point) ||
+            !self.fog_visible_at(view, body.pose.position) ||
+            !body.primary_overlaps_circle(point, 10.0 / self.camera.pixels_per_unit)
         {
             return None;
         }
+        let bounds = body.primary_bounds()?;
         Some((bounds.min + bounds.max) * 0.5)
     }
 
@@ -2050,7 +2050,11 @@ impl NativeSoftwareRenderer {
                     (false, _) => "Destroy MapObject",
                 }
             );
-            let health = target.map_or(String::new(), |object|
+            // Objective identity and deadline are public, but an unseen
+            // object's live health is not part of the LAN player's view.
+            let visible = view.combat.obstacle_body(demolition.target_map_object_id)
+                .is_some_and(|body| self.fog_visible_at(view, body.pose.position));
+            let health = target.filter(|_| visible).map_or(String::new(), |object|
                 format!("  {}/{} HP", object.health, object.max_health)
             );
             let label = format!(
