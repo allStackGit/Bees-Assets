@@ -6054,8 +6054,8 @@ fn run_battle(
                 other => other,
             };
         }
-        // Uranus I and III begin with Stage.ActivateHiveMind=false while
-        // the opening dialogue and optional Carrier tutorial hold gameplay.
+        // Uranus I, II and III begin with Stage.ActivateHiveMind=false while
+        // the opening dialogue/tooltip and optional Carrier tutorial hold gameplay.
         // Source FinishCarrierIntroduction then calls SetupHivemind and
         // enables command requests before the first physical game step.
         // Native clients and authenticated dedicated hosts hold the same
@@ -6063,7 +6063,8 @@ fn run_battle(
         // *post-briefing* authority rather than the exported pre-intro flag.
         if matches!(level.campaign_dialogue,
             Some(CampaignDialogueSpec::UranusNewThreat { .. }) |
-            Some(CampaignDialogueSpec::UranusOffensive { .. }))
+            Some(CampaignDialogueSpec::UranusOffensive { .. }) |
+            Some(CampaignDialogueSpec::UranusDefensive { .. }))
         {
             if source.schema_version < 27 ||
                 source.activate_hivemind != Some(false) ||
@@ -6072,7 +6073,7 @@ fn run_battle(
                 source.source_squads.iter().any(|squad| squad.hivemind.is_none())
             {
                 return Err(invalid(
-                    "Uranus I and III require pre-intro source HiveMind authority and a complete post-intro command roster",
+                    "Uranus I, II and III require pre-intro source HiveMind authority and a complete post-intro command roster",
                 ).into());
             }
             source.activate_hivemind = Some(true);

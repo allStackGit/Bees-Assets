@@ -2744,12 +2744,18 @@ impl NativePhysicalScene {
                     zone.player_side == player_side && zone.retreat_on_exit) ||
                 setup.groups.is_some() || setup.survival.is_some() ||
                 setup.demolition.is_some() || setup.escort.is_some() ||
-                setup.reinforcements.len() != 6 ||
-                [120.0, 240.0, 360.0, 480.0, 540.0, 600.0].iter().any(|due|
-                    !setup.reinforcements.iter().any(|wave|
+                // Original Uranus2.StartWaves uses SIX timer callbacks
+                // but NINE AddReinforcementSquads calls: waves 4, 5
+                // and 6 each deploy independent upper and lower lanes.
+                // A single generic merged wave would alter physical
+                // starting positions, squad formations and AI commands.
+                setup.reinforcements.len() != 9 ||
+                [(120.0_f32, 1_usize), (240.0, 1), (360.0, 1),
+                 (480.0, 2), (540.0, 2), (600.0, 2)].iter().any(|&(due, expected)|
+                    setup.reinforcements.iter().filter(|wave|
                         matches!(wave.activation,
                             crate::reinforcements::NativeReinforcementActivation::AfterSeconds(seconds)
-                            if (seconds - due).abs() <= 0.0001))) =>
+                            if (seconds - due).abs() <= 0.0001)).count() != expected) =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::UranusNewThreat {
                 player_side, barges, ..

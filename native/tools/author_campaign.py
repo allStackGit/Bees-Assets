@@ -153,7 +153,8 @@ def input_mission(run_path: Path, player_side: int,
         # Uranus III is captured before its Carrier introduction has
         # enabled Stage.ActivateHiveMind. The native launcher explicitly
         # releases the same post-briefing gate, with source squad ownership.
-        prelude = (story in ("uranus_new_threat", "uranus_on_the_offensive") and
+        prelude = (story in ("uranus_new_threat", "uranus_on_the_offensive",
+                            "uranus_on_the_defensive") and
                    scene.get("activate_hivemind") is False and
                    (scene.get("native_game_schema") == 1 or
                     scene.get("schema_version") == 35))
@@ -572,21 +573,31 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             # No shadow mission simulation or invented reinforcement plans.
             zone = level.get("extraction")
             waves = level.get("reinforcements")
-            expected = (120.0, 240.0, 360.0, 480.0, 540.0, 600.0)
+            # The six source timers create NINE physical deployments.
+            # The 480/540/600-second callbacks each spawn TWO independent
+            # routes, upper and lower. Never silently combine them into
+            # one oversized squad or omit the lower flanking lane.
+            expected = ((120.0, 1), (240.0, 1), (360.0, 1),
+                        (480.0, 2), (540.0, 2), (600.0, 2))
             times = [wave.get("after_seconds") for wave in waves
                      if isinstance(wave, dict)] if isinstance(waves, list) else []
-            if all(type(time) in (int, float) for time in times):
-                times.sort()
+            valid_waves = (isinstance(waves, list) and len(waves) == 9 and
+                           len(times) == len(waves) and
+                           all(type(time) in (int, float) and
+                               time == time and 0 <= time < float("inf")
+                               for time in times) and
+                           all(sum(abs(time - due) <= 0.0001 for time in times) == count
+                               for due, count in expected))
             if (scene.get("human_side") != args.player_side or
+                    scene.get("activate_hivemind") is not False or
+                    not isinstance(run.get("hivemind"), dict) or
+                    run["hivemind"].get("issue_source_commands") is not True or
                     scene.get("activate_mining") is not True or
                     not scene.get("mining_asteroids") or
                     not isinstance(zone, dict) or
                     zone.get("player_side") != args.player_side or
                     zone.get("retreat_on_exit") is not True or
-                    len(times) != len(expected) or
-                    any(type(time) not in (int, float) or
-                        abs(time - due) > 0.0001
-                        for time, due in zip(times, expected)) or
+                    not valid_waves or
                     level.get("campaign_dialogue") is not None or
                     any(level.get(name) is not None for name in
                         ("survival", "demolition", "escort", "groups"))):
