@@ -5942,35 +5942,44 @@ fn run_battle(
                 );
             }
         }
-        if let Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusNewThreat {
-            player_side, barges, ..
-        }) = level.campaign_dialogue {
-            if mission.is_some() {
-                // Uranus III adds optional Fritz lines only when the
-                // actual persistent CurrentShips roster still owns a
-                // Cruiser. Recompute after campaign loss/purchase replay,
-                // exactly as the Neptune Factory branch does above.
-                let lost = mission.and_then(|owner| owner.lost_fleet_ids);
-                let owned_cruiser = |entity: &NativeAuthoredEntity| match entity {
-                    NativeAuthoredEntity::Ship(ship) =>
-                        ship.side == player_side && ship.ship_type == 6 &&
-                        ship.fleet_ship_id.is_some_and(|id|
-                            lost.is_none_or(|lost| !lost.contains(&id))) &&
-                        !ship.vitals.is_dead(),
-                    _ => false,
-                };
-                let has_cruiser = template.entities.iter().any(|entity| owned_cruiser(entity)) ||
-                    source.entities.iter().any(|entity| owned_cruiser(entity)) ||
-                    mission.and_then(|owner| owner.owned_purchases)
-                        .is_some_and(|purchases| purchases.iter().any(|ship|
-                            ship.ship_type == 6 &&
-                            lost.is_none_or(|lost| !lost.contains(&ship.fleet_ship_id))));
-                level.campaign_dialogue = Some(
-                    bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusNewThreat {
+        use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
+        let uranus_cruiser_side = match level.campaign_dialogue {
+            Some(CampaignDialogueSpec::UranusNewThreat { player_side, .. }) |
+            Some(CampaignDialogueSpec::UranusDefensive { player_side, .. }) =>
+                Some(player_side),
+            _ => None,
+        };
+        if let Some(player_side) = uranus_cruiser_side.filter(|_| mission.is_some()) {
+            // Both Uranus missions conditionally introduce Fritz only if
+            // CurrentShips still owns a real Cruiser (including reserve
+            // hulls). Use the recovered campaign ledger after casualties,
+            // transfers and purchases, not a static run-file branch flag.
+            let lost = mission.and_then(|owner| owner.lost_fleet_ids);
+            let owned_cruiser = |entity: &NativeAuthoredEntity| match entity {
+                NativeAuthoredEntity::Ship(ship) =>
+                    ship.side == player_side && ship.ship_type == 6 &&
+                    ship.fleet_ship_id.is_some_and(|id|
+                        lost.is_none_or(|lost| !lost.contains(&id))) &&
+                    !ship.vitals.is_dead(),
+                _ => false,
+            };
+            let has_cruiser = template.entities.iter().any(&owned_cruiser) ||
+                source.entities.iter().any(&owned_cruiser) ||
+                mission.and_then(|owner| owner.owned_purchases)
+                    .is_some_and(|purchases| purchases.iter().any(|ship|
+                        ship.ship_type == 6 &&
+                        lost.is_none_or(|lost| !lost.contains(&ship.fleet_ship_id))));
+            level.campaign_dialogue = match level.campaign_dialogue {
+                Some(CampaignDialogueSpec::UranusNewThreat { barges, .. }) =>
+                    Some(CampaignDialogueSpec::UranusNewThreat {
                         player_side, barges, has_cruiser,
-                    }
-                );
-            }
+                    }),
+                Some(CampaignDialogueSpec::UranusDefensive { met_scientists, .. }) =>
+                    Some(CampaignDialogueSpec::UranusDefensive {
+                        player_side, has_cruiser, met_scientists,
+                    }),
+                other => other,
+            };
         }
         // Uranus III begins with Stage.ActivateHiveMind=false while the
         // opening dialogue and optional Carrier tutorial hold gameplay.
