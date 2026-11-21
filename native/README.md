@@ -1503,9 +1503,14 @@ the default includes the persistent Frontier fleet campaign and four
 quick battles, including **Hold the Beehive**: an authored 110-second
 survival defense against two genuine deferred enemy waves (35s, 70s).
 **Build Fleet Skirmish** is also available in the native game library,
-including packaged custom libraries. Pick either player faction or two
-local commanders, then independently choose 1, 2, 4, 8, 16, 32, 64
-or 128 ships per side. The builder now offers source-matched Bee Scouts
+including packaged custom libraries. Pick either player faction, two
+local commanders, or **Watch AI vs AI battle** to spectate the original
+physical fleets for 1, 4, 16 or 64 consecutive native episodes. Spectator
+sessions retain recorded battles, checkpoint recovery and selectable
+tactical doctrines; they are not the headless CPU benchmark. The same
+archived physical spectator fleets can be converted into MA-POCA training
+sources (with learner-owned episode scheduling). Choose 1, 2, 4, 8, 16,
+32, 64 or 128 ships independently for either side. The builder now offers source-matched Bee Scouts
 and their real Beacons, independent Human Barges, Fire Barges and Yellow
 Jackets with separately registered physical weapons, and Queens with
 actual timed offspring waves on large maps. Fighters can share real
@@ -1557,9 +1562,14 @@ right swipe, strike-and-withdraw, or mixed source maneuvers. Every
 selection uses the same native Squad command director as headless
 training and authored scenes; an out-of-range or destroyed target is
 resolved against the next living squad rather than a baked target list.
-Specialists add one genuine Bee Scout with its physical Beacon
-ability or one Human Fire Barge with its source-authored explosive weapon,
-plus authentic Beehives/Carriers where the fleet is large enough.
+Specialist formations include multiple genuine Bee Scouts and their
+physical Beacons, Human Barges with Charge, Fire Barges with source-authored
+explosive weapons, and Yellow Jackets with their real detonations. Human
+Carriers bring both their original free armed Drones and bomb-carrying
+Strikers into battle; these independent squads share their real Carrier's
+persistent fleet ownership and deploy with it during reinforcement waves.
+Carrier deaths retain the shared native child's original rehoming lifecycle.
+Beehives, WarpGates and Queens retain their own game abilities.
 Mixed fleets use original source hulls; physical metadata, weapons,
 fleet/roster identity and support effects all come from the same native
 asset import and shared CombatWorld as training. At
