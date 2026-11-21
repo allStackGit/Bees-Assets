@@ -145,6 +145,7 @@ pub struct NativeClient {
     playback: bool,
     dialogue_sequence: Option<u32>,
     dialogue_line: usize,
+    dialogue_pause_started: Option<(u32, usize, Instant)>,
     dialogue_visible: bool,
     held_fire_target: Option<Vec2>,
     selection_drag: Option<(Vec2, Vec2)>,
@@ -237,6 +238,7 @@ impl NativeClient {
             playback: false,
             dialogue_sequence: None,
             dialogue_line: 0,
+            dialogue_pause_started: None,
             dialogue_visible: false,
             held_fire_target: None,
             selection_drag: None, minimap_dragging: false,
@@ -479,6 +481,7 @@ impl NativeClient {
             }
             self.selection_owner = Some(owner);
             self.dialogue_sequence = None;
+            self.dialogue_pause_started = None;
             self.held_fire_target = None;
         }
         self.renderer.selection.synchronize(&view);
@@ -494,12 +497,30 @@ impl NativeClient {
             if first_presentation {
                 self.dialogue_sequence = Some(sequence);
                 self.dialogue_line = 0;
+                self.dialogue_pause_started = None;
             }
             let count = crate::presentation::campaign_dialogue::line_count(cue);
             if self.window.is_key_pressed(Key::K, KeyRepeat::No) {
                 self.dialogue_line = count;
             } else if self.dialogue_line < count && self.window.is_key_pressed(Key::L, KeyRepeat::No) {
                 self.dialogue_line += 1;
+            }
+            if let Some(seconds) =
+                crate::presentation::campaign_dialogue::pause_seconds(cue,self.dialogue_line)
+            {
+                match self.dialogue_pause_started {
+                    Some((revision, index, started))
+                        if revision == sequence && index == self.dialogue_line => {
+                        if now.duration_since(started).as_secs_f32() >= seconds {
+                            self.dialogue_line += 1;
+                            self.dialogue_pause_started = None;
+                        }
+                    }
+                    _ => self.dialogue_pause_started =
+                        Some((sequence,self.dialogue_line,now)),
+                }
+            } else {
+                self.dialogue_pause_started = None;
             }
             // Source DialogueManager plays the intercom once, on the
             // first visible line of each newly presented section. A
