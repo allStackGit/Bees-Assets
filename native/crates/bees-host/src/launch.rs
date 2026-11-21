@@ -5912,7 +5912,7 @@ fn run_battle(
                 // templates, can establish that pre-existing ownership.
                 let has_factory = template.entities.iter().any(|entity| owned_factory(entity)) ||
                     source.entities.iter().any(|entity| owned_factory(entity)) ||
-                    mission.and_then(|owner| owner.purchased_ships)
+                    mission.and_then(|owner| owner.owned_purchases)
                         .is_some_and(|purchases| purchases.iter().any(|ship|
                             ship.ship_type == bees_sim::combat_world::MINING_FACTORY_TYPE &&
                             lost.is_none_or(|lost| !lost.contains(&ship.fleet_ship_id))));
