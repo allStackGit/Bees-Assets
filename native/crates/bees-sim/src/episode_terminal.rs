@@ -61,6 +61,13 @@ pub enum EpisodeEconomicError {
 pub struct EpisodeTerminalMeasurements {
     pub ticks_observed: u64,
     pub elimination_checks: u64,
+    /// Source-gated elimination checks actually withheld before the last
+    /// scheduled campaign wave; distinct from reserved-ship deferrals.
+    #[serde(default)]
+    pub authored_eliminations_deferred: u64,
+    /// Final-wave clock releases that reached the terminal evaluator.
+    #[serde(default)]
+    pub authored_elimination_release_checks: u64,
     pub eliminations: u64,
     pub timeouts: u64,
     pub draws: u64,
@@ -416,7 +423,8 @@ impl NativeEpisodeTerminal {
         if self.timeout_seconds.is_some_and(|timeout|
             (ticks as f64) * (fixed_dt_seconds as f64) > timeout as f64
         ) || self.survival.is_some() || self.demolition.is_some() ||
-            self.escort.is_some() || self.measurements.ticks_observed != 0 ||
+            self.escort.is_some() || self.delayed_elimination.is_some() ||
+            self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.defending_side) ||
             objective.protected_ship_id <= 0 ||
             !objective.seconds.is_finite() || objective.seconds <= 0.0 ||
@@ -438,7 +446,8 @@ impl NativeEpisodeTerminal {
         if self.timeout_seconds.is_some_and(|timeout|
             (ticks as f64) * (fixed_dt_seconds as f64) > timeout as f64
         ) || self.survival.is_some() || self.demolition.is_some() ||
-            self.escort.is_some() || self.measurements.ticks_observed != 0 ||
+            self.escort.is_some() || self.delayed_elimination.is_some() ||
+            self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.attacking_side) ||
             objective.target_map_object_id <= 0 ||
             !objective.seconds.is_finite() || objective.seconds <= 0.0 ||
@@ -458,7 +467,8 @@ impl NativeEpisodeTerminal {
         if self.timeout_seconds.is_some_and(|timeout|
             (ticks as f64) * (fixed_dt_seconds as f64) > timeout as f64
         ) || self.survival.is_some() || self.demolition.is_some() ||
-            self.escort.is_some() || self.measurements.ticks_observed != 0 ||
+            self.escort.is_some() || self.delayed_elimination.is_some() ||
+            self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.escorting_side) ||
             objective.escorted_ship_id <= 0 ||
             !objective.seconds.is_finite() || objective.seconds <= 0.0 ||
@@ -833,6 +843,11 @@ impl NativeEpisodeTerminal {
         if squad_was_retired || self.deferred_elimination ||
             extraction_outcome.is_some() || gate_due {
             self.measurements.elimination_checks += 1;
+            self.measurements.authored_elimination_release_checks += u64::from(gate_due);
+            self.measurements.authored_eliminations_deferred += u64::from(
+                (bee_dead && !bee_waiting && suppressed(self.bee_side)) ||
+                (human_dead && !human_waiting && suppressed(self.human_side)),
+            );
             // Recheck on subsequent ticks only while a currently empty
             // faction waits for its real reserved hulls. Once they arrive,
             // retire this pending check without requiring another death.
