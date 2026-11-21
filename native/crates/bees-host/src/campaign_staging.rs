@@ -160,7 +160,22 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 }
             }
         }
+        // Already-deployed opposing hulls are genuine initial-World bodies.
+        // Keep player staging clear of them as well as obstacles and other
+        // newly staged player squads; deferred waves have been removed by
+        // the normal scene constructor before this method is invoked.
         let mut occupied: Vec<(Vec2, f32)> = Vec::new();
+        for entity in &self.entities {
+            let NativeAuthoredEntity::Ship(ship) = entity else { continue };
+            if ship.side == player_side || ship.vitals.is_dead() { continue; }
+            let size = self.metadata.ship_catalog.sprite_size(ship.ship_type)
+                .ok_or("Titania II opposing ship lacks source sprite dimensions")?;
+            if !size.is_finite() || size.x <= 0.0 || size.y <= 0.0 ||
+                !ship.motion.position.is_finite() {
+                return Err("Titania II opposing ship has invalid physical geometry");
+            }
+            occupied.push((ship.motion.position, size.x.max(size.y) * 0.5 + 8.0));
+        }
         // Resolve the complete fleet before modifying the physical scene.
         // A malformed later squad must not leave earlier squads relocated.
         let mut placements = Vec::new();
