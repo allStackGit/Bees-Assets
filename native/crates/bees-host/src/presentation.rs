@@ -72,6 +72,8 @@ pub(crate) fn battle_outcome_reason(
         if result.extraction_victory { "Convoy delivered" } else { "Convoy lost" }
     } else if result.extraction_victory {
         "Extraction"
+    } else if view.combat.extraction_retreat_completed() {
+        "Fleet withdrew"
     } else if view.survival.is_some() {
         "Defense"
     } else if let Some(objective) = view.demolition {
