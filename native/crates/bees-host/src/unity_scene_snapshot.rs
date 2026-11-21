@@ -2713,6 +2713,31 @@ impl NativePhysicalScene {
                     setup.survival.is_some() || setup.demolition.is_some() ||
                     setup.escort.is_some() || setup.extraction.is_some() =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
+            Some(CampaignDialogueSpec::UranusOffensive {
+                player_side, bumblebee_id, ..
+            }) if player_side != human_side ||
+                bumblebee_id <= 0 ||
+                !self.entities.iter().any(|entity| matches!(entity,
+                    NativeAuthoredEntity::Ship(ship)
+                        if ship.entity_id == bumblebee_id &&
+                        ship.side == bee_side && ship.ship_type == 3 &&
+                        !ship.vitals.is_dead()
+                )) ||
+                // Source Scouts gain a real ProximityCollider at Ship.Sight,
+                // falling back to MaxRange only for an explicit zero sight.
+                // Without that source metadata the discovery trigger would
+                // guess a radius, so reject the mission rather than drift.
+                self.entities.iter().any(|entity| match entity {
+                    NativeAuthoredEntity::Ship(ship)
+                        if ship.side == player_side && ship.ship_type == 18 =>
+                        self.source_vision.get(&ship.entity_id)
+                            .is_none_or(|source| source.source_sight.is_none()),
+                    _ => false,
+                }) ||
+                setup.groups.is_some() || setup.survival.is_some() ||
+                setup.demolition.is_some() || setup.escort.is_some() ||
+                setup.extraction.is_some() =>
+                return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::UranusDefensive { player_side, .. })
                 if ![bee_side, human_side].contains(&player_side) ||
                 !setup.extraction.is_some_and(|zone|

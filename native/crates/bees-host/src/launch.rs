@@ -5976,45 +5976,46 @@ fn run_battle(
                 level, template.as_ref(), &source, mission.player_side,
             )?;
         }
-        if let Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::NeptunePressingForward {
-            player_side, ..
-        }) = level.campaign_dialogue {
-            if mission.is_some() {
-                // Neptune 3's defeat dialogue reads CurrentShips.HasShipsOfType
-                // after the player's persistent roster has been restored.
-                // Source run files predate purchases and casualties, so a
-                // fixed authored flag would select the wrong story branch.
-                // Read the *actual* surviving FleetShip owners, including
-                // newly bought Factory hulls, after the same canonical
-                // campaign deployment transaction used by the battle.
-                let lost = mission.and_then(|owner| owner.lost_fleet_ids);
-                let owned_factory = |entity: &NativeAuthoredEntity| match entity {
-                    NativeAuthoredEntity::Ship(ship) =>
-                        ship.side == player_side &&
-                        ship.ship_type == bees_sim::combat_world::MINING_FACTORY_TYPE &&
-                        ship.fleet_ship_id.is_some_and(|id|
-                            lost.is_none_or(|lost| !lost.contains(&id))) &&
-                        !ship.vitals.is_dead(),
-                    _ => false,
-                };
-                // The source checks CurrentShips, including surviving
-                // original FleetShips transferred into reserve. Only the
-                // immutable authored player roster, not inert shop class
-                // templates, can establish that pre-existing ownership.
-                let has_factory = template.entities.iter().any(|entity| owned_factory(entity)) ||
-                    source.entities.iter().any(|entity| owned_factory(entity)) ||
-                    mission.and_then(|owner| owner.owned_purchases)
-                        .is_some_and(|purchases| purchases.iter().any(|ship|
-                            ship.ship_type == bees_sim::combat_world::MINING_FACTORY_TYPE &&
-                            lost.is_none_or(|lost| !lost.contains(&ship.fleet_ship_id))));
-                level.campaign_dialogue = Some(
-                    bees_gameplay::campaign_dialogue::CampaignDialogueSpec::NeptunePressingForward {
-                        player_side, has_factory,
-                    }
-                );
-            }
-        }
         use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
+        let factory_story_side = match level.campaign_dialogue {
+            Some(CampaignDialogueSpec::NeptunePressingForward { player_side, .. }) |
+            Some(CampaignDialogueSpec::UranusOffensive { player_side, .. }) =>
+                Some(player_side),
+            _ => None,
+        };
+        if let Some(player_side) = factory_story_side.filter(|_| mission.is_some()) {
+            // Both Neptune III and Uranus I consult persistent
+            // CurrentShips.HasShipsOfType(Factory), including reserves.
+            // Capture that from the same canonical fleet/casualty ledger
+            // used to install purchased ships, not a stale source flag.
+            let lost = mission.and_then(|owner| owner.lost_fleet_ids);
+            let owned_factory = |entity: &NativeAuthoredEntity| match entity {
+                NativeAuthoredEntity::Ship(ship) =>
+                    ship.side == player_side &&
+                    ship.ship_type == bees_sim::combat_world::MINING_FACTORY_TYPE &&
+                    ship.fleet_ship_id.is_some_and(|id|
+                        lost.is_none_or(|lost| !lost.contains(&id))) &&
+                    !ship.vitals.is_dead(),
+                _ => false,
+            };
+            let has_factory = template.entities.iter().any(&owned_factory) ||
+                source.entities.iter().any(&owned_factory) ||
+                mission.and_then(|owner| owner.owned_purchases)
+                    .is_some_and(|purchases| purchases.iter().any(|ship|
+                        ship.ship_type == bees_sim::combat_world::MINING_FACTORY_TYPE &&
+                        lost.is_none_or(|lost| !lost.contains(&ship.fleet_ship_id))));
+            level.campaign_dialogue = match level.campaign_dialogue {
+                Some(CampaignDialogueSpec::NeptunePressingForward { .. }) =>
+                    Some(CampaignDialogueSpec::NeptunePressingForward {
+                        player_side, has_factory,
+                    }),
+                Some(CampaignDialogueSpec::UranusOffensive { bumblebee_id, .. }) =>
+                    Some(CampaignDialogueSpec::UranusOffensive {
+                        player_side, bumblebee_id, has_factory,
+                    }),
+                other => other,
+            };
+        }
         let uranus_cruiser_side = match level.campaign_dialogue {
             Some(CampaignDialogueSpec::UranusNewThreat { player_side, .. }) |
             Some(CampaignDialogueSpec::UranusDefensive { player_side, .. }) =>
@@ -6053,15 +6054,16 @@ fn run_battle(
                 other => other,
             };
         }
-        // Uranus III begins with Stage.ActivateHiveMind=false while the
-        // opening dialogue and optional Carrier tutorial hold gameplay.
+        // Uranus I and III begin with Stage.ActivateHiveMind=false while
+        // the opening dialogue and optional Carrier tutorial hold gameplay.
         // Source FinishCarrierIntroduction then calls SetupHivemind and
         // enables command requests before the first physical game step.
         // Native clients and authenticated dedicated hosts hold the same
         // briefing at tick zero, so the executable Level must use the
         // *post-briefing* authority rather than the exported pre-intro flag.
         if matches!(level.campaign_dialogue,
-            Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusNewThreat { .. }))
+            Some(CampaignDialogueSpec::UranusNewThreat { .. }) |
+            Some(CampaignDialogueSpec::UranusOffensive { .. }))
         {
             if source.schema_version < 27 ||
                 source.activate_hivemind != Some(false) ||
@@ -6070,7 +6072,7 @@ fn run_battle(
                 source.source_squads.iter().any(|squad| squad.hivemind.is_none())
             {
                 return Err(invalid(
-                    "Uranus III requires pre-intro source HiveMind authority and a complete post-intro command roster",
+                    "Uranus I and III require pre-intro source HiveMind authority and a complete post-intro command roster",
                 ).into());
             }
             source.activate_hivemind = Some(true);

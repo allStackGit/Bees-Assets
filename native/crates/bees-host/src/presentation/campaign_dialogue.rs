@@ -77,6 +77,38 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
             ("Oviya", "Let’s get within scouting distance as soon as possible. If it’s as bad as we think, we need to stop this as soon as possible."),
             ("Yoshiko", "Oh, this is gonna be a big fight. I can tell!"),
         ],
+        CampaignCue::UranusOffensiveBriefing => &[
+            ("Oviya", "Bee presence around Uranus is heavy, but not insurmountable. We’re far enough from the blockade that we aren’t expecting reinforcements now."),
+            ("Oviya", "Victory should ensure us time to collect more resources for the fleet."),
+            ("Samuel", "We aren’t receiving any human signals, but it does look like there’s fighting ahead."),
+            ("Yoshiko", "Let’s get in there! And fast!"),
+        ],
+        CampaignCue::UranusOffensiveBumblebeeSpotted => &[
+            ("Oviya", "Commander! This is a bee ship we haven’t seen before. Be careful; we don’t know what it can do."),
+        ],
+        CampaignCue::UranusOffensiveBumblebeeHit => &[
+            ("Samuel", "We just took massive damage from the unknown ship, commander!"),
+            ("Yoshiko", "Find a way to take it out!"),
+            ("Joey", "That’s not gonna be so easy. Its weapon has a huge range from what I can tell."),
+        ],
+        CampaignCue::UranusOffensiveBumblebeeDestroyed => &[
+            ("Samuel", "Good work, commander. That was scary."),
+            ("Marco", "I’m sure there will be more later…"),
+        ],
+        CampaignCue::UranusOffensiveEnding { player_victory: true, has_factory: true } => &[
+            ("Wesley", "Your mining vessels are ready for the asteroids, commander. I recommend initiating operations quickly, before more of these bees arrive."),
+            ("Alejandra", "I like the way you think! I’m glad somebody else here cares about efficiency."),
+            ("Wesley", "Efficiency creates profit, ma’am."),
+        ],
+        CampaignCue::UranusOffensiveEnding { player_victory: true, has_factory: false } => &[],
+        CampaignCue::UranusOffensiveEnding { player_victory: false, .. } => &[
+            ("Samuel", "All of our fleet we sent out is down, commander."),
+            ("Yoshiko", "We can still take ‘em!"),
+            ("Marco", "We can’t risk further casualties, Yoshiko. Keep your head on straight."),
+            ("Oviya", "Hold on, we have more bees on our radar! They’re… not coming towards us?"),
+            ("Marco", "No rest for the weary…"),
+            ("Samuel", "Alright, commander, gather your squads and let's investigate."),
+        ],
         CampaignCue::UranusDefensiveBriefing => &[
             ("Samuel", "Our success has bought us some time to collect resources around Uranus. There will likely be reinforcements called on from the bees we just fought, though. Take care."),
         ],

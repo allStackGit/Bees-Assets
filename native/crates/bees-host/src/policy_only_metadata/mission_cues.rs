@@ -52,7 +52,8 @@ impl NativeMissionCue {
                     Self::UranusReinforcements),
             Some(CampaignDialogueSpec::NeptunePressingForward { .. }) |
             Some(CampaignDialogueSpec::PlutoEvacuation { .. }) |
-            Some(CampaignDialogueSpec::UranusDefensive { .. }) | None => false,
+            Some(CampaignDialogueSpec::UranusDefensive { .. }) |
+            Some(CampaignDialogueSpec::UranusOffensive { .. }) | None => false,
         }
     }
 }
