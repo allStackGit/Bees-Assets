@@ -465,11 +465,11 @@ struct PeerClient {
     last_response_request: u64,
     /// Confirmed by the same authenticated input-result request stream.
     /// Never restored when the TCP connection or host identity changes.
-    briefing_pending: Option<(u64,u64,u8,u64)>,
-    briefing_approved: Option<(u64,u64,u8)>,
+    briefing_pending: Option<(u64,u64,u32,u64)>,
+    briefing_approved: Option<(u64,u64,u32)>,
     /// A denied cue is not resent every display frame. A new World or
     /// source cue can still request its own acknowledgment.
-    briefing_rejected: Option<(u64,u64,u8)>,
+    briefing_rejected: Option<(u64,u64,u32)>,
     authenticated: bool,
     connected: bool,
     /// UI-only control gate, computed from the authoritative story cue
@@ -795,7 +795,7 @@ impl PeerClient {
 
     /// Presentation-only, per-cue acknowledgment. It never impersonates a
     /// gameplay command, advances a private clock, or changes a roster.
-    fn briefing_ready(&mut self, world:u64, revision:u64, sequence:u8)
+    fn briefing_ready(&mut self, world:u64, revision:u64, sequence:u32)
         -> Result<(),Box<dyn Error>>
     {
         if !self.authenticated || !self.connected {
@@ -2571,7 +2571,7 @@ pub fn connect_remote(
             if !cue.is_briefing(){return None;}
             Some((state["world_id"].as_u64()?,
                 state["episode_revision"].as_u64()?,
-                u8::try_from(state["campaign_dialogue"]["sequence"].as_u64()?).ok()?))
+                u32::try_from(state["campaign_dialogue"]["sequence"].as_u64()?).ok()?))
         });
         let briefing=story_briefing.is_some() &&
             peer.state.as_ref().is_some_and(|state|
