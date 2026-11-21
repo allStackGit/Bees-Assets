@@ -854,6 +854,11 @@ def aggregate_collection_metrics(bundles):
                 proof["resumed_collection"] for proof in accelerator_rows
             )} if all(type(proof.get("resumed_collection")) is bool for proof in accelerator_rows) else {}),
         }
+        forwards = result["gpu_inference"]["model_forwards"]
+        if forwards:
+            result["gpu_inference"]["agent_rows_per_model_forward"] = (
+                result["gpu_inference"]["agent_rows"] / forwards
+            )
     # Do not silently convert a historical unmeasured collector into
     # zero observed parallel work. Metrics describe the entire distributed
     # update only when every collector contributed the same evidence.
