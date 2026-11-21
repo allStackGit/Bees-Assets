@@ -2149,8 +2149,9 @@ fn current_state(
                 "kind": "extraction",
                 "exiting_side": exiting_side,
                 "retreat_on_exit": view.combat.extraction_is_withdrawal(),
-                "mine_and_withdraw": view.campaign_objective == Some(
-                    bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusDefensive),
+                "mine_and_withdraw": matches!(view.campaign_objective,
+                    Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusDefensive |
+                         bees_gameplay::campaign_dialogue::CampaignObjectiveKind::NeptuneProduction)),
             }))
         } else if let Some(barges) = view.rescue_barges {
             // Original rescue squad identities are private to the
