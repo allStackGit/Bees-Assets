@@ -51,10 +51,10 @@ def derive_hub_resource_plan(hub_plan, total_worlds):
             hub_plan.get("schema_version") != 1 or
             hub_plan.get("schedule_start") is not True or
             hub_plan.get("confirm_unattended_start") is not True or
-            not isinstance(entries, list) or not 2 <= len(entries) <= 16 or
+            not isinstance(entries, list) or not 1 <= len(entries) <= 16 or
             type(total_worlds) is not int or
             not len(entries) <= total_worlds <= len(entries) * 1024):
-        raise ValueError("Hub resource plan requires 2..16 machines and 1..1024 worlds per machine")
+        raise ValueError("Hub resource plan requires 1..16 machines and 1..1024 worlds per machine")
     seen = set()
     machines = set()
     cpus = []

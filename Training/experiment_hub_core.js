@@ -1666,10 +1666,10 @@ function exactResourceBundle(snapshot,value,confirmation) {
     if(!object(value)||value[confirmation]!==true||
         !UUID.test(String(value.bundle_id||''))||
         !Array.isArray(value.expected_job_ids)||
-        value.expected_job_ids.length<2||value.expected_job_ids.length>16||
+        value.expected_job_ids.length<1||value.expected_job_ids.length>16||
         value.expected_job_ids.some(id=>!UUID.test(String(id)))||
         new Set(value.expected_job_ids).size!==value.expected_job_ids.length)
-        throw Error('Confirm the exact 2–16 resource-bundle members and operation.');
+        throw Error('Confirm the exact 1–16 resource-bundle members and operation.');
     const members=snapshot.jobs.filter(job=>job.resource_bundle?.id===value.bundle_id)
         .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
     if(members.length!==value.expected_job_ids.length||
@@ -6573,9 +6573,9 @@ class ExperimentHub {
                 value.collector_job_ids.some(id=>!UUID.test(String(id)))||
                 new Set(value.collector_job_ids).size!==
                     value.collector_job_ids.length))||
-            !Array.isArray(value.members)||value.members.length<2||
+            !Array.isArray(value.members)||value.members.length<1||
             value.members.length>16)
-            throw Error('Confirm 2–16 machine-pinned job allocations in one resource bundle.');
+            throw Error('Confirm 1–16 machine-pinned job allocations in one resource bundle.');
         // Resolve all physical inputs before creating a single reservation.
         // The completed collector's authenticated mirror, not the UI or a
         // mutable file path, owns the receipt SHA and the source model proof.

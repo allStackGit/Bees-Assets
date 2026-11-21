@@ -1871,8 +1871,8 @@ def main():
         parser.error("torch threads must be between 1 and 256")
     if args.hub_auto_worlds is not None and (
             args.hub_dispatch_plan is None or args.distributed_plan is not None or
-            not 2 <= args.hub_auto_worlds <= 16384):
-        parser.error("--hub-auto-worlds requires a Hub dispatch plan, no separate distributed plan, and 2..16384 total Worlds")
+            not 1 <= args.hub_auto_worlds <= 16384):
+        parser.error("--hub-auto-worlds requires a Hub dispatch plan, no separate distributed plan, and 1..16384 total Worlds")
     if args.learner_gpus > 1 and args.device not in ("cuda", "cuda:0"):
         parser.error("native multi-GPU optimizer requires CUDA/ROCm learner execution")
     if args.torch_threads is not None and args.torch_threads < args.learner_gpus:

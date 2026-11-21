@@ -44,8 +44,8 @@ function checkPlan(plan,orders) {
         (!plan.resume_after_restart&&plan.confirm_restart_rearm===true)||
         !Array.isArray(plan.collectors)||
         plan.collectors.length!==orders.jobs.length||
-        plan.collectors.length<2||plan.collectors.length>16)
-        throw Error('Hub round dispatch requires 2–16 machine allocations and explicit unattended Start approval.');
+        plan.collectors.length<1||plan.collectors.length>16)
+        throw Error('Hub round dispatch requires 1–16 machine allocations and explicit unattended Start approval.');
     const jobs=new Map();
     for(const job of orders.jobs) {
         if(!ID.test(String(job?.id||''))||jobs.has(job.id)||

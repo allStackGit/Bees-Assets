@@ -953,7 +953,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         resourceLabel.append(resources);
         const remove=button('Remove',()=>{
-            if(container.children.length<=2)return;
+            if(container.children.length<=1)return;
             row.remove();
             renderResourceBundleMembers();
         });
@@ -1014,11 +1014,11 @@ document.addEventListener('DOMContentLoaded', () => {
             machine.replaceChildren(...eligible.map(m=>
                 new Option(m.name+' ('+m.id+')',m.id)));
             if(eligible.some(m=>m.id===oldMachine))machine.value=oldMachine;
-            row.querySelector('button').disabled=rows.length<=2;
+            row.querySelector('button').disabled=rows.length<=1;
         }
         nativeCollectorChoice();
         $('hub-resource-bundle-add').disabled=rows.length>=16;
-        $('hub-resource-bundle-queue').disabled=rows.length<2||
+        $('hub-resource-bundle-queue').disabled=rows.length<1||
             !rows.every(row=>row.querySelector('.hub-bundle-machine').value);
         const container=$('hub-resource-bundle-existing');
         container.replaceChildren();
@@ -5162,8 +5162,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!state||project==='bees')return;
         try{
             const rows=[...$('hub-resource-bundle-rows').children];
-            if(rows.length<2||rows.length>16)
-                throw Error('Select 2–16 members.');
+            if(rows.length<1||rows.length>16)
+                throw Error('Select 1–16 members.');
             const members=rows.map(row=>{
                 const cfg=state.configurations.find(c=>c.id===
                     row.querySelector('.hub-bundle-config').value);
