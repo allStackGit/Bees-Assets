@@ -3044,6 +3044,40 @@ impl NativePhysicalScene {
                     setup.demolition.is_some() || setup.escort.is_some() ||
                     setup.extraction.is_some() =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
+            Some(CampaignDialogueSpec::NeptuneProduction { player_side })
+                if player_side != human_side ||
+                    self.activate_mining != Some(true) ||
+                    self.activate_hivemind != Some(true) ||
+                    !setup.extraction.is_some_and(|zone|
+                        zone.player_side == player_side && zone.retreat_on_exit &&
+                        zone.layer == 20 &&
+                        zone.center.unity_equal(Vec2::new(-512.0, 0.0)) &&
+                        zone.half_extents.unity_equal(Vec2::new(25.0, 128.0))) ||
+                    self.entities.iter().filter(|entity| matches!(
+                        entity, NativeAuthoredEntity::MiningAsteroid { .. }
+                    )).count() != 5 ||
+                    ![
+                        Vec2::new(80.0, 300.0),
+                        Vec2::new(-320.0, -245.0),
+                        Vec2::new(-270.0, 390.0),
+                        Vec2::new(-20.0, -175.0),
+                        Vec2::new(155.0, -120.0),
+                    ].into_iter().all(|expected| self.entities.iter().any(
+                        |entity| matches!(entity,
+                            NativeAuthoredEntity::MiningAsteroid { body, .. }
+                                if body.pose.position.unity_equal(expected)
+                        )
+                    )) ||
+                    !self.starting_positions.is_some_and(|home|
+                        usize::try_from(bee_side - 1).ok()
+                            .and_then(|index| home.get(index))
+                            .is_some_and(|ai|
+                                neptune_production_waves_match_source(
+                                    &setup.reinforcements, *ai, bee_side,
+                                    &self.source_squads, &self.entities))) ||
+                    setup.groups.is_some() || setup.survival.is_some() ||
+                    setup.demolition.is_some() || setup.escort.is_some() =>
+                return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::NeptunePressingForward { player_side, .. })
                 if ![bee_side, human_side].contains(&player_side) ||
                     setup.survival.is_some() || setup.demolition.is_some() ||
