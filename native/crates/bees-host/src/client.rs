@@ -1179,7 +1179,18 @@ impl NativeClient {
                                         .representative_ships(&view).next();
                                 }
                             }
-                        } else { self.renderer.selection.clear(); }
+                        } else {
+                            // Preserve the existing multi-selection when
+                            // Ctrl-clicking empty terrain, as the native
+                            // remote commander already does. A plain click
+                            // still dismisses the selection.
+                            if !self.window.is_key_down(Key::LeftCtrl) &&
+                                !self.window.is_key_down(Key::RightCtrl) {
+                                self.renderer.selection.clear();
+                            }
+                            self.renderer.selected_ship = self.renderer.selection
+                                .representative_ships(&view).next();
+                        }
                     }
                 }
             }
