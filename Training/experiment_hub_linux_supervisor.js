@@ -849,7 +849,9 @@ class LinuxSupervisor {
                 r.job_id===job.optimizer_restart_of_job_id);
             if(!prior||prior.project_id!==job.project_id||
                 !['failed','stopped','finished'].includes(prior.state)||
-                prior.job_id===job.id)
+                prior.job_id===job.id||
+                (prior.continuation_of_job_id||null)!==
+                    (job.continuation_of_job_id||null))
                 throw Error('New optimizer rank has no original terminal machine-local owner.');
             const physical=await this.inspectUnit(prior);
             if(physical.active!==false||
