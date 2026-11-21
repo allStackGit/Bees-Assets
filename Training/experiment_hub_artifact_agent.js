@@ -140,7 +140,12 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
         if(!TERMINAL.has(record.state))continue;
         const project=record.project_id,adapter=executor.supervisor.adapters?.[project];
         if(nativeTrainingOnly&&
-            !['bees_native','bees_native_collect'].includes(project))continue;
+            (!['bees_native','bees_native_collect'].includes(project)||
+             // Only a finished, checkpoint-verified publisher can mirror
+             // transferable model files. Failed synchronized groups can
+             // leave partial weights; do not let their rejected uploads
+             // block later valid checkpoint owners on this agent.
+             project==='bees_native'&&record.state!=='finished'))continue;
         // Collectors carry binary training experience rather than only
         // diagnostics. Raise their bounded per-cycle delivery allowance
         // without changing general telemetry's smaller background budget.
@@ -152,6 +157,10 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map(),
         if(typeof root!=='string'||!path.isAbsolute(root))continue;
         if(!fs.existsSync(root))continue;
         for(const relative of filesForJob(root,project,nativeTrainingOnly)) {
+            // Normal diagnostic mirroring still includes failed-job logs.
+            // Only the explicit model-package paths are completion-only.
+            if(project==='bees_native'&&record.state!=='finished'&&
+                safeNativeModelPath(relative))continue;
             const file=path.join(root,...relative.split('/'));
             let st;
             try{st=fs.lstatSync(file);}catch{continue;}
