@@ -429,6 +429,13 @@ impl CampaignProgress<'_> {
             squad.template_saved_squad_id == id)
     }
 
+    /// Historical career rows may retain retired SavedSquad identities.
+    /// Never accept a newly published physical assignment or preference
+    /// for an identity with an immutable retirement tombstone.
+    pub fn is_retired_saved_squad(&self, saved_squad_id: i64) -> bool {
+        self.retired_squad_ids.contains(&saved_squad_id)
+    }
+
     pub fn created_squads_for_side(&self, side: i32) -> Vec<NativeCreatedSquad> {
         self.created_squads.iter().copied().filter(|squad|
             squad.side == side).collect()
@@ -642,7 +649,8 @@ impl BattleCatalog {
             !progress.is_ship_unlocked(shop) ||
             progress.unspent_minerals()? < shop.price_tsv ||
             fleet_ship_id <= 0 || fleet_ship_id <= progress.highest_fleet_id() ||
-            saved_squad_id <= 0
+            saved_squad_id <= 0 ||
+            progress.is_retired_saved_squad(saved_squad_id)
         {
             return Err(invalid("purchase requires verified bank funds, new FleetShip ID and a valid SavedSquad"));
         }
@@ -671,6 +679,8 @@ impl BattleCatalog {
         let (side, ship) = progress.purchased_ship(fleet_ship_id)
             .ok_or_else(|| invalid("only previously purchased hulls can be transferred"))?;
         if to_saved_squad_id < 0 || to_saved_squad_id == ship.saved_squad_id ||
+            (to_saved_squad_id > 0 &&
+                progress.is_retired_saved_squad(to_saved_squad_id)) ||
             progress.fleet.get(&fleet_ship_id)
                 .is_none_or(|fleet| fleet.side != side ||
                     (fleet.is_dead && to_saved_squad_id != 0))
@@ -700,6 +710,7 @@ impl BattleCatalog {
         // against each native scene. On a fresh campaign, the physical
         // SavedSquad does not yet have a career receipt in progress.squads.
         if !matches!(side, 1 | 2) || template_id <= 0 ||
+            progress.is_retired_saved_squad(template_id) ||
             new_id <= progress.highest_saved_squad_id() ||
             new_id <= 0 || new_id == i64::MAX
         {
@@ -750,6 +761,7 @@ impl BattleCatalog {
         let campaign_id = self.campaign_id.as_deref()
             .ok_or_else(|| invalid("saved tactics require a campaign"))?;
         if !matches!(entry.side, 1 | 2) || entry.saved_squad_id <= 0 ||
+            progress.is_retired_saved_squad(entry.saved_squad_id) ||
             !(1..=40).contains(&entry.shooting_strategy_id) ||
             entry.formation.is_some_and(|formation| !formation.is_valid()) ||
             progress.tactics_for_squad(entry.side, entry.saved_squad_id) == Some(entry) ||
@@ -777,6 +789,7 @@ impl BattleCatalog {
             .ok_or_else(|| invalid("authored roster changes require a campaign"))?;
         if !matches!(side, 1 | 2) || fleet_ship_id <= 0 ||
             from_squad < 0 || to_squad < 0 || from_squad == to_squad ||
+            (to_squad > 0 && progress.is_retired_saved_squad(to_squad)) ||
             progress.purchased_ship(fleet_ship_id).is_some() ||
             progress.authored_current_squad(fleet_ship_id)
                 .is_some_and(|saved| saved != from_squad) ||
