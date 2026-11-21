@@ -9,6 +9,7 @@ use bees_sim::geometry::Vec2;
 use bees_sim::physics::ObstacleBody;
 use bees_sim::obstacle::ObstacleKind;
 use bees_sim::box_obstacle_assets::BoxObstacleCatalog;
+use bees_sim::asteroid_assets::CollisionAsteroidCatalog;
 use bees_sim::polygon_obstacle_assets::PolygonObstacleCatalog;
 use bees_sim::ship_assets::HUMAN_TARGET_TYPE;
 use bees_sim::squad_movement::authored_placement_offset;
@@ -101,6 +102,8 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         let polygons = has_obstacles.then(PolygonObstacleCatalog::embedded)
             .transpose().map_err(|_| "Titania II needs valid source polygon assets")?;
         let mut obstacles = Vec::new();
+        let asteroids = has_obstacles.then(CollisionAsteroidCatalog::embedded)
+            .transpose().map_err(|_| "Titania II needs valid source asteroid assets")?;
         if has_obstacles {
             for entity in &self.entities {
                 let body = match entity {
@@ -131,8 +134,18 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                     }
                     NativeAuthoredEntity::MapObject { body, .. } |
                     NativeAuthoredEntity::MiningAsteroid { body, .. } => body.clone(),
-                    NativeAuthoredEntity::FullCollisionAsteroid { .. } =>
-                        return Err("Titania II requires source-staged fleet with moving asteroids"),
+                    NativeAuthoredEntity::FullCollisionAsteroid {
+                        entity_id, profile, pose, velocity,
+                        angular_velocity_degrees, effective_max_health,
+                    } => {
+                        let (_, body) = asteroids.as_ref()
+                            .expect("loaded source asteroid colliders")
+                            .prepare_spawn(profile.prefab_number, *entity_id,
+                                *pose, *velocity, *angular_velocity_degrees,
+                                Some(*effective_max_health))
+                            .map_err(|_| "Titania II asteroid has invalid source geometry")?;
+                        body
+                    },
                     NativeAuthoredEntity::Ship(_) => continue,
                 };
                 if body.active { obstacles.push(body); }
