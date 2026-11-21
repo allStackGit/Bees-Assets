@@ -103,7 +103,8 @@ def check_plan(plan, store):
 
 def select_round_manifest(root, plan, self_play, round_number, previous_manifest,
                           checkpoint, learner_slot, *, create,
-                          portable=False, registry_locked=False):
+                          portable=False, registry_locked=False,
+                          initial_seed_offset=None):
     """Freeze one historical opponent at the existing self-play swap boundary.
 
     The original GhostTrainer samples a whole non-learning team queue at
@@ -125,7 +126,10 @@ def select_round_manifest(root, plan, self_play, round_number, previous_manifest
         "round": round_number, "input_manifest_sha256": file_sha256(previous_manifest),
         "input_checkpoint_sha256": file_sha256(checkpoint),
         "opponent_slot": self_play["opponent_slot"],
-        **({"plan_sha256": plan["plan_sha256"]} if portable else {}),
+        **({"plan_sha256": plan["plan_sha256"]}
+           if portable or initial_seed_offset is not None else {}),
+        **({"seed_offset": initial_seed_offset}
+           if initial_seed_offset is not None else {}),
     }
     if sidecar.exists():
         receipt = document(sidecar)
@@ -135,7 +139,7 @@ def select_round_manifest(root, plan, self_play, round_number, previous_manifest
         if file_sha256(selected) != receipt["effective_manifest_sha256"]:
             raise ValueError("historical opponent selection manifest changed")
         check_learner(selected, checkpoint, learner_slot)
-        if portable:
+        if portable or initial_seed_offset is not None:
             native_manifest_model_dependencies(selected)
         return selected
     if not create:
@@ -160,6 +164,8 @@ def select_round_manifest(root, plan, self_play, round_number, previous_manifest
             # Every Hub job owns one round. Include immutable model identity
             # so independent generations do not repeat the round-one draw.
             seed += ":" + lineage["input_checkpoint_sha256"]
+        if initial_seed_offset is not None:
+            seed += f":initial:{lineage['input_checkpoint_sha256']}:{initial_seed_offset}"
         rng = random.Random(seed)
         if weighted and rng.random() < plan["historical_training_ratio"]:
             selected_row = HistoricalOpponentScheduler._choose_weighted(weighted, rng)
@@ -172,9 +178,13 @@ def select_round_manifest(root, plan, self_play, round_number, previous_manifest
                 if row["slot"] == self_play["opponent_slot"]:
                     # Change only the opponent route; the learner and
                     # any other permitted slots retain their exact bytes.
-                    location = (portable_opponent(previous_manifest.parent, frozen_checkpoint,
-                                                  policy["sha256"])
-                                if portable else str(frozen_checkpoint))
+                    if portable or initial_seed_offset is not None:
+                        directory = previous_manifest.parent if portable else root
+                        location = portable_opponent(directory, frozen_checkpoint, policy["sha256"])
+                        if not portable:
+                            location = str(directory / location)
+                    else:
+                        location = str(frozen_checkpoint)
                     models.append({**policy, "slot": row["slot"], "path": location})
                 else:
                     models.append(dict(row) if portable else {**row, "path": str(
@@ -187,7 +197,7 @@ def select_round_manifest(root, plan, self_play, round_number, previous_manifest
             atomic_json(effective, previous)
             chosen = effective
         check_learner(chosen, checkpoint, learner_slot)
-        if portable:
+        if portable or initial_seed_offset is not None:
             native_manifest_model_dependencies(chosen)
         receipt = {
             **lineage, "champion_model_id": champion_id,

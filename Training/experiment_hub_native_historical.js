@@ -3,6 +3,8 @@
 // The optimizer's committed manifest is immutable. The next collection
 // may replace exactly one frozen opponent, never the learner or scene.
 const {isDeepStrictEqual}=require('node:util');
+const path=require('node:path');
+const fs=require('node:fs');
 const SHA=/^[a-f0-9]{64}$/;
 const MODEL=/^bees-rl-v[0-9]+-[0-9a-f]{24}$/;
 
@@ -43,17 +45,24 @@ function validateCollectionSelection(round,release) {
     return selection;
 }
 
-function validateCollectionManifest(base,selected,selection) {
+function validateCollectionManifest(base,selected,selection,local=null) {
+    // Initial draws retain local dependencies; distributed handoff still
+    // uses the strictly relative portable manifest contract.
+    const normalize=(row,directory)=>({...row,path:fs.realpathSync(path.resolve(directory,row.path))});
     if(!Array.isArray(base?.models)||!Array.isArray(selected?.models)||
         !isDeepStrictEqual({...base,models:null},{...selected,models:null})||
         base.models.length!==selected.models.length||
         base.models.filter(row=>row.slot===selection.opponent_slot).length!==1||
         base.models.some((row,i)=>{
             const next=selected.models[i];
-            if(row.slot!==selection.opponent_slot)return !isDeepStrictEqual(row,next);
+            if(row.slot!==selection.opponent_slot)return !isDeepStrictEqual(
+                local?normalize(row,local.baseDirectory):row,
+                local?normalize(next,local.selectedDirectory):next);
             return next?.slot!==row.slot||!['mlagents','onnx'].includes(next.backend)||
                 !SHA.test(String(next.sha256||''))||
-                next.path!=='opponents/'+next.sha256+'.model'||
+                (local?path.resolve(local.selectedDirectory,next.path)!==
+                    path.join(local.selectedDirectory,'opponents',next.sha256+'.model'):
+                    next.path!=='opponents/'+next.sha256+'.model')||
                 !selection.opponent_model_id.endsWith(next.sha256.slice(0,24));
         }))
         throw Error('Historical selection changed model routes outside its frozen opponent slot.');

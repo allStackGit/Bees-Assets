@@ -1230,6 +1230,8 @@ def main() -> None:
                         help="release the committed learner checkpoint within this job allocation")
     parser.add_argument("--resume-continual-release", action="store_true",
                         help="resume only the authorized release of an already committed round")
+    parser.add_argument("--select-initial-historical-opponent", action="store_true",
+                        help=argparse.SUPPRESS)
     parser.add_argument("--model-manifest", type=Path,
                         help="override the run configuration's manifest for the next round")
     parser.add_argument("--learner-slot", type=int)
@@ -1401,6 +1403,11 @@ def main() -> None:
         "input_manifest_sha256": input_manifest_sha,
     }
     args.continual_plan = None
+    initial_selection = None
+    if args.select_initial_historical_opponent and (
+            args.continual_release_plan is None or "rollout_bundles" in run_document or
+            args.collect_only or args.resume_optimizer or args.learner_nodes != 1):
+        parser.error("initial historical selection belongs only to a fresh physical continual learner")
     if args.resume_continual_release and args.continual_release_plan is None:
         parser.error("release-only recovery requires the original continual release plan")
     if args.continual_release_plan is not None:
@@ -1420,12 +1427,36 @@ def main() -> None:
             if args.refresh_opponent_slot is None:
                 parser.error("Hub continual historical league requires the existing self-play opponent refresh slot")
             result["hub_historical_selection"] = True
+            if args.select_initial_historical_opponent:
+                # The supervised worker publishes its first input selection
+                # under its own job root; never modify installed model files.
+                from native_continual_session import select_round_manifest
+                initial = output / "initial-collection"
+                if not args.resume_continual_release:
+                    output.mkdir(parents=True)
+                    initial.mkdir()
+                elif not initial.is_dir():
+                    raise ValueError("committed initial historical selection is missing")
+                manifest = select_round_manifest(
+                    initial, args.continual_plan,
+                    {"every": 1, "opponent_slot": args.refresh_opponent_slot},
+                    1, manifest, checkpoint, args.learner_slot,
+                    create=not args.resume_continual_release,
+                    initial_seed_offset=args.seed_offset,
+                )
+                initial_selection = json.loads(
+                    (initial / "historical-round-00001.json").read_text(encoding="utf-8")
+                )
+                input_manifest_sha = file_sha256(manifest)
+                result["input_manifest_sha256"] = input_manifest_sha
+                result["initial_collection_selection"] = initial_selection
         if args.resume_continual_release:
             from train_policy_session import verify_round
             record, _, _ = verify_round(output, input_manifest_sha, input_checkpoint_sha,
                                         args.learner_slot, args.refresh_opponent_slot)
             if (record.get("seed_offset") != args.seed_offset or
                     record.get("optimizer_group_id") != args.learner_group_id or
+                    record.get("initial_collection_selection") != initial_selection or
                     record.get("continual_release_plan") != args.continual_plan or
                     record.get("continual_trainer_sha256") != result["continual_trainer_sha256"]):
                 raise ValueError("release recovery differs from the original authorized plan or trainer")
@@ -1616,7 +1647,10 @@ def main() -> None:
     for index, level in enumerate(levels):
         buckets[assignments[index]].append(level)
 
-    output.mkdir(parents=True, exist_ok=args.resume_rollout)
+    # The initial league draw, when enabled, already owns this new output
+    # directory. Do not permit reuse of unrelated direct-round artifacts.
+    if initial_selection is None:
+        output.mkdir(parents=True, exist_ok=args.resume_rollout)
     shards = []
     for index, allocated_levels in enumerate(buckets):
         directory = output if workers == 1 else output / f"rollout-{index}"

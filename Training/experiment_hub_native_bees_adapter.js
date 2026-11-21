@@ -1381,7 +1381,7 @@ function createNativeBeesAdapter({
     }
 
     function historicalUsage(context,round) {
-        const selection=context.parent_collection_selection;
+        const selection=round.receipt.initial_collection_selection||context.parent_collection_selection;
         if(!selection||selection.opponent_model_id===null)return null;
         validateSelection(selection);
         if(selection.effective_manifest_sha256!==round.receipt.input_manifest_sha256||
@@ -1494,6 +1494,40 @@ function createNativeBeesAdapter({
             throw Error('Native Bees round evidence disagrees with the exact Hub GPU lease.');
     }
 
+    function verifyInitialCollection(context,round,inputs,output) {
+        const selected=round.receipt.initial_collection_selection;
+        if(selected===undefined)return inputs;
+        if(collectOnly||bundleRound||inboxLearner||distributedOptimizer||
+            context.model_source_job_id||context.continuation_of_job_id||
+            context.frozen_parameters?.continual_release!==true||!releasePlan)
+            throw Error('Only the first physical continual learner may draw its own historical opponent.');
+        validateSelection(selected);
+        const root=path.join(output,'initial-collection');
+        const sidecar=completionReceipt(root,'historical-round-00001.json');
+        if(!sidecar||!isDeepStrictEqual(sidecar.receipt,selected)||
+            selected.input_manifest_sha256!==inputs.manifestDigest||
+            selected.input_checkpoint_sha256!==inputs.checkpointDigest||
+            selected.plan_sha256!==pins.get(releasePlan)||
+            selected.plan_sha256!==round.receipt.continual_release_plan?.plan_sha256||
+            selected.seed_offset!==round.receipt.seed_offset||
+            selected.seed_offset!==(context.frozen_parameters.seed_offset??0)||
+            selected.opponent_slot!==context.frozen_parameters.refresh_opponent_slot||
+            selected.opponent_slot===learnerSlot)
+            throw Error('Initial historical selection differs from the authorized model and self-play plan.');
+        if(selected.opponent_model_id===null)return inputs;
+        const effective=path.join(root,'historical-round-00001.manifest.json');
+        if(trustedFile(effective)!==effective||
+            sha256(fs.readFileSync(effective))!==selected.effective_manifest_sha256)
+            throw Error('Initial historical manifest changed after collection.');
+        validateCollectionManifest(JSON.parse(fs.readFileSync(inputs.manifest,'utf8')),
+            JSON.parse(fs.readFileSync(effective,'utf8')),selected,{
+                baseDirectory:path.dirname(inputs.manifest),selectedDirectory:root,
+            });
+        return {...inputs,manifest:effective,manifestDigest:selected.effective_manifest_sha256,
+            ...verifyModelDependencies(effective,new Map([[inputs.checkpoint,inputs.checkpointDigest]]),
+                inputs.checkpoint,learnerSlot)};
+    }
+
     function jobRound(context) {
         const output = jobRoot(context);
         const round = completedRound(output);
@@ -1536,7 +1570,7 @@ function createNativeBeesAdapter({
                 throw Error('Native Bees learner CPU threads exceeded its Hub lease.');
             }
         }
-        const inputs = roundInputs(context);
+        const inputs = verifyInitialCollection(context,round,roundInputs(context),output);
         if (round.receipt.input_checkpoint_sha256 !== inputs.checkpointDigest ||
             round.receipt.input_manifest_sha256 !== inputs.manifestDigest)
             throw Error('Native Bees completion receipt disagrees with the approved inputs.');
@@ -1928,8 +1962,13 @@ function createNativeBeesAdapter({
             // An existing committed round belongs to this same job, not its
             // predecessor. The runner verifies its original input, trainer
             // and release plan before resuming the registry transaction.
-            const resumeRelease = continual_release &&
-                completionReceipt(output, 'round-result.json') !== null;
+            const committedRound = continual_release
+                ?completionReceipt(output, 'round-result.json'):null;
+            const resumeRelease = committedRound!==null;
+            const selectInitial = continual_release && !bundleRound && !inboxLearner &&
+                !distributedOptimizer && !context.model_source_job_id &&
+                !context.continuation_of_job_id &&
+                (!resumeRelease||committedRound.receipt.initial_collection_selection!==undefined);
             if (context.native_release_checkpoint_sha256 !== undefined) {
                 if (!resumeRelease)
                     throw Error('Release recovery must never start another optimizer round.');
@@ -1942,6 +1981,7 @@ function createNativeBeesAdapter({
             return ['-B', runner, activeRun, inputs.checkpoint, trainer, output,
                 ...(continual_release ? ['--continual-release-plan', releasePlan] : []),
                 ...(resumeRelease ? ['--resume-continual-release'] : []),
+                ...(selectInitial ? ['--select-initial-historical-opponent'] : []),
                 '--model-manifest', inputs.manifest, ...(binary ? ['--rollout-binary', binary] : []),
                 '--stage-diagnostics',
                 // Supervisor-owned exclusive GPU selection is already verified.
