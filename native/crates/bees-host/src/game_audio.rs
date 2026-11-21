@@ -19,7 +19,7 @@ use bees_sim::simulation::WorldId;
 use serde_json::Value;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 
-use crate::presentation::NativeRenderWorldView;
+use crate::presentation::{NativeRenderWorldView, NativeShipExplosionSound};
 use crate::unity_scene_snapshot::NativeMusicLocation;
 
 const MAX_EFFECT_VOICES: usize = 16;
@@ -32,15 +32,16 @@ const TITANIA_LOOP_END: f32 = 185.461_18;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Effect {
     LightLaser, SmallLaser, BigLaser, BeamCannon, FlagshipLaser, QueenLaser,
-    RocketLaunch, StrikerBomb, Explosion, HugeExplosion,
-    Warp, Button, FireBargeClick,
+    RocketLaunch, StrikerBomb, Explosion, SmallExplosion, MediumExplosion,
+    LargeExplosion, HugeExplosion, Warp, Button, FireBargeClick,
 }
 
 impl Effect {
-    const ALL: [Self; 13] = [
+    const ALL: [Self; 16] = [
         Self::LightLaser, Self::SmallLaser, Self::BigLaser,
         Self::BeamCannon, Self::FlagshipLaser, Self::QueenLaser, Self::RocketLaunch,
-        Self::StrikerBomb, Self::Explosion, Self::HugeExplosion,
+        Self::StrikerBomb, Self::Explosion, Self::SmallExplosion,
+        Self::MediumExplosion, Self::LargeExplosion, Self::HugeExplosion,
         Self::Warp, Self::Button, Self::FireBargeClick,
     ];
 
@@ -55,10 +56,24 @@ impl Effect {
             Self::RocketLaunch => "Rocket Launch Sound.mp3",
             Self::StrikerBomb => "Striker Bomb Release.mp3",
             Self::Explosion => "Ship Explosion.mp3",
+            Self::SmallExplosion => "Smaller Explosion.mp3",
+            Self::MediumExplosion => "Medium Explosion.mp3",
+            Self::LargeExplosion => "Larger Explosion.mp3",
             Self::HugeExplosion => "Largest Explosion.mp3",
             Self::Warp => "Enter The Warp.mp3",
             Self::Button => "Beez Button Click.mp3",
             Self::FireBargeClick => "Fire Barge Detonation Click.mp3",
+        }
+    }
+
+    fn ship_explosion(kind: u8) -> Option<Self> {
+        match NativeShipExplosionSound::for_ship_type(kind) {
+            NativeShipExplosionSound::Tiny => Some(Self::Explosion),
+            NativeShipExplosionSound::Small => Some(Self::SmallExplosion),
+            NativeShipExplosionSound::Medium => Some(Self::MediumExplosion),
+            NativeShipExplosionSound::Large => Some(Self::LargeExplosion),
+            NativeShipExplosionSound::Nuclear => Some(Self::HugeExplosion),
+            NativeShipExplosionSound::Silent => None,
         }
     }
 
@@ -405,6 +420,9 @@ impl NativeGameAudio {
             }
             let effect = match event["effect"].as_str() {
                 Some("explosion") => Some(Effect::Explosion),
+                Some("small_explosion") => Some(Effect::SmallExplosion),
+                Some("medium_explosion") => Some(Effect::MediumExplosion),
+                Some("large_explosion") => Some(Effect::LargeExplosion),
                 Some("huge_explosion") => Some(Effect::HugeExplosion),
                 Some("striker_bomb") => Some(Effect::StrikerBomb),
                 Some("warp") => Some(Effect::Warp),
@@ -497,10 +515,14 @@ impl NativeGameAudio {
         for event in view.combat.events() {
             let (effect, point): (Effect, Option<Vec2>) = match event {
                 CombatEvent::ShipDied { victim_id, end_kill: false, .. } => (
-                    if view.combat.ship(*victim_id)
-                        .is_some_and(|ship| matches!(ship.ship_type, 7 | 10 | 11 | 17)) {
-                        Effect::HugeExplosion
-                    } else { Effect::Explosion },
+                    match view.combat.ship(*victim_id) {
+                        Some(ship) => {
+                            let Some(effect) = Effect::ship_explosion(ship.ship_type)
+                                else { continue };
+                            effect
+                        }
+                        None => Effect::Explosion,
+                    },
                     view.combat.ship_body(*victim_id)
                         .map(|body| body.motion.position),
                 ),
