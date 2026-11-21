@@ -29,7 +29,10 @@ from package_policy_manifest import (
 ROOT = Path(__file__).resolve().parents[2]
 AUDIO_SOURCE = ROOT / "native/crates/bees-host/src/game_audio.rs"
 CONVERTER = ROOT / "native/tools/import-ship-sprites.py"
-EXAMPLES = ("native-duel", "native-skirmish", "native-two-player", "native-wave-defense")
+EXAMPLES = (
+    "native-duel", "native-skirmish", "native-two-player",
+    "native-wave-defense", "native-escort-convoy", "native-fire-tank-defense",
+)
 
 
 
