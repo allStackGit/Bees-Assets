@@ -350,6 +350,30 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
     return scene, run, len(clones)
 
 
+def verified_source_specialist_command(members: list[dict]) -> str | None:
+    """Only two original physical Bomb/Charge classes lack policy actors.
+
+    This strictly checks the source weapon contract; a type number alone
+    cannot authorize replacing player input with a scripted combat order.
+    """
+    kinds = {ship["ship_type"] for ship in members}
+    if kinds == {0} and all(
+            isinstance(ship.get("special"), dict) and
+            ship["special"].get("kind") == "barge" and
+            isinstance(ship.get("special_weapon"), dict) and
+            isinstance(ship["special_weapon"].get("charge_range"), dict)
+            for ship in members):
+        return "charge_nearest"
+    if kinds == {22} and all(
+            isinstance(ship.get("special"), dict) and
+            ship["special"].get("kind") == "yellow_jacket" and
+            isinstance(ship.get("special_weapon"), dict) and
+            isinstance(ship["special_weapon"].get("proximity"), dict)
+            for ship in members):
+        return "bombing_nearest"
+    return None
+
+
 def deferred_reinforcement_ships(
         scene: dict, run: dict, require_scripted_fallback: bool = True) -> set[int]:
     """Preflight reserved physical identities and their command ownership.
@@ -386,7 +410,15 @@ def deferred_reinforcement_ships(
     if not ship_ids.issubset(ships_by_id):
         raise ValueError("native reinforcement has a missing authored hull")
     for squad_id in (deferred - command_squads if require_scripted_fallback else ()):
-        for ship_id in squads[squad_id]["members"]:
+        squad = squads[squad_id]
+        members = [ships_by_id[ship_id] for ship_id in squad["members"]]
+        if (squad.get("user_controlled") and
+                verified_source_specialist_command(members) is not None):
+            # The training author installs the same Charge/BombingRun source
+            # command on deployment, without ever stealing the live game's
+            # actual human-control authority.
+            continue
+        for ship_id in squad["members"]:
             ship = ships_by_id[ship_id]
             # Authentic Carriers' children follow their parent without
             # command queues; immobile support also needs no active order.
@@ -492,22 +524,7 @@ def verify_same_battle(scene: dict, run: dict,
             raise ValueError("policy added an unauthorized game command owner")
         extra_owners.add(squad_id)
         members = [source_ships[ship_id] for ship_id in squad["members"]]
-        kinds = {ship["ship_type"] for ship in members}
-        action = None
-        if kinds == {0} and all(
-                isinstance(ship.get("special"), dict) and
-                ship["special"].get("kind") == "barge" and
-                isinstance(ship.get("special_weapon"), dict) and
-                isinstance(ship["special_weapon"].get("charge_range"), dict)
-                for ship in members):
-            action = "charge_nearest"
-        elif kinds == {22} and all(
-                isinstance(ship.get("special"), dict) and
-                ship["special"].get("kind") == "yellow_jacket" and
-                isinstance(ship.get("special_weapon"), dict) and
-                isinstance(ship["special_weapon"].get("proximity"), dict)
-                for ship in members):
-            action = "bombing_nearest"
+        action = verified_source_specialist_command(members)
         allowed = {
             "squad_item_id": squad_id, "repeat": True,
             "orders": [{"kind": action}],
