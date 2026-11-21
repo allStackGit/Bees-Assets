@@ -17,8 +17,8 @@ import sys
 
 from evaluate_native_champion import document, gate, pinned_model
 from native_training_artifacts import atomic_json, file_sha256, native_input_dependencies, sync_directory
-from package_policy_manifest import export_model, verify_package
-from native_deployed_game import verify_deployment
+from package_policy_manifest import export_model
+from native_deployed_game import verify_deployment, verified_deployment_policy
 from train_policy_session import session_lock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "Training"))
@@ -44,10 +44,10 @@ def native_model(store, model_id):
         raise ValueError(f"incompatible registered native policy: {model_id}")
     policy = row.get("metadata", {}).get("native_policy")
     checkpoint = Path(row["artifact_path"]).resolve(strict=True)
-    if (not isinstance(policy, dict) or policy.get("backend") != "mlagents" or
+    if (not isinstance(policy, dict) or policy.get("backend") not in ("mlagents", "onnx") or
             policy.get("sha256") != row["artifact_sha256"] or
             file_sha256(checkpoint) != row["artifact_sha256"]):
-        raise ValueError(f"registered model lacks an authenticated native MA-POCA checkpoint: {model_id}")
+        raise ValueError(f"registered model lacks an authenticated native policy: {model_id}")
     manifest = store.models_dir / "native-manifests" / (model_id + ".json")
     immutable_json(manifest, {
         "format": "bees-native-model-v1",
@@ -62,6 +62,8 @@ def register(store, manifest, checkpoint, slot, run_id, step, build, parent, tra
     manifest = manifest.resolve(strict=True)
     checkpoint = checkpoint.resolve(strict=True)
     source, policy = pinned_model(manifest, checkpoint, slot)
+    if policy["backend"] != "mlagents":
+        raise ValueError("native learner registration requires an actual MA-POCA checkpoint")
     if (source["policy_signature"] != store.config["policy_signature"] or
             source["abi_version"] != store.config["policy_abi_version"]):
         raise ValueError("native registration disagrees with the registry policy contract")
@@ -77,6 +79,36 @@ def register(store, manifest, checkpoint, slot, run_id, step, build, parent, tra
         source_checkpoint=file_sha256(checkpoint),
         metadata={"native_policy": policy},
     )
+
+
+def migrate_frozen_model(store, model_id):
+    """Admit an existing approved v26 ONNX model without inventing weights."""
+    row = store.get_model(model_id)
+    if (row["status"] not in ("champion", "historical") or
+            any(row.get(key) != value for key, value in store.compatibility.to_dict().items())):
+        raise ValueError("only compatible approved legacy policies may be migrated")
+    artifact = Path(row["artifact_path"]).resolve(strict=True)
+    if artifact.suffix.lower() != ".onnx" or file_sha256(artifact) != row["artifact_sha256"]:
+        raise ValueError("legacy frozen policy artifact differs from registry")
+    from policy_worker import OnnxPolicy, CONTINUOUS, DISCRETE
+    policy = {
+        "backend": "onnx", "sha256": row["artifact_sha256"],
+        "providers": ["CPUExecutionProvider"],
+        "inputs": {"observations": "obs_0", "allowed_mask": "action_masks"},
+        "outputs": {"continuous": "deterministic_continuous_actions",
+                    "discrete": "deterministic_discrete_actions"},
+    }
+    # Inspect actual graph tensor signatures through the exact native
+    # runtime adapter. Do not accept unknown recurrent memory or shapes,
+    # and do not run a synthetic evaluation to manufacture approval.
+    model = OnnxPolicy(artifact, policy)
+    outputs = {item.name: item for item in model.session.get_outputs()}
+    for name, width in ((policy["outputs"]["continuous"], CONTINUOUS),
+                        (policy["outputs"]["discrete"], DISCRETE)):
+        info = outputs[name]
+        if len(info.shape) != 2 or info.shape[1] != width:
+            raise ValueError("legacy ONNX output differs from the frozen native action contract")
+    return store.admit_native_frozen_policy(model_id, policy)
 
 
 def physical_suite(path):
@@ -326,7 +358,7 @@ def publish_champion(store):
         staging = Path(tempfile.mkdtemp(prefix=".native-staging-", dir=packages))
         try:
             export_model(manifest, staging / "policy")
-            verified = verify_package(staging / "policy", 0)
+            verified = verified_deployment_policy(staging / "policy")
             atomic_json(staging / "deployment.json", {
                 "identity": identity, "identity_sha256": digest,
                 "deployment_id": deployment_id,
@@ -384,6 +416,10 @@ def main():
     pin = commands.add_parser("pin-competencies")
     pin.add_argument("suite", type=Path)
     commands.add_parser("publish")
+    migrate = commands.add_parser("migrate-frozen")
+    migrate.add_argument("model_id")
+    rollback = commands.add_parser("rollback")
+    rollback.add_argument("--model-id")
     evaluate = commands.add_parser("release")
     evaluate.add_argument("candidate_model_id")
     evaluate.add_argument("champion_suite", type=Path)
@@ -417,6 +453,20 @@ def main():
             result = store.pin_competency_suite(contract)
         elif args.command == "publish":
             result = publish_champion(store)
+        elif args.command == "migrate-frozen":
+            result = migrate_frozen_model(store, args.model_id)
+        elif args.command == "rollback":
+            # Verify the rollback target's native runtime BEFORE altering the
+            # sole registry champion pointer.
+            target = args.model_id
+            if target is None:
+                from bees_continual_learning import STATE_PREVIOUS_CHAMPION
+                with store._connect() as db:
+                    target = store._state(db, STATE_PREVIOUS_CHAMPION)
+            if not target:
+                raise ValueError("no approved native rollback target")
+            native_model(store, target)
+            result = {"model": store.rollback(target), "deployment": publish_champion(store)}
         else:
             if not 0 <= args.policy_seed < (1 << 63) or not 1 <= args.physics_workers <= 128:
                 parser.error("invalid native evaluation seed or physics allocation")

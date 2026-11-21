@@ -214,8 +214,18 @@ class OnnxPolicy:
             raise ValueError("ONNX missing configured observation/mask inputs")
         if any(name not in actual_outputs for name in names[2:]):
             raise ValueError("ONNX missing configured action outputs")
-        # Extra required model inputs must not be invented by the worker.
-        if len(actual_inputs) != 2:
+        # ML-Agents feedforward exports can retain a zero-width recurrent
+        # input. It represents no memory and requires no per-agent state.
+        # Reject real recurrence or any other unknown required input.
+        self.empty_recurrent_input = False
+        extra = set(actual_inputs) - {obs_input, mask_input}
+        if extra == {"recurrent_in"}:
+            memory = actual_inputs["recurrent_in"]
+            if (memory.type != "tensor(float)" or len(memory.shape) != 3 or
+                    memory.shape[1] != 1 or memory.shape[2] != 0):
+                raise ValueError("native feedforward policy cannot load recurrent ONNX memory")
+            self.empty_recurrent_input = True
+        elif extra:
             raise ValueError("ONNX model requires additional unsupported inputs")
         for name, width in ((obs_input, OBS_FLOATS), (mask_input, MASK_WIDTH)):
             info = actual_inputs[name]
@@ -228,6 +238,8 @@ class OnnxPolicy:
             self.observation_input: np.ascontiguousarray(observations),
             self.mask_input: np.ascontiguousarray(allowed),
         }
+        if self.empty_recurrent_input:
+            feeds["recurrent_in"] = np.empty((len(observations), 1, 0), dtype=np.float32)
         if self.combined_output is not None:
             outputs = self.session.run([self.combined_output], feeds)
             combined = np.asarray(outputs[0])
@@ -238,9 +250,17 @@ class OnnxPolicy:
             if not np.all(np.isfinite(disc)) or not np.all(disc == np.floor(disc)):
                 raise ValueError("ONNX combined discrete actions must be integral")
             return cont, disc.astype(np.int64)
-        return tuple(self.session.run(
+        continuous, discrete = self.session.run(
             [self.continuous_output, self.discrete_output], feeds
-        ))
+        )
+        discrete = np.asarray(discrete)
+        if discrete.dtype.kind not in ("i", "u"):
+            if (not np.all(np.isfinite(discrete)) or
+                    not np.all(discrete == np.floor(discrete)) or
+                    np.any(discrete < 0) or np.any(discrete > 255)):
+                raise ValueError("ONNX discrete actions must be valid integers")
+            discrete = discrete.astype(np.int64)
+        return continuous, discrete
 
 
 def install_bees_actor():

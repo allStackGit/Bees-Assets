@@ -756,6 +756,40 @@ class ContinualLearningStore:
                 raise
             return self._row_dict(self._model_row(db, model_id))
 
+    def admit_native_frozen_policy(self, model_id: str, policy: Mapping[str, Any]) -> Dict[str, Any]:
+        """Preserve an approved legacy model's identity while pinning its native runtime.
+
+        The caller has validated the feedforward ONNX contract. Status,
+        training lineage, evaluation and previous champion remain unchanged.
+        """
+        self._require_initialized()
+        policy = dict(policy)
+        cleanup = None
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            model = self._model_row(db, model_id)
+            self._assert_model_compatible(model)
+            source = Path(model["artifact_path"])
+            digest = model["artifact_sha256"]
+            if (model["status"] not in ("historical", "champion") or
+                    source.suffix.lower() != ".onnx" or policy.get("backend") != "onnx" or
+                    policy.get("sha256") != digest or "path" in policy or "slot" in policy):
+                raise ValidationError("Native frozen migration requires an approved compatible ONNX policy.")
+            metadata = json.loads(model["metadata_json"])
+            existing = metadata.get("native_policy")
+            if existing is not None and existing != policy:
+                raise ValidationError("Registered native frozen policy metadata conflicts.")
+            target = self.models_dir / "native-checkpoints" / (model_id + ".onnx")
+            self._assert_artifact_hash(source, digest)
+            self._copy_immutable(source, target, digest)
+            metadata["native_policy"] = policy
+            db.execute("UPDATE models SET artifact_path=?, metadata_json=? WHERE model_id=?",
+                       (str(target), canonical_json(metadata), model_id))
+            cleanup = (source, target, digest)
+            result = self._row_dict(self._model_row(db, model_id))
+        self._cleanup_staged_source(*cleanup)
+        return result
+
     def _assert_registration_compatible(
         self,
         existing: sqlite3.Row,

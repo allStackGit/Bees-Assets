@@ -26,6 +26,17 @@ def document(path):
     return value
 
 
+def verified_deployment_policy(package):
+    verified = verify_package(package)
+    manifest_path = package / "manifest.json"
+    model = document(manifest_path)["models"]
+    if (len(model) != 1 or model[0]["slot"] != 0 or
+            model[0]["backend"] not in ("mlagents", "onnx")):
+        raise ValueError("native champion deployment must contain exactly one policy")
+    return {**verified, "manifest": str(manifest_path),
+            "learner_checkpoint": str(package / model[0]["path"])}
+
+
 def verify_deployment(package, pointer):
     deployment_id = pointer.get("deployment_id")
     if (pointer.get("schema_version") != 1 or not isinstance(deployment_id, str) or
@@ -41,7 +52,7 @@ def verify_deployment(package, pointer):
     digest = hashlib.sha256(json.dumps(
         identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
     ).encode("utf-8")).hexdigest()
-    verified = verify_package(package / "policy", 0)
+    verified = verified_deployment_policy(package / "policy")
     model = document(Path(verified["manifest"]))
     checkpoint = Path(verified["learner_checkpoint"])
     if (record["identity_sha256"] != digest or

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from evaluate_policy import evaluate
 from native_training_artifacts import (
-    atomic_json, check_learner, file_sha256, native_manifest_model_dependencies,
+    atomic_json, file_sha256, native_manifest_model_dependencies,
     native_input_dependencies,
 )
 from train_policy_session import verify_evaluation, session_lock
@@ -29,15 +29,20 @@ def document(path):
 
 
 def pinned_model(manifest, checkpoint, slot):
-    check_learner(manifest, checkpoint, slot)
     source = document(manifest)
+    if (source.get("format") != "bees-native-model-v1" or
+            source.get("abi_version") != 26 or
+            type(slot) is not int or not 0 <= slot < 1 << 32):
+        raise ValueError("comparison needs a valid native policy manifest and slot")
     matches = [model for model in source["models"] if model["slot"] == slot]
     if len(matches) != 1:
         raise ValueError("ambiguous native champion model slot")
     model = dict(matches[0])
     artifact = (manifest.parent / model["path"]).resolve(strict=True)
-    if file_sha256(artifact) != model["sha256"]:
-        raise ValueError("native champion model does not match its manifest")
+    if (model["backend"] not in ("mlagents", "onnx") or
+            file_sha256(artifact) != model["sha256"] or
+            file_sha256(checkpoint) != model["sha256"]):
+        raise ValueError("native comparison model does not match its authenticated artifact")
     model["path"] = str(artifact)
     return source, model
 

@@ -58,7 +58,18 @@ def selected_run(receipt_path: Path) -> tuple[dict, dict, int, Path]:
     slot = receipt.get("learner_slot")
     if type(slot) is not int or not 0 <= slot < (1 << 32):
         raise ValueError("selected native learner model slot is invalid")
-    check_learner(manifest, checkpoint, slot)
+    if kind == "native_continual_champion_playable":
+        policy = document(manifest)
+        selected_slots = [model for model in policy["models"] if model["slot"] == slot]
+        if (policy.get("format") != "bees-native-model-v1" or
+                policy.get("abi_version") != 26 or len(selected_slots) != 1 or
+                selected_slots[0]["backend"] not in ("mlagents", "onnx") or
+                selected_slots[0]["sha256"] != selected["checkpoint_sha256"] or
+                file_sha256(existing_path(manifest, selected_slots[0]["path"])) !=
+                selected["checkpoint_sha256"]):
+            raise ValueError("approved champion does not match the native policy manifest")
+    else:
+        check_learner(manifest, checkpoint, slot)
     run = document(run_path)
     if existing_path(run_path, run.get("model_manifest")) != manifest:
         raise ValueError("selected gameplay run uses a different model manifest")

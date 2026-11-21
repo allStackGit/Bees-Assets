@@ -211,7 +211,9 @@ impl TrainedGame {
         let checkpoint_sha = text_field(record, "checkpoint_sha256")?;
         let selected = recorded_model["models"].as_array().is_some_and(|models|
             models.iter().any(|model|
-                model["backend"] == "mlagents" &&
+                (model["backend"] == "mlagents" ||
+                    (receipt["kind"] == "native_continual_champion_playable" &&
+                     model["backend"] == "onnx")) &&
                 model["sha256"].as_str() == Some(checkpoint_sha) &&
                 learner_slot.is_none_or(|slot| model["slot"].as_u64() == Some(slot)))
         );
