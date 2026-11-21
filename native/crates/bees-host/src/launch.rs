@@ -4334,6 +4334,53 @@ fn new_library_battle_output(save_root: &Path, game_id: &str)
     }
 }
 
+/// Project original per-mode match wins from already committed physical
+/// battle summaries. Each numbered battle is counted at most once; a
+/// closed, failed, interrupted or nonterminal run never creates a win.
+/// The immutable archive is the only durable owner: no parallel scoreboard
+/// file, background monitor or write on a simulation hot path.
+#[cfg(feature = "client")]
+fn archived_library_battle_wins(
+    save_root: &Path, game_id: &str,
+) -> Result<(u64, u64), Box<dyn Error>> {
+    let root = save_root.join("battles").join(game_id);
+    if !root.is_dir() { return Ok((0, 0)); }
+    let mut side_wins = [0_u64; 2];
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() { continue; }
+        let name = entry.file_name();
+        let Some(number) = name.to_str().and_then(|value|
+            value.strip_prefix("battle-")).filter(|value|
+                value.len() == 6 && value.bytes().all(|ch| ch.is_ascii_digit()))
+        else { continue };
+        if number.parse::<u32>().is_err() { continue; }
+        let run = entry.path().join("run");
+        let receipt = run.join("rollout-summary.json");
+        if run.is_symlink() || receipt.is_symlink() || !receipt.is_file() {
+            continue;
+        }
+        let summary: Value = serde_json::from_slice(&fs::read(receipt)?)?;
+        if summary["kind"] != "run_final" ||
+            !summary["failed_window"].is_null() ||
+            summary["cleanup_errors"] != json!([]) ||
+            summary["user_closed"] != false
+        {
+            continue;
+        }
+        let result = &summary["battle_terminal_receipt"];
+        if result["kind"] != "battle_result" || result["protocol"] != 1 {
+            continue;
+        }
+        let Some(side) = result["winner_side"].as_u64() else { continue };
+        if (1..=2).contains(&side) {
+            side_wins[side as usize - 1] =
+                side_wins[side as usize - 1].saturating_add(1);
+        }
+    }
+    Ok((side_wins[0], side_wins[1]))
+}
+
 /// The library and LAN host both pick a checkpointed quick battle under
 /// the same exclusive per-game save owner. A new output remains create-only.
 #[cfg(feature = "client")]
@@ -4850,7 +4897,12 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let mut completed_by_campaign = HashMap::<String, HashSet<String>>::new();
         let status = library.games.iter().zip(&games).map(|(item, config)| {
             if item.kind != "campaign" {
-                return Ok("  [Battle]".to_string());
+                let (side_one, side_two) = archived_library_battle_wins(save_root, &item.id)?;
+                return Ok(if side_one + side_two == 0 {
+                    "  [Battle]".to_string()
+                } else {
+                    format!("  [Completed wins: Side 1 {side_one} / Side 2 {side_two}]")
+                });
             }
             let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(&fs::read(config)?)?;
             let career_root = save_root.join("campaigns").join(&item.id);
@@ -8680,9 +8732,10 @@ fn run_battle(
     // Preserve the same physical terminal result as the authenticated
     // multiplayer wire. A process can die after this immutable commit but
     // before the peer receives its transient terminal notification.
-    let remote_terminal_receipt = remote.as_ref().and_then(|_| host.render_world(0))
-        .and_then(|view|
-            bees_host::remote_play::NativeRemotePlay::authoritative_battle_receipt(&view));
+    let battle_terminal_receipt = host.render_world(0).and_then(|view|
+        bees_host::remote_play::NativeRemotePlay::authoritative_battle_receipt(&view));
+    let remote_terminal_receipt = remote.as_ref()
+        .and_then(|_| battle_terminal_receipt.clone());
     let remote_session_id = remote.as_ref().map(|server| server.session_id().to_owned());
     let remote_authorized_sides = remote.as_ref().map(|server| server.authorized_sides());
     let mut final_summary = json!({
@@ -8691,6 +8744,10 @@ fn run_battle(
         "remote_session_id": remote_session_id,
         "remote_authorized_sides": remote_authorized_sides,
         "remote_terminal_receipt": remote_terminal_receipt,
+        // Exactly one committed native World result, shared by LAN and
+        // local score projections. Match history is derived from these
+        // immutable numbered battle archives, never a separate counter.
+        "battle_terminal_receipt": battle_terminal_receipt,
         "source_scene_template_cache": {
             "distinct_source_documents": unique_source_documents,
             "distinct_parsed_layouts": unique_source_templates,
