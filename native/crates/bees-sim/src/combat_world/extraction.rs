@@ -9,6 +9,11 @@ pub struct ExtractionZone {
     pub half_extents: Vec2,
     pub activation_radius: f32,
     pub layer: u8,
+    /// Source Uranus II: the final surviving ship may withdraw voluntarily.
+    /// Withdrawal preserves extracted FleetShips but awards the mission to
+    /// the opponent; ordinary extraction remains a player victory.
+    #[serde(default)]
+    pub retreat_on_exit: bool,
 }
 
 impl ExtractionZone {
@@ -90,6 +95,15 @@ impl CombatWorld {
         ))
     }
 
+    /// Read-only physical withdrawal outcome for campaign progression.
+    /// A military defeat with no actual extraction never qualifies.
+    pub fn extraction_retreat_completed(&self) -> bool {
+        self.extraction.as_ref().is_some_and(|state|
+            state.zone.retreat_on_exit && state.last_mobile_extracted &&
+            self.living_mobile_ships_on_side(state.zone.player_side) == 0 &&
+            !self.has_reserved_future_ships_on_side(state.zone.player_side))
+    }
+
     pub fn escorted_destination_bounds(&self) -> Option<Aabb> {
         self.extraction.as_ref()
             .filter(|state| state.escort_ship_id.is_some())
@@ -115,8 +129,12 @@ impl CombatWorld {
         let enemy_eliminated = self.living_mobile_ships_on_side(enemy) == 0 &&
             !self.has_reserved_future_ships_on_side(enemy);
         if player_eliminated || enemy_eliminated {
-            Some((if player_eliminated && !state.last_mobile_extracted { enemy } else { player },
-                player_eliminated && state.last_mobile_extracted))
+            let evacuated = player_eliminated && state.last_mobile_extracted;
+            let withdrawn = evacuated && state.zone.retreat_on_exit;
+            Some((if (player_eliminated && !evacuated) || withdrawn {
+                enemy
+            } else { player },
+                evacuated && !withdrawn))
         } else { None }
     }
 
