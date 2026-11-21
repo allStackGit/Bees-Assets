@@ -814,9 +814,7 @@ impl NativeGameAudio {
         // Query only the two physical WarpGate registries, not every
         // deployed ship. This remains client-only presentation cost;
         // headless simulation and PPO never iterate audio state.
-        for gate_id in view.combat.live_warp_gate_ids_for_side(1)
-            .chain(view.combat.live_warp_gate_ids_for_side(2))
-        {
+        for gate_id in view.combat.live_warp_gate_ids() {
             let Some(elapsed) = view.combat.game_warp_gate_animation_elapsed(gate_id)
                 else { continue };
             let Some(position) = view.combat.game_warp_gate_position(gate_id)
