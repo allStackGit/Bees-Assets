@@ -196,6 +196,7 @@ pub(super) struct FleetChoice {
     fleet_sizes: [usize; 2],
     mix: [FleetMix; 2],
     terrain: Terrain,
+    fog_of_war: bool,
     /// None preserves the original authored 320x200 map.
     arena_size: Option<u32>,
     lethal_borders: bool,
@@ -230,6 +231,7 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
+    let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
     let ai_tactics = if mode == 2 { AiTactics::Aggressive } else {
         let Some(value) = choose_ai_tactics()? else { return Ok(None); };
@@ -257,7 +259,7 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side, fleet_sizes, mix, terrain, arena_size, lethal_borders,
+        player_side, fleet_sizes, mix, terrain, fog_of_war, arena_size, lethal_borders,
         ai_both: false, ai_tactics, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
@@ -269,6 +271,7 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
+    let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
     let Some(objective) = choose_objective()? else { return Ok(None); };
     let objective_side = match objective {
@@ -287,7 +290,7 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, mix, terrain, arena_size, lethal_borders,
+        player_side: None, fleet_sizes, mix, terrain, fog_of_war, arena_size, lethal_borders,
         ai_both: false,
         ai_tactics: AiTactics::Aggressive,
         objective, reinforcements, objective_side,
@@ -301,6 +304,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes)? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
+    let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
     let Some(ai_tactics) = choose_ai_tactics()? else { return Ok(None); };
     let Some(objective) = choose_objective()? else { return Ok(None); };
@@ -328,11 +332,26 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(threads) = choose_resource("CPU physics workers", &workers)?
         else { return Ok(None); };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, mix, terrain, arena_size, lethal_borders,
+        player_side: None, fleet_sizes, mix, terrain, fog_of_war, arena_size, lethal_borders,
         ai_both: true,
         ai_tactics, objective, objective_side,
         reinforcements, benchmark_worlds: worlds, benchmark_workers: threads,
     }))
+}
+
+/// The authored Stage owns FogOfWarVision for gameplay, headless AI and
+/// training. Selecting visibility changes only the shared native scene
+/// input, never introduces a second presentation-only sight model.
+fn choose_visibility() -> Result<Option<bool>, Box<dyn Error>> {
+    let options = [
+        ("All visible", "  [No fog of war]"),
+        ("Fog of war", "  [Source ship vision and discovery]"),
+    ];
+    let rows = options.iter().map(|(title, status)| BattleMenuRow {
+        title, status, unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut selected = 0_usize;
+    Ok(select_library(&rows, &mut selected, false)?.map(|choice| choice == 1))
 }
 
 fn choose_resource(label: &str, options: &[usize]) -> Result<Option<usize>, Box<dyn Error>> {
@@ -816,6 +835,9 @@ pub(super) fn archive(
 ) -> Result<PathBuf, Box<dyn Error>> {
     let mut scene: Value = serde_json::from_str(SOURCE_SCENE)?;
     let mut run: Value = serde_json::from_str(SOURCE_RUN)?;
+    // This is the same native FogOfWarVision switch consumed by the
+    // actual Level; camera and policy perception read that shared state.
+    scene["activate_fog_of_war"] = json!(selected.fog_of_war);
     let squads = scene["squads"].as_array_mut()
         .ok_or_else(|| invalid("built-in fleet template has no squads"))?;
     if squads.len() != 2 || squads[0]["item_id"] != 101 ||
