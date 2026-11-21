@@ -157,6 +157,10 @@ pub struct Mission {
     /// completed defeat. The default remains the original victory gate.
     #[serde(default)]
     grant_on: AdvanceOn,
+    /// Source Pluto IV evacuation pays a varying subset of its authored
+    /// maximum fleet rewards, derived from the *real* survival clock.
+    #[serde(default)]
+    pub evacuation_rewards: bool,
     on_victory: Option<MissionRoute>,
     on_defeat: Option<MissionRoute>,
 }
@@ -205,6 +209,21 @@ impl OutcomePrerequisite {
             RequiredOutcome::Victory => progress.latest_victory(&self.mission),
             RequiredOutcome::Defeat => progress.latest_defeat(&self.mission),
         }
+    }
+}
+
+/// Pluto IV / Bluer Pastures: actual source reward tiers, based on the
+/// number evacuated before the physical HumanTarget is destroyed or
+/// the 300.49-second survival clock expires. Types come from Unity's
+/// ConfigData.ShipTypes: Scout, Gunship, Frigate, Dreadnought.
+pub(crate) fn pluto_evacuation_reward_count(ship_type: u8, evacuated: u32) -> u32 {
+    match ship_type {
+        18 => 5,
+        13 => if evacuated == 60 { 8 } else if evacuated > 50 { 6 }
+              else if evacuated > 15 { 4 } else { 1 },
+        12 => if evacuated == 60 { 4 } else if evacuated > 35 { 2 } else { 0 },
+        7 => if evacuated > 50 { 2 } else { 0 },
+        _ => 0,
     }
 }
 
@@ -688,6 +707,16 @@ impl BattleCatalog {
                     (!mission.persist_fleet_losses || !mission.record_fleet_stats)) ||
                 (mission.grants_on_finished() &&
                     !matches!(mission.advance_on, AdvanceOn::Finished)) ||
+                (mission.evacuation_rewards && !mission.grants_on_finished()) ||
+                (mission.evacuation_rewards && {
+                    let classes = [(18, 5), (13, 8), (12, 4), (7, 2)];
+                    classes.iter().any(|&(kind, count)|
+                        mission.victory_grants.iter()
+                            .filter(|grant| grant.ship_type == kind)
+                            .map(|grant| grant.count).sum::<u32>() != count) ||
+                    mission.victory_grants.iter().any(|grant|
+                        !classes.iter().any(|&(kind, _)| kind == grant.ship_type))
+                }) ||
                 earlier.contains(mission.id.as_str()) ||
                 mission.requires.iter().any(|id| !earlier.contains(id.as_str())) ||
                 mission.unlock_if_any.len() > 40 ||
@@ -1594,6 +1623,9 @@ impl BattleCatalog {
             }
             if mission.grants_on_finished() {
                 row["grant_on"] = json!("finished");
+            }
+            if mission.evacuation_rewards {
+                row["evacuation_rewards"] = json!(true);
             }
             if has_defeat_conditions {
                 row["attempted"] = json!(progress.missions.get(mission.id.as_str())
