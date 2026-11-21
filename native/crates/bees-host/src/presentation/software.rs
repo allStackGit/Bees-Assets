@@ -2114,6 +2114,18 @@ impl NativeSoftwareRenderer {
             text::draw_centered(&mut self.pixels, self.width, 8,
                 &label, 1, [239, 247, 255]);
         } else if view.campaign_objective == Some(
+            bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoPushback,
+        ) {
+            let label = if view.player_authority.player_viewer_side()
+                == view.campaign_dialogue_side
+            {
+                "Push back the enemy!"
+            } else {
+                "Defend the Bee fleet from the attacking human ships"
+            };
+            text::draw_centered(&mut self.pixels, self.width, 8,
+                label, 1, [239, 247, 255]);
+        } else if view.campaign_objective == Some(
             bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusOffensive,
         ) {
             let objective = if view.player_authority.player_viewer_side()
