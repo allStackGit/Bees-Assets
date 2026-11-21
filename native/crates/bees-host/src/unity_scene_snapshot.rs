@@ -1639,10 +1639,14 @@ impl NativePhysicalScene {
             .filter(|ship| Self::authored_carrier_parent(ship) == Some(parent))
             .map(|ship| (ship.entity_id, ship)).collect::<HashMap<_, _>>();
         if children.is_empty() { return None; }
+        // Preserve the complete child identity set while consuming members.
+        // Otherwise a second source squad referencing an already consumed
+        // child is silently skipped, making one physical hull own two decks.
+        let original_child_ids = children.keys().copied().collect::<HashSet<_>>();
         let mut groups = Vec::new();
         let source_squads = if reserved { &self.fleet_template_squads } else { &self.source_squads };
         for squad in source_squads {
-            if !squad.members.iter().any(|id| children.contains_key(id)) { continue; }
+            if !squad.members.iter().any(|id| original_child_ids.contains(id)) { continue; }
             if squad.side != side || squad.saved_squad_id.is_some() ||
                 squad.player_permissions.user_controlled == reserved ||
                 squad.is_carrier_squad != Some(true)
