@@ -215,6 +215,16 @@ struct CampaignSquadCreation {
     squad: NativeCreatedSquad,
 }
 
+/// Tombstone for a user-created SavedSquad with no live fleet assignments.
+/// Historical battle receipts and permanent IDs remain intact.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignSquadRetirement {
+    campaign_id: String,
+    side: i32,
+    saved_squad_id: i64,
+}
+
 /// One immutable tactical edit. Later numbered edits supersede earlier
 /// preferences without rewriting the receipt for a prior campaign battle.
 #[derive(Deserialize, Serialize)]
@@ -271,6 +281,7 @@ pub struct CampaignProgress<'a> {
     awarded_fleet_ids: HashSet<i64>,
     awarded_saved_squad_ids: HashSet<i64>,
     created_squads: Vec<NativeCreatedSquad>,
+    retired_squad_ids: HashSet<i64>,
     tactics: Vec<NativeSavedSquadTactics>,
     tactics_edits: u64,
     transfer_count: u64,
@@ -427,7 +438,8 @@ impl CampaignProgress<'_> {
     pub fn highest_saved_squad_id(&self) -> i64 {
         self.squads.keys().copied().chain(
             self.created_squads.iter().map(|squad| squad.saved_squad_id)
-        ).max().unwrap_or(0)
+        ).chain(self.retired_squad_ids.iter().copied())
+            .max().unwrap_or(0)
     }
 
     pub fn saved_squad_ids_for_side(&self, side: i32) -> Vec<i64> {
@@ -436,6 +448,7 @@ impl CampaignProgress<'_> {
             .chain(self.created_squads.iter().filter_map(|squad|
                 (squad.side == side).then_some(squad.saved_squad_id)))
             .collect::<Vec<_>>();
+        ids.retain(|id| !self.retired_squad_ids.contains(id));
         ids.sort_unstable();
         ids.dedup();
         ids
@@ -454,7 +467,9 @@ impl CampaignProgress<'_> {
                     squad.side, squad.battles_won, squad.battles_fought,
                     squad.ships_lost, squad.damage_done, squad.damage_received,
                     squad.kills,
-                )
+                ) + if self.retired_squad_ids.contains(&id) {
+                    " [Deleted]"
+                } else { "" }
             } else {
                 let side = self.created_squads.iter().find(|squad|
                     squad.saved_squad_id == id).map_or(0, |squad| squad.side);
@@ -686,6 +701,35 @@ impl BattleCatalog {
                 campaign_id: campaign_id.to_owned(), squad,
             })?;
         Ok(squad)
+    }
+
+    /// Retire a vacant user-created or earned squad without rewriting
+    /// previous battles. Its stable ID remains reserved for all time.
+    /// Physical ships must first be moved into another squad or reserve
+    /// through the existing validated transfer/assignment operations.
+    pub fn retire_saved_squad(
+        &self, progress: &CampaignProgress<'_>, output: &Path,
+        side: i32, saved_squad_id: i64,
+    ) -> io::Result<()> {
+        let campaign_id = self.campaign_id.as_deref()
+            .ok_or_else(|| invalid("SavedSquad deletion requires a native campaign"))?;
+        if !matches!(side, 1 | 2) || saved_squad_id <= 0 ||
+            !progress.created_squads.iter().any(|squad|
+                squad.side == side && squad.saved_squad_id == saved_squad_id) ||
+            progress.retired_squad_ids.contains(&saved_squad_id) ||
+            progress.created_squads.iter().any(|squad|
+                squad.template_saved_squad_id == saved_squad_id) ||
+            progress.purchases.iter().any(|(_, ship)|
+                ship.saved_squad_id == saved_squad_id) ||
+            progress.authored_roster.values().any(|owner|
+                owner.current_saved_squad_id == saved_squad_id)
+        {
+            return Err(invalid("delete only an empty created SavedSquad not needed by another squad"));
+        }
+        commit_campaign_edit(output, "squad-retire-", "retirement.json",
+            &CampaignSquadRetirement {
+                campaign_id: campaign_id.to_owned(), side, saved_squad_id,
+            })
     }
 
     /// Publish an authenticated, zero-cost SavedSquad tactics change.
@@ -1161,6 +1205,38 @@ impl BattleCatalog {
             progress.authored_transfer_count = progress.authored_transfer_count.checked_add(1)
                 .ok_or_else(|| invalid("authored squad edit counter overflow"))?;
         }
+        // Retirement is replayed after every fleet assignment. Because
+        // retirement is allowed only for an empty created squad, later
+        // valid transfers cannot depend on a removed identity. Keep an
+        // immutable tombstone rather than making that ID reusable.
+        for directory in numbered_directories(output, "squad-retire-")? {
+            let bytes = match fs::read(directory.join("retirement.json")) {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            let edit: CampaignSquadRetirement = serde_json::from_slice(&bytes)
+                .map_err(|error| invalid(format!("invalid SavedSquad retirement: {error}")))?;
+            if edit.campaign_id != *campaign ||
+                !matches!(edit.side, 1 | 2) || edit.saved_squad_id <= 0 ||
+                !progress.created_squads.iter().any(|squad|
+                    squad.side == edit.side && squad.saved_squad_id == edit.saved_squad_id) ||
+                progress.retired_squad_ids.contains(&edit.saved_squad_id) ||
+                progress.created_squads.iter().any(|squad|
+                    squad.template_saved_squad_id == edit.saved_squad_id) ||
+                progress.purchases.iter().any(|(_, ship)|
+                    ship.saved_squad_id == edit.saved_squad_id) ||
+                progress.authored_roster.values().any(|owner|
+                    owner.current_saved_squad_id == edit.saved_squad_id)
+            {
+                return Err(invalid("stale or nonempty retired SavedSquad receipt"));
+            }
+            progress.created_squads.retain(|squad|
+                squad.saved_squad_id != edit.saved_squad_id);
+            progress.tactics.retain(|row|
+                row.saved_squad_id != edit.saved_squad_id);
+            progress.retired_squad_ids.insert(edit.saved_squad_id);
+        }
         progress.unspent_minerals()?;
         Ok(progress)
     }
@@ -1319,6 +1395,11 @@ impl BattleCatalog {
                     "victory_grant"
                 } else { "player_created" },
             })).collect::<Vec<_>>(),
+            "retired_saved_squad_ids": {
+                let mut ids = progress.retired_squad_ids.iter().copied().collect::<Vec<_>>();
+                ids.sort_unstable();
+                ids
+            },
             "saved_squad_tactics_edits": progress.tactics_edits,
             "saved_squad_tactics": progress.tactics.iter().map(|entry| json!({
                 "side": entry.side,
