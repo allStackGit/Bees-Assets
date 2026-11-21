@@ -57,6 +57,7 @@ function fieldsFor(config,project) {
                 'training.gae_lambda':[0,1],
                 'training.ppo_clip':[0.000000001,0.999999],
                 'training.learning_rate':[0.000000001,1],
+                'training.colony_batch_size':[1,65536],
                 'training.max_grad_norm':[0.000000001,1000000],
                 'training.entropy_coefficient':[0,1000000],
                 'training.value_coefficient':[0,1000000],
@@ -88,6 +89,13 @@ function fieldsFor(config,project) {
         }
     };
     visit(base,[]);
+    // The installed persistent PPO optimizer defaults to 16 when a
+    // legacy checkpoint omits this optional, effective minibatch field.
+    if(project==='tinybrains'&&base.training?.algorithm==='colony_ppo'&&
+        base.training.colony_batch_size===undefined)
+        fields.push({key:'training.colony_batch_size',section:'training',
+            label:'Colony PPO minibatch size',type:'integer',
+            default:16,min:1,max:65536});
     if(fields.length>128)throw Error('Installed configuration has too many editable fields.');
     return fields;
 }
@@ -117,7 +125,9 @@ function applyOverrides(config,project,overrides) {
                 throw Error('Design parameter path changed: '+key);
             target=target[part];
         }
-        if(!Object.hasOwn(target,segments.at(-1)))
+        if(!Object.hasOwn(target,segments.at(-1))&&
+            !(project==='tinybrains'&&key==='training.colony_batch_size'&&
+                target.algorithm==='colony_ppo'))
             throw Error('Design parameter missing: '+key);
         target[segments.at(-1)]=value;
     }
