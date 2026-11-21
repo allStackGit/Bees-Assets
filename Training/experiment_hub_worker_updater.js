@@ -249,6 +249,22 @@ async function stage(base,env,root,name,entry) {
                 ?'tinybrains.exe':'tinybrains');
             if(!fs.existsSync(engine))
                 throw Error('Pinned TinyBrains CLI does not contain the approved executable.');
+            // The trainer's runtime.configure uses this version's project
+            // cache by default. Populate the exact CLI cache layout before
+            // the release is marked verified, so simultaneous collectors
+            // cannot race the first download or require outbound Internet.
+            const downloads=path.join(project,'downloads');
+            const pin=JSON.parse(fs.readFileSync(path.join(downloads,'ants-cartridge.json'),'utf8'));
+            if(!HASH.test(pin.sha256||'')||!HASH.test(pin.engine_sha256||''))
+                throw Error('Invalid pinned TinyBrains cartridge metadata.');
+            const cartridgeArchive=path.join(downloads,'ants-artifacts.tar.gz');
+            if(crypto.createHash('sha256').update(fs.readFileSync(cartridgeArchive)).digest('hex')!==pin.sha256)
+                throw Error('Pinned TinyBrains cartridge archive checksum mismatch.');
+            const cartridge=path.join(project,'cache','cartridges',pin.sha256);
+            escapeTar(cartridge,cartridgeArchive);
+            if(!fs.statSync(path.join(cartridge,'cartridge.json')).isFile()||
+                crypto.createHash('sha256').update(fs.readFileSync(path.join(cartridge,'tb-ants.wasm'))).digest('hex')!==pin.engine_sha256)
+                throw Error('Pinned TinyBrains cartridge engine checksum mismatch.');
         }
         fs.writeFileSync(path.join(temporary,'.verified-'+entry.sha256),'\n',{mode:0o600});
         fs.renameSync(temporary,directory);
@@ -503,9 +519,26 @@ function preparePythonRuntimes(root,changes) {
             exec(command,[...prefix,'pip','install','--python',python,
                 '--no-deps','-e',path.join(project,'upstream','ants','baselines'),
                 '-e',project],{env});
-            exec(python,['-B','-c',
-                'import ants_mapoca.remote_rollout; from ants_mapoca.env import Engine'],{
-                    cwd:project,env:{...env,PYTHONPATH:project}});
+            // Exercise the same runtime and engine handshake that a remote
+            // collector needs, before replacing the active service. The
+            // pinned cartridge is already local and needs no runtime fetch.
+            exec(python,['-B','-c',[
+                'from ants_mapoca.runtime import configure, ENGINE',
+                'from ants_mapoca.env import Engine',
+                'import ants_mapoca.remote_rollout',
+                'configure(threads=1)',
+                'engine = Engine(waves=1, matches_per_wave=1, max_turns=2, maps=["basic-tiny-2p"])',
+                'try:',
+                '    assert engine.engine_digest == ENGINE, "Unexpected Ants engine digest"',
+                '    engine.reset()',
+                'finally:',
+                '    engine.close()',
+            ].join('\n')],{
+                cwd:project,env:{...env,PYTHONPATH:project,
+                    TINYBRAINS_HOME:path.join(project,'cache'),
+                    TINYBRAINS_REGISTRY:path.join(project,'games.toml'),
+                    TINYBRAINS:path.join(project,'tools','tinybrains-0.5.0',
+                        windows?'tinybrains.exe':'tinybrains')},timeout:120000});
         }
         pythonPaths[name]=python;
     }

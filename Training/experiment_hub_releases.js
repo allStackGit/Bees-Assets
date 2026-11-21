@@ -22,7 +22,7 @@ const CLI_ASSETS=[
     'tinybrains-x86_64-unknown-linux-gnu.tar.gz',
     'tinybrains-x86_64-pc-windows-msvc.zip',
 ];
-const TINYBRAINS_PACKAGE_FORMAT='pinned-upstream-and-cli-v1';
+const TINYBRAINS_PACKAGE_FORMAT='pinned-upstream-cli-and-cartridge-v2';
 
 function git(args,cwd,timeout=120000) {
     return new Promise((resolve,reject)=>{
@@ -51,7 +51,7 @@ function command(program,args,cwd,timeout=120000) {
         function fail(error){if(complete)return;complete=true;clearTimeout(alarm);reject(error);}
     });
 }
-async function pinTinyBrainsUpstream(root,archive) {
+async function pinTinyBrainsUpstream(root,archive,registry) {
     const vendorRoot=path.join(root,'pinned-upstream');
     fs.mkdirSync(vendorRoot,{recursive:true,mode:0o700});
     for(const [name,revision] of Object.entries(TINYBRAINS_UPSTREAM)) {
@@ -91,6 +91,28 @@ async function pinTinyBrainsUpstream(root,archive) {
     }
     await command('tar',['-rf',archive,'-C',downloads,
         '--transform=s|^|Ants-MAPOCA/downloads/|','SHA256SUMS',...CLI_ASSETS],root,120000);
+    // Package the game itself as well as its CLI. The exact archived
+    // registry is the source of truth, not a moving upstream release.
+    const section=registry.split(/^\[games\.ants\]\s*$/m)[1]?.split(/^\[/m)[0]||'';
+    const sourceRepo=section.match(/^repo\s*=\s*"Tiny-Brains\/ants"\s*$/m);
+    const release=section.match(/^release\s*=\s*"(engine-[a-f0-9]{12})"\s*$/m)?.[1];
+    const digest=section.match(/^artifacts\s*=\s*\{\s*file\s*=\s*"ants-artifacts\.tar\.gz"\s*,\s*sha256\s*=\s*"sha256:([a-f0-9]{64})"\s*\}\s*$/m)?.[1];
+    const engine=section.match(/^engine\s*=\s*"sha256:([a-f0-9]{64})"\s*$/m)?.[1];
+    if(!sourceRepo||!release||!digest||!engine)
+        throw Error('TinyBrains registry does not identify a supported pinned Ants cartridge.');
+    const cartridgeDir=path.join(root,'pinned-cartridges',digest);
+    fs.mkdirSync(cartridgeDir,{recursive:true,mode:0o700});
+    const assetName='ants-artifacts.tar.gz';
+    const asset=path.join(cartridgeDir,assetName);
+    if(!fs.existsSync(asset)||(await fileHash(asset)).sha256!==digest)
+        await command('curl',['--fail','--location','--silent','--show-error',
+            '--output',asset,'https://github.com/Tiny-Brains/ants/releases/download/'+release+'/'+assetName],root,240000);
+    if((await fileHash(asset)).sha256!==digest)
+        throw Error('Pinned TinyBrains Ants cartridge checksum mismatch.');
+    fs.writeFileSync(path.join(cartridgeDir,'ants-cartridge.json'),
+        JSON.stringify({release,sha256:digest,engine_sha256:engine})+'\n',{mode:0o600});
+    await command('tar',['-rf',archive,'-C',cartridgeDir,
+        '--transform=s|^|Ants-MAPOCA/downloads/|',assetName,'ants-cartridge.json'],root,120000);
 }
 async function fileHash(file) {
     const hash=crypto.createHash('sha256');let bytes=0;
@@ -171,8 +193,10 @@ class ReleaseStore {
                     ]:[];
                 await git(['archive','--format=tar','--output='+temp,sha,
                     ...archivePaths],repo,240000);
-                if(name==='tinybrains')
-                    await pinTinyBrainsUpstream(this.root,temp);
+                if(name==='tinybrains') {
+                    const registry=await git(['show',sha+':Ants-MAPOCA/games.toml'],repo);
+                    await pinTinyBrainsUpstream(this.root,temp,registry);
+                }
                 const info=await fileHash(temp);
                 if(info.bytes===0)throw Error('Empty release archive.');
                 fs.renameSync(temp,filename);
