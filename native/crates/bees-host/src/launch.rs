@@ -2894,7 +2894,7 @@ fn launch_catalog_battle(
     // authorized at its original start and has already passed the frozen
     // source and career checks above.
     if entry.mission.as_ref().is_some_and(|mission|
-        mission.requires.iter().any(|id| !progress.completed(id)))
+        !mission.unlocked(&progress))
     {
         return Err(invalid("the chosen campaign mission is no longer unlocked").into());
     }
