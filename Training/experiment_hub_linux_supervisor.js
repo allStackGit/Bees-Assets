@@ -63,20 +63,35 @@ function checkedAdapterArgs(adapter,fn,parameters,context) {
 }
 function gpuRuntimeProof(adapter,parameters,context) {
     const pci=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
-    const dual=Array.isArray(context?.gpu_pci_addresses)&&
-        context.gpu_pci_addresses.length===2&&
-        new Set(context.gpu_pci_addresses).size===2&&
-        context.gpu_pci_addresses.every(p=>pci.test(String(p)));
+    const ids=context?.gpu_pci_addresses;
+    const dual=Array.isArray(ids)&&ids.length===2&&
+        new Set(ids).size===2&&ids.every(p=>pci.test(String(p)))&&
+        adapter?.gpu_dual_execution==='split-ppo';
+    const multi=Array.isArray(ids)&&ids.length>=2&&ids.length<=8&&
+        new Set(ids).size===ids.length&&ids.every(p=>pci.test(String(p)))&&
+        (adapter?.gpu_multi_execution==='independent-ppo'||
+         ids.length>=3&&adapter?.gpu_multi_execution==='split-ppo-collectors');
+    const single=!ids&&pci.test(String(context?.gpu_pci_address||''));
     if(!adapter||typeof adapter.executable!=='string'||
         !path.isAbsolute(adapter.executable)||
         !SAFE_ARG.test(adapter.executable)||
         !(dual&&['split-ppo','native-rollouts'].includes(adapter.gpu_dual_execution)||
             !context?.gpu_pci_addresses&&pci.test(String(context?.gpu_pci_address||''))))
         throw Error('Invalid local ROCm runtime or leased PCI identity.');
-    const rocrUuid=dual?null:Object.hasOwn(adapter.rocr_gpu_uuids||{},context.gpu_pci_address)
-        ?adapter.rocr_gpu_uuids[context.gpu_pci_address]:null;
+    // TinyBrains verifies HIP physical PCI identities for the complete
+    // leased set under the kernel device filter, like its existing dual
+    // mode. Courier's independently owned PPO devices instead use a
+    // separately pinned ROCr UUID selector for every device.
+    const rocrUuid=multi&&adapter.gpu_multi_execution==='independent-ppo'
+        ?ids.map(p=>adapter.rocr_gpu_uuids?.[p])
+        :multi||dual?null:Object.hasOwn(adapter.rocr_gpu_uuids||{},context.gpu_pci_address)
+            ?adapter.rocr_gpu_uuids[context.gpu_pci_address]:null;
     if(rocrUuid!==null&&
-        (typeof rocrUuid!=='string'||!ROCM_UUID.test(rocrUuid)))
+        (Array.isArray(rocrUuid)
+            ?rocrUuid.length!==ids.length||
+                new Set(rocrUuid).size!==rocrUuid.length||
+                rocrUuid.some(uuid=>typeof uuid!=='string'||!ROCM_UUID.test(uuid))
+            :typeof rocrUuid!=='string'||!ROCM_UUID.test(rocrUuid)))
         throw Error('Invalid locally approved ROCr GPU UUID selector.');
     // The verifier's inputs must be identical during an unstarted
     // qualification and a later native Start. Dispatch IDs and evaluation
@@ -86,13 +101,19 @@ function gpuRuntimeProof(adapter,parameters,context) {
         job_id:context.job_id,project_id:context.project_id,
         artifact_lineage_root_id:context.artifact_lineage_root_id,
         continuation_of_job_id:context.continuation_of_job_id||null,
-        ...(dual?{gpu_pci_addresses:context.gpu_pci_addresses.slice()}:
+        ...(dual||multi?{gpu_pci_addresses:ids.slice()}:
             {gpu_pci_address:context.gpu_pci_address}),
     });
+    // Every selected GPU is qualified alone while the other GPUs must be
+    // denied by the kernel device filter. Only then may the trusted native
+    // service use the union of the leased render nodes.
+    const singleProofs=multi?ids.map(p=>gpuRuntimeProof(adapter,parameters,{
+        ...verifierContext,gpu_pci_addresses:undefined,gpu_pci_address:p
+    })):null;
     return {executable:adapter.executable,
         verifyArgs:checkedAdapterArgs(adapter,adapter.gpu_verify_args,
             parameters,verifierContext),
-        rocrUuid};
+        rocrUuid,...(singleProofs?{singleProofs}:{})};
 }
 // Freeze exactly the PCI/VRAM bindings and ordered local device identity
 // into the same pre-start attestation used for single- and dual-GPU jobs.
@@ -106,12 +127,14 @@ function gpuAttestationArgs(bindings,plan,proof) {
     ];
 }
 function gpuSelectorArgs(rocrUuid) {
-    if(rocrUuid!=null&&
-        (typeof rocrUuid!=='string'||!ROCM_UUID.test(rocrUuid)))
+    const selectors=Array.isArray(rocrUuid)?rocrUuid:rocrUuid?[rocrUuid]:[];
+    if(selectors.length>8||
+        new Set(selectors).size!==selectors.length||
+        selectors.some(uuid=>typeof uuid!=='string'||!ROCM_UUID.test(uuid)))
         throw Error('Invalid locally pinned ROCr GPU selector.');
-    return [...(rocrUuid?['--setenv=ROCR_VISIBLE_DEVICES='+rocrUuid]:[]),
+    return [...(selectors.length?['--setenv=ROCR_VISIBLE_DEVICES='+selectors.join(',')]:[]),
         '--property=UnsetEnvironment=CUDA_VISIBLE_DEVICES HIP_VISIBLE_DEVICES'+
-            (rocrUuid?'':' ROCR_VISIBLE_DEVICES')+' GPU_DEVICE_ORDINAL'];
+            (selectors.length?'':' ROCR_VISIBLE_DEVICES')+' GPU_DEVICE_ORDINAL'];
 }
 function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=false) {
     if(!job||!lease||job.status!=='waiting_adapter'||
@@ -167,7 +190,7 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
     const dual=r.gpu_count===2&&lr.gpu_count===2&&
         r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'&&dualProject;
     if(!cpuOnly&&(!gpuEnabled||typeof adapter.gpu_verify_args!=='function'||
-        !(single||dual)||bindings.length!==r.gpu_count||
+        !(single||dual||multi)||bindings.length!==r.gpu_count||
         lr.gpus?.length!==r.gpu_count||
         bindings.some((bound,index)=>bound.id!==lr.gpus[index])||
         new Set(bindings.map(bound=>bound.pci_address)).size!==bindings.length||
@@ -218,6 +241,7 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         dispatch_id:job.dispatch_id||null,evaluation_suite_id:job.evaluation_stop?.suite_id||
             job.evaluation_stop?.all_of?.[0]?.suite_id||null,
         continuation_of_job_id:predecessor,
+        continuation_mode:continuationMode,
         collector_replacement_of_job_id:replaced,
         optimizer_restart_of_job_id:oldOptimizer,
         artifact_lineage_root_id:lineageRoot,
@@ -301,8 +325,12 @@ function launchArguments(record,invocation,gpuPlan) {
         const check=path.join(__dirname,'experiment_hub_linux_gpu_launch_check.js');
         if(!SAFE_ARG.test(process.execPath)||!SAFE_ARG.test(check))
             throw Error('GPU pre-start verifier requires unambiguous local executable paths.');
+        const physical=bindings.length===1
+            ?[bindings[0].id,bindings[0].pci_address,bindings[0].vram_mb]
+            :['--multi',bindings.length,...bindings.flatMap(binding=>
+                [binding.id,binding.pci_address,binding.vram_mb])];
         args.push(...gpuPlan.device_properties.map(p=>'--property='+p),
-            '--property=TimeoutStartSec=25s',
+            '--property=TimeoutStartSec='+(bindings.length>1?'45s':'25s'),
             ...gpuSelectorArgs(rocrUuid),
             '--property=ExecStartPre='+[
                 process.execPath,check,
@@ -482,6 +510,31 @@ class LinuxSupervisor {
             throw Error('CPU/RAM preflight must pass before GPU device checks.');
         if(this.gpuProbeCleanupPending())
             throw Error('Previous GPU access probe cleanup unconfirmed; inspect the recorded local service before retry.');
+        if(Array.isArray(bindings)&&bindings.length>1) {
+            // A union of N GPUs can have no unselected render nodes on a
+            // two-GPU host. Prove kernel allow/deny and HIP PCI identity
+            // for *each* GPU separately before authorizing the union.
+            if(bindings.length>8||!runtimeProof||
+                !Array.isArray(runtimeProof.singleProofs)||
+                runtimeProof.singleProofs.length!==bindings.length||
+                !Number.isSafeInteger(runtimeProof.ram_mb))
+                throw Error('Multi-GPU preflight requires one trusted physical proof per GPU.');
+            for(let i=0;i<bindings.length;i++) {
+                const result=await this.qualifyGpuDeviceAccess([bindings[i]],{
+                    ...runtimeProof.singleProofs[i],ram_mb:runtimeProof.ram_mb});
+                if(result.runtime_pci_verified!==true||
+                    result.selected.length!==1||
+                    result.selected[0]!==bindings[i].pci_address)
+                    throw Error('An individual leased GPU did not pass HIP device isolation.');
+            }
+            const full=resolveRocmDevices(bindings,{fsApi:this.fs});
+            if(full.selected.length!==bindings.length||
+                full.selected.some((g,i)=>g.pci_address!==bindings[i].pci_address))
+                throw Error('Combined native GPU set changed after isolation qualification.');
+            return {qualified_at:new Date().toISOString(),
+                selected:bindings.map(b=>b.pci_address),
+                runtime_pci_verified:true};
+        }
         // A real native Start would create a durable ownership journal. Do
         // the same tiny HIP runtime attestation here *before* that Start,
         // within the short-lived, device-restricted qualification service.
@@ -498,7 +551,6 @@ class LinuxSupervisor {
             !Number.isSafeInteger(runtimeProof.ram_mb)||
             runtimeProof.ram_mb<128||runtimeProof.ram_mb>1000000))
             throw Error('Invalid trusted Linux GPU runtime qualification request.');
-        const proofArgs=runtimeProof===null?[]:gpuSelectorArgs(runtimeProof.rocrUuid);
         const plan=resolveRocmDevices(bindings,{fsApi:this.fs});
         // A proof of denial requires a second GPU render node that the same
         // unconfined account can open. Do not mistake a UNIX ACL failure for
@@ -509,6 +561,28 @@ class LinuxSupervisor {
             throw Error('GPU access qualification needs excluded-device evidence or a dual-GPU HIP attestation.');
         const denied=plan.unselected.map(device=>device.node).sort();
         verifyUnconfinedDeviceAccess(plan,this.fs);
+        if(!plan.unselected.length)
+            await this.runGpuDeviceProbe(plan,bindings[0],null,{denySelected:true});
+        await this.runGpuDeviceProbe(plan,bindings[0],runtimeProof);
+        const observed=resolveRocmDevices(bindings,{fsApi:this.fs});
+        if(deviceIdentity(plan)!==deviceIdentity(observed))
+            throw Error('GPU device identity changed during the access probe.');
+        return {qualified_at:new Date().toISOString(),
+            selected:plan.selected.map(g=>g.pci_address),
+            runtime_pci_verified:runtimeProof!==null};
+    }
+
+    async runGpuDeviceProbe(plan,binding,runtimeProof,{denySelected=false}={}) {
+        if(denySelected&&runtimeProof!==null)
+            throw Error('The GPU denial control must run without a HIP workload.');
+        if(this.gpuProbeCleanupPending())
+            throw Error('Previous GPU access probe cleanup unconfirmed; inspect the recorded local service before retry.');
+        const selected=plan.selected[0].node;
+        const allowed=denySelected?'--deny-selected':selected;
+        const denied=denySelected?[selected]:plan.unselected.map(device=>device.node).sort();
+        const deviceProperties=denySelected?['DevicePolicy=closed','DeviceAllow=/dev/kfd rw']:
+            plan.device_properties;
+        const proofArgs=runtimeProof===null?[]:gpuSelectorArgs(runtimeProof.rocrUuid);
         const nonce=crypto.randomUUID(),unit=
             'experiment-hub-gpu-preflight-'+nonce.replace(/-/g,'')+'.service';
         const description='Experiment Hub GPU device preflight '+nonce;
@@ -535,12 +609,12 @@ class LinuxSupervisor {
             '--property=RuntimeMaxSec='+(runtimeProof===null?'10s':'35s'),
             '--property=TimeoutStopSec=3s',
             '--property=KillMode=control-group',
-            ...plan.device_properties.map(p=>'--property='+p),
+            ...deviceProperties.map(p=>'--property='+p),
             ...proofArgs,
             '--',process.execPath,
             ...(runtimeProof===null
                 ?[path.join(__dirname,'experiment_hub_linux_gpu_probe.js'),
-                    plan.kfd.node,plan.selected[0].node,...denied]
+                    plan.kfd.node,allowed,...denied]
                 :[path.join(__dirname,'experiment_hub_linux_gpu_launch_check.js'),
                     ...gpuAttestationArgs(bindings,plan,runtimeProof)])];
         let failure=null;
@@ -622,12 +696,6 @@ class LinuxSupervisor {
         if(failure)
             throw Error('GPU device access preflight failed: '+
                 String(failure.message||failure).slice(0,160));
-        const observed=resolveRocmDevices(bindings,{fsApi:this.fs});
-        if(deviceIdentity(plan)!==deviceIdentity(observed))
-            throw Error('GPU device identity changed during the access probe.');
-        return {qualified_at:new Date().toISOString(),
-            selected:plan.selected.map(g=>g.pci_address),
-            runtime_pci_verified:runtimeProof!==null};
     }
 
     terminalAfterUnload(record) {
@@ -897,8 +965,6 @@ class LinuxSupervisor {
                 !(native.unit_exists===false||native.state==='finished'))
                 throw Error('Predecessor service is not demonstrably inactive.');
         }
-        if(this.state.records.length>=MAX_RECORDS)
-            throw Error('Supervisor history capacity reached; no launch permitted.');
         // Refuse to create a service when a deterministic unit already
         // exists but the local ledger has lost ownership of it.
         const unit=unitFor(job.id);
