@@ -505,6 +505,12 @@ function rolloutGpuMeasurements(rollout) {
         rollout_gpu_verified_workers: {value: proof.verified_workers, unit: 'count'},
         rollout_gpu_model_forwards: {value: proof.model_forwards, unit: 'count'},
         rollout_gpu_agent_rows: {value: proof.agent_rows, unit: 'count'},
+        // A useful-batch shape derived from actual completed actor forwards,
+        // not sampled GPU busyness or device-reservation count. Scalar
+        // rather than ratio: one forward can contain many agent rows.
+        rollout_gpu_agent_rows_per_model_forward: {
+            value: proof.agent_rows / proof.model_forwards, unit: 'scalar',
+        },
     };
     if (proof.workers_with_final_counters !== undefined) {
         if (!Number.isSafeInteger(proof.workers_with_final_counters) ||
@@ -547,6 +553,10 @@ function rolloutGpuMeasurements(rollout) {
                     value: entry[source], unit: 'count',
                 };
             }
+            metrics[`rollout_gpu_${index}_agent_rows_per_model_forward`] = {
+                value: entry.gpu_agent_rows / entry.model_forwards,
+                unit: 'scalar',
+            };
         }
     }
     return metrics;
