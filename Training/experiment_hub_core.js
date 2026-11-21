@@ -6329,7 +6329,8 @@ class ExperimentHub {
                 const releaseValid=!['native_round_release','native_round_collection']
                     .includes(nativeRecovery(job)?.start_origin)||
                     this.nativeRoundRecoveryAuthorized(snapshot,job);
-                if(!adapterInstalled||!automationValid||!releaseValid||!lease.receipt_fresh||
+                if(!adapterInstalled||!automationValid||!groupStillReady||
+                    !releaseValid||!lease.receipt_fresh||
                     machine.native_preflight_passed!==true||
                     !supportsEvaluation(machine.evaluation_suites,job)||
                     !supportsTinyBrainsProfile(machine,job)||
