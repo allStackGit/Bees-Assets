@@ -20,7 +20,9 @@ from portable_policy_bundle import (
     package_model_manifest, package_stage_assets, write_pinned_policy_assets,
 )
 from challenge_policy import existing_path, selected_run
-from carrier_family import carrier_parent_id, source_carrier_groups
+from carrier_family import (
+    carrier_parent_id, source_carrier_groups, squad_members, has_policy,
+)
 
 
 def read(path: Path) -> dict:
@@ -128,16 +130,36 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
         raise ValueError("native campaign mission has no scene path")
     scene_path = (run_path.parent / scene_name).resolve(strict=True)
     scene = read(scene_path)
-    if (scene.get("native_game_schema") != 1 or
-            scene.get("stage_name") != run.get("stage_name") or
-            scene.get("bounds") != run.get("fragment_spawn", {}).get("map_bounds") or
+    # Migration snapshots are the original game's observed initial state.
+    # Keep them byte-for-byte in the source format understood by the native
+    # importer; never synthesize the missing rules from a second game model.
+    captured = scene.get("native_game_schema") is None
+    if captured:
+        if scene.get("schema_version") != 35:
+            raise ValueError("campaign migration needs schema-35 source SavedSquad identities")
+        bounds = {
+            end: [scene[end]["x"], scene[end]["y"]] for end in ("min", "max")
+        }
+        targeting = scene.get("targeting_context") or {}
+        if (targeting.get("has_player") is not True or
+                targeting.get("user_side") != player_side or
+                scene.get("has_policy_episode") is not False or
+                run.get("model_manifest") is not None or
+                any(has_policy(ship) for ship in scene.get("ships", []))):
+            raise ValueError("campaign migration requires an ordinary player-controlled source Level")
+    else:
+        if scene.get("native_game_schema") != 1:
+            raise ValueError("unsupported native game scene schema")
+        bounds = scene.get("bounds")
+    if (scene.get("stage_name") != run.get("stage_name") or
+            bounds != run.get("fragment_spawn", {}).get("map_bounds") or
             not isinstance(scene.get("ships"), list) or
             not isinstance(scene.get("squads"), list)):
         raise ValueError("campaign source must contain the matching complete Unity-free game scene")
     if player_side not in (scene.get("bee_side"), scene.get("human_side")):
         raise ValueError("campaign player side is not a faction in its authored mission")
     has_model = run.get("model_manifest") is not None
-    if has_model != (scene.get("policy_episode") is not None):
+    if not captured and has_model != (scene.get("policy_episode") is not None):
         raise ValueError("a native campaign policy scene requires its authentic model manifest")
     model_provenance = (trained_opponent(run_path, run, scene_path, player_side)
                         if has_model else {})
@@ -156,7 +178,7 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
     if not squads or any(not squad["user_controlled"] or
             not squad["can_accept_input"] for squad in squads):
         raise ValueError("campaign player squads must own explicit input authority")
-    if any(ship.get("policy") is not None or not ship.get("user_controlled")
+    if any(has_policy(ship) or not ship.get("user_controlled")
            for ship in ships.values()):
         raise ValueError("campaign player may not be controlled by a learning policy")
     if any(ship.get("persistent_fleet") and (
@@ -164,8 +186,8 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
             ship["fleet_ship_id"] <= 0)
            for ship in ships.values()):
         raise ValueError("persistent fleet ships require real FleetShip identity")
-    if any(not set(squad["members"]).issubset(ships) or
-            not squad["members"] for squad in squads):
+    if any(not set(squad_members(squad)).issubset(ships) or
+            not squad_members(squad) for squad in squads):
         raise ValueError("player squads reference unknown physical ships")
     # SavedSquad and FleetShip are career identities, not the transient
     # physical roster. Free Carrier complements and any other transient
@@ -174,13 +196,15 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
     persistent_squads = []
     for squad in squads:
         members = tuple(ships[ship_id]["fleet_ship_id"]
-                        for ship_id in squad["members"]
+                        for ship_id in squad_members(squad)
                         if ships[ship_id].get("persistent_fleet"))
         if not members:
-            if squad.get("saved_squad_id") is not None:
+            if squad.get("saved_squad_id") not in (None, 0):
                 raise ValueError("transient player squad cannot own a SavedSquad identity")
             continue
-        saved = squad.setdefault("saved_squad_id", squad["item_id"])
+        # Captured ItemId is a transient Stage allocation, not a career ID.
+        saved = (squad.get("saved_squad_id") if captured else
+                 squad.setdefault("saved_squad_id", squad["item_id"]))
         if type(saved) is not int or saved <= 0:
             raise ValueError("campaign SavedSquad identities must be positive")
         persistent_squads.append((saved, members))
@@ -225,6 +249,35 @@ FLEET_CLASS_FIELDS = (
     "is_bomber", "is_carrier_ship", "can_override_bounds",
     "turrets", "special", "special_weapon", "support_zone",
 )
+
+
+def captured_fleet_class_sha256(ship: dict) -> str:
+    """Pin source-owned physical class fields, not transient battle state."""
+    fields = (
+        "ship_type", "max_health", "max_tsv", "original_health", "size_class",
+        "size_pixels", "has_healing_zone", "healing_zone", "has_warp_zone",
+        "warp_zone", "rotation_speed", "base_speed", "height", "turning_radius",
+        "half_width", "half_height", "path_clearance", "mobile",
+        "cannot_change_orders", "longest_side", "max_weapon_range", "firepower",
+        "is_bomber", "is_carrier_ship", "source_sight", "special",
+        "special_weapon", "turrets", "target_geometry", "weapon_rank_source",
+    )
+    source = {key: copy.deepcopy(ship[key]) for key in fields}
+    source["special"].pop("carrier_id", None)
+    source["special"].pop("offset_from_center", None)
+    if isinstance(source["special_weapon"], dict):
+        source["special_weapon"].pop("weapon_id", None)
+    for turret in source["turrets"]:
+        turret.pop("initial_rotation_degrees", None)
+    source["target_geometry"].pop("bounds_latched", None)
+    for key in ("fleet_owner_ship_id", "fleet_damage_done", "last_killed"):
+        source["weapon_rank_source"].pop(key, None)
+    # Format-specific pinning is intentional: two different source formats
+    # cannot establish identical class definitions by comparing partial keys.
+    return hashlib.sha256(json.dumps(
+        {"captured_physical_class": source}, sort_keys=True,
+        separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")).hexdigest()
 
 
 def native_fleet_class_sha256(ship: dict) -> str:
@@ -286,6 +339,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         """Require each selectable game variant to supply real identical hulls."""
         class_prices = {}
         class_contracts = {}
+        fingerprint = (native_fleet_class_sha256 if scene.get("native_game_schema") == 1
+                       else captured_fleet_class_sha256)
         candidates = (
             (False, (ship for ship in scene["ships"] if ship.get("persistent_fleet"))),
             (True, iter(scene.get("fleet_templates", []))),
@@ -295,11 +350,11 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 if (ship["side"] != args.player_side or
                         ship["health"] != ship["max_health"] or
                         ship["max_tsv"] <= 0 or
-                        ship.get("policy") is not None or ship.get("mined_cargo", 0) or
+                        has_policy(ship) or ship.get("mined_cargo", 0) or
                         carrier_parent_id(ship) is not None):
                     continue
                 ship_type = ship["ship_type"]
-                contract = native_fleet_class_sha256(ship)
+                contract = fingerprint(ship)
                 if ship_type == 5:
                     family = source_carrier_groups(scene, ship, inert=inert)
                     if family is None:
@@ -310,7 +365,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     # part of the immutable purchased class.
                     contract = hashlib.sha256(json.dumps([
                         contract,
-                        [[native_fleet_class_sha256(child) for child in children]
+                        [[fingerprint(child) for child in children]
                          for _, children in family],
                     ], separators=(",", ":")).encode("utf-8")).hexdigest()
                 class_prices.setdefault(ship_type, set()).add(ship["max_tsv"])
@@ -382,7 +437,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         }
         authored_squads = {squad["saved_squad_id"] for squad in scene["squads"]
                            if squad["side"] == args.player_side and
-                           squad.get("saved_squad_id") is not None}
+                           squad.get("saved_squad_id") not in (None, 0)}
         squad_grants = [grant for grant in args.victory_squad if grant[0] == index]
         if len(squad_grants) > 64:
             raise ValueError(f"mission {index} awards too many new SavedSquads")
