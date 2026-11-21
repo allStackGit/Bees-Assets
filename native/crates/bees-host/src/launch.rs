@@ -4459,7 +4459,7 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
             Some(tokens.keys().next()
                 .expect("validated nonempty side token map").parse::<i32>()?)
         } else { None };
-        fleet_builder::choose_multiplayer(single_remote_side)?
+        fleet_builder::choose_multiplayer(single_remote_side, save_root)?
     } else { None };
     if custom_fleet && generated_recovery.is_none() && fleet.is_none() {
         return Ok(());
@@ -4775,7 +4775,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     return run_session(&source, true, true,
                         Some(output), None, None, None);
                 }
-                let Some(choice) = fleet_builder::choose()? else {
+                let Some(choice) = fleet_builder::choose(save_root)? else {
                     return Ok::<(), Box<dyn Error>>(());
                 };
                 let output = new_library_battle_output(save_root, fleet_builder::GAME_ID)?;
