@@ -28,7 +28,10 @@ function filesForJob(folder,projectId,nativeTrainingOnly=false) {
             if(item.isSymbolicLink())continue;
             const allowed=name=>nativeTrainingOnly
                 ?projectId==='bees_native'&&
-                    (safeNativeModelPath(name)||name==='round-result.json')||
+                    (safeNativeModelPath(name)||[
+                        'round-result.json', 'optimizer-attempt.json',
+                        'learner/metrics.json',
+                    ].includes(name))||
                     projectId==='bees_native_collect'&&
                     (name==='rollout-bundle.json'||
                      /(?:^|\/)(?:decisions\.bin|events\.jsonl)$/.test(name)&&
