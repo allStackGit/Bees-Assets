@@ -15,6 +15,7 @@ import shutil
 from native_training_artifacts import (
     file_sha256, normalized_python_source_sha256, sync_directory,
 )
+from package_policy_manifest import POLICY_WORKER_SOURCES, MLAGENTS_ACTOR_SOURCES
 
 
 def existing_artifact(owner: Path, value: str) -> Path:
@@ -30,29 +31,12 @@ def read_json_object(path: Path) -> dict:
     return value
 
 
-# The installed policy worker dynamically loads the shared MA-POCA actor.
-# Keep that exact implementation beside the published model on all hosts,
-# independent of where the original training checkout lived.
-POLICY_WORKER_SOURCES = (
-    "native/tools/policy_worker.py",
-    "native/tools/native_gpu_allocation.py",
-)
-MLAGENTS_ACTOR_SOURCES = (
-    "Training/bees_mlagents_ppo_compat.py",
-    "Training/bees_mlagents_structured_policy.py",
-    "Training/bees_mlagents_factorized_poca.py",
-    "Training/bees_learner_stall_diagnostics.py",
-    "Training/bees_log_categories.py",
-    "Training/bees_process_safety.py",
-)
-
-
 def source_policy_runtime(run_path: Path, run: dict, runtime_files: dict,
                           uses_mlagents: bool) -> dict:
     """Pin the real native inference code, not a mutable external checkout.
 
-    The worker imports its sibling native_gpu_allocation module and, only
-    for ML-Agents checkpoints, a handful of native Training actor modules.
+    The worker imports its native GPU allocation and artifact helpers and,
+    only for ML-Agents checkpoints, the shared Training actor modules.
     Python/Torch/ML-Agents are installed platform dependencies; we never
     copy a machine-specific virtual environment or executable.
     """

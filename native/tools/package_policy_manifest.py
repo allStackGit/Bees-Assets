@@ -12,6 +12,25 @@ import os
 from pathlib import Path
 
 
+# Both standalone releases and portable trained-game publications must
+# contain the actual import closure of the resident inference worker.
+# Keep the inventory in this standard-library-only package module so the
+# receiving release verifier can check it without importing the learner.
+POLICY_WORKER_SOURCES = (
+    "native/tools/policy_worker.py",
+    "native/tools/native_gpu_allocation.py",
+    "native/tools/native_training_artifacts.py",
+)
+MLAGENTS_ACTOR_SOURCES = (
+    "Training/bees_mlagents_ppo_compat.py",
+    "Training/bees_mlagents_structured_policy.py",
+    "Training/bees_mlagents_factorized_poca.py",
+    "Training/bees_learner_stall_diagnostics.py",
+    "Training/bees_log_categories.py",
+    "Training/bees_process_safety.py",
+)
+
+
 def digest_file(path):
     digest = hashlib.sha256()
     with path.open("rb") as source:

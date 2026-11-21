@@ -21,21 +21,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-from package_policy_manifest import export_model, verify_package as verify_policy_package
+from package_policy_manifest import (
+    export_model, verify_package as verify_policy_package,
+    POLICY_WORKER_SOURCES, MLAGENTS_ACTOR_SOURCES,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 AUDIO_SOURCE = ROOT / "native/crates/bees-host/src/game_audio.rs"
 CONVERTER = ROOT / "native/tools/import-ship-sprites.py"
 EXAMPLES = ("native-duel", "native-skirmish", "native-two-player", "native-wave-defense")
 
-POLICY_RUNTIME_MODULES = (
-    "bees_mlagents_ppo_compat.py",
-    "bees_mlagents_structured_policy.py",
-    "bees_learner_stall_diagnostics.py",
-    "bees_log_categories.py",
-    "bees_mlagents_factorized_poca.py",
-    "bees_process_safety.py",
-)
 
 
 
@@ -149,13 +144,10 @@ def package_native_training_runtime(
 
 
 def package_policy_runtime(destination: Path) -> None:
-    worker = destination / "native/tools/policy_worker.py"
-    worker.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(ROOT / "native/tools/policy_worker.py", worker)
-    modules = destination / "Training"
-    modules.mkdir()
-    for name in POLICY_RUNTIME_MODULES:
-        shutil.copy2(ROOT / "Training" / name, modules / name)
+    for name in POLICY_WORKER_SOURCES + MLAGENTS_ACTOR_SOURCES:
+        target = destination / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, target)
 
 
 def package_game_library(
@@ -619,6 +611,9 @@ def verify_native_package(directory: Path) -> dict:
                 worker = owned_link(file, data["policy_worker"], "policy worker")
                 if worker != directory / "native/tools/policy_worker.py":
                     raise ValueError("packaged run names an external policy worker")
+                if any(name not in expected for name in
+                       POLICY_WORKER_SOURCES + MLAGENTS_ACTOR_SOURCES):
+                    raise ValueError("native policy release lacks required inference modules")
                 model = owned_link(file, data["model_manifest"], "policy manifest")
                 if model.name != "manifest.json" or not model.parent.is_relative_to(
                         directory / "assets/policies"):
