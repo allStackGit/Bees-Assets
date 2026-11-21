@@ -27,14 +27,15 @@ function probe(kfd,allowed,...denied) {
         throw Error('Device-policy probe did not establish allowed/blocked access.');
     return result;
 }
-// Multi-GPU native rollouts use one OS service with two exclusively leased
-// render devices. Prove that BOTH selected nodes are accessible, and that
+// Native Bees rollouts use one/two exclusive GPUs; approved Courier and
+// TinyBrains profiles can allocate up to eight. Prove every selected render
+// node is accessible in the same restricted OS service, and that
 // every excluded GPU is blocked. A fully allocated two-GPU host legitimately
 // has no excluded device; the separately attested HIP PCI set must then
 // equal the complete discovered AMD render inventory.
 function probeMany(kfd,allowed,denied) {
     if(kfd!=='/dev/kfd'||!Array.isArray(allowed)||!Array.isArray(denied)||
-        ![1,2].includes(allowed.length)||denied.length>31||
+        !(allowed.length>=1&&allowed.length<=8)||denied.length>31||
         !allowed.every(node=>RENDER.test(node))||
         !denied.every(node=>RENDER.test(node))||
         new Set([...allowed,...denied]).size!==allowed.length+denied.length||

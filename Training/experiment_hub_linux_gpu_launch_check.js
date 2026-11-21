@@ -7,11 +7,20 @@ const {resolveRocmDevices,deviceIdentity}=require('./experiment_hub_linux_gpu_de
 const {probe,probeMany}=require('./experiment_hub_linux_gpu_probe');
 
 function verify(argv) {
-    // The locally trusted supervisor alone creates --dual. The two lease
-    // PCI identities, systemd device cgroup and live HIP ordinal inspection
-    // must all agree before any native training process is admitted.
+    // Only the machine-local supervisor constructs --dual/--multi. Preserve
+    // Bees' exact two-card proof and the original project's 2–8-card ordered
+    // HIP runtime mapping without accepting job-supplied physical ordinals.
     let pairs, expected, executable, args;
-    if(argv[0]==='--dual') {
+    const orderedMulti=argv[0]==='--multi';
+    if(orderedMulti) {
+        const count=Number(argv[1]);
+        if(!Number.isSafeInteger(count)||count<2||count>8||
+            argv.length<2+3*count+2)
+            throw Error('Invalid approved multi-GPU start proof.');
+        pairs=Array.from({length:count},(_,i)=>
+            [argv[2+i*3],argv[3+i*3],argv[4+i*3]]);
+        [expected,executable,...args]=argv.slice(2+3*count);
+    }else if(argv[0]==='--dual') {
         if(argv.length<9)throw Error('Incomplete two-GPU verifier invocation.');
         pairs=[[argv[1],argv[2],argv[3]],[argv[4],argv[5],argv[6]]];
         [expected,executable,...args]=argv.slice(7);
@@ -32,14 +41,17 @@ function verify(argv) {
         :probeMany(plan.kfd.node,plan.selected.map(device=>device.node),
             plan.unselected.map(device=>device.node));
     const result=JSON.parse(execFileSync(executable,args,{
-        encoding:'utf8',timeout:12000,maxBuffer:4096,killSignal:'SIGKILL',
+        encoding:'utf8',timeout:bindings.length>1?40000:12000,
+        maxBuffer:4096,killSignal:'SIGKILL',
         stdio:['ignore','pipe','pipe'],
     }));
     const identities=bindings.map(binding=>binding.pci_address);
     if(!Array.isArray(result?.pci_addresses)||
         result.pci_addresses.length!==identities.length||
         new Set(result.pci_addresses).size!==identities.length||
-        result.pci_addresses.some(pci=>!identities.includes(pci)))
+        (orderedMulti
+            ?result.pci_addresses.some((pci,i)=>pci!==identities[i])
+            :result.pci_addresses.some(pci=>!identities.includes(pci))))
         throw Error('Adapter HIP runtime did not expose exactly the leased ROCm GPUs.');
     // Return a measured identity set, never a claim from the requested
     // resource count. The same trusted verifier runs at preflight and start.
