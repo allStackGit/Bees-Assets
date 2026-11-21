@@ -5072,7 +5072,8 @@ fn run_campaign_game_menu(
     use bees_host::presentation::{
         BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
         NativeTransferMenuRow, NativeCreateSquadMenuRow,
-        NativeDeleteSquadMenuRow, NativeTacticsMenuRow, select_battle, select_library,
+        NativeDeleteSquadMenuRow, NativeTacticsMenuRow, NativeNameMenuRow,
+        select_battle, select_library,
     };
 
     let catalog_path = catalog_path.canonicalize()?;
@@ -5327,6 +5328,13 @@ fn run_campaign_game_menu(
             tactic_defaults.sort_unstable_by_key(|row| (row.side, row.saved_squad_id));
             tactic_source_cache = Some((created_ids, selected_routes, tactic_defaults));
         }
+        let name_rows = editable_tactics.iter().filter_map(|&(side, id)| {
+            (!progress.is_retired_saved_squad(id)).then(|| NativeNameMenuRow {
+                title: format!("Side {}  SavedSquad #{}", side, id),
+                side, saved_squad_id: id,
+                name: progress.squad_name(id).unwrap_or("").to_owned(),
+            })
+        }).collect::<Vec<_>>();
         let tactics_rows = tactic_source_cache.as_ref()
             .expect("saved tactics source cache initialized").2
             .iter().copied()
@@ -5352,7 +5360,7 @@ fn run_campaign_game_menu(
         }).collect::<Vec<_>>();
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
             &fleet_rows, &squad_rows, &shop_rows, available, &transfer_rows,
-            &create_rows, &tactics_rows, &delete_rows)?
+            &create_rows, &tactics_rows, &delete_rows, &name_rows)?
             else { break };
         let index = match action {
             NativeBattleMenuAction::Play(index) => index,
@@ -5364,6 +5372,17 @@ fn run_campaign_game_menu(
                 launch_failed = result.is_err();
                 if let Err(error) = result {
                     eprintln!("Could not create SavedSquad from #{template_saved_squad_id}: {error}");
+                }
+                continue;
+            }
+            NativeBattleMenuAction::NameSquad { side, saved_squad_id, name } => {
+                let result = run_name_saved_squad(
+                    &catalog_path, output_root, side, saved_squad_id, &name,
+                );
+                progress = catalog.load_progress(output_root)?;
+                launch_failed = result.is_err();
+                if let Err(error) = result {
+                    eprintln!("Could not rename SavedSquad #{saved_squad_id}: {error}");
                 }
                 continue;
             }
