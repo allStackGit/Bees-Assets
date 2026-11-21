@@ -613,6 +613,26 @@ function rolloutGpuMeasurements(rollout) {
                 value: entry.gpu_agent_rows / entry.model_forwards,
                 unit: 'scalar',
             };
+            const deviceStaging=entry.accelerator_input_staging;
+            if (deviceStaging!==undefined) {
+                if (!deviceStaging || typeof deviceStaging!=='object' ||
+                    Array.isArray(deviceStaging) ||
+                    ['workers_observed','device_buffer_growths',
+                     'device_input_reused_forwards','device_rows_staged'].some(key=>
+                        !Number.isSafeInteger(deviceStaging[key]) ||
+                        deviceStaging[key]<0) ||
+                    deviceStaging.workers_observed<1 ||
+                    deviceStaging.workers_observed>entry.rollout_processes ||
+                    deviceStaging.device_buffer_growths+
+                        deviceStaging.device_input_reused_forwards>entry.model_forwards ||
+                    deviceStaging.device_rows_staged>entry.gpu_agent_rows)
+                    throw Error('Invalid per-device native GPU input staging evidence.');
+                for (const field of ['workers_observed','device_buffer_growths',
+                                     'device_input_reused_forwards','device_rows_staged'])
+                    metrics[`rollout_gpu_${index}_${field}`]={
+                        value:deviceStaging[field],unit:'count',
+                    };
+            }
         }
     }
     return metrics;
