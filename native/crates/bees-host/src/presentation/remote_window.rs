@@ -1859,9 +1859,30 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                             .and_then(Value::as_i64).unwrap_or(0);
                         let defending = objective.get("defending_side")
                             .and_then(Value::as_i64) == Some(i64::from(side));
-                        format!("{} #{} {:02}:{:02}  {:.0}%  Waves {}",
-                            if defending { "Protect" } else { "Destroy" },
-                            protected, seconds / 60, seconds % 60, percent, waves)
+                        let cue = &state["campaign_dialogue"]["cue"];
+                        let evacuation = cue.as_str() == Some("PlutoEvacuationBriefing") ||
+                            cue.get("PlutoEvacuationComplete").is_some();
+                        if evacuation && defending {
+                            let elapsed = objective.get("elapsed_seconds")
+                                .and_then(Value::as_f64)
+                                .filter(|value| value.is_finite() && *value >= 0.0)
+                                .unwrap_or(0.0);
+                            let saved = (elapsed / 5.0).floor().clamp(0.0, 60.0) as u32;
+                            let lost = state["ships"].as_array().into_iter().flatten()
+                                .find(|ship| ship["id"].as_i64() == Some(protected))
+                                .and_then(|ship| Some((
+                                    ship["health"].as_i64()?,
+                                    ship["max_health"].as_i64()?,
+                                )))
+                                .map_or(15, |(health, maximum)|
+                                    ((maximum - health).max(0) / 200).min(15));
+                            format!("Evacuated {saved}/60  Lost {lost}/15  {:02}:{:02}",
+                                seconds / 60, seconds % 60)
+                        } else {
+                            format!("{} #{} {:02}:{:02}  {:.0}%  Waves {}",
+                                if defending { "Protect" } else { "Destroy" },
+                                protected, seconds / 60, seconds % 60, percent, waves)
+                        }
                     },
                     "demolition" => {
                         let id = objective.get("target_map_object_id")
