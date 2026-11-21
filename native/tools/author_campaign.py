@@ -20,6 +20,7 @@ from portable_policy_bundle import (
     package_model_manifest, package_stage_assets, write_pinned_policy_assets,
 )
 from challenge_policy import existing_path, selected_run
+from prepare_fleet_training import materialize as materialize_native_fleet_layout
 from carrier_family import (
     carrier_parent_id, source_carrier_groups, squad_members, has_policy,
     stationary_fleet_source,
@@ -131,6 +132,17 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
         raise ValueError("native campaign mission has no scene path")
     scene_path = (run_path.parent / scene_name).resolve(strict=True)
     scene = read(scene_path)
+    if (scene.get("native_game_schema") == 1 and
+            isinstance(run.get("run_id"), str) and
+            run["run_id"].startswith("native-fleet-") and
+            run["levels"][0].get("native_layout")):
+        # Native fleet skirmishes are archived compactly, with genuine
+        # source-ship clones and (now) multi-ship squad composition in
+        # their immutable Level layout. Reuse the EXACT same materializer
+        # as the playable-game-to-PPO publisher: a campaign must save and
+        # replay the full physical fleet, not only its two template hulls.
+        # No separate ship stats, combat simulation or roster interpreter.
+        scene, run, _ = materialize_native_fleet_layout(scene, run)
     # Migration snapshots are the original game's observed initial state.
     # Keep their original field schema for the native importer; never
     # synthesize the missing rules from a second game model.
