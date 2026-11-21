@@ -2147,6 +2147,13 @@ fn current_state(
                 } else { None },
             }))
         } else if view.campaign_objective == Some(
+            bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoPushback,
+        ) {
+            Some(json!({
+                "kind": "pluto_pushback",
+                "player_side": view.campaign_dialogue_side,
+            }))
+        } else if view.campaign_objective == Some(
             bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusOffensive,
         ) {
             Some(json!({
