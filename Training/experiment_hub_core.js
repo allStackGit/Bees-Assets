@@ -812,6 +812,7 @@ function verifiedOptimizerCompletion(job,raw,state) {
     const keys=['group_id','node_rank','node_count','input_sha256',
         'model_consensus_sha256',
         ...(raw?.learner_work!==undefined?['learner_work']:[]),
+        ...(raw?.historical_opponent_usage!==undefined?['historical_opponent_usage']:[]),
         ...(raw?.continual_release!==undefined?['continual_release']:[])];
     if(state!=='finished'||job?.frozen_parameters?.optimizer_group!==true||
         !bundle||!object(raw)||
@@ -840,6 +841,24 @@ function verifiedOptimizerCompletion(job,raw,state) {
             work.trajectory_processing_wall_seconds+
                 work.optimizer_update_wall_seconds>work.learner_wall_seconds+0.01)
             throw Error('Native publishing learner measurements differ from its synchronized completion.');
+    }
+    if(raw.historical_opponent_usage!==undefined) {
+        const usage=raw.historical_opponent_usage;
+        const selection=job.parent_collection_selection;
+        const fields=['manifest_sha256','opponent_model_id','opponent_slot',
+            'opponent_decision_rows','total_decision_rows'];
+        if(bundle.index!==1||!selection?.opponent_model_id||!object(usage)||
+            Object.keys(usage).sort().join(',')!==fields.sort().join(',')||
+            usage.manifest_sha256!==job.expected_parent_manifest_sha256||
+            usage.manifest_sha256!==selection.effective_manifest_sha256||
+            usage.opponent_model_id!==selection.opponent_model_id||
+            usage.opponent_slot!==selection.opponent_slot||
+            !Number.isSafeInteger(usage.opponent_decision_rows)||
+            usage.opponent_decision_rows<0||
+            !Number.isSafeInteger(usage.total_decision_rows)||
+            usage.total_decision_rows<1||
+            usage.opponent_decision_rows>usage.total_decision_rows)
+            throw Error('Native historical usage differs from its pinned physical collection.');
     }
     const requiresRelease=job.project_id==='bees_native'&&
         job.frozen_parameters?.continual_release===true;
@@ -884,6 +903,7 @@ function nativeBeesRoundTrainingSummary(plan) {
     let learnerCpuSeconds=0,collectorCoverage=0,learnerCoverage=0;
     let releaseCoverage=0,promotions=0,releaseSeconds=0,releaseTimingCoverage=0;
     let historicalSelections=0,historicalOpponents=0;
+    let historicalRoundsMeasured=0,historicalRoundsPlayed=0,historicalRows=0,historicalTotalRows=0;
     const evaluations=new Map();
     for(const entry of rounds) {
         const work=entry.collector_work_totals;
@@ -902,6 +922,13 @@ function nativeBeesRoundTrainingSummary(plan) {
             processingSeconds+=learner.trajectory_processing_wall_seconds;
             learnerCpuSeconds+=learner.learner_process_cpu_seconds;
             learnerCoverage++;
+        }
+        const usage=entry.optimizer_group?.historical_opponent_usage;
+        if(usage) {
+            historicalRoundsMeasured++;
+            if(usage.opponent_decision_rows>0)historicalRoundsPlayed++;
+            historicalRows+=usage.opponent_decision_rows;
+            historicalTotalRows+=usage.total_decision_rows;
         }
         const release=entry.continual_release;
         if(release) {
@@ -967,6 +994,10 @@ function nativeBeesRoundTrainingSummary(plan) {
         continual_promotions_passed:promotions,
         continual_historical_selections:historicalSelections,
         continual_historical_opponents_selected:historicalOpponents,
+        historical_opponent_rounds_measured:historicalRoundsMeasured,
+        historical_opponent_rounds_played:historicalRoundsPlayed,
+        historical_opponent_decision_rows:historicalRows,
+        historical_opponent_measured_decision_rows:historicalTotalRows,
         continual_release_attempts_timed:releaseTimingCoverage,
         sum_completed_continual_release_attempt_wall_seconds:releaseSeconds,
         independent_evaluations:[...evaluations.values()],
@@ -4426,6 +4457,8 @@ class ExperimentHub {
                         ?{expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
                     ...(job.expected_parent_manifest_sha256?
                         {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+                    ...(job.parent_collection_selection?
+                        {parent_collection_selection:copy(job.parent_collection_selection)}:{}),
                 },
                 lease:{
                     id:lease.id,job_id:job.id,project_id:lease.project_id,
@@ -5777,6 +5810,9 @@ class ExperimentHub {
                         // and their work cannot be added as fleet wall time.
                         ...(optimizerConsensus.learner_work?{
                             learner_work:optimizerConsensus.learner_work,
+                        }:{}),
+                        ...(optimizerConsensus.historical_opponent_usage?{
+                            historical_opponent_usage:copy(optimizerConsensus.historical_opponent_usage),
                         }:{}),
                         ranks:members.map((member,index)=>({
                             job_id:member.id,

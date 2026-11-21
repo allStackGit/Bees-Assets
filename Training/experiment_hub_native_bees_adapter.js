@@ -8,7 +8,7 @@ const {promisify, isDeepStrictEqual} = require('node:util');
 const execFileAsync = promisify(execFile);
 const {validateProgress} = require('./experiment_hub_progress');
 const {evaluationReader} = require('./experiment_hub_evaluation');
-const {validateCollectionSelection, validateCollectionManifest} =
+const {validateSelection, validateCollectionSelection, validateCollectionManifest} =
     require('./experiment_hub_native_historical');
 
 const PROJECT = 'bees_native';
@@ -1380,6 +1380,31 @@ function createNativeBeesAdapter({
             manifestDigest: receipt.next_manifest_sha256, ...gpuSupport};
     }
 
+    function historicalUsage(context,round) {
+        const selection=context.parent_collection_selection;
+        if(!selection||selection.opponent_model_id===null)return null;
+        validateSelection(selection);
+        if(selection.effective_manifest_sha256!==round.receipt.input_manifest_sha256||
+            selection.input_checkpoint_sha256!==round.receipt.input_checkpoint_sha256)
+            throw Error('Historical usage differs from the exact collected model set.');
+        const counts=round.metrics.capture_policy_decisions_by_slot;
+        if(counts===undefined)return null; // Older completed artifacts did not measure this.
+        if(!counts||typeof counts!=='object'||Array.isArray(counts)||
+            Object.keys(counts).length>256||
+            Object.entries(counts).some(([slot,count])=>
+                !/^(0|[1-9][0-9]{0,9})$/.test(slot)||Number(slot)>0xffffffff||
+                !Number.isSafeInteger(count)||count<0))
+            throw Error('Invalid per-slot native captured decision counts.');
+        const total=Object.values(counts).reduce((sum,count)=>sum+count,0);
+        if(!Number.isSafeInteger(total)||total<1)
+            throw Error('Invalid total native captured decision count.');
+        return {manifest_sha256:selection.effective_manifest_sha256,
+            opponent_model_id:selection.opponent_model_id,
+            opponent_slot:selection.opponent_slot,
+            opponent_decision_rows:counts[String(selection.opponent_slot)]??0,
+            total_decision_rows:total};
+    }
+
     function roundInputs(context) {
         const sourceId=context.model_source_job_id;
         if(sourceId!==undefined&&sourceId!==null) {
@@ -1676,6 +1701,7 @@ function createNativeBeesAdapter({
                 // Only rank zero publishes the physical MA-POCA checkpoint
                 // and its measured learner work. Other nodes contribute to
                 // consensus, but overlapping rank wall times are not additive.
+                const historical=ownerRound?historicalUsage(context,ownerRound):null;
                 const measured=distributedOptimizer.role==='owner'?{
                     optimizer_input_steps:evidence.optimizer_input_steps,
                     learner_wall_seconds:evidence.total_wall_seconds,
@@ -1689,6 +1715,7 @@ function createNativeBeesAdapter({
                     node_count:bundle.size,input_sha256:inputSha,
                     model_consensus_sha256:modelSha,
                     ...(measured?{learner_work:measured}:{}),
+                    ...(historical?{historical_opponent_usage:historical}:{}),
                     ...(release?{continual_release:{
                         checkpoint_sha256:release.receipt.checkpoint_sha256,
                         parent_model_id:release.receipt.parent_model_id,
@@ -2186,12 +2213,19 @@ function createNativeBeesAdapter({
                     !receipt.continual_release_plan)
                 throw Error('Native Bees round lacks its authorized continual release plan.');
             const release = completedRelease(round, jobRoot(context));
+            const historical=historicalUsage(context,round);
             return validateProgress({
                 schema_version: 1, source: 'hub-metrics-v1',
                 experiment_id: context.job_id, segment_id: 'training',
                 source_modified_at: new Date(Math.max(stat.mtimeMs, release?.stat.mtimeMs ?? 0)).toISOString(),
                 steps_completed: metrics.optimizer_input_steps,
                 metrics: {
+                    ...(historical?{
+                        historical_opponent_decision_rows:{value:historical.opponent_decision_rows,unit:'count'},
+                        historical_opponent_decision_fraction:{
+                            value:historical.opponent_decision_rows/historical.total_decision_rows,unit:'ratio',
+                        },
+                    }:{}),
                     ...(release ? {
                         continual_promotion_passed: {value: Number(release.receipt.passed), unit: 'count'},
                         continual_training_step: {value: release.receipt.training_step, unit: 'count'},

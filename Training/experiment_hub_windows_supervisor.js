@@ -159,7 +159,9 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
         ...(job.expected_parent_manifest_sha256?
-    {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+            {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+        ...(job.parent_collection_selection?
+            {parent_collection_selection:structuredClone(job.parent_collection_selection)}:{}),
         ...(gpu?{gpu_pci_address:gpu.pci_address,gpu_cuda_uuid:gpu.cuda_uuid,
             gpu_mode:gpu.mode,gpu_vram_mb:gpu.vram_mb,
             gpu_total_vram_mb:gpu.total_vram_mb,

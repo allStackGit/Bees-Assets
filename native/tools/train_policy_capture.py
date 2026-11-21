@@ -623,6 +623,12 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                         str(team) not in context["group_agents_by_team"] or
                         row["model_slot"] != context["model_slots_by_team"][str(team)]):
                     raise ValueError("decision disagrees with its authored episode")
+                if stats is not None:
+                    # Count actual validated applied decisions, including
+                    # ungrouped physical controllers. No extra capture scan.
+                    counts = stats.setdefault("policy_decisions_by_slot", {})
+                    slot = int(row["model_slot"])
+                    counts[slot] = counts.get(slot, 0) + 1
                 if agent == 0:
                     # Native game-only controllers legitimately share the
                     # authoritative world and policy forward with an MA-POCA
@@ -1934,6 +1940,7 @@ def main():
         "terminal_steps": terminal_steps,
         "episodes": len(episode_keys),
         "opponent_steps": opponent_steps,
+        "capture_policy_decisions_by_slot": capture_stats.get("policy_decisions_by_slot", {}),
         "capture_peak_inflight_decisions": capture_stats.get("peak_inflight_decisions", 0),
         "capture_peak_inflight_episodes": capture_stats.get("peak_inflight_episodes", 0),
         "empty_policy_terminal_boundaries":

@@ -1051,6 +1051,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?' · PPO '+measured.optimizer_input_steps_measured.toLocaleString()+
                         ' input rows across '+measured.learner_rounds_measured+' rounds'
                     :'')+
+                (measured?.historical_opponent_rounds_measured
+                    ?' · historical opponents played '+measured.historical_opponent_rounds_played+
+                        '/'+measured.historical_opponent_rounds_measured+' measured selected rounds'
+                    :'')+
                 (lastRound?.optimizer_group
                     ?' · '+lastRound.optimizer_group.total_leased_gpu_slots+
                         ' GPU learner ranks across '+lastRound.optimizer_group.nodes+' machines'
@@ -1082,6 +1086,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         ' publishing-learner seconds; '+
                         measured.optimizer_input_rows_per_ppo_update_second.toFixed(1)+
                         ' input rows per PPO update second.',
+                    ]:[]),
+                    ...(measured?.continual_historical_selections?[
+                        'Historical opponent draws: '+measured.continual_historical_opponents_selected+
+                        '/'+measured.continual_historical_selections+' selections for subsequent collection.',
+                    ]:[]),
+                    ...(measured?.historical_opponent_rounds_measured?[
+                        'Actual historical-opponent usage: '+measured.historical_opponent_rounds_played+
+                        ' rounds with decisions, '+measured.historical_opponent_decision_rows+
+                        ' opponent decisions out of '+measured.historical_opponent_measured_decision_rows+
+                        ' validated applied decisions in selected rounds.',
                     ]:[]),
                     ...(measured?.independent_evaluations?.map(suite=>
                         'Independent frozen suite '+suite.suite_id+' ('+

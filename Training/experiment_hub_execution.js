@@ -166,7 +166,9 @@ class LocalExecution {
                         ...(job.expected_parent_model_sha256?
                             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
                         ...(job.expected_parent_manifest_sha256?
-    {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+                            {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+                        ...(job.parent_collection_selection?
+                            {parent_collection_selection:structuredClone(job.parent_collection_selection)}:{}),
                         ...(dual
                             ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
                             :{gpu_pci_address:lease.gpu_bindings[0].pci_address}),
@@ -297,7 +299,9 @@ class LocalExecution {
                     ...(job.expected_parent_model_sha256?
                         {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
                     ...(job.expected_parent_manifest_sha256?
-    {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+                        {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+                    ...(job.parent_collection_selection?
+                        {parent_collection_selection:structuredClone(job.parent_collection_selection)}:{}),
                     ...(lease.gpu_bindings?.length===1?
                         {gpu_pci_address:lease.gpu_bindings[0].pci_address}:
                         lease.gpu_bindings?.length===2?
@@ -419,7 +423,9 @@ class LocalExecution {
                         ...(job.expected_parent_model_sha256?
                             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
                         ...(job.expected_parent_manifest_sha256?
-    {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+                            {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+                        ...(job.parent_collection_selection?
+                            {parent_collection_selection:structuredClone(job.parent_collection_selection)}:{}),
                         ...(lease.gpu_bindings?.length===1
                             ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
                             :lease.gpu_bindings?.length===2
@@ -451,7 +457,9 @@ class LocalExecution {
                     ...(job.expected_parent_model_sha256?
                         {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
                     ...(job.expected_parent_manifest_sha256?
-    {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+                        {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+                    ...(job.parent_collection_selection?
+                        {parent_collection_selection:structuredClone(job.parent_collection_selection)}:{}),
                     ...(lease.gpu_bindings?.length===1
                         ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
                         :lease.gpu_bindings?.length===2
@@ -487,7 +495,9 @@ class LocalExecution {
                         ...(job.expected_parent_model_sha256?
                             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
                         ...(job.expected_parent_manifest_sha256?
-    {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+                            {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+                        ...(job.parent_collection_selection?
+                            {parent_collection_selection:structuredClone(job.parent_collection_selection)}:{}),
                         ...(lease.gpu_bindings?.length===1
                             ?{gpu_pci_address:lease.gpu_bindings[0].pci_address}
                             :lease.gpu_bindings?.length===2
@@ -519,7 +529,9 @@ class LocalExecution {
                     ...(job.expected_parent_model_sha256?
                         {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
                     ...(job.expected_parent_manifest_sha256?
-    {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+                        {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
+                    ...(job.parent_collection_selection?
+                        {parent_collection_selection:structuredClone(job.parent_collection_selection)}:{}),
                     // Carry the acknowledged physical allocation into
                     // observational receipt verification. A completed
                     // multi-GPU bundle must not self-assert a different
