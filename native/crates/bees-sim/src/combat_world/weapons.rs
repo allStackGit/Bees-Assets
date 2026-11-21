@@ -56,6 +56,11 @@ pub struct NativeTurretSpec {
     /// RocketTurret=5, Eye=7, QueenEye=8.
     pub weapon_type: u8,
     pub projectile_type: u8,
+    /// Actual ConfigData.WeaponSoundTypes assigned by the original
+    /// Weapon.Create, not inferred from a potentially shared projectile.
+    /// Omitted by historical native scenes; gameplay never consumes it.
+    #[serde(default)]
+    pub weapon_sound_type: Option<u8>,
     /// Turret PieceTransform local offset relative to ship center at 0°.
     pub mount_offset: Vec2,
     /// The actual current PieceTransform.eulerAngles.z on ship bind.
@@ -126,6 +131,9 @@ impl NativeTurretSpec {
         let supported_projectile = matches!(
             self.projectile_type, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11
         );
+        if self.weapon_sound_type.is_some_and(|sound| sound > 11) {
+            return Err(CombatWorldError::InvalidPolicyTurret);
+        }
         if !valid_pattern || !supported_projectile ||
             (self.weapon_type == 5) != (self.projectile_type == 5) {
             return Err(CombatWorldError::UnsupportedPolicyTurret {
@@ -383,6 +391,15 @@ impl CombatWorld {
         self.ship_weapons.get(&ship_id)?
             .turrets.get(usize::from(slot))?
             .as_ref().map(|mount| mount.spec.projectile_type)
+    }
+
+    /// Read-only source audio family for the actual installed mount.
+    /// Some older game scenes have no such capture; callers may retain
+    /// their legacy projectile-based approximation only in that case.
+    pub fn weapon_sound_type(&self, ship_id: i64, slot: u8) -> Option<u8> {
+        self.ship_weapons.get(&ship_id)?
+            .turrets.get(usize::from(slot))?
+            .as_ref()?.spec.weapon_sound_type
     }
 
     /// A DualCannon emits two real projectile events but invokes the
@@ -1147,6 +1164,7 @@ mod tests {
         world.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
         world.configure_policy_turret(1, 0, NativeTurretSpec {
             weapon_type: 1,
+            weapon_sound_type: None,
             projectile_type: 8,
             mount_offset: Vec2::ZERO,
             initial_rotation_degrees: 0.0,
@@ -1255,6 +1273,7 @@ mod tests {
         world.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
         world.configure_policy_turret(1, 0, NativeTurretSpec {
             weapon_type: 9, projectile_type: 9,
+            weapon_sound_type: None,
             mount_offset: Vec2::ZERO,
             initial_rotation_degrees: 0.0,
             rotation_rate: 90.0,
@@ -1313,6 +1332,7 @@ mod tests {
         world.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
         world.configure_policy_turret(1, 0, NativeTurretSpec {
             weapon_type: 4, projectile_type: 4,
+            weapon_sound_type: None,
             mount_offset: Vec2::ZERO,
             initial_rotation_degrees: 0.0, rotation_rate: 90.0,
             range: 100.0, power: 30, rate_of_fire: 0.3,
@@ -1384,6 +1404,7 @@ mod tests {
         combat.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
         let spec = NativeTurretSpec {
             weapon_type: 6,
+            weapon_sound_type: None,
             projectile_type: 6, // HumanSmall; never the generic turret type
             mount_offset: Vec2::ZERO,
             initial_rotation_degrees: 90.0,
@@ -1497,6 +1518,7 @@ mod tests {
         combat.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
         let spec = NativeTurretSpec {
             weapon_type: 3,
+            weapon_sound_type: None,
             projectile_type: 1,
             mount_offset: Vec2::new(1.0, 0.0),
             initial_rotation_degrees: 0.0,
@@ -1587,6 +1609,7 @@ mod tests {
         world.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
         let spec = NativeTurretSpec {
             weapon_type: 7, projectile_type: 1,
+            weapon_sound_type: None,
             mount_offset: Vec2::new(2.0, 0.0),
             initial_rotation_degrees: 90.0,
             rotation_rate: 90.0,
