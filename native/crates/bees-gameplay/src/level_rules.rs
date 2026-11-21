@@ -1463,24 +1463,26 @@ where
         // that ship dies. Do this only AFTER the shared episode reward
         // consumer has received pre-death mining values. No allocation,
         // scan of the full fleet, or duplicate gameplay implementation.
+        // ShipWarped/ShipExtracted always precedes their matching ShipDied
+        // in the canonical source-order event buffer. Build this sparse
+        // receipt set only when real departures occur (no allocation in
+        // ordinary combat), so a large simultaneous fleet withdrawal does
+        // not scan all events once per departing ship. A nested Beehive
+        // casualty with EndKill still loses its mined TSV unless that
+        // specific hull has its own authenticated departure receipt.
+        let mut safe_departures = HashSet::new();
         for event in state.combat.events() {
-            if let CombatEvent::ShipDied { victim_id, end_kill, .. } = event {
-                // Combat deaths can never be safe departures. Only the
-                // rare EndKill path needs to inspect preceding same-tick
-                // extraction/warp receipts (which excludes cascade victims).
-                // Both extraction and a completed WarpGate departure end
-                // the physical ship's episode, but they are not a lethal
-                // fleet loss. The matching departure event is emitted in
-                // the very same fixed tick before ShipDied. Deaths are
-                // rare; avoid maintaining a second per-step death registry.
-                let returned_safely = *end_kill && state.combat.events().iter().any(|event| match event {
-                    CombatEvent::ShipExtracted { ship_id, .. } |
-                    CombatEvent::ShipWarped { ship_id, .. } => ship_id == victim_id,
-                    _ => false,
-                });
-                if !returned_safely {
-                    state.metadata.retire_mined_credit_on_death(*victim_id);
+            match event {
+                CombatEvent::ShipExtracted { ship_id, .. } |
+                CombatEvent::ShipWarped { ship_id, .. } => {
+                    safe_departures.insert(*ship_id);
                 }
+                CombatEvent::ShipDied { victim_id, end_kill, .. } => {
+                    if !*end_kill || !safe_departures.contains(victim_id) {
+                        state.metadata.retire_mined_credit_on_death(*victim_id);
+                    }
+                }
+                _ => {}
             }
         }
         if let Some(dialogue) = &mut state.campaign_dialogue {
