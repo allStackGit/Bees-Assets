@@ -797,9 +797,16 @@ impl NativeGameAudio {
                 ),
                 // Fire Barge death is already represented by ShipDied;
                 // sounding both would double the same physical explosion.
-                CombatEvent::FireTankExploded { .. } |
-                CombatEvent::BombDetonated { .. } => (
+                CombatEvent::FireTankExploded { .. } => (
                     Effect::HugeExplosion, None,
+                ),
+                CombatEvent::BombDetonated { target_id, .. } => (
+                    Effect::HugeExplosion,
+                    // The attached fuse detonates at the target's live
+                    // physical hull. Sound this at the actual battle
+                    // position rather than globally across the map.
+                    view.combat.ship_body(*target_id)
+                        .map(|body| body.motion.position),
                 ),
                 CombatEvent::ShipWarped { ship_id, .. } => (
                     Effect::Warp,
