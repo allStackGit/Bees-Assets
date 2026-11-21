@@ -34,6 +34,52 @@ def read(path: Path) -> dict:
     return value
 
 
+def same_point(actual, expected) -> bool:
+    return (isinstance(actual, list) and len(actual) == 2 and
+            isinstance(expected, list) and len(expected) == 2 and
+            all(type(a) in (int, float) and type(b) in (int, float) and
+                abs(a - b) <= 0.00001
+                for a, b in zip(actual, expected)))
+
+
+def source_wave_types(wave, squads, ships, bee_side):
+    """Actual physical SavedSquad type sequence, preserving mixed veterans.
+
+    Missing source selections are allowed; an empty wave still fires its
+    authored story timer. Actual arrivals must belong to genuine source
+    squads and contain no duplicate physical ship IDs.
+    """
+    squad_ids = wave.get("squad_item_ids")
+    if not isinstance(squad_ids, list):
+        return None
+    fleet = []
+    seen = set()
+    for squad_id in squad_ids:
+        squad = squads.get(squad_id)
+        if squad is None or squad.get("side") != bee_side:
+            return None
+        members = squad_members(squad)
+        if not members or any(ship_id in seen for ship_id in members):
+            return None
+        seen.update(members)
+        selected = [ships.get(ship_id) for ship_id in members]
+        if any(ship is None or ship.get("side") != bee_side
+               for ship in selected):
+            return None
+        types = {ship["ship_type"] for ship in selected}
+        fleet.append(next(iter(types)) if len(types) == 1 else None)
+    return fleet
+
+
+def source_types_in_order(actual, required) -> bool:
+    if actual is None:
+        return False
+    remaining = iter(required)
+    return all(kind is not None and
+               any(expected == kind for expected in remaining)
+               for kind in actual)
+
+
 def trained_opponent(run_path: Path, run: dict, scene_path: Path,
                      player_side: int) -> dict:
     """Allow only a checkpoint-pinned challenge from the native publisher.
@@ -681,11 +727,30 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                         for ship_id in squad_members(squad))
             ]
             waves = level.get("reinforcements")
-            follows_60 = isinstance(waves, list) and any(
-                isinstance(wave, dict) and
-                type(wave.get("after_seconds")) in (int, float) and
-                abs(wave["after_seconds"] - 60.0) < 0.0001
-                for wave in waves
+            homes = scene.get("starting_positions")
+            side = scene.get("bee_side")
+            ai_home = (homes[side - 1]
+                       if isinstance(homes, list) and len(homes) == 2
+                       and side in (1, 2) else None)
+            if isinstance(ai_home, dict):
+                ai_home = [ai_home.get("x"), ai_home.get("y")]
+            source_squads = {
+                squad["item_id"]: squad for squad in scene.get("squads", [])
+                if isinstance(squad, dict) and type(squad.get("item_id")) is int
+            }
+            follows_60 = (
+                isinstance(waves, list) and len(waves) == 1 and
+                isinstance(waves[0], dict) and
+                type(waves[0].get("after_seconds")) in (int, float) and
+                abs(waves[0]["after_seconds"] - 60.0) <= 0.0001 and
+                isinstance(ai_home, list) and len(ai_home) == 2 and
+                all(type(v) in (int, float) for v in ai_home) and
+                same_point(waves[0].get("entry"), ai_home) and
+                same_point(waves[0].get("spawn"),
+                           [ai_home[0] + 100, ai_home[1]]) and
+                source_types_in_order(source_wave_types(
+                    waves[0], source_squads, ships, side),
+                    [14, 21, 15, 22, 22])
             )
             if (scene.get("human_side") != args.player_side or
                     scene.get("activate_hivemind") is not False or
@@ -738,14 +803,6 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                                    if abs(wave["after_seconds"] - 120.0) <= 0.0001)
                 upper_spawn = upper_first.get("spawn")
                 upper_entry = upper_first.get("entry")
-
-                def same_point(actual, expected):
-                    return (isinstance(actual, list) and len(actual) == 2 and
-                            isinstance(expected, list) and len(expected) == 2 and
-                            all(type(a) in (int, float) and
-                                type(b) in (int, float) and
-                                abs(a - b) <= 0.00001
-                                for a, b in zip(actual, expected)))
 
                 def same_route(wave, spawn, entry):
                     return (same_point(wave.get("spawn"), spawn) and
@@ -802,47 +859,13 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     if isinstance(ship, dict) and type(ship.get("entity_id")) is int
                 }
 
-                def source_fleet(wave):
-                    squad_ids = wave.get("squad_item_ids")
-                    if not isinstance(squad_ids, list):
-                        return None
-                    fleet = []
-                    for squad_id in squad_ids:
-                        squad = source_squads.get(squad_id)
-                        if squad is None or squad.get("side") != scene.get("bee_side"):
-                            return None
-                        members = squad_members(squad)
-                        if not members or len(members) != len(set(members)):
-                            return None
-                        ships = [source_ships.get(member) for member in members]
-                        if any(ship is None or
-                               ship.get("side") != scene.get("bee_side")
-                               for ship in ships):
-                            return None
-                        types = {ship["ship_type"] for ship in ships}
-                        # The optional veteran squads can contain mixed
-                        # historical fleets; the source's newly generated
-                        # compositions are uniformly typed.
-                        fleet.append(next(iter(types)) if len(types) == 1
-                                     else None)
-                    return fleet
-
-                def source_order(actual, required):
-                    # GetSquadByComposition returns None when an authored
-                    # type is unavailable; AddReinforcementSquads filters
-                    # those missing squads. Present types retain their
-                    # original order, but may skip unavailable formations.
-                    remaining = iter(required)
-                    return all(kind is not None and
-                               any(expected == kind for expected in remaining)
-                               for kind in actual)
-
                 for wave in waves:
                     when = next((int(due) for due, _ in expected
                                  if abs(wave["after_seconds"] - due) <= 0.0001), None)
                     lane = ("upper" if same_route(wave, upper_spawn, upper_entry)
                             else "lower")
-                    actual = source_fleet(wave)
+                    actual = source_wave_types(
+                        wave, source_squads, source_ships, scene.get("bee_side"))
                     required = formations.get((when, lane))
                     if required is None or actual is None:
                         valid_waves = False
@@ -853,11 +876,11 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     # arbitrary fleet cannot masquerade as this wave.
                     if (when, lane) == (540, "upper"):
                         if actual and not any(
-                                source_order(actual[start:], required)
+                                source_types_in_order(actual[start:], required)
                                 for start in range(len(actual))):
                             valid_waves = False
                             break
-                    elif not source_order(actual, required):
+                    elif not source_types_in_order(actual, required):
                         valid_waves = False
                         break
             if (scene.get("human_side") != args.player_side or
