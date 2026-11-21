@@ -65,7 +65,10 @@ impl CombatWorld {
     /// The terminal retains only the objective identity and clock.
     pub fn configure_escort_target(&mut self, ship_id: i64) -> Result<(), CombatWorldError> {
         let state = self.extraction.as_ref().ok_or(CombatWorldError::InvalidExtractionZone)?;
-        if state.escort_ship_id.is_some() ||
+        // A voluntary fleet withdrawal and a protected escort have
+        // incompatible terminal outcomes; reject the combination at the
+        // shared simulation boundary, not only in the host config reader.
+        if state.zone.retreat_on_exit || state.escort_ship_id.is_some() ||
             self.ship(ship_id).is_none_or(|ship|
                 ship.side != state.zone.player_side || ship.vitals.is_dead()) ||
             self.ship_body(ship_id).is_none_or(|body| !body.active || !body.motion.mobile)
