@@ -78,54 +78,54 @@ fn place_at_center(radius: f32, occupied: &[(Vec2, f32)],
 pub(crate) fn authored_obstacle_bodies(
     entities: &[NativeAuthoredEntity],
 ) -> Result<Vec<ObstacleBody>, &'static str> {
-        let boxes = BoxObstacleCatalog::embedded().map_err(|_| "Titania II needs valid source box assets")?;
-        let polygons = PolygonObstacleCatalog::embedded().map_err(|_| "Titania II needs valid source polygon assets")?;
-        let mut obstacles = Vec::new();
-        let asteroids = CollisionAsteroidCatalog::embedded().map_err(|_| "Titania II needs valid source asteroid assets")?;
-        for entity in entities {
-                let body = match entity {
-                    NativeAuthoredEntity::BoxObstacle {
-                        entity_id, prefab_name, pose, live_corners,
-                    } => {
-                        let asset = boxes
-                            .by_name(prefab_name)
-                            .ok_or("Titania II obstacle lacks its source prefab")?;
-                        if asset.kind != ObstacleKind::StaticObstacle { continue; }
-                        let (_, body) = if let Some(corners) = live_corners {
-                            asset.prepare_spawn_live_box(*entity_id,
-                                pose.ok_or("Titania II live box has no pose")?, *corners)
-                        } else { asset.prepare_spawn(*entity_id, *pose) }
-                            .map_err(|_| "Titania II box obstacle has invalid geometry")?;
-                        body
-                    }
-                    NativeAuthoredEntity::PolygonObstacle {
-                        entity_id, pose, live_vertices,
-                    } => {
-                        let catalog = &polygons;
-                        let (_, body) = if let Some(vertices) = live_vertices {
-                            catalog.prepare_spawn_live_polygon(*entity_id,
-                                pose.ok_or("Titania II live polygon has no pose")?, vertices.clone())
-                        } else { catalog.prepare_spawn(*entity_id, *pose) }
-                            .map_err(|_| "Titania II polygon obstacle has invalid geometry")?;
-                        body
-                    }
-                    NativeAuthoredEntity::MapObject { body, .. } |
-                    NativeAuthoredEntity::MiningAsteroid { body, .. } => body.clone(),
-                    NativeAuthoredEntity::FullCollisionAsteroid {
-                        entity_id, profile, pose, velocity,
-                        angular_velocity_degrees, effective_max_health,
-                    } => {
-                        let (_, body) = asteroids
-                            .prepare_spawn(profile.prefab_number, *entity_id,
-                                *pose, *velocity, *angular_velocity_degrees,
-                                Some(*effective_max_health))
-                            .map_err(|_| "Titania II asteroid has invalid source geometry")?;
-                        body
-                    },
-                    NativeAuthoredEntity::Ship(_) => continue,
-                };
-                if body.active { obstacles.push(body); }
-            }
+    let boxes = BoxObstacleCatalog::embedded().map_err(|_| "Native level needs valid source box assets")?;
+    let polygons = PolygonObstacleCatalog::embedded().map_err(|_| "Native level needs valid source polygon assets")?;
+    let mut obstacles = Vec::new();
+    let asteroids = CollisionAsteroidCatalog::embedded().map_err(|_| "Native level needs valid source asteroid assets")?;
+    for entity in entities {
+            let body = match entity {
+                NativeAuthoredEntity::BoxObstacle {
+                    entity_id, prefab_name, pose, live_corners,
+                } => {
+                    let asset = boxes
+                        .by_name(prefab_name)
+                        .ok_or("Native level obstacle lacks its source prefab")?;
+                    if asset.kind != ObstacleKind::StaticObstacle { continue; }
+                    let (_, body) = if let Some(corners) = live_corners {
+                        asset.prepare_spawn_live_box(*entity_id,
+                            pose.ok_or("Native level live box has no pose")?, *corners)
+                    } else { asset.prepare_spawn(*entity_id, *pose) }
+                        .map_err(|_| "Native level box obstacle has invalid geometry")?;
+                    body
+                }
+                NativeAuthoredEntity::PolygonObstacle {
+                    entity_id, pose, live_vertices,
+                } => {
+                    let catalog = &polygons;
+                    let (_, body) = if let Some(vertices) = live_vertices {
+                        catalog.prepare_spawn_live_polygon(*entity_id,
+                            pose.ok_or("Native level live polygon has no pose")?, vertices.clone())
+                    } else { catalog.prepare_spawn(*entity_id, *pose) }
+                        .map_err(|_| "Native level polygon obstacle has invalid geometry")?;
+                    body
+                }
+                NativeAuthoredEntity::MapObject { body, .. } |
+                NativeAuthoredEntity::MiningAsteroid { body, .. } => body.clone(),
+                NativeAuthoredEntity::FullCollisionAsteroid {
+                    entity_id, profile, pose, velocity,
+                    angular_velocity_degrees, effective_max_health,
+                } => {
+                    let (_, body) = asteroids
+                        .prepare_spawn(profile.prefab_number, *entity_id,
+                            *pose, *velocity, *angular_velocity_degrees,
+                            Some(*effective_max_health))
+                        .map_err(|_| "Native level asteroid has invalid source geometry")?;
+                    body
+                },
+                NativeAuthoredEntity::Ship(_) => continue,
+            };
+            if body.active { obstacles.push(body); }
+    }
 
     Ok(obstacles)
 }
