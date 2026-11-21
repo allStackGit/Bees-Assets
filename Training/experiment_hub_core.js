@@ -825,11 +825,11 @@ function verifiedOptimizerRecovery(job,raw,state) {
 // have committed the same model and inputs before finalization is allowed.
 function optimizerRecoveryConsensus(members) {
     if(!members.length)return false;
-    const proof=members[0].optimizer_completion||members[0].native_optimizer_pending||
-        members[0].native_release_pending;
+    const proof=members[0]?.optimizer_completion||members[0]?.native_optimizer_pending||
+        members[0]?.native_release_pending;
     return Boolean(proof&&members.every(job=>{
-        const rank=job.optimizer_completion||job.native_optimizer_pending||
-            job.native_release_pending;
+        const rank=job?.optimizer_completion||job?.native_optimizer_pending||
+            job?.native_release_pending;
         return rank&&rank.input_sha256===proof.input_sha256&&
             rank.model_consensus_sha256===proof.model_consensus_sha256&&
             (job.status==='finished'||job.status==='failed'||
@@ -934,6 +934,8 @@ function nativeBeesRoundTrainingSummary(plan) {
     let optimizerRows=0,learnerSeconds=0,ppoSeconds=0,processingSeconds=0;
     let learnerCpuSeconds=0,collectorCoverage=0,learnerCoverage=0;
     let collectorRecoveryAttempts=0,recoveredCollectorJobs=0;
+    let optimizerFinalizationAttempts=0,optimizerRanksFinalized=0;
+    let interruptedOptimizerCpuSeconds=0,interruptedOptimizerCpuCoverage=0;
     let interruptedCollectorCpuSeconds=0,interruptedCollectorCpuCoverage=0;
     let releaseCoverage=0,promotions=0,releaseSeconds=0,releaseTimingCoverage=0;
     let historicalSelections=0,historicalOpponents=0;
@@ -956,6 +958,16 @@ function nativeBeesRoundTrainingSummary(plan) {
             if(Number.isFinite(seconds)&&seconds>=0) {
                 interruptedCollectorCpuSeconds+=seconds;
                 interruptedCollectorCpuCoverage++;
+            }
+        }
+        const finalizers=(entry.optimizer_recovery_attempts||[]).filter(attempt=>attempt.finalizer);
+        optimizerFinalizationAttempts+=finalizers.length;
+        optimizerRanksFinalized+=new Set(finalizers.map(attempt=>attempt.job_id)).size;
+        for(const attempt of finalizers) {
+            const seconds=attempt.previous_resource_usage?.cpu_time_seconds_high_water;
+            if(Number.isFinite(seconds)&&seconds>=0) {
+                interruptedOptimizerCpuSeconds+=seconds;
+                interruptedOptimizerCpuCoverage++;
             }
         }
         const learner=entry.optimizer_group?.learner_work;
@@ -1019,6 +1031,10 @@ function nativeBeesRoundTrainingSummary(plan) {
         latest_checkpoint_sha256:rounds.at(-1)?.checkpoint_sha256||null,
         collector_rounds_measured:collectorCoverage,
         recovered_collector_jobs:recoveredCollectorJobs,
+        optimizer_finalization_attempts:optimizerFinalizationAttempts,
+        optimizer_ranks_finalized:optimizerRanksFinalized,
+        interrupted_optimizer_attempts_cpu_measured:interruptedOptimizerCpuCoverage,
+        interrupted_optimizer_process_cpu_seconds:interruptedOptimizerCpuSeconds,
         collector_recovery_attempts:collectorRecoveryAttempts,
         interrupted_collector_attempts_cpu_measured:interruptedCollectorCpuCoverage,
         interrupted_collector_process_cpu_seconds:interruptedCollectorCpuSeconds,
@@ -5554,12 +5570,18 @@ class ExperimentHub {
                 return job?.native_collector_failed_dispatch_id||
                     job?.native_collector_recovery;
             })&&!plan.optimizer_bundle_id;
-        if(!coordinatorRestart&&!optimizerReplacement&&!releaseReview&&!collectorReview)
+        const finalizerMembers=(plan?.optimizer_job_ids||[]).map(id=>
+            this.state.jobs.find(job=>job.id===id));
+        const finalizerReview=plan?.status==='needs_review'&&
+            finalizerMembers.length>=2&&finalizerMembers.every(Boolean)&&
+            optimizerRecoveryConsensus(finalizerMembers)&&
+            finalizerMembers.some(job=>job.native_optimizer_pending);
+        if(!coordinatorRestart&&!optimizerReplacement&&!releaseReview&&!collectorReview&&!finalizerReview)
             throw Error('Only a disarmed native round or reviewed recovery may resume.');
         // Older persisted plans did not retain the suspended stage. Their
         // durable bundle/job identities identify it without inventing work.
         let phase=collectorReview?'awaiting_collectors':
-            releaseReview?'awaiting_optimizer':plan.restart_phase;
+            releaseReview||finalizerReview?'awaiting_optimizer':plan.restart_phase;
         if(!phase) {
             if(plan.optimizer_bundle_id&&plan.optimizer_job_ids)
                 phase='awaiting_optimizer';
@@ -6354,6 +6376,12 @@ class ExperimentHub {
                             collector_work_totals:plan.collector_work_totals,
                         }:{}),
                         optimizer_job_ids:members.map(job=>job.id),
+                        ...(members.some(job=>nativeRecoveryAttempts(job).length)?{
+                            optimizer_recovery_attempts:members.flatMap(job=>
+                                nativeRecoveryAttempts(job).map(attempt=>({
+                                    job_id:job.id,...copy(attempt),
+                                }))),
+                        }:{}),
                         collector_bundle_id:plan.collectors_bundle_id,
                         optimizer_bundle_id:bundleId,
                         optimizer_group:optimizerGroup,

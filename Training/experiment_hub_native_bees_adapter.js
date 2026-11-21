@@ -1605,7 +1605,8 @@ function createNativeBeesAdapter({
         const pinnedBundles=inboxLearner?frozen.rollout_bundles:
             JSON.parse(fs.readFileSync(runFile,'utf8')).rollout_bundles;
         const expectedReceipts=pinnedBundles?.map(item=>[
-            item.sha256,inboxLearner?item.job_id:path.basename(path.dirname(item.path)),
+            item.sha256,inboxLearner?item.job_id:
+                path.basename(path.dirname(path.resolve(path.dirname(runFile),item.path))),
         ]);
         if(attempt.schema_version!==1||attempt.kind!=='native_optimizer_attempt'||
             attempt.learner_group_id!==bundle.id||attempt.learner_node_rank!==node||
@@ -2071,7 +2072,10 @@ function createNativeBeesAdapter({
                     throw Error('Native finalize-only recovery no longer owns the exact committed rank output.');
             }
             return ['-B', runner, activeRun, inputs.checkpoint, trainer, output,
-                ...(resumeOptimizer!==undefined&&!resumeRelease?['--resume-optimizer']:[]),
+                ...(resumeOptimizer!==undefined&&!resumeRelease?[
+                    '--resume-optimizer','--optimizer-finalizer-sha256',
+                    resumeOptimizer.optimizer_attempt_sha256,resumeOptimizer.finalizer_sha256,
+                ]:[]),
                 ...(continual_release ? ['--continual-release-plan', releasePlan] : []),
                 ...(resumeRelease ? ['--resume-continual-release'] : []),
                 ...(selectInitial ? ['--select-initial-historical-opponent'] : []),

@@ -34,6 +34,7 @@ const POST_ACTIONS={
     '/api/hub/resource-bundles':[201,'queueResourceBundle'],
     '/api/hub/resource-bundles/restart-optimizer':[201,'restartNativeOptimizerBundle'],
     '/api/hub/jobs/recover-native-release':[200,'prepareNativeReleaseRecovery'],
+    '/api/hub/jobs/finalize-native-optimizer':[200,'prepareNativeOptimizerRecovery'],
     '/api/hub/jobs/recover-native-collector':[200,'prepareNativeCollectorRecovery'],
     '/api/hub/native-bees/rounds':[201,'scheduleNativeBeesRounds'],
     '/api/hub/native-bees/rounds/resume':[200,'resumeNativeBeesRounds'],

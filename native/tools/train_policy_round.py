@@ -972,6 +972,9 @@ def prepare_optimizer_attempt(args, output, trainer_config, result):
     if args.resume_optimizer:
         if receipt.is_symlink() or not receipt.is_file():
             raise ValueError("no immutable optimizer attempt to finalize")
+        if (args.optimizer_finalizer_sha256 is not None and
+                file_sha256(receipt) != args.optimizer_finalizer_sha256[0]):
+            raise ValueError("optimizer attempt differs from the authorized finalization")
         saved = json.loads(receipt.read_text(encoding="utf-8"))
         if not isinstance(saved, dict) or not isinstance(saved.get("run_id"), str):
             raise ValueError("invalid saved native optimizer attempt")
@@ -1085,6 +1088,11 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
                 "native optimizer did not commit its complete rank output; "
                 "restart the synchronized group as a new attempt"
             )
+        finalizer = learner_dir / ("node-result.json" if args.learner_node_rank
+                                   else "metrics.json")
+        if (args.optimizer_finalizer_sha256 is not None and
+                file_sha256(finalizer) != args.optimizer_finalizer_sha256[1]):
+            raise ValueError("optimizer finalizer differs from the authorized committed output")
         # The normal capture learner verifies files when loading and again
         # before committing its update. Recovery skips that subprocess, so
         # recheck the original completed collector inputs before finalizing.
@@ -1295,7 +1303,15 @@ def main() -> None:
                         metavar=("RECEIPT", "SHA256"), help="supply an approved receipt to an empty bundle template")
     parser.add_argument("--collection-orders", type=Path,
                         help="verify every imported bundle against one distributed session order")
+    parser.add_argument("--optimizer-finalizer-sha256", nargs=2,
+                        metavar=("ATTEMPT", "FINALIZER"),
+                        help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.optimizer_finalizer_sha256 is not None and (
+            not args.resume_optimizer or any(
+                re.fullmatch(r"[a-f0-9]{64}", digest) is None
+                for digest in args.optimizer_finalizer_sha256)):
+        parser.error("pinned optimizer finalizer requires a valid recovery identity")
     if args.resume_rollout and (not args.collect_only or args.collection_id is None):
         parser.error("--resume-rollout requires one pinned distributed collection")
     if args.resume_optimizer and (

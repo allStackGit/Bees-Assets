@@ -1054,6 +1054,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 (measured?.recovered_collector_jobs
                     ?' · '+measured.recovered_collector_jobs+' recovered collectors'
                     :'')+
+                (measured?.optimizer_ranks_finalized
+                    ?' · '+measured.optimizer_ranks_finalized+' recovered optimizer ranks'
+                    :'')+
                 (measured?.historical_opponent_rounds_measured
                     ?' · historical opponents played '+measured.historical_opponent_rounds_played+
                         '/'+measured.historical_opponent_rounds_measured+' measured selected rounds'
@@ -1086,6 +1089,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         ' recovery attempts; '+measured.interrupted_collector_process_cpu_seconds.toFixed(2)+
                         ' interrupted-attempt process CPU seconds across '+
                         measured.interrupted_collector_attempts_cpu_measured+' measured attempts (not additional rollout steps).',
+                    ]:[]),
+                    ...(measured?.optimizer_finalization_attempts?[
+                        'Optimizer finalization recovery: '+measured.optimizer_ranks_finalized+
+                        ' ranks, '+measured.optimizer_finalization_attempts+
+                        ' attempts; '+measured.interrupted_optimizer_process_cpu_seconds.toFixed(2)+
+                        ' interrupted-attempt process CPU seconds across '+
+                        measured.interrupted_optimizer_attempts_cpu_measured+
+                        ' measured attempts (includes completed optimizer work).',
                     ]:[]),
                     ...(measured?.learner_rounds_measured?[
                         'Measured publishing-learner PPO over '+measured.learner_rounds_measured+
@@ -1206,6 +1217,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const reviewedRecovery=plan.status==='needs_review'&&
                 (plan.optimizer_job_ids?.[0]&&state.jobs.some(job=>
                     job.id===plan.optimizer_job_ids[0]&&job.native_release_pending)||
+                 plan.optimizer_job_ids?.some(id=>state.jobs.some(job=>
+                    job.id===id&&job.native_optimizer_pending))||
                  !plan.optimizer_bundle_id&&plan.collectors_job_ids?.some(id=>
                     state.jobs.some(job=>job.id===id&&
                         (job.native_collector_failed_dispatch_id||job.native_collector_recovery))));
@@ -3919,7 +3932,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     await reload();
                 }));
             if(j.status==='waiting_adapter'&&readiness?.eligible===true)
-                actions.append(button(j.native_release_recovery?'Start release recovery':
+                actions.append(button(j.native_optimizer_recovery?'Finalize optimizer rank':
+                    j.native_release_recovery?'Start release recovery':
                     j.native_collector_recovery?'Resume collector':'Start native job',async()=>{
                     const windows=machine.agent_platform==='win32';
                     const gpu=j.resources.gpu_count>0;
@@ -4008,6 +4022,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     }));
                 }
             }
+            if(j.status==='failed'&&j.native_optimizer_pending&&!j.native_release_pending)
+                actions.append(button('Recover optimizer finalization',async()=>{
+                    if(!confirm('Finalize the original committed optimizer rank on its original machine and resource budget? All original ranks must prove the same completed collective. No gradients will be recomputed. Start after any required GPU qualification.'))return;
+                    try {
+                        await action('hub/jobs/finalize-native-optimizer',{
+                            job_id:j.id,confirm_recover:true,
+                        });
+                        feedback('hub-job-message','Optimizer finalization prepared; authorize its native Start after resource qualification.');
+                        await reload();
+                    }catch(error){feedback('hub-job-message',error.message);}
+                }));
             if(j.project_id==='bees_native'&&j.status==='failed'&&
                 j.native_release_pending)
                 actions.append(button('Recover generation release',async()=>{
@@ -4035,7 +4060,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 const alreadyRestarted=state.jobs.some(member=>
                     member.optimizer_restart_of_bundle_id===j.resource_bundle.id&&
                     member.status!=='cancelled');
-                if(groupFailed&&!alreadyRestarted&&!j.native_release_pending)
+                const consensus=optimizerGroup[0]?.optimizer_completion||
+                    optimizerGroup[0]?.native_optimizer_pending||optimizerGroup[0]?.native_release_pending;
+                const committedGroup=Boolean(consensus&&optimizerGroup.every(member=>{
+                    const proof=member.optimizer_completion||member.native_optimizer_pending||
+                        member.native_release_pending;
+                    return proof&&proof.input_sha256===consensus.input_sha256&&
+                        proof.model_consensus_sha256===consensus.model_consensus_sha256&&
+                        ['finished','failed'].includes(member.status);
+                }));
+                if(groupFailed&&!alreadyRestarted&&!j.native_release_pending&&!committedGroup)
                     actions.append(button('Restart failed GPU optimizer group',async()=>{
                         if(!confirm('Reserve a NEW complete native MA-POCA GPU group on the same '+
                             optimizerGroup.length+' machines using the ORIGINAL input model, '+
