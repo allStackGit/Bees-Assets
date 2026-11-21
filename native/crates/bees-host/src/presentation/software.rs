@@ -2084,10 +2084,15 @@ impl NativeSoftwareRenderer {
             text::draw_centered(&mut self.pixels, self.width, 8, &label, 1, [239, 247, 255]);
         } else if let Some((exiting_side, _, escort)) = view.combat.extraction_objective() {
             if !escort {
-                let label = if view.player_authority.player_viewer_side()
-                    == Some(exiting_side) {
-                    "Extract your mobile fleet to the marked exit"
-                } else { "Intercept enemy fleet before it extracts" };
+                let withdrawing = view.combat.extraction_is_withdrawal();
+                let own_side = view.player_authority.player_viewer_side()
+                    == Some(exiting_side);
+                let label = match (own_side, withdrawing) {
+                    (true, true) => "Withdraw surviving fleet through the marked retreat zone",
+                    (false, true) => "Intercept enemy fleet before it withdraws",
+                    (true, false) => "Extract your mobile fleet to the marked exit",
+                    (false, false) => "Intercept enemy fleet before it extracts",
+                };
                 text::draw_centered(&mut self.pixels, self.width, 8, label, 1, [239, 247, 255]);
             }
         }
