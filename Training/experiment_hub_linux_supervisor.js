@@ -188,7 +188,15 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         !job.frozen_parameters?.optimizer_group||
         !UUID.test(String(oldOptimizer))||oldOptimizer===job.id||
         !UUID.test(String(job.optimizer_restart_of_bundle_id||''))||
-        !job.resource_bundle||predecessor!==null||replaced!==null))
+        !job.resource_bundle||replaced!==null||
+        // Rank zero may continue the original, verified model source.
+        // Hub's failed-group restart freezes this exact predecessor;
+        // workers never own a checkpoint continuation of their own.
+        (predecessor!==null&&(
+            job.project_id!=='bees_native'||
+            predecessor!==job.model_source_job_id||
+            !/^[a-f0-9]{64}$/.test(
+                String(job.expected_parent_model_sha256||''))))))
         throw Error('Synchronized optimizer restart requires a separately leased new rank and an exact old group.');
     if(!UUID.test(String(lineageRoot))||
         (predecessor!==null&&(!UUID.test(String(predecessor))||
