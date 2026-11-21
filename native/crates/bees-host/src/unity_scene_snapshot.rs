@@ -2396,6 +2396,13 @@ impl NativePhysicalScene {
         self.bind_exported_policy_ships()
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
         let dt = self.fixed_dt_seconds;
+        // Campaign roster restoration retains vacant SavedSquad identities
+        // but excludes them from the physical Level. Keep the source-side
+        // identity just for validating authored mission references.
+        let vacant_squads = self.source_squads.iter()
+            .filter(|squad| squad.members.is_empty())
+            .map(|squad| (squad.item_id, squad.side))
+            .collect::<HashMap<_, _>>();
         let mut authored = self.into_policy_only_level(NativePolicyOnlyLevelSetup {
             world_id: setup.world_id,
             level_id: setup.level_id,
@@ -2433,12 +2440,12 @@ impl NativePhysicalScene {
         }).collect::<std::collections::HashSet<_>>();
         authored.metadata.stage_scripted_queues(
             &authored.squads, setup.scripted_queues, &deferred_squads,
-            &entry_squads, &known_ships,
+            &entry_squads, &known_ships, &vacant_squads,
             setup.demolition.map(|objective|
                 (objective.attacking_side, objective.target_map_object_id)),
             dt, authored.campaign_dialogue,
         ).map_err(NativePolicyOnlyLevelError::InvalidScriptedCommands)?;
-        authored.stage_reinforcements(setup.reinforcements, dt)
+        authored.stage_reinforcements(setup.reinforcements, dt, &vacant_squads)
             .map_err(NativePolicyOnlyLevelError::InvalidReinforcements)?;
         if let Some(CampaignDialogueSpec::TitaniaBeenoculars { player_side, .. }) =
             authored.campaign_dialogue

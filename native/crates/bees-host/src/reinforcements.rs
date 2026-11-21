@@ -258,8 +258,10 @@ fn plan_reinforcement_wave(
 }
 
 impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
-    pub(crate) fn stage_reinforcements(&mut self, plans: Vec<NativeReinforcementPlan>, dt: f32)
-        -> Result<(), &'static str>
+    pub(crate) fn stage_reinforcements(
+        &mut self, plans: Vec<NativeReinforcementPlan>, dt: f32,
+        vacant_squads: &HashMap<i64, i32>,
+    ) -> Result<(), &'static str>
     {
         if plans.is_empty() { return Ok(()); }
         // Source SetStartingPosition may use Pathfinder to search a nearby
@@ -271,6 +273,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             return Err("Obstacle-bearing reinforcement spawns need captured physical ship positions (omit spawn)");
         }
         let mut squad_waves = HashMap::new();
+        let mut seen_squads = HashSet::new();
         let mut waves = Vec::with_capacity(plans.len());
         let mut spawn_centers = Vec::with_capacity(plans.len());
         let mut planned_squad_order = Vec::with_capacity(plans.len());
@@ -278,7 +281,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         // Equal-time waves and simultaneous mission cues retain authored
         // construction order. Timed waves remain sorted relative to other
         // timed waves; cue-triggered waves may interleave them.
-        for plan in plans {
+        for mut plan in plans {
             let due = match plan.activation {
                 NativeReinforcementActivation::AfterSeconds(seconds) => {
                     let tick = (f64::from(seconds) / f64::from(dt)).floor() + 1.0;
@@ -320,9 +323,19 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             // LevelConstructor.PositionSquads call, including Carrier
             // children. Their authored order determines physical spacing.
             for &id in &plan.squad_item_ids {
-                if squad_waves.insert(id, waves.len()).is_some() {
+                if !seen_squads.insert(id) {
                     return Err("A squad may arrive in only one reinforcement wave");
                 }
+            }
+            // The original LevelConstructor skips an empty persistent
+            // composition. A campaign casualty or reserve transfer can
+            // empty a source squad (including its Carrier descendants).
+            // Never create an empty wave or a phantom pending faction.
+            // Unknown identities still fail the normal source validation.
+            plan.squad_item_ids.retain(|id| !vacant_squads.contains_key(id));
+            if plan.squad_item_ids.is_empty() { continue; }
+            for &id in &plan.squad_item_ids {
+                squad_waves.insert(id, waves.len());
             }
             planned_squad_order.push(plan.squad_item_ids);
             spawn_centers.push(plan.spawn);
@@ -335,6 +348,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 policy_agents: 0, group_agents: Vec::new(),
             });
         }
+        if waves.is_empty() { return Ok(()); }
         // Validate deferred membership and physical ownership BEFORE taking
         // any authored scene objects. Partial extraction on a malformed
         // later wave would otherwise make this Level unusable on retry.

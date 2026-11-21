@@ -5,7 +5,7 @@
 //! director owns timers, completion and command identifiers. No independent
 //! scripted physics or HiveMind outcome IDs are created.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use bees_gameplay::commands::{
@@ -315,6 +315,7 @@ impl NativePolicyOnlyMetadata {
         deferred: &HashSet<i64>,
         with_entry_order: &HashSet<i64>,
         known_ships: &HashSet<i64>,
+        vacant_squads: &HashMap<i64, i32>,
         demolition_target: Option<(i32, i64)>,
         dt_seconds: f32,
         campaign: Option<CampaignDialogueSpec>,
@@ -340,6 +341,10 @@ impl NativePolicyOnlyMetadata {
             {
                 return Err("invalid scripted command plan");
             }
+            // A vacant campaign composition cannot own a live command.
+            // Still validate plan identity and syntax above, and reject
+            // unknown IDs rather than silently ignoring a bad mission.
+            if vacant_squads.contains_key(&plan.squad_item_id) { continue; }
             let squad = squads.iter().find(|squad|
                 squad.owner.squad_id == plan.squad_item_id
             ).ok_or("scripted commands require an initially deployed squad")?;
@@ -355,13 +360,20 @@ impl NativePolicyOnlyMetadata {
             }
             for order in &plan.orders {
                 if let Some((target_id, enemy)) = order.target_squad() {
-                    if !squads.iter().any(|target|
+                    let live_target = squads.iter().any(|target|
                         target.owner.squad_id == target_id &&
                         target.owner.level_id == squad.owner.level_id &&
                         (target.side != squad.side) == enemy &&
                         (enemy || target.owner != squad.owner)
-                    ) {
-                        return Err("scripted command needs an authenticated live friendly or opposing squad");
+                    );
+                    // Keep the authored order and its normal target-gone
+                    // handling. Only a real vacant source identity may be
+                    // absent initially; unrelated targets remain invalid.
+                    let vacant_target = vacant_squads.get(&target_id)
+                        .is_some_and(|&side| (side != squad.side) == enemy &&
+                            target_id != plan.squad_item_id);
+                    if !live_target && !vacant_target {
+                        return Err("scripted command needs an authenticated friendly or opposing source squad");
                     }
                 }
             }
