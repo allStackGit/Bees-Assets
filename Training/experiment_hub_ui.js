@@ -1111,6 +1111,51 @@ function approvedTinyBrainsProfiles(machines) {
     return [...profiles.entries()].sort(([a],[b])=>a.localeCompare(b));
 }
 
+// Version polling is intentionally independent of the local service controls
+// and the larger Hub UI initializer. A missing service panel or a later UI
+// exception must not leave the running version stuck at "checking".
+(function observeHubVersion() {
+    const status=document.getElementById('hub-version-status');
+    if(!status)return; // The production Bees page has no standalone version.
+    const generation=status.dataset.generation||null;
+    const commit=status.dataset.commit||null;
+    const initial=status.textContent;
+    async function checkVersion() {
+        try {
+            const response=await fetch('/api/hub/software/version',{cache:'no-store'});
+            if(!response.ok)
+                throw Error('HTTP '+response.status);
+            const data=await response.json();
+            if(!data||typeof data!=='object'||
+                typeof data.generation!=='string'||!data.generation)
+                throw Error('Invalid version response');
+            if(data.generation!==generation||
+                (data.source_commit||null)!==commit) {
+                window.location.reload();
+                return;
+            }
+            const updated=data.updated_at&&Number.isFinite(Date.parse(data.updated_at))
+                ?new Date(data.updated_at).toLocaleString():null;
+            status.textContent='Hub '+(data.source_commit?.slice(0,12)||'version unknown')+
+                (updated
+                    ?data.timestamp_kind==='activated'
+                        ?' · Last updated: '+updated
+                        :' · Source committed: '+updated
+                    :' · Update time unavailable')+
+                (data.pending_commit
+                    ?' · New version waiting to activate ('+
+                        data.pending_commit.slice(0,12)+')':'');
+        }catch(error) {
+            // Preserve the server-rendered running version, and surface the
+            // failed check rather than hiding it behind a permanent spinner.
+            status.textContent=initial+' · Update check unavailable: '+
+                String(error.message||error);
+        }
+    }
+    checkVersion();
+    setInterval(checkVersion,10000);
+})();
+
 document.addEventListener('DOMContentLoaded', () => {
     const $ = id => document.getElementById(id);
     // One browser tab keeps its own navigation and Compare selections across
