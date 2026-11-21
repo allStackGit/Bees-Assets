@@ -92,7 +92,7 @@ class RemoteBattleWindow:
             state="disabled",
         )
         self.rejoin_button.pack(side="left", padx=10)
-        self.info = tk.StringVar(value="Left-click select, Shift+click add, right-click context order")
+        self.info = tk.StringVar(value="Left-click select, Ctrl/Shift+click toggle, right-click order")
         ttk.Label(self.footer, textvariable=self.info).pack(side="right")
 
         self.mode = None
@@ -668,7 +668,10 @@ class RemoteBattleWindow:
             self.issue_at(event.x, event.y, self.mode)
             self.draw()
             return
-        additive = bool(event.state & 0x0001)
+        # Tk uses Shift=0x0001 and Control=0x0004 on Windows/X11. Match
+        # the native window's Ctrl-click squad toggle while keeping the
+        # remote client's established Shift-click shortcut.
+        additive = bool(event.state & (0x0001 | 0x0004))
         if self.drag_box is not None and self.state is not None:
             x0, y0, x1, y1 = self.drag_box
             x0, x1 = sorted((x0, x1))
