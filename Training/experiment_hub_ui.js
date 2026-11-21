@@ -6801,12 +6801,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const observedRam=sampledRam.reduce((sum,j)=>
                 sum+j.live_execution.memory_current_mb,0);
             const overClaimed=m.capacity_overcommitted===true;
-            cell(tr,m.name+' ('+m.id+')');
+            const machineName=cell(tr,'');
+            machineName.append(recordHeading(m.name),
+                Object.assign(document.createElement('span'),{
+                    className:'hub-secondary',textContent:m.id}));
             const reports=state.machine_software?.[m.id]||{};
             const active=state.machine_active_software?.[m.id]||{};
             const releases=state.software_release_catalog;
-            const status=cell(tr,m.status+
-                (overClaimed?' · Claims exceed reported capacity':''));
+            const status=cell(tr,'');
+            status.append(recordHeading(m.status==='connected'?'Connected':m.status),
+                ...(overClaimed?[Object.assign(document.createElement('span'),{
+                    className:'hub-secondary',textContent:'Claims exceed reported capacity'})]:[]));
             const names=[...new Set([...Object.keys(active),...Object.keys(reports)])];
             for(const name of names) {
                 const report=reports[name];
@@ -6865,16 +6870,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' average cores from '+sampledCpu.length+'/'+activeJobs.length+
                     ' Hub native jobs':''));
             cpuCell.title='Host busy percentage includes Bees, external training and the OS; Hub native job samples are a subset and must not be added to it.';
-            cell(tr,m.ram_mb+' MiB configured'+
-                (m.reported_ram_mb!=null?' / '+m.reported_ram_mb+' MiB reported':'')+
-                ' / '+claimedRam+' MiB claimed'+
+            const cpuSummary=recordHeading(m.cpus+' configured / '+
+                (m.reported_cpus??'unreported')+' reported');
+            const cpuDetail=document.createElement('span');
+            cpuDetail.className='hub-secondary';
+            cpuDetail.textContent=claimedCpus+' reserved'+
+                (m.status==='connected'&&m.host_cpu_busy_pct!=null
+                    ?' · '+m.host_cpu_busy_pct.toFixed(1)+'% host busy':'')+
+                (sampledCpu.length?' · '+observedCpu.toFixed(2)+
+                    ' cores used by sampled Hub jobs':'');
+            cpuCell.replaceChildren(cpuSummary,cpuDetail);
+            const ramCell=cell(tr,'');
+            ramCell.append(recordHeading(m.ram_mb.toLocaleString()+
+                ' MiB configured / '+(m.reported_ram_mb?.toLocaleString()??'unreported')+
+                ' MiB reported'));
+            const ramDetail=document.createElement('span');
+            ramDetail.className='hub-secondary';
+            ramDetail.textContent=claimedRam.toLocaleString()+' MiB reserved'+
                 (m.status==='connected'&&m.reported_available_ram_mb!=null
-                    ?' · '+m.reported_available_ram_mb+' MiB currently available (all processes)':
+                    ?' · '+m.reported_available_ram_mb.toLocaleString()+' MiB host available':
                     m.status==='connected'&&m.reported_free_ram_mb!=null
-                        ?' · '+m.reported_free_ram_mb+' MiB host free (all processes)':'')+
+                        ?' · '+m.reported_free_ram_mb.toLocaleString()+' MiB host free':'')+
                 (sampledRam.length?' · '+Math.round(observedRam).toLocaleString()+
-                    ' MiB observed from '+sampledRam.length+'/'+activeJobs.length+
-                    ' Hub native jobs':''));
+                    ' MiB from sampled Hub jobs':'');
+            ramCell.append(ramDetail);
             const verified=new Map((m.verified_gpus||[]).map(g=>[g.id,g]));
             const configured=(m.gpus||[]).map(g=>{
                 const matched=verified.get(g.id);
@@ -6894,9 +6913,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 (g.temperature_c==null?'':', '+g.temperature_c+'°C GPU')+
                 (g.hotspot_temperature_c==null?'':', '+g.hotspot_temperature_c+
                     '°C hotspot')+')');
-            cell(tr,(configured.join(' / ')||'No configured GPUs')+
-                (discovered.length?' · Detected '+(m.agent_platform==='win32'?'NVIDIA':'AMD')+' GPUs: '+
-                    discovered.join(', '):''));
+            const gpuCell=cell(tr,'');
+            if(!configured.length)gpuCell.append(recordHeading('No configured GPUs'));
+            else for(const description of configured) {
+                const line=document.createElement('div');
+                line.className='hub-secondary';
+                line.textContent=description;
+                gpuCell.append(line);
+            }
+            if(discovered.length)
+                gpuCell.append(recordDetail('machine-gpu:'+m.id,
+                    'Detected host GPU telemetry ('+discovered.length+')',
+                    discovered.join(' · ')));
             const capability=m.execution_capabilities;
             const recoveryOnly=m.local_executor_enabled&&!m.installed_projects?.length;
             const control=cell(tr,m.status==='connected'
