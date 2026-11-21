@@ -2013,19 +2013,36 @@ impl NativeSoftwareRenderer {
             self.draw_battle_result(view, result);
         } else if let Some(survival) = view.survival {
             let seconds = survival.seconds_remaining.ceil() as u64;
-            let label = match view.combat.ship(survival.protected_ship_id) {
-                Some(target) => format!(
-                    "{}  {}/{} HP  |  Defend {:02}:{:02}",
-                    if target.ship_type == bees_sim::ship_assets::HUMAN_TARGET_TYPE {
-                        "Planetary Shield"
-                    } else { "Protected ship" },
-                    target.vitals.health(), target.vitals.max_health(),
+            let evacuation = view.campaign_dialogue.is_some_and(|(_, cue)| matches!(cue,
+                bees_gameplay::campaign_dialogue::CampaignCue::PlutoEvacuationBriefing |
+                bees_gameplay::campaign_dialogue::CampaignCue::PlutoEvacuationComplete { .. }
+            ));
+            let label = if evacuation {
+                let saved = (survival.elapsed_seconds / 5.0).floor()
+                    .clamp(0.0, 60.0) as u32;
+                let shield = view.combat.ship(survival.protected_ship_id);
+                let lost = shield.map_or(15, |target|
+                    (target.vitals.max_health() - target.vitals.health())
+                        .max(0) / 200);
+                format!(
+                    "Evacuated {saved}/60  |  Lost {lost}/15  |  Defend {:02}:{:02}",
                     seconds / 60, seconds % 60,
-                ),
-                None => format!(
-                    "Protected target lost  |  {:02}:{:02}",
-                    seconds / 60, seconds % 60,
-                ),
+                )
+            } else {
+                match view.combat.ship(survival.protected_ship_id) {
+                    Some(target) => format!(
+                        "{}  {}/{} HP  |  Defend {:02}:{:02}",
+                        if target.ship_type == bees_sim::ship_assets::HUMAN_TARGET_TYPE {
+                            "Planetary Shield"
+                        } else { "Protected ship" },
+                        target.vitals.health(), target.vitals.max_health(),
+                        seconds / 60, seconds % 60,
+                    ),
+                    None => format!(
+                        "Protected target lost  |  {:02}:{:02}",
+                        seconds / 60, seconds % 60,
+                    ),
+                }
             };
             text::draw_centered(&mut self.pixels, self.width, 8, &label, 1, [239, 247, 255]);
         } else if let Some(escort) = view.escort {
