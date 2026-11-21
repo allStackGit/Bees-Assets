@@ -2473,10 +2473,21 @@ pub(super) fn archive(
             // than chasing distant enemies away from the convoy. Strikers
             // retain their source bombing role; both use ordinary Level
             // commands, movement and weapon targeting.
+            let extraction = selected.objective_side == Some(2) &&
+                matches!(selected.objective, Objective::Extraction);
             let escort_guard = command == "aggressive_nearest" &&
                 selected.objective_side == Some(2) &&
                 matches!(selected.objective, Objective::Escort);
-            let orders = if escort_guard {
+            let orders = if extraction {
+                // Extraction terminates only after every mobile friendly
+                // ship exits, including physically independent Carrier
+                // children. A bombing/attack loop would keep an otherwise
+                // evacuated fleet permanently in the battle.
+                vec![json!({
+                    "kind": "move_to_point",
+                    "destination": [-extraction_x, 0.0],
+                })]
+            } else if escort_guard {
                 vec![json!({
                     "kind": "guard",
                     "friendly_squad_item_id": squad_ids[1][0],
@@ -2486,7 +2497,7 @@ pub(super) fn archive(
             };
             let mut queue = json!({
                 "squad_item_id": child_squad,
-                "repeat": true,
+                "repeat": !extraction,
                 "orders": orders,
             });
             if deferred_squads.contains(&child_squad) {
