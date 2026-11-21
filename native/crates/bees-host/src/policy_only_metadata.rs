@@ -1360,6 +1360,28 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
+    fn uranus_offensive_bumblebee_discovered(
+        &self, world: &CombatWorld, player_side: i32, bumblebee_id: i64,
+    ) -> bool {
+        if world.player_weapons_contact_enemy(player_side, bumblebee_id) {
+            return true;
+        }
+        // The source adds a HumanProximityCollider to every living human
+        // Scout in Uranus I. Reuse each original Ship.Sight and the actual
+        // physical target collider; this does no work in other missions.
+        self.effective_vision.iter().any(|(&ship_id, vision)| {
+            let Some(scout) = world.ship(ship_id) else { return false };
+            if scout.side != player_side || scout.ship_type != 18 ||
+                scout.vitals.is_dead() { return false }
+            let Some(sight) = vision.source_sight else { return false };
+            let radius = if sight > 0 { sight as f32 } else {
+                self.authored_ships.get(&ship_id)
+                    .map_or(0.0, |source| source.max_weapon_range)
+            };
+            world.scout_source_proximity_contact(ship_id, bumblebee_id, radius)
+        })
+    }
+
     fn scripted_queue_owns(&self, owner: SquadLifetime) -> bool {
         self.scripted_queues.iter().any(|queue|
             queue.owner == owner && queue.claimed

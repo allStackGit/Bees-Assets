@@ -50,6 +50,45 @@ impl CombatWorld {
         Ok(Some(NativeWeaponRangeContacts { ship_ids: &contacts.ships, revision: contacts.revision }))
     }
 
+    /// Uranus I's original discovery trigger reads Ship.ShipsWithinRange:
+    /// the union of genuine post-physics weapon RangeCollider contacts for
+    /// every living human ship. This is the existing combat target cache,
+    /// not an extra mission-specific distance search or a new AI sensor.
+    pub fn player_weapons_contact_enemy(&self, player_side: i32, enemy_id: i64) -> bool {
+        if !self.ship(enemy_id).is_some_and(|ship| !ship.vitals.is_dead()) {
+            return false;
+        }
+        self.ship_weapons.iter().any(|(&ship_id, weapons)|
+            self.ship(ship_id).is_some_and(|ship|
+                ship.side == player_side && !ship.vitals.is_dead()) &&
+            weapons.range_contacts.iter().any(|contacts| contacts.contains(enemy_id))
+        )
+    }
+
+    /// The source Uranus I Scout creates a ProximityCollider CircleCollider2D
+    /// at the source Ship.Sight radius. Test against the same authoritative
+    /// post-physics enemy primary hull used by weapon RangeColliders;
+    /// campaign story only consumes the resulting boolean.
+    pub fn scout_source_proximity_contact(
+        &self, scout_id: i64, enemy_id: i64, radius: f32,
+    ) -> bool {
+        if !radius.is_finite() || radius <= 0.0 { return false; }
+        let (Some(&scout_index), Some(&enemy_index)) =
+            (self.ship_by_id.get(&scout_id), self.ship_by_id.get(&enemy_id))
+        else { return false };
+        let scout = &self.ships[scout_index];
+        let enemy = &self.ships[enemy_index];
+        if scout.side == enemy.side || scout.ship_type != 18 ||
+            scout.vitals.is_dead() || enemy.vitals.is_dead() ||
+            !self.physics.ships()[scout_index].active ||
+            !self.physics.ships()[enemy_index].active {
+            return false;
+        }
+        self.physics.ship_primary_overlaps_circle(
+            enemy_index, self.physics.ships()[scout_index].motion.position, radius,
+        )
+    }
+
     pub(super) fn refresh_weapon_range_contacts(&mut self, collisions: &CollisionMatrix)
         -> StepCounts
     {

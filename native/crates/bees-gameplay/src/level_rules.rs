@@ -530,6 +530,13 @@ pub trait NativeLevelCommandContext {
         Err(GameCommandError::MissingCombatSnapshot)
     }
 
+    /// Original Uranus I Bumblebee discovery checks real player weapon
+    /// RangeCollider membership and source-authored Scout proximity.
+    /// No generic range estimate is substituted for missing source sight.
+    fn uranus_offensive_bumblebee_discovered(
+        &self, _world: &CombatWorld, _player_side: i32, _bumblebee_id: i64,
+    ) -> bool { false }
+
     /// Share the same immutable ship catalog used to spawn native
     /// collision bodies; it also contains Unity's complete sprite-size
     /// table. The Level never needs a duplicate ship-ID -> size registry.
@@ -1486,7 +1493,11 @@ where
             }
         }
         if let Some(dialogue) = &mut state.campaign_dialogue {
-            if let Some(cue) = dialogue.observe_combat(&state.combat) {
+            let bumblebee_spotted = dialogue.uranus_offensive_target()
+                .is_some_and(|target| state.metadata.uranus_offensive_bumblebee_discovered(
+                    &state.combat, dialogue.player_side(), target,
+                ));
+            if let Some(cue) = dialogue.observe_combat(&state.combat, bumblebee_spotted) {
                 dialogue.set_cue(cue);
                 state.events.queue_campaign_dialogue(completed_tick, cue)?;
             }

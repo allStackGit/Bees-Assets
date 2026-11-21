@@ -31,6 +31,9 @@ pub enum CampaignDialogueSpec {
     UranusDefensive {
         player_side: i32, has_cruiser: bool, met_scientists: bool,
     },
+    /// Uranus I source encounter: only the named Bumblebee can trigger
+    /// discovery, damage warning and follow-up casualty dialogue.
+    UranusOffensive { player_side: i32, bumblebee_id: i64, has_factory: bool },
 }
 
 impl CampaignDialogueSpec {
@@ -41,7 +44,8 @@ impl CampaignDialogueSpec {
             Self::NeptunePressingForward { player_side, .. } |
             Self::PlutoEvacuation { player_side, .. } |
             Self::UranusNewThreat { player_side, .. } |
-            Self::UranusDefensive { player_side, .. } => player_side,
+            Self::UranusDefensive { player_side, .. } |
+            Self::UranusOffensive { player_side, .. } => player_side,
         }
     }
 }
@@ -94,13 +98,19 @@ pub enum CampaignCue {
     /// Source six physical reinforcement announcements, in arrival order.
     UranusDefensiveWave { number: u8, line: u8 },
     UranusDefensiveEnding { last_ship_retreated: bool, player_victory: bool },
+    UranusOffensiveBriefing,
+    UranusOffensiveBumblebeeSpotted,
+    UranusOffensiveBumblebeeHit,
+    UranusOffensiveBumblebeeDestroyed,
+    UranusOffensiveEnding { has_factory: bool, player_victory: bool },
 }
 
 impl CampaignCue {
     pub fn is_briefing(self) -> bool {
         matches!(self, Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. } |
             Self::NeptunePressingForwardBriefing | Self::PlutoEvacuationBriefing |
-            Self::UranusNewThreatBriefing | Self::UranusDefensiveBriefing)
+            Self::UranusNewThreatBriefing | Self::UranusDefensiveBriefing |
+            Self::UranusOffensiveBriefing)
     }
 }
 
@@ -119,6 +129,10 @@ enum DialogueMode {
     UranusDefensive {
         has_cruiser: bool, met_scientists: bool,
         waves_reported: u8,
+    },
+    UranusOffensive {
+        bumblebee_id: i64, has_factory: bool,
+        discovered: bool, hit_seen: bool, hit_reported: bool, destroyed_reported: bool,
     },
 }
 
@@ -184,6 +198,15 @@ impl CampaignDialogue {
                 },
                 CampaignCue::UranusDefensiveBriefing,
             ),
+            CampaignDialogueSpec::UranusOffensive {
+                bumblebee_id, has_factory, ..
+            } => (
+                DialogueMode::UranusOffensive {
+                    bumblebee_id, has_factory, discovered: false,
+                    hit_seen: false, hit_reported: false, destroyed_reported: false,
+                },
+                CampaignCue::UranusOffensiveBriefing,
+            ),
         };
         Self { player_side: spec.player_side(), mode, cue, sequence: 0 }
     }
@@ -234,6 +257,11 @@ impl CampaignDialogue {
             }, DialogueMode::UranusDefensive {
                 has_cruiser: new_cruiser, met_scientists: new_scientists, ..
             }) => old_cruiser == new_cruiser && old_scientists == new_scientists,
+            (DialogueMode::UranusOffensive {
+                bumblebee_id: saved, has_factory: old, ..
+            }, DialogueMode::UranusOffensive {
+                bumblebee_id: authored, has_factory: new, ..
+            }) => saved == authored && old == new,
             _ => false,
         };
         if player_side != self.player_side || !same_authored_story {
@@ -281,6 +309,27 @@ impl CampaignDialogue {
                     personnel_saved, shield_health, shield_max,
                 }) => sequence == 1 && personnel_saved <= 60 &&
                     shield_max > 0 && (0..=shield_max).contains(&shield_health),
+            (DialogueMode::UranusOffensive {
+                discovered: false, hit_seen: false,
+                hit_reported: false, destroyed_reported: false, ..
+            }, CampaignCue::UranusOffensiveBriefing) => sequence == 0,
+            (DialogueMode::UranusOffensive { discovered: true, hit_reported: false,
+                destroyed_reported: false, .. },
+                CampaignCue::UranusOffensiveBumblebeeSpotted) => sequence == 1,
+            (DialogueMode::UranusOffensive { discovered: true, hit_seen: true,
+                hit_reported: true, destroyed_reported, .. },
+                CampaignCue::UranusOffensiveBumblebeeHit) =>
+                sequence == 2 + u8::from(*destroyed_reported),
+            (DialogueMode::UranusOffensive { discovered: true, hit_reported,
+                destroyed_reported: true, .. },
+                CampaignCue::UranusOffensiveBumblebeeDestroyed) =>
+                sequence == 2 + u8::from(*hit_reported),
+            (DialogueMode::UranusOffensive { discovered, hit_reported,
+                destroyed_reported, has_factory: original, .. },
+                CampaignCue::UranusOffensiveEnding { has_factory, .. }) =>
+                *original == has_factory && sequence ==
+                    1 + u8::from(*discovered) + u8::from(*hit_reported) +
+                        u8::from(*destroyed_reported),
             (DialogueMode::UranusDefensive {
                 waves_reported: 0, ..
             }, CampaignCue::UranusDefensiveBriefing) => sequence == 0,
@@ -335,6 +384,15 @@ impl CampaignDialogue {
 
     /// Read-only objective identity for local and authenticated LAN HUDs.
     /// The three source FleetShip hulls are still owned by CombatWorld.
+    pub fn uranus_offensive_target(&self) -> Option<i64> {
+        if let DialogueMode::UranusOffensive { bumblebee_id, discovered: false, .. } =
+            self.mode {
+            Some(bumblebee_id)
+        } else {
+            None
+        }
+    }
+
     pub fn rescue_barges(&self) -> Option<[i64; 3]> {
         if let DialogueMode::UranusNewThreat { barges, .. } = self.mode {
             Some(barges)
@@ -361,6 +419,10 @@ impl CampaignDialogue {
                 CampaignCue::NeptunePressingForwardVictory,
             (DialogueMode::NeptunePressingForward { has_factory }, false) =>
                 CampaignCue::NeptunePressingForwardDefeat { has_factory: *has_factory },
+            (DialogueMode::UranusOffensive { has_factory, .. }, player_victory) =>
+                CampaignCue::UranusOffensiveEnding {
+                    has_factory: *has_factory, player_victory,
+                },
             (DialogueMode::UranusDefensive { .. }, player_victory) =>
                 CampaignCue::UranusDefensiveEnding {
                     last_ship_retreated: world.extraction_retreat_completed(),
@@ -478,7 +540,44 @@ impl CampaignDialogue {
         Some(CampaignCue::UranusNewThreatReinforcements)
     }
 
-    pub(crate) fn observe_combat(&mut self, world: &CombatWorld) -> Option<CampaignCue> {
+    pub(crate) fn observe_combat(
+        &mut self, world: &CombatWorld, source_bumblebee_spotted: bool,
+    ) -> Option<CampaignCue> {
+        if let DialogueMode::UranusOffensive {
+            bumblebee_id, discovered, hit_seen, hit_reported,
+            destroyed_reported, ..
+        } = &mut self.mode {
+            // The source creates its attack/death triggers only after the
+            // Bumblebee has actually been discovered. A pre-discovery shot
+            // must not count as the later "ShipsHit" callback.
+            if !*discovered && source_bumblebee_spotted {
+                *discovered = true;
+                return Some(CampaignCue::UranusOffensiveBumblebeeSpotted);
+            }
+            let both_sides_fighting = [self.player_side, 3 - self.player_side]
+                .into_iter().all(|side|
+                    world.living_mobile_ships_on_side(side) > 0 ||
+                    world.has_reserved_future_ships_on_side(side));
+            if !*discovered || !both_sides_fighting {
+                return None;
+            }
+            *hit_seen |= world.events().iter().any(|event| match event {
+                bees_sim::combat_world::CombatEvent::Hit(hit) =>
+                    hit.attacker_id == *bumblebee_id &&
+                    hit.target_side == self.player_side && hit.delta.applied_damage > 0,
+                _ => false,
+            });
+            if *hit_seen && !*hit_reported {
+                *hit_reported = true;
+                return Some(CampaignCue::UranusOffensiveBumblebeeHit);
+            }
+            if !*destroyed_reported && world.ship(*bumblebee_id)
+                .is_some_and(|ship| ship.vitals.is_dead()) {
+                *destroyed_reported = true;
+                return Some(CampaignCue::UranusOffensiveBumblebeeDestroyed);
+            }
+            return None;
+        }
         if let DialogueMode::UranusNewThreat {
             barges, loss_reported, charge_observed, charge_reported, ..
         } = &mut self.mode {
