@@ -1775,6 +1775,7 @@ struct CampaignSquadSource {
     saved_squad_id: i64,
     side: i32,
     fleet_ship_ids: Vec<i64>,
+    deferred: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -5726,6 +5727,7 @@ fn run_battle(
                 if fleet_ship_ids.is_empty() { continue; }
                 saved_squad_sources.push(CampaignSquadSource {
                     saved_squad_id, side: squad.side, fleet_ship_ids,
+                    deferred: deferred_squads.contains(&squad.item_id),
                 });
             }
         }
@@ -7825,6 +7827,16 @@ fn run_battle(
             .collect::<HashMap<_, _>>();
         let mut squads = Vec::with_capacity(saved_squad_sources.len());
         for source in &saved_squad_sources {
+            // A timed/cue wave can remain reserved when a mission ends.
+            // Such a squad never entered Level.State and has no battle
+            // receipt or losses. Require atomic admission: missing initial
+            // members and partial deferred squads remain hard errors.
+            let admitted = source.fleet_ship_ids.iter()
+                .filter(|id| by_id.contains_key(*id)).count();
+            if source.deferred && admitted == 0 { continue; }
+            if admitted != source.fleet_ship_ids.len() {
+                return Err(invalid("incomplete physical admission for recorded SavedSquad").into());
+            }
             let mut outcome = CampaignSquadOutcome {
                 saved_squad_id: source.saved_squad_id,
                 side: source.side,

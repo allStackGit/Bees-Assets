@@ -1447,8 +1447,13 @@ where
                     if let Some(killer_id) =
                         state.events.fire_barge_external_killer(hit.attacker_id)
                     {
+                        // The killer may itself be a free Carrier/Queen
+                        // child whose durable FleetShip owner is retained
+                        // in the same canonical rank attribution history.
+                        let fleet_owner = state.combat.ship_fleet_rank_owner(killer_id)
+                            .unwrap_or(killer_id);
                         state.metadata.observe_fire_barge_chain_damage(
-                            killer_id, hit.delta.tsv_loss,
+                            fleet_owner, hit.delta.tsv_loss,
                         );
                     }
                 }
