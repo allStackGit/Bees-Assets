@@ -19,8 +19,8 @@ GPU_MASK_ENVIRONMENTS = (
 )
 
 
-def rocm_visible_gpu_pci() -> str | None:
-    """Inspect HIP's *actually loaded* cuda:0 physical PCI identity.
+def rocm_visible_gpu_pci(device_index=0) -> str | None:
+    """Inspect HIP's *actually loaded* device's physical PCI identity.
 
     Only used for post-forward telemetry. A dual Hub lease is never accepted
     merely because two GPU masks were requested; each actor must report a
@@ -46,12 +46,155 @@ def rocm_visible_gpu_pci() -> str | None:
         get_pci.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
         get_pci.restype = ctypes.c_int
         address = ctypes.create_string_buffer(64)
-        if get_pci(address, len(address), 0) != 0:
+        if get_pci(address, len(address), device_index) != 0:
             return None
         value = address.value.decode("ascii").lower()
         return value if re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", value) else None
     except (OSError, AttributeError, UnicodeDecodeError):
         return None
+
+
+def process_memory_bytes():
+    """Current and peak resident memory of this process, not its device."""
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        class Counters(ctypes.Structure):
+            _fields_ = [
+                ("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                *[(name, ctypes.c_size_t) for name in (
+                    "PeakWorkingSetSize", "WorkingSetSize",
+                    "QuotaPeakPagedPoolUsage", "QuotaPagedPoolUsage",
+                    "QuotaPeakNonPagedPoolUsage", "QuotaNonPagedPoolUsage",
+                    "PagefileUsage", "PeakPagefileUsage",
+                )],
+            ]
+
+        try:
+            kernel = ctypes.WinDLL("kernel32")
+            kernel.GetCurrentProcess.restype = wintypes.HANDLE
+            get = ctypes.WinDLL("psapi").GetProcessMemoryInfo
+            get.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+            get.restype = wintypes.BOOL
+            counters = Counters()
+            counters.cb = ctypes.sizeof(counters)
+            if get(kernel.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+                return {"process_resident_bytes": counters.WorkingSetSize,
+                        "process_peak_resident_bytes": counters.PeakWorkingSetSize}
+        except (OSError, AttributeError):
+            pass
+    else:
+        try:
+            fields = {}
+            with open("/proc/self/status", encoding="ascii") as status:
+                for line in status:
+                    key, _, value = line.partition(":")
+                    if key in ("VmRSS", "VmHWM"):
+                        fields[key] = int(value.split()[0]) * 1024
+            return {name: fields[key] for key, name in (
+                ("VmRSS", "process_resident_bytes"),
+                ("VmHWM", "process_peak_resident_bytes"),
+            ) if key in fields}
+        except (OSError, ValueError, IndexError):
+            pass
+    return {}
+
+
+class OptimizerResourceSampler:
+    """Constant-space, low-frequency measurements during one optimizer update.
+
+    CPU process time counts all rank threads, not the whole host. Physical
+    device busy and VRAM occupancy include other processes sharing the GPU.
+    Unsupported driver counters stay absent rather than becoming zero.
+    """
+    def __init__(self, torch, device, interval=1.0):
+        import threading
+
+        self.torch = torch
+        self.device = device
+        self.interval = interval
+        self.stop_event = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.samples = {}
+        self.pci = None
+        self.gpu_path = None
+        self.nvidia = False
+        if device.type == "cuda":
+            index = device.index
+            if index is None:
+                index = torch.cuda.current_device()
+            if torch.version.hip:
+                self.pci = rocm_visible_gpu_pci(index)
+                if self.pci:
+                    self.gpu_path = Path("/sys/bus/pci/devices") / self.pci
+            else:
+                self.nvidia = True
+
+    def _observe(self, key, value):
+        import math
+        if type(value) not in (float, int) or not math.isfinite(value) or value < 0:
+            return
+        sample = self.samples.setdefault(key, [0, 0.0, 0.0])
+        sample[0] += 1
+        sample[1] += value
+        sample[2] = max(sample[2], value)
+
+    def _sample(self):
+        for key, value in process_memory_bytes().items():
+            self._observe(key, value)
+        if self.gpu_path is not None:
+            for name, key in (
+                ("gpu_busy_percent", "physical_gpu_busy_pct"),
+                ("mem_info_vram_used", "physical_gpu_used_vram_bytes"),
+            ):
+                try:
+                    self._observe(key, int((self.gpu_path / name).read_text()))
+                except (OSError, ValueError):
+                    pass
+        elif self.nvidia:
+            # Torch's NVML helpers resolve the device visibility mask.
+            # Older PyTorch/NVML installations may lack these optional APIs.
+            for name, key in (
+                ("utilization", "physical_gpu_busy_pct"),
+                ("device_memory_used", "physical_gpu_used_vram_bytes"),
+            ):
+                try:
+                    getter = getattr(self.torch.cuda, name, None)
+                    if getter is not None:
+                        self._observe(key, getter(self.device))
+                except Exception:
+                    # Monitoring is best-effort; never abort an update
+                    # because its driver does not expose a counter.
+                    pass
+
+    def _run(self):
+        while not self.stop_event.wait(self.interval):
+            self._sample()
+
+    def __enter__(self):
+        self._sample()
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_):
+        self.stop_event.set()
+        self.thread.join()
+        self._sample()
+
+    def summary(self):
+        return {
+            "scope": "optimizer_rank_process_and_shared_physical_device",
+            "sample_interval_seconds": self.interval,
+            **({"gpu_pci_address": self.pci} if self.pci else {}),
+            "samples": {
+                key: ({"sample_count": count, "observed_high_water": peak}
+                      if key == "process_peak_resident_bytes" else
+                      {"sample_count": count, "sample_mean": total / count,
+                       "sample_peak": peak})
+                for key, (count, total, peak) in self.samples.items()
+            },
+        }
 
 
 def parse_rollout_gpus(value: str | None) -> tuple[int, ...] | None:

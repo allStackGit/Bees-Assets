@@ -19,6 +19,7 @@ from policy_worker import file_sha256, install_bees_actor, mlagents_behavior_spe
 from read_policy_capture import capture_frames
 from native_training_outcomes import accumulate_training_outcome, record_combat_hit
 from native_training_artifacts import sync_directory
+from native_gpu_allocation import OptimizerResourceSampler
 from native_mission_contract import (
     OBJECTIVE_START as NATIVE_MISSION_ACTIVE_INDEX,
     OBJECTIVE_WIDTH, verified_policy_observations,
@@ -1663,14 +1664,19 @@ def main():
         )
     processing_wall_seconds = time.perf_counter() - processing_started
     processing_cpu_seconds = time.process_time() - processing_cpu_started
-    update_started = time.perf_counter()
-    update_cpu_started = time.process_time()
-    if not trainer._update_policy():
-        raise RuntimeError("MA-POCA did not update its policy")
-    if device.type == "cuda":
-        torch.cuda.synchronize(device)
-    update_wall_seconds = time.perf_counter() - update_started
-    update_cpu_seconds = time.process_time() - update_cpu_started
+    with OptimizerResourceSampler(torch, device) as resources:
+        update_started = time.perf_counter()
+        update_cpu_started = time.process_time()
+        if not trainer._update_policy():
+            raise RuntimeError("MA-POCA did not update its policy")
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        update_wall_seconds = time.perf_counter() - update_started
+        update_cpu_seconds = time.process_time() - update_cpu_started
+    resource_metrics = resources.summary()
+    resource_metrics["update_process_cpu_core_equivalents"] = (
+        update_cpu_seconds / update_wall_seconds if update_wall_seconds > 0 else None
+    )
     # PyTorch allocator peaks describe this process, not total device VRAM.
     # Read once per round, never in the simulation or optimizer hot loop.
     cuda_metrics = {}
@@ -1702,6 +1708,7 @@ def main():
                 trainer.optimizer, "_bees_distributed_sync_submission_seconds", 0.0,
             ),
             "update_wall_seconds": update_wall_seconds,
+            "update_resource_measurements": resource_metrics,
             **cuda_metrics,
         }
         gpu_worker_metrics = [None] * learner_workers
@@ -1895,6 +1902,7 @@ def main():
         "optimizer_torch_intraop_threads": torch.get_num_threads(),
         "optimizer_torch_interop_threads": torch.get_num_interop_threads(),
         **cuda_metrics,
+        "optimizer_update_resource_measurements": resource_metrics,
         "optimizer_input_steps": steps,
         "native_mission_learner_decisions": mission_learner_decisions,
         "native_mission_learner_decision_rows_validated":

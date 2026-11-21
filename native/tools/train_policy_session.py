@@ -1073,6 +1073,20 @@ def measured_learner_pipeline(completed):
                 metrics["optimizer_update_cpu_seconds"],
             "optimizer_input_steps_per_update_wall_second":
                 metrics["optimizer_input_steps"] / update,
+            # Only measurements actually present in the verified immutable
+            # receipt. Never impute missing counters for earlier rounds.
+            "optimizer_resource_measurements": (
+                [{"rank": worker["rank"], "node_rank": worker["node_rank"],
+                  "device": worker["device"],
+                  **worker["update_resource_measurements"]}
+                 for worker in metrics.get("optimizer_gpu_per_device", [])
+                 if isinstance(worker.get("update_resource_measurements"), dict)]
+                if metrics.get("optimizer_gpu_workers", 1) > 1 else
+                [{"rank": 0, "node_rank": 0, "device": metrics["optimizer_device"],
+                  **metrics["optimizer_update_resource_measurements"]}]
+                if isinstance(metrics.get("optimizer_update_resource_measurements"), dict)
+                else []
+            ),
         })
     sum_phase = lambda name: sum(row[name] for row in measured)
     total_steps = sum_phase("optimizer_input_steps")
