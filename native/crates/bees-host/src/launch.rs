@@ -1598,6 +1598,7 @@ struct CampaignMission<'a> {
     record_fleet_stats: bool,
     bank_player_minerals: bool,
     lost_fleet_ids: Option<&'a HashSet<i64>>,
+    enemy_lost_fleet_ids: Option<&'a HashSet<i64>>,
     purchased_ships: Option<&'a [NativePurchasedShip]>,
     /// Full owner ledger, including valid reserve hulls not installed in
     /// this battle. Source Neptune 3 defeats retire them as well.
@@ -1642,6 +1643,8 @@ struct CampaignReplaySetup {
     record_fleet_stats: bool,
     bank_player_minerals: bool,
     lost_fleet_ids: Option<HashSet<i64>>,
+    #[serde(default)]
+    enemy_lost_fleet_ids: Option<HashSet<i64>>,
     purchased_ships: Option<Vec<NativePurchasedShip>>,
     #[serde(default)]
     owned_purchases: Option<Vec<NativePurchasedShip>>,
@@ -1682,6 +1685,7 @@ impl CampaignReplaySetup {
             record_fleet_stats: mission.record_fleet_stats,
             bank_player_minerals: mission.bank_player_minerals,
             lost_fleet_ids: mission.lost_fleet_ids.cloned(),
+            enemy_lost_fleet_ids: mission.enemy_lost_fleet_ids.cloned(),
             purchased_ships: mission.purchased_ships.map(|ships| ships.to_vec()),
             owned_purchases: mission.owned_purchases.map(|ships| ships.to_vec()),
             retire_on_defeat_types: mission.retire_on_defeat_types.to_vec(),
@@ -1723,6 +1727,7 @@ impl CampaignReplaySetup {
             record_fleet_stats: self.record_fleet_stats,
             bank_player_minerals: self.bank_player_minerals,
             lost_fleet_ids: self.lost_fleet_ids.as_ref(),
+            enemy_lost_fleet_ids: self.enemy_lost_fleet_ids.as_ref(),
             purchased_ships: self.purchased_ships.as_deref(),
             owned_purchases: self.owned_purchases.as_deref(),
             retire_on_defeat_types: &self.retire_on_defeat_types,
@@ -2945,6 +2950,10 @@ fn launch_catalog_battle(
             return Ok(output);
         }
     }
+    let enemy_lost = entry.mission.as_ref()
+        .filter(|mission| mission.persist_enemy_fleet_losses)
+        .map(|mission| progress.lost_player_fleet_ids(3 - mission.player_side))
+        .transpose()?;
     let owned_purchases = entry.mission.as_ref()
         .map(|mission| progress.purchases_for_side(mission.player_side));
     let mut purchased = owned_purchases.clone();
@@ -3009,6 +3018,7 @@ fn launch_catalog_battle(
             record_fleet_stats: mission.record_fleet_stats,
             bank_player_minerals: mission.bank_player_minerals,
             lost_fleet_ids: lost.as_ref(),
+            enemy_lost_fleet_ids: enemy_lost.as_ref(),
             purchased_ships: purchased.as_deref(),
             owned_purchases: owned_purchases.as_deref(),
             retire_on_defeat_types: &mission.retire_on_defeat_types,
@@ -5827,6 +5837,19 @@ fn run_battle(
                     "kind": "native_campaign_fleet_restored",
                     "level_id": level.level_id,
                     "permanently_lost_ships_omitted": removed,
+                }));
+            }
+        }
+        if let Some(enemy_lost) = mission.and_then(|owner| owner.enemy_lost_fleet_ids) {
+            let removed = source.omit_killed_campaign_enemy_ships(
+                3 - mission.expect("native campaign enemy history").player_side,
+                enemy_lost,
+            ).map_err(|error| contextual("persistent enemy campaign fleet", error))?;
+            if removed != 0 {
+                println!("{}", json!({
+                    "kind": "native_campaign_enemy_fleet_restored",
+                    "level_id": level.level_id,
+                    "permanently_lost_enemy_hulls_omitted": removed,
                 }));
             }
         }
