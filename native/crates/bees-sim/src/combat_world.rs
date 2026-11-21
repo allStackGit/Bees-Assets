@@ -366,6 +366,12 @@ pub enum CombatEvent {
         object_id: i64,
         triggering_projectile_id: i64,
         explosion_projectile_id: i64,
+        /// Position of the source-spawned blast, including if the new
+        /// projectile dies before the next presentation snapshot. Older
+        /// checkpoints had only projectile identity; do not fabricate a
+        /// position when replaying those events.
+        #[serde(default)]
+        origin: Option<Vec2>,
     },
     /// The linked obstacle is removed from gameplay; the render client
     /// may spawn the authored cosmetic debris without affecting RL RNG.
