@@ -8360,6 +8360,10 @@ fn run_battle(
                 "cloned_squads": layout.clone_squads.len(),
                 "cloned_ships": layout.clone_squads.iter()
                     .map(|entry| entry.ship_ids.len()).sum::<usize>(),
+                "merged_squad_groups": layout.merge_squads.len(),
+                "absorbed_squad_owners": layout.merge_squads.iter()
+                    .map(|entry| entry.merged_squad_item_ids.len()).sum::<usize>(),
+                "numbered_player_squads": layout.number_squads.len(),
                 "removed_squads": layout.remove_squads.len(),
             }))
         ).collect::<Vec<_>>());
