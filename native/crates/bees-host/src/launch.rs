@@ -1603,6 +1603,7 @@ struct CampaignMission<'a> {
     /// this battle. Source Neptune 3 defeats retire them as well.
     owned_purchases: Option<&'a [NativePurchasedShip]>,
     retire_on_defeat_types: &'a [u8],
+    grants_on_finished: bool,
     created_squads: Option<&'a [NativeCreatedSquad]>,
     tactics: Option<&'a [NativeSavedSquadTactics]>,
     authored_roster: Option<&'a [(i64, i64, i64)]>,
@@ -1646,6 +1647,8 @@ struct CampaignReplaySetup {
     owned_purchases: Option<Vec<NativePurchasedShip>>,
     #[serde(default)]
     retire_on_defeat_types: Vec<u8>,
+    #[serde(default)]
+    grants_on_finished: bool,
     created_squads: Option<Vec<NativeCreatedSquad>>,
     tactics: Option<Vec<NativeSavedSquadTactics>>,
     authored_roster: Option<Vec<(i64, i64, i64)>>,
@@ -1682,6 +1685,7 @@ impl CampaignReplaySetup {
             purchased_ships: mission.purchased_ships.map(|ships| ships.to_vec()),
             owned_purchases: mission.owned_purchases.map(|ships| ships.to_vec()),
             retire_on_defeat_types: mission.retire_on_defeat_types.to_vec(),
+            grants_on_finished: mission.grants_on_finished,
             created_squads: mission.created_squads.map(|squads| squads.to_vec()),
             tactics: mission.tactics.map(|tactics| tactics.to_vec()),
             authored_roster: mission.authored_roster.map(|roster| roster.to_vec()),
@@ -1722,6 +1726,7 @@ impl CampaignReplaySetup {
             purchased_ships: self.purchased_ships.as_deref(),
             owned_purchases: self.owned_purchases.as_deref(),
             retire_on_defeat_types: &self.retire_on_defeat_types,
+            grants_on_finished: self.grants_on_finished,
             created_squads: self.created_squads.as_deref(),
             tactics: self.tactics.as_deref(),
             authored_roster: self.authored_roster.as_deref(),
@@ -3007,6 +3012,7 @@ fn launch_catalog_battle(
             purchased_ships: purchased.as_deref(),
             owned_purchases: owned_purchases.as_deref(),
             retire_on_defeat_types: &mission.retire_on_defeat_types,
+            grants_on_finished: mission.grants_on_finished(),
             created_squads: created.as_deref(),
             tactics: tactics.as_deref(),
             authored_roster: authored.as_deref(),
@@ -8193,10 +8199,10 @@ fn run_battle(
                 campaign_id: mission.campaign_id.to_owned(), mission_id: mission.mission_id.to_owned(),
                 player_side: mission.player_side, winner_side: result.winner_side,
                 mission_success: Some(mission_success),
-                awarded_ships: if mission_success {
+                awarded_ships: if mission_success || mission.grants_on_finished {
                     mission.victory_grants.to_vec()
                 } else { Vec::new() },
-                awarded_squads: if mission_success {
+                awarded_squads: if mission_success || mission.grants_on_finished {
                     mission.victory_squads.to_vec()
                 } else { Vec::new() },
                 // The original Neptune3Ending destroys Factories only
