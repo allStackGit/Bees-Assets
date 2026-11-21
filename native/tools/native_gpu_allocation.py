@@ -122,6 +122,7 @@ class OptimizerResourceSampler:
         self.pci = None
         self.gpu_path = None
         self.gpu_power_sensor = None
+        self.gpu_temperature_sensor = None
         self.nvidia = False
         if device.type == "cuda":
             index = device.index
@@ -136,10 +137,13 @@ class OptimizerResourceSampler:
                     # host would silently misattribute power consumption.
                     for hwmon in sorted((self.gpu_path / "hwmon").glob("hwmon*")):
                         try:
-                            if ((hwmon / "name").read_text().strip() == "amdgpu" and
-                                    (hwmon / "power1_average").is_file()):
+                            if (hwmon / "name").read_text().strip() != "amdgpu":
+                                continue
+                            if (hwmon / "power1_average").is_file():
                                 self.gpu_power_sensor = hwmon / "power1_average"
-                                break
+                            if (hwmon / "temp1_input").is_file():
+                                self.gpu_temperature_sensor = hwmon / "temp1_input"
+                            break
                         except OSError:
                             continue
             else:
@@ -188,6 +192,15 @@ class OptimizerResourceSampler:
                                   int(self.gpu_power_sensor.read_text()) / 1_000_000)
                 except (OSError, ValueError):
                     pass
+            if self.gpu_temperature_sensor is not None:
+                try:
+                    # hwmon temp1_input is a physical card sensor in
+                    # millidegrees Celsius, not an inferred board or
+                    # junction temperature. Keep its identity explicit.
+                    self._observe("physical_gpu_hwmon_temp1_celsius",
+                                  int(self.gpu_temperature_sensor.read_text()) / 1_000)
+                except (OSError, ValueError):
+                    pass
         elif self.nvidia:
             # Torch's NVML helpers resolve the device visibility mask.
             # Older PyTorch/NVML installations may lack these optional APIs.
@@ -225,6 +238,8 @@ class OptimizerResourceSampler:
             **({"gpu_pci_address": self.pci} if self.pci else {}),
             **({"gpu_power_source": "amdgpu hwmon power1_average (device sensor)"}
                if self.gpu_power_sensor is not None else {}),
+            **({"gpu_temperature_source": "amdgpu hwmon temp1_input (sensor 1)"}
+               if self.gpu_temperature_sensor is not None else {}),
             "samples": {
                 key: ({"sample_count": count, "observed_high_water": peak}
                       if key == "process_peak_resident_bytes" else
