@@ -131,8 +131,8 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
     scene_path = (run_path.parent / scene_name).resolve(strict=True)
     scene = read(scene_path)
     # Migration snapshots are the original game's observed initial state.
-    # Keep them byte-for-byte in the source format understood by the native
-    # importer; never synthesize the missing rules from a second game model.
+    # Keep their original field schema for the native importer; never
+    # synthesize the missing rules from a second game model.
     captured = scene.get("native_game_schema") is None
     if captured:
         if scene.get("schema_version") != 35:
@@ -175,12 +175,15 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
         raise ValueError("campaign needs an authored persistent player fleet")
     squads = [squad for squad in scene["squads"]
               if squad["side"] == player_side]
-    if not squads or any(not squad["user_controlled"] or
-            not squad["can_accept_input"] for squad in squads):
-        raise ValueError("campaign player squads must own explicit input authority")
-    if any(has_policy(ship) or not ship.get("user_controlled")
+    # Original missions can have allied objective entities (for example
+    # HumanTarget) with input deliberately disabled by their source script.
+    # Require player authority for the durable fleet, not temporary allies.
+    if not squads:
+        raise ValueError("campaign requires source player-side squads")
+    if any(has_policy(ship) or
+           (ship.get("persistent_fleet") and not ship.get("user_controlled"))
            for ship in ships.values()):
-        raise ValueError("campaign player may not be controlled by a learning policy")
+        raise ValueError("campaign player FleetShips must retain human control")
     if any(ship.get("persistent_fleet") and (
             not isinstance(ship.get("fleet_ship_id"), int) or
             ship["fleet_ship_id"] <= 0)
@@ -194,14 +197,20 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
     # mission squads still deploy in the real scene, but must never become
     # independently owned, awarded, or permanently lost account ships.
     persistent_squads = []
+    assigned_fleet = set()
     for squad in squads:
-        members = tuple(ships[ship_id]["fleet_ship_id"]
+        members = tuple(sorted(ships[ship_id]["fleet_ship_id"]
                         for ship_id in squad_members(squad)
-                        if ships[ship_id].get("persistent_fleet"))
+                        if ships[ship_id].get("persistent_fleet")))
         if not members:
             if squad.get("saved_squad_id") not in (None, 0):
                 raise ValueError("transient player squad cannot own a SavedSquad identity")
             continue
+        if not squad["user_controlled"] or not squad["can_accept_input"]:
+            raise ValueError("durable player squad must own explicit input authority")
+        if len(set(members)) != len(members) or assigned_fleet.intersection(members):
+            raise ValueError("player FleetShip appears in multiple squad memberships")
+        assigned_fleet.update(members)
         # Captured ItemId is a transient Stage allocation, not a career ID.
         saved = (squad.get("saved_squad_id") if captured else
                  squad.setdefault("saved_squad_id", squad["item_id"]))
@@ -215,6 +224,8 @@ def input_mission(run_path: Path, player_side: int) -> tuple[dict, dict, dict]:
     ]
     if len({ship["fleet_ship_id"] for ship in persistent_hulls}) != len(persistent_hulls):
         raise ValueError("duplicate durable player FleetShip identity")
+    if assigned_fleet != {ship["fleet_ship_id"] for ship in persistent_hulls}:
+        raise ValueError("every durable player FleetShip must own one persistent squad")
     # Separate physical entities may legitimately use different IDs in
     # different Levels. Only the durable FleetShip/SavedSquad identities
     # and their source class/value contract persist across missions.
