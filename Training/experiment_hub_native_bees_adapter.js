@@ -563,6 +563,7 @@ function distributedRolloutCoverage(rollout) {
         'collectors_with_physics_worker_measurements',
         'collectors_with_sampled_model_timing',
         'collectors_with_gpu_inference',
+        'collectors_with_resource_observations',
     ]) {
         const count=rollout[field];
         if (count === undefined) continue; // older completed rounds
@@ -578,6 +579,55 @@ function distributedRolloutCoverage(rollout) {
           gpuCount !== rollout.collectors_with_gpu_inference)))
         throw Error('Native fleet GPU evidence does not match its collector coverage.');
     return coverage;
+}
+
+function rolloutResourceMeasurements(rollout) {
+    const result={};
+    const add=(name,value,unit)=>{
+        if(value == null)return;
+        if(!Number.isFinite(value)||value<0||value>1e12||
+            (unit==='count'&&!Number.isSafeInteger(value)))
+            throw Error('Invalid native rollout process-tree measurement: '+name);
+        result[name]={value,unit};
+    };
+    const project=(prefix,observations,breakdown)=>{
+        if(observations==null)return;
+        if(observations.scope!=='observed_current_invocation_process_tree'||
+            observations.cpu_seconds_are_lower_bounds!==true||
+            observations.rss_includes_shared_pages!==true||
+            !observations.scopes||typeof observations.scopes!=='object'||
+            Array.isArray(observations.scopes))
+            throw Error('Invalid native rollout resource observation scope.');
+        const groups=breakdown?[
+            ['collector_process_tree',''],['simulator_processes','simulator_'],
+            ['inference_descendants','inference_'],
+        ]:[['collector_process_tree','']];
+        for(const [source,suffix] of groups) {
+            const row=observations.scopes[source];
+            if(row==null)continue;
+            const base=prefix+suffix;
+            if(!Number.isSafeInteger(row.sample_count)||row.sample_count<1||
+                !Number.isFinite(row.rss_sample_mean_bytes)||row.rss_sample_mean_bytes<0||
+                !Number.isFinite(row.rss_sample_peak_bytes)||
+                row.rss_sample_peak_bytes<row.rss_sample_mean_bytes)
+                throw Error('Invalid native rollout resident-memory observations.');
+            add(base+'resource_samples',row.sample_count,'count');
+            add(base+'rss_mean_mb',row.rss_sample_mean_bytes/1048576,'mb');
+            add(base+'rss_peak_mb',row.rss_sample_peak_bytes/1048576,'mb');
+            if(row.observed_cpu_core_equivalents_lower_bound!=null) {
+                add(base+'cpu_seconds_observed',row.observed_cpu_seconds,'seconds');
+                add(base+'cpu_observation_seconds',row.cpu_observation_wall_seconds,'seconds');
+                add(base+'cpu_cores_observed',row.observed_cpu_core_equivalents_lower_bound,'scalar');
+            }
+        }
+    };
+    project('rollout_',rollout?.resource_observations,true);
+    // Independent collector samples do not share a clock; do not add
+    // their peaks or imply that their CPU averages overlapped.
+    if(Array.isArray(rollout?.collectors))
+        rollout.collectors.forEach((row,index)=>
+            project('rollout_collector_'+index+'_',row.resource_observations,false));
+    return result;
 }
 
 function rolloutPhysicsMeasurements(rollout) {
@@ -1944,6 +1994,7 @@ function createNativeBeesAdapter({
                         },
                         rollout_workers: {value: receipt.captures.length, unit: 'count'},
                         ...rolloutPhysicsMeasurements(rollout),
+                        ...rolloutResourceMeasurements(rollout),
                         ...distributedRolloutCoverage(rollout),
                         ...rolloutGpuMeasurements(rollout),
                         ...rolloutReinforcementMeasurements(rollout),
@@ -1999,6 +2050,7 @@ function createNativeBeesAdapter({
                 metrics: {
                     ...(rollout ? {
                         ...rolloutPhysicsMeasurements(rollout),
+                        ...rolloutResourceMeasurements(rollout),
                         ...distributedRolloutCoverage(rollout),
                         ...rolloutGpuMeasurements(rollout),
                         ...rolloutReinforcementMeasurements(rollout),

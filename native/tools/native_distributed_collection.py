@@ -722,6 +722,8 @@ def aggregate_collection_metrics(bundles):
         ),
         "collectors_with_physics_worker_measurements":
             sum("parallel_physics_rounds" in row for row in rows),
+        "collectors_with_resource_observations":
+            sum(isinstance(row.get("resource_observations"), dict) for row in rows),
         "collector_world_steps_per_wall_second_min": min(collector_rates),
         "collector_world_steps_per_wall_second_max": max(collector_rates),
         "policy_worker_sha256": next(iter(worker_digests)),
@@ -742,6 +744,7 @@ def aggregate_collection_metrics(bundles):
                     "parallel_worker_cpu_wall_seconds_sum",
                 ) if key in row} if "parallel_physics_rounds" in row else {}),
                 "worker_shards": row.get("worker_shards", []),
+                "resource_observations": row.get("resource_observations"),
                 "sampled_model_timing": row.get("sampled_model_timing"),
                 "gpu_inference": row.get("gpu_inference"),
                 "reinforcement_arrivals": row.get("reinforcement_arrivals"),

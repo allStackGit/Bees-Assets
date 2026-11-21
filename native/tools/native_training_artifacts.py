@@ -298,6 +298,118 @@ def combined_source_scene_cache(rows):
     }
 
 
+class RolloutProcessSampler:
+    """Low-frequency observation of concurrently executing native shards.
+
+    Sample the Rust simulator and its resident Python inference descendants
+    together, also retaining the simulator-only and child-only breakdown.
+    Use process birth identities to avoid attributing a recycled PID.
+    CPU deltas are lower bounds: short-lived children and the final partial
+    sampling interval may be missed. RSS sums include shared pages.
+    """
+    def __init__(self, interval=1.0):
+        import time
+        try:
+            import psutil
+        except ImportError:
+            psutil = None
+        self.psutil = psutil
+        self.interval = interval
+        self.next_sample = 0.0
+        self.previous = {}
+        self.last_sample = None
+        self.scopes = {}
+        self.time = time.monotonic
+
+    def _observe(self, name, current, previous, elapsed):
+        row = self.scopes.setdefault(name, {
+            "sample_count": 0, "rss_sum_bytes": 0,
+            "rss_peak_bytes": 0, "observed_cpu_seconds": 0.0,
+            "cpu_observation_wall_seconds": 0.0,
+        })
+        if current:
+            rss = sum(value[1] for value in current.values())
+            row["sample_count"] += 1
+            row["rss_sum_bytes"] += rss
+            row["rss_peak_bytes"] = max(row["rss_peak_bytes"], rss)
+        if elapsed > 0 and current and previous:
+            matched = current.keys() & previous.keys()
+            if matched:
+                row["observed_cpu_seconds"] += sum(
+                    max(0.0, current[key][0] - previous[key][0]) for key in matched
+                )
+                row["cpu_observation_wall_seconds"] += elapsed
+
+    def sample(self, processes, settled):
+        if self.psutil is None:
+            return
+        now = self.time()
+        if now < self.next_sample:
+            return
+        self.next_sample = now + self.interval
+        current = {}
+        all_roots = {}
+        all_children = {}
+        for index, process in enumerate(processes):
+            if process is None or index in settled:
+                continue
+            try:
+                root = self.psutil.Process(process.pid)
+                children = root.children(recursive=True)
+            except (self.psutil.Error, OSError):
+                continue
+            roots, descendants = {}, {}
+            for candidate in (root, *children):
+                try:
+                    with candidate.oneshot():
+                        identity = candidate.pid, candidate.create_time()
+                        times = candidate.cpu_times()
+                        rss = candidate.memory_info().rss
+                    (roots if candidate.pid == root.pid else descendants)[identity] = (
+                        times.user + times.system, rss,
+                    )
+                except (self.psutil.Error, OSError):
+                    continue
+            if not roots:
+                continue
+            current[f"worker_{index}"] = {**roots, **descendants}
+            all_roots.update(roots)
+            all_children.update(descendants)
+        current["simulator_processes"] = all_roots
+        current["inference_descendants"] = all_children
+        current["collector_process_tree"] = {**all_roots, **all_children}
+        elapsed = now - self.last_sample if self.last_sample is not None else 0.0
+        for name, values in current.items():
+            self._observe(name, values, self.previous.get(name, {}), elapsed)
+        self.previous = current
+        self.last_sample = now
+
+    def summary(self, resumed):
+        if self.psutil is None or not self.scopes.get("collector_process_tree", {}).get("sample_count"):
+            return None
+        return {
+            "scope": "observed_current_invocation_process_tree",
+            "cpu_seconds_are_lower_bounds": True,
+            "rss_includes_shared_pages": True,
+            "resumed_collection": resumed,
+            "sample_interval_seconds": self.interval,
+            "scopes": {
+                name: {
+                    "sample_count": row["sample_count"],
+                    "rss_sample_mean_bytes": row["rss_sum_bytes"] / row["sample_count"],
+                    "rss_sample_peak_bytes": row["rss_peak_bytes"],
+                    **({
+                        "observed_cpu_seconds": row["observed_cpu_seconds"],
+                        "cpu_observation_wall_seconds": row["cpu_observation_wall_seconds"],
+                        "observed_cpu_core_equivalents_lower_bound":
+                            row["observed_cpu_seconds"] / row["cpu_observation_wall_seconds"],
+                    } if row["cpu_observation_wall_seconds"] > 0 else {}),
+                }
+                for name, row in self.scopes.items() if row["sample_count"]
+            },
+        }
+
+
 def combined_rollout_lifecycle_metrics(rows):
     """Preserve source lifecycle counters across process and machine boundaries.
 

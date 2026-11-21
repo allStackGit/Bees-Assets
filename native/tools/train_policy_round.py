@@ -30,6 +30,7 @@ from native_training_artifacts import (
     native_source_contract_sha256,
     verified_source_scene_cache, combined_source_scene_cache,
     native_manifest_model_dependencies, combined_rollout_lifecycle_metrics,
+    RolloutProcessSampler,
 )
 from native_distributed_collection import verify_bundle, aggregate_collection_metrics
 from transfer_policy_bundle import artifact_paths, verify_bundle_files
@@ -698,6 +699,7 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
     gpu_proofs = {}
     gpu_requested = gpu_ids is not None or leased_gpu_inference
     settled = set()
+    resources = RolloutProcessSampler()
     with ExitStack() as files:
         try:
             for index, (shard, config_path) in enumerate(shards):
@@ -728,6 +730,7 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0),
                 )
             while len(metrics) != len(shards):
+                resources.sample(processes, settled)
                 for index, (shard, _) in enumerate(shards):
                     if index in settled:
                         continue
@@ -771,6 +774,9 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                 )
                 if resume:
                     result["wall_time_basis"] = "summed_shard_incarnations_conservative"
+            observations = resources.summary(resume)
+            if observations is not None:
+                result["resource_observations"] = observations
             if gpu_requested:
                 # Every allocated process must have actually forwarded at
                 # least one action batch on a GPU, not merely loaded weights.

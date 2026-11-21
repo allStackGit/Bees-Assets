@@ -3057,6 +3057,7 @@ document.addEventListener('DOMContentLoaded', () => {
         bees_native_collect:[
             'rollout_world_steps_per_second','rollout_policy_rows_per_second',
             'rollout_world_steps','rollout_policy_rows',
+            'rollout_cpu_cores_observed','rollout_rss_peak_mb',
             'job_cpu_cores','job_memory_mb','host_gpu_busy_pct',
         ],
         bees_native_optimizer_worker:[
@@ -3146,6 +3147,10 @@ document.addEventListener('DOMContentLoaded', () => {
         'rollout_world_steps','rollout_policy_rows','rollout_world_steps_per_second',
         'rollout_policy_rows_per_second','rollout_world_steps_per_collector_wall_second',
         'rollout_policy_rows_per_collector_wall_second',
+        ...['rollout_','rollout_simulator_','rollout_inference_',
+            ...Array.from({length:16},(_,i)=>'rollout_collector_'+i+'_')]
+            .flatMap(prefix=>['cpu_cores_observed','rss_mean_mb','rss_peak_mb',
+                'resource_samples'].map(name=>prefix+name)),
         'learner_optimizer_input_rows_per_update_second',
         'learner_ppo_update_wall_seconds','learner_trajectory_processing_wall_seconds',
         'optimizer_synchronized_minibatches',
