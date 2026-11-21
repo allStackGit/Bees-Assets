@@ -5794,16 +5794,26 @@ fn run_battle(
                 // Read the *actual* surviving FleetShip owners, including
                 // newly bought Factory hulls, after the same canonical
                 // campaign deployment transaction used by the battle.
-                let has_factory = source.entities.iter().any(|entity| match entity {
+                let lost = mission.and_then(|owner| owner.lost_fleet_ids);
+                let owned_factory = |entity: &NativeAuthoredEntity| match entity {
                     NativeAuthoredEntity::Ship(ship) =>
                         ship.side == player_side &&
                         ship.ship_type == bees_sim::combat_world::MINING_FACTORY_TYPE &&
-                        !ship.vitals.is_dead() &&
-                        source.fleet.get(ship.entity_id).is_some_and(|value|
-                            value.has_persistent_fleet_value) &&
-                        !source.fleet.was_killed(ship.entity_id),
+                        ship.fleet_ship_id.is_some_and(|id|
+                            lost.is_none_or(|lost| !lost.contains(&id))) &&
+                        !ship.vitals.is_dead(),
                     _ => false,
-                });
+                };
+                // The source checks CurrentShips, including surviving
+                // original FleetShips transferred into reserve. Only the
+                // immutable authored player roster, not inert shop class
+                // templates, can establish that pre-existing ownership.
+                let has_factory = template.entities.iter().any(owned_factory) ||
+                    source.entities.iter().any(owned_factory) ||
+                    mission.and_then(|owner| owner.purchased_ships)
+                        .is_some_and(|purchases| purchases.iter().any(|ship|
+                            ship.ship_type == bees_sim::combat_world::MINING_FACTORY_TYPE &&
+                            lost.is_none_or(|lost| !lost.contains(&ship.fleet_ship_id))));
                 level.campaign_dialogue = Some(
                     bees_gameplay::campaign_dialogue::CampaignDialogueSpec::NeptunePressingForward {
                         player_side, has_factory,
