@@ -291,10 +291,11 @@ class LocalExecution {
             /^[a-f0-9]{64}$/.test(String(job.frozen_parameters?.collection_id||'')))
             report.native_collector_recovery_ready=true;
         if(ownsArtifacts&&state==='failed'&&observed.active===false&&
-            job.frozen_parameters?.continual_release===true&&
-            typeof localAdapter?.release_recovery_ready==='function') {
+            (typeof localAdapter?.optimizer_recovery_ready==='function'||
+             job.frozen_parameters?.continual_release===true&&
+                typeof localAdapter?.release_recovery_ready==='function')) {
             try {
-                const pending=await localAdapter.release_recovery_ready(Object.freeze({
+                const context=Object.freeze({
                     job_id:job.id,project_id:job.project_id,
                     cpu_quota:job.resources.cpus,frozen_parameters:job.frozen_parameters,
                     continuation_of_job_id:job.continuation_of_job_id||null,
@@ -310,10 +311,18 @@ class LocalExecution {
                         {gpu_pci_address:lease.gpu_bindings[0].pci_address}:
                         lease.gpu_bindings?.length===2?
                         {gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}:{}),
-                }));
-                if(pending)report.native_release_pending=pending;
+                });
+                if(typeof localAdapter?.optimizer_recovery_ready==='function') {
+                    const proof=await localAdapter.optimizer_recovery_ready(context);
+                    if(proof)report.native_optimizer_pending=proof;
+                }
+                if(job.frozen_parameters?.continual_release===true&&
+                    typeof localAdapter?.release_recovery_ready==='function') {
+                    const pending=await localAdapter.release_recovery_ready(context);
+                    if(pending)report.native_release_pending=pending;
+                }
             }catch(error) {
-                report.diagnostic=('Native continual recovery evidence unavailable: '+
+                report.diagnostic=('Native recovery evidence unavailable: '+
                     String(error.message||error)).slice(0,220);
             }
         }

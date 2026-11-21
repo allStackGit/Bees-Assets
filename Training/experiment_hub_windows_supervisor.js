@@ -146,6 +146,7 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
     const context=Object.freeze({
         job_id:logicalId,project_id:job.project_id,
         ...(logicalId!==job.id?
+            job.native_optimizer_finalize?{native_optimizer_finalize:structuredClone(job.native_optimizer_finalize)}:
             job.native_collector_resume?{native_collector_resume:true}:
                 {native_release_checkpoint_sha256:job.native_release_checkpoint_sha256}:{}),
         ...(job.resource_bundle?{resource_bundle:Object.freeze({...job.resource_bundle})}:{}),

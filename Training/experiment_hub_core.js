@@ -807,6 +807,37 @@ function verifiedReleaseRecovery(job,raw,state) {
         throw Error('Invalid native continual release recovery proof.');
     return copy(raw);
 }
+function verifiedOptimizerRecovery(job,raw,state) {
+    if(raw==null)return null;
+    const bundle=job?.resource_bundle;
+    const owner=bundle?.index===1;
+    const keys=['optimizer_attempt_sha256','finalizer_sha256','input_sha256',
+        'model_consensus_sha256',...(owner?['checkpoint_sha256']:[])];
+    if(state!=='failed'||job?.frozen_parameters?.optimizer_group!==true||
+        !bundle||job.project_id!==(owner?'bees_native':'bees_native_optimizer_worker')||
+        !object(raw)||Object.keys(raw).sort().join(',')!==keys.sort().join(',')||
+        keys.some(key=>!SHA256.test(String(raw[key]||''))))
+        throw Error('Invalid native optimizer finalization proof.');
+    return copy(raw);
+}
+
+// A failed wrapper does not imply a failed collective. Every rank must
+// have committed the same model and inputs before finalization is allowed.
+function optimizerRecoveryConsensus(members) {
+    if(!members.length)return false;
+    const proof=members[0].optimizer_completion||members[0].native_optimizer_pending||
+        members[0].native_release_pending;
+    return Boolean(proof&&members.every(job=>{
+        const rank=job.optimizer_completion||job.native_optimizer_pending||
+            job.native_release_pending;
+        return rank&&rank.input_sha256===proof.input_sha256&&
+            rank.model_consensus_sha256===proof.model_consensus_sha256&&
+            (job.status==='finished'||job.status==='failed'||
+                Boolean(nativeRecovery(job))&&
+                ['waiting_adapter','start_requested','launch_requested','running'].includes(job.status));
+    }));
+}
+
 function verifiedOptimizerCompletion(job,raw,state) {
     if(raw==null)return null;
     const bundle=job?.resource_bundle;
@@ -3009,7 +3040,8 @@ class ExperimentHub {
                 item.collectors_job_ids?.includes(job.id)&&
                 item.collectors_bundle_id===job.resource_bundle?.id:
                 item.status==='awaiting_optimizer'&&
-                item.optimizer_job_ids?.[0]===job?.id&&
+                (job?.native_optimizer_recovery?item.optimizer_job_ids?.includes(job.id):
+                    item.optimizer_job_ids?.[0]===job?.id)&&
                 item.optimizer_bundle_id===job?.resource_bundle?.id);
         return Boolean(plan&&recovery?.round_plan_id===plan.id&&
             Object.entries(plan.agent_instances).every(([id,instance])=>
@@ -3037,7 +3069,7 @@ class ExperimentHub {
             throw Error('Cancel the frozen distributed group plan before individually starting one of its members.');
         const snapshot=this.snapshot();
         const job=snapshot.jobs.find(j=>j.id===value.job_id);
-        if(job?.frozen_parameters?.optimizer_group===true&&!job.native_release_recovery)
+        if(job?.frozen_parameters?.optimizer_group===true&&!nativeRecovery(job))
             throw Error('Synchronized native optimizer nodes must start together through their exact approved resource bundle.');
         if(['native_round_release','native_round_collection'].includes(origin)) {
             if(!this.nativeRoundRecoveryAuthorized(snapshot,job)||
@@ -3970,6 +4002,33 @@ class ExperimentHub {
         return this.prepareNativeRecoveryIn(next,job,lease,
             {collection_id:job.frozen_parameters.collection_id},roundPlanId);
     }
+    prepareNativeOptimizerRecovery(value,roundPlanId=null) {
+        if(!object(value)||value.confirm_recover!==true||
+            !UUID.test(String(value.job_id||''))||
+            Object.keys(value).some(key=>!['job_id','confirm_recover'].includes(key)))
+            throw Error('Confirm the exact failed native optimizer finalizer.');
+        const next=copy(this.state);
+        const job=next.jobs.find(item=>item.id===value.job_id);
+        const proof=job?.native_optimizer_pending;
+        const bundle=job?.resource_bundle;
+        const lease=next.reservations.find(item=>item.id===job?.lease_id&&
+            item.job_id===job.id&&item.machine_id===job.assigned_machine_id&&
+            item.project_id===job.project_id&&item.issued_by==='experiment-hub'&&
+            ['acknowledged','released'].includes(item.status));
+        if(!job||job.status!=='failed'||!proof||!bundle||
+            job.frozen_parameters?.optimizer_group!==true||!lease||
+            (lease.status==='released')!==Boolean(job.capacity_released_at)||
+            !job.dispatch_id||!job.start_first_offered_at||!job.execution_updated_at||
+            job.native_release_pending)
+            throw Error('Finalization recovery requires the original failed optimizer rank and committed local output.');
+        const members=next.jobs.filter(item=>item.resource_bundle?.id===bundle.id)
+            .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
+        if(members.length!==bundle.size||!optimizerRecoveryConsensus(members)||
+            next.jobs.some(item=>item.optimizer_restart_of_bundle_id===bundle.id&&
+                item.status!=='cancelled'))
+            throw Error('Every original optimizer rank must prove the same completed collective; no replacement group may own it.');
+        return this.prepareNativeRecoveryIn(next,job,lease,{finalizer:copy(proof)},roundPlanId);
+    }
     prepareNativeRecoveryIn(next,job,lease,identity,roundPlanId) {
         const collector=job.project_id==='bees_native_collect';
         const previous=nativeRecovery(job);
@@ -3979,7 +4038,9 @@ class ExperimentHub {
                 item.id===roundPlanId&&(collector
                     ?item.status==='awaiting_collectors'&&item.collectors_job_ids?.includes(job.id)&&
                         item.collectors_bundle_id===job.resource_bundle?.id
-                    :item.status==='awaiting_optimizer'&&item.optimizer_job_ids?.[0]===job.id&&
+                    :item.status==='awaiting_optimizer'&&
+                        (identity.finalizer?item.optimizer_job_ids?.includes(job.id):
+                            item.optimizer_job_ids?.[0]===job.id)&&
                         item.optimizer_bundle_id===job.resource_bundle?.id));
             if(!plan||attempts.length||
                 !next.bundle_start_plans?.some(launch=>
@@ -4017,13 +4078,21 @@ class ExperimentHub {
         if(collector) {
             job.native_collector_attempts=[...attempts,attempt];
             job.native_collector_recovery=attempt;
+        }else if(identity.finalizer) {
+            job.native_optimizer_attempts=[...attempts,attempt];
+            job.native_optimizer_recovery=attempt;
+            delete job.native_release_recovery;
+            delete job.native_release_attempts;
         }else {
             job.native_release_attempts=[...attempts,attempt];
             job.native_release_recovery=attempt;
+            delete job.native_optimizer_recovery;
+            delete job.native_optimizer_attempts;
         }
         job.status='waiting_adapter';
         job.status_reason=collector
             ?'Original physical collection retained; collector recovery queued on its original machine.'
+            :identity.finalizer?'Committed rank output retained; optimizer finalization queued on its original machine.'
             :roundPlanId!==null
                 ?'Committed training round retained; original native round authorizes one release-only recovery.'
                 :'Committed training round retained; release-only recovery is queued for explicit Start.';
@@ -4124,6 +4193,16 @@ class ExperimentHub {
                     changed=true;
                 }
             }
+            const finalizer=verifiedOptimizerRecovery(job,report.native_optimizer_pending,report.state);
+            if(finalizer) {
+                if(job.native_optimizer_pending&&
+                    JSON.stringify(job.native_optimizer_pending)!==JSON.stringify(finalizer))
+                    throw Error('Committed native optimizer rank output changed.');
+                if(!job.native_optimizer_pending) {
+                    job.native_optimizer_pending=finalizer;
+                    changed=true;
+                }
+            }
             const releaseRecovery=verifiedReleaseRecovery(
                 job,report.native_release_pending,report.state);
             if(releaseRecovery) {
@@ -4141,6 +4220,12 @@ class ExperimentHub {
             const optimizerCompletion=verifiedOptimizerCompletion(
                 job,report.optimizer_completion,report.state);
             if(optimizerCompletion) {
+                const finalizer=job.native_optimizer_pending;
+                if(finalizer&&(optimizerCompletion.input_sha256!==finalizer.input_sha256||
+                    optimizerCompletion.model_consensus_sha256!==finalizer.model_consensus_sha256||
+                    finalizer.checkpoint_sha256&&
+                        finalizer.checkpoint_sha256!==report.checkpoint_model_sha256))
+                    throw Error('Finalized rank disagrees with its original committed optimizer output.');
                 if(optimizerCompletion.continual_release&&
                     (report.checkpoint_ready_verified!==true||
                      optimizerCompletion.continual_release.checkpoint_sha256!==
@@ -4619,6 +4704,9 @@ class ExperimentHub {
                     }:{}),
                     ...(job.native_collector_recovery?{
                         native_collector_recovery:copy(job.native_collector_recovery),
+                    }:{}),
+                    ...(job.native_optimizer_recovery?{
+                        native_optimizer_recovery:copy(job.native_optimizer_recovery),
                     }:{}),
                     ...(job.collector_replacement_of_job_id?{
                         collector_replacement_of_job_id:
@@ -5575,7 +5663,8 @@ class ExperimentHub {
                     stage==='optimizer'&&job.id===jobs[0].id&&
                     job.status==='failed'&&job.native_release_pending||
                     stage==='collectors'&&job.status==='failed'&&
-                    job.native_collector_failed_dispatch_id===job.dispatch_id)&&
+                    job.native_collector_failed_dispatch_id===job.dispatch_id||
+                    stage==='optimizer'&&job.status==='failed'&&job.native_optimizer_pending)&&
                     job.capacity_released_at;
                 if(!lease||(terminal
                     ?lease.status!=='released'||!lease.released_at
@@ -5595,6 +5684,9 @@ class ExperimentHub {
                 stage==='optimizer'&&job.id===jobs[0].id&&
                     job.native_release_pending&&
                     ['failed','waiting_adapter'].includes(job.status)||
+                stage==='optimizer'&&(
+                    job.status==='failed'&&job.native_optimizer_pending||
+                    job.status==='waiting_adapter'&&job.native_optimizer_recovery)||
                 stage==='collectors'&&(
                     job.status==='failed'&&job.native_collector_failed_dispatch_id===job.dispatch_id||
                     job.status==='waiting_adapter'&&job.native_collector_recovery)||
@@ -5614,6 +5706,12 @@ class ExperimentHub {
                     if(job.status==='failed'&&job.native_collector_failed_dispatch_id===job.dispatch_id||
                         job.native_collector_recovery&&(job.status==='waiting_adapter'||
                             job.status==='start_requested'&&job.start_first_offered_at===null))
+                        return false;
+                }
+                if(stage==='optimizer'&&optimizerRecoveryConsensus(jobs)) {
+                    if(job.status==='finished'&&job.capacity_released_at)return false;
+                    if(job.native_optimizer_pending&&(job.status==='failed'||job.status==='waiting_adapter'||
+                        job.status==='start_requested'&&job.start_first_offered_at===null))
                         return false;
                 }
                 if(stage==='optimizer'&&jobs[0].native_release_pending) {
@@ -5738,6 +5836,36 @@ class ExperimentHub {
         }
         return this.advanceNativeRecoveryStart(plan,owner,snapshot,'native_round_release');
     }
+    advanceNativeOptimizerRecovery(plan,members,snapshot) {
+        if(Object.entries(plan.agent_instances).some(([id,instance])=>{
+            const live=this.agentReports.get(id);
+            return live?.instance_id&&live.instance_id!==instance;
+        }))throw Error('An optimizer agent changed; finalization requires renewed authorization.');
+        if(Object.keys(plan.agent_instances).some(id=>
+            snapshot.machines.find(machine=>machine.id===id)?.status!=='connected'))
+            return 'Awaiting original authenticated optimizer machines.';
+        // Some ranks may still be publishing their final output. Do not
+        // stop them merely because a different wrapper crashed after the
+        // collective. Finalization is independent once consensus is durable.
+        if(!optimizerRecoveryConsensus(members))
+            return 'Awaiting terminal consensus from every original optimizer rank.';
+        for(const job of members) {
+            if(job.status==='failed'&&job.native_optimizer_pending&&!job.native_release_pending&&
+                !nativeRecoveryAttempts(job).length) {
+                try {
+                    this.prepareNativeOptimizerRecovery({job_id:job.id,confirm_recover:true},plan.id);
+                    return null;
+                }catch(error) {
+                    return 'Optimizer finalization awaiting ownership or capacity: '+
+                        String(error.message||error).slice(0,140);
+                }
+            }
+            if(job.status==='waiting_adapter'&&job.native_optimizer_recovery)
+                return this.advanceNativeRecoveryStart(plan,job,snapshot,'native_round_release');
+        }
+        return 'Committed optimizer outputs retained; any further failed finalization requires operator review.';
+    }
+
     advanceNativeRecoveryStart(plan,owner,snapshot,origin) {
         if(nativeRecovery(owner)?.round_plan_id!==plan.id)
             return 'Original work retained; awaiting manually prepared native recovery Start.';
@@ -5956,6 +6084,15 @@ class ExperimentHub {
                         members.slice(1).every(job=>!['failed','unverified','stopped','cancelled'].includes(job.status))) {
                         const owner=members[0];
                         const reason=this.advanceNativeReleaseRecovery(plan,owner,members,snapshot);
+                        if(reason&&plan.reason!==reason)update(plan.status,reason);
+                        continue;
+                    }
+                    if(phase==='optimizer'&&
+                        members.some(job=>job.status==='failed'&&job.native_optimizer_pending||
+                            job.status==='waiting_adapter'&&job.native_optimizer_recovery)&&
+                        members.every(job=>!['unverified','stopped','cancelled'].includes(job.status)&&
+                            (job.status!=='failed'||job.native_optimizer_pending||job.native_release_pending))) {
+                        const reason=this.advanceNativeOptimizerRecovery(plan,members,snapshot);
                         if(reason&&plan.reason!==reason)update(plan.status,reason);
                         continue;
                     }
@@ -6310,8 +6447,8 @@ class ExperimentHub {
             !previous.some(job=>['failed','stopped'].includes(job.status))||
             !nativeOptimizerGroupBlock(snapshot,previous[0]))
             throw Error('A full synchronized optimizer restart requires every original rank to terminate, release its lease, and leave an incomplete group.');
-        if(previous[0].native_release_pending)
-            throw Error('The original owner already committed its PPO checkpoint; recover the continual release instead of restarting optimization.');
+        if(previous[0].native_release_pending||optimizerRecoveryConsensus(previous))
+            throw Error('The original group committed its PPO update; finalize the original output instead of restarting optimization.');
         if(snapshot.jobs.some(job=>
             job.optimizer_restart_of_bundle_id===value.bundle_id&&
             job.status!=='cancelled'))
@@ -6433,7 +6570,7 @@ class ExperimentHub {
                     lease.issued_by==='experiment-hub'&&
                     lease.status==='released'&&Boolean(lease.released_at)))||
             !restartGroup.some(old=>['failed','stopped'].includes(old.status))||
-            Boolean(restartGroup[0]?.native_release_pending)||
+            Boolean(restartGroup[0]?.native_release_pending)||optimizerRecoveryConsensus(restartGroup)||
             !nativeOptimizerGroupBlock(next,restartGroup[0])||
             next.jobs.some(job=>
                 job.optimizer_restart_of_bundle_id===value.restart_optimizer_bundle_id&&

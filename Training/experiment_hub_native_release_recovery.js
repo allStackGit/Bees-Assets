@@ -4,11 +4,11 @@ const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const SHA=/^[0-9a-f]{64}$/;
 
 function nativeRecovery(job) {
-    return job?.native_release_recovery||job?.native_collector_recovery||null;
+    return job?.native_optimizer_recovery||job?.native_release_recovery||job?.native_collector_recovery||null;
 }
 
 function nativeRecoveryAttempts(job) {
-    return job?.native_release_attempts||job?.native_collector_attempts||[];
+    return job?.native_optimizer_attempts||job?.native_release_attempts||job?.native_collector_attempts||[];
 }
 
 function recoveryRecordJobId(record) {
@@ -21,7 +21,13 @@ function physicalExecution(job,lease) {
     const recovery=nativeRecovery(job);
     if(!recovery)return {job,lease};
     const collector=job.project_id==='bees_native_collect';
-    if((collector
+    const optimizer=job.native_optimizer_recovery;
+    if((optimizer
+        ?!['bees_native','bees_native_optimizer_worker'].includes(job.project_id)||
+            job.frozen_parameters?.optimizer_group!==true||!optimizer.finalizer||
+            !SHA.test(optimizer.finalizer.optimizer_attempt_sha256)||
+            !SHA.test(optimizer.finalizer.finalizer_sha256)
+        :collector
         ?!job.native_collector_recovery||!SHA.test(recovery.collection_id)||
             recovery.collection_id!==job.frozen_parameters?.collection_id
         :job.project_id!=='bees_native'||job.frozen_parameters?.continual_release!==true||
@@ -36,7 +42,8 @@ function physicalExecution(job,lease) {
         native_recovery_previous_job_id:recovery.previous_attempt_id,
         native_recovery_previous_lease_id:recovery.previous_lease_id,
         native_recovery_original_lease_id:recovery.original_lease_id,
-        ...(collector?{native_collector_resume:true}:
+        ...(optimizer?{native_optimizer_finalize:optimizer.finalizer}:
+            collector?{native_collector_resume:true}:
             {native_release_checkpoint_sha256:recovery.checkpoint_sha256})},
         lease:{...lease,job_id:recovery.attempt_id}};
 }
@@ -44,7 +51,12 @@ function physicalExecution(job,lease) {
 function logicalJobId(job) {
     const logical=job.native_recovery_of_job_id;
     if(logical===undefined)return job.id;
-    if((job.project_id==='bees_native_collect'
+    if((job.native_optimizer_finalize!==undefined
+        ?!['bees_native','bees_native_optimizer_worker'].includes(job.project_id)||
+            job.frozen_parameters?.optimizer_group!==true||
+            !SHA.test(job.native_optimizer_finalize?.optimizer_attempt_sha256)||
+            !SHA.test(job.native_optimizer_finalize?.finalizer_sha256)
+        :job.project_id==='bees_native_collect'
         ?job.native_collector_resume!==true||
             !SHA.test(job.frozen_parameters?.collection_id)
         :job.project_id!=='bees_native'||job.frozen_parameters?.continual_release!==true||

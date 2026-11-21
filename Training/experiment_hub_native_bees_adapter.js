@@ -1582,6 +1582,79 @@ function createNativeBeesAdapter({
         return round;
     }
 
+    // The capture learner commits its rank output only after collective
+    // consensus. The outer round receipt can be absent after interruption.
+    // Bind a finalize-only request to BOTH immutable local commits.
+    function optimizerRecoveryProof(context) {
+        if(!distributedOptimizer||context.frozen_parameters?.optimizer_group!==true)
+            return null;
+        const output=jobRoot(context),bundle=context.resource_bundle;
+        const node=bundle?.index-1,nodes=bundle?.size,local=gpuLeaseCount(context);
+        const owner=distributedOptimizer.role==='owner';
+        if(!bundle||!UUID.test(String(bundle.id||''))||
+            !Number.isSafeInteger(node)||!Number.isSafeInteger(nodes)||
+            nodes<2||nodes>8||node<0||node>=nodes||(node===0)!==owner||
+            ![1,2].includes(local))return null;
+        const saved=completionReceipt(output,'optimizer-attempt.json');
+        const filename=owner?'metrics.json':'node-result.json';
+        const finalizer=completionReceipt(path.join(output,'learner'),filename,2*1024*1024);
+        if(!saved||!finalizer)return null;
+        const inputs=roundInputs(context),attempt=saved.receipt,m=finalizer.receipt;
+        const frozen=context.frozen_parameters;
+        const runFile=curriculumRuns[0].run;
+        const pinnedBundles=inboxLearner?frozen.rollout_bundles:
+            JSON.parse(fs.readFileSync(runFile,'utf8')).rollout_bundles;
+        const expectedReceipts=pinnedBundles?.map(item=>[
+            item.sha256,inboxLearner?item.job_id:path.basename(path.dirname(item.path)),
+        ]);
+        if(attempt.schema_version!==1||attempt.kind!=='native_optimizer_attempt'||
+            attempt.learner_group_id!==bundle.id||attempt.learner_node_rank!==node||
+            attempt.learner_nodes!==nodes||attempt.learner_gpus!==local||
+            attempt.device!=='cuda'||attempt.learner_backend!==distributedOptimizer.backend||
+            attempt.input_checkpoint_sha256!==inputs.checkpointDigest||
+            attempt.input_manifest_sha256!==inputs.manifestDigest||
+            attempt.run_config_sha256!==pins.get(runFile)||
+            attempt.trainer_sha256!==pins.get(trainer)||
+            attempt.learner_slot!==(learnerSlot??null)||
+            attempt.refresh_opponent_slot!==(frozen.refresh_opponent_slot??null)||
+            attempt.torch_threads!==(frozen.optimizer_threads??Math.min(256,context.cpu_quota))||
+            !Array.isArray(expectedReceipts)||!expectedReceipts.length||
+            !isDeepStrictEqual(attempt.rollout_receipts,expectedReceipts)||
+            m.schema_version!==1||m.optimizer_group_id!==bundle.id||
+            m.input_checkpoint_sha256!==inputs.checkpointDigest||
+            m.input_manifest_sha256!==inputs.manifestDigest)
+            throw Error('Committed native optimizer output differs from the original frozen rank and inputs.');
+        const inputSha=owner?m.optimizer_global_input_sha256:m.global_input_sha256;
+        const modelSha=owner?m.optimizer_gpu_model_consensus_sha256:m.model_consensus_sha256;
+        if(!SHA256.test(String(inputSha||''))||!SHA256.test(String(modelSha||'')))
+            throw Error('Native optimizer has no completed consensus proof.');
+        let checkpointSha=null;
+        if(owner) {
+            if(m.source!=='bees-native-ma-poca-v1'||
+                m.optimizer_gpu_nodes!==nodes||m.optimizer_gpu_local_workers!==local||
+                m.optimizer_gpu_workers!==nodes*local||m.learner_slot!==(learnerSlot??null)||
+                m.refreshed_opponent_slot!==(frozen.refresh_opponent_slot??null)||
+                !Number.isSafeInteger(m.optimizer_input_steps)||m.optimizer_input_steps<1)
+                throw Error('Native optimizer publisher has incomplete final metrics.');
+            synchronizedOptimizerEvidence(m);
+            checkpointSha=verifiedRoundArtifacts({metrics:m,receipt:{
+                next_checkpoint_sha256:m.next_checkpoint_sha256,
+                next_manifest_sha256:m.next_manifest_sha256,
+            }},output).checkpointDigest;
+        }else if(m.kind!=='native_distributed_optimizer_node_complete'||
+            m.node_rank!==node||m.node_count!==nodes||m.local_gpu_workers!==local||
+            m.global_gpu_workers!==local*nodes||!Array.isArray(m.gpu_per_device)||
+            m.gpu_per_device.length!==local||m.gpu_per_device.some((row,index)=>
+                row.rank!==node*local+index||row.node_rank!==node||row.local_rank!==index))
+            throw Error('Native optimizer worker lacks its completed rank output.');
+        return {
+            optimizer_attempt_sha256:sha256(fs.readFileSync(path.join(output,'optimizer-attempt.json'))),
+            finalizer_sha256:sha256(fs.readFileSync(path.join(output,'learner',filename))),
+            input_sha256:inputSha,model_consensus_sha256:modelSha,
+            ...(owner?{checkpoint_sha256:checkpointSha}:{}),
+        };
+    }
+
     function completedWorker(context) {
         if (distributedOptimizer?.role!=='worker')
             throw Error('Only a Hub-owned native optimizer worker may publish a worker receipt.');
@@ -1713,6 +1786,7 @@ function createNativeBeesAdapter({
                 ...ids];
         },
         ...(distributedOptimizer?{
+            optimizer_recovery_ready:optimizerRecoveryProof,
             distributed_completion(context) {
                 const bundle=context.resource_bundle;
                 if(!bundle||!UUID.test(String(bundle.id||''))||
@@ -1990,7 +2064,14 @@ function createNativeBeesAdapter({
                         context.native_release_checkpoint_sha256)
                     throw Error('Release recovery checkpoint differs from the authorized committed round.');
             }
+            const resumeOptimizer=context.native_optimizer_finalize;
+            if(resumeOptimizer!==undefined) {
+                const actual=optimizerRecoveryProof({...context,frozen_parameters:parameters});
+                if(!actual||!isDeepStrictEqual(actual,resumeOptimizer))
+                    throw Error('Native finalize-only recovery no longer owns the exact committed rank output.');
+            }
             return ['-B', runner, activeRun, inputs.checkpoint, trainer, output,
+                ...(resumeOptimizer!==undefined&&!resumeRelease?['--resume-optimizer']:[]),
                 ...(continual_release ? ['--continual-release-plan', releasePlan] : []),
                 ...(resumeRelease ? ['--resume-continual-release'] : []),
                 ...(selectInitial ? ['--select-initial-historical-opponent'] : []),
