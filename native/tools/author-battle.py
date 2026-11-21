@@ -1009,13 +1009,15 @@ def author(args) -> tuple[dict, dict, dict]:
         "seed": args.seed, "scripted_queues": queues,
     }]
     if waves:
-        # Each native wave with several squad IDs must represent one
-        # Carrier's linked child squads, not unrelated formation groups.
-        # Publish each ordinary chunk as its own same-tick wave instead.
-        # Reserved hulls use distinct authored positions rather than
-        # invented pathfinding through unknown authored obstacles.
+        # Unity AddReinforcementSquads deploys each independent SavedSquad
+        # in its own constructor call, but all squads from one timer are
+        # ONE arrival event. Native plan_reinforcement_wave preserves the
+        # independent constructors and Carrier child families. Group
+        # adjacent same-side/same-trigger entries into the original arrival
+        # so roster, announcements and pending-wave metrics agree.
         deployments = []
-        for index, (when, _, _, _, trigger) in enumerate(waves):
+        last_wave_side = None
+        for index, (when, side, _, _, trigger) in enumerate(waves):
             if trigger is None:
                 activation = {"after_seconds": when}
             elif trigger[0] == "cue":
@@ -1034,17 +1036,26 @@ def author(args) -> tuple[dict, dict, dict]:
                     )
                 activation = {"on_ship_destroyed": eligible[0]}
             squads_by_id = {squad["item_id"]: squad for squad in new_squads}
+            arriving = []
             for squad_id in wave_squads[index]:
                 squad = squads_by_id[squad_id]
                 if squad.get("is_carrier_squad"):
                     continue  # emitted together with its persistent parent
-                complement = [
+                arriving.append(squad_id)
+                arriving.extend(
                     child for parent in squad["members"]
                     for child in carrier_child_squads.get(parent, ())
-                ]
-                deployments.append({
-                    **activation, "squad_item_ids": [squad_id, *complement],
-                })
+                )
+            if not arriving:
+                continue
+            if (deployments and last_wave_side == side and
+                    all(deployments[-1].get(key) == activation.get(key)
+                        for key in ("after_seconds", "on_campaign_cue",
+                                    "on_ship_destroyed"))):
+                deployments[-1]["squad_item_ids"].extend(arriving)
+            else:
+                deployments.append({**activation, "squad_item_ids": arriving})
+            last_wave_side = side
         run["levels"][0]["reinforcements"] = deployments
     # These are the native Level's real survival/extraction/demolition contracts,
     # consumed by the same CombatWorld/terminal as campaign and training.
