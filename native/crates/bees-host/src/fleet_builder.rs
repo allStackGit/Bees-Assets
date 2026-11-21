@@ -77,6 +77,17 @@ enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Scouts, R
 enum AiTactics { Aggressive, Circle, RightSwipe, LeftSwipe, InAndOut, Mixed }
 
 impl AiTactics {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Aggressive => "aggressive",
+            Self::Circle => "circle",
+            Self::RightSwipe => "right-swipe",
+            Self::LeftSwipe => "left-swipe",
+            Self::InAndOut => "in-out",
+            Self::Mixed => "mixed",
+        }
+    }
+
     fn source_order(self, squad_index: usize) -> &'static str {
         let tactic = match self {
             Self::Mixed => match squad_index % 5 {
@@ -139,7 +150,7 @@ fn choose_reinforcements(
         .map(|index| patterns[index].0))
 }
 
-fn choose_ai_tactics() -> Result<Option<AiTactics>, Box<dyn Error>> {
+fn choose_ai_tactics(side: usize) -> Result<Option<AiTactics>, Box<dyn Error>> {
     let options = [
         ("Aggressive pursuit", "  [Source Aggressive command]"),
         ("Circle the target", "  [Source CircleSquad command]"),
@@ -148,7 +159,11 @@ fn choose_ai_tactics() -> Result<Option<AiTactics>, Box<dyn Error>> {
         ("Strike and withdraw", "  [Source InAndOut command]"),
         ("Mixed tactics", "  [Different tactics per squad]"),
     ];
-    let rows = options.iter().map(|(title, status)| BattleMenuRow {
+    let faction = if side == 0 { "Bee" } else { "Human" };
+    let titles = options.iter().map(|(label, _)|
+        format!("{faction} AI: {label}")
+    ).collect::<Vec<_>>();
+    let rows = options.iter().zip(&titles).map(|((_, status), title)| BattleMenuRow {
         title, status, unlocked: true,
     }).collect::<Vec<_>>();
     let mut selected = 0;
@@ -338,7 +353,7 @@ pub(super) struct FleetChoice {
     /// ordinary one-World gameplay, replay and durable crash recovery.
     benchmark: bool,
     spectator_episodes: usize,
-    ai_tactics: AiTactics,
+    ai_tactics: [AiTactics; 2],
     hivemind: Option<NativeHiveMindFleet>,
     objective: Objective,
     reinforcements: ReinforcementPattern,
@@ -390,12 +405,15 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
         let Some(enabled) = choose_visibility()? else { return Ok(None); };
         enabled
     };
-    let ai_tactics = if mode == 2 || mode >= 4 {
-        AiTactics::Aggressive
-    } else {
-        let Some(value) = choose_ai_tactics()? else { return Ok(None); };
-        value
-    };
+    let mut ai_tactics = [AiTactics::Aggressive; 2];
+    for side in 0..2_usize {
+        let scripted = mode == 3 ||
+            (mode == 0 && side == 1) || (mode == 1 && side == 0);
+        if scripted {
+            let Some(value) = choose_ai_tactics(side)? else { return Ok(None); };
+            ai_tactics[side] = value;
+        }
+    }
     let spectator_episodes = if mode == 3 {
         let Some(count) = choose_resource(
             "AI-vs-AI battles in this spectator session", &[1, 4, 16, 64],
@@ -505,7 +523,7 @@ pub(super) fn choose_multiplayer(
         ai_both: false,
         benchmark: false,
         spectator_episodes: 1,
-        ai_tactics: AiTactics::Aggressive,
+        ai_tactics: [AiTactics::Aggressive; 2],
         hivemind, objective, reinforcements, objective_side,
         benchmark_worlds: 1, benchmark_workers: 1,
     }))
@@ -524,7 +542,11 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(specialist_squad_sizes) =
         choose_specialist_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
-    let Some(ai_tactics) = choose_ai_tactics()? else { return Ok(None); };
+    let mut ai_tactics = [AiTactics::Aggressive; 2];
+    for side in 0..2 {
+        let Some(value) = choose_ai_tactics(side)? else { return Ok(None); };
+        ai_tactics[side] = value;
+    }
     let Some(objective) = choose_objective()? else { return Ok(None); };
     let objective_side = match objective {
         Objective::Elimination => None,
@@ -2126,6 +2148,16 @@ pub(super) fn archive(
         selected.objective_side.unwrap_or(0),
         u8::from(selected.mining_field), u8::from(selected.fog_of_war),
     ));
+    if selected.ai_both || !matches!(selected.ai_tactics,
+        [AiTactics::Aggressive, AiTactics::Aggressive])
+    {
+        let id = run["run_id"].as_str()
+            .ok_or_else(|| invalid("AI doctrine lacks source identity"))?;
+        run["run_id"] = json!(format!(
+            "{id}-doctrine-{}v{}",
+            selected.ai_tactics[0].label(), selected.ai_tactics[1].label(),
+        ));
+    }
     if selected.specialist_squad_sizes != [1, 1] {
         let id = run["run_id"].as_str()
             .ok_or_else(|| invalid("specialist squad has no saved run identity"))?;
@@ -2303,7 +2335,7 @@ pub(super) fn archive(
                 {
                     orders.push(json!({"kind": "heal_available"}));
                 }
-                orders.push(json!({"kind": selected.ai_tactics.source_order(position)}));
+                orders.push(json!({"kind": selected.ai_tactics[side].source_order(position)}));
                 orders
             };
             // Only commands that physically complete a one-shot goal
