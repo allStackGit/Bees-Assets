@@ -562,7 +562,7 @@ function nativeBeesStageSource(machine,round) {
     return selected;
 }
 function dualGpuApproved(job,machine) {
-    if(!job||!machine||machine.agent_platform!=='linux'||
+    if(!job||!machine||!['linux','win32'].includes(machine.agent_platform)||
         job.resources?.gpu_count!==2||
         job.resources?.gpu_mode!=='exclusive')
         return false;
@@ -570,7 +570,8 @@ function dualGpuApproved(job,machine) {
         return job.frozen_parameters?.device==='dual'&&
             machine.tinybrains_dual_gpu_profiles
                 ?.includes(job.frozen_parameters.profile)===true;
-    return ['bees_native','bees_native_collect','bees_native_optimizer_worker'].includes(job.project_id)&&
+    return machine.agent_platform==='linux'&&
+        ['bees_native','bees_native_collect','bees_native_optimizer_worker'].includes(job.project_id)&&
         machine.gpu_dual_native_projects?.includes(job.project_id)===true;
 }
 function gpuStartBlock(job,lease,machine) {
@@ -595,7 +596,7 @@ function gpuStartBlock(job,lease,machine) {
         r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive';
     if(!(single||dual||multiTiny||multi)||allocated.gpus?.length!==r.gpu_count||
         (r.gpus?.length&&r.gpus.some((id,i)=>id!==allocated.gpus[i])))
-        return 'Native GPU Start requires one GPU or two approved, exclusively bound ROCm GPUs.';
+        return 'Native GPU Start requires the exact approved PCI lease and project GPU execution mode.';
     if(!machine.gpu_projects?.includes(job.project_id))
         return 'The local adapter has not opted into native GPU execution.';
     if(machine.agent_platform==='win32') {
@@ -609,8 +610,8 @@ function gpuStartBlock(job,lease,machine) {
     }
     if(machine.agent_platform!=='linux')
         return 'Native GPU execution is unavailable on this operating system.';
-    if((machine.observed_gpus?.length??0)<r.gpu_count)
-        return 'Native GPU Start requires enough freshly observed physical devices for its exact GPU lease.';
+    if(!linuxGpuQualificationSupported(machine,r.gpu_count))
+        return 'Native GPU Start requires an observed physical device set and qualified Linux isolation.';
     if(job.gpu_qualification?.current!==true)
         return 'Current device access and HIP runtime qualification for this exact GPU lease are required.';
     return null;
