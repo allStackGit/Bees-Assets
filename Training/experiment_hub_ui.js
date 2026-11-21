@@ -1160,6 +1160,26 @@ document.addEventListener('DOMContentLoaded', () => {
         return data;
     };
     const feedback=(id,message)=>{ $(id).textContent=message; };
+    const expandedRecordDetails=new Set();
+    function recordDetail(key,label,message) {
+        const details=document.createElement('details');
+        if(expandedRecordDetails.has(key))details.open=true;
+        details.addEventListener('toggle',()=>{
+            if(details.open)expandedRecordDetails.add(key);
+            else expandedRecordDetails.delete(key);
+        });
+        const summary=document.createElement('summary');
+        summary.textContent=label;
+        const description=document.createElement('p');
+        description.textContent=message;
+        details.append(summary,description);
+        return details;
+    }
+    function recordHeading(text) {
+        const strong=document.createElement('strong');
+        strong.textContent=text;
+        return strong;
+    }
     function placementObservedLoad(place) {
         if(!place.capacity_fits)return '';
         if(place.suggested_gpus?.length===1) {
@@ -5667,10 +5687,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?' · Resource bundle '+j.resource_bundle.id.slice(-8)+
                     ' ('+j.resource_bundle.index+'/'+j.resource_bundle.size+')'
                 :'';
-            const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
-                checkpointRecovery+noTrainer+distributedSummary+launchText+scheduleText+abortText+bundleLabel+
+            const statusCell=cell(tr,'');
+            statusCell.append(recordHeading(labels[j.status]||j.status));
+            const statusBrief=document.createElement('div');
+            statusBrief.className='hub-secondary';
+            statusBrief.textContent=waitingOnParent||
+                (readiness&&!readiness.eligible?'Start blocked: '+readiness.reason:status);
+            statusCell.append(statusBrief);
+            const fullStatus=status+lineage+promoted+gpuProof+readinessText+
+                checkpointRecovery+noTrainer+distributedSummary+launchText+scheduleText+
+                abortText+bundleLabel+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
-                    ?' · Cancel downstream stage first':''));
+                    ?' · Cancel downstream stage first':'')+
+                (detail?' · '+detail:'')+
+                (j.status_reason?' · '+j.status_reason:'');
+            if(fullStatus!==statusBrief.textContent)
+                statusCell.append(recordDetail('job-status:'+j.id,
+                    'Full status and eligibility',fullStatus));
 
             statusCell.title=readiness?.reason||
                 proof?.diagnostic||detail||j.status_reason||status;
@@ -5700,7 +5733,20 @@ document.addEventListener('DOMContentLoaded', () => {
                                 j.resources.gpu_compute_pct+'% advisory compute':'')+
                         (pinnedGpuDevices.length?' · '+pinnedGpuDevices.join(', '):' · awaiting binding')+')'
                     :'');
-            const resourceCell=cell(tr,resourceText);
+            const resourceCell=cell(tr,'');
+            resourceCell.append(recordHeading(j.resources.cpus+' CPU · '+
+                j.resources.ram_mb.toLocaleString()+' MiB RAM · '+
+                j.resources.gpu_count+' GPU'+(j.resources.gpu_count===1?'':'s')));
+            if(j.resources.gpu_count) {
+                const allocation=document.createElement('div');
+                allocation.className='hub-secondary';
+                allocation.textContent='GPU '+j.resources.gpu_mode+
+                    (j.resources.gpu_mode==='shared'
+                        ?' · '+j.resources.gpu_vram_mb+' MiB VRAM budget / '+
+                            j.resources.gpu_compute_pct+'% advisory compute':'');
+                resourceCell.append(allocation,recordDetail('job-gpu:'+j.id,
+                    'GPU bindings and host observations',resourceText));
+            }
             if(j.resources.gpu_count)
                 resourceCell.title='GPU budget reservations and observed host telemetry are separate. Shared Windows PyTorch limits do not enforce GPU compute time or non-PyTorch memory.';
             const policy=j.evaluation_monitor||j.evaluation_stop;
@@ -5787,7 +5833,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 :regressionSignals.some(row=>row.status==='regressed')
                     ?' · Independent evaluation regression detected (inspect details)'
                     :'';
-            const learningCell=cell(tr,learningSummary(j)+evaluation+availability+regressionText);
+            const learningCell=cell(tr,'');
+            const progress=j.live_execution?.progress||j.final_progress;
+            const update=progress?.steps_completed;
+            const rate=progress?.metrics?.ant_decisions_per_second?.value;
+            const winRate=progress?.metrics?.training_win_rate?.value;
+            const measuredProgress=[
+                Number.isSafeInteger(update)?'Update / step '+update.toLocaleString():null,
+                Number.isFinite(rate)?rate.toFixed(1)+' decisions/s':null,
+                Number.isFinite(winRate)?(winRate*100).toFixed(1)+'% wins':null,
+            ].filter(Boolean);
+            learningCell.append(recordHeading(measuredProgress.join(' · ')||
+                'No progress reported'));
+            const fullLearning=learningSummary(j)+evaluation+availability+regressionText;
+            if(fullLearning&&fullLearning!=='—')
+                learningCell.append(recordDetail('job-progress:'+j.id,
+                    'Training, evaluation and diagnostics',fullLearning));
             if(policy) {
                 const details=document.createElement('details');
                 const summary=document.createElement('summary');
@@ -7757,6 +7818,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const input=document.createElement('input');
         input.type='checkbox';
         const label=document.createElement('label');
+        label.className='hub-toggle-row';
         label.append(input,' Match budgets across the selected machines');
         return {input,label};
     }
@@ -7777,6 +7839,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // chooses the CPU/RAM/GPU budgets; endpoint-to-machine identity is never
     // entered by the browser and comes from connected native agents instead.
     const distributedPanel=document.createElement('fieldset');
+    distributedPanel.className='hub-distributed-panel';
     const distributedLegend=document.createElement('legend');
     distributedLegend.textContent='Distributed TinyBrains learner + remote collectors';
     const distributedMachine=document.createElement('select');
@@ -7914,6 +7977,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Courier reuses the same native group claims, but unlike TinyBrains
     // each remote process trains its own immutable recurrent PPO lineage.
     const courierPanel=document.createElement('fieldset');
+    courierPanel.className='hub-distributed-panel';
     const courierLegend=document.createElement('legend');
     courierLegend.textContent='Distributed Courier training';
     const courierMachine=document.createElement('select');
