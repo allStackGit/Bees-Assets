@@ -273,6 +273,23 @@ impl NativeEpisodeRewardCoordinator {
         }
     }
 
+    /// Preserve the campaign's delayed victory trigger within the one
+    /// gameplay/RL episode-terminal owner. Training does not acquire this
+    /// campaign gate or a separate simulation.
+    pub fn defer_side_elimination_until_after(
+        &mut self, side: i32, seconds: f32, fixed_dt_seconds: f32,
+    ) -> Result<(), NativeEpisodeRewardError> {
+        if !matches!(self.mode, EpisodeMode::Game(_)) {
+            return Err(NativeEpisodeRewardError::Terminal(
+                EpisodeTerminalError::InvalidEliminationGate,
+            ));
+        }
+        self.terminal.defer_side_elimination_until_after(
+            side, seconds, fixed_dt_seconds,
+        )?;
+        Ok(())
+    }
+
     pub fn arm_survival(
         &mut self, objective: SurvivalObjective, fixed_dt_seconds: f32,
     ) -> Result<(), NativeEpisodeRewardError> {
