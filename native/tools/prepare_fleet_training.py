@@ -257,7 +257,7 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
                     ship.get(key) is not None for key in (
                         "policy", "special", "special_weapon", "drone_carrier_id")
             ) or ship.get("is_moving", False) or ship.get(
-                    "has_target_coordinates", False):
+                    "has_target_coordinates", False)):
                 raise ValueError("native grouped squad must contain stationary ordinary ships")
             center[0] += ship["position"][0]
             center[1] += ship["position"][1]
