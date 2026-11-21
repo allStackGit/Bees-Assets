@@ -56,7 +56,7 @@ class LocalExecution {
             tinybrains_required_import_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_required_import_profiles||[])],
             tinybrains_remote_rollout_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_remote_rollout_profiles||[])],
             tinybrains_remote_rollout_count:this.supervisor.adapters?.tinybrains?.tinybrains_remote_rollout_count||0,
-            tinybrains_remote_cpu_learner:this.supervisor instanceof DockerSupervisor&&
+            tinybrains_remote_cpu_learner:dockerCapable(this.supervisor)&&
                 this.supervisor.adapters?.tinybrains?.tinybrains_remote_cpu_learner===true,
             tinybrains_rollout_subset:this.supervisor.adapters?.tinybrains?.tinybrains_rollout_subset===true,
             tinybrains_remote_rollout_endpoints:[...(this.supervisor.adapters?.tinybrains?.tinybrains_remote_rollout_endpoints||[])],
