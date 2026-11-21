@@ -69,7 +69,7 @@ impl ReinforcementPattern {
 }
 
 #[derive(Clone, Copy)]
-enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Chargers }
+enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Chargers, Gate, Detonators }
 
 #[derive(Clone, Copy)]
 enum AiTactics { Aggressive, Circle, RightSwipe, LeftSwipe, InAndOut, Mixed }
@@ -172,6 +172,8 @@ impl FleetMix {
             Self::Specialists => "specialists",
             Self::Miners => "miners",
             Self::Chargers => "chargers",
+            Self::Gate => "warp-gate",
+            Self::Detonators => "yellow-jackets",
         }
     }
 
@@ -181,7 +183,8 @@ impl FleetMix {
             Self::Balanced => total.div_ceil(4).min(8),
             Self::SupportHeavy => (total / 2).min(12),
             Self::Specialists => if total >= 4 { total.div_ceil(4).min(8) } else { 0 },
-            Self::Miners | Self::Chargers => 0,
+            Self::Gate => usize::from(total >= 2),
+            Self::Miners | Self::Chargers | Self::Detonators => 0,
         }).min(total.saturating_sub(1 + self.specialist_count(total)))
     }
 
@@ -189,7 +192,7 @@ impl FleetMix {
         if total < 2 { return 0; }
         match self {
             Self::Miners => total.div_ceil(4).min(8),
-            Self::Specialists | Self::Chargers => 1,
+            Self::Specialists | Self::Chargers | Self::Detonators => 1,
             _ => 0,
         }
     }
@@ -458,15 +461,25 @@ fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool)
                 FleetMix::Specialists.support_count(total),
             )),
         ];
-        if side == 0 && mining_field {
-            let miners = FleetMix::Miners.specialist_count(total);
-            options.push((FleetMix::Miners, format!(
-                "{} fighters, {} Carpenter Bees  |  Source mineral mining",
-                total - miners, miners,
+        if side == 0 {
+            if mining_field {
+                let miners = FleetMix::Miners.specialist_count(total);
+                options.push((FleetMix::Miners, format!(
+                    "{} fighters, {} Carpenter Bees  |  Source mineral mining",
+                    total - miners, miners,
+                )));
+            }
+            options.push((FleetMix::Gate, format!(
+                "{} fighters, 1 WarpGate  |  Source FullRetreat evacuation",
+                total - 1,
             )));
-        } else if side == 1 {
+        } else {
             options.push((FleetMix::Chargers, format!(
                 "{} fighters, 1 Barge  |  Source charge specialist",
+                total - 1,
+            )));
+            options.push((FleetMix::Detonators, format!(
+                "{} fighters, 1 Yellow Jacket  |  Source physical detonation",
                 total - 1,
             )));
         }
@@ -609,9 +622,11 @@ fn mixed_fleet_offsets(
     let specialist = mix.specialist_count(total);
     let fighters = total - support - specialist;
     let fighter_kind = if side == 0 { 21 } else { 13 };
-    let support_kind = if side == 0 { 2 } else { 5 };
+    let support_kind = if matches!(mix, FleetMix::Gate) { 20 }
+        else if side == 0 { 2 } else { 5 };
     let specialist_kind = if matches!(mix, FleetMix::Miners) { 4 }
         else if matches!(mix, FleetMix::Chargers) { 0 }
+        else if matches!(mix, FleetMix::Detonators) { 22 }
         else if side == 0 { 18 } else { 10 };
     let fighter_size = catalog.sprite_size(fighter_kind)
         .ok_or_else(|| invalid("source fighter has no sprite extents"))?;
@@ -1043,7 +1058,8 @@ pub(super) fn archive(
     for side in 0..2_usize {
         if support_count[side] == 0 { continue; }
         let side_id = side as i64 + 1;
-        let archetype = if side == 0 { 2 } else { 5 };
+        let archetype = if matches!(selected.mix[side], FleetMix::Gate) { 20 }
+            else if side == 0 { 2 } else { 5 };
         let template = available.iter().find(|ship|
             ship["side"].as_i64() == Some(side_id) &&
             ship["ship_type"].as_u64() == Some(archetype)
@@ -1087,6 +1103,7 @@ pub(super) fn archive(
         let side_id = side as i64 + 1;
         let specialist_type = if matches!(selected.mix[side], FleetMix::Miners) { 4 }
             else if matches!(selected.mix[side], FleetMix::Chargers) { 0 }
+            else if matches!(selected.mix[side], FleetMix::Detonators) { 22 }
             else if side == 0 { 18 } else { 10 };
         let template = available.iter().find(|ship|
             ship["side"].as_i64() == Some(side_id) &&
@@ -1254,10 +1271,12 @@ pub(super) fn archive(
         for side in 0..2_usize {
             for index in 0..selected.fleet_sizes[side] {
                 let kind = if index >= fighter_count[side] + specialist_count[side] {
-                    if side == 0 { 2 } else { 5 }
+                    if matches!(selected.mix[side], FleetMix::Gate) { 20 }
+                    else if side == 0 { 2 } else { 5 }
                 } else if index >= fighter_count[side] {
                     if matches!(selected.mix[side], FleetMix::Miners) { 4 }
                     else if matches!(selected.mix[side], FleetMix::Chargers) { 0 }
+                    else if matches!(selected.mix[side], FleetMix::Detonators) { 22 }
                     else if side == 0 { 18 } else { 10 }
                 } else if side == 0 { 21 } else { 13 };
                 let extents = catalog.sprite_size(kind)
@@ -1304,8 +1323,10 @@ pub(super) fn archive(
     let level_name = scene["level_name"].as_str()
         .unwrap_or("Fleet Skirmish").to_owned();
     scene["level_name"] = json!(format!(
-        "{level_name}  |  Support: {} Beehives, {} Carriers  |  Specialist hulls: {} Bees, {} Humans",
-        support_count[0], support_count[1], specialist_count[0], specialist_count[1],
+        "{level_name}  |  Support: {} {}, {} Carriers  |  Specialist hulls: {} Bees, {} Humans",
+        support_count[0],
+        if matches!(selected.mix[0], FleetMix::Gate) { "WarpGates" } else { "Beehives" },
+        support_count[1], specialist_count[0], specialist_count[1],
     ));
     if selected.mining_field {
         let title = scene["level_name"].as_str().unwrap_or("Fleet Skirmish");
@@ -1631,7 +1652,9 @@ pub(super) fn archive(
                 // grants health; the scripted director advances to the
                 // ordinary source maneuver on its next fixed tick.
                 let mut orders = Vec::new();
-                if side == 0 && support_count[side] > 0 {
+                if side == 0 && support_count[side] > 0 &&
+                    !matches!(selected.mix[side], FleetMix::Gate)
+                {
                     orders.push(json!({"kind": "heal_available"}));
                 }
                 orders.push(json!({"kind": selected.ai_tactics.source_order(position)}));
