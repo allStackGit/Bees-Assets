@@ -4,6 +4,32 @@ use bees_gameplay::campaign_dialogue::{CampaignCue, UploadMilestone};
 
 pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)] {
     match cue {
+        // Original Neptune_OfProduction sections (source dialogue IDs 2-17).
+        CampaignCue::NeptuneProductionBriefing => &[
+            ("Oviya", "The mining asteroids can be found at these locations."),
+            ("Wesley", "Our Factory ships should be quite capable of increasing your prof- erm, resources in order to further bolster your fleet. Simply direct them to a mining location."),
+            ("Samuel", "Collect these ores as long as you can, commander, but don’t risk too many lives."),
+            ("Samuel", "If a Factory goes down, it’ll lose all the resources it collected. It won’t be worth it in the end."),
+            ("Wesley", "Be careful with those Factories! They’re not built for combat or maneuverability."),
+            ("Oviya", "In that case, you’ll have to plan your retreat carefully."),
+        ],
+        CampaignCue::NeptuneProductionWave { line, .. } => match line {
+            8 => &[("Oviya", "It looks like there are bee scouting parties approaching. They’ll soon find out their fleet here was destroyed.")],
+            9 => &[("Oviya", "More bees are en route. The longer we stay here, the more dangerous it becomes, commander.")],
+            10 => &[("Yoshiko", "Incoming ships! Get ready for a fight!")],
+            11 => &[("Marco", "More bees. Hope you know what you’re doing, commander.")],
+            12 => &[("Joey", "Gracious, how many more bees are there?")],
+            13 => &[("Oviya", "Scouts are reporting even more bees than before. Brace yourselves.")],
+            14 => &[("Samuel", "Commander, get ready for another fight. We have bees incoming.")],
+            _ => &[],
+        },
+        CampaignCue::NeptuneProductionEnding { last_ship_retreated: true, .. } |
+        CampaignCue::NeptuneProductionEnding { player_victory: true, .. } => &[
+            ("Samuel", "That's everyone commander, we made it out."),
+        ],
+        CampaignCue::NeptuneProductionEnding { .. } => &[
+            ("Samuel", "We've lost the last ships we sent out, commander. It’s time to regroup."),
+        ],
         // Exact original PlutoLines_Pushback sections: intro 1..13,
         // victory 13..22, defeat 22..31. Source one-second pauses
         // remain empty, non-speaking dialogue lines.
