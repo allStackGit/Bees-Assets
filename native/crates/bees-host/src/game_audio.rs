@@ -444,6 +444,10 @@ impl NativeGameAudio {
             self.seen_projectiles.clear();
         }
         if self.last_tick == Some(view.tick) { return; }
+        // A client attaching to an already-running Level must not sound
+        // every currently airborne projectile as a newly fired weapon.
+        // Still record those identities so later frames remain launch-only.
+        let first_snapshot = self.last_tick.is_none();
         if let Some(previous) = self.last_tick {
             self.measurements.missed_visualized_ticks +=
                 view.tick.saturating_sub(previous).saturating_sub(1);
@@ -456,7 +460,7 @@ impl NativeGameAudio {
             if self.seen_projectiles.insert(projectile.entity_id, view.tick).is_some() {
                 continue;
             }
-            if !on_screen(visible, body.motion.position) { continue; }
+            if first_snapshot || !on_screen(visible, body.motion.position) { continue; }
             if let Some(effect) = Effect::projectile(projectile.projectile_type) {
                 if budget > 0 {
                     budget -= 1;
