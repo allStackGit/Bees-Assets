@@ -54,7 +54,7 @@ enum WireInput {
         episode_revision: u64, squads: Vec<SquadLifetime> },
     /// UI acknowledgment only, without an alternative gameplay clock.
     BriefingReady { request_id: u64, world_id: u64,
-        episode_revision: u64, sequence: u8 },
+        episode_revision: u64, sequence: u32 },
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -417,7 +417,7 @@ pub struct NativeRemotePlay {
     held_fire: HashMap<u64, HeldFireLease>,
     pending_releases: Vec<RemoteOrder>,
     /// Per-connection source briefing acknowledgment, never gameplay.
-    briefing_ready: HashMap<u64,(u64,u64,u8)>,
+    briefing_ready: HashMap<u64,(u64,u64,u32)>,
     measurements: RemotePlayMeasurements,
 }
 
@@ -663,7 +663,7 @@ impl NativeRemotePlay {
     /// episode cannot retain a peer's old gesture lease. Disconnect releases
     /// are returned as canonical inputs before newly received player orders.
     pub fn poll(&mut self, world_id: WorldId, revision: u64,
-                live_controllers: &[u64], briefing: Option<(i32,u8)>) -> Vec<RemoteOrder> {
+                live_controllers: &[u64], briefing: Option<(i32,u32)>) -> Vec<RemoteOrder> {
         let poll_started = Instant::now();
         let mut retired_no_live = Vec::new();
         self.held_fire.retain(|&peer, lease| {
@@ -1015,7 +1015,7 @@ impl NativeRemotePlay {
     /// original physical World from its source briefing. A disconnected
     /// viewer cannot hold up the mission after their socket is reaped.
     pub fn briefing_waiting(&mut self, world_id: WorldId, revision: u64,
-        owner_side: i32, sequence: u8) -> bool
+        owner_side: i32, sequence: u32) -> bool
     {
         let required=(world_id.0,revision,sequence);
         let mut viewers=0usize;
