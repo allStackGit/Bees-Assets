@@ -96,7 +96,9 @@ impl ReinforcementWakeup {
         self.next_tick.is_some_and(|at| tick >= at) ||
             (self.campaign_event && events.campaign_cue_fired(tick, |_| true)) ||
             (self.ship_death_event && world.events().iter().any(|event|
-                matches!(event, bees_sim::combat_world::CombatEvent::ShipDied { .. })
+                matches!(event, bees_sim::combat_world::CombatEvent::ShipDied {
+                    end_kill: false, ..
+                })
             ))
     }
 }
