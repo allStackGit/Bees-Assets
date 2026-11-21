@@ -29,7 +29,7 @@ from native_training_artifacts import (
     file_sha256, check_learner, sync_directory, normalized_python_source_sha256,
     native_source_contract_sha256,
     verified_source_scene_cache, combined_source_scene_cache,
-    native_manifest_model_dependencies, check_native_model_dependencies,
+    native_manifest_model_dependencies,
 )
 from native_distributed_collection import verify_bundle, aggregate_collection_metrics
 from transfer_policy_bundle import artifact_paths
