@@ -71,7 +71,7 @@ impl ReinforcementPattern {
 }
 
 #[derive(Clone, Copy)]
-enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Chargers, Gate, Detonators, Queen }
+enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Chargers, FireBarges, Gate, Detonators, Queen }
 
 #[derive(Clone, Copy)]
 enum AiTactics { Aggressive, Circle, RightSwipe, LeftSwipe, InAndOut, Mixed }
@@ -174,6 +174,7 @@ impl FleetMix {
             Self::Specialists => "specialists",
             Self::Miners => "miners",
             Self::Chargers => "chargers",
+            Self::FireBarges => "fire-barges",
             Self::Gate => "warp-gate",
             Self::Detonators => "yellow-jackets",
             Self::Queen => "queen",
@@ -209,15 +210,16 @@ impl FleetMix {
             Self::SupportHeavy => (total / 2).min(12),
             Self::Specialists => if total >= 4 { total.div_ceil(4).min(8) } else { 0 },
             Self::Gate | Self::Queen => usize::from(total >= 2),
-            Self::Miners | Self::Chargers | Self::Detonators => 0,
+            Self::Miners | Self::Chargers | Self::FireBarges | Self::Detonators => 0,
         }).min(total.saturating_sub(1 + self.specialist_count(total)))
     }
 
     fn specialist_count(self, total: usize) -> usize {
         if total < 2 { return 0; }
         match self {
-            Self::Miners => total.div_ceil(4).min(8),
-            Self::Specialists | Self::Chargers | Self::Detonators => 1,
+            Self::Miners | Self::Chargers | Self::FireBarges | Self::Detonators =>
+                total.div_ceil(4).min(8),
+            Self::Specialists => 1,
             _ => 0,
         }
     }
@@ -611,13 +613,20 @@ fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool, arena_size: Option<u3
                 total - 1,
             )));
         } else {
+            let charges = FleetMix::Chargers.specialist_count(total);
             options.push((FleetMix::Chargers, format!(
-                "{} fighters, 1 Barge  |  Source charge specialist",
-                total - 1,
+                "{} fighters, {} Barges  |  Independent physical Charge weapons",
+                total - charges, charges,
             )));
+            let barges = FleetMix::FireBarges.specialist_count(total);
+            options.push((FleetMix::FireBarges, format!(
+                "{} fighters, {} Fire Barges  |  Source area-damage weapon crews",
+                total - barges, barges,
+            )));
+            let detonators = FleetMix::Detonators.specialist_count(total);
             options.push((FleetMix::Detonators, format!(
-                "{} fighters, 1 Yellow Jacket  |  Source physical detonation",
-                total - 1,
+                "{} fighters, {} Yellow Jackets  |  Source physical detonations",
+                total - detonators, detonators,
             )));
             if arena_size.is_some_and(|size| size >= 1024) {
                 options.push((FleetMix::Queen, format!(
