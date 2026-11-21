@@ -636,6 +636,12 @@ function gpuProbeWorkerReady(job,lease,machine) {
 function gpuProbeBlock(job,lease,machine) {
     const count=job?.resources?.gpu_count;
     const dual=dualGpuApproved(job,machine);
+    const multiTiny=job?.project_id==='tinybrains'&&count>=3&&count<=8&&
+        job.frozen_parameters?.device==='multi'&&
+        machine?.tinybrains_multi_gpu_profiles?.includes(job.frozen_parameters.profile)&&
+        job.resources.gpu_mode==='exclusive';
+    const multi=job?.project_id==='courier'&&count>=2&&count<=8&&
+        job.resources.gpu_mode==='exclusive';
     if(!gpuProbeWorkerReady(job,lease,machine)||!lease.receipt_fresh||
         !machine.installed_projects?.includes(job.project_id)||
         !machine.gpu_projects?.includes(job.project_id)||
@@ -2298,7 +2304,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         const exclusiveGpu=r.gpu_count===1&&r.gpu_mode==='exclusive';
         const nativeGpu=r.gpu_count===1&&['exclusive','shared'].includes(r.gpu_mode);
         const dualGpu=r.gpu_count===2&&r.gpu_mode==='exclusive'&&
-            ['tinybrains','bees_native','bees_native_collect']
+            ['tinybrains','bees_native','bees_native_collect','bees_native_optimizer_worker']
                 .includes(selected.project_id);
         const courierMulti=r.gpu_count>=2&&r.gpu_count<=8&&
             r.gpu_mode==='exclusive'&&selected.project_id==='courier';
@@ -2323,11 +2329,12 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
                             tinyMulti&&machine.tinybrains_multi_gpu_profiles
                                 ?.includes(selected.frozen_parameters.profile))&&
                         (r.gpu_mode!=='shared'||machine.gpu_shared_projects?.includes(selected.project_id))
-                    :(r.gpu_count===2
+                    :(r.gpu_count===2&&!courierMulti
                         ?dualGpu&&dualGpuApproved(selected,machine)
-                        :r.gpu_mode==='exclusive'||r.gpu_mode==='shared'&&
+                        :courierMulti||tinyMulti||
+                            r.gpu_mode==='exclusive'||r.gpu_mode==='shared'&&
                             machine.gpu_shared_projects?.includes(selected.project_id))&&
-                        machine.observed_gpus?.length>=2))
+                        linuxGpuQualificationSupported(machine,r.gpu_count)))
         ).map(machine=>machine.id));
         const runnable=fits.filter(p=>ready.has(p.machine_id));
         if(runnable.length)return runnable;
@@ -4242,6 +4249,8 @@ class ExperimentHub {
     }
 
     authorizeStart(value,origin='operator') {
+        if(this.softwareMaintenance)
+            throw Error('Software release maintenance is in progress; no new native Start is authorized.');
         if(!['operator','automation','distributed','native_round_release','native_round_collection'].includes(origin))
             throw Error('Unknown native Start authorization source.');
         if(!object(value)||value.confirm_start!==true||
