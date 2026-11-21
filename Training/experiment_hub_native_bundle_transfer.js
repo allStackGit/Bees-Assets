@@ -201,22 +201,34 @@ function nativeModelPackage(hub,source) {
     // coordinator mirror before authorizing cross-machine model transfer;
     // a model/checkpoint digest alone cannot prove which optimizer attempt
     // and synchronized GPU group produced the published generation.
+    // Every new local or distributed native round has a final metrics
+    // digest. Only imported/distributed optimizer attempts have a separate
+    // optimizer-attempt.json. Never require that file for an ordinary
+    // single-machine training round.
+    if(receipt.optimizer_metrics_sha256!==undefined) {
+        if(!SHA.test(String(receipt.optimizer_metrics_sha256||'')))
+            fail('Native model source has an invalid learner metrics digest.');
+        const metricsFile=mirroredByMetadata(root,jobId,'learner/metrics.json');
+        if(metricsFile.sha!==receipt.optimizer_metrics_sha256||
+            metricsFile.size>2*1024*1024)
+            fail('Mirrored native learner metrics differ from committed round.');
+        let metrics;
+        try{metrics=JSON.parse(fs.readFileSync(metricsFile.file,'utf8'));}
+        catch{fail('Native learner final metrics contain invalid JSON.');}
+        if(!isDeepStrictEqual(metrics,receipt.learner_metrics))
+            fail('Native learner metrics no longer authorize the published model.');
+    }
     if(receipt.optimizer_attempt_sha256!==undefined) {
         if(!SHA.test(String(receipt.optimizer_attempt_sha256||''))||
-            !SHA.test(String(receipt.optimizer_metrics_sha256||'')))
-            fail('Native model source lacks complete optimizer finalizer digests.');
+            receipt.optimizer_metrics_sha256===undefined)
+            fail('Native optimizer attempt lacks complete finalizer digests.');
         const attemptFile=mirroredByMetadata(root,jobId,'optimizer-attempt.json');
-        const metricsFile=mirroredByMetadata(root,jobId,'learner/metrics.json');
         if(attemptFile.sha!==receipt.optimizer_attempt_sha256||
-            attemptFile.size>64*1024||
-            metricsFile.sha!==receipt.optimizer_metrics_sha256||
-            metricsFile.size>2*1024*1024)
-            fail('Mirrored native optimizer finalizers differ from the committed round.');
-        let attempt,metrics;
-        try {
-            attempt=JSON.parse(fs.readFileSync(attemptFile.file,'utf8'));
-            metrics=JSON.parse(fs.readFileSync(metricsFile.file,'utf8'));
-        }catch{fail('Native optimizer finalizer contains invalid JSON.');}
+            attemptFile.size>64*1024)
+            fail('Mirrored optimizer attempt differs from the committed round.');
+        let attempt;
+        try{attempt=JSON.parse(fs.readFileSync(attemptFile.file,'utf8'));}
+        catch{fail('Native optimizer attempt contains invalid JSON.');}
         if(attempt?.schema_version!==1||
             attempt.kind!=='native_optimizer_attempt'||
             attempt.run_id!==receipt.run_id||
@@ -230,11 +242,8 @@ function nativeModelPackage(hub,source) {
                 attempt.learner_group_id!==source.resource_bundle?.id||
                 attempt.learner_node_rank!==0||
                 attempt.learner_nodes!==source.resource_bundle?.size
-            )||
-            !isDeepStrictEqual(metrics,receipt.learner_metrics))
-            fail('Original optimizer attempt and metrics do not authorize this transferred model.');
-    }else if(receipt.optimizer_metrics_sha256!==undefined) {
-        fail('Native model source has metrics without its original optimizer attempt.');
+            ))
+            fail('Original optimizer attempt does not authorize this transferred model.');
     }
     const manifest=mirroredFile(root,jobId,'learner/manifest.json',
         receipt.next_manifest_sha256);
