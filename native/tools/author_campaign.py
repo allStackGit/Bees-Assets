@@ -818,12 +818,16 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                         if not members or len(members) != len(set(members)):
                             return None
                         ships = [source_ships.get(member) for member in members]
-                        if (any(ship is None or
-                                ship.get("side") != scene.get("bee_side")
-                                for ship in ships) or
-                                len({ship["ship_type"] for ship in ships}) != 1):
+                        if any(ship is None or
+                               ship.get("side") != scene.get("bee_side")
+                               for ship in ships):
                             return None
-                        fleet.append((ships[0]["ship_type"], len(ships)))
+                        types = {ship["ship_type"] for ship in ships}
+                        # The optional veteran squads can contain mixed
+                        # historical fleets; the source's newly generated
+                        # compositions are uniformly typed.
+                        fleet.append((next(iter(types)) if len(types) == 1
+                                      else None, len(ships)))
                     return fleet
 
                 for wave in waves:
