@@ -385,6 +385,18 @@ impl CombatWorld {
             .as_ref().map(|mount| mount.spec.projectile_type)
     }
 
+    /// A DualCannon emits two real projectile events but invokes the
+    /// source weapon's sound once per volley. The read-only identity
+    /// lets local/LAN presentation coalesce those sibling sound cues.
+    pub fn weapon_is_dual_cannon(&self, ship_id: i64, slot: u8) -> bool {
+        self.ship_weapons.get(&ship_id)
+            .and_then(|weapons| weapons.turrets.get(usize::from(slot)))
+            .and_then(|mount| mount.as_ref())
+            .is_some_and(|mount| matches!(
+                mount.spec.fire_pattern, NativeFirePattern::DualCannon { .. }
+            ))
+    }
+
     /// Read-only geometry for both presentation and future automatic targeting.
     /// Legacy scenes may fire manually but must not invent a range collider.
     pub fn weapon_range(&self, ship_id: i64, slot: usize)
