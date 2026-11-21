@@ -88,6 +88,13 @@ function fieldsFor(config,project) {
         }
     };
     visit(base,[]);
+    // Older frozen colony-PPO specifications may omit this optional field.
+    // The actual persistent optimizer defaults to 16 in that case.
+    if(project==='tinybrains'&&base.training?.algorithm==='colony_ppo'&&
+        base.training.colony_batch_size===undefined)
+        fields.push({key:'training.colony_batch_size',section:'training',
+            label:'Colony PPO minibatch size',type:'integer',
+            default:16,min:1,max:65536});
     if(fields.length>128)throw Error('Installed configuration has too many editable fields.');
     return fields;
 }
@@ -117,7 +124,9 @@ function applyOverrides(config,project,overrides) {
                 throw Error('Design parameter path changed: '+key);
             target=target[part];
         }
-        if(!Object.hasOwn(target,segments.at(-1)))
+        if(!Object.hasOwn(target,segments.at(-1))&&
+            !(project==='tinybrains'&&key==='training.colony_batch_size'&&
+                target.algorithm==='colony_ppo'))
             throw Error('Design parameter missing: '+key);
         target[segments.at(-1)]=value;
     }
