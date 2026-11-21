@@ -6042,6 +6042,24 @@ fn run_battle(
                 });
             }
         }
+        if let Some(CampaignDialogueSpec::UranusDefensive { player_side, .. }) =
+            level.campaign_dialogue
+        {
+            // Source Uranus2Ending always calls CollectMinedMineralsForPlayer
+            // and records fleet stats, even when the final surviving hull
+            // withdraws as a completed defeat. A campaign that only banks
+            // on victory would silently erase the mission's primary reward.
+            if source.activate_mining != Some(true) ||
+                mission.is_some_and(|owner|
+                    owner.player_side != player_side ||
+                    !owner.record_fleet_stats || !owner.bank_player_minerals ||
+                    !owner.bank_on_finished)
+            {
+                return Err(invalid(
+                    "Uranus II requires mining and finish-banked persistent FleetShip stats",
+                ).into());
+            }
+        }
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
         }
