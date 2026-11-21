@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use bees_host::presentation::{select_library, BattleMenuRow};
 use bees_host::unity_scene_snapshot::{
-    NativeLevelLayout, NativePlacedStaticBox, NativeSquadClone,
+    NativeLevelLayout, NativePlacedStaticBox, NativeSquadClone, NativeSquadMerge,
 };
 use bees_sim::ship_assets::ShipAssetCatalog;
 use serde_json::{json, Value};
@@ -239,6 +239,7 @@ pub(super) struct FleetChoice {
     /// None preserves the source's two human-controlled factions.
     player_side: Option<i32>,
     fleet_sizes: [usize; 2],
+    squad_sizes: [usize; 2],
     mix: [FleetMix; 2],
     terrain: Terrain,
     fog_of_war: bool,
@@ -279,6 +280,7 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(mining_field) = choose_mining_field(terrain)? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, mining_field, arena_size)? else { return Ok(None); };
+    let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     // A single local window cannot present two opposing, independently
     // fog-filtered viewpoints. LAN commanders have separate viewers and
     // may enable authentic fog independently.
@@ -312,7 +314,7 @@ pub(super) fn choose() -> Result<Option<FleetChoice>, Box<dyn Error>> {
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side, fleet_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
+        player_side, fleet_sizes, squad_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
         ai_both: false, ai_tactics, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
@@ -326,6 +328,7 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
     let Some(mining_field) = choose_mining_field(terrain)? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, mining_field, arena_size)? else { return Ok(None); };
+    let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
     let Some(objective) = choose_objective()? else { return Ok(None); };
     let objective_side = match objective {
@@ -344,7 +347,7 @@ pub(super) fn choose_multiplayer() -> Result<Option<FleetChoice>, Box<dyn Error>
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
+        player_side: None, fleet_sizes, squad_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
         ai_both: false,
         ai_tactics: AiTactics::Aggressive,
         objective, reinforcements, objective_side,
@@ -360,6 +363,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(mining_field) = choose_mining_field(terrain)? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, mining_field, arena_size)? else { return Ok(None); };
+    let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
     let Some(ai_tactics) = choose_ai_tactics()? else { return Ok(None); };
     let Some(objective) = choose_objective()? else { return Ok(None); };
@@ -387,7 +391,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(threads) = choose_resource("CPU physics workers", &workers)?
         else { return Ok(None); };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
+        player_side: None, fleet_sizes, squad_sizes, mix, terrain, fog_of_war, mining_field, arena_size, lethal_borders,
         ai_both: true,
         ai_tactics, objective, objective_side,
         reinforcements, benchmark_worlds: worlds, benchmark_workers: threads,
@@ -522,6 +526,36 @@ fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool, arena_size: Option<u3
         choices[side] = options[index].0;
     }
     Ok(Some(choices))
+}
+
+/// One physical squad may contain several original ships. This reduces
+/// command scheduling overhead in large games while preserving each ship's
+/// weapon, position, fleet identity, and policy/gameplay simulation.
+fn choose_squad_sizes(
+    fleet_sizes: [usize; 2], mix: [FleetMix; 2],
+) -> Result<Option<[usize; 2]>, Box<dyn Error>> {
+    let mut selected_sizes = [1_usize; 2];
+    for side in 0..2_usize {
+        let fighters = fleet_sizes[side] -
+            mix[side].support_count(fleet_sizes[side]) -
+            mix[side].specialist_count(fleet_sizes[side]);
+        if fighters < 2 { continue; }
+        let options = [1_usize, 2, 4, 8].into_iter()
+            .filter(|&size| size <= fighters).collect::<Vec<_>>();
+        let labels = options.iter().map(|size| {
+            format!("{} fighter{} per squad  |  {} independent command groups",
+                size, if *size == 1 { "" } else { "s" }, fighters.div_ceil(*size))
+        }).collect::<Vec<_>>();
+        let rows = labels.iter().map(|title| BattleMenuRow {
+            title, status: "  [Shared game and training squads]", unlocked: true,
+        }).collect::<Vec<_>>();
+        let mut selected = 0_usize;
+        let Some(index) = select_library(&rows, &mut selected, false)? else {
+            return Ok(None);
+        };
+        selected_sizes[side] = options[index];
+    }
+    Ok(Some(selected_sizes))
 }
 
 fn choose_objective() -> Result<Option<Objective>, Box<dyn Error>> {
