@@ -1070,7 +1070,7 @@ impl NativePhysicalScene {
             let template = self.source_squads.iter().find(|squad|
                 squad.saved_squad_id == Some(new.template_saved_squad_id) &&
                 squad.side == side && squad.player_permissions.user_controlled &&
-                squad.hivemind.is_none()
+                !squad.hivemind.as_ref().is_some_and(|source| source.hivemind_controlled)
             ).ok_or(invalid("new SavedSquad requires an authored player command template"))?;
             let mut squad = template.clone();
             next_item_id = next_item_id.checked_add(1)
@@ -1080,7 +1080,11 @@ impl NativePhysicalScene {
             squad.members.clear();
             squad.hotkey_number = None;
             squad.original_squad_count = None;
-            squad.hivemind = None;
+            // Source SavedSquad.ToSquad constructs ordinary player squads
+            // with isImobile=false; preserve explicit command authority.
+            if let Some(source) = &mut squad.hivemind {
+                source.immobile = false;
+            }
             squad.is_carrier_squad = Some(false);
             squad.matching_speed = None;
             squad.should_chase = false;
@@ -1535,7 +1539,13 @@ impl NativePhysicalScene {
                 squad.hotkey_number = None;
                 squad.original_squad_count = None;
                 squad.is_carrier_squad = Some(true);
-                squad.hivemind = None;
+                // LevelConstructor creates children for the same faction
+                // and command authority, with isImobile=false. An inactive
+                // archetype must not erase the imported Stage's authority.
+                squad.hivemind = self.source_squads[owner].hivemind.map(|mut source| {
+                    source.immobile = false;
+                    source
+                });
                 // Inactive templates carry no live input authority.
                 // Admit each free child with its persistent parent's
                 // actual campaign player permission.

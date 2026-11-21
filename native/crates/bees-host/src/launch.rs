@@ -3852,12 +3852,10 @@ fn authored_menu_fleet(
                             // physical destinations even before a battle
                             // contributes a career squad record.
                             destinations.insert(saved_id);
-                            if squad.hivemind.is_none() {
-                                templates.insert(saved_id);
-                            }
                             if !squad.hivemind.as_ref()
                                 .is_some_and(|hivemind| hivemind.hivemind_controlled)
                             {
+                                templates.insert(saved_id);
                                 tactics.insert(saved_id);
                             }
                             if !active || config != selected { continue; }
