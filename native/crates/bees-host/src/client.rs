@@ -495,20 +495,21 @@ impl NativeClient {
                 self.dialogue_sequence = Some(sequence);
                 self.dialogue_line = 0;
             }
-            let lines = crate::presentation::campaign_dialogue::lines(cue);
+            let count = crate::presentation::campaign_dialogue::line_count(cue);
             if self.window.is_key_pressed(Key::K, KeyRepeat::No) {
-                self.dialogue_line = lines.len();
-            } else if self.dialogue_line < lines.len() && self.window.is_key_pressed(Key::L, KeyRepeat::No) {
+                self.dialogue_line = count;
+            } else if self.dialogue_line < count && self.window.is_key_pressed(Key::L, KeyRepeat::No) {
                 self.dialogue_line += 1;
             }
             // Source DialogueManager plays the intercom once, on the
             // first visible line of each newly presented section. A
             // skipped section makes no sound, and advancing within the
             // same section never repeats the cue.
-            if first_presentation && self.dialogue_line < lines.len() {
+            if first_presentation && self.dialogue_line < count {
                 self.audio.campaign_dialogue_presented();
             }
-            lines.get(self.dialogue_line).map(|&(speaker, line)| (cue, speaker, line))
+            crate::presentation::campaign_dialogue::visible_line(cue,self.dialogue_line)
+                .map(|(speaker, line)| (cue, speaker, line))
         });
         self.dialogue_visible = dialogue.is_some();
         // Hiding the owner's story from the opposite hot-seat must not
