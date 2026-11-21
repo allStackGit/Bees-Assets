@@ -1585,7 +1585,10 @@ def main() -> None:
         rollout_gpus, gpu_mask, args.leased_gpu_inference,
         args.leased_gpu_count, resume=args.resume_rollout,
     )
-    check_native_model_dependencies(model_dependencies)
+    if native_manifest_model_dependencies(
+        manifest, os.environ.get("BEES_NATIVE_MODEL_STORE"),
+    ) != model_dependencies:
+        raise ValueError("native rollout model paths changed during collection")
     if args.collect_only:
         captures = []
         for shard, _ in shards:
