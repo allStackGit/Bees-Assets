@@ -678,6 +678,32 @@ def verified_gpu_forwards(log_path):
                     "final_counters": row.get("final") is True,
                     **({"gpu_pci_address": pci} if pci else {}),
                 }
+                staging = row.get("accelerator_input_staging_by_device")
+                if isinstance(staging, list) and staging:
+                    # Some ONNX providers manage their own input buffers.
+                    # Only report explicitly observed resident Torch staging,
+                    # never fabricate zero allocations for uninstrumented models.
+                    if all(
+                        isinstance(item, dict) and
+                        type(item.get("device_buffer_growths")) is int and
+                        0 <= item["device_buffer_growths"] <= calls and
+                        type(item.get("device_input_reused_forwards")) is int and
+                        0 <= item["device_input_reused_forwards"] <= calls and
+                        type(item.get("device_rows_staged")) is int and
+                        0 <= item["device_rows_staged"] <= processed and
+                        type(item.get("capacity_rows")) is int and
+                        1 <= item["capacity_rows"] <= 65536
+                        for item in staging
+                    ):
+                        growths = sum(item["device_buffer_growths"] for item in staging)
+                        reused = sum(item["device_input_reused_forwards"] for item in staging)
+                        staged = sum(item["device_rows_staged"] for item in staging)
+                        if growths + reused <= calls and staged <= processed:
+                            evidence["accelerator_input_staging"] = {
+                                "device_buffer_growths": growths,
+                                "device_input_reused_forwards": reused,
+                                "device_rows_staged": staged,
+                            }
     if evidence is None:
         raise ValueError(
             f"native GPU allocation produced no verified GPU model forwards: {log_path}"
