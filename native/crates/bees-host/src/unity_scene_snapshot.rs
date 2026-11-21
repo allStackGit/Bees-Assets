@@ -2682,6 +2682,11 @@ impl NativePhysicalScene {
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::TitaniaMinesweeper { .. }) if setup.survival.is_some() =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
+            Some(CampaignDialogueSpec::NeptunePressingForward { player_side, .. })
+                if ![bee_side, human_side].contains(&player_side) ||
+                    setup.survival.is_some() || setup.demolition.is_some() ||
+                    setup.escort.is_some() || setup.extraction.is_some() =>
+                return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             _ => {}
         }
         if let Some(objective) = setup.survival {
