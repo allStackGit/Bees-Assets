@@ -73,6 +73,33 @@ def artifact_paths(receipt):
     return files
 
 
+def verify_bundle_files(receipt_path):
+    """Verify a published collector's captures at the consumer boundary.
+
+    Work-order verification checks the receipt identity; this check pins the
+    actual on-disk observations before recovery or learner dispatch. Archive
+    import already hashes streamed files before atomic publication, so it
+    deliberately calls only verify_bundle until extraction is complete.
+    """
+    receipt_path = Path(receipt_path)
+    root = receipt_path.parent
+    if (root.is_symlink() or not root.is_dir() or
+            receipt_path.is_symlink() or not receipt_path.is_file()):
+        raise ValueError("native collector has no owned published receipt")
+    expected = artifact_paths(json.loads(receipt_path.read_text(encoding="utf-8")))
+    canonical = root.resolve(strict=True)
+    for name, digest in expected.items():
+        target = root
+        for part in PurePosixPath(name).parts:
+            target = target / part
+            if target.is_symlink():
+                raise ValueError(f"collector artifact uses a symlink: {name}")
+        if (not target.is_file() or
+                not target.resolve(strict=True).is_relative_to(canonical) or
+                file_sha256(target) != digest):
+            raise ValueError(f"collector artifact differs from its receipt: {name}")
+
+
 class DigestReader:
     """Hash the same bytes tarfile writes, with no second artifact read."""
     def __init__(self, stream):
@@ -333,6 +360,7 @@ def completed_uploaded_bundle(inbox, job, orders):
     # revalidate the published capture receipt against the currently issued
     # work order before acknowledging a retry after a receiver restart.
     verify_bundle(receipt, job, orders)
+    verify_bundle_files(receipt)
     return {
         "kind": "native_bundle_received",
         "collector_id": job["id"],

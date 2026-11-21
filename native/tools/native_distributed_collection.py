@@ -622,6 +622,7 @@ def wait_for_collections(inbox, orders, timeout_seconds, progress=None,
                          archive_inbox=None, check_unfinished=None):
     if not inbox.is_dir():
         raise ValueError(f"collector inbox must be an existing directory: {inbox}")
+    from transfer_policy_bundle import verify_bundle_files
     if archive_inbox is not None:
         if not archive_inbox.is_dir():
             raise ValueError(f"collector archive inbox must already exist: {archive_inbox}")
@@ -650,7 +651,9 @@ def wait_for_collections(inbox, orders, timeout_seconds, progress=None,
                             "collector_id": job["id"], **imported,
                         })
             if receipt.is_file():
-                results[job["id"]] = verify_bundle(receipt, job, orders)
+                verified = verify_bundle(receipt, job, orders)
+                verify_bundle_files(receipt)
+                results[job["id"]] = verified
                 if progress is not None:
                     progress("native_distributed_collector_received", {
                         "collector_id": job["id"], "receipt": str(receipt),

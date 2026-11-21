@@ -9,7 +9,7 @@ import argparse
 import json
 import os
 import re
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import tempfile
 import subprocess
 import sys
@@ -21,7 +21,7 @@ from native_training_artifacts import (
 from native_distributed_collection import verify_bundle
 from transfer_policy_bundle import (
     export_bundle_archive, verified_existing_bundle_archive,
-    artifact_paths, checked_order,
+    checked_order, verify_bundle_files,
 )
 from native_bundle_receiver import upload_bundle_archive
 
@@ -131,14 +131,7 @@ def reusable_collection(receipt_path, job, orders, leased_gpu_inference=False,
             return None
         if leased_gpu_inference and document.get("leased_gpu_count", 1) != leased_gpu_count:
             return None
-        captures = artifact_paths(document)
-        canonical = root.resolve(strict=True)
-        for name, digest in captures.items():
-            file = root.joinpath(*PurePosixPath(name).parts)
-            if (file.is_symlink() or not file.is_file() or
-                    not file.resolve(strict=True).is_relative_to(canonical) or
-                    file_sha256(file) != digest):
-                return None
+        verify_bundle_files(receipt_path)
         return receipt
     except (OSError, ValueError, KeyError, TypeError):
         return None
