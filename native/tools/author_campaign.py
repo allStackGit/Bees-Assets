@@ -926,11 +926,11 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         if grants:
             allowed = authored_squads | guaranteed_squads | awarded_this_mission
             classes = set(args.shop_types) | set(args.grant_only_types)
-            if any(kind not in classes or saved_id not in allowed
+            if any(kind not in classes or (saved_id != 0 and saved_id not in allowed)
                    for _, kind, _, saved_id in grants):
                 raise ValueError(
                     f"mission {index} ship rewards require a source-priced fleet class and "
-                    "a SavedSquad guaranteed by its prerequisite victories"
+                    "a valid SavedSquad or unassigned career reserve"
                 )
             if sum(count for _, _, count, _ in grants) > 1024:
                 raise ValueError(f"mission {index} exceeds 1024 awarded ships")
@@ -1196,7 +1196,8 @@ def victory_grant(value: str) -> tuple[int, int, int, int]:
     """MISSION_INDEX:SHIP_TYPE:COUNT:SAVED_SQUAD_ID.
 
     All rewarded hulls are real native FleetShips with their original
-    source-priced prototype, placed into an existing persistent squad.
+    source-priced prototype. SavedSquad 0 keeps the hull in career reserve
+    until it is assigned to an authenticated player SavedSquad.
     """
     if not re.fullmatch(r"\d+:\d+:\d+:\d+", value):
         raise argparse.ArgumentTypeError(
@@ -1204,10 +1205,10 @@ def victory_grant(value: str) -> tuple[int, int, int, int]:
         )
     mission, kind, count, saved_id = map(int, value.split(":"))
     if (not 1 <= mission <= 40 or not 0 <= kind < 24 or
-            not 1 <= count <= 1024 or not 1 <= saved_id < 2**63):
+            not 1 <= count <= 1024 or not 0 <= saved_id < 2**63):
         raise argparse.ArgumentTypeError(
             "victory grant requires mission 1..40, ship type 0..23, "
-            "count 1..1024 and a positive SavedSquad ID"
+            "count 1..1024 and SavedSquad ID 0 (reserve) or positive"
         )
     return mission, kind, count, saved_id
 
