@@ -490,7 +490,9 @@ class WindowsSupervisor {
             const prior=this.state.records.find(r=>
                 r.job_id===job.optimizer_restart_of_job_id);
             if(!prior||prior.project_id!==job.project_id||
-                !['failed','stopped','finished'].includes(prior.state))
+                !['failed','stopped','finished'].includes(prior.state)||
+                (prior.continuation_of_job_id||null)!==
+                    (job.continuation_of_job_id||null))
                 throw Error('Previous synchronized Windows optimizer rank has no terminal local owner.');
             const observed=await this.observe(prior);
             if(observed.active!==false||observed.owner_verified!==true||
