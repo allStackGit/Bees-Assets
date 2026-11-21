@@ -805,13 +805,12 @@ impl NativeGameAudio {
                         *explosion_projectile_id,
                     ).map(|(_, body)| body.motion.position)),
                 ),
-                CombatEvent::BombDetonated { target_id, .. } => (
+                CombatEvent::BombDetonated {
+                    origin, target_id, ..
+                } => (
                     Effect::HugeExplosion,
-                    // The attached fuse detonates at the target's live
-                    // physical hull. Sound this at the actual battle
-                    // position rather than globally across the map.
-                    view.combat.ship_body(*target_id)
-                        .map(|body| body.motion.position),
+                    (*origin).or_else(|| view.combat.ship_body(*target_id)
+                        .map(|body| body.motion.position)),
                 ),
                 CombatEvent::ShipWarped { ship_id, .. } => (
                     Effect::Warp,
