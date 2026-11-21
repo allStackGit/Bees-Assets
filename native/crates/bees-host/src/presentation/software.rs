@@ -1899,8 +1899,12 @@ impl NativeSoftwareRenderer {
                 }
                 continue;
             }
-            let bees_sim::combat_world::CombatEvent::ShipDied { victim_id, .. } = event
-                else { continue };
+            // EndKill (WarpGate return or physical extraction) removes the
+            // ship without Source Ship.DropExplosionAnimation or ShipRemains.
+            // Only lethal combat deaths produce the five-second visual.
+            let bees_sim::combat_world::CombatEvent::ShipDied {
+                victim_id, end_kill: false, ..
+            } = event else { continue };
             let (Some(ship), Some(body)) = (
                 view.combat.ship(*victim_id), view.combat.ship_body(*victim_id),
             ) else { continue };
