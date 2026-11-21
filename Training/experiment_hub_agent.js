@@ -13,7 +13,9 @@ const {fromEnvironment}=require('./experiment_hub_execution');
 const {syncArtifacts}=require('./experiment_hub_artifact_agent');
 const {syncNativeBundles,syncNativeModels}=
     require('./experiment_hub_native_bundle_transfer');
-const {MAX_BODY_BYTES}=require('./experiment_hub_agent_listener');
+const {evaluatorHealth}=require('./experiment_hub_evaluator_health');
+const remoteEvaluator=require('./experiment_hub_remote_evaluator_control');
+const {MAX_BODY_BYTES,isTailnetIPv4}=require('./experiment_hub_agent_listener');
 const {request: resourceRequest}=require('./experiment_hub_resources');
 const {control:controlNativeEvaluatorService}=
     require('./experiment_hub_evaluator_control');
@@ -62,10 +64,11 @@ function hostCpuBusyPct(hostOs=os,nowMs=Date.now()) {
 function endpoint(input) {
     const url = new URL(input || 'http://127.0.0.1:7149');
     if (url.protocol !== 'http:' ||
-        !['127.0.0.1','localhost'].includes(url.hostname) ||
+        (!['127.0.0.1','localhost'].includes(url.hostname)&&
+            !isTailnetIPv4(url.hostname)) || url.port!=='7149' ||
         url.username || url.password || url.search || url.hash ||
         !['','/'].includes(url.pathname)) {
-        throw Error('Agent endpoint must be a local HTTP address; use a trusted SSH tunnel for remote machines.');
+        throw Error('Agent endpoint must use the local or Tailscale-only HTTP listener on port 7149.');
     }
     url.pathname='/api/hub/agent/heartbeat';
     return url;
@@ -192,7 +195,7 @@ function observedOffers(offers,observation) {
 function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
     executionReports=[],advertisement={},gpuQualificationReports=[],
     requestExecutionOrders=true,closeAgentSession=false,
-    evaluatorServiceReport=null) {
+    evaluatorActionReports=[],evaluatorServiceReport=null) {
     if(typeof requestExecutionOrders!=='boolean')
         return Promise.reject(Error('Native instruction request preference must be boolean.'));
     if(typeof closeAgentSession!=='boolean'||
@@ -207,6 +210,7 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
     if(!Array.isArray(executionReports)||executionReports.length>50||
         !Array.isArray(gpuQualificationReports)||
         gpuQualificationReports.length>4||
+        !Array.isArray(evaluatorActionReports)||evaluatorActionReports.length>1||
         !advertisement||typeof advertisement!=='object')
         return Promise.reject(Error('Invalid local execution report batch.'));
     const payload=JSON.stringify({
@@ -216,28 +220,49 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
         close_agent_session:closeAgentSession,
         execution_reports:executionReports,
         gpu_qualification_reports:gpuQualificationReports,
+        evaluator_action_reports:evaluatorActionReports,
         ...(evaluatorServiceReport?{
             evaluator_service_report:evaluatorServiceReport,
         }:{}),
         local_executor:advertisement.local_executor===true,
         installed_projects:advertisement.installed_projects||[],
         evaluation_suites:advertisement.evaluation_suites||{},
+        evaluator_services:advertisement.evaluator_services||[],
+        evaluator_service_issue:advertisement.evaluator_service_issue||null,
+        evaluator_service_checked_at:advertisement.evaluator_service_checked_at||null,
+        design_catalog:advertisement.design_catalog||{},
         native_bees_curriculum_sources:advertisement.native_bees_curriculum_sources||[],
         tinybrains_profiles:advertisement.tinybrains_profiles||{},
         tinybrains_cuda_profiles:advertisement.tinybrains_cuda_profiles||[],
         tinybrains_thread_overrides:advertisement.tinybrains_thread_overrides||[],
+        tinybrains_curriculum_stages:advertisement.tinybrains_curriculum_stages||[],
         tinybrains_cpu_fallback_profiles:advertisement.tinybrains_cpu_fallback_profiles||[],
         tinybrains_required_import_profiles:advertisement.tinybrains_required_import_profiles||[],
         tinybrains_remote_rollout_profiles:advertisement.tinybrains_remote_rollout_profiles||[],
         tinybrains_remote_rollout_count:advertisement.tinybrains_remote_rollout_count||0,
+        tinybrains_remote_cpu_learner:advertisement.tinybrains_remote_cpu_learner===true,
+        tinybrains_rollout_subset:advertisement.tinybrains_rollout_subset===true,
         tinybrains_remote_rollout_endpoints:advertisement.tinybrains_remote_rollout_endpoints||[],
         tinybrains_remote_key_fingerprint:advertisement.tinybrains_remote_key_fingerprint||null,
         tinybrains_rollout_endpoint:advertisement.tinybrains_rollout_endpoint||null,
+        tinybrains_rollout_slots:advertisement.tinybrains_rollout_slots||[],
         tinybrains_rollout_key_fingerprint:advertisement.tinybrains_rollout_key_fingerprint||null,
         tinybrains_rollout_thread_limit:advertisement.tinybrains_rollout_thread_limit||0,
+        courier_remote_lineage_endpoints:advertisement.courier_remote_lineage_endpoints||[],
+        courier_lineage_subset:advertisement.courier_lineage_subset===true,
+        courier_shared_policy_maps:advertisement.courier_shared_policy_maps||0,
+        courier_shared_policy_collector:advertisement.courier_shared_policy_collector===true,
+        courier_remote_key_fingerprint:advertisement.courier_remote_key_fingerprint||null,
+        courier_remote_max_shards:advertisement.courier_remote_max_shards||[],
+        courier_lineage_endpoint:advertisement.courier_lineage_endpoint||null,
+        courier_lineage_slots:advertisement.courier_lineage_slots||[],
+        courier_lineage_key_fingerprint:advertisement.courier_lineage_key_fingerprint||null,
+        courier_lineage_max_shards:advertisement.courier_lineage_max_shards||0,
         tinybrains_dual_gpu_profiles:advertisement.tinybrains_dual_gpu_profiles||[],
+        tinybrains_multi_gpu_profiles:advertisement.tinybrains_multi_gpu_profiles||[],
         tinybrains_imports:advertisement.tinybrains_imports||{},
         gpu_projects:advertisement.gpu_projects||[],
+        linux_single_gpu_qualification:advertisement.linux_single_gpu_qualification===true,
         gpu_shared_projects:advertisement.gpu_shared_projects||[],
         gpu_dual_native_projects:advertisement.gpu_dual_native_projects||[],
         native_preflight_passed:advertisement.native_preflight_passed===true,
@@ -253,9 +278,6 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
         const req=http.request(url,{
             method:'POST',timeout:10000,
             headers:{
-                // The manager remains loopback-bound and expects its own
-                // origin. This works with a local SSH forwarded port.
-                Host:'127.0.0.1:7149',
                 'Content-Type':'application/json',
                 'Content-Length':Buffer.byteLength(payload),
                 'X-Hub-Agent-Token':token,
@@ -315,8 +337,18 @@ async function main() {
         native_preflight_reason:nativePreflightReason,
         instance_id:crypto.randomUUID(),
     };
+    // Scheduler status is a cached observation, not native ownership.
+    // Refresh once per minute; keep the 15-second heartbeat inexpensive.
+    let evaluatorObservation=null;
+    const refreshEvaluatorObservation=()=>{
+        const tick=Date.now();
+        if(!evaluatorObservation||tick-evaluatorObservation.at>=60000)
+            evaluatorObservation={at:tick,value:evaluatorHealth(id)};
+        Object.assign(advertisement,evaluatorObservation.value);
+    };
     let active=false,executingNative=false,busyHeartbeat=null,
         last='initial',receipts=[],pendingReports=[],pendingGpuReports=[],
+        pendingEvaluatorReports=[],pendingRemoteRestart=null,
         pendingEvaluatorReport=null;
     const artifactCache=new Map();
     let artifactSync=null;
@@ -330,6 +362,8 @@ async function main() {
         artifactSync=work;
     };
     const once=process.argv.includes('--once');
+    const nativeOwned=()=>Boolean(executor?.supervisor.snapshot().some(entry=>
+        !['finished','failed','stopped'].includes(entry.state)));
     const poll=async(expedite=false)=>{
         if(active) {
             if(executingNative&&!busyHeartbeat) {
@@ -346,15 +380,31 @@ async function main() {
             }
             return;
         }
+        refreshEvaluatorObservation();
         active=true;
         try{
+            const restartAwaitingReceipt=pendingRemoteRestart;
+            const restartAwaitingReceipt=pendingRemoteRestart;
             const response=await sendHeartbeat(url,id,token,receipts,
                 pendingReports,advertisement,pendingGpuReports,
-                true,false,pendingEvaluatorReport);
+                !restartAwaitingReceipt,false,pendingEvaluatorReports,pendingEvaluatorReport);
             // The coordinator accepted these reports. Any subsequent agent
             // crash is reconciled using the native service journal.
             pendingReports=[];
             pendingGpuReports=[];
+            pendingEvaluatorReports=[];
+            if(restartAwaitingReceipt) {
+                pendingRemoteRestart=null;
+                try {
+                    await remoteEvaluator.restartAgentAfterAcknowledgement(nativeOwned());
+                }catch(error) {
+                    pendingEvaluatorReports=[{
+                        id:restartAwaitingReceipt.id,unit:'@agent',
+                        status:'failed',diagnostic:String(error.message||error).slice(0,200),
+                    }];
+                    if(expedite)setTimeout(()=>poll(true),0);
+                }
+            }
             pendingEvaluatorReport=null;
             // A corrupt advisory offer must not prevent this worker from
             // executing an independent native Stop or Inspect instruction.
@@ -415,6 +465,26 @@ async function main() {
                         setTimeout(collectArtifacts,0);
                 }
             }
+            const evaluatorOrders=response.evaluator_orders||[];
+            if(!Array.isArray(evaluatorOrders)||evaluatorOrders.length>1||
+                evaluatorOrders.length&&(response.execution_orders||[]).length)
+                throw Error('Invalid overlapping evaluator and native directive batch.');
+            if(evaluatorOrders.length) {
+                executingNative=true;
+                try {
+                    const order=evaluatorOrders[0];
+                    pendingEvaluatorReports=[await remoteEvaluator.execute(
+                        id,order,advertisement.installed_projects||[],
+                        nativeOwned()||once&&order.action==='restart-agent')];
+                    if(order.action==='restart-agent'&&
+                        pendingEvaluatorReports[0].status==='completed')
+                        pendingRemoteRestart={id:order.id};
+                }finally {
+                    executingNative=false;
+                    if(busyHeartbeat)await busyHeartbeat;
+                }
+                if(expedite)setTimeout(()=>poll(true),0);
+            }
             const command=response.evaluator_service_command;
             if(command!=null) {
                 if(!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(
@@ -464,6 +534,28 @@ async function main() {
     // heartbeat and never block native Stop/Inspect report delivery.
     const mirrorTimer=!once&&(syncLogs||syncNativeTraining)
         ?setInterval(collectArtifacts,60000):null;
+    if(!once) {
+        // systemd-driven software activation can restart only the agent,
+        // leaving separately OS-owned native jobs and checkpoint journals.
+        // Sign off before this process disappears so the replacement agent
+        // does not collide with a stale 45-second instance identity.
+        let stopping=false;
+        process.once('SIGTERM',async()=>{
+            if(stopping)return;
+            stopping=true;
+            clearInterval(timer);
+            if(mirrorTimer)clearInterval(mirrorTimer);
+            try {
+                if(busyHeartbeat)await busyHeartbeat;
+                await sendHeartbeat(url,id,token,[],[],advertisement,[],false,true);
+            }catch(error) {
+                console.error('[experiment-hub-agent] Update sign-off: '+
+                    String(error.message||error).slice(0,160));
+            }finally {
+                process.exit(0);
+            }
+        });
+    }
     await poll(!once);
     if(!once)collectArtifacts();
     if(once) {
@@ -476,7 +568,8 @@ async function main() {
                 // still tells the coordinator that this process will exit:
                 // it must not keep this instance connected for another TTL.
                 await sendHeartbeat(url,id,token,receipts,pendingReports,
-                    advertisement,pendingGpuReports,false,true,pendingEvaluatorReport);
+                    advertisement,pendingGpuReports,false,true,
+                    pendingEvaluatorReports,pendingEvaluatorReport);
             }catch(error) {
                 console.error('[experiment-hub-agent] Final sign-off failed: '+error.message);
                 process.exitCode=1;
