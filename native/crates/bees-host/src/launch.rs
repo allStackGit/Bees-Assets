@@ -4455,7 +4455,11 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     // A reconnect restores the same frozen fleet without asking the
     // human to recreate it or replacing the original archived scenario.
     let fleet = if custom_fleet && generated_recovery.is_none() {
-        fleet_builder::choose_multiplayer()?
+        let single_remote_side = if tokens.len() == 1 {
+            Some(tokens.keys().next()
+                .expect("validated nonempty side token map").parse::<i32>()?)
+        } else { None };
+        fleet_builder::choose_multiplayer(single_remote_side)?
     } else { None };
     if custom_fleet && generated_recovery.is_none() && fleet.is_none() {
         return Ok(());
