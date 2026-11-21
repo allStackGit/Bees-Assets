@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 pub enum NativeMissionCue {
     FireTankSpotted,
     FireTankDestroyed,
+    UranusBargeLost,
+    UranusBargeCharged,
     UploadTen,
     UploadTwentyFour,
     UploadFifty,
@@ -26,6 +28,8 @@ impl NativeMissionCue {
         matches!((self, cue),
             (Self::FireTankSpotted, CampaignCue::FireTankSpotted { .. }) |
             (Self::FireTankDestroyed, CampaignCue::FireTankDestroyed { .. }) |
+            (Self::UranusBargeLost, CampaignCue::UranusNewThreatBargeLost) |
+            (Self::UranusBargeCharged, CampaignCue::UranusNewThreatBargeCharged) |
             (Self::UploadTen, CampaignCue::BeenocularsUpload(UploadMilestone::Ten)) |
             (Self::UploadTwentyFour, CampaignCue::BeenocularsUpload(UploadMilestone::TwentyFour)) |
             (Self::UploadFifty, CampaignCue::BeenocularsUpload(UploadMilestone::Fifty)) |
@@ -41,6 +45,8 @@ impl NativeMissionCue {
             Some(CampaignDialogueSpec::TitaniaBeenoculars { .. }) =>
                 matches!(self, Self::UploadTen | Self::UploadTwentyFour |
                     Self::UploadFifty | Self::UploadSeventyFive | Self::UploadNinety),
+            Some(CampaignDialogueSpec::UranusNewThreat { .. }) =>
+                matches!(self, Self::UranusBargeLost | Self::UranusBargeCharged),
             Some(CampaignDialogueSpec::NeptunePressingForward { .. }) |
             Some(CampaignDialogueSpec::PlutoEvacuation { .. }) | None => false,
         }

@@ -24,6 +24,8 @@ pub enum CampaignDialogueSpec {
     /// not the presence of a surviving Factory in the deployed roster.
     NeptunePressingForward { player_side: i32, has_factory: bool },
     PlutoEvacuation { player_side: i32, protected_ship_id: i64 },
+    /// Source Uranus III protects exactly three real Barge hulls.
+    UranusNewThreat { player_side: i32, barges: [i64; 3], has_cruiser: bool },
 }
 
 impl CampaignDialogueSpec {
@@ -32,7 +34,8 @@ impl CampaignDialogueSpec {
             Self::TitaniaMinesweeper { player_side } |
             Self::TitaniaBeenoculars { player_side, .. } |
             Self::NeptunePressingForward { player_side, .. } |
-            Self::PlutoEvacuation { player_side, .. } => player_side,
+            Self::PlutoEvacuation { player_side, .. } |
+            Self::UranusNewThreat { player_side, .. } => player_side,
         }
     }
 }
@@ -76,12 +79,17 @@ pub enum CampaignCue {
     NeptunePressingForwardDefeat { has_factory: bool },
     PlutoEvacuationBriefing,
     PlutoEvacuationComplete { personnel_saved: u32, shield_health: i32, shield_max: i32 },
+    UranusNewThreatBriefing,
+    UranusNewThreatBargeLost,
+    UranusNewThreatBargeCharged,
+    UranusNewThreatEnding { barges_survived: bool, has_cruiser: bool },
 }
 
 impl CampaignCue {
     pub fn is_briefing(self) -> bool {
         matches!(self, Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. } |
-            Self::NeptunePressingForwardBriefing | Self::PlutoEvacuationBriefing)
+            Self::NeptunePressingForwardBriefing | Self::PlutoEvacuationBriefing |
+            Self::UranusNewThreatBriefing)
     }
 }
 
@@ -92,6 +100,10 @@ enum DialogueMode {
     Beenoculars { under_heavy_fire: bool, next_milestone: usize },
     NeptunePressingForward { has_factory: bool },
     PlutoEvacuation { protected_ship_id: i64 },
+    UranusNewThreat {
+        barges: [i64; 3], has_cruiser: bool,
+        loss_reported: bool, charge_observed: bool, charge_reported: bool,
+    },
 }
 
 /// Exact authored campaign progress at the shared fixed-step recovery
@@ -140,6 +152,13 @@ impl CampaignDialogue {
                 DialogueMode::PlutoEvacuation { protected_ship_id },
                 CampaignCue::PlutoEvacuationBriefing,
             ),
+            CampaignDialogueSpec::UranusNewThreat { barges, has_cruiser, .. } => (
+                DialogueMode::UranusNewThreat {
+                    barges, has_cruiser, loss_reported: false,
+                    charge_observed: false, charge_reported: false,
+                },
+                CampaignCue::UranusNewThreatBriefing,
+            ),
         };
         Self { player_side: spec.player_side(), mode, cue, sequence: 0 }
     }
@@ -180,6 +199,11 @@ impl CampaignDialogue {
             (DialogueMode::PlutoEvacuation { protected_ship_id: saved },
                 DialogueMode::PlutoEvacuation { protected_ship_id: authored }) =>
                 saved == authored,
+            (DialogueMode::UranusNewThreat {
+                barges: saved, has_cruiser: saved_cruiser, ..
+            }, DialogueMode::UranusNewThreat {
+                barges: authored, has_cruiser: authored_cruiser, ..
+            }) => saved == authored && saved_cruiser == authored_cruiser,
             _ => false,
         };
         if player_side != self.player_side || !same_authored_story {
@@ -227,6 +251,26 @@ impl CampaignDialogue {
                     personnel_saved, shield_health, shield_max,
                 }) => sequence == 1 && personnel_saved <= 60 &&
                     shield_max > 0 && (0..=shield_max).contains(&shield_health),
+            (DialogueMode::UranusNewThreat {
+                loss_reported: false, charge_observed: false,
+                charge_reported: false, ..
+            }, CampaignCue::UranusNewThreatBriefing) => sequence == 0,
+            (DialogueMode::UranusNewThreat {
+                loss_reported: true, charge_reported, ..
+            }, CampaignCue::UranusNewThreatBargeLost) =>
+                sequence == 1 + u8::from(*charge_reported),
+            (DialogueMode::UranusNewThreat {
+                loss_reported, charge_observed: true,
+                charge_reported: true, ..
+            }, CampaignCue::UranusNewThreatBargeCharged) =>
+                sequence == 1 + u8::from(*loss_reported),
+            (DialogueMode::UranusNewThreat {
+                loss_reported, charge_observed, charge_reported,
+                has_cruiser: authored, ..
+            }, CampaignCue::UranusNewThreatEnding { has_cruiser, .. }) =>
+                *authored == has_cruiser &&
+                (!*charge_reported || *charge_observed) &&
+                sequence == 1 + u8::from(*loss_reported) + u8::from(*charge_reported),
             _ => false,
         };
         if !valid {
@@ -257,6 +301,12 @@ impl CampaignDialogue {
                 CampaignCue::NeptunePressingForwardVictory,
             (DialogueMode::NeptunePressingForward { has_factory }, false) =>
                 CampaignCue::NeptunePressingForwardDefeat { has_factory: *has_factory },
+            (DialogueMode::UranusNewThreat { barges, has_cruiser, .. }, _) =>
+                CampaignCue::UranusNewThreatEnding {
+                    barges_survived: barges.iter().any(|id|
+                        world.ship(*id).is_some_and(|ship| !ship.vitals.is_dead())),
+                    has_cruiser: *has_cruiser,
+                },
             (DialogueMode::PlutoEvacuation { protected_ship_id }, _) => {
                 let status = survival.expect("Pluto evacuation requires survival");
                 // The protected hull may already have been retired from
@@ -290,6 +340,32 @@ impl CampaignDialogue {
     }
 
     pub(crate) fn observe_combat(&mut self, world: &CombatWorld) -> Option<CampaignCue> {
+        if let DialogueMode::UranusNewThreat {
+            barges, loss_reported, charge_observed, charge_reported, ..
+        } = &mut self.mode {
+            // Observe simultaneous true physical loss and first charge.
+            // Deliver one dialogue cue per fixed step without discarding
+            // the other when both happen in the same physics tick.
+            *charge_observed |= world.events().iter().any(|event|
+                matches!(event, bees_sim::combat_world::CombatEvent::BargeChargeStarted {
+                    ship_id
+                } if barges.contains(ship_id)));
+            let side_alive = |side| world.living_mobile_ships_on_side(side) > 0 ||
+                world.has_reserved_future_ships_on_side(side);
+            if !*loss_reported && barges.iter().any(|id|
+                world.ship(*id).is_some_and(|ship| ship.vitals.is_dead())) &&
+                side_alive(self.player_side) && side_alive(3 - self.player_side)
+            {
+                *loss_reported = true;
+                return Some(CampaignCue::UranusNewThreatBargeLost);
+            }
+            if *charge_observed && !*charge_reported &&
+                side_alive(self.player_side) && side_alive(3 - self.player_side) {
+                *charge_reported = true;
+                return Some(CampaignCue::UranusNewThreatBargeCharged);
+            }
+            return None;
+        }
         let DialogueMode::Minesweeper { tracked_tank } = &mut self.mode else { return None };
         if let Some(object_id) = *tracked_tank {
             // Titania I tests the saved MapObject's persistent IsDead state,

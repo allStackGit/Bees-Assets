@@ -2713,6 +2713,22 @@ impl NativePhysicalScene {
                     setup.survival.is_some() || setup.demolition.is_some() ||
                     setup.escort.is_some() || setup.extraction.is_some() =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
+            Some(CampaignDialogueSpec::UranusNewThreat {
+                player_side, barges, ..
+            }) if ![bee_side, human_side].contains(&player_side) ||
+                setup.survival.is_some() || setup.demolition.is_some() ||
+                setup.escort.is_some() || setup.extraction.is_some() ||
+                barges.iter().any(|id| *id <= 0) ||
+                barges[0] == barges[1] || barges[0] == barges[2] ||
+                barges[1] == barges[2] ||
+                !barges.iter().all(|id| self.entities.iter().any(|entity| matches!(
+                    entity, NativeAuthoredEntity::Ship(ship)
+                        if ship.entity_id == *id && ship.side == player_side &&
+                        ship.ship_type == 0 && !ship.vitals.is_dead()
+                ))) ||
+                !self.source_squads.iter().any(|squad| squad.side == player_side &&
+                    barges.iter().all(|id| squad.members.contains(id))) =>
+                return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::PlutoEvacuation {
                 player_side, protected_ship_id,
             }) if !setup.survival.is_some_and(|objective|
