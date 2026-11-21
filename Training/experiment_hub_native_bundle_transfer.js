@@ -245,6 +245,39 @@ function nativeModelPackage(hub,source) {
             ))
             fail('Original optimizer attempt does not authorize this transferred model.');
     }
+    // A continual learner's optimizer output is not the whole generation.
+    // The exact release decision must survive the authenticated mirror
+    // before remote collectors can consume the next checkpoint.
+    if(source.frozen_parameters?.continual_release===true||
+        receipt.continual_release_plan!==undefined) {
+        const plan=receipt.continual_release_plan;
+        const releaseFile=mirroredByMetadata(root,jobId,'continual-release.json');
+        if(releaseFile.size>64*1024)
+            fail('Invalid native continual release receipt size.');
+        let release;
+        try{release=JSON.parse(fs.readFileSync(releaseFile.file,'utf8'));}
+        catch{fail('Invalid native continual release receipt.');}
+        const step=plan?.initial_parent_training_step+
+            receipt.learner_metrics?.optimizer_input_steps;
+        if(source.frozen_parameters?.continual_release!==true||
+            !plan||release?.schema_version!==1||
+            release.kind!=='native_continual_generation_complete'||
+            release.round!==1||
+            release.checkpoint_sha256!==source.checkpoint_model_sha256||
+            release.parent_model_id!==plan.initial_parent_model_id||
+            !Number.isSafeInteger(step)||step<1||release.training_step!==step||
+            typeof release.passed!=='boolean')
+            fail('Mirrored native generation release disagrees with the committed checkpoint and training lineage.');
+        if(source.frozen_parameters?.optimizer_group===true) {
+            const proof=source.optimizer_completion?.continual_release;
+            const keys=['checkpoint_sha256','parent_model_id','model_id','training_step',
+                'evaluation_report_id','passed','deployment_id','deployed_model_id',
+                ...(release.release_attempt_wall_seconds!==undefined?
+                    ['release_attempt_wall_seconds']:[])];
+            if(!proof||keys.some(key=>release[key]!==proof[key]))
+                fail('Mirrored native generation release disagrees with the authenticated optimizer owner.');
+        }
+    }
     const manifest=mirroredFile(root,jobId,'learner/manifest.json',
         receipt.next_manifest_sha256);
     if(manifest.size>1024*1024)fail('Native model manifest exceeds its bounded size.');
