@@ -153,7 +153,7 @@ def input_mission(run_path: Path, player_side: int,
         # Uranus III is captured before its Carrier introduction has
         # enabled Stage.ActivateHiveMind. The native launcher explicitly
         # releases the same post-briefing gate, with source squad ownership.
-        prelude = (story == "uranus_new_threat" and
+        prelude = (story in ("uranus_new_threat", "uranus_on_the_offensive") and
                    scene.get("activate_hivemind") is False and
                    (scene.get("native_game_schema") == 1 or
                     scene.get("schema_version") == 35))
@@ -421,6 +421,20 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     mission_outcomes = {}
     for index, prior, result in args.mission_unlock_any:
         mission_outcomes.setdefault(index, []).append((prior, result))
+    # The original Uranus I defeat skips On the Defensive entirely and
+    # proceeds to A New Threat. Represent that as authenticated completed
+    # outcome gates, not a fabricated victory or a skipped battle receipt.
+    # Explicit author-specified routes still take precedence.
+    for index, story in mission_stories.items():
+        if (story == "uranus_on_the_offensive" and
+                mission_stories.get(index + 1) == "uranus_on_the_defensive" and
+                mission_stories.get(index + 2) == "uranus_new_threat" and
+                index + 2 not in mission_dependencies and
+                index + 2 not in mission_outcomes):
+            mission_dependencies[index + 2] = []
+            mission_outcomes[index + 2] = [
+                (index, "defeat"), (index + 1, "finished"),
+            ]
     shop_unlocks = dict(args.shop_unlock)
     variants = {
         "victory": {mission: (previous, run_path)
@@ -476,6 +490,37 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     "Neptune Of Production requires real mineable asteroids "
                     "and an authored native fleet extraction Level"
                 )
+        elif story == "uranus_on_the_offensive":
+            # The original Uranus I locates the one authored Bumblebee
+            # through true weapon contacts or real Scout sight, then
+            # reports its hits and later death from the shared CombatWorld.
+            # The crossed-out Cruiser/Fritz encounter is deliberately absent.
+            enemy = [ship for ship in scene["ships"] if isinstance(ship, dict)
+                     and ship.get("ship_type") == 3 and
+                     ship.get("side") == 3 - args.player_side]
+            if (scene.get("human_side") != args.player_side or
+                    scene.get("activate_hivemind") is not False or
+                    not isinstance(run.get("hivemind"), dict) or
+                    run["hivemind"].get("issue_source_commands") is not True or
+                    len(enemy) != 1 or
+                    type(enemy[0].get("entity_id")) is not int or
+                    enemy[0]["entity_id"] <= 0 or
+                    level.get("campaign_dialogue") is not None or
+                    any(level.get(name) is not None for name in
+                        ("survival", "demolition", "escort", "extraction", "groups"))):
+                raise ValueError(
+                    "Uranus On the Offensive requires source-owned Bumblebee, "
+                    "original pre-Carrier HiveMind gate and ordinary elimination"
+                )
+            level["campaign_dialogue"] = {
+                "uranus_offensive": {
+                    "player_side": args.player_side,
+                    "bumblebee_id": enemy[0]["entity_id"],
+                    # Native launch binds the actual persistent CurrentShips
+                    # Factory ownership after casualty and purchase recovery.
+                    "has_factory": False,
+                }
+            }
         elif story == "uranus_new_threat":
             # The original Level builds a new three-hull Barge SavedSquad
             # before combat. These are real persistent FleetShips, not
@@ -732,7 +777,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         # blockade invokes CollectMinedMineralsForPlayer.
         if mission_stories.get(index) in (
                 "pluto_bluer_pastures", "neptune_pressing_forward",
-                "uranus_new_threat"):
+                "uranus_on_the_offensive", "uranus_new_threat"):
             mission["bank_player_minerals"] = False
         if mission_stories.get(index) == "uranus_new_threat":
             # Source Uranus3Ending finishes the campaign on either outcome;
@@ -1170,12 +1215,12 @@ def mission_advance(value: str) -> tuple[int, str]:
 
 def mission_story(value: str) -> tuple[int, str]:
     match = re.fullmatch(
-        r"(\d+):(neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_defensive|uranus_new_threat)",
+        r"(\d+):(neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_offensive|uranus_on_the_defensive|uranus_new_threat)",
         value,
     )
     if match is None or not 1 <= int(match.group(1)) <= 40:
         raise argparse.ArgumentTypeError(
-            "--mission-story needs MISSION:neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures, uranus_on_the_defensive or uranus_new_threat"
+            "--mission-story needs MISSION:neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures, uranus_on_the_offensive, uranus_on_the_defensive or uranus_new_threat"
         )
     return int(match.group(1)), match.group(2)
 
