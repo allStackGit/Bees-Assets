@@ -250,6 +250,11 @@ struct NativeHiveMindFleet {
     controlled_side: i32,
 }
 
+fn has_hivemind_profile(save_root: &Path) -> bool {
+    std::env::var_os("BEES_NATIVE_HIVEMIND_FLEET_CONFIG").is_some() ||
+        save_root.join("hivemind-fleet.json").exists()
+}
+
 fn configured_hivemind_fleet(save_root: &Path)
     -> Result<Option<NativeHiveMindFleet>, Box<dyn Error>>
 {
@@ -334,14 +339,14 @@ fn invalid(message: &'static str) -> io::Error {
 }
 
 pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Error>> {
-    let network = configured_hivemind_fleet(save_root)?;
+    let has_network = has_hivemind_profile(save_root);
     let mut choices = vec![
         ("Bees commander vs Human AI", "  [Player side 1]"),
         ("Humans commander vs Bee AI", "  [Player side 2]"),
         ("Two local commanders", "  [Both factions]"),
         ("Watch AI vs AI battle", "  [Original physical game; spectator view]"),
     ];
-    if network.is_some() {
+    if has_network {
         choices.extend([
             ("Bees commander vs Human HiveMind", "  [Live network command AI]"),
             ("Humans commander vs Bee HiveMind", "  [Live network command AI]"),
@@ -382,7 +387,8 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
     let hivemind = match mode {
         4 | 5 => Some(NativeHiveMindFleet {
             controlled_side: if mode == 4 { 2 } else { 1 },
-            ..network.expect("HiveMind menu option requires pinned network source")
+            ..configured_hivemind_fleet(save_root)?
+                .ok_or_else(|| invalid("selected HiveMind profile vanished"))?
         }),
         _ => None,
     };
@@ -420,8 +426,8 @@ pub(super) fn choose_multiplayer(
     // The existing LAN host's token map is authoritative. A HiveMind
     // opponent is selectable only when exactly one real remote commander
     // can authenticate, so two users can never be assigned the same side.
-    let configured = configured_hivemind_fleet(save_root)?;
-    let use_hivemind = if configured.is_some() && authenticated_side.is_some() {
+    let use_hivemind = if has_hivemind_profile(save_root) &&
+        authenticated_side.is_some() {
         let rows = [
             BattleMenuRow { title: "Two remote commanders",
                 status: "  [Side 1 and side 2]", unlocked: true },
@@ -439,7 +445,8 @@ pub(super) fn choose_multiplayer(
         let side = authenticated_side.expect("one authorized remote commander");
         Some(NativeHiveMindFleet {
             controlled_side: 3 - side,
-            ..configured.expect("selected configured network controller")
+            ..configured_hivemind_fleet(save_root)?
+                .ok_or_else(|| invalid("selected HiveMind profile vanished"))?
         })
     } else { None };
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
