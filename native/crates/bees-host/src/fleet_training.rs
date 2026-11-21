@@ -135,10 +135,10 @@ fn approved_hub_plan() -> Result<Option<(PathBuf, String, u16, String)>, Box<dyn
         source["schedule_start"].as_bool() != Some(true) ||
         source["confirm_unattended_start"].as_bool() != Some(true) ||
         source["confirm_gpu_start"].as_bool().is_none() ||
-        !collectors.is_some_and(|items| (2..=16).contains(&items.len()))
+        !collectors.is_some_and(|items| (1..=16).contains(&items.len()))
     {
         return Err(invalid(
-            "native Hub plan requires 2-16 allocated machines and explicit unattended Start approval"
+            "native Hub plan requires 1-16 allocated machines and explicit unattended Start approval"
         ).into());
     }
     let listener = env::var("BEES_NATIVE_BUNDLE_LISTEN").map_err(|_|
@@ -185,9 +185,18 @@ fn hub_arguments(
     let port = source["hub_port"].as_u64()
         .filter(|value| (1..=65535).contains(value))
         .ok_or_else(|| invalid("native Hub operator port is invalid"))?;
-    let worlds = source["hub_worlds"].as_u64()
-        .filter(|value| (2..=16384).contains(value))
-        .ok_or_else(|| invalid("native Hub World budget is invalid"))?;
+    // None delegates sizing to train_policy_session's existing Hub
+    // allocator, which derives an initial bounded World population from
+    // each machine's approved CPU and RAM lease. A manually selected
+    // budget remains exact and the same approved collector partitioner
+    // validates whether every machine can receive its share.
+    let worlds = if source["hub_worlds"].is_null() {
+        None
+    } else {
+        Some(source["hub_worlds"].as_u64()
+            .filter(|value| (1..=16384).contains(value))
+            .ok_or_else(|| invalid("native Hub World budget is invalid"))?)
+    };
     // The learner receives archives over its authenticated streaming
     // receiver. These are separate per-job directories, not shared
     // checkpoints or uncontrolled writes to Experiment Hub's data root.
@@ -195,8 +204,10 @@ fn hub_arguments(
     let outbox = job.join("collector-input-outbox");
     fs::create_dir_all(&inbox)?;
     fs::create_dir_all(&outbox)?;
-    command.arg("--hub-auto-worlds").arg(worlds.to_string())
-        .arg("--bundle-inbox").arg(inbox)
+    if let Some(worlds) = worlds {
+        command.arg("--hub-auto-worlds").arg(worlds.to_string());
+    }
+    command.arg("--bundle-inbox").arg(inbox)
         .arg("--collector-input-outbox").arg(outbox)
         .arg("--bundle-receiver-listen").arg(listener)
         .arg("--hub-dispatch-plan").arg(plan)
@@ -689,13 +700,25 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     };
     let hub = if use_hub { approved_hub_plan()? } else { None };
     let (worlds, workers, hub_worlds, rollout_processes, rollout_binary) = if use_hub {
-        let Some(worlds) = choose_count(
-            "Total distributed native arenas", &[16, 32, 64, 128, 256, 512, 1024],
-        )? else { return Ok(()); };
+        let choices: [u32; 7] = [16, 32, 64, 128, 256, 512, 1024];
+        let titles = std::iter::once(
+            "Automatically size arenas from approved Hub CPU and RAM".to_owned()
+        ).chain(choices.iter().map(|worlds|
+            format!("{worlds}  |  Total distributed native arenas")
+        )).collect::<Vec<_>>();
+        let rows = titles.iter().map(|title| BattleMenuRow {
+            title, status: "  [Existing native Hub collector allocator]",
+            unlocked: true,
+        }).collect::<Vec<_>>();
+        let mut selected = 0;
+        let Some(choice) = select_library(&rows, &mut selected, false)? else {
+            return Ok(());
+        };
+        let worlds = (choice != 0).then(|| choices[choice - 1]);
         // A distributed learner still evaluates holdouts on its own host.
         // Forward a prebuilt rollout executable if available; remote jobs
         // continue using only Hub-approved allocations.
-        (None, None, Some(worlds), None, available_rollout_binary()?)
+        (None, None, worlds, None, available_rollout_binary()?)
     } else {
         let Some(worlds) = choose_count(
             "Parallel native arenas", &[1, 2, 4, 8, 16, 32, 64],
