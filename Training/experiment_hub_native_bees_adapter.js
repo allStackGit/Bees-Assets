@@ -1826,8 +1826,14 @@ function createNativeBeesAdapter({
             if (continual_release && (releaseConfig.evaluation_physics_workers > context.cpu_quota ||
                     (releaseConfig.evaluation_device === 'cuda:0' && !gpu)))
                 throw Error('Continual evaluation must fit the checkpoint-owner CPU and GPU lease.');
+            // An existing committed round belongs to this same job, not its
+            // predecessor. The runner verifies its original input, trainer
+            // and release plan before resuming the registry transaction.
+            const resumeRelease = continual_release &&
+                completionReceipt(output, 'round-result.json') !== null;
             return ['-B', runner, activeRun, inputs.checkpoint, trainer, output,
                 ...(continual_release ? ['--continual-release-plan', releasePlan] : []),
+                ...(resumeRelease ? ['--resume-continual-release'] : []),
                 '--model-manifest', inputs.manifest, ...(binary ? ['--rollout-binary', binary] : []),
                 '--stage-diagnostics',
                 // Supervisor-owned exclusive GPU selection is already verified.
