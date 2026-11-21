@@ -35,7 +35,8 @@ impl NativePhysicalScene {
                 squad.item_id == row.squad_item_id && squad.side == row.side &&
                 squad.player_permissions.user_controlled &&
                 squad.player_permissions.can_accept_input &&
-                squad.hivemind.is_none() &&
+                !squad.hivemind.as_ref()
+                    .is_some_and(|owner| owner.hivemind_controlled) &&
                 squad.is_carrier_squad != Some(true)
             ).ok_or(invalid("numbered squad is not a player command owner"))?;
             if self.source_squads[index].hotkey_number.is_some() ||
