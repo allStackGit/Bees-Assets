@@ -4,6 +4,45 @@ use bees_gameplay::campaign_dialogue::{CampaignCue, UploadMilestone};
 
 pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)] {
     match cue {
+        // Exact original PlutoLines_Pushback sections: intro 1..13,
+        // victory 13..22, defeat 22..31. Source one-second pauses
+        // remain empty, non-speaking dialogue lines.
+        CampaignCue::PlutoPushbackBriefing { .. } => &[
+            ("Samuel", "Alright, commander, we have all of our Lieutenants online. They’ll be giving orders for each of your vessels as you direct the entire fleet."),
+            ("Oviya", " I'm Oviya, your scout lieutenant. Use the scout to… well, scout the battlefield. They get around fast, so as long as you keep giving orders they probably won't get hit by enemy fire."),
+            ("Oviya", "They don’t have any guns, though, so please don’t leave them out to dry when they can’t fight back."),
+            ("Joey", "Alrighty, Commander, I'm commanding yer Frigates. They're yer explosives experts. They can't shoot far, but they sure pack a wallop."),
+            ("Joey", "Those rockets will do some serious damage, and they can even hit multiple targets inside the blast radius."),
+            ("Joey", "Use ‘em against those ships that like to group up like moths to a flame and you’ll find them quite effective."),
+            ("Marco", "I'll be commanding your Gunships. They're fast-flying dogfighting specialists. Use their speed to your advantage if you can."),
+            ("Marco", "Even if they can't fly as well as me, they'll still be good at dodging fire. As long as you’re competent."),
+            ("Yoshiko", "And I’m Yoshiko, your Dreadnought lieutenant! These babies are made to brawl. They can take a lotta hits and dish it right back! Keep ‘em out front and watch ‘em tear it up!"),
+            ("Samuel", "And that’s everyone. Use all of our fleet’s strengths to win this battle, commander."),
+            ("Samuel", " If you ever need a reminder on what any of our ships do or what we’ve discovered about the enemy’s fleet, you can always pause and view the United Fleet Codex."),
+            ("Samuel", "I’ll be keeping it updated for you. I believe in you!"),
+        ],
+        CampaignCue::PlutoPushbackVictory => &[
+            ("Samuel", "Great work, commander! This might not be so b-"),
+            ("Oviya", "Commander, I’ve had my team scouting further ahead during the battle, and… it’s not looking good. There’s… more than we can count."),
+            ("Yoshiko", "Good, we didn’t get to have much of a fight yet!"),
+            ("Oviya", "No, Yoshiko, it’s far too many for us to defeat here and now."),
+            ("Marco", "Commander, I recommend an emergency retreat. We need to regroup and assess this threat before going fully to war with it."),
+            ("Oviya", "I agree."),
+            ("Samuel", "Commander?"),
+            ("Samuel", ""),
+            ("Samuel", "Then it’s settled. I’ll issue the evacuation alert, and you’ll prepare the fleet to defend Pluto until we can get our people off the surface."),
+        ],
+        CampaignCue::PlutoPushbackDefeat => &[
+            ("Samuel", "These aliens are much tougher than I thought…"),
+            ("Oviya", "Commander, I’ve had my team scouting further ahead during the battle, and… it’s not looking good. There’s… more than we can count."),
+            ("Yoshiko", "Good, let’s win the next fight then!"),
+            ("Oviya", "No, Yoshiko, it’s far too many for us to defeat here and now. Especially if that first wave was too much for us."),
+            ("Marco", "Commander, I recommend an emergency retreat. We need to regroup and assess this threat before going fully to war with it."),
+            ("Oviya", "I agree."),
+            ("Samuel", "Commander?"),
+            ("Samuel", ""),
+            ("Samuel", "Then it’s settled. I’ll issue the evacuation alert, and you’ll prepare the fleet to defend Pluto until we can get our people off the surface."),
+        ],
         CampaignCue::UranusNewThreatBriefing => &[
             ("Marge", "Is this dang thing working? Hello! Any humans left? Hang in there, team, we’re gonna get through this, okay?"),
             ("Barge Pilot", "It’s not looking good, Marge…"),
@@ -339,4 +378,35 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
             ("Samuel", "Full speed ahead!"),
         ],
     }
+}
+
+/// Filter the original Pluto III lieutenant introduction by the real
+/// surviving player FleetShip classes after career restoration. Presentation
+/// never copies or mutates the campaign mission owner.
+pub(crate) fn displayed_lines(cue: CampaignCue) ->
+    impl Iterator<Item = (&'static str, &'static str)>
+{
+    lines(cue).iter().copied().filter(move |(speaker, _)| match cue {
+        CampaignCue::PlutoPushbackBriefing { speaker_mask } => {
+            let bit = match *speaker {
+                "Oviya" => 0,
+                "Joey" => 1,
+                "Marco" => 2,
+                "Yoshiko" => 3,
+                _ => return true,
+            };
+            (speaker_mask & (1_u8 << bit)) != 0
+        }
+        _ => true,
+    })
+}
+
+pub(crate) fn line_count(cue: CampaignCue) -> usize {
+    displayed_lines(cue).count()
+}
+
+pub(crate) fn visible_line(cue: CampaignCue, index: usize) ->
+    Option<(&'static str, &'static str)>
+{
+    displayed_lines(cue).nth(index)
 }
