@@ -59,6 +59,7 @@ const TINYBRAINS_METRIC_CATALOG={
         'group_states','group_states_per_second',
         'update_wall_time','elapsed_training_seconds',
         'collection_seconds','optimization_seconds','overlap_seconds',
+        'policy_lag_mean','policy_lag_min','policy_lag_max','policy_version_count',
         'rollout_model_refresh_seconds','rollout_engine_step_seconds',
         'rollout_learner_inference_seconds','rollout_observation_encode_seconds',
         'rollout_opponent_inference_seconds','rollout_result_processing_seconds',
@@ -77,6 +78,8 @@ const TINYBRAINS_METRIC_CATALOG={
         'population_peak','visible_food_mean','combat_exposure_fraction',
         'episodes_ended','terminal_rewards','carried_matches',
         'collector_count','ppo_board_pixel_samples','ppo_max_board_cells',
+        'ppo_packed_remote_behavior_states','rollout_onnx_calls',
+        'rollout_onnx_batches','rollout_onnx_batched_states','rollout_onnx_states',
         'local_engine_count','local_engine_active_count',
         'local_engine_actions_per_second','local_engine_wall_seconds',
         'local_engine_critical_seconds',
@@ -126,7 +129,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'remote_collector_join_wait_seconds','remote_collector_exposed_wait_seconds',
         'remote_transport_connect_max_seconds',
         'remote_connect_exposed_seconds',
-        'collection_merge_seconds',
+        'collection_merge_seconds','collection_lease_accounting_seconds',
         'overlap_seconds','local_gpu_join_wait_seconds',
         'local_gpu_wait_after_local_max_seconds',
         'remote_policy_snapshot_seconds',
@@ -250,7 +253,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'remote_policy_readback_groups','remote_policy_source_pack_reused',
         'ppo_gpu_max_group_pixels','rollout_inference_max_group_pixels',
         'ppo_board_pixel_samples','ppo_max_board_cells',
-        'ppo_unique_board_shapes','policy_lag','action_target',
+        'ppo_unique_board_shapes','policy_lag','policy_lag_min',
+        'policy_lag_max','policy_version_count','action_target',
+        'ppo_packed_remote_behavior_states','collector_capacity_bootstrapped',
+        'rollout_opponent_forward_chunks','rollout_opponent_readback_models',
+        'rollout_opponent_readbacks_saved','rollout_onnx_calls',
+        'rollout_onnx_batches','rollout_onnx_batched_states','rollout_onnx_states',
         'automatic_collector_allocation','collector_allocation_rebalanced',
         'rollout_inference_batches','rollout_inference_boards',
         'rollout_inference_max_batch'])
@@ -264,7 +272,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'baseline_grad_norm','actor_max_weight_change',
         'critic_max_weight_change','learning_rate','population_mean',
         'states_per_microbatch','rollout_inference_mean_batch',
-        'collector_balance_trial_sps_gain'])
+        'collector_balance_trial_sps_gain','policy_lag_mean'])
         add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
     add('rollout_board_packed_bytes',row.rollout_board_packed_bytes,'bytes');
@@ -469,6 +477,16 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_shape_groups,'count');
         add('collector_'+i+'_opponent_readbacks',
             worker.rollout_opponent_readbacks,'count');
+        // Async batches can mix bounded policy versions. Report the actual
+        // per-collector lag rather than assuming every decision used the
+        // learner's latest weights.
+        add('collector_'+i+'_policy_lag_mean',worker.policy_lag_mean,'scalar');
+        add('collector_'+i+'_policy_lag_max',worker.policy_lag_max,'count');
+        for(const name of ['rollout_opponent_forward_chunks',
+            'rollout_opponent_readback_models','rollout_opponent_readbacks_saved',
+            'rollout_onnx_calls','rollout_onnx_batches',
+            'rollout_onnx_batched_states','rollout_onnx_states'])
+            add('collector_'+i+'_'+name,worker[name],'count');
         add('collector_'+i+'_opp_learner_joined_readbacks',
             worker.rollout_opponent_joined_learner_readbacks,'count');
         add('collector_'+i+'_opp_slot_reused',
@@ -527,6 +545,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.learner_wait_after_local_seconds,'seconds');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
+        // Request preparation is local learner CPU work, not wire latency.
+        add('collector_'+i+'_request_prepare_seconds',
+            worker.collector_request_prepare_seconds,'seconds');
         add('collector_'+i+'_connect_seconds',
             worker.collector_client_connect_seconds,'seconds');
         add('collector_'+i+'_connection_reused',
@@ -814,6 +835,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 'sim_draining',
                 'dispatch_queue_seconds',
                 'sim_workload_reprobes','sim_inconclusive_trials',
+                'request_prepare_seconds','policy_lag_mean','policy_lag_max',
+                'rollout_opponent_forward_chunks',
+                'rollout_opponent_readback_models',
+                'rollout_opponent_readbacks_saved','rollout_onnx_calls',
+                'rollout_onnx_batches','rollout_onnx_batched_states',
+                'rollout_onnx_states',
             ];
             for(const suffix of deferredDetails) {
                 for(let i=0;i<collectors;i++)
