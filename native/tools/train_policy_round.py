@@ -1126,6 +1126,10 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
         publish_receipt(output, "round-worker-result.json", {
             **result,
             **worker,
+            # The worker's own finalizer is a separate immutable commit
+            # after its GPU ranks reach consensus. Bind the Hub-facing
+            # completion to those exact bytes, not only copied JSON fields.
+            "optimizer_node_receipt_sha256": file_sha256(worker_file),
             "schema_version": 1,
             "kind": "native_distributed_optimizer_worker_complete",
         })
@@ -1190,6 +1194,10 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
         "schema_version": 1,
         "kind": "native_training_round_complete",
         **result,
+        # Metrics are the learner's final durable group-wide commit. A
+        # subsequent Hub continuation must be able to verify the source
+        # bytes independently of the surrounding round receipt.
+        "optimizer_metrics_sha256": file_sha256(learner_dir / "metrics.json"),
         "learner_metrics": metrics,
         "next_checkpoint": str(next_checkpoint),
         "next_checkpoint_sha256": checkpoint_sha,
