@@ -37,7 +37,7 @@ use bees_host::scene_builder::{NativeAuthoredEntity, NativeAuthoredGroups};
 use bees_host::unity_scene_snapshot::{
     NativeExportedPolicyLevelSetup, NativePhysicalScene, NativeLevelLayout,
     NativePurchasedShip, NativeCreatedSquad, NativeSavedSquadTactics,
-    NativeSquadColorSetting,
+    NativeSquadColorSetting, NativeSavedSquadFormation, NativeSquadFormationKind,
 };
 use bees_sim::asteroid_fragments::FragmentSpawnSettings;
 use bees_sim::collision::Aabb;
@@ -1575,7 +1575,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees reassign <catalog.json> --output-dir <battle-runs> --side <n> --ship <fleet-id> --from <saved-id> --squad <saved-id>
        bees squad-create <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
        bees squad-delete <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id>
-       bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false> [--match-speed <true|false>] [--color <inherit|clear|RRGGBB>]
+       bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false> [--match-speed <true|false>] [--color <inherit|clear|RRGGBB>] [--formation <source|line|box|rectangle|pyramid|hollow-pyramid>[:width]]
   play  Open the native battle window (requires the client feature)
   serve  Host headless authenticated multiplayer with deterministic input recording
          (requires --output-dir, BEES_NATIVE_REMOTE_LISTEN and remote token)
@@ -1962,6 +1962,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             .to_string_lossy().parse()?;
         let mut match_speed = None;
         let mut color_setting = None;
+        let mut formation = None;
         while let Some(flag) = args.next() {
             if flag == "--match-speed" && match_speed.is_none() {
                 match_speed = Some(args.next().ok_or_else(|| invalid(USAGE))?
@@ -1971,13 +1972,18 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 color_setting = Some(parse_squad_color_setting(
                     &value.to_string_lossy(),
                 )?);
+            } else if flag == "--formation" && formation.is_none() {
+                let value = args.next().ok_or_else(|| invalid(USAGE))?;
+                formation = Some(parse_squad_formation_setting(
+                    &value.to_string_lossy(),
+                )?);
             } else {
                 return Err(invalid(USAGE).into());
             }
         }
         return run_set_saved_squad_tactics(&catalog, &output, NativeSavedSquadTactics {
             side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
-            match_speed, color_setting,
+            match_speed, color_setting, formation,
         });
     }
     if first == "reassign" {
@@ -3738,6 +3744,31 @@ fn parse_squad_color_setting(value: &str) -> io::Result<NativeSquadColorSetting>
     Ok(NativeSquadColorSetting::Custom(channels))
 }
 
+/// The same source formation can be selected from the native UI or
+/// from a headless/Windows CLI without depending on Unity settings.
+fn parse_squad_formation_setting(value: &str) -> io::Result<NativeSavedSquadFormation> {
+    use NativeSquadFormationKind as Kind;
+    let (kind, width) = value.split_once(':').map_or((value, None),
+        |(name, width)| (name, Some(width)));
+    let kind = match kind {
+        "source" => Kind::Authored,
+        "line" => Kind::Line,
+        "box" => Kind::Box,
+        "rectangle" => Kind::Rectangle,
+        "pyramid" => Kind::Pyramid,
+        "hollow-pyramid" => Kind::HollowPyramid,
+        _ => return Err(invalid("unknown native saved squad formation")),
+    };
+    let max_width = width.map(|width| width.parse::<u8>())
+        .transpose().map_err(|_| invalid("formation width must be 1..32"))?
+        .unwrap_or(5);
+    let formation = NativeSavedSquadFormation { kind, max_width };
+    if !formation.is_valid() {
+        return Err(invalid("formation width must be 1..32"));
+    }
+    Ok(formation)
+}
+
 fn run_set_saved_squad_tactics(
     catalog_path: &Path, output_root: &Path, entry: NativeSavedSquadTactics,
 ) -> Result<(), Box<dyn Error>> {
@@ -3759,6 +3790,13 @@ fn run_set_saved_squad_tactics(
     if entry.color_setting.is_none() {
         entry.color_setting = progress.tactics_for_squad(entry.side, entry.saved_squad_id)
             .and_then(|saved| saved.color_setting);
+    }
+    if entry.formation.is_none() {
+        entry.formation = progress.tactics_for_squad(entry.side, entry.saved_squad_id)
+            .and_then(|saved| saved.formation);
+    }
+    if entry.formation.is_some_and(|form| !form.is_valid()) {
+        return Err(invalid("invalid saved squad formation width").into());
     }
     let root = catalog_path.parent().ok_or_else(|| invalid("missing campaign directory"))?;
     // Qualify the entire authored campaign, including its alternate
@@ -3827,6 +3865,7 @@ fn run_set_saved_squad_tactics(
         "cease_fire": entry.cease_fire,
         "match_speed": entry.match_speed,
         "color_setting": entry.color_setting,
+        "formation": entry.formation,
         "validated_configs": checked,
     }));
     Ok(())
@@ -5191,6 +5230,7 @@ fn run_campaign_game_menu(
                                     should_chase: squad.should_chase, cease_fire,
                                     match_speed: Some(squad.matching_speed.is_some()),
                                     color_setting: None,
+                                    formation: None,
                                 });
                         }
                     }
@@ -5219,6 +5259,8 @@ fn run_campaign_game_menu(
                     .unwrap_or(original.match_speed.unwrap_or(false)),
                 color_setting: tactics.color_setting
                     .unwrap_or(NativeSquadColorSetting::Inherit),
+                formation: tactics.formation
+                    .unwrap_or(NativeSavedSquadFormation::authored()),
             }
         }).collect::<Vec<_>>();
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
@@ -5251,13 +5293,14 @@ fn run_campaign_game_menu(
             }
             NativeBattleMenuAction::Tactics {
                 side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
-                match_speed, color_setting,
+                match_speed, color_setting, formation,
             } => {
                 let result = run_set_saved_squad_tactics(
                     &catalog_path, output_root, NativeSavedSquadTactics {
                         side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
                         match_speed: Some(match_speed),
                         color_setting: Some(color_setting),
+                        formation: Some(formation),
                     },
                 );
                 progress = catalog.load_progress(output_root)?;
