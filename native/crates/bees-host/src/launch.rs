@@ -6500,18 +6500,27 @@ fn run_battle(
             // shared terminal therefore releases that gate on the next
             // completed fixed step. Reject a playable mission whose
             // configured round budget would stop before that callback.
-            if matches!(dialogue,
-                bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusDefensive { .. })
-            {
-                let last_admission = (600.0_f64 /
+            let last_campaign_callback = match dialogue {
+                bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusDefensive { .. } =>
+                    // Its victory trigger first becomes armed after the
+                    // last 600-second physical wave has been admitted.
+                    Some((600.0_f64, 1_u64, "Uranus II")),
+                bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusNewThreat { .. } =>
+                    // Its 60-second wave and story announcement share the
+                    // authoritative deployment tick.
+                    Some((60.0_f64, 0_u64, "Uranus III")),
+                _ => None,
+            };
+            if let Some((seconds, release_ticks, mission_name)) = last_campaign_callback {
+                let last_admission = (seconds /
                     f64::from(source.fixed_dt_seconds)).floor() + 1.0;
-                let required = last_admission + 1.0;
+                let required = last_admission + release_ticks as f64;
                 if !required.is_finite() || required < 1.0 ||
                     required >= u64::MAX as f64 ||
                     required as u64 > config.max_rounds
                 {
                     return Err(invalid(format!(
-                        "Uranus II needs at least {} fixed rounds to reach its final wave and victory trigger; max_rounds is {}",
+                        "{mission_name} needs at least {} fixed rounds to reach its final source-authored callback; max_rounds is {}",
                         required as u64, config.max_rounds,
                     )).into());
                 }
