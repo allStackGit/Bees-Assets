@@ -186,6 +186,7 @@ pub struct CampaignDialogue {
 /// state machine. This is not another objective/lifecycle owner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CampaignObjectiveKind {
+    PlutoPushback,
     UranusOffensive,
     UranusDefensive,
 }
@@ -193,6 +194,8 @@ pub enum CampaignObjectiveKind {
 impl CampaignDialogue {
     pub fn objective_kind(&self) -> Option<CampaignObjectiveKind> {
         match self.mode {
+            DialogueMode::PlutoPushback { .. } =>
+                Some(CampaignObjectiveKind::PlutoPushback),
             DialogueMode::UranusOffensive { .. } =>
                 Some(CampaignObjectiveKind::UranusOffensive),
             DialogueMode::UranusDefensive { .. } =>
