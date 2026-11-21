@@ -65,26 +65,34 @@ def squad_sizes(value: str) -> tuple[int, int, tuple[int, ...]]:
     return int(side), int(kind), sizes
 
 
-def reinforcement(value: str) -> tuple[float, int, int, int]:
-    """A timed deferred squad allocation: SECONDS:SIDE:TYPE:COUNT."""
+def reinforcement(value: str):
+    """SECONDS:SIDE:TYPE:COUNT[:SPAWNX:SPAWNY:ENTRYX:ENTRYY].
+
+    Optional physical route is the source AddReinforcementSquads spawn and
+    MoveToPoint target, shared by local game, HiveMind and RL controllers.
+    No invented path or instant transport is applied to the source ships.
+    """
     parts = value.split(":")
-    if len(parts) != 4:
+    if len(parts) not in (4, 8):
         raise argparse.ArgumentTypeError(
-            "reinforcement format is SECONDS:SIDE:TYPE:COUNT (e.g. 45:2:13:4)"
+            "reinforcement format is SECONDS:SIDE:TYPE:COUNT"
+            "[:SPAWNX:SPAWNY:ENTRYX:ENTRYY]"
         )
     try:
         seconds = float(parts[0])
-        side, kind, count = (int(part) for part in parts[1:])
+        side, kind, count = (int(part) for part in parts[1:4])
+        route = [float(part) for part in parts[4:]] if len(parts) == 8 else None
     except ValueError as error:
         raise argparse.ArgumentTypeError("invalid timed reinforcement numbers") from error
     if (not math.isfinite(seconds) or seconds <= 0 or
             side not in (1, 2) or not 0 <= kind < 24 or
-            not 1 <= count <= 1024):
+            not 1 <= count <= 1024 or
+            route is not None and not all(math.isfinite(v) for v in route)):
         raise argparse.ArgumentTypeError(
-            "reinforcement requires positive finite seconds, side 1/2, "
-            "ship type 0..23 and count 1..1024"
+            "reinforcement needs positive finite seconds, side 1/2, "
+            "ship type 0..23, count 1..1024 and finite route coordinates"
         )
-    return seconds, side, kind, count
+    return seconds, side, kind, count, route
 
 
 def death_reinforcement(value: str) -> tuple[int, int, int, int, int]:
@@ -440,19 +448,19 @@ def author(args) -> tuple[dict, dict, dict]:
     if len(set(activation_targets)) != len(activation_targets):
         raise ValueError("one scripted fleet type cannot have multiple conflicting start conditions")
     waves = [
-        (when, side, kind, count, None)
-        for when, side, kind, count in args.reinforcements
+        (when, side, kind, count, None, route)
+        for when, side, kind, count, route in args.reinforcements
     ] + [
-        (None, side, kind, count, ("death", trigger_side, trigger_kind))
+        (None, side, kind, count, ("death", trigger_side, trigger_kind), None)
         for trigger_side, trigger_kind, side, kind, count
         in args.death_reinforcements
     ] + [
-        (None, side, kind, count, ("cue", cue))
+        (None, side, kind, count, ("cue", cue), None)
         for cue, side, kind, count in cue_waves
     ]
     deferred_counts: dict[tuple[int, int], int] = {}
     prior_time = 0.0
-    for when, side, kind, count, trigger in waves:
+    for when, side, kind, count, trigger, route in waves:
         key = (side, kind)
         if when is not None:
             if when < prior_time or when >= args.minutes * 60:
@@ -662,7 +670,7 @@ def author(args) -> tuple[dict, dict, dict]:
         key: len(ships) - deferred_counts.get(key, 0)
         for key, ships in by_kind.items()
     }
-    for index, (_, side, kind, count, _) in enumerate(waves):
+    for index, (_, side, kind, count, _, _) in enumerate(waves):
         key = (side, kind)
         start = wave_cursor[key]
         wave_members[index].update(by_kind[key][start:start + count])
@@ -1017,7 +1025,7 @@ def author(args) -> tuple[dict, dict, dict]:
         # so roster, announcements and pending-wave metrics agree.
         deployments = []
         last_wave_side = None
-        for index, (when, side, _, _, trigger) in enumerate(waves):
+        for index, (when, side, _, _, trigger, route) in enumerate(waves):
             if trigger is None:
                 activation = {"after_seconds": when}
             elif trigger[0] == "cue":
@@ -1035,6 +1043,9 @@ def author(args) -> tuple[dict, dict, dict]:
                         f"type {trigger_kind} has no initially deployed hull"
                     )
                 activation = {"on_ship_destroyed": eligible[0]}
+            if route is not None:
+                activation["spawn"] = route[:2]
+                activation["entry"] = route[2:]
             squads_by_id = {squad["item_id"]: squad for squad in new_squads}
             arriving = []
             for squad_id in wave_squads[index]:
@@ -1051,7 +1062,7 @@ def author(args) -> tuple[dict, dict, dict]:
             if (deployments and last_wave_side == side and
                     all(deployments[-1].get(key) == activation.get(key)
                         for key in ("after_seconds", "on_campaign_cue",
-                                    "on_ship_destroyed"))):
+                                    "on_ship_destroyed", "spawn", "entry"))):
                 deployments[-1]["squad_item_ids"].extend(arriving)
             else:
                 deployments.append({**activation, "squad_item_ids": arriving})
@@ -1749,7 +1760,7 @@ def main() -> None:
     parser.add_argument("--spacing", type=float, default=24)
     parser.add_argument("--reinforcement", action="append", default=[],
                         type=reinforcement, dest="reinforcements",
-                        help="defer part of a faction's fleet until SECONDS:SIDE:TYPE:COUNT; repeat in time order")
+                        help="defer source ships at SECONDS:SIDE:TYPE:COUNT[:SPAWNX:SPAWNY:ENTRYX:ENTRYY]; repeat in time order")
     parser.add_argument("--reinforcement-on-death", action="append", default=[],
                         type=death_reinforcement, dest="death_reinforcements",
                         help="deploy when an initially active ship dies: TRIGGER_SIDE:TRIGGER_TYPE:SIDE:TYPE:COUNT")
