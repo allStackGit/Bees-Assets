@@ -639,18 +639,21 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 members = squad_members(squad)
                 types = {physical.get(ship_id, {}).get("ship_type")
                          for ship_id in members}
-                source_groups.append((next(iter(types)), len(members))
-                                     if len(types) == 1 and members else None)
-            authentic_wave = [
-                (14, 2), (15, 4), (15, 6), (21, 4), (21, 4),
-            ]
+                # CurrentShips.GetSquadByComposition(..., true, true)
+                # prefers the exact requested size, but may choose ANY
+                # nonempty smaller or larger homogeneous SavedSquad when
+                # veterans have changed since the preceding battle.
+                source_groups.append(next(iter(types))
+                                     if len(types) == 1 and 1 <= len(members) <= 10
+                                     else None)
+            authentic_wave = [14, 15, 15, 21, 21]
             if (scene.get("native_game_schema") != 1 or
                     scene.get("human_side") != args.player_side or
                     scene.get("activate_hivemind") is not True or
                     not isinstance(run.get("hivemind"), dict) or
                     run["hivemind"].get("issue_source_commands") is not True or
-                    not any(source_groups[start:start + len(authentic_wave)] ==
-                            authentic_wave for start in range(len(source_groups))) or
+                    not source_groups or
+                    not source_types_in_order(source_groups, authentic_wave) or
                     level.get("campaign_dialogue") is not None or
                     level.get("reinforcements") not in (None, []) or
                     any(level.get(name) is not None for name in (
