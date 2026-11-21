@@ -5942,6 +5942,36 @@ fn run_battle(
                 );
             }
         }
+        if let Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusNewThreat {
+            player_side, barges, ..
+        }) = level.campaign_dialogue {
+            if mission.is_some() {
+                // Uranus III adds optional Fritz lines only when the
+                // actual persistent CurrentShips roster still owns a
+                // Cruiser. Recompute after campaign loss/purchase replay,
+                // exactly as the Neptune Factory branch does above.
+                let lost = mission.and_then(|owner| owner.lost_fleet_ids);
+                let owned_cruiser = |entity: &NativeAuthoredEntity| match entity {
+                    NativeAuthoredEntity::Ship(ship) =>
+                        ship.side == player_side && ship.ship_type == 6 &&
+                        ship.fleet_ship_id.is_some_and(|id|
+                            lost.is_none_or(|lost| !lost.contains(&id))) &&
+                        !ship.vitals.is_dead(),
+                    _ => false,
+                };
+                let has_cruiser = template.entities.iter().any(|entity| owned_cruiser(entity)) ||
+                    source.entities.iter().any(|entity| owned_cruiser(entity)) ||
+                    mission.and_then(|owner| owner.owned_purchases)
+                        .is_some_and(|purchases| purchases.iter().any(|ship|
+                            ship.ship_type == 6 &&
+                            lost.is_none_or(|lost| !lost.contains(&ship.fleet_ship_id))));
+                level.campaign_dialogue = Some(
+                    bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusNewThreat {
+                        player_side, barges, has_cruiser,
+                    }
+                );
+            }
+        }
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
         }
