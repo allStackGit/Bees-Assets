@@ -2311,7 +2311,25 @@ pub(super) fn archive(
             // Passive support has no guns. Only scripted squads reach
             // this loop; a player's commander never loses input authority.
             let mission_owner = selected.objective_side == Some(side as i32 + 1);
-            let orders = if supporting {
+            let orders = if supporting && mission_owner && side == 1 &&
+                matches!(selected.objective, Objective::Extraction)
+            {
+                // The original Carrier is a mobile source ship. It must
+                // physically reach extraction alongside its fighters;
+                // passive Beehives and WarpGates remain immobile support.
+                vec![json!({"kind": "move_to_point", "destination": [
+                    -extraction_x, 0.0,
+                ]})]
+            } else if supporting && mission_owner && side == 1 &&
+                matches!(selected.objective, Objective::Escort)
+            {
+                // Mobile Carriers defend the moving command convoy with
+                // the same Guard lifetime used by the other escorts.
+                vec![json!({
+                    "kind": "guard",
+                    "friendly_squad_item_id": squad_ids[side][0],
+                })]
+            } else if supporting {
                 vec![json!({"kind": "hold"})]
             } else if mission_owner &&
                 matches!(selected.objective, Objective::Survival) &&
