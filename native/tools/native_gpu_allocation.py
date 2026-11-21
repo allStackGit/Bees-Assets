@@ -121,6 +121,7 @@ class OptimizerResourceSampler:
         self.last_cpu_sample = None
         self.pci = None
         self.gpu_path = None
+        self.gpu_power_sensor = None
         self.nvidia = False
         if device.type == "cuda":
             index = device.index
@@ -130,6 +131,17 @@ class OptimizerResourceSampler:
                 self.pci = rocm_visible_gpu_pci(index)
                 if self.pci:
                     self.gpu_path = Path("/sys/bus/pci/devices") / self.pci
+                    # Only use the hwmon belonging to the HIP-mapped
+                    # physical PCI card. An unrelated hwmon0 on a dual-GPU
+                    # host would silently misattribute power consumption.
+                    for hwmon in sorted((self.gpu_path / "hwmon").glob("hwmon*")):
+                        try:
+                            if ((hwmon / "name").read_text().strip() == "amdgpu" and
+                                    (hwmon / "power1_average").is_file()):
+                                self.gpu_power_sensor = hwmon / "power1_average"
+                                break
+                        except OSError:
+                            continue
             else:
                 self.nvidia = True
 
@@ -167,6 +179,15 @@ class OptimizerResourceSampler:
                     self._observe(key, int((self.gpu_path / name).read_text()))
                 except (OSError, ValueError):
                     pass
+            if self.gpu_power_sensor is not None:
+                try:
+                    # Linux hwmon power1_average is in microwatts, and
+                    # reports the AMD device sensor (not whole-system
+                    # wall power). Missing/unavailable counters are absent.
+                    self._observe("physical_gpu_hwmon_power_watts",
+                                  int(self.gpu_power_sensor.read_text()) / 1_000_000)
+                except (OSError, ValueError):
+                    pass
         elif self.nvidia:
             # Torch's NVML helpers resolve the device visibility mask.
             # Older PyTorch/NVML installations may lack these optional APIs.
@@ -202,6 +223,8 @@ class OptimizerResourceSampler:
             "scope": "optimizer_rank_process_and_shared_physical_device",
             "sample_interval_seconds": self.interval,
             **({"gpu_pci_address": self.pci} if self.pci else {}),
+            **({"gpu_power_source": "amdgpu hwmon power1_average (device sensor)"}
+               if self.gpu_power_sensor is not None else {}),
             "samples": {
                 key: ({"sample_count": count, "observed_high_water": peak}
                       if key == "process_peak_resident_bytes" else
