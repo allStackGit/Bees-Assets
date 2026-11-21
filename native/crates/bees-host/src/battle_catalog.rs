@@ -1451,8 +1451,10 @@ impl BattleCatalog {
         let mut mission_ids = progress.missions.keys().copied().collect::<Vec<_>>();
         mission_ids.sort_unstable();
         let defeat_routes = self.battles.iter().filter_map(|entry|
-            entry.mission.as_ref().and_then(|mission| mission.on_defeat.as_ref())
-        ).count() != 0;
+            entry.mission.as_ref()).any(|mission|
+                mission.on_defeat.is_some() ||
+                mission.unlock_if_any.iter().any(|condition|
+                    condition.result == RequiredOutcome::Defeat));
         let mission_results = mission_ids.into_iter().map(|id| {
             let result = &progress.missions[id];
             let mut row = json!({
@@ -1476,6 +1478,11 @@ impl BattleCatalog {
     /// tooling. No sidecar save file is ever more authoritative than the
     /// original successful battle summaries.
     pub fn status(&self, progress: &CampaignProgress<'_>) -> Value {
+        let has_defeat_conditions = self.battles.iter().filter_map(|entry|
+            entry.mission.as_ref()).any(|mission|
+                mission.on_defeat.is_some() ||
+                mission.unlock_if_any.iter().any(|condition|
+                    condition.result == RequiredOutcome::Defeat));
         let missions = self.battles.iter().filter_map(|entry| {
             let mission = entry.mission.as_ref()?;
             let mut row = json!({
@@ -1496,10 +1503,7 @@ impl BattleCatalog {
                 } else { "victory" },
                 "unlocked": mission.unlocked(progress),
                 "completed": progress.completed(&mission.id),
-                "attempted": progress.missions.get(mission.id.as_str())
-                    .is_some_and(|result| result.attempted),
                 "latest_victory": progress.latest_victory(&mission.id),
-                "latest_defeat": progress.latest_defeat(&mission.id),
                 "victory_grants_claimed": progress.grants_claimed(&mission.id),
                 "victory_squads": mission.victory_squads.iter().map(|grant| json!({
                     "saved_squad_id": grant.saved_squad_id,
@@ -1513,6 +1517,11 @@ impl BattleCatalog {
                 "bank_player_minerals": mission.bank_player_minerals,
                 "persist_fleet_losses": mission.persist_fleet_losses,
             });
+            if has_defeat_conditions {
+                row["attempted"] = json!(progress.missions.get(mission.id.as_str())
+                    .is_some_and(|result| result.attempted));
+                row["latest_defeat"] = json!(progress.latest_defeat(&mission.id));
+            }
             if !mission.unlock_if_any.is_empty() {
                 row["unlock_if_any"] = json!(mission.unlock_if_any.iter()
                     .map(|condition| json!({
