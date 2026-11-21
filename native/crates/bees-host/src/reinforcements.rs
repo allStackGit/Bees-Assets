@@ -404,17 +404,16 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                     ReinforcementDue::Event(event)
                 }
             };
-            // Uranus II's authored timers still announce each wave when
-            // CurrentShips has no eligible SavedSquad of a requested type.
-            // Represent that real timer as an empty admission, never as
-            // invented combat ships. All other gameplay requires a real
-            // source squad before scheduling a reinforcement wave.
-            let empty_uranus_timer = matches!(
-                (self.campaign_dialogue, plan.activation),
-                (Some(CampaignDialogueSpec::UranusDefensive { .. }),
-                 NativeReinforcementActivation::AfterSeconds(_))
-            );
-            if (plan.squad_item_ids.is_empty() && !empty_uranus_timer) ||
+            // Uranus II/III's authored timers still announce the wave
+            // when CurrentShips has no eligible SavedSquad of a requested
+            // type. Never fabricate ships just to satisfy that dialogue.
+            // Unrelated levels still require genuine physical squads.
+            let empty_campaign_timer = matches!(self.campaign_dialogue,
+                Some(CampaignDialogueSpec::UranusDefensive { .. } |
+                     CampaignDialogueSpec::UranusNewThreat { .. })
+            ) && matches!(plan.activation,
+                NativeReinforcementActivation::AfterSeconds(_));
+            if (plan.squad_item_ids.is_empty() && !empty_campaign_timer) ||
                 plan.spawn.is_some_and(|spawn| !spawn.is_finite()) ||
                 plan.entry.is_some_and(|entry| !entry.is_finite())
             {
@@ -434,7 +433,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             // Never create an empty wave or a phantom pending faction.
             // Unknown identities still fail the normal source validation.
             plan.squad_item_ids.retain(|id| !vacant_squads.contains_key(id));
-            if plan.squad_item_ids.is_empty() && !empty_uranus_timer { continue; }
+            if plan.squad_item_ids.is_empty() && !empty_campaign_timer { continue; }
             for &id in &plan.squad_item_ids {
                 squad_waves.insert(id, waves.len());
             }
