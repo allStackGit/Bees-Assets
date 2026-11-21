@@ -14,7 +14,7 @@ const {inspectHost}=require('./experiment_hub_host');
 const {matchingLeaseBudget}=require('./experiment_hub_resources');
 const {validateProgress}=require('./experiment_hub_progress');
 const {physicalExecution,recoveryRecordJobId}=require('./experiment_hub_native_release_recovery');
-const {evaluationEvidence,evaluationRules,suiteIds,supportsEvaluation}=
+const {activeEvaluation,evaluationEvidence,evaluationFailure,evaluationRules,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -43,26 +43,52 @@ class LocalExecution {
     advertisement(){
         return {local_executor:true,installed_projects:this.projects.slice(),
             evaluation_suites:structuredClone(this.evaluationSuites),
+            design_catalog:Object.assign({},...this.projects.map(project=>
+                this.supervisor.adapters?.[project]?.design_catalog||{})),
             native_bees_curriculum_sources:this.projects.includes('bees_native_collect')
                 ?structuredClone(this.supervisor.adapters?.bees_native_collect
                     ?.native_bees_curriculum_sources||[]):[],
             tinybrains_profiles:{...this.supervisor.adapters?.tinybrains?.tinybrains_profiles},
             tinybrains_cuda_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_cuda_profiles||[])],
             tinybrains_thread_overrides:[...(this.supervisor.adapters?.tinybrains?.tinybrains_thread_overrides||[])],
+            tinybrains_curriculum_stages:[...(this.supervisor.adapters?.tinybrains?.tinybrains_curriculum_stages||[])],
             tinybrains_cpu_fallback_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_cpu_fallback_profiles||[])],
             tinybrains_required_import_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_required_import_profiles||[])],
             tinybrains_remote_rollout_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_remote_rollout_profiles||[])],
             tinybrains_remote_rollout_count:this.supervisor.adapters?.tinybrains?.tinybrains_remote_rollout_count||0,
+            tinybrains_remote_cpu_learner:this.supervisor instanceof DockerSupervisor&&
+                this.supervisor.adapters?.tinybrains?.tinybrains_remote_cpu_learner===true,
+            tinybrains_rollout_subset:this.supervisor.adapters?.tinybrains?.tinybrains_rollout_subset===true,
             tinybrains_remote_rollout_endpoints:[...(this.supervisor.adapters?.tinybrains?.tinybrains_remote_rollout_endpoints||[])],
             tinybrains_remote_key_fingerprint:this.supervisor.adapters?.tinybrains?.tinybrains_remote_key_fingerprint||null,
             tinybrains_rollout_endpoint:this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_endpoint||null,
+            tinybrains_rollout_slots:structuredClone(this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_slots||[]),
             tinybrains_rollout_key_fingerprint:this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_key_fingerprint||null,
             tinybrains_rollout_thread_limit:this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_thread_limit||0,
+            courier_remote_lineage_endpoints:[...(this.supervisor.adapters?.courier?.courier_remote_lineage_endpoints||[])],
+            courier_lineage_subset:this.supervisor.adapters?.courier?.courier_lineage_subset===true,
+            courier_remote_ppo_settings:this.supervisor.adapters?.courier?.courier_remote_ppo_settings===true,
+            courier_shared_policy_maps:this.supervisor.adapters?.courier?.courier_shared_policy_maps||0,
+            courier_shared_policy_collector:this.supervisor.adapters?.courier_lineage?.courier_shared_policy_collector===true,
+            courier_lineage_remote_ppo_settings:this.supervisor.adapters?.courier_lineage?.courier_lineage_remote_ppo_settings===true,
+            courier_remote_key_fingerprint:this.supervisor.adapters?.courier?.courier_remote_key_fingerprint||null,
+            courier_remote_max_shards:[...(this.supervisor.adapters?.courier?.courier_remote_max_shards||[])],
+            courier_lineage_endpoint:this.supervisor.adapters?.courier_lineage?.courier_lineage_endpoint||null,
+            courier_lineage_slots:structuredClone(this.supervisor.adapters?.courier_lineage?.courier_lineage_slots||[]),
+            courier_lineage_key_fingerprint:this.supervisor.adapters?.courier_lineage?.courier_lineage_key_fingerprint||null,
+            courier_lineage_max_shards:this.supervisor.adapters?.courier_lineage?.courier_lineage_max_shards||0,
             tinybrains_dual_gpu_profiles:this.supervisor.gpuEnabled===true&&
                 dockerCapable(this.supervisor)&&
                 this.supervisor.adapters?.tinybrains?.gpu_dual_execution==='split-ppo'
                 ?[...(this.supervisor.adapters.tinybrains.tinybrains_dual_gpu_profiles||[])]:[],
+            tinybrains_multi_gpu_profiles:this.supervisor.gpuEnabled===true&&
+                this.supervisor instanceof DockerSupervisor&&
+                this.supervisor.adapters?.tinybrains?.gpu_multi_execution==='split-ppo-collectors'
+                ?[...(this.supervisor.adapters.tinybrains.tinybrains_multi_gpu_profiles||[])]:[],
             tinybrains_imports:{...this.supervisor.adapters?.tinybrains?.tinybrains_imports},
+            linux_single_gpu_qualification:this.supervisor.gpuEnabled===true&&
+                (this.supervisor instanceof LinuxSupervisor||
+                    this.supervisor instanceof DockerSupervisor),
             gpu_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
                 (!this.supervisor.gpuProjects||this.supervisor.gpuProjects.includes(project))&&
@@ -136,11 +162,20 @@ class LocalExecution {
                         (['bees_native','bees_native_collect','bees_native_optimizer_worker'].includes(job.project_id)&&
                             localAdapter?.gpu_dual_execution==='native-rollouts')
                     );
+                const multi=count>=2&&count<=8&&
+                    job.resources?.gpu_mode==='exclusive'&&
+                    (this.supervisor instanceof LinuxSupervisor&&
+                        job.project_id==='courier'&&
+                        localAdapter?.gpu_multi_execution==='independent-ppo'||
+                     this.supervisor instanceof DockerSupervisor&&
+                        job.project_id==='tinybrains'&&count>=3&&
+                        job.frozen_parameters?.device==='multi'&&
+                        localAdapter?.gpu_multi_execution==='split-ppo-collectors');
                 const single=count===1;
                 if(typeof this.supervisor.qualifyGpuDeviceAccess!=='function'||
                     !this.supervisor.qualifiedAt||
                     job.status!=='waiting_adapter'||
-                    !(dual||single&&(job.resources?.gpu_mode==='exclusive'||
+                    !(dual||multi||single&&(job.resources?.gpu_mode==='exclusive'||
                         job.resources?.gpu_mode==='shared'&&
                         dockerCapable(this.supervisor)&&
                         localAdapter?.gpu_sharing==='cooperative-pytorch'))||
@@ -152,7 +187,7 @@ class LocalExecution {
                     lease.gpu_bindings.some((bound,i)=>
                         bound.id!==lease.resources.gpus?.[i]||
                         (job.resources.gpus?.length>0&&bound.id!==job.resources.gpus[i])))
-                    throw Error('GPU access probe requires a qualified frozen one- or two-GPU Linux lease.');
+                    throw Error('GPU access probe requires a qualified frozen, project-approved Linux GPU lease.');
                 // The bounded device-filter service verifies both allowed /
                 // denied render nodes and the actual installed HIP runtime.
                 // Read-only verifier construction must not create the
@@ -169,7 +204,7 @@ class LocalExecution {
                             {expected_parent_manifest_sha256:job.expected_parent_manifest_sha256}:{}),
                         ...(job.parent_collection_selection?
                             {parent_collection_selection:structuredClone(job.parent_collection_selection)}:{}),
-                        ...(dual
+                        ...(dual||multi
                             ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
                             :{gpu_pci_address:lease.gpu_bindings[0].pci_address}),
                     }));
@@ -358,24 +393,42 @@ class LocalExecution {
             }
         }
         if(ownsArtifacts&&(state==='running'&&lease.status==='acknowledged'||
-            lease.status==='released'&&['finished','stopped'].includes(state)&&job.final_checkpoint_sha256)&&job.evaluation_stop&&
+            lease.status==='released'&&['finished','stopped'].includes(state)&&job.final_checkpoint_sha256)&&activeEvaluation(job)&&
             supportsEvaluation(this.evaluationSuites,job)) {
-            const results=[];
-            for(const rule of evaluationRules(job.evaluation_stop)) {
+            const results=[],failures=[],issues=[];
+            for(const rule of evaluationRules(activeEvaluation(job))) {
+                const context=Object.freeze({
+                    job_id:job.id,project_id:job.project_id,
+                    artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                    dispatch_id:order.dispatch_id,suite_id:rule.suite_id,
+                });
                 try {
-                    const result=localAdapter.readEvaluation(Object.freeze({
-                        job_id:job.id,project_id:job.project_id,
-                        artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
-                        dispatch_id:order.dispatch_id,suite_id:rule.suite_id,
-                    }));
+                    const result=localAdapter.readEvaluation(context);
                     if(result!=null&&(state==='running'||result.checkpoint_sha256===job.final_checkpoint_sha256))
                         results.push(evaluationEvidence(result,rule,order.dispatch_id));
                 }catch(error) {
-                    report.evaluation_issue=(rule.suite_id+': '+
-                        String(error.message||error)).slice(0,160);
+                    issues.push((rule.suite_id+': '+
+                        String(error.message||error)).slice(0,160));
+                }
+                if(typeof localAdapter.readEvaluationFailure==='function')try {
+                    const failure=localAdapter.readEvaluationFailure(context);
+                    if(failure!=null&&(state==='running'||
+                        failure.checkpoint_sha256===job.final_checkpoint_sha256))
+                        failures.push(evaluationFailure(failure,context));
+                }catch(error) {
+                    issues.push((rule.suite_id+': failure observation: '+
+                        String(error.message||error)).slice(0,160));
                 }
             }
-            if(job.evaluation_stop.all_of) {
+            if(failures.length)report.evaluation_failures=failures;
+            if(issues.length) {
+                // Preserve older Hub compatibility with one diagnostic and
+                // keep the heartbeat report bounded at eight distinct issues.
+                const bounded=[...new Set(issues)].slice(0,8);
+                report.evaluation_issue=bounded.at(-1);
+                report.evaluation_issues=bounded;
+            }
+            if(activeEvaluation(job).all_of) {
                 if(results.length)report.evaluations=results;
             }else if(results.length) {
                 report.evaluation=results[0];
@@ -635,7 +688,9 @@ function fromEnvironment(env=process.env,options={}) {
             !/^[a-f0-9]{64}$/.test(String(helperSha256||'')))
             throw Error('Specify a locally installed absolute Windows owner path and its SHA-256.');
         const local={root,machineId,adapters,helperPath,helperSha256,
-            gpuEnabled:env.EXPERIMENT_HUB_ENABLE_CUDA==='1'};
+            gpuEnabled:env.EXPERIMENT_HUB_ENABLE_CUDA==='1'||
+                (env.EXPERIMENT_HUB_TINYBRAINS_CUDA==='1'&&
+                    adapters.tinybrains_rollout?.gpu_execution==='cuda')};
         supervisor=options.createSupervisor
             ?options.createSupervisor(local)
             :new WindowsSupervisor(local);
