@@ -1287,8 +1287,9 @@ impl NativeSoftwareRenderer {
             self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
         ).then(|| (
             ship_type == 5 && self.draw_carrier_deck(color_rgb, point, radians),
-            ship_type == 0 && self.draw_barge_charge_effect(
-                barge_charge, color_rgb, point, radians),
+            if ship_type == 0 {
+                self.draw_barge_charge_effect(barge_charge, color_rgb, point, radians)
+            } else { 0 },
         ))
     }
 
