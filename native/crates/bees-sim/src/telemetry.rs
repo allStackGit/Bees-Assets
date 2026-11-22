@@ -113,6 +113,7 @@ pub struct Measurements {
     pub ship_grid_cells_indexed: u64,
     pub obstacle_grid_cells_indexed: u64,
     /// Measured obstacle contact spatial searches combined this tick.
+    #[serde(default)]
     pub obstacle_contact_queries_merged: u64,
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
