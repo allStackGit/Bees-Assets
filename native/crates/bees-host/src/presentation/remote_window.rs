@@ -668,6 +668,20 @@ impl PeerClient {
                             return Err(invalid("out-of-order authoritative world snapshot").into());
                         }
                     }
+                    // A completed battle's reliable receipt must not keep
+                    // suppressing orders when the host publishes a new
+                    // authoritative world or advances its episode revision.
+                    // Do this at the same accepted snapshot boundary used
+                    // by interpolation and squad-selection ownership.
+                    let new_episode = self.state.as_ref().is_some_and(|previous|
+                        previous["world_id"] != message["world_id"] ||
+                        previous["episode_revision"] != message["episode_revision"]);
+                    if new_episode {
+                        self.battle_result_receipt = None;
+                        self.battle_loss_breakdown.clear();
+                        self.campaign_receipt = None;
+                        self.notice = "New battle started".into();
+                    }
                     if self.visual.snapshot(self.state.as_ref(), &message) {
                         self.metrics.snapshot_pairs_interpolated += 1;
                     }
@@ -736,6 +750,14 @@ impl PeerClient {
                             winner.is_null()||winner.as_i64().is_some())
                     {
                         return Err(invalid("native battle result belongs to another session or side").into());
+                    }
+                    // Terminal receipts are reliable but belong to exactly
+                    // one World episode. Never apply a late result for a
+                    // previous battle to the current input and HUD gates.
+                    if self.state.as_ref().is_some_and(|state|
+                        state["world_id"] != message["world_id"] ||
+                        state["episode_revision"] != message["episode_revision"]) {
+                        return Err(invalid("battle result does not match current world episode").into());
                     }
                     let label = message["label"].as_str()
                         .filter(|text| !text.is_empty())
