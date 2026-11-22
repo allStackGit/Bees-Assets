@@ -55,6 +55,9 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
             ("Samuel", "We've lost contact with our scouting force, commander."),
         ],
         // Original Neptune_OfProduction sections (source dialogue IDs 2-17).
+        CampaignCue::NeptuneProductionRetreatOpened => &[
+            ("Samuel", "The commander is calling a retreat. Regroup for our next battle!"),
+        ],
         CampaignCue::NeptuneProductionBriefing => &[
             ("Oviya", "The mining asteroids can be found at these locations."),
             ("Wesley", "Our Factory ships should be quite capable of increasing your prof- erm, resources in order to further bolster your fleet. Simply direct them to a mining location."),
@@ -226,6 +229,9 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
         ],
         CampaignCue::UranusDefensiveBriefing => &[
             ("Samuel", "Our success has bought us some time to collect resources around Uranus. There will likely be reinforcements called on from the bees we just fought, though. Take care."),
+        ],
+        CampaignCue::UranusDefensiveRetreatOpened => &[
+            ("Samuel", "Fleet, it's time to regroup and head out! Return to the commander's position immediately."),
         ],
         CampaignCue::UranusDefensiveWave { line, .. } => match line {
             1 => &[("Oviya", "Reinforcements from the remnants of the blockade are incoming.")],
