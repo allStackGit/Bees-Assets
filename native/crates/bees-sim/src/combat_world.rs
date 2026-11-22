@@ -2349,6 +2349,8 @@ impl CombatWorld {
                 state.map_bounds.min.x > state.map_bounds.max.x ||
                 state.map_bounds.min.y > state.map_bounds.max.y ||
                 state.power < 0 ||
+                (state.waiting_for_new_charge &&
+                    !specials.barge_config.contains_key(&id)) ||
                 state.command_outcome_id.is_some_and(|outcome| outcome <= 0)
             ) ||
             specials.barge_config.iter().any(|(&id, &(power, _))|

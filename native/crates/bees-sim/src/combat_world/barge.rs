@@ -36,6 +36,10 @@ pub(super) struct GameBargeCharge {
     pub(super) can_override_bounds: bool,
     pub(super) power: i32,
     pub(super) command_outcome_id: Option<i64>,
+    /// Source SquadActionBox.Charge remembers an additional player click
+    /// while wind-up, rush or cooldown owns the movement lock.
+    #[serde(default)]
+    pub(super) waiting_for_new_charge: bool,
 }
 
 impl CombatWorld {
@@ -121,17 +125,22 @@ impl CombatWorld {
         if self.frozen_after_elimination ||
             !self.game_barge_player_config.contains_key(&ship_id) ||
             !self.game_ship_steering.contains_key(&ship_id) ||
-            self.pending_player_barge_charges.contains(&ship_id) ||
-            // Command-owned phase-4 entries must remain intact until the
-            // command director observes completion/finalization. Player
-            // input may not overwrite that still-owned state.
-            self.game_barge_charges.contains_key(&ship_id) {
+            self.pending_player_barge_charges.contains(&ship_id) {
             return false;
         }
-        self.ship(ship_id).is_some_and(|ship| !ship.vitals.is_dead()) &&
-            self.ship_body(ship_id).is_some_and(|body| body.active &&
-                !body.motion.is_policy_controlled &&
-                !body.motion.cannot_change_movement_orders)
+        let Some(ship) = self.ship(ship_id) else { return false };
+        let Some(body) = self.ship_body(ship_id) else { return false };
+        if ship.vitals.is_dead() || !body.active || body.motion.is_policy_controlled {
+            return false;
+        }
+        // Unity SquadActionBox.Charge records WaitingForNewCharge while a
+        // running ChargeForward holds the movement lock. Repeated clicks
+        // coalesce; a completed command-owned charge retains its completion
+        // token until the owning command director finalizes it.
+        if let Some(charge) = self.game_barge_charges.get(&ship_id) {
+            return charge.phase != 4 && !charge.waiting_for_new_charge;
+        }
+        !body.motion.cannot_change_movement_orders
     }
 
     pub fn queue_player_barge_charge(
@@ -141,7 +150,11 @@ impl CombatWorld {
             return Err(CombatWorldError::InvalidPolicyBarge);
         }
         if !self.player_game_barge_charge_ready(ship_id) { return Ok(false); }
-        self.pending_player_barge_charges.push(ship_id);
+        if let Some(charge) = self.game_barge_charges.get_mut(&ship_id) {
+            charge.waiting_for_new_charge = true;
+        } else {
+            self.pending_player_barge_charges.push(ship_id);
+        }
         Ok(true)
     }
 
@@ -188,6 +201,7 @@ impl CombatWorld {
         self.game_barge_charges.insert(ship_id, GameBargeCharge {
             phase: 1, elapsed: 0.0, target_id,
             map_bounds, can_override_bounds, power, command_outcome_id,
+            waiting_for_new_charge: false,
         });
         self.game_barge_measurements.starts += 1;
         self.events.push(CombatEvent::BargeChargeStarted { ship_id });
@@ -251,6 +265,15 @@ impl CombatWorld {
                 } else {
                     motion.stop_moving();
                 }
+            }
+            // A completed command-owned charge cannot be replaced before
+            // its owner observes phase 4. Deliver a queued player click
+            // through the ordinary next-tick input path after finalization.
+            if charge.phase == 4 && charge.target_id.is_some() &&
+                charge.waiting_for_new_charge &&
+                self.game_barge_player_config.contains_key(&ship_id) &&
+                !self.pending_player_barge_charges.contains(&ship_id) {
+                self.pending_player_barge_charges.push(ship_id);
             }
         }
     }
@@ -346,10 +369,22 @@ impl CombatWorld {
                     // scanning inert per-ship timers forever. Targeted
                     // commands retain their completion token until their
                     // existing command-finalization path observes it.
-                    if self.game_barge_charges.get(&ship_id)
-                        .is_some_and(|charge| charge.target_id.is_none())
+                    if let Some(charge) = self.game_barge_charges.get(&ship_id)
+                        .copied().filter(|charge| charge.target_id.is_none())
                     {
                         self.reset_game_barge_charge(ship_id);
+                        // FinishCoolDown immediately calls ChargeForward
+                        // when WaitingForNewCharge was set. It uses the same
+                        // gameplay charge engine and preserves its normal
+                        // wind-up, collision and recoil behavior.
+                        if charge.waiting_for_new_charge {
+                            if let Some(&(power, can_override_bounds)) =
+                                self.game_barge_player_config.get(&ship_id)
+                            {
+                                self.begin_game_barge_charge(index, None,
+                                    charge.map_bounds, can_override_bounds, power, None)?;
+                            }
+                        }
                     }
                 }
                 _ => unreachable!("authored game Barge phase"),
