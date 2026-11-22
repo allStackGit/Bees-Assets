@@ -221,7 +221,7 @@ async function stage(base,env,root,name,entry) {
             !fs.existsSync(path.join(temporary,'Ants-MAPOCA','pyproject.toml')))
             throw Error('TinyBrains release has no simulation package.');
         if(name==='tinybrains') {
-            const heldout=path.join(temporary,'Ants-MAPOCA','evidence','heldout.json');
+            const heldout=path.join(temporary,'Ants-MAPOCA','configs','onnx-parity-observations.json');
             let observations;
             try {
                 const size=fs.statSync(heldout).size;
@@ -229,7 +229,7 @@ async function stage(base,env,root,name,entry) {
                     throw Error('Held-out observations exceed the approved size.');
                 observations=JSON.parse(fs.readFileSync(heldout,'utf8')).observations;
             }catch {
-                throw Error('TinyBrains release lacks valid held-out export observations.');
+                throw Error('TinyBrains release lacks valid source-controlled ONNX parity observations.');
             }
             if(!Array.isArray(observations)||!observations.length)
                 throw Error('TinyBrains release has no representative observations for ONNX export parity.');

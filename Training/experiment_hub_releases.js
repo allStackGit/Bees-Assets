@@ -70,7 +70,7 @@ const CLI_ASSETS=[
 ];
 // Runtime provisioning changed too: force an immutable new release/venv
 // even for workers that already installed this exact TinyBrains source.
-const TINYBRAINS_PACKAGE_FORMAT='pinned-upstream-cli-cartridge-windows-cuda-v4-heldout';
+const TINYBRAINS_PACKAGE_FORMAT='pinned-upstream-cli-cartridge-windows-cuda-v5-parity-fixture';
 
 function git(args,cwd,timeout=120000) {
     return new Promise((resolve,reject)=>{
@@ -249,9 +249,9 @@ class ReleaseStore {
                 // enrolled machines. Include only the runtime's source,
                 // configuration, maps and tools; the pinned official engine
                 // and upstream baseline are installed separately on workers.
-                // The held-out observation set is required to verify exported
-                // ONNX action parity. It is a bounded, tracked input, not
-                // training history; do not include other evidence files.
+                // Source-controlled configs/onnx-parity-observations.json
+                // provides ONNX action-parity cases without bundling generated
+                // run evidence or machine-local checkpoints.
                 const archivePaths=name==='worker'?['Training']:
                     name==='tinybrains'?[
                         'Ants-MAPOCA/pyproject.toml',
@@ -259,7 +259,6 @@ class ReleaseStore {
                         'Ants-MAPOCA/src',
                         'Ants-MAPOCA/configs',
                         'Ants-MAPOCA/maps',
-                        'Ants-MAPOCA/evidence/heldout.json',
                         'Ants-MAPOCA/scripts',
                         'Ants-MAPOCA/tools',
                         'Ants-MAPOCA/games.toml',
