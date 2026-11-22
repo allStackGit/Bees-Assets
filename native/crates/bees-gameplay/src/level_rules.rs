@@ -1051,8 +1051,10 @@ impl NativeCollisionAsteroidTimer {
         self.interval_seconds.is_finite() && self.interval_seconds >= self.spec.minimum_seconds as f32 &&
         self.interval_seconds < self.spec.maximum_seconds.max(self.spec.minimum_seconds + 1) as f32 &&
         self.interval_seconds.fract() == 0.0 &&
-        self.elapsed_seconds.is_finite() && self.elapsed_seconds >= 0.0 &&
-        self.elapsed_seconds < self.interval_seconds
+        // Unity's ScaledTimer.Update runs one callback per frame, not
+        // a catch-up loop. A late tick may legitimately leave elapsed
+        // above Length after subtracting only one interval.
+        self.elapsed_seconds.is_finite() && self.elapsed_seconds >= 0.0
     }
 }
 
@@ -1575,7 +1577,11 @@ where
         // so every side sees the new obstacle at the next shared boundary.
         if let Some(timer) = state.collision_asteroid_timer.as_mut() {
             timer.elapsed_seconds += dt_seconds;
-            while timer.elapsed_seconds >= timer.interval_seconds {
+            // Source ScaledTimer.Update uses a strict > Length threshold
+            // and invokes a recurring action only once per Update(). Do not
+            // emit multiple asteroids for one long frame; retain the
+            // remainder so later fixed steps catch up in source order.
+            if timer.elapsed_seconds > timer.interval_seconds {
                 state.combat.spawn_next_full_collision_asteroid(&mut world.random)?;
                 timer.elapsed_seconds -= timer.interval_seconds;
                 timer.spawned = timer.spawned.saturating_add(1);
