@@ -3634,6 +3634,9 @@ fn original_fleet_source_squad(
                         Some(ship.entity_id),
             _ => None,
         }) else { continue };
+        if !scene.can_reassign_authored_ship(side, parent) {
+            continue;
+        }
         if let Some(squad) = scene.source_squads.iter().find(|squad|
             squad.side == side && squad.saved_squad_id.is_some() &&
             squad.player_permissions.user_controlled &&
