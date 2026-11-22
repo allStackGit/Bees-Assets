@@ -358,8 +358,10 @@ impl CombatWorld {
             let Some(&index) = self.ship_by_id.get(&id) else {
                 return Err(CombatWorldError::UnknownPolicyAgent(decision.agent_id));
             };
-            if !self.policy_ship_runtime.contains_key(&id) ||
-                !self.physics.ships()[index].active ||
+            let Some(runtime) = self.policy_ship_runtime.get(&id) else {
+                return Err(CombatWorldError::UnknownPolicyAgent(decision.agent_id));
+            };
+            if !self.physics.ships()[index].active ||
                 self.ships[index].vitals.is_dead() {
                 return Err(CombatWorldError::UnknownPolicyAgent(decision.agent_id));
             }
@@ -367,9 +369,7 @@ impl CombatWorld {
             // inference. A slot is enabled only after real mount registration;
             // future subclasses must connect their actual firing path.
             let mask = self.policy_mask_for_bound_ship(
-                id,
-                self.policy_ship_runtime.get(&id)
-                    .expect("already validated policy controller"),
+                id, runtime,
                 self.ship_weapons.get(&id)
                     .expect("bound policy ship owns mounted weapons"),
             );
