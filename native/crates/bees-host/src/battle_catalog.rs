@@ -884,12 +884,22 @@ impl CampaignProgress<'_> {
                 }
             }
             if let Some(ship) = self.fleet.get(&id) {
+                // Older campaign summaries can predate combat telemetry.
+                // Never display partial historical shots or damage as
+                // complete zeros in the original FleetShip career view.
+                let observed = |value: u64| {
+                    if ship.combat_history_complete {
+                        value.to_string()
+                    } else { "?".to_owned() }
+                };
                 return Some(format!(
-                    "#{id}{name} S{}{type_label} W{}/{} M{} Hit{} Taken{} Kill{}{}{}",
+                    "#{id}{name} S{}{type_label} W{}/{} Shots{} Hit{} Taken{} Kill{} M{}{}{}",
                     ship.side, ship.battles_won, ship.battles_fought,
-                    ship.minerals_mined, ship.combat.enemy_tsv_damage_done,
-                    ship.combat.tsv_damage_received,
+                    observed(ship.combat.observed_turret_shots),
+                    observed(ship.combat.enemy_tsv_damage_done),
+                    observed(ship.combat.tsv_damage_received),
                     ship.combat.source_kills.map_or("?".to_owned(), |count| count.to_string()),
+                    ship.minerals_mined,
                     if ship.is_dead { " LOST" } else { "" }, assignment,
                 ));
             }
