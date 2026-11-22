@@ -9135,6 +9135,7 @@ fn run_battle(
             "carrier_deck_overlay_draws": client.carrier_deck_overlay_draws,
             "barge_charge_effect_draws": client.barge_charge_effect_draws,
             "queen_part_sprite_draws": client.queen_part_sprite_draws,
+            "queen_explosion_layer_draws": client.queen_explosion_layer_draws,
             "combat_impacts_observed": client.combat_impacts_observed,
             "combat_impact_visual_draws": client.combat_impact_visual_draws,
             "combat_impact_visuals_dropped": client.combat_impact_visuals_dropped,
