@@ -9301,6 +9301,23 @@ fn run_battle(
                 continue 'battle;
             }
         }
+        // Authenticated remote commanders can pause the ONE playable
+        // World. Keep polling sockets and local UI at the same boundary;
+        // physics, HiveMind timers, replay rounds and the deterministic
+        // simulation clock remain untouched until every vote is released.
+        // Disconnect or World turnover clears that peer's vote in the
+        // existing network reaper. Headless training never has a listener.
+        if let Some(server) = remote.as_mut() {
+            let world = host.simulation().world(0).expect("remote Level registered");
+            if server.commander_paused(world.id, world.episode_revision()) {
+                if let Some(view) = host.render_world(0) {
+                    server.broadcast_initial_if_pending(&view, client_bounds[0]);
+                }
+                std::thread::sleep(Duration::from_millis(16));
+                remote_deadline = Instant::now();
+                continue 'battle;
+            }
+        }
         let until_update = config.model_updates.get(next_model_update)
             .filter(|item| item.at_round > rounds)
             .map_or(config.max_rounds, |item| item.at_round);

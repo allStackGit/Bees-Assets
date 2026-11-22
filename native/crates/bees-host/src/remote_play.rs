@@ -71,6 +71,10 @@ enum WireInput {
     /// UI acknowledgment only, without an alternative gameplay clock.
     BriefingReady { request_id: u64, world_id: u64,
         episode_revision: u64, sequence: u32 },
+    /// An authenticated commander's time-control vote. Not a gameplay
+    /// order: the one authoritative World simply stops advancing ticks.
+    Pause { request_id: u64, world_id: u64,
+        episode_revision: u64, paused: bool },
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -331,6 +335,12 @@ pub struct RemotePlayMeasurements {
     pub briefing_rejected_acks: u64,
     #[serde(default)]
     pub briefing_wait_polls: u64,
+    #[serde(default)]
+    pub commander_pause_requests: u64,
+    #[serde(default)]
+    pub commander_pause_rejections: u64,
+    #[serde(default)]
+    pub commander_paused_polls: u64,
     pub state_frames: u64,
     pub state_bytes: u64,
     pub states_superseded: u64,
@@ -482,6 +492,9 @@ pub struct NativeRemotePlay {
     force_initial_state: bool,
     // Cosmetic cues only, not a duplicate gameplay event store.
     pending_audio: HashMap<i32, Vec<Value>>,
+    /// A pause-state broadcast can repeat the same physical tick.
+    /// Consume its audio events once, regardless of extra UI snapshots.
+    last_audio_tick: Option<(u64,u64,u64)>,
     // Each authenticated side has only presentation vision masks; no
     // second gameplay visibility or historical enemy positions are stored.
     fog_by_side: HashMap<i32, RemoteFogSight>,
@@ -494,6 +507,11 @@ pub struct NativeRemotePlay {
     pending_releases: Vec<RemoteOrder>,
     /// Per-connection source briefing acknowledgment, never gameplay.
     briefing_ready: HashMap<u64,(u64,u64,u32)>,
+    /// Cooperative human peers pause the same World, never its renderer
+    /// or an independent simulation. Their votes expire on episode change
+    /// and disconnect, with no durable replay/gameplay side effects.
+    pause_episode: Option<(u64, u64)>,
+    pause_peers: HashSet<u64>,
     measurements: RemotePlayMeasurements,
 }
 
@@ -589,11 +607,13 @@ impl NativeRemotePlay {
             side_tokens, spectator_tokens,
             archived_receipts: HashMap::new(), peers: Vec::new(),
             next_peer: 1, last_state: None, force_initial_state: false,
-            pending_audio: HashMap::new(), fog_by_side: HashMap::new(),
+            pending_audio: HashMap::new(), last_audio_tick: None,
+            fog_by_side: HashMap::new(),
             music_location: None, camera_zoom: None,
             camera_edge_scrolling: None,
             held_fire: HashMap::new(), pending_releases: Vec::new(),
             briefing_ready: HashMap::new(),
+            pause_episode: None, pause_peers: HashSet::new(),
             measurements: RemotePlayMeasurements::default(),
         }))
     }
@@ -754,6 +774,9 @@ impl NativeRemotePlay {
         // The recovered World retains its authored cue. The old TCP
         // peers cannot acknowledge on behalf of newly authenticated ones.
         self.briefing_ready.clear();
+        self.pause_peers.clear();
+        self.pause_episode = None;
+        self.last_audio_tick = None;
         self.measurements = saved.measurements;
         self.measurements.held_fire_disconnect_releases += previous.len() as u64;
         self.measurements.disconnected_peers += saved.connected_peers as u64;
@@ -791,6 +814,11 @@ impl NativeRemotePlay {
     pub fn poll(&mut self, world_id: WorldId, revision: u64,
                 live_controllers: &[u64], briefing: Option<(i32,u32)>) -> Vec<RemoteOrder> {
         let poll_started = Instant::now();
+        if self.pause_episode != Some((world_id.0, revision)) {
+            self.pause_episode = Some((world_id.0, revision));
+            self.pause_peers.clear();
+            self.force_initial_state = true;
+        }
         let mut retired_no_live = Vec::new();
         self.held_fire.retain(|&peer, lease| {
             if lease.world_id != world_id || lease.episode_revision != revision {
@@ -1089,6 +1117,39 @@ impl NativeRemotePlay {
                             } else { "Stale or unauthorized campaign briefing" },
                         }));
                     }
+                    Ok(WireInput::Pause {
+                        request_id, world_id: claimed_world,
+                        episode_revision: claimed_revision, paused,
+                    }) if peer.side.is_some() => {
+                        if request_id <= peer.last_request_id {
+                            self.measurements.commander_pause_rejections += 1;
+                            peer.closed = true;
+                            break;
+                        }
+                        peer.last_request_id = request_id;
+                        peer_orders += 1;
+                        let accepted = !peer.spectator && !self.archive_only &&
+                            claimed_world == world_id.0 &&
+                            claimed_revision == revision;
+                        if accepted {
+                            let changed = if paused {
+                                self.pause_peers.insert(peer.id)
+                            } else {
+                                self.pause_peers.remove(&peer.id)
+                            };
+                            if changed { self.force_initial_state = true; }
+                            self.measurements.commander_pause_requests += 1;
+                        } else {
+                            self.measurements.commander_pause_rejections += 1;
+                        }
+                        let _ = peer.enqueue(&json!({
+                            "kind": "pause_result",
+                            "request_id": request_id,
+                            "processed": accepted,
+                            "owned": self.pause_peers.contains(&peer.id),
+                            "paused": !self.pause_peers.is_empty(),
+                        }));
+                    }
                     Ok(WireInput::WeaponOverlay { request_id, world_id: claimed_world,
                         episode_revision: claimed_revision, squads }) if peer.side.is_some() => {
                         // A spectator has no player-owned squad or private
@@ -1280,6 +1341,16 @@ impl NativeRemotePlay {
 
     pub fn held_fire_active(&self) -> bool { !self.held_fire.is_empty() }
 
+    /// Queried at the host's fixed-tick boundary AFTER polling sockets.
+    /// A paused host still polls and authenticates inputs but never calls
+    /// CombatWorld::step. Votes are in-memory player UI state only.
+    pub fn commander_paused(&mut self, world_id: WorldId, revision: u64) -> bool {
+        let paused = self.pause_episode == Some((world_id.0, revision)) &&
+            !self.pause_peers.is_empty();
+        if paused { self.measurements.commander_paused_polls += 1; }
+        paused
+    }
+
     pub fn reply(&mut self, peer_id: u64, request_id: u64, result: Result<&str, &str>) {
         // Authoritative Begin rejection must revoke its provisional lease,
         // or one invalid squad selection could lock out all other clients.
@@ -1378,6 +1449,7 @@ impl NativeRemotePlay {
         if self.last_state.is_some_and(|previous| previous != episode) {
             self.pending_audio.clear();
             self.fog_by_side.clear();
+            self.last_audio_tick = None;
         }
         self.fog_by_side.retain(|side,_|sides.contains(side));
         self.pending_audio.retain(|side,_|sides.contains(side));
@@ -1434,7 +1506,12 @@ impl NativeRemotePlay {
             vision.insert(side, source);
         }
         // Carry short-lived sounds to the next presentation frame.
-        if has_events {
+        if has_events &&
+            self.last_audio_tick != Some((view.world_id.0, view.episode_revision, view.tick))
+        {
+            self.last_audio_tick = Some((
+                view.world_id.0, view.episode_revision, view.tick,
+            ));
             // Audio events already carry exact projectile IDs. Look up
             // only those physical shots in CombatWorld's existing live
             // identity index; do not allocate and hash every active shot
@@ -1455,6 +1532,7 @@ impl NativeRemotePlay {
         let music_location = self.music_location;
         let camera_zoom = self.camera_zoom;
         let camera_edge_scrolling = self.camera_edge_scrolling;
+        let commander_paused = !self.pause_peers.is_empty();
         // The source's introductory and mid-mission briefings prevent
         // either side issuing physical orders. Local windows pace their
         // source dialogue; dedicated servers require authenticated ACKs
@@ -1511,6 +1589,7 @@ impl NativeRemotePlay {
                     if spectator { None } else { overlay_by_side.get(&side) },
                     spectator, measurements,
                 );
+                state["commander_paused"] = json!(commander_paused);
                 if spectator {
                     measurements.spectator_snapshots_encoded += 1;
                     // Objective-specific tactical story fields are still
@@ -1725,6 +1804,13 @@ impl NativeRemotePlay {
         self.peers.retain(|peer| !peer.closed);
         self.briefing_ready.retain(|peer,_|
             self.peers.iter().any(|client| client.id==*peer));
+        let paused_before = self.pause_peers.len();
+        self.pause_peers.retain(|peer|
+            self.peers.iter().any(|client| client.id==*peer &&
+                client.side.is_some() && !client.spectator));
+        if paused_before != self.pause_peers.len() {
+            self.force_initial_state = true;
+        }
         self.measurements.disconnected_peers += (before - self.peers.len()) as u64;
     }
 }

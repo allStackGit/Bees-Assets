@@ -557,6 +557,11 @@ struct PeerClient {
     /// A denied cue is not resent every display frame. A new World or
     /// source cue can still request its own acknowledgment.
     briefing_rejected: Option<(u64,u64,u32)>,
+    /// This commander's own time-control vote, not the shared pause state.
+    /// It is cleared on reconnect and World turnover.
+    pause_owned: bool,
+    pause_pending: Option<(u64,bool)>,
+    pause_episode: Option<(u64,u64)>,
     authenticated: bool,
     connected: bool,
     /// The host proves this authority class in its signed-in welcome,
@@ -619,6 +624,7 @@ impl PeerClient {
             last_response_request: 0, pending_order_times: VecDeque::new(),
             briefing_pending: None, briefing_approved: None,
             briefing_rejected: None,
+            pause_owned: false, pause_pending: None, pause_episode: None,
             authenticated: false, connected: true,
             input_suppressed: spectator, spectator, side,
             host_session_id: None,
@@ -746,6 +752,11 @@ impl PeerClient {
                     let new_episode = self.state.as_ref().is_some_and(|previous|
                         previous["world_id"] != message["world_id"] ||
                         previous["episode_revision"] != message["episode_revision"]);
+                    if self.pause_episode != Some((world_id,revision)) {
+                        self.pause_owned = false;
+                        self.pause_pending = None;
+                        self.pause_episode = Some((world_id,revision));
+                    }
                     if new_episode {
                         self.battle_result_receipt = None;
                         self.battle_loss_breakdown.clear();
@@ -955,6 +966,34 @@ impl PeerClient {
                     self.metrics.briefing_receipts+=1;
                     self.notice=format!("Story {request}: {feedback}");
                 }
+                Some("pause_result") => {
+                    if !self.authenticated || self.spectator {
+                        return Err(invalid("unauthorized host pause receipt").into());
+                    }
+                    let request = message["request_id"].as_u64()
+                        .ok_or_else(|| invalid("host pause receipt lacks request ID"))?;
+                    let processed = message["processed"].as_bool()
+                        .ok_or_else(|| invalid("host pause receipt lacks decision"))?;
+                    let owned = message["owned"].as_bool()
+                        .ok_or_else(|| invalid("host pause receipt lacks vote ownership"))?;
+                    let paused = message["paused"].as_bool()
+                        .ok_or_else(|| invalid("host pause receipt lacks global state"))?;
+                    let Some((pending,_)) = self.pause_pending else {
+                        return Err(invalid("unsolicited native pause receipt").into());
+                    };
+                    if request != pending {
+                        return Err(invalid("host pause receipt mismatches request").into());
+                    }
+                    self.pause_pending = None;
+                    if processed { self.pause_owned = owned; }
+                    self.notice = if !processed {
+                        "Host rejected stale or unauthorized pause".into()
+                    } else if paused {
+                        "Authoritative battle paused".into()
+                    } else {
+                        "Authoritative battle resumed".into()
+                    };
+                }
                 Some("input_result") => {
                     if !self.authenticated {
                         return Err(invalid("native host acknowledged an unauthenticated order").into());
@@ -1069,6 +1108,24 @@ impl PeerClient {
             "sequence":sequence}),"Campaign briefing ready".into())?;
         self.briefing_pending=Some((world,revision,sequence,id));
         self.metrics.briefing_requests_sent+=1;
+        Ok(())
+    }
+
+    /// Time-control is a server-owned vote. Do not conflate it with local
+    /// soundtrack mute or an ordinary replayed physical player command.
+    fn request_pause(&mut self, world:u64, revision:u64, paused:bool)
+        -> Result<(), Box<dyn Error>>
+    {
+        if !self.authenticated || !self.connected || self.spectator ||
+            self.pause_pending.is_some() {
+            return Err(invalid("pause request requires an idle authenticated player seat").into());
+        }
+        let id=self.next_request;
+        self.enqueue_request(json!({
+            "kind":"pause","world_id":world,
+            "episode_revision":revision,"paused":paused
+        }), if paused { "Requesting battle pause" } else { "Resuming battle" }.into())?;
+        self.pause_pending=Some((id,paused));
         Ok(())
     }
 
@@ -3133,12 +3190,24 @@ pub fn connect_remote(
                 (level * 100.0).round() as u32);
         }
         if !show_controls_help && window.is_key_pressed(Key::Space, KeyRepeat::No) {
-            soundtrack_paused=!soundtrack_paused;
-            audio.set_paused(soundtrack_paused);
-            peer.notice=if soundtrack_paused {
-                "Soundtrack paused".into()
-            } else { "Soundtrack playing".into() };
+            if peer.spectator {
+                soundtrack_paused=!soundtrack_paused;
+                peer.notice=if soundtrack_paused {
+                    "Soundtrack paused".into()
+                } else { "Soundtrack playing".into() };
+            } else if let Some((world,revision))=peer.state.as_ref()
+                .and_then(|state|Some((
+                    state["world_id"].as_u64()?,
+                    state["episode_revision"].as_u64()?,
+                )))
+            {
+                if let Err(error)=peer.request_pause(world,revision,!peer.pause_owned) {
+                    peer.notice=error.to_string();
+                }
+            }
         }
+        audio.set_paused(soundtrack_paused || peer.state.as_ref()
+            .is_some_and(|state|state["commander_paused"]==true));
         // Backspace mirrors the local tactical client's cancellation
         // without closing the battle. Escape still exits only when no
         // targeting or shooting UI is active.
@@ -4389,6 +4458,16 @@ pub fn connect_remote(
                 &format!("Spectator camera following visible ship #{id}"),
                 1,[198,231,248]);
         }
+        if peer.state.as_ref().is_some_and(|state|
+            state["commander_paused"] == true)
+        {
+            text::draw_at(&mut pixels,WIDTH,12,36,
+                if peer.spectator { "Battle paused by a commander" }
+                else if peer.pause_owned {
+                    "Battle paused - Space to release your pause"
+                } else { "Battle paused by another commander" },
+                1,[255,211,130]);
+        }
         if surrender_confirmation.is_some() {
             NativeSoftwareRenderer::draw_surrender_panel(&mut pixels,WIDTH,HEIGHT);
         } else if show_campaign_rewards && !peer.campaign_reward_details.is_empty() {
@@ -4415,7 +4494,7 @@ pub fn connect_remote(
                 "C or F2: inspect the Fleet Codex",
                 "S: request surrender (commander only; confirmation required)",
                 "Q: disconnect from the host and close this window",
-                "The host battle continues for all players",
+                "Space: request shared pause / release your vote",
             ];
             NativeSoftwareRenderer::draw_help_panel(
                 &mut pixels,WIDTH,HEIGHT,ROWS,&[0,6],
@@ -4479,7 +4558,7 @@ pub fn connect_remote(
                 "NETWORK / AUDIO",
                 "F4: surrender   F5: reconnect   F8: network measurements",
                 "F7: mute   F10/F11: effects   Shift+F10/F11: music",
-                "Space: pause local soundtrack (not remote battle)",
+                "Space: request / release shared battle pause",
             ];
             if peer.spectator {
                 // The observer may navigate the native camera, artwork,
