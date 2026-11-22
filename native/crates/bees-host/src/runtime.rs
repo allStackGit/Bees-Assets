@@ -1794,6 +1794,7 @@ where
             campaign_dialogue: world.state.campaign_dialogue.as_ref().map(|dialogue| dialogue.current()),
             campaign_dialogue_side: world.state.campaign_dialogue.as_ref().map(|dialogue| dialogue.player_side()),
             campaign_score: world.state.metadata.campaign_score_snapshot(),
+            campaign_codex: world.state.metadata.campaign_codex_classes(),
             player_match_counts: world.state.metadata.player_match_counts(),
             player_loss_types: world.state.metadata.player_loss_types(),
             player_minerals_mined: world.state.metadata.player_minerals_mined(),
