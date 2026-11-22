@@ -2428,6 +2428,7 @@ pub fn connect_remote(
     let mut show_art=true;
     let mut show_weapon_ranges=false;
     let mut show_diagnostics=false;
+    let mut show_controls_help=false;
     let mut sent_weapon_overlay: Option<(u64,u64,Vec<Value>)>=None;
     let mut shooting_menu=false;
     let mut shooting_focus=1_u8;
@@ -2441,7 +2442,20 @@ pub fn connect_remote(
         let now=Instant::now();
         let elapsed=now.duration_since(previous_frame).as_secs_f32().min(0.1);
         previous_frame=now;
-        if window.is_key_pressed(Key::F6, KeyRepeat::No) {
+        if window.is_key_pressed(Key::F1, KeyRepeat::No) && !held_fire_active {
+            show_controls_help=!show_controls_help;
+            if show_controls_help {
+                // A modal may not continue an old target gesture or turn
+                // a subsequent click into an authenticated player order.
+                shooting_menu=false;shooting_press=None;
+                mode=None;patrol_start=None;drag_start=None;right_press=None;
+                hud_press=None;squad_tab_press=None;minimap_dragging=false;
+                last_selection_press=None;double_left_press=false;
+            }
+            last_left=window.get_mouse_down(MouseButton::Left);
+            last_right=window.get_mouse_down(MouseButton::Right);
+        }
+        if !show_controls_help && window.is_key_pressed(Key::F6, KeyRepeat::No) {
             show_art=!show_art;
             peer.notice=if show_art {
                 "Native source sprites enabled".into()
@@ -2449,13 +2463,13 @@ pub fn connect_remote(
                 "Fast geometric display enabled".into()
             };
         }
-        if window.is_key_pressed(Key::B, KeyRepeat::No) {
+        if !show_controls_help && window.is_key_pressed(Key::B, KeyRepeat::No) {
             show_weapon_ranges=!show_weapon_ranges;
             peer.notice=if show_weapon_ranges {
                 "Selected weapon ranges enabled".into()
             } else { "Selected weapon ranges hidden".into() };
         }
-        if window.is_key_pressed(Key::F8, KeyRepeat::No) {
+        if !show_controls_help && window.is_key_pressed(Key::F8, KeyRepeat::No) {
             show_diagnostics=!show_diagnostics;
         }
         if window.is_key_pressed(Key::F7, KeyRepeat::No) {
@@ -2473,7 +2487,7 @@ pub fn connect_remote(
                 if music { "Music" } else { "Effects" },
                 (level * 100.0).round() as u32);
         }
-        if window.is_key_pressed(Key::Space, KeyRepeat::No) {
+        if !show_controls_help && window.is_key_pressed(Key::Space, KeyRepeat::No) {
             soundtrack_paused=!soundtrack_paused;
             audio.set_paused(soundtrack_paused);
             peer.notice=if soundtrack_paused {
@@ -2485,7 +2499,11 @@ pub fn connect_remote(
         // targeting or shooting UI is active.
         let cancel = window.is_key_pressed(Key::Backspace, KeyRepeat::No);
         let escape = window.is_key_pressed(Key::Escape, KeyRepeat::No);
-        if cancel || escape {
+        if escape && show_controls_help {
+            show_controls_help=false;
+            last_left=window.get_mouse_down(MouseButton::Left);
+            last_right=window.get_mouse_down(MouseButton::Right);
+        } else if !show_controls_help && (cancel || escape) {
             if shooting_menu {
                 shooting_menu=false;shooting_press=None;
             } else if mode.is_some() {
@@ -2497,7 +2515,7 @@ pub fn connect_remote(
         // Dropping the previous socket makes the authoritative host release
         // the old peer's held-fire weapons at its next fixed-tick boundary.
         let mut rejoined=false;
-        if window.is_key_pressed(Key::F5, KeyRepeat::No) {
+        if !show_controls_help && window.is_key_pressed(Key::F5, KeyRepeat::No) {
             peer.metrics.reconnect_attempts+=1;
             let original = peer.host_session_id.as_deref()
                 .or(peer.expected_host_session_id.as_deref());
@@ -2608,15 +2626,18 @@ pub fn connect_remote(
             if count>0 {
                 // Source campaign dialogue uses K to skip and L to advance.
                 // A skip must not activate a Beacon in the same frame.
-                dialogue_skip_key=dialogue_line<count &&
+                dialogue_skip_key=!show_controls_help&&dialogue_line<count &&
                     window.is_key_pressed(Key::K,KeyRepeat::No);
                 if dialogue_skip_key {
                     dialogue_line=count;
-                } else if window.is_key_pressed(Key::L,KeyRepeat::No) ||
-                    window.is_key_pressed(Key::Enter,KeyRepeat::No) {
+                } else if !show_controls_help &&
+                    (window.is_key_pressed(Key::L,KeyRepeat::No) ||
+                    window.is_key_pressed(Key::Enter,KeyRepeat::No)) {
                     dialogue_line=(dialogue_line+1).min(count);
                 }
-                if window.is_key_pressed(Key::Backspace,KeyRepeat::No) {
+                if !show_controls_help &&
+                    window.is_key_pressed(Key::Backspace,KeyRepeat::No)
+                {
                     dialogue_line=dialogue_line.saturating_sub(1);
                 }
                 let pause = serde_json::from_value::<CampaignCue>(
@@ -2730,7 +2751,7 @@ pub fn connect_remote(
         // its reliable reply may precede the next lossy World snapshot.
         let host_briefing_paused=peer.state.as_ref()
             .is_some_and(|state|state["briefing_paused"]==true);
-        peer.input_suppressed=terminal||briefing||host_briefing_paused;
+        peer.input_suppressed=terminal||briefing||host_briefing_paused||show_controls_help;
         if peer.input_suppressed {
             // A completed battle has no further physical input boundary,
             // whereas a story briefing pauses only this commander's UI.
@@ -2760,6 +2781,7 @@ pub fn connect_remote(
             hud_press=None;squad_tab_press=None;shooting_press=None;
             minimap_dragging=false;
         }
+        if !show_controls_help {
         if let Some(mut cam)=camera {
             let keys=window.get_keys_pressed(KeyRepeat::No);
             let shift=window.is_key_down(Key::LeftShift)||
@@ -3249,6 +3271,12 @@ pub fn connect_remote(
             camera=Some(cam);
             }
         }
+        } else {
+            // Remember button states but do not interpret any held gesture
+            // as a new press when the overlay is dismissed.
+            last_left=window.get_mouse_down(MouseButton::Left);
+            last_right=window.get_mouse_down(MouseButton::Right);
+        }
         // Interest changes only with the selected live lifetimes, toggle,
         // or episode. It never enters the authoritative input trace.
         if peer.connected && peer.authenticated {
@@ -3350,7 +3378,35 @@ pub fn connect_remote(
             text::draw_at(&mut pixels, WIDTH, 10, HEIGHT-43,
                 text::fit(receipt, FIELD-20), 1, [255, 211, 130]);
         }
-        if show_diagnostics {
+        if show_controls_help {
+            const LINES: &[&str] = &[
+                "BEES NATIVE / MULTIPLAYER CONTROLS",
+                "F1 or Esc: close help (remote battle continues)",
+                "SELECTION",
+                "Left click: ship   Drag: box select   Double click: ship type",
+                "Ctrl+click: add/remove   Ctrl+A: all   1-0: numbered squads",
+                "Tab / PgUp / PgDn: cycle original squads",
+                "CAMERA / DISPLAY",
+                "Right click or drag: move / attack   Arrows: pan   Wheel: zoom",
+                "F: fit map   B: weapon ranges   F6: source art / fast view",
+                "Shift+wheel: horizontal pan   Ctrl+wheel: vertical pan",
+                "COMMANDS",
+                "C: hold   A: attack on sight   V: cease fire   E: chase",
+                "G: guard   P: patrol   M: mine   H: heal   R: retreat",
+                "S: shooting priority   O: lock   Y: match   U: free speed",
+                "K: beacon   D: detonate   Q: charge",
+                "T: point fire   Hold J: manual fire   X: stop fire",
+                "Backspace: cancel target   Shift+T: attack ship",
+                "NETWORK / AUDIO",
+                "F5: reconnect original session   F8: network measurements",
+                "F7: mute   F10/F11: effects   Shift+F10/F11: music",
+                "Space: pause local soundtrack (not remote battle)",
+            ];
+            NativeSoftwareRenderer::draw_help_panel(
+                &mut pixels, WIDTH, HEIGHT, LINES, &[2, 6, 10, 17],
+            );
+        }
+        if show_diagnostics && !show_controls_help {
             let frames=peer.metrics.frames_rendered.max(1) as f64;
             let polls=peer.metrics.network_poll_samples.max(1) as f64;
             let uptime=started.elapsed().as_secs_f64().max(0.001);
