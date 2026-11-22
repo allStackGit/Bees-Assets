@@ -1638,7 +1638,7 @@ impl NativeClient {
                 .or_else(|| player_move.map(NativePlayerInput::Move));
             if let Some(action) = action { return Ok(NativeClientAction::Input { action, step: false }); }
             let selected = self.renderer.selection.squads();
-            if selected != self.submitted_selection {
+            if selected != self.submitted_selection.as_slice() {
                 self.submitted_selection.clear();
                 self.submitted_selection.extend_from_slice(selected);
                 // Only genuine source-authorized selection changes are
