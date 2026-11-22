@@ -591,6 +591,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         self.measurements = cumulative;
         self.physics_pool = None;
         self.window_action_buffers.clear();
+        self.physics_worker_aggregates.clear();
     }
 
     pub fn step_world(
