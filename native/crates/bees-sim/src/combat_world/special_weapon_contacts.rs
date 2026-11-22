@@ -94,6 +94,54 @@ impl CombatWorld {
             .transform_point(spec.mount_offset))
     }
 
+    /// Original Weapon.IsShipValidTarget used when the source HiveMind
+    /// constructs its matchup keys. Bomb overrides that predicate and
+    /// accepts every living target; the Barge's base Weapon instead
+    /// requires an actual RangeCollider contact and clear line of fire.
+    ///
+    /// This is deliberately distinct from whether a BombingRun/Charge
+    /// can deliver damage NOW. The source chooses an enemy before movement
+    /// or its wind-up, and a failed physical contact must not fabricate
+    /// weapon eligibility. Uses the same world and trigger cache as attacks.
+    pub fn is_special_weapon_ship_target_valid(
+        &self, ship_id: i64, target_id: i64,
+    ) -> Result<bool, CombatWorldError> {
+        let special = self.special_weapons.get(&ship_id)
+            .ok_or(CombatWorldError::MissingAutomaticTargetingInputs)?;
+        let shooter = self.ship(ship_id).ok_or(CombatWorldError::UnknownShip)?;
+        let target = self.ship(target_id).ok_or(CombatWorldError::UnknownShip)?;
+        if shooter.vitals.is_dead() || target.vitals.is_dead() {
+            return Ok(false);
+        }
+        match shooter.ship_type {
+            // Source Bomb.IsShipValidTarget only checks a living Ship. Its
+            // owner/target side and delivery range are not part of this
+            // method, even though physical detonation enforces enemy side.
+            10 | 19 | 22 => Ok(true),
+            0 => {
+                let charge = special.spec.charge_range
+                    .ok_or(CombatWorldError::InvalidBombTarget)?;
+                if !charge.enabled || !special.charge.contains(target_id) {
+                    return Ok(false);
+                }
+                let level = self.level_geometry
+                    .ok_or(CombatWorldError::MissingLevelGeometry)?;
+                if !level.has_obstacles { return Ok(true); }
+                // Unlike Turret.IsShipValidTarget, the Barge uses the
+                // base Weapon.HasClearLineOfFire: no target bounds latch.
+                let origin = self.special_weapon_origin(ship_id)
+                    .ok_or(CombatWorldError::MissingAutomaticTargetingInputs)?;
+                let point = self.ship_body(target_id)
+                    .ok_or(CombatWorldError::UnknownShip)?
+                    .primary_closest_point_readonly(origin);
+                Ok(!self.physics.primary_obstacle_linecast(
+                    origin, point, 1u32 << 19,
+                )?)
+            },
+            _ => Err(CombatWorldError::InvalidBombTarget),
+        }
+    }
+
     pub fn bomb_target_is_nearby(&self, ship_id: i64, target_id: i64) -> Result<bool, CombatWorldError> {
         let contacts = self.special_weapons.get(&ship_id).ok_or(CombatWorldError::MissingAutomaticTargetingInputs)?;
         if contacts.spec.proximity.is_none() { return Err(CombatWorldError::InvalidBombTarget); }
