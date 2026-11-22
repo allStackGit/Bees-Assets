@@ -1688,7 +1688,18 @@ def main():
     resource_metrics = resources.summary()
     # Report actual accelerated optimizer dispatch, not physical GPU
     # utilization or the mere availability of PyTorch's fast paths.
-    from bees_mlagents_ppo_compat import poca_learner_optimization_options
+    from bees_mlagents_ppo_compat import (
+        poca_completed_gpu_execution_metrics, poca_learner_optimization_options,
+    )
+    graph_counts = poca_completed_gpu_execution_metrics()
+    graph_execution = {
+        "graph_captures": graph_counts.get("graph_captures", 0),
+        "graph_replays": graph_counts.get("graph_replays", 0),
+        "graph_skips": graph_counts.get("graph_skips", 0),
+        "graph_memory_skips": graph_counts.get("graph_memory_skips", 0),
+        "graph_full_replays": graph_counts.get("graph_full_replays", 0),
+        "graph_adam_replays": graph_counts.get("graph_adam_replays", 0),
+    } if graph_counts else None
     adam = getattr(trainer.optimizer, "optimizer", None)
     live_groups = getattr(adam, "param_groups", ())
     fused_adam_active = bool(
@@ -1731,6 +1742,7 @@ def main():
             "update_wall_seconds": update_wall_seconds,
             "fused_adam_active": int(fused_adam_active),
             "cuda_graph_requested": int(cuda_graph_requested),
+            **({"graph_execution": graph_execution} if graph_execution is not None else {}),
             "update_resource_measurements": resource_metrics,
             **cuda_metrics,
         }
@@ -1938,6 +1950,7 @@ def main():
             sum(row["fused_adam_active"] for row in gpu_worker_metrics)
             if gpu_worker_metrics is not None else int(fused_adam_active)),
         "optimizer_cuda_graph_requested": int(cuda_graph_requested),
+        **({"optimizer_graph_execution": graph_execution} if graph_execution is not None else {}),
         **cuda_metrics,
         "optimizer_update_resource_measurements": resource_metrics,
         "optimizer_input_steps": steps,
