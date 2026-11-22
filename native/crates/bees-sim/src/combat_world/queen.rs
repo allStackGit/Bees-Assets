@@ -323,6 +323,14 @@ impl CombatWorld {
         if self.game_queens.is_empty() { return Ok(()); }
         self.queen_spawn_ids.clear();
         self.queen_spawn_ids.extend(self.game_queens.keys().copied());
+        // Each Queen may mint transient FleetShip/weapon IDs and consume
+        // the shared per-side spawn cap. HashMap iteration is process-seeded
+        // and therefore cannot own those game-order decisions. Unity's
+        // Level.State.Ships uses insertion order; CombatWorld.ship_by_id
+        // preserves those exact physical registration indices.
+        let registration = &self.ship_by_id;
+        self.queen_spawn_ids.sort_unstable_by_key(|id|
+            registration.get(id).copied().unwrap_or(usize::MAX));
         for index in 0..self.queen_spawn_ids.len() {
             let queen_id = self.queen_spawn_ids[index];
             if self.ship(queen_id).is_none_or(|ship| ship.vitals.is_dead()) ||
