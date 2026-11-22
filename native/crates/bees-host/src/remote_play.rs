@@ -12,6 +12,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use bees_sim::collision::Aabb;
@@ -19,6 +20,7 @@ use bees_sim::combat_world::CombatEvent;
 use bees_sim::level_discovery::DiscoveryKind;
 use bees_sim::obstacle::ObstacleKind;
 use bees_sim::physics::ShipShape;
+use bees_sim::ship_assets::ShipAssetCatalog;
 use bees_sim::geometry::Vec2;
 use bees_sim::simulation::WorldId;
 use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerHeldFire};
@@ -2175,6 +2177,16 @@ fn wire_primary_hull(shape: &ShipShape) -> Value {
     }
 }
 
+fn source_ship_names() -> &'static [String] {
+    // Read the same immutable source catalog as native scene construction,
+    // once per host process rather than parsing assets per network frame.
+    // Do not maintain a separate LAN-only list of classes or progression.
+    static NAMES: OnceLock<Vec<String>> = OnceLock::new();
+    NAMES.get_or_init(|| ShipAssetCatalog::embedded()
+        .expect("native game requires valid embedded ship assets")
+        .ships().iter().map(|ship| ship.name.clone()).collect())
+}
+
 fn current_state(
     view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32,
     music_location: Option<NativeMusicLocation>, audio_events: &[Value],
@@ -2749,6 +2761,17 @@ fn current_state(
             .map(|(_, allowed)| allowed.iter().enumerate()
                 .filter_map(|(kind, &known)| known.then_some(kind as u8))
                 .collect::<Vec<_>>()),
+        "campaign_codex_entries": view.campaign_codex
+            .filter(|(player_side, _)| !spectator && *player_side == side)
+            .map(|(_, allowed)| {
+                let names = source_ship_names();
+                allowed.iter().enumerate().filter_map(|(kind, &known)| {
+                    known.then(|| json!({
+                        "ship_type": kind as u8,
+                        "name": names[kind].as_str(),
+                    }))
+                }).collect::<Vec<_>>()
+            }),
         "ships": ships, "squads": squads, "obstacles": obstacles,
         "projectiles": projectiles,
         "asteroid_pieces": asteroid_pieces,
