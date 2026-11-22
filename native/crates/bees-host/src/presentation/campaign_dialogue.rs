@@ -375,10 +375,30 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
             ("Emilia", "Sorry..."),
             ("Alejandra", "We'll join your formation shortly, commander."),
         ],
+        // Source Pluto4BluerPastures[1..13] introduces the first actual
+        // civilian-defense mission. Keep its casualty/fleet survival guidance
+        // with the real five-minute HumanTarget and reinforcement schedule;
+        // no separate tutorial simulation, timer or staged enemy is created.
         CampaignCue::PlutoEvacuationBriefing => &[
-            ("Samuel", "Scouts are reporting overwhelming reinforcements from the enemy. We can't outlast them, but we have to buy enough time for those on the planet to evacuate."),
-            ("Samuel", "This is a full emergency order, so personnel have to be on space-ready vessels within 5 minutes."),
-            ("Marco", "Destroy enemy ships where we can safely. That's the only way we'll get through this."),
+            ("Samuel", "Scouts are reporting overwhelming reinforcements from the enemy. We can’t defeat them, but we have to try and buy enough time for those on the planet to evacuate."),
+            ("Samuel", "Commander, these… What do we call the mysterious alien fleet, anyway?"),
+            ("Oviya", "They do look like Bees. We can call them that."),
+            ("Joey", "Let’s just call ‘em that. It’s easier than U.F.O.s. or ‘mysterious alien fleet.’"),
+            ("Samuel", "Um, right, whatever they are, they’re still coming. In order to evacuate the Pluto base, we have to keep the Bees from reaching the surface."),
+            ("Samuel", "If they get to that point, we’re going to start losing people and ships before they can lift off."),
+            ("Samuel", "This is a full emergency order, so personnel have to be on space-ready vessels within 5 minutes. As soon as we have the fleet ready to leave, we’ll evacuate out of here at full speed."),
+            ("Yoshiko", "We’ve got this, commander! Dreadnoughts standing by."),
+            ("Marco", "Gunships at the ready."),
+            ("Joey", "Frigates ready to go!"),
+            ("Oviya", "I’ve got the Scouts mapping an escape route."),
+            ("Yoshiko", "Let's take out as many as we can on our way out! That’ll show 'em!"),
+            ("Marco", "Don’t be risky with our fleet’s lives, Yoshiko. Destroy enemy ships where we can safely. That’s the only way we’ll get through this."),
+            // The source's optional pre-battle tooltip sequence is
+            // delivered alongside its regular briefing until user-local
+            // tooltip preferences exist in the native game.
+            ("Samuel", "Ships lost in a campaign battle are permanently lost. Your surviving fleet will carry on, but if your entire fleet is destroyed, the campaign will end."),
+            ("Samuel", "The Bees have finite resources, too. Every enemy ship you destroy reduces the invasion forces available later, while ships left alive can return in a later mission."),
+            ("Samuel", "For this evacuation, each group of personnel saved strengthens your future fleet. Preserve your ships, defend the surface, and thin the invasion as much as you can."),
         ],
         // Original PlutoLines_BluerPastures[14..18]. Each is released
         // only by its corresponding live physical weapon/contact event.
