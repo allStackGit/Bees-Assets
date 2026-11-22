@@ -284,6 +284,10 @@ fn select_battle_inner(
             // A pointer release that closes a view must not become a
             // purchase, transfer or battle activation on the parent.
             mouse_down = window.get_mouse_down(MouseButton::Left);
+            // Pump a new input frame before checking for another Esc edge.
+            // Otherwise one keypress would close the submenu and immediately
+            // exit the parent battle launcher on the same stale input state.
+            window.update();
             continue;
         }
         if !library_mode && !show_tactics && !show_names &&
