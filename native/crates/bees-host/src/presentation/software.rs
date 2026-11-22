@@ -3237,6 +3237,17 @@ impl NativeSoftwareRenderer {
             self.codex_seen.fill(false);
             self.codex_scan_tick = None;
         }
+        // Original campaigns unlock knowledge at authored mission endings.
+        // A sighting cannot unlock later-story classes; non-campaign
+        // skirmishes retain observed-hull discovery instead.
+        if let Some((side, allowed)) = view.campaign_codex {
+            self.codex_seen = if side == player_side {
+                *allowed
+            } else {
+                [false; bees_sim::ship_assets::SHIP_TYPE_COUNT]
+            };
+            return;
+        }
         let stride = (1.0 / f64::from(view.fixed_step_seconds))
             .round().max(1.0) as u64;
         if self.codex_scan_tick.is_some_and(|tick|
