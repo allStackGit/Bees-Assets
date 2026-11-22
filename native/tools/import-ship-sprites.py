@@ -239,13 +239,13 @@ def packed_color_mask(data: bytearray, frame, colors):
             count -= run
 
 
-def pack(images, directory, magic, animated, palettes=None):
+def pack(images, directory, magic, animated, palettes=None, *, large_static=False):
     entries = [(kind, name) for kind, name in enumerate(images) if name]
     data = bytearray(struct.pack("<4sH", magic, len(entries)))
     for kind, name in entries:
         ppu, frames = source_frames(
             directory / name, animated,
-            large_static=(magic == b"BSS2" and kind == 17),
+            large_static=large_static or (magic == b"BSS2" and kind == 17),
         )
         if animated:
             data.extend(struct.pack("<BHH", kind, ppu, len(frames)))
@@ -421,7 +421,8 @@ def main():
         palettes,
     )
     backgrounds, background_count = pack(
-        MAP_BACKGROUND_IMAGES, ROOT / "Sprites/Backgrounds", b"BSS1", False,
+        MAP_BACKGROUND_IMAGES, ROOT / "Sprites/Backgrounds", b"BSS1",
+        False, large_static=True,
     )
     animations, animation_count = pack_ship_animations(palettes)
     remains, remains_count = pack_ship_remains(palettes)
