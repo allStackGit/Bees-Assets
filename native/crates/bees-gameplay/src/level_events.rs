@@ -1644,6 +1644,10 @@ impl NativeLevelEventProcessor {
         self.episode.demolition_status()
     }
 
+    pub fn target_ship_objective(&self) -> Option<bees_sim::episode_terminal::TargetShipObjective> {
+        self.episode.target_ship_objective()
+    }
+
     pub fn escort_status(&self) -> Option<bees_sim::episode_terminal::EscortStatus> {
         self.episode.escort_status()
     }
