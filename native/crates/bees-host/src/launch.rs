@@ -6758,7 +6758,6 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
 }
 
 #[cfg(feature = "client")]
-#[cfg(feature = "client")]
 fn show_new_campaign_debrief(
     title: &str, mission_id: &str, previous_matches: u64,
     progress: &battle_catalog::CampaignProgress<'_>,
@@ -6782,6 +6781,7 @@ fn show_new_campaign_debrief(
     Ok(())
 }
 
+#[cfg(feature = "client")]
 fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error>> {
     run_campaign_game_menu(catalog_path, output_root, false)?;
     Ok(())
