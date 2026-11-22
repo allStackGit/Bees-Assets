@@ -122,6 +122,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'async_snapshot_replica_live',
             'async_snapshot_reuse_copy_groups',
             'async_snapshot_reused_model_bytes',
+            'async_snapshot_network_copy_groups',
+            'async_snapshot_network_packed_bytes',
             'ppo_gpu_batch_target_pixels',
             'ppo_gpu_batch_next_target','ppo_gpu_batch_settled',
             // Report exposed CPU-prep wait, not concurrent background work
@@ -206,6 +208,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_lineage_async_adopted_bytes',
             'training_gpu_independent_policy_reused',
             'training_gpu_independent_policy_kept',
+            'training_gpu_independent_snapshot_reuses',
+            'training_gpu_independent_snapshot_bytes',
             'training_gpu_independent_reused_bytes',
             'training_gpu_fused_adam_active',
             'training_gpu_fused_adam_selected',
