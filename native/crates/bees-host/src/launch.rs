@@ -5061,20 +5061,85 @@ fn save_freeplay_level(
     let source=source.canonicalize()?;
     let bytes=fs::read(&source)?;
     let run:RunConfig=serde_json::from_slice(&bytes)?;
-    let record=SavedFreeplayLevel {
-        schema_version:1,
-        name:name.to_owned(),
-        source_sha256:format!("{:x}",Sha256::digest(&bytes)),
-        assets_sha256:native_start_asset_digests(&source,&run)?,
-        source_config:source,
-    };
     let directory=save_root.join("saved-levels");
     fs::create_dir_all(&directory)?;
+    // Self-contained scenes use only the native embedded physical catalogs.
+    // Freeze their actual scene with the run so updates to the original
+    // package cannot invalidate a player-made Level. Online HiveMind,
+    // model and legacy external-asset battles retain source pins instead
+    // of silently publishing an incomplete standalone copy.
+    let can_archive = run.levels.len()==1 &&
+        run.model_manifest.is_none() &&
+        run.model_updates.is_empty() && run.hivemind.is_none() &&
+        run.native_stage.is_some() &&
+        run.collision_matrix.is_none() && run.stage_palette.is_none() &&
+        run.python.is_none() && run.policy_worker.is_none() &&
+        run.recover_notifications.is_empty() &&
+        run.recover_outcome_journals.is_empty();
+    let source_dir=source.parent().ok_or_else(||
+        invalid("native FreePlay source lacks an authored directory"))?;
+    let original_scene=if can_archive {
+        let scene=&run.levels[0].scene;
+        if scene.is_absolute() || scene.components().count()!=1 {
+            return Err(invalid(
+                "standalone native FreePlay scene must be adjacent to its run",
+            ).into());
+        }
+        let scene=source_dir.join(scene);
+        let raw=fs::read(&scene)?;
+        let _:serde_json::Value=serde_json::from_slice(&raw)?;
+        Some(raw)
+    } else {None};
     let mut number=0_u64;
     loop {
         number=number.checked_add(1).ok_or_else(||
             invalid("FreePlay saved-level count exhausted"))?;
         let path=directory.join(format!("level-{number:06}.json"));
+        if path.exists() {continue;}
+        let record = if let Some(scene_bytes)=&original_scene {
+            // A unique create-only directory is the crash-safe reservation.
+            // The adjacent manifest is written last; incomplete directories
+            // are ignored, never presented as playable saved Levels.
+            let folder=directory.join(format!("level-{number:06}"));
+            match fs::create_dir(&folder) {
+                Err(error) if error.kind()==ErrorKind::AlreadyExists=>continue,
+                Err(error)=>return Err(error.into()),
+                Ok(())=>{},
+            }
+            let mut archived:serde_json::Value=serde_json::from_slice(&bytes)?;
+            archived["levels"][0]["scene"]=json!("scene.json");
+            archived["connection_checkpoint"]=json!("connection.json");
+            archived["host_recovery_checkpoint"]=json!("native-host-checkpoint.json");
+            archived["notifications"]=json!("notifications.jsonl");
+            archived["rollout_summary"]=json!("rollout-summary.json");
+            archived["policy_capture"]=serde_json::Value::Null;
+            archived["recover_notifications"]=json!([]);
+            archived["recover_outcome_journals"]=json!([]);
+            // These remain EXACT authored physical setup and input/seed
+            // configuration. The sole shared scene loader handles them;
+            // snapshots are not game-state serialization or new physics.
+            let scene_doc:serde_json::Value=serde_json::from_slice(scene_bytes)?;
+            persist_new_json(&folder.join("scene.json"),&scene_doc)?;
+            let new_source=folder.join("run.json");
+            persist_new_json(&new_source,&archived)?;
+            let new_bytes=fs::read(&new_source)?;
+            let new_run:RunConfig=serde_json::from_slice(&new_bytes)?;
+            SavedFreeplayLevel {
+                schema_version:2,
+                name:name.to_owned(),
+                source_sha256:format!("{:x}",Sha256::digest(&new_bytes)),
+                assets_sha256:native_start_asset_digests(&new_source,&new_run)?,
+                source_config:new_source.canonicalize()?,
+            }
+        } else {
+            SavedFreeplayLevel {
+                schema_version:1,
+                name:name.to_owned(),
+                source_sha256:format!("{:x}",Sha256::digest(&bytes)),
+                assets_sha256:native_start_asset_digests(&source,&run)?,
+                source_config:source.clone(),
+            }
+        };
         match persist_new_json(&path,&record) {
             Ok(())=>return Ok(path),
             Err(bees_host::checkpoint_file::CheckpointFileError::Io(error))
@@ -5117,7 +5182,7 @@ fn list_saved_freeplay_levels(save_root:&Path)
         let source=fs::read(&path)?;
         let Ok(level):Result<SavedFreeplayLevel,_>=serde_json::from_slice(&source)
         else {continue};
-        if level.schema_version !=1 ||
+        if !(1..=2).contains(&level.schema_version) ||
             !valid_freeplay_level_name(&level.name) ||
             !level.source_config.is_absolute() ||
             level.source_sha256.len()!=64 ||
@@ -5143,6 +5208,21 @@ fn verify_saved_freeplay_level(level:&SavedFreeplayLevel)
         return Err(invalid("saved FreePlay Level source bytes have changed").into());
     }
     let run:RunConfig=serde_json::from_slice(&bytes)?;
+    if level.schema_version==2 {
+        // Version-2 saves are complete standalone scenes inside the
+        // selected user library. Restrict references to their own folder,
+        // not a mutable global package or an arbitrary external path.
+        if source.file_name().is_none_or(|name|name!="run.json") ||
+            source.parent().is_none_or(|parent|
+                parent.file_name().is_none_or(|name|
+                    !name.to_string_lossy().starts_with("level-"))) ||
+            run.levels.len()!=1 ||
+            run.levels[0].scene!=PathBuf::from("scene.json") ||
+            run.model_manifest.is_some() || run.hivemind.is_some() ||
+            run.native_stage.is_none() {
+            return Err(invalid("saved standalone native Level has external dependencies").into());
+        }
+    }
     if native_start_asset_digests(&source,&run)? != level.assets_sha256 {
         return Err(invalid("saved FreePlay Level physical assets or models have changed").into());
     }
