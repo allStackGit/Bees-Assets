@@ -186,6 +186,7 @@ class RemoteBattleWindow:
             self.strategy_picker.pack_forget()
             self.apply_shooting_button.pack_forget()
 
+        self.canvas.configure(takefocus=1)
         self.canvas.bind("<ButtonPress-1>", self.left_down)
         self.canvas.bind("<B1-Motion>", self.left_drag)
         self.canvas.bind("<ButtonRelease-1>", self.left_up)
@@ -203,6 +204,7 @@ class RemoteBattleWindow:
         self.root.bind("<Control-a>", self.select_all)
         self.root.bind("<KeyPress-l>", self.advance_dialogue)
         self.root.bind("<KeyPress-k>", self.skip_dialogue)
+        self.root.bind("<KeyPress>", self.squad_shortcut, add="+")
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.after(50, self.poll)
 
@@ -626,6 +628,82 @@ class RemoteBattleWindow:
         self.draw()
         self.update_sidebar()
 
+    def focus_squad(self, owner):
+        if self.state is None:
+            return
+        squad = next((s for s in self.state["squads"]
+                      if s["owner"] == owner), None)
+        if squad is None:
+            return
+        members = set(squad["members"])
+        bounds = []
+        for ship in self.state["ships"]:
+            if ship["id"] not in members:
+                continue
+            hull = ship.get("collider_bounds")
+            if hull is not None:
+                bounds.append(hull)
+            else:
+                bounds.append([[ship["x"], ship["y"]], [ship["x"], ship["y"]]])
+        if not bounds:
+            return
+        cx = (min(h[0][0] for h in bounds) + max(h[1][0] for h in bounds)) / 2
+        cy = (min(h[0][1] for h in bounds) + max(h[1][1] for h in bounds)) / 2
+        px, py = self.to_screen(cx, cy)
+        self.offset = (self.offset[0] + self.canvas.winfo_width()/2 - px,
+                       self.offset[1] + self.canvas.winfo_height()/2 - py)
+
+    def squad_shortcut(self, event):
+        # Tk propagates key events from comboboxes and text fields to the
+        # root. Only the actual game map can use source number shortcuts.
+        if (event.widget is not self.canvas or self.console.spectator or
+                not self.console.alive or self.state is None or
+                self.held_drag or self.visible_dialogue() is not None):
+            return
+        squads = self.state["squads"]
+        owner = None
+        if event.char in "1234567890" and len(event.char) == 1:
+            # Original count is fixed at mission creation, not rebuilt
+            # from remaining live squads after casualties. Never silently
+            # reuse a destroyed squad's number for a survivor.
+            count = next((
+                row.get("original_squad_count") for row in squads
+                if row["controllable"] and row.get("source_number") is not None
+                and row.get("original_squad_count")
+            ), None)
+            if count:
+                number = 10 if event.char == "0" else int(event.char)
+                wanted = (number-1) % count + 1
+                owner = next((
+                    row["owner"] for row in squads if row["controllable"]
+                    and row.get("source_number") == wanted
+                ), None)
+        elif event.keysym in ("Prior", "Next"):
+            # PageUp/PageDown cycle the source roster in actual host order;
+            # generated dependent minions do not acquire fake hotkeys.
+            eligible = [row["owner"] for row in squads
+                        if row["controllable"] and (
+                            row.get("source_number") is not None or
+                            (row.get("original_squad_count") is None and
+                             row.get("source_root") is True))]
+            if eligible:
+                current = self.selected[0] if self.selected else None
+                at = eligible.index(current) if current in eligible else None
+                forward = event.keysym == "Next"
+                at = ((at+1) % len(eligible) if forward else
+                      (at-1) % len(eligible)) if at is not None else (
+                          0 if forward else len(eligible)-1)
+                owner = eligible[at]
+        if owner is None:
+            return
+        self.selected = [owner]
+        self.focus_squad(owner)
+        if self.weapon_overlay_on.get():
+            self.update_weapon_interest()
+        self.update_sidebar()
+        self.draw()
+        return "break"
+
     def select_all(self, _event=None):
         if self.state and not self.console.spectator:
             # Source Ctrl+A selects root player squads, not dependent
@@ -774,6 +852,7 @@ class RemoteBattleWindow:
             self.notice(f"Held-fire release: {error}")
 
     def left_down(self, event):
+        self.canvas.focus_set()
         if self.console.spectator:
             return
         self.drag_origin = (event.x, event.y)
