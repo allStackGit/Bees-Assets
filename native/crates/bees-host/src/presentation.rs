@@ -247,12 +247,12 @@ impl<'a> NativeRenderWorldView<'a> {
         let radius_squared = radius * radius;
         self.combat.render_ships().any(|(ship, body)| {
             if ship.side == beacon.side { return false; }
-            // Cheap broadphase first; only a nearby original hull gets a
-            // closest-point polygon query. No extra physics allocations.
-            let bound = radius + body.hull_radius_bound;
-            (body.motion.position - origin).length_squared() <= bound * bound &&
-                (body.primary_closest_point_readonly(origin) - origin)
-                    .length_squared() <= radius_squared
+            // The existing immutable primary-hull query handles circles,
+            // boxes and concave source colliders, including changed poses
+            // before the next physics step. Do not inspect a private
+            // physics cache or substitute a point-center approximation.
+            (body.primary_closest_point_readonly(origin) - origin)
+                .length_squared() <= radius_squared
         })
     }
 
