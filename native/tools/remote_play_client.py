@@ -54,6 +54,8 @@ HELP = """Commands:
   ships                List currently visible ships and their positions
   squads               List friendly and visible target squads
   obstacles            List visible map objects and mining asteroids
+  weapons              Inspect live weapon status on selected ships
+  overlay on|off       Request authoritative weapon range/contact detail
   select ID [ID...]    Select one or more friendly squad IDs
   move X Y             Move selected squads to world point
   fire X Y             Manual point fire; fire stop clears target
@@ -102,6 +104,7 @@ class RemoteConsole:
         self.spectator = spectator
         self.surrender_requested_episode = None
         self.surrender_request_id = None
+        self.weapon_overlay_enabled = False
         # One host_session_id belongs to the original authoritative World
         # across native checkpoint recovery. Rejoining an unrelated host
         # with the same tokens must never carry old player authority.
@@ -144,6 +147,7 @@ class RemoteConsole:
                                 self.selected.clear()
                                 self.held_scope = None
                                 self.held_begin_request = None
+                                self.weapon_overlay_enabled = False
                                 # A first world snapshot may arrive after
                                 # the reliably queued campaign commit. Never
                                 # discard that receipt on initial admission.
@@ -454,6 +458,24 @@ class RemoteConsole:
         self.next_request += 1
         return packet["request_id"]
 
+    def request_weapon_overlay(self, state, owners):
+        """Ask the host to project exact physical range and contact data.
+
+        Interest is presentation only; host validates every squad lifetime
+        and retains no alternative combat state.
+        """
+        if self.spectator:
+            raise ValueError("spectators cannot request private weapon overlays")
+        packet = {
+            "kind": "weapon_overlay", "request_id": self.next_request,
+            "world_id": state["world_id"],
+            "episode_revision": state["episode_revision"],
+            "squads": owners,
+        }
+        encoded = (json.dumps(packet, separators=(",", ":")) + "\n").encode("utf-8")
+        self.socket.sendall(encoded)
+        self.next_request += 1
+
     def surrender(self):
         if self.spectator:
             raise ValueError("spectators cannot surrender another player's battle")
@@ -612,6 +634,32 @@ class RemoteConsole:
                       f"{' (orders disabled)' if squad['owned'] and not squad['controllable'] else ''}"
                       f" ships {squad['members']}")
             return
+        if cmd == "weapons":
+            selected = {owner["squad_id"] for owner in self.selected_owners(state)}
+            ship_ids = {
+                ship_id for squad in state["squads"]
+                if squad["owner"]["squad_id"] in selected
+                for ship_id in squad["members"]
+            }
+            if not ship_ids:
+                print("No live selected friendly ships")
+            for ship in state["ships"]:
+                if ship["id"] not in ship_ids:
+                    continue
+                print(f"  Ship {ship['id']} type {ship['ship_type']}")
+                for weapon in ship.get("weapons", []):
+                    charge = weapon.get("charge")
+                    detail = f" charge {charge}" if charge is not None else ""
+                    range_data = weapon.get("range")
+                    if range_data is not None:
+                        detail += f" range {range_data[2]:.1f} enabled={range_data[3]}"
+                    detail += f" contacts {len(weapon.get('contacts', []))}"
+                    print(f"    Slot {weapon['slot']}{detail}")
+                if ship.get("striker_bomb_ready") is not None:
+                    print(f"    Striker bomb ready: {ship['striker_bomb_ready']}")
+                if ship.get("barge_charge") is not None:
+                    print(f"    Barge charge: {ship['barge_charge']}")
+            return
         if cmd == "obstacles":
             for object in state.get("obstacles", []):
                 print(f"  {object['id']:>8} kind {object['kind']}"
@@ -626,7 +674,18 @@ class RemoteConsole:
             with self.lock:
                 self.selected = [owner["squad_id"] for owner in owners]
                 self.selected_scope = (state["world_id"], state["episode_revision"])
+            if self.weapon_overlay_enabled:
+                self.request_weapon_overlay(state, owners)
             print(f"Selected: {self.selected}")
+            return
+        if cmd == "overlay" and len(argv) == 1:
+            enabled = self.flag(argv[0])
+            owners = self.selected_owners(state) if enabled else []
+            if enabled and not owners:
+                raise ValueError("select live friendly squads before enabling weapon overlay")
+            self.request_weapon_overlay(state, owners)
+            self.weapon_overlay_enabled = enabled
+            print("Weapon contact overlay enabled" if enabled else "Weapon contact overlay disabled")
             return
         owners = self.selected_owners(state)
         if cmd in ("move", "fire") and len(argv) == 2:
