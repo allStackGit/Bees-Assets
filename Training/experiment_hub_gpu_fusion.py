@@ -741,7 +741,14 @@ class MeasuredGpuExecution:
             # mixed-device cohorts stay on the original serial model calls.
             if self.fusion.device is not None and self.fusion.device.type == "cuda":
                 if self.allow_fusion and self.fusion.compatible:
-                    args, rows, fused_shape = self.fusion._prepare(batches)
+                    # Equal network structure does not guarantee that two
+                    # collectors supply the same number of tensor arguments.
+                    # This is a normal unfusable cohort, not a reason to
+                    # reject independently executable streams or graphs.
+                    try:
+                        args, rows, fused_shape = self.fusion._prepare(batches)
+                    except ValueError:
+                        fused_shape = None
                     if fused_shape is not None:
                         self.fusion.qualifications += 1
                         decision = self.fusion._qualify(args, rows)
