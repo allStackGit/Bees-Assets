@@ -98,6 +98,8 @@ pub struct NativeRenderCounts {
     /// Actual backdrop pixels emitted by the native client, not an estimate.
     pub map_background_pixels: usize,
     pub map_background_art_loaded: usize,
+    /// Original Uranus Ring Sparkle, one drawn rotated child layer.
+    pub map_ring_layer_draws: usize,
     /// Source PNG sprites rendered instead of the fallback hull outline.
     pub ship_sprite_draws: usize,
     /// Real source Carrier deck overlays matched to a custom squad color.
@@ -1485,12 +1487,14 @@ impl NativeSoftwareRenderer {
     /// local gameplay. Only pixels are produced; no shadow physics,
     /// collisions, policy state, or second ship asset definitions exist.
     #[cfg(feature = "client")]
-    pub(super) fn begin_remote_art(&mut self, camera: NativeCamera) -> (usize, usize) {
+    pub(super) fn begin_remote_art(
+        &mut self, camera: NativeCamera, tick: u64, dt: f32,
+    ) -> (usize, usize, usize) {
         self.camera = camera;
         self.sprite_raster_candidate_pixels = 0;
         self.sprite_raster_opaque_pixels = 0;
         self.sprite_raster_blended_pixels = 0;
-        self.draw_map_background()
+        self.draw_map_background(tick, dt)
     }
 
     #[cfg(feature = "client")]
@@ -2242,10 +2246,10 @@ impl NativeSoftwareRenderer {
     /// Unity Map.SpriteRenderer stretches its imported PNG over its actual
     /// centered 512- or 1024-unit prefab square, independent of Level bounds.
     /// Clamp the scan to on-screen texels and draw only in the native client.
-    fn draw_map_background(&mut self) -> (usize, usize) {
+    fn draw_map_background(&mut self, tick: u64, dt: f32) -> (usize, usize, usize) {
         self.pixels.fill(0x080e19);
-        let Some(background) = self.map_background else { return (0, 0) };
-        let Some(atlas) = source_map_backgrounds() else { return (0, 0) };
+        let Some(background) = self.map_background else { return (0, 0, 0) };
+        let Some(atlas) = source_map_backgrounds() else { return (0, 0, 0) };
         let (index, half) = match background {
             NativeMapBackdrop::Pluto => (0, 256.0_f32),
             NativeMapBackdrop::Neptune => (1, 512.0),
@@ -2253,11 +2257,26 @@ impl NativeSoftwareRenderer {
             NativeMapBackdrop::Uranus => (3, 512.0),
         };
         let Some(art) = atlas.sprites.get(index).and_then(Option::as_ref)
-            else { return (0, atlas.loaded) };
+            else { return (0, atlas.loaded, 0) };
         let sprite = &art.sprite;
         let camera = self.camera;
         let ppu = camera.pixels_per_unit;
-        if !ppu.is_finite() || ppu <= 0.0 { return (0, atlas.loaded) }
+        if !ppu.is_finite() || ppu <= 0.0 { return (0, atlas.loaded, 0) }
+        // Uranus.prefab has a Ring Sparkle child at (-195,-125) with
+        // m_SortingOrder -1, behind its main sliced SpriteRenderer. Its
+        // ImageSpinner advances at 5 Hz by 6 deg/second, using the same
+        // authoritative fixed elapsed time as the displayed World.
+        let ring_drawn = if matches!(background, NativeMapBackdrop::Uranus) {
+            if let Some(ring) = atlas.sprites.get(4).and_then(Option::as_ref) {
+                let steps = (f64::from(dt) * tick as f64 * 5.0 + 1.0e-6)
+                    .floor().max(0.0);
+                let angle = ((steps * 1.2).rem_euclid(360.0) as f32).to_radians();
+                usize::from(self.draw_sprite(
+                    &ring.sprite, Vec2::new(-195.0, -125.0), angle,
+                    ppu * 1024.0 / ring.sprite.width as f32, 1.0,
+                ))
+            } else { 0 }
+        } else { 0 };
         let left = ((-half - camera.center.x) * ppu +
             self.width as f32 * 0.5).floor().max(0.0) as usize;
         let right = ((half - camera.center.x) * ppu +
@@ -2266,7 +2285,7 @@ impl NativeSoftwareRenderer {
             self.height as f32 * 0.5).floor().max(0.0) as usize;
         let bottom = ((camera.center.y + half) * ppu +
             self.height as f32 * 0.5).ceil().min(self.height as f32) as usize;
-        if left >= right || top >= bottom { return (0, atlas.loaded) }
+        if left >= right || top >= bottom { return (0, atlas.loaded, ring_drawn) }
         let inverse = ppu.recip();
         let u_factor = sprite.width as f32 / (half * 2.0);
         let v_factor = sprite.height as f32 / (half * 2.0);
@@ -2299,7 +2318,7 @@ impl NativeSoftwareRenderer {
                 samples += 1;
             }
         }
-        (samples, atlas.loaded)
+        (samples, atlas.loaded, ring_drawn)
     }
 
     pub fn render(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) -> NativeRenderCounts {
@@ -2324,16 +2343,18 @@ impl NativeSoftwareRenderer {
                 self.width as f32, 0.0, self.width, self.height,
             ) + pad,
         };
-        let (background_pixels, background_types) = self.draw_map_background();
         self.sprite_raster_candidate_pixels = 0;
         self.sprite_raster_opaque_pixels = 0;
         self.sprite_raster_blended_pixels = 0;
+        let (background_pixels, background_types, map_ring_layers) =
+            self.draw_map_background(view.tick, view.fixed_step_seconds);
         if self.death_owner != Some((view.world_id, view.episode_revision)) {
             self.pending_visual_event_counts = NativeRenderCounts::default();
         }
         let mut counts = std::mem::take(&mut self.pending_visual_event_counts);
         counts.map_background_pixels = background_pixels;
         counts.map_background_art_loaded = background_types;
+        counts.map_ring_layer_draws = map_ring_layers;
         self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
             half_extents: (bounds.max - bounds.min) * 0.5 },
             Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x33455e);

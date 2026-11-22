@@ -110,6 +110,7 @@ struct WireCounts {
     interpolated_draw_frames: u64,
     ship_sprite_draws: u64,
     map_background_pixels_drawn: u64,
+    map_ring_layer_draws: u64,
     carrier_deck_overlay_draws: u64,
     barge_charge_effect_draws: u64,
     queen_part_sprite_draws: u64,
@@ -234,8 +235,13 @@ impl RemoteArtwork {
             serde_json::from_value(state["map_background"].clone())
                 .ok().flatten();
         self.raster.set_map_background(background);
-        let (background_pixels, _) = self.raster.begin_remote_art(camera);
+        let tick = state["tick"].as_u64().unwrap_or(0);
+        let dt = state["fixed_step_seconds"].as_f64().unwrap_or(0.0) as f32;
+        let (background_pixels, _, rings) = self.raster.begin_remote_art(
+            camera, tick, dt,
+        );
         stats.map_background_pixels_drawn += background_pixels as u64;
+        stats.map_ring_layer_draws += rings as u64;
         let episode = (
             state["world_id"].as_u64().unwrap_or(0),
             state["episode_revision"].as_u64().unwrap_or(0),
@@ -244,8 +250,6 @@ impl RemoteArtwork {
             self.shot_first_seen.clear();
             self.episode = Some(episode);
         }
-        let tick = state["tick"].as_u64().unwrap_or(0);
-        let dt = state["fixed_step_seconds"].as_f64().unwrap_or(0.0) as f32;
         for obstacle in state["obstacles"].as_array().into_iter().flatten() {
             let (Some(id), Some(point)) = (
                 obstacle["id"].as_i64(), visual.position(obstacle, 2, fraction),

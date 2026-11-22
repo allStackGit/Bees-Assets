@@ -65,6 +65,8 @@ QUEEN_EXPLOSION = (
 # Source Map.SpriteRenderer backgrounds, in native map type order.
 MAP_BACKGROUND_IMAGES = (
     "pluto 1k resize.png", "neptune.png", "titania_rough.png", "uranus.png",
+    # Uranus' distinct Ring Sparkle child, behind the main planet (sort -1).
+    "Uranus_ring_bg_texture.png",
 )
 
 # Original ShipRemains and Beehive Shrinking sheets. The tuple is keyed
