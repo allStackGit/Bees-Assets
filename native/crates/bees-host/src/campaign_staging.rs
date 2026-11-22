@@ -112,7 +112,7 @@ pub(crate) fn authored_obstacle_bodies(
                     body
                 }
                 NativeAuthoredEntity::PolygonObstacle {
-                    entity_id, pose, live_vertices,
+                    entity_id, pose, live_vertices, ..
                 } => {
                     let catalog = &polygons;
                     let (_, body) = if let Some(vertices) = live_vertices {
