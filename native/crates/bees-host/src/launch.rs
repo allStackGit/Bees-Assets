@@ -4689,6 +4689,25 @@ fn run_set_saved_squad_tactics(
     if entry.formation.is_some_and(|form| !form.is_valid()) || !entry.placements_valid() {
         return Err(invalid("invalid saved squad formation or FleetShip placements").into());
     }
+    // New CLI-specified FleetShip identities must be present in this
+    // player's selected SavedSquad in at least one real current mission.
+    // Existing saved offsets may be dormant after casualties or transfers;
+    // they are kept, not mistaken for authorization to move other hulls.
+    let requested_ids: HashSet<i64> = if replace_placements {
+        HashSet::new()
+    } else {
+        entry.placements.as_ref().into_iter().flatten()
+            .map(|place| place.fleet_ship_id).collect()
+    };
+    let dead_requested = if requested_ids.is_empty() {
+        HashSet::new()
+    } else {
+        progress.lost_player_fleet_ids(entry.side)?
+    };
+    if requested_ids.iter().any(|id| dead_requested.contains(id)) {
+        return Err(invalid("cannot place a permanently lost FleetShip").into());
+    }
+    let mut matched_requested_ids = HashSet::new();
     // Explicit incoming FleetShip edits update only those persistent IDs.
     // Old commands and UI tactics changes retain the existing layout.
     let prior = progress.tactics_for_squad(entry.side, entry.saved_squad_id)
@@ -4759,6 +4778,25 @@ fn run_set_saved_squad_tactics(
                 .map_err(|error| contextual("tactics final campaign deployment", error))?;
             scene.finalize_campaign_squad_tactics(entry.side, &effective)
                 .map_err(|error| contextual("tactics matching-speed preflight", error))?;
+            if !requested_ids.is_empty() {
+                if let Some(squad) = scene.source_squads.iter().find(|squad|
+                    squad.side == entry.side &&
+                    squad.saved_squad_id == Some(entry.saved_squad_id) &&
+                    squad.player_permissions.user_controlled) {
+                    let members = squad.members.iter().copied().collect::<HashSet<_>>();
+                    for entity in &scene.entities {
+                        if let NativeAuthoredEntity::Ship(ship) = entity {
+                            if members.contains(&ship.entity_id) {
+                                if let Some(id) = ship.fleet_ship_id {
+                                    if requested_ids.contains(&id) {
+                                        matched_requested_ids.insert(id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             reconcile_campaign_carrier_deployment(
                 &mut level, &source_archetypes, &scene, entry.side,
             )?;
@@ -4767,6 +4805,9 @@ fn run_set_saved_squad_tactics(
     }
     if checked == 0 {
         return Err(invalid("saved tactics require at least one authored player mission").into());
+    }
+    if matched_requested_ids.len() != requested_ids.len() {
+        return Err(invalid("FleetShip placement is not owned by the selected SavedSquad in any playable mission").into());
     }
     catalog.set_saved_squad_tactics(&progress, output_root, entry)?;
     println!("{}", json!({
@@ -4783,6 +4824,7 @@ fn run_set_saved_squad_tactics(
         "match_speed": entry.match_speed,
         "color_setting": entry.color_setting,
         "formation": entry.formation,
+        "placements": entry.placements,
         "validated_configs": checked,
     }));
     Ok(())
