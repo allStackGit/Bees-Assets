@@ -192,6 +192,12 @@ pub struct NativeSoftwareRenderer {
     /// shrinking its mask by 0.8 every 0.1 simulation seconds.
     fog_context: Option<(WorldId, u64, Option<i32>)>,
     fog_render_pass: u64,
+    /// Original Codex discoveries are presentation-only until a career
+    /// receipt explicitly owns them. Never share one commander's sightings
+    /// with another player or another world.
+    codex_owner: Option<(WorldId, u64, i32)>,
+    codex_seen: [bool; bees_sim::ship_assets::SHIP_TYPE_COUNT],
+    codex_scan_tick: Option<u64>,
     fog_live: HashMap<i64, FogLiveSource>,
     fog_fades: Vec<NativeFogFade>,
     pending_fog_fades: Vec<NativeFogFade>,
@@ -884,6 +890,9 @@ impl NativeSoftwareRenderer {
         }
         Ok(Self { width, height, pixels: vec![0; width * height],
             fog_coverage: Vec::new(), fog_context: None, fog_render_pass: 0,
+            codex_owner: None,
+            codex_seen: [false; bees_sim::ship_assets::SHIP_TYPE_COUNT],
+            codex_scan_tick: None,
             fog_live: HashMap::new(), fog_fades: Vec::new(),
             pending_fog_fades: Vec::new(),
             camera: NativeCamera::fit(bounds, width, height), selected_ship: None,
@@ -2334,6 +2343,7 @@ impl NativeSoftwareRenderer {
         // Only presentation pixels are masked. Commands, physics, learning
         // and the source-owned visibility caches remain unchanged.
         self.apply_player_fog(view, &mut counts);
+        self.observe_codex_discoveries(view);
         if let Some(bounds) = self.selection_box {
             self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
                 half_extents: (bounds.max - bounds.min) * 0.5 },
@@ -3213,23 +3223,43 @@ impl NativeSoftwareRenderer {
             LINES, &[2, 6, 10, 17]);
     }
 
-    /// Original Fleet Codex discovery is a presentation permission, not a
-    /// second ship registry. Reveal only hulls physically observable from
-    /// this player's source fog mask. The caller invokes this only while
-    /// opening the Codex, not on every render or training tick.
-    #[cfg(feature = "client")]
-    pub fn codex_visible_ship_types(&self, view: &NativeRenderWorldView<'_>) -> Vec<u8> {
-        let mut seen = [false; bees_sim::ship_assets::SHIP_TYPE_COUNT];
+    /// Source FogOfWarVision is already sampled by the renderer. Refresh
+    /// this small bitset at most once per simulation second, only for a
+    /// real local player; no additional work runs in the headless learner.
+    /// The original game keeps discovered classes for the player's Codex,
+    /// even after an observed ship has died or left the visible viewport.
+    fn observe_codex_discoveries(&mut self, view: &NativeRenderWorldView<'_>) {
+        let Some(player_side) = view.player_authority.player_viewer_side()
+            else { return };
+        let owner = (view.world_id, view.episode_revision, player_side);
+        if self.codex_owner != Some(owner) {
+            self.codex_owner = Some(owner);
+            self.codex_seen.fill(false);
+            self.codex_scan_tick = None;
+        }
+        let stride = (1.0 / f64::from(view.fixed_step_seconds))
+            .round().max(1.0) as u64;
+        if self.codex_scan_tick.is_some_and(|tick|
+            tick == view.tick || view.tick.saturating_sub(tick) < stride
+        ) {
+            return;
+        }
+        self.codex_scan_tick = Some(view.tick);
         for (ship, body) in view.combat.render_ships() {
-            if !ship.vitals.is_dead() &&
+            let kind = usize::from(ship.ship_type);
+            if kind < self.codex_seen.len() && !self.codex_seen[kind] &&
                 self.fog_visible_at(view, body.motion.position)
             {
-                seen[usize::from(ship.ship_type)] = true;
+                self.codex_seen[kind] = true;
             }
         }
-        seen.into_iter().enumerate()
-            .filter_map(|(kind, visible)| visible.then_some(kind as u8))
-            .collect()
+    }
+
+    #[cfg(feature = "client")]
+    pub fn codex_seen_types(&self)
+        -> &[bool; bees_sim::ship_assets::SHIP_TYPE_COUNT]
+    {
+        &self.codex_seen
     }
 
     /// Gameplay Codex: class names use the *same* frozen native ship asset
