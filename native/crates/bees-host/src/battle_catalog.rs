@@ -108,6 +108,10 @@ impl BattleEntry {
 pub struct Mission {
     pub id: String,
     pub player_side: i32,
+    /// Source Codex entries awarded at mission ending, independent of
+    /// whether this battle advances the campaign or grants FleetShips.
+    #[serde(default)]
+    pub codex_reveals: Vec<CampaignCodexReveal>,
     /// Exactly Unity Stage.RecordStats for this authored mission; a
     /// successful battle must not invent FleetShip career progression
     /// if its source stage deliberately disables stat recording.
@@ -168,6 +172,14 @@ pub struct Mission {
     pub evacuation_rewards: bool,
     on_victory: Option<MissionRoute>,
     on_defeat: Option<MissionRoute>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CampaignCodexReveal {
+    ship_type: u8,
+    #[serde(default)]
+    on: AdvanceOn,
 }
 
 #[derive(Deserialize)]
@@ -265,6 +277,10 @@ enum AdvanceOn {
 pub struct BattleCatalog {
     pub campaign_id: Option<String>,
     pub battles: Vec<BattleEntry>,
+    /// Baseline original Codex visibility. An absent source contract keeps
+    /// historical custom catalogs' source-sighting behavior unchanged.
+    #[serde(default)]
+    pub codex_initial: Vec<u8>,
     /// An explicitly authored ship shop. Prices are the source
     /// ConfigData.GetShipInfo(type).Tsv and must match the canonical
     /// full-health ship prototype on every native campaign scene.
@@ -457,6 +473,7 @@ struct MissionProgress {
     completed: bool,
     attempted: bool,
     latest_victory: bool,
+    ever_victorious: bool,
     grants_claimed: bool,
     evacuated_personnel: Option<u32>,
     latest_score_delta: Option<i64>,
@@ -861,6 +878,17 @@ impl BattleCatalog {
             !self.max_squad_ships.is_some_and(|n| (1..=1024).contains(&n))
         {
             return Err(invalid("a native campaign ship shop requires the authored maximum SavedSquad size"));
+        }
+        if self.codex_initial.iter().any(|&kind| kind >= 23) ||
+            self.codex_initial.iter().copied().collect::<HashSet<_>>().len() !=
+                self.codex_initial.len() ||
+            self.battles.iter().filter_map(|battle| battle.mission.as_ref())
+                .any(|mission| mission.codex_reveals.iter().any(|reveal|
+                        reveal.ship_type >= 23) ||
+                    mission.codex_reveals.iter().map(|reveal| reveal.ship_type)
+                        .collect::<HashSet<_>>().len() != mission.codex_reveals.len())
+        {
+            return Err(invalid("campaign Codex requires distinct real ship classes 0..22"));
         }
         let mut available = HashSet::new();
         for ship in &self.buildable_ships {
@@ -1349,6 +1377,7 @@ impl BattleCatalog {
                 let state = progress.missions.entry(&mission.id).or_default();
                 state.attempted = true;
                 state.latest_victory = outcome.mission_victory();
+                state.ever_victorious |= state.latest_victory;
                 state.evacuated_personnel = outcome.evacuated_personnel;
                 state.latest_score_delta = campaign_score_delta;
                 state.latest_player_match_counts = player_match_counts;
@@ -1929,8 +1958,10 @@ impl BattleCatalog {
         fields.remove("shop");
         fields.remove("fleet_classes");
         fields.remove("max_squad_ships");
-        // Presentation projection, not a new durable checkpoint identity.
+        // Presentation projections are not new durable checkpoint identity.
         fields.remove("fleet_roster");
+        fields.remove("codex_known_types");
+        fields.remove("codex_progression_authored");
         let mut mission_ids = progress.missions.keys().copied().collect::<Vec<_>>();
         mission_ids.sort_unstable();
         let missions = self.battles.iter().filter_map(|entry|
@@ -1965,6 +1996,33 @@ impl BattleCatalog {
     /// Read-only, complete campaign view for the game menu and external
     /// tooling. No sidecar save file is ever more authoritative than the
     /// original successful battle summaries.
+    /// Only original source-authored Codex gates may reveal a class in a
+    /// campaign. All visibility is derived from committed mission outcomes,
+    /// including previously won stages later replayed on a losing route.
+    /// None preserves old custom catalogs without an authored Codex.
+    pub fn codex_known_types(&self, progress: &CampaignProgress<'_>) -> Option<Vec<u8>> {
+        if self.codex_initial.is_empty() &&
+            !self.battles.iter().filter_map(|battle| battle.mission.as_ref())
+                .any(|mission| !mission.codex_reveals.is_empty()) {
+            return None;
+        }
+        let mut types = self.codex_initial.clone();
+        for mission in self.battles.iter().filter_map(|battle| battle.mission.as_ref()) {
+            let Some(result) = progress.missions.get(mission.id.as_str()) else { continue };
+            for reveal in &mission.codex_reveals {
+                if match reveal.on {
+                    AdvanceOn::Finished => result.attempted,
+                    AdvanceOn::Victory => result.ever_victorious,
+                } {
+                    types.push(reveal.ship_type);
+                }
+            }
+        }
+        types.sort_unstable();
+        types.dedup();
+        Some(types)
+    }
+
     pub fn status(&self, progress: &CampaignProgress<'_>) -> Value {
         let has_defeat_conditions = self.battles.iter().filter_map(|entry|
             entry.mission.as_ref()).any(|mission|
@@ -2167,6 +2225,8 @@ impl BattleCatalog {
             "missions": missions,
             "fleet": fleet,
             "fleet_roster": fleet_roster,
+            "codex_known_types": self.codex_known_types(progress),
+            "codex_progression_authored": self.codex_known_types(progress).is_some(),
             "squads": squads,
             "battles_without_fleet_data": progress.battles_without_fleet_data,
             "battles_without_squad_data": progress.battles_without_squad_data,
