@@ -2333,9 +2333,14 @@ function createNativeBeesAdapter({
                             round.receipt.source_run_config_sha256 !== pins.get(galleryRun))
                             throw Error('Native game gallery physical source differs from verified local run.');
                         const gameId = 'hub-' + context.job_id;
+                        const selectedManifestArgs =
+                            verified.manifest === path.join(output, 'learner', 'manifest.json')
+                                ? [] : ['--selected-manifest', verified.manifest,
+                                       '--selected-manifest-sha256', verified.manifestDigest];
                         const {stdout} = await execFileAsync(executable, [
                             '-B', publisher, galleryRun, output, gallery, gameId,
                             String(learnerSlot), pins.get(galleryRun),
+                            ...selectedManifestArgs,
                         ], {
                             cwd: path.dirname(publisher),
                             timeout: 120000,
