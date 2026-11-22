@@ -541,14 +541,17 @@ impl CampaignProgress<'_> {
         ids.sort_unstable();
         ids.into_iter().map(|id| {
             let owner = &self.authored_roster[&id];
-            json!({
+            let mut row = json!({
                 "fleet_ship_id": id,
                 "player_side": owner.side,
                 "initial_saved_squad_id": owner.initial_saved_squad_id,
                 "saved_squad_id": owner.current_saved_squad_id,
                 "in_reserve": owner.current_saved_squad_id == 0,
-                "ship_type": owner.ship_type,
-            })
+            });
+            if let Some(kind) = owner.ship_type {
+                row["ship_type"] = json!(kind);
+            }
+            row
         }).collect()
     }
 
