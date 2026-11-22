@@ -24,6 +24,8 @@ pub enum NativeReinforcementActivation {
     AfterSeconds(f32),
     OnCampaignCue(NativeMissionCue),
     OnShipDestroyed(i64),
+    OnShipExtracted(i64),
+    OnShipWarped(i64),
     OnMapObjectDestroyed(i64),
     OnMiningAsteroidDepleted(i64),
 }
@@ -79,6 +81,7 @@ pub(crate) struct ReinforcementWakeup {
     pub next_tick: Option<u64>,
     campaign_event: bool,
     ship_death_event: bool,
+    ship_exit_event: bool,
     map_object_death_event: bool,
     mining_depletion_event: bool,
 }
@@ -94,6 +97,9 @@ impl ReinforcementWakeup {
                     state.campaign_event = true,
                 ReinforcementDue::Event(NativeMissionEvent::ShipDestroyed(_)) =>
                     state.ship_death_event = true,
+                ReinforcementDue::Event(NativeMissionEvent::ShipExtracted(_) |
+                    NativeMissionEvent::ShipWarped(_)) =>
+                    state.ship_exit_event = true,
                 ReinforcementDue::Event(NativeMissionEvent::MapObjectDestroyed(_)) =>
                     state.map_object_death_event = true,
                 ReinforcementDue::Event(NativeMissionEvent::MiningAsteroidDepleted(_)) =>
@@ -109,8 +115,8 @@ impl ReinforcementWakeup {
         {
             return true;
         }
-        if !(self.ship_death_event || self.map_object_death_event ||
-            self.mining_depletion_event)
+        if !(self.ship_death_event || self.ship_exit_event ||
+            self.map_object_death_event || self.mining_depletion_event)
         {
             return false;
         }
@@ -121,6 +127,9 @@ impl ReinforcementWakeup {
         world.events().iter().any(|event| match event {
             bees_sim::combat_world::CombatEvent::ShipDied { end_kill: false, .. } =>
                 self.ship_death_event,
+            bees_sim::combat_world::CombatEvent::ShipExtracted { .. } |
+            bees_sim::combat_world::CombatEvent::ShipWarped { .. } =>
+                self.ship_exit_event,
             bees_sim::combat_world::CombatEvent::MapObjectDestroyed { .. } =>
                 self.map_object_death_event,
             bees_sim::combat_world::CombatEvent::MiningAsteroidDepleted { .. } =>
@@ -183,6 +192,12 @@ impl ReinforcementWave {
     pub(crate) fn is_ship_death_triggered(&self) -> bool {
         matches!(self.due,
             ReinforcementDue::Event(NativeMissionEvent::ShipDestroyed(_))
+        )
+    }
+    pub(crate) fn is_ship_exit_triggered(&self) -> bool {
+        matches!(self.due,
+            ReinforcementDue::Event(NativeMissionEvent::ShipExtracted(_) |
+                NativeMissionEvent::ShipWarped(_))
         )
     }
     pub(crate) fn is_map_object_death_triggered(&self) -> bool {
@@ -448,6 +463,23 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                         )), |_| false, |_| false
                     ) {
                         return Err("Reinforcement ship-death trigger needs an authored source ship");
+                    }
+                    ReinforcementDue::Event(event)
+                }
+                NativeReinforcementActivation::OnShipExtracted(ship_id) |
+                NativeReinforcementActivation::OnShipWarped(ship_id) => {
+                    let event = if matches!(plan.activation,
+                        NativeReinforcementActivation::OnShipExtracted(_))
+                    {
+                        NativeMissionEvent::ShipExtracted(ship_id)
+                    } else { NativeMissionEvent::ShipWarped(ship_id) };
+                    if !event.valid_for(self.campaign_dialogue, |id|
+                        self.entities.iter().any(|entity| matches!(entity,
+                            NativeAuthoredEntity::Ship(ship)
+                                if ship.entity_id == id && !ship.vitals.is_dead()
+                        )), |_| false, |_| false
+                    ) {
+                        return Err("Reinforcement extraction trigger requires a living authored source ship");
                     }
                     ReinforcementDue::Event(event)
                 }
