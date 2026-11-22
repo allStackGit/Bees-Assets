@@ -243,6 +243,24 @@ impl NativeFleetInventory {
             return;
         }
         for event in world.events() {
+            // This one sparse branch implements GameState.PlayerScore.
+            // Do not spend career-stat HashMap lookups in missions which
+            // only request campaign score and not individual histories.
+            if let (Some(side), CombatEvent::ShipDied {
+                victim_id, end_kill: false, ..
+            }) = (self.campaign_player_side, event) {
+                if let Some(victim) = world.ship(*victim_id) {
+                    if victim.ship_type != BEACON_TYPE &&
+                        !(victim.side == side && victim.ship_type == HUMAN_TARGET_TYPE)
+                    {
+                        let tsv = i64::from(victim.vitals.max_tsv());
+                        self.campaign_score = self.campaign_score.saturating_add(
+                            if victim.side == side { -tsv } else { tsv }
+                        );
+                    }
+                }
+            }
+            if !self.career_tracking { continue; }
             match event {
                 CombatEvent::GameWeaponFired { ship_id, .. } |
                 CombatEvent::PolicyWeaponFired { ship_id, .. } => {
@@ -303,28 +321,8 @@ impl NativeFleetInventory {
                             .saturating_add(delta.tsv_loss.max(0) as u64);
                     }
                 }
-                CombatEvent::ShipDied { victim_id, killer_id, end_kill, .. } => {
-                    // Source Ship.Kill only calls LogKilledStats for actual
-                    // deaths, never safe extraction/EndKill or Beacon
-                    // retirement. A friendly HumanTarget is a protected
-                    // objective, not a fleet score penalty.
-                    if !end_kill {
-                        if let Some(side) = self.campaign_player_side {
-                            if let Some(victim) = world.ship(*victim_id) {
-                                if victim.ship_type != BEACON_TYPE &&
-                                    !(victim.side == side &&
-                                      victim.ship_type == HUMAN_TARGET_TYPE)
-                                {
-                                    let tsv = i64::from(victim.vitals.max_tsv());
-                                    self.campaign_score = self.campaign_score.saturating_add(
-                                        if victim.side == side { -tsv } else { tsv }
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    if !self.career_tracking ||
-                        killer_id == victim_id || *killer_id <= 0 {
+                CombatEvent::ShipDied { victim_id, killer_id, .. } => {
+                    if killer_id == victim_id || *killer_id <= 0 {
                         continue;
                     }
                     let opposing = world.ship(*killer_id).zip(world.ship(*victim_id))
