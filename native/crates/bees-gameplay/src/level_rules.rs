@@ -77,6 +77,12 @@ pub trait NativeLevelRewardMetadata {
     /// can omit this optional observer.
     fn observe_fleet_combat_tick(&mut self, _world: &CombatWorld) {}
 
+    /// Native campaign source controls and reinforcement ownership react
+    /// to the same committed cue, not a second scripted tutorial clock.
+    fn observe_campaign_cue(
+        &mut self, _cue: crate::campaign_dialogue::CampaignCue,
+    ) {}
+
     /// Read-only scoreboard supplied by the source Level, with its
     /// authorized player side. Non-campaign training need not store one.
     fn campaign_score_snapshot(&self) -> Option<(i32, i64)> { None }
@@ -1535,6 +1541,7 @@ where
                 &state.combat, bumblebee_spotted, pluto_spotted,
             ) {
                 dialogue.set_cue(cue);
+                state.metadata.observe_campaign_cue(cue);
                 state.events.queue_campaign_dialogue(completed_tick, cue)?;
             }
             if let Some(finalized) = state.events.latest_finalized_episode() {
