@@ -1952,7 +1952,7 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
             # match; a matching hull class, power and slot alone do not prove
             # its authored range/aim parameters.
             physical_fields = ("slot", "power", "mount_offset",
-                               "charge_range", "proximity")
+                               "linecast_offset", "charge_range", "proximity")
             if (not isinstance(observation, dict) or
                     any(reference.get(key) != physical.get(key)
                         for key in physical_fields)):
