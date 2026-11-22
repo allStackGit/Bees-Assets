@@ -220,18 +220,19 @@ class RemoteBattleWindow:
 
     def show_codex(self):
         state = self.state
-        if (self.console.spectator or state is None or
-                state.get("campaign_codex_gate") is not True):
-            self.notice("Campaign Codex unavailable to this player side")
+        if self.console.spectator or state is None:
+            self.notice("Fleet Codex unavailable to this viewer")
             return
-        entries = state.get("campaign_codex_entries")
+        entries = self.console.codex_entries(state)
         if entries is None:
             self.notice("This native host does not expose named Codex entries")
             return
         rows = [f"{entry['ship_type']:>2}  {entry['name']}" for entry in entries]
         messagebox.showinfo(
             "Fleet Codex",
-            f"{len(rows)} source ship classes unlocked\n\n" +
+            f"{len(rows)} source ship classes " +
+            ("unlocked" if state.get("campaign_codex_gate") is True
+             else "encountered") + "\n\n" +
             ("\n".join(rows) if rows else "No ship classes unlocked yet"),
             parent=self.root,
         )
@@ -466,8 +467,8 @@ class RemoteBattleWindow:
         )
         has_codex = (
             not self.console.spectator and state is not None and
-            state.get("campaign_codex_gate") is True and
-            state.get("campaign_codex_entries") is not None
+            (state.get("campaign_codex_entries") is not None or
+             state.get("visible_ship_classes") is not None)
         )
         self.codex_button.state(
             ["!disabled"] if has_codex else ["disabled"]
