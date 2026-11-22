@@ -4483,7 +4483,7 @@ impl NativePhysicalScene {
         if format.native_game_schema.is_some() {
             Self::parse_native_game_scene(
                 json, assets.ship_catalog(), assets.box_catalog(),
-                assets.polygon_catalog(),
+                assets.polygon_catalog(), assets.collision_asteroid_catalog(),
             )
         } else {
             Self::parse_with_ship_catalog(json, assets.ship_catalog())
