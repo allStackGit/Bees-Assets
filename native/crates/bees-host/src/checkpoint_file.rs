@@ -298,6 +298,18 @@ impl NativeHostCheckpointFile {
     }
 }
 
+/// Settings and other mutable client-owned JSON use the existing
+/// platform-portable checkpoint replacement path. Unlike a HiveMind
+/// checkpoint, these carry no gameplay ownership or request allocator.
+pub fn persist_atomic_json(
+    path: &Path, document: &impl serde::Serialize,
+) -> Result<(), CheckpointFileError> {
+    persist_atomic(path, |writer| {
+        serde_json::to_writer(writer,document)?;
+        Ok(())
+    })
+}
+
 /// Publish an immutable completed-run receipt. Build the entire JSON in a
 /// private temporary inode and link it into place only after sync, so a
 /// process crash cannot strand a half-written run_final at its permanent

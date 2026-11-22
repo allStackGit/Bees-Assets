@@ -23,6 +23,10 @@ mod text;
 pub(crate) mod campaign_dialogue;
 pub use campaign_dialogue::{NativeCampaignIntermission, NativeCampaignPreparation};
 #[cfg(feature = "client")]
+mod controls;
+#[cfg(feature = "client")]
+pub(crate) use controls::NativeControls;
+#[cfg(feature = "client")]
 mod codex;
 #[cfg(feature = "client")]
 mod battle_menu;

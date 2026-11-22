@@ -19,7 +19,7 @@ use bees_sim::simulation::WorldId;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use serde_json::{json, Value};
 
-use super::{NativeCamera, NativeSoftwareRenderer, text};
+use super::{NativeCamera, NativeSoftwareRenderer, NativeControls, text};
 use super::codex::{native_codex, codex_lines};
 use super::minimap::MiniMapLayout;
 use super::tactical_hud::{HudAction, HudRect, ACTIONS, shooting_hit, shooting_rect};
@@ -3060,6 +3060,9 @@ pub fn connect_remote(
         WindowOptions::default())?;
     window.set_target_fps(30);
     let mut pixels=vec![0;WIDTH*HEIGHT];
+    // Shared local and remote preferences, no alternate game inputs.
+    let mut controls=NativeControls::load()?;
+    let mut controls_open=false;
     let mut artwork=RemoteArtwork::new()?;
     let mut audio=NativeGameAudio::new();
     if let Some(path) = audio_preferences {
@@ -3138,6 +3141,25 @@ pub fn connect_remote(
         previous_frame=now;
         let menu_action_consumed=show_battle_menu;
         let mut menu_surrender_requested=false;
+        // Shift+F5 opens portable settings without sending player input.
+        // The existing help modal suspends commands but not network reads.
+        let shift_pressed=window.is_key_down(Key::LeftShift) ||
+            window.is_key_down(Key::RightShift);
+        if surrender_confirmation.is_none() && !held_fire_active &&
+            !show_battle_menu && shift_pressed &&
+            window.is_key_pressed(Key::F5,KeyRepeat::No)
+        {
+            controls_open=!controls_open;
+            show_controls_help=controls_open;
+            show_codex=false;show_campaign_rewards=false;
+            shooting_menu=false;shooting_press=None;
+            mode=None;patrol_start=None;drag_start=None;right_press=None;
+            hud_press=None;squad_tab_press=None;minimap_dragging=false;
+            last_selection_press=None;double_left_press=false;
+            last_left=window.get_mouse_down(MouseButton::Left);
+            last_right=window.get_mouse_down(MouseButton::Right);
+        }
+        if controls_open { controls.edit(&window); }
         // The host must continue advancing for other commanders. This is
         // only an input-capturing local overlay, never a network pause.
         if show_battle_menu {
@@ -3179,6 +3201,7 @@ pub fn connect_remote(
             }
         }
         if surrender_confirmation.is_none() && !menu_action_consumed &&
+            !controls_open &&
             window.is_key_pressed(Key::F1, KeyRepeat::No) && !held_fire_active {
             show_codex=false;
             show_campaign_rewards=false;
@@ -3195,6 +3218,7 @@ pub fn connect_remote(
             last_right=window.get_mouse_down(MouseButton::Right);
         }
         if surrender_confirmation.is_none() && !menu_action_consumed &&
+            !controls_open &&
             window.is_key_pressed(Key::F2, KeyRepeat::No) && !held_fire_active {
             show_codex=!show_codex;
             show_campaign_rewards=false;
@@ -3209,7 +3233,8 @@ pub fn connect_remote(
             last_right=window.get_mouse_down(MouseButton::Right);
         }
         if surrender_confirmation.is_none() && !menu_action_consumed &&
-            !show_battle_menu && window.is_key_pressed(Key::F9,KeyRepeat::No) && !held_fire_active
+            !show_battle_menu && !controls_open &&
+            window.is_key_pressed(Key::F9,KeyRepeat::No) && !held_fire_active
         {
             if show_campaign_rewards {
                 show_campaign_rewards=false;
@@ -3286,7 +3311,7 @@ pub fn connect_remote(
             }
         }
         if !show_controls_help && !show_codex && !show_campaign_rewards &&
-            window.is_key_pressed(Key::I, KeyRepeat::No) &&
+            controls.pressed(&window,"Mini Map",KeyRepeat::No) &&
             !window.is_key_down(Key::LeftShift) &&
             !window.is_key_down(Key::RightShift)
         {
@@ -3295,7 +3320,8 @@ pub fn connect_remote(
             peer.notice=if show_minimap { "Minimap visible".into() }
                 else { "Minimap hidden".into() };
         }
-        if !show_controls_help && window.is_key_pressed(Key::B, KeyRepeat::No) {
+        if !show_controls_help &&
+            controls.pressed(&window,"Show Ranges",KeyRepeat::No) {
             show_weapon_ranges=!show_weapon_ranges;
             peer.notice=if show_weapon_ranges {
                 "Selected weapon ranges enabled".into()
@@ -3370,13 +3396,13 @@ pub fn connect_remote(
         let escape = window.is_key_pressed(Key::Escape, KeyRepeat::No);
         if surrender_confirmation.is_some() && (escape || cancel) {
             surrender_confirmation=None;
-        } else if !menu_action_consumed && escape && show_controls_help {
+        } else if !controls_open && !menu_action_consumed && escape && show_controls_help {
             show_controls_help=false;
             show_codex=false;
             show_campaign_rewards=false;
             last_left=window.get_mouse_down(MouseButton::Left);
             last_right=window.get_mouse_down(MouseButton::Right);
-        } else if !menu_action_consumed && !show_controls_help && (cancel || escape) {
+        } else if !controls_open && !menu_action_consumed && !show_controls_help && (cancel || escape) {
             if shooting_menu {
                 shooting_menu=false;shooting_press=None;
             } else if mode.is_some() {
@@ -3554,7 +3580,7 @@ pub fn connect_remote(
             held_fire_active = false;
             held_fire_target = None;
         }
-        if !window.is_key_down(Key::J) {
+        if !controls.down(&window,"Manual Fire") {
             peer.held_fire_rejected = false;
         }
         // A newly delivered campaign cue resets this presentation-only
@@ -3823,14 +3849,15 @@ pub fn connect_remote(
                             },
                             Err(error)=>peer.notice=error.to_string(),
                         }
-                    } else if matches!(key,Key::Backspace|Key::S) {
+                    } else if key==Key::Backspace ||
+                        key==controls.key("Shooting Priority") {
                         shooting_menu=false;shooting_press=None;
                     }
                     continue;
                 }
                 // The unmodified I key is a display toggle, not a squad
                 // command; Shift+I remains the Circle tactical shortcut.
-                if key==Key::I && !shift { continue; }
+                if key==controls.key("Mini Map") && !shift { continue; }
                 let numbered=match key {
                     Key::Key1=>Some(1),Key::Key2=>Some(2),Key::Key3=>Some(3),
                     Key::Key4=>Some(4),Key::Key5=>Some(5),Key::Key6=>Some(6),
@@ -3871,7 +3898,7 @@ pub fn connect_remote(
                 }
                 // Keyboard and on-screen buttons share one typed command
                 // dispatcher. Source local controls retain their meanings.
-                if key==Key::F {
+                if key==controls.key("Fit Camera") {
                     if let Some(map)=peer.state.as_ref().and_then(bounds) {
                         cam=NativeCamera::fit(map,FIELD,HEIGHT);
                         cam.constrain_source_zoom(authored_zoom,HEIGHT);
@@ -3890,33 +3917,48 @@ pub fn connect_remote(
                     }
                     continue;
                 }
-                let action=match key {
-                    Key::A if control=>Some(HudAction::SelectAll),
-                    Key::A=>Some(HudAction::AttackOnSight),
-                    Key::V=>Some(HudAction::CeaseFire),
-                    Key::T if shift=>Some(HudAction::Attack),
-                    Key::T=>Some(HudAction::PointFire),
-                    Key::I if shift=>Some(HudAction::Circle),
-                    Key::O if shift=>Some(HudAction::LeftSwipe),
-                    Key::U if shift=>Some(HudAction::RightSwipe),
-                    Key::N if shift=>Some(HudAction::InAndOut),
-                    Key::G=>Some(HudAction::Guard),
-                    Key::M=>Some(HudAction::Mine),
-                    Key::H=>Some(HudAction::Heal),
-                    Key::R=>Some(HudAction::Retreat),
-                    Key::P=>Some(HudAction::Patrol),
-                    Key::C=>Some(HudAction::Hold),
-                    Key::E=>Some(HudAction::Chase),
-                    Key::O=>Some(HudAction::LockOn),
-                    Key::Y=>Some(HudAction::MatchSpeed),
-                    Key::U=>Some(HudAction::FreeSpeed),
-                    Key::K if dialogue_skip_key=>None,
-                    Key::K=>Some(HudAction::Beacon),
-                    Key::D=>Some(HudAction::Detonate),
-                    Key::Q=>Some(HudAction::Charge),
-                    Key::X=>Some(HudAction::StopFire),
-                    Key::S=>Some(HudAction::Shooting),
-                    _=>None,
+                // Shift tactical gestures retain their distinct source
+                // targeting meanings. Unmodified keys are user-bindable
+                // without changing the canonical HostPlayerInput protocol.
+                let shifted_action=if shift {
+                    match key {
+                        Key::T=>Some(HudAction::Attack),
+                        Key::I=>Some(HudAction::Circle),
+                        Key::O=>Some(HudAction::LeftSwipe),
+                        Key::U=>Some(HudAction::RightSwipe),
+                        Key::N=>Some(HudAction::InAndOut),
+                        _=>None,
+                    }
+                } else { None };
+                let action=if key==Key::A && control {
+                    Some(HudAction::SelectAll)
+                } else if shifted_action.is_some() {
+                    shifted_action
+                } else if key==Key::K && dialogue_skip_key {
+                    None
+                } else {
+                    const ACTIONS: &[(&str,HudAction)] = &[
+                        ("Attack on Sight",HudAction::AttackOnSight),
+                        ("Cease Fire",HudAction::CeaseFire),
+                        ("Point Fire",HudAction::PointFire),
+                        ("Guard",HudAction::Guard),
+                        ("Mine",HudAction::Mine),
+                        ("Heal",HudAction::Heal),
+                        ("Retreat",HudAction::Retreat),
+                        ("Patrol",HudAction::Patrol),
+                        ("Hold",HudAction::Hold),
+                        ("Chase",HudAction::Chase),
+                        ("Lock On",HudAction::LockOn),
+                        ("Match Speed",HudAction::MatchSpeed),
+                        ("Free Speed",HudAction::FreeSpeed),
+                        ("Beacon",HudAction::Beacon),
+                        ("Detonate",HudAction::Detonate),
+                        ("Charge",HudAction::Charge),
+                        ("Stop Fire",HudAction::StopFire),
+                        ("Shooting Priority",HudAction::Shooting),
+                    ];
+                    ACTIONS.iter().find_map(|&(name,action)|
+                        (key==controls.key(name)).then_some(action))
                 };
                 if let Some(action)=action {
                     drag_start=None;patrol_start=None;
@@ -4059,10 +4101,10 @@ pub fn connect_remote(
             // native commander. Keeping J held after X cancels fire must
             // not immediately begin another weapon lease in this frame.
             // An already active gesture still sends Aim and End as usual.
-            let holding=window.is_active() && window.is_key_down(Key::J)
+            let holding=window.is_active() && controls.down(&window,"Manual Fire")
                 && !peer.input_suppressed && !peer.held_fire_rejected && within.is_some() &&
                 (held_fire_active || (!selected.is_empty() &&
-                    window.is_key_pressed(Key::J,KeyRepeat::No)));
+                    controls.pressed(&window,"Manual Fire",KeyRepeat::No)));
             match (held_fire_active,holding,within) {
                 (false,true,Some((x,y))) => {
                     let point=cam.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
@@ -4629,7 +4671,9 @@ pub fn connect_remote(
                 } else { "Battle paused by another commander" },
                 1,[255,211,130]);
         }
-        if surrender_confirmation.is_some() {
+        if controls_open {
+            controls.draw(&mut pixels,WIDTH,HEIGHT);
+        } else if surrender_confirmation.is_some() {
             NativeSoftwareRenderer::draw_surrender_panel(&mut pixels,WIDTH,HEIGHT);
         } else if show_campaign_rewards && !peer.campaign_reward_details.is_empty() {
             let total=peer.campaign_reward_details.len();
@@ -4710,7 +4754,7 @@ pub fn connect_remote(
         } else if show_controls_help {
             const LINES: &[&str] = &[
                 "BEES NATIVE / MULTIPLAYER CONTROLS",
-                "F1 or Esc: close help   F2: United Fleet Codex",
+                "F1/Esc: close   F2: Codex   Shift+F5: hotkey settings",
                 "F9: inspect the authenticated committed campaign rewards",
                 "SELECTION",
                 "Left click: ship   Drag: box select   Double click: ship type",

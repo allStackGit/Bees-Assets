@@ -3639,6 +3639,15 @@ impl NativeSoftwareRenderer {
         );
     }
 
+    /// Local settings draw into the existing window framebuffer. Gameplay
+    /// input is suspended by the client modal; this never touches CombatWorld.
+    #[cfg(feature = "client")]
+    pub fn draw_control_settings(
+        &mut self, controls: &super::NativeControls,
+    ) {
+        controls.draw(&mut self.pixels,self.width,self.height);
+    }
+
     /// F1 help uses the same static source-control wording on every world,
     /// without building a string or allocating a second framebuffer.
     #[cfg(feature = "client")]
@@ -3705,7 +3714,7 @@ impl NativeSoftwareRenderer {
     pub fn draw_controls_help(&mut self) {
         const LINES: &[&str] = &[
             "BEES NATIVE  /  CONTROLS",
-            "F1 or Esc: close this help panel   F2: United Fleet Codex",
+            "F1/Esc: close   F2: Fleet Codex   F5: editable hotkeys",
             "SELECTION",
             "Left click: select ship   Drag: box select   Double click: ship type",
             "Ctrl+click: add/remove   Ctrl+A: all   1-0: numbered squads",
