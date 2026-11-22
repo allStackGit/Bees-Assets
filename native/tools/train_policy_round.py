@@ -339,6 +339,12 @@ def rollout_metrics(summary_path, config, manifest_sha):
             keys += optional
         if isinstance(ship_slots, dict) and "inactive_projectile_slots_skipped" in ship_slots:
             keys += ("inactive_projectile_slots_skipped",)
+        # New counters prove exactly how many unused navigation hash probes
+        # were avoided. A historical runner cannot report these as zeros.
+        skipped_keys = ("navigation_lookups_skipped",
+                        "steering_lookups_skipped")
+        if isinstance(ship_slots, dict) and any(key in ship_slots for key in skipped_keys):
+            keys += skipped_keys
         if (not isinstance(ship_slots, dict) or
                 any(type(ship_slots.get(key)) is not int or ship_slots[key] < 0
                     for key in keys)):
@@ -514,6 +520,14 @@ def combined_rollout_metrics(shards, wall_seconds):
             })
         # A round may combine old and new collectors. Missing values mean
         # unmeasured, never a fabricated zero for those older binaries.
+        navigation_keys = ("navigation_lookups_skipped",
+                           "steering_lookups_skipped")
+        if all(all(key in shard["ship_slot_work"] for key in navigation_keys)
+               for shard in shards):
+            metrics["ship_slot_work"].update({
+                key: sum(shard["ship_slot_work"][key] for shard in shards)
+                for key in navigation_keys
+            })
         projectile_key = "inactive_projectile_slots_skipped"
         if all(projectile_key in shard["ship_slot_work"] for shard in shards):
             metrics["ship_slot_work"][projectile_key] = sum(
