@@ -382,6 +382,7 @@ fn source_art_sprite(
 }
 
 const SOURCE_SHIP_TYPES: usize = 24;
+const SOURCE_SHIP_ANIMATION_VARIANTS: usize = 3;
 const SOURCE_PROJECTILE_TYPES: usize = 16;
 const SOURCE_ASTEROID_PREFABS: usize = 29; // zero is unused
 
@@ -603,7 +604,7 @@ fn decode_ship_clip(
 }
 
 struct SourceShipAnimationAtlas {
-    clips: [Option<SourceShipAnimationArt>; SOURCE_SHIP_TYPES * 2],
+    clips: [Option<SourceShipAnimationArt>; SOURCE_SHIP_TYPES * SOURCE_SHIP_ANIMATION_VARIANTS],
     loaded: usize,
 }
 
@@ -614,7 +615,7 @@ impl SourceShipAnimationAtlas {
         if bytes.get(..4) != Some(&b"BSA1"[..]) { return Err(invalid()); }
         let mut at = 4usize;
         let count = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
-        if count > SOURCE_SHIP_TYPES * 2 { return Err(invalid()); }
+        if count > SOURCE_SHIP_TYPES * SOURCE_SHIP_ANIMATION_VARIANTS { return Err(invalid()); }
         let mut clips = std::array::from_fn(|_| None);
         let mut pixels_total = 0usize;
         for _ in 0..count {
@@ -625,12 +626,12 @@ impl SourceShipAnimationAtlas {
             let ppu = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
             let fps = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
             let frames = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
-            if ty >= SOURCE_SHIP_TYPES || variant > 1 || ppu == 0 ||
+            if ty >= SOURCE_SHIP_TYPES || variant >= SOURCE_SHIP_ANIMATION_VARIANTS || ppu == 0 ||
                 !(1..=120).contains(&fps) || !(1..=64).contains(&frames) ||
-                clips[ty * 2 + variant].is_some() {
+                clips[ty * SOURCE_SHIP_ANIMATION_VARIANTS + variant].is_some() {
                 return Err(invalid());
             }
-            clips[ty * 2 + variant] = Some(decode_ship_clip(
+            clips[ty * SOURCE_SHIP_ANIMATION_VARIANTS + variant] = Some(decode_ship_clip(
                 bytes, &mut at, ppu, fps, frames, &mut pixels_total,
             )?);
         }
@@ -1189,7 +1190,7 @@ impl NativeSoftwareRenderer {
                 return None;
             }
             let art = source_ship_animation_art()?
-                .clips.get(usize::from(ship_type) * 2 + usize::from(variant))
+                .clips.get(usize::from(ship_type) * SOURCE_SHIP_ANIMATION_VARIANTS + usize::from(variant))
                 .and_then(Option::as_ref)?;
             let frame = ((elapsed * art.frames_per_second).floor() as usize)
                 % art.frames.len();
@@ -1852,7 +1853,7 @@ impl NativeSoftwareRenderer {
             };
             let animated = visual_phase.and_then(|(variant, elapsed)| {
                 let atlas = ship_animations?;
-                let clip = atlas.clips.get(usize::from(ship.ship_type) * 2 + variant)
+                let clip = atlas.clips.get(usize::from(ship.ship_type) * SOURCE_SHIP_ANIMATION_VARIANTS + variant)
                     .and_then(Option::as_ref)?;
                 let index = if let Some(opening) = elapsed.filter(|_| variant == 0) {
                     ((opening * clip.frames_per_second).floor() as usize)
