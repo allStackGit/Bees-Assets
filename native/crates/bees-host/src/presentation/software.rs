@@ -3794,7 +3794,7 @@ impl NativeSoftwareRenderer {
             "G: guard   P: patrol   M: mine   H: heal   R: retreat",
             "S: shooting priority   O: lock on   Y: match speed   U: free speed",
             "K: beacon   D: detonate   Q: charge",
-            "T: point fire   Hold J: fire   Hold W: range + fire   X: stop",
+            "T: point fire   Hold J: fire   J+B or W: range+fire   X: stop",
             "Backspace: cancel target   F9: change local commander",
             "AUDIO / PERFORMANCE",
             "F7: mute   Shift+F7: FreePlay fog   F10/F11: effect level",

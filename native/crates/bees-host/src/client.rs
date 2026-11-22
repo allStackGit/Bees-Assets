@@ -1120,13 +1120,14 @@ impl NativeClient {
                 return Ok(NativeClientAction::SideChanged);
             }
         }
-        if self.controls.pressed(&self.window,"Show Ranges",KeyRepeat::No) {
+        if self.controls.pressed(&self.window,"Show Ranges",KeyRepeat::No) &&
+            !self.controls.down(&self.window,"Manual Fire") {
             self.range_overlay_pinned = !self.range_overlay_pinned;
         }
         self.renderer.show_weapon_ranges = self.range_overlay_pinned ||
             (self.window.is_active() && !self.show_controls_help &&
              !self.playback && !briefing &&
-             self.controls.down(&self.window,"Show Ranges + Manual Fire"));
+             self.controls.combined_range_fire_down(&self.window));
         if self.controls.pressed(&self.window,"Mini Map",KeyRepeat::No) {
             self.renderer.show_minimap = !self.renderer.show_minimap;
             if !self.renderer.show_minimap { self.minimap_dragging = false; }
@@ -1487,8 +1488,7 @@ impl NativeClient {
             let cursor = mouse.map(|(x, y)| self.renderer.camera.screen_to_world(x, y, width, height));
             if let Some(previous) = self.held_fire_target {
                 if !pointer_active ||
-                    !(self.controls.down(&self.window,"Manual Fire") ||
-                      self.controls.down(&self.window,"Show Ranges + Manual Fire")) ||
+                    !self.controls.manual_fire_down(&self.window) ||
                     stop_fire {
                     self.held_fire_target = None;
                     Some(NativeHeldFireAction::End)
@@ -1497,8 +1497,7 @@ impl NativeClient {
                     Some(NativeHeldFireAction::Aim { target })
                 } else { None }
             } else if pointer_active &&
-                (self.controls.pressed(&self.window,"Manual Fire",KeyRepeat::No) ||
-                 self.controls.pressed(&self.window,"Show Ranges + Manual Fire",KeyRepeat::No)) &&
+                self.controls.manual_fire_started(&self.window) &&
                 !self.renderer.selection.squads().is_empty()
             {
                 cursor.map(|target| {

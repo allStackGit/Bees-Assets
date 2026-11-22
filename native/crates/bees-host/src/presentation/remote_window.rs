@@ -3321,7 +3321,8 @@ pub fn connect_remote(
                 else { "Minimap hidden".into() };
         }
         if !show_controls_help &&
-            controls.pressed(&window,"Show Ranges",KeyRepeat::No) {
+            controls.pressed(&window,"Show Ranges",KeyRepeat::No) &&
+            !controls.down(&window,"Manual Fire") {
             show_weapon_ranges=!show_weapon_ranges;
             peer.notice=if show_weapon_ranges {
                 "Selected weapon ranges enabled".into()
@@ -3582,8 +3583,7 @@ pub fn connect_remote(
             held_fire_active = false;
             held_fire_target = None;
         }
-        if !(controls.down(&window,"Manual Fire") ||
-             controls.down(&window,"Show Ranges + Manual Fire")) {
+        if !controls.manual_fire_down(&window) {
             peer.held_fire_rejected = false;
         }
         // A newly delivered campaign cue resets this presentation-only
@@ -4120,13 +4120,10 @@ pub fn connect_remote(
             // native commander. Keeping J held after X cancels fire must
             // not immediately begin another weapon lease in this frame.
             // An already active gesture still sends Aim and End as usual.
-            let holding=window.is_active() &&
-                (controls.down(&window,"Manual Fire") ||
-                 controls.down(&window,"Show Ranges + Manual Fire")) &&
+            let holding=window.is_active() && controls.manual_fire_down(&window) &&
                 !peer.input_suppressed && !peer.held_fire_rejected && within.is_some() &&
                 (held_fire_active || (!selected.is_empty() &&
-                    (controls.pressed(&window,"Manual Fire",KeyRepeat::No) ||
-                     controls.pressed(&window,"Show Ranges + Manual Fire",KeyRepeat::No))));
+                    controls.manual_fire_started(&window)));
             match (held_fire_active,holding,within) {
                 (false,true,Some((x,y))) => {
                     let point=cam.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
@@ -4496,7 +4493,7 @@ pub fn connect_remote(
         // separate B toggle remains pinned after either firing key releases.
         let range_overlay_active=show_weapon_ranges ||
             (window.is_active() && !show_controls_help && !peer.input_suppressed &&
-             controls.down(&window,"Show Ranges + Manual Fire"));
+             controls.combined_range_fire_down(&window));
         // Interest changes only with the selected live lifetimes, toggle,
         // or episode. It never enters the authoritative input trace.
         if peer.connected && peer.authenticated && !peer.spectator {
@@ -4796,7 +4793,7 @@ pub fn connect_remote(
                 "G: guard   P: patrol   M: mine   H: heal   R: retreat",
                 "S: priority picker   Shift+letter: direct source priorities 1-16",
                 "K: beacon   D: detonate   Q: charge",
-                "T: point fire   Hold J: fire   Hold W: range + fire   X: stop",
+                "T: point fire   Hold J: fire   J+B or W: range+fire   X: stop",
                 "Shift+Q/W/E/R/T/Y/U/I/O/P: source tactical orders",
                 "NETWORK / AUDIO",
                 "F4: surrender   F5: reconnect   F8: network measurements",

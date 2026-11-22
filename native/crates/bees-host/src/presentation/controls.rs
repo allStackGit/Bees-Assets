@@ -227,6 +227,33 @@ impl NativeControls {
         !Self::shift_held(window) && window.is_key_down(self.key(action))
     }
 
+    /// Source UserSettingsData binds Show Ranges + Manual Fire as a chord
+    /// of its separate range and firing keys. Existing native installations
+    /// also have a distinct editable combination key. Both routes enter the
+    /// one existing held-fire action; neither changes World weapon rules.
+    pub(crate) fn combined_range_fire_down(&self, window: &Window) -> bool {
+        self.down(window, "Show Ranges + Manual Fire") ||
+            (self.down(window, "Show Ranges") &&
+             self.down(window, "Manual Fire"))
+    }
+
+    pub(crate) fn combined_range_fire_started(&self, window: &Window) -> bool {
+        self.pressed(window, "Show Ranges + Manual Fire", KeyRepeat::No) ||
+            (self.down(window, "Show Ranges") &&
+             self.pressed(window, "Manual Fire", KeyRepeat::No)) ||
+            (self.down(window, "Manual Fire") &&
+             self.pressed(window, "Show Ranges", KeyRepeat::No))
+    }
+
+    pub(crate) fn manual_fire_down(&self, window: &Window) -> bool {
+        self.down(window, "Manual Fire") || self.combined_range_fire_down(window)
+    }
+
+    pub(crate) fn manual_fire_started(&self, window: &Window) -> bool {
+        self.pressed(window, "Manual Fire", KeyRepeat::No) ||
+            self.combined_range_fire_started(window)
+    }
+
     /// Accept the original source direct priority in IDs 1..16. This
     /// output is still sent through NativePlayerSquadShooting and validated
     /// by the one native Level, not applied to any client-owned weapon.
