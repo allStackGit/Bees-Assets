@@ -22,7 +22,7 @@ use bees_sim::geometry::Vec2;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum NativeClientAction {
-    Wait, Step, Quit, WorldChanged, SideChanged,
+    Wait, Step, Quit, Restart, WorldChanged, SideChanged,
     Input { action: NativePlayerInput, step: bool },
 }
 
@@ -160,6 +160,7 @@ pub struct NativeClient {
     /// The original FreePlay/FishTank menu may disable display fog;
     /// campaign and Challenge visibility cannot be overridden.
     allow_freeplay_fog: bool,
+    allow_freeplay_restart: bool,
     /// Source per-Level Map.MinZoom/MaxZoom. No gameplay-state copy.
     source_zoom_by_world: Vec<Option<(f32, f32)>>,
     next_step: Instant,
@@ -283,6 +284,7 @@ impl NativeClient {
             performance: NativeLivePerformance::new(now),
             edge_scroll_enabled: false,
             allow_freeplay_fog: false,
+            allow_freeplay_restart: false,
             source_zoom_by_world: Vec::new(),
             next_step: now, pending_steps: 0, previous_frame: now, left_was_down: false,
             right_was_down: false, right_press: None, last_left_press: None, double_left_press: false,
@@ -493,6 +495,10 @@ impl NativeClient {
         self.allow_freeplay_fog=allowed;
     }
 
+    pub fn set_freeplay_restart_allowed(&mut self,allowed:bool) {
+        self.allow_freeplay_restart=allowed;
+    }
+
     pub fn result_action(&self) -> Option<NativeResultAction> {
         if self.dialogue_visible { return None; }
         let controls = self.result_controls?;
@@ -623,7 +629,8 @@ impl NativeClient {
         if self.battle_menu_open {
             let left = self.window.get_mouse_down(MouseButton::Left);
             let hover = self.window.get_mouse_pos(MouseMode::Discard)
-                .and_then(|(x, y)| self.renderer.battle_menu_at(x, y));
+                .and_then(|(x, y)|
+                    self.renderer.battle_menu_at(x,y,self.allow_freeplay_restart));
             if left && !self.left_was_down {
                 self.battle_menu_press = hover;
             }
@@ -639,6 +646,8 @@ impl NativeClient {
                 self.window.is_key_pressed(Key::F2, KeyRepeat::No) { Some(2) }
             else if self.window.is_key_pressed(Key::S, KeyRepeat::No) { Some(3) }
             else if self.window.is_key_pressed(Key::Q, KeyRepeat::No) { Some(4) }
+            else if self.allow_freeplay_restart &&
+                self.window.is_key_pressed(Key::N,KeyRepeat::No) {Some(5)}
             else { click };
             match choice {
                 Some(0 | 1 | 2) => {
@@ -663,6 +672,14 @@ impl NativeClient {
                     }
                 }
                 Some(4) => return Ok(NativeClientAction::Quit),
+                Some(5) if self.allow_freeplay_restart => {
+                    // The host owns cleanup, immutable run receipts and a
+                    // new original Level. Never reset an existing World
+                    // directly from this presentation-only menu.
+                    self.battle_menu_open=false;
+                    self.battle_menu_press=None;
+                    return Ok(NativeClientAction::Restart);
+                },
                 _ => {},
             }
         }
@@ -1836,7 +1853,9 @@ impl NativeClient {
         if self.battle_menu_open {
             let can_surrender = view.player_authority.player_viewer_side()
                 .is_some_and(|side| view.can_surrender(side));
-            self.renderer.draw_battle_menu(self.paused, can_surrender);
+            self.renderer.draw_battle_menu(
+                self.paused, can_surrender,self.allow_freeplay_restart,
+            );
         } else if self.codex_open {
             self.renderer.draw_fleet_codex(&view, self.codex_selected);
         } else if self.show_controls_help {

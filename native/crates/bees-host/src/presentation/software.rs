@@ -3674,45 +3674,56 @@ impl NativeSoftwareRenderer {
     /// Rows are actionable only through the local window's edge-triggered
     /// input handler, never through a physical game event or remote session.
     #[cfg(feature = "client")]
-    pub fn draw_battle_menu(&mut self, was_paused: bool, can_surrender: bool) {
-        let lines: &[&str] = if can_surrender {
+    pub fn draw_battle_menu(
+        &mut self,was_paused:bool,can_surrender:bool,can_restart:bool,
+    ) {
+        let surrender=if can_surrender {
+            "S: surrender this battle (confirmation required)"
+        } else {"S: surrender unavailable for this World"};
+        let status=if was_paused {"Battle was already paused"}
+            else {"Battle paused while menu is open"};
+        let lines:&[&str]=if can_restart {
             &["BEES NATIVE  /  BATTLE MENU",
               "Esc or R: resume the battle",
               "H or F1: open controls and shortcuts",
               "C or F2: inspect the Fleet Codex",
-              "S: surrender this battle (confirmation required)",
+              surrender,
               "Q: exit battle (return to library when launched there)",
-              if was_paused { "Battle was already paused" }
-              else { "Battle paused while menu is open" }]
+              "N: restart this FreePlay battle (original fleet and map)",
+              status]
         } else {
             &["BEES NATIVE  /  BATTLE MENU",
               "Esc or R: resume the battle",
               "H or F1: open controls and shortcuts",
               "C or F2: inspect the Fleet Codex",
-              "S: surrender is unavailable for this World",
+              surrender,
               "Q: exit battle (return to library when launched there)",
-              if was_paused { "Battle was already paused" }
-              else { "Battle paused while menu is open" }]
+              status]
         };
-        Self::draw_help_panel(&mut self.pixels, self.width, self.height,
-            lines, &[0, 6]);
+        Self::draw_help_panel(&mut self.pixels,self.width,self.height,
+            lines,if can_restart {&[0,7]} else {&[0,6]});
     }
 
-    /// Hit exactly the same centered lines drawn by draw_battle_menu.
-    /// Returns 0..4 for Resume/Help/Codex/Surrender/Leave respectively.
+    /// Hit exactly the same centered action rows that the menu draws.
+    /// Resume, Help, Codex, Surrender, Exit and (FreePlay only) Restart.
     #[cfg(feature = "client")]
-    pub fn battle_menu_at(&self, x: f32, y: f32) -> Option<usize> {
-        Self::battle_menu_hit(self.width, self.height, x, y)
+    pub fn battle_menu_at(
+        &self,x:f32,y:f32,can_restart:bool,
+    ) -> Option<usize> {
+        Self::battle_menu_hit(
+            self.width,self.height,x,y,if can_restart {6} else {5},
+        )
     }
 
     #[cfg(feature = "client")]
     pub(super) fn battle_menu_hit(
-        width: usize, height: usize, x: f32, y: f32,
+        width: usize,height:usize,x:f32,y:f32,actions:usize,
     ) -> Option<usize> {
+
         if width < 490 || height < 400 ||
             !x.is_finite() || !y.is_finite() { return None; }
         let row_height = text::HEIGHT + 5;
-        let panel_height = (7 * row_height + 28).min(height);
+        let panel_height = ((actions+2)*row_height + 28).min(height);
         let panel_width = width.saturating_sub(40).min(875);
         let left = (width - panel_width) / 2;
         let top = (height - panel_height) / 2;
@@ -3722,12 +3733,12 @@ impl NativeSoftwareRenderer {
         // indices. This also prevents malformed OS pointer positions from
         // producing overflowing row arithmetic in debug/native builds.
         if y < (top + 12 + row_height) as f32 ||
-            y >= (top + 12 + 6 * row_height) as f32 {
+            y >= (top + 12 + (actions+1) * row_height) as f32 {
             return None;
         }
         let row = ((y - (top + 12) as f32) /
             row_height as f32) as usize;
-        (1..=5).contains(&row).then_some(row - 1)
+        (1..=actions).contains(&row).then_some(row - 1)
     }
 
     pub fn draw_controls_help(&mut self) {

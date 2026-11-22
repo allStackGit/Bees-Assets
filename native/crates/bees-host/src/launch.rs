@@ -2637,10 +2637,21 @@ fn run_session(
             }
         }
         replay_number = replay_number.checked_add(1).ok_or_else(|| invalid("replay count exhausted"))?;
-        let next = output.as_ref().ok_or_else(|| invalid("replay requires --output-dir"))?
-            .join(format!("replay-{replay_number:04}"));
-        battle_capture = capture.as_ref().map(|_| next.join("final.ppm"));
-        battle_output = Some(next);
+        // Both post-match replay and an in-battle FreePlay restart use
+        // the same complete World teardown and next-session construction.
+        // An ordinary unsaved FreePlay has no output directory and must
+        // remain restartable without inventing a persistent game receipt.
+        battle_output = output.as_ref().map(|root|
+            root.join(format!("replay-{replay_number:04}")));
+        battle_capture = capture.as_ref().map(|path| {
+            battle_output.as_ref().map_or_else(|| {
+                let mut name = path.file_stem().unwrap_or_default().to_os_string();
+                name.push(format!("-replay-{replay_number:04}"));
+                let mut result = path.with_file_name(name);
+                result.set_extension(path.extension().unwrap_or_default());
+                result
+            }, |next| next.join("final.ppm"))
+        });
         replay_inputs = restart.replay_inputs;
     }
     Ok(())
@@ -8058,6 +8069,12 @@ fn run_battle(
         client.set_freeplay_fog_allowed(
             mission.is_none() && replay_inputs.is_none(),
         );
+        // FreePlay restart must not roll back durable Campaign/Challenge
+        // rewards or the other commander's shared multiplayer clock.
+        client.set_freeplay_restart_allowed(
+            mission.is_none() && replay_inputs.is_none() &&
+            remote_step_interval.is_none(),
+        );
         client.set_source_zoom_limits(client_zoom_limits);
         client.set_music_locations(
             source_levels.iter().map(|source| source.music_location).collect(),
@@ -8636,6 +8653,8 @@ fn run_battle(
     let mut next_status_round = status_every_rounds;
     #[cfg(feature = "client")]
     let mut user_closed = false;
+    #[cfg(feature = "client")]
+    let mut restart_requested = false;
     #[cfg(feature = "client")]
     let mut client_step_budget = 1_u32;
     #[cfg(not(feature = "client"))]
@@ -9298,6 +9317,16 @@ fn run_battle(
                     }
                     if !step { continue; }
                     client_step_budget = client.pending_steps();
+                },
+                Ok(bees_host::client::NativeClientAction::Restart) => {
+                    // Abort the current play attempt through ordinary
+                    // terminal cleanup, checkpoint and recorded-input
+                    // finalization. No campaign awards are minted on quit.
+                    // A fresh authored Level is constructed only after
+                    // all of those obligations have settled.
+                    user_closed = true;
+                    restart_requested = true;
+                    break;
                 },
                 Ok(bees_host::client::NativeClientAction::Quit) => { user_closed = true; break; },
                 Err(error) => { failed_window = Some(format!("native window: {error}")); break; },
@@ -10835,6 +10864,10 @@ fn run_battle(
                 }
             }
         }
+    }
+    #[cfg(feature = "client")]
+    if restart_requested {
+        return Ok(Some(BattleRestart { replay_inputs: None }));
     }
     Ok(None)
 }

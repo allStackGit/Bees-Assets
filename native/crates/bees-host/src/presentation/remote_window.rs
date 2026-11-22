@@ -3166,7 +3166,7 @@ pub fn connect_remote(
             let left=window.get_mouse_down(MouseButton::Left);
             let hover=window.get_mouse_pos(MouseMode::Discard)
                 .and_then(|(x,y)|NativeSoftwareRenderer::battle_menu_hit(
-                    WIDTH,HEIGHT,x,y));
+                    WIDTH,HEIGHT,x,y,5));
             if left&&!last_left {battle_menu_press=hover;}
             let clicked=if !left&&last_left {
                 battle_menu_press.take().filter(|&start|Some(start)==hover)
