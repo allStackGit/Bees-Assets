@@ -1115,7 +1115,7 @@ fn select_battle_inner(
                     };
                     format!("Form {}:{} {}deg{} @{},{} | {} | {} | Chase {} | Fire {} | Speed {} | RGB {}",
                         formation.label(), formation.max_width,
-                        formation.clockwise_quarters * 90,
+                        u16::from(formation.clockwise_quarters) * 90,
                         if formation.mirrored { " mirrored" } else { "" },
                         formation.translation[0], formation.translation[1],
                         row.title, name, if chase { "on" } else { "off" },

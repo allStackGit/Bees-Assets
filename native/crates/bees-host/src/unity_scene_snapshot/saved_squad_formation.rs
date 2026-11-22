@@ -300,6 +300,13 @@ impl NativePhysicalScene {
                 // other ships retain source/automatic formation order.
                 let offset = custom.unwrap_or(slot - slot_center);
                 let destination = original_center + offset + translation;
+                // An individual saved placement must not disturb the
+                // remaining source-authored ships. Skip untouched owners
+                // instead of revalidating/copying their entire families.
+                if authored && custom.is_none() &&
+                    formation.translation == [0, 0] {
+                    continue;
+                }
                 let delta = destination - original;
                 let family = self.movable_authored_family(side, id)
                     .ok_or(invalid("formation cannot move an active or ambiguous Carrier family"))?;
