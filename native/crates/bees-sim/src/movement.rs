@@ -129,8 +129,13 @@ impl ShipMotion {
         }
 
         let initial_rotation = self.rotation_degrees;
-        let difference = self.target_coordinates - self.position;
-        if !self.has_target_coordinates || difference.length_squared().sqrt() > self.height {
+        // When no tracked gameplay coordinate exists, do not calculate a
+        // distance at all. With the imported positive ship height, squared
+        // distances preserve the source's strict > height turn guard while
+        // avoiding a square root per policy-controlled ship per fixed step.
+        if !self.has_target_coordinates ||
+            (self.target_coordinates - self.position).length_squared() >
+                self.height * self.height {
             self.rotation_degrees = timed_ship_rotation(
                 self.rotation_degrees,
                 f32::from(self.movement_direction),
