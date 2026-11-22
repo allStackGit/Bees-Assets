@@ -382,7 +382,7 @@ fn source_art_sprite(
 }
 
 const SOURCE_SHIP_TYPES: usize = 24;
-const SOURCE_SHIP_ANIMATION_VARIANTS: usize = 3;
+const SOURCE_SHIP_ANIMATION_VARIANTS: usize = 4;
 const SOURCE_PROJECTILE_TYPES: usize = 16;
 const SOURCE_ASTEROID_PREFABS: usize = 29; // zero is unused
 
@@ -1189,6 +1189,39 @@ impl NativeSoftwareRenderer {
                 sprite, point, radians,
                 self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
             ));
+        }
+        if phase == 2 {
+            // Barge.prefab owns four Charge Rocket Flare children, each
+            // at one of these source offsets, all with a looping 2 FPS
+            // sprite clip. No particle system or secondary timer exists.
+            if let Some(clip) = atlas.clips.get(3).and_then(Option::as_ref) {
+                let frame = ((elapsed * clip.frames_per_second).floor() as usize)
+                    % clip.frames.len();
+                let art = &clip.frames[frame];
+                let tinted = color.filter(|_| art.recolor_mask.is_some()).map(|rgb| {
+                    let key = (0, 3, frame, rgb);
+                    if !self.animated_ship_art.contains_key(&key) {
+                        if self.animated_ship_art.len() >= 512 {
+                            self.animated_ship_art.clear();
+                        }
+                        self.animated_ship_art.insert(key, Arc::new(art.recolored(rgb)));
+                    }
+                    Arc::clone(self.animated_ship_art.get(&key)
+                        .expect("installed source Barge flare color"))
+                });
+                let sprite = tinted.as_deref().unwrap_or(&art.sprite);
+                let (sin, cos) = radians.sin_cos();
+                for x in [-5.55_f32, -2.45, 2.45, 5.55] {
+                    let y = -4.75_f32;
+                    let point = position + Vec2::new(
+                        x * cos - y * sin, x * sin + y * cos,
+                    );
+                    drawn += usize::from(self.draw_sprite(
+                        sprite, point, radians,
+                        self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
+                    ));
+                }
+            }
         }
         drawn
     }
