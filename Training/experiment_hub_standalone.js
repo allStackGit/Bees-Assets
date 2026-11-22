@@ -149,6 +149,8 @@ function renderPage(html,runtime={}) {
         '<p id="hub-remote-evaluator-message" class="hub-notice" role="status"></p>'+
         '</div>';
     return normalized.slice(0,at+script.length)
+        .replace(script,'<script src="/experiment-hub-ui.js?v='+
+            runtime.frontend_revision+'"></script>')
         .replace('<html lang="en">',
             '<html lang="en" data-hub-default-project="tinybrains">')
         .replace('</style>',
@@ -163,7 +165,8 @@ function renderPage(html,runtime={}) {
             '<strong>NATIVE EXPERIMENT HUB</strong> — Bees/Unity training controls are unavailable. '+
             'Only an enrolled worker with a locally installed trusted adapter may execute a job.'+
             '</div>')
-        +'\n<script src="/experiment-hub-services.js"></script>\n</body>\n</html>\n';
+        +'\n<script src="/experiment-hub-services.js?v='+
+            runtime.frontend_revision+'"></script>\n</body>\n</html>\n';
 }
 
 // Browser assets have a separate, immutable revision from the native worker
@@ -262,14 +265,17 @@ function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null}={}
         try {
             const url=new URL(req.url,'http://localhost');
             const route=url.pathname;
+            const requestedVersion=url.searchParams.get('v');
+            const assets=requestedVersion&&frontend.snapshots.get(requestedVersion)||
+                frontend.current;
             if(req.method==='GET'&&route==='/')
                 return sendFile(res,frontend.current.html,'text/html; charset=utf-8');
             if(req.method==='GET'&&route==='/experiment-hub-beaker.svg')
-                return sendFile(res,frontend.current.beakerIcon,'image/svg+xml');
+                return sendFile(res,assets.beakerIcon,'image/svg+xml');
             if(req.method==='GET'&&route==='/experiment-hub-ui.js')
-                return sendFile(res,frontend.current.ui,'text/javascript; charset=utf-8');
+                return sendFile(res,assets.ui,'text/javascript; charset=utf-8');
             if(req.method==='GET'&&route==='/experiment-hub-services.js')
-                return sendFile(res,frontend.current.servicesUi,'text/javascript; charset=utf-8');
+                return sendFile(res,assets.servicesUi,'text/javascript; charset=utf-8');
             if(req.method==='GET'&&route==='/api/hub/software/version') {
                 const candidate=releases?.latest?.worker?.source_commit;
                 return json(res,200,{
@@ -368,8 +374,10 @@ async function main(argv=process.argv.slice(2)) {
         hub.addProject({id:'courier',name:'Courier Ants'});
     }
     const runtime=activeHubVersion(root);
-    const frontend={current:frontendSnapshot(runtime),
-        checkedSource:runtime.source_commit,backendPending:false};
+    const initialFrontend=frontendSnapshot(runtime);
+    const frontend={current:initialFrontend,checkedSource:runtime.source_commit,
+        backendPending:false,snapshots:new Map([
+            [initialFrontend.revision,initialFrontend]])};
     const releases=new ReleaseStore(root);
     const admin=createAdminServer(hub,{frontend,dataRoot:root,releases,runtime});
     const worker=createAgentServer(()=>hub,AGENT_HOST,releases);
@@ -409,6 +417,11 @@ async function main(argv=process.argv.slice(2)) {
                     const next=frontendSnapshot(runtime,newest,releases.sources.worker.path);
                     frontend.checkedSource=newest;
                     if(next.revision!==frontend.current.revision) {
+                        frontend.snapshots.set(next.revision,next);
+                        // Keep old HTML and its JavaScript paired while a
+                        // browser loads across a frontend-version boundary.
+                        while(frontend.snapshots.size>8)
+                            frontend.snapshots.delete(frontend.snapshots.keys().next().value);
                         frontend.current=next;
                         console.log('[hub-updates] Browser UI activated at '+newest.slice(0,12));
                     }
