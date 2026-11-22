@@ -7013,6 +7013,17 @@ fn run_battle(
             if mission.record_fleet_stats {
                 source.fleet.enable_career_tracking();
             }
+        } else if (play || view || remote_step_interval.is_some()) &&
+            source.source_squads.iter().any(|squad|
+                squad.side == source.human_side &&
+                squad.player_permissions.user_controlled
+            )
+        {
+            // The original GameState.PlayerScore also applies to free-play
+            // and challenge matches. The source's human faction is the
+            // authoritative owner; spectators have no score, and training
+            // collectors do not pay for an otherwise unused event counter.
+            source.fleet.enable_campaign_score(source.human_side);
         }
         source_levels.push(source);
         source_sides.push(sides);
@@ -9212,6 +9223,17 @@ fn run_battle(
         Some(combat_score.checked_add(minerals)
             .ok_or_else(|| invalid("campaign score overflow"))?)
     } else { None };
+    // Ordinary playable skirmishes also use the source GameState score.
+    // One physical match / one authoritative World is required; an
+    // interrupted game, a multi-world learner or an input replay cannot
+    // publish a fictional completed match result.
+    let player_score = if !user_closed && failed_window.is_none() &&
+        cleanup_errors.is_empty() && completed_episodes == [1] &&
+        config.levels.len() == 1 && replay_inputs.is_none()
+    {
+        host.simulation().world(0)
+            .and_then(|world| world.state.metadata.fleet.campaign_player_score())
+    } else { None };
     // Include all current episode admissions as well as those from
     // previously recycled worlds. This covers independent multi-episode
     // training and fixed-seed evaluation without requiring hot-path logs.
@@ -9415,6 +9437,7 @@ fn run_battle(
         "campaign_squads": campaign_squads,
         "campaign_banked_minerals": campaign_banked_minerals,
         "campaign_score_delta": campaign_score_delta,
+        "player_score": player_score,
         "aborted_worlds": status.aborted_worlds,
         "failed_worlds": status.failed_worlds,
         "running_worlds": status.running_worlds,
