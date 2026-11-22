@@ -569,9 +569,9 @@ class RemoteBattleWindow:
                 return squad
         return None
 
-    def collider_screen_shape(self, obj):
+    def collider_screen_shape(self, obj, override=None):
         """Project a host-owned ship or obstacle collider with its live pose."""
-        collider = obj.get("collider") or {}
+        collider = override if override is not None else obj.get("collider") or {}
         kind = collider.get("kind")
         scale, cx, cy = self.transform()
         if kind in ("circle", "box", "polygon"):
@@ -727,6 +727,15 @@ class RemoteBattleWindow:
             # even at low zoom; the full real hull is clickable.
             if d < distance:
                 closest, distance = ("ship", ship), d
+            # Only clicks, not drag-box commands or physical combat, use
+            # the authored Beehive HealCollider child. The host projects
+            # the real source shape; a remote client never guesses its size.
+            healing = ship.get("input_healing_zone")
+            if healing is not None:
+                zone_shape, zone_points = self.collider_screen_shape(ship, healing)
+                zone_distance = self.obstacle_distance(zone_shape, zone_points, x, y)
+                if zone_distance < distance:
+                    closest, distance = ("ship", ship), zone_distance
         # Ships drawn over an obstacle retain selection priority.
         if closest is not None:
             return closest
