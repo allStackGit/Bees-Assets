@@ -4788,7 +4788,7 @@ pub fn connect_remote(
                 "Ctrl+click: add/remove   Ctrl+A: all   1-0: numbered squads",
                 "Tab / PgUp / PgDn: cycle original squads",
                 "CAMERA / DISPLAY",
-                "Right click or drag: move / attack   Arrows: pan   Wheel: zoom",
+                "Right: move / attack   Middle-drag or arrows: pan   Wheel: zoom",
                 "F: fit   B: ranges   I: map   F6: art   Shift+F6: edge pan",
                 "Shift+wheel: horizontal pan   Ctrl+wheel: vertical pan",
                 "COMMANDS",

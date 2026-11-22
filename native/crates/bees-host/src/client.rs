@@ -174,6 +174,8 @@ pub struct NativeClient {
     previous_frame: Instant,
     left_was_down: bool,
     right_was_down: bool,
+    /// Presentation-only camera grab; no player input or physical tick.
+    middle_drag_last: Option<(f32, f32)>,
     right_press: Option<RightPress>,
     last_left_press: Option<Instant>,
     double_left_press: bool,
@@ -297,7 +299,7 @@ impl NativeClient {
             level_name_input: None,
             source_zoom_by_world: Vec::new(),
             next_step: now, pending_steps: 0, previous_frame: now, left_was_down: false,
-            right_was_down: false, right_press: None, last_left_press: None, double_left_press: false,
+            right_was_down: false, middle_drag_last: None, right_press: None, last_left_press: None, double_left_press: false,
             input_feedback: "",
             result_controls: None,
             match_summary_visible: false, match_summary: None,
@@ -1099,6 +1101,7 @@ impl NativeClient {
                 self.double_left_press = false;
                 self.left_was_down = self.window.get_mouse_down(MouseButton::Left);
                 self.right_was_down = self.window.get_mouse_down(MouseButton::Right);
+                self.middle_drag_last = None;
                 self.input_feedback = if hotseat.active == hotseat.sides[0] {
                     "Switched to Bees commander"
                 } else { "Switched to Humans commander" };
@@ -1141,6 +1144,7 @@ impl NativeClient {
             // button held across the switch as a new click in that World.
             self.left_was_down = self.window.get_mouse_down(MouseButton::Left);
             self.right_was_down = self.window.get_mouse_down(MouseButton::Right);
+            self.middle_drag_last = None;
             self.right_press = None;
             self.hud_press = None;
             self.squad_tab_press = None;
@@ -1171,8 +1175,25 @@ impl NativeClient {
             if self.window.is_key_down(Key::Down) { pan_y -= speed; }
         }
         let mouse = self.window.get_mouse_pos(MouseMode::Discard);
+        let camera_grab = self.window.is_active() && !self.show_controls_help &&
+            !self.controls_open && !self.battle_menu_open && !self.codex_open &&
+            !self.renderer.show_shooting_menu &&
+            self.window.get_mouse_down(MouseButton::Middle);
+        if camera_grab {
+            if let (Some((x, y)), Some((old_x, old_y))) =
+                (mouse, self.middle_drag_last)
+            {
+                // Camera-only movement at the current display zoom. Match
+                // the multiplayer window's grab direction and distance.
+                pan_x -= (x - old_x) / self.renderer.camera.pixels_per_unit;
+                pan_y += (y - old_y) / self.renderer.camera.pixels_per_unit;
+            }
+            self.middle_drag_last = mouse;
+        } else {
+            self.middle_drag_last = None;
+        }
         if self.edge_scroll_enabled && self.window.is_active() &&
-            !self.renderer.show_shooting_menu {
+            !camera_grab && !self.renderer.show_shooting_menu {
             if let Some((x, y)) = mouse.filter(|&(x, y)|
                 self.renderer.minimap_world_at(bounds, x, y).is_none()) {
                 // Unity's left/right and top/bottom edge pan, adapted to
