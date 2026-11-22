@@ -129,7 +129,7 @@ class IndependentGpuTraining:
         self.serial_rates, self.concurrent_rates = [], []
         self.phase = "serial_probe"
         self.calls = self.serial_calls = self.concurrent_calls = 0
-        self.work_completed = 0.0
+        self.work_dispatched = 0.0
         self.last_qualified_seconds = 0.0
         self.last_qualified_work_rate = 0.0
         self.selected = None
@@ -216,7 +216,7 @@ class IndependentGpuTraining:
             torch.cuda.current_stream(self.device).synchronize()
         seconds = perf_counter()-begun
         self.calls += 1
-        self.work_completed += count
+        self.work_dispatched += count
         self.serial_calls += int(mode == "serial")
         self.concurrent_calls += int(mode == "parallel")
         if measuring and seconds>0:
@@ -236,7 +236,7 @@ class IndependentGpuTraining:
             gpu_training_step_batches=self.calls,
             gpu_training_serial_batches=self.serial_calls,
             gpu_training_parallel_batches=self.concurrent_calls,
-            gpu_training_work_completed=self.work_completed,
+            gpu_training_work_dispatched=self.work_dispatched,
             gpu_training_calibration_serial=len(self.serial_rates),
             gpu_training_calibration_parallel=len(self.concurrent_rates),
             gpu_training_selected_parallel=int(self.selected == "parallel"),
