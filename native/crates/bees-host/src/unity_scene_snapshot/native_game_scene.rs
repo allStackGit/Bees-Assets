@@ -45,6 +45,11 @@ struct GameScene {
     /// Native-authored physical resources and destructible level objects.
     #[serde(default)]
     mining_asteroids: Vec<GameMiningAsteroid>,
+    /// Exact physical full asteroids already present at initial game
+    /// creation. This is not an extra random spawn request; the authentic
+    /// prefab, speed, movement and durability are explicitly authored.
+    #[serde(default)]
+    full_collision_asteroids: Vec<GameFullCollisionAsteroid>,
     #[serde(default)]
     map_objects: Vec<GameMapObject>,
     /// Supply the authentic MA-POCA group/episode baselines explicitly when
@@ -522,6 +527,20 @@ struct GameMiningAsteroid {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GameFullCollisionAsteroid {
+    entity_id: i64,
+    prefab_number: u8,
+    /// Source CollisionAsteroid.Create-time speed, not current velocity.
+    speed: i32,
+    effective_max_health: i32,
+    position: [f32; 2],
+    rotation_degrees: f32,
+    velocity: [f32; 2],
+    angular_velocity_degrees: f32,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum GameMapObjectKind { Generic, FireTank }
 
@@ -629,6 +648,7 @@ impl NativePhysicalScene {
         catalog: &ShipAssetCatalog,
         boxes: &BoxObstacleCatalog,
         polygons: &PolygonObstacleCatalog,
+        asteroids: &bees_sim::asteroid_assets::CollisionAsteroidCatalog,
     ) -> Result<Self, NativeSnapshotError> {
         let raw: GameScene = serde_json::from_str(json)
             .map_err(NativeSnapshotError::Malformed)?;
@@ -1332,6 +1352,40 @@ impl NativePhysicalScene {
                     vitals: Some(vitals), size_class: 0,
                 },
                 body,
+            });
+        }
+        for asteroid in raw.full_collision_asteroids {
+            let id = asteroid.entity_id;
+            let pose = Pose {
+                position: Vec2::new(asteroid.position[0], asteroid.position[1]),
+                rotation_degrees: asteroid.rotation_degrees,
+            };
+            let velocity = Vec2::new(asteroid.velocity[0], asteroid.velocity[1]);
+            let prototype = FullAsteroidPrototype {
+                prefab_number: asteroid.prefab_number,
+                speed: asteroid.speed,
+            };
+            // Revalidate with the exact source-authored collider catalog
+            // installed by the shared CombatWorld. No hand-authored circle
+            // approximation, alternate asteroid hull, or training-only
+            // shortcut is allowed.
+            if id <= 0 || id == i64::MAX || !world_ids.insert(id) ||
+                prototype.prefab_number == 0 || prototype.speed < 2 ||
+                asteroid.effective_max_health <= 0 ||
+                !pose.position.is_finite() || !pose.rotation_degrees.is_finite() ||
+                !velocity.is_finite() || !asteroid.angular_velocity_degrees.is_finite() ||
+                asteroids.prepare_spawn(
+                    prototype.prefab_number, id, pose, velocity,
+                    asteroid.angular_velocity_degrees,
+                    Some(asteroid.effective_max_health),
+                ).is_err()
+            {
+                return Err(invalid("invalid native full asteroid identity, prefab, or physical state"));
+            }
+            entities.push(NativeAuthoredEntity::FullCollisionAsteroid {
+                entity_id: id, profile: prototype, pose, velocity,
+                angular_velocity_degrees: asteroid.angular_velocity_degrees,
+                effective_max_health: asteroid.effective_max_health,
             });
         }
         for source in raw.map_objects {
