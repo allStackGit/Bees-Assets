@@ -24,7 +24,7 @@ SHIP_IMAGES = (
     "bumblebee_bowless.png", "carpenter.png", "carrier.png",
     "cruiser.png", "dreadnought.png", "drone.png", "factory.png",
     "firebarge.png", "flagship.png", "frigate.png", "gunship.png",
-    "honeybee.png", "hornet.png", "leafcutter.png", None,
+    "honeybee.png", "hornet.png", "leafcutter.png", "queen_nocrown.png",
     "scout.png", "striker.png", "warpgate.png", "wasp.png",
     "yellowjacket.png", None,
 )
@@ -91,7 +91,7 @@ PROJECTILE_IMAGES = (
 )
 
 
-def source_frames(path: Path, animation: bool):
+def source_frames(path: Path, animation: bool, *, large_static: bool = False):
     metadata = path.with_suffix(".png.meta").read_text(encoding="utf-8")
     source_ppu = re.search(r"^  spritePixelsToUnits: (\d+)$", metadata, re.MULTILINE)
     if source_ppu is None or not (1 <= int(source_ppu[1]) <= 65535):
@@ -112,7 +112,9 @@ def source_frames(path: Path, animation: bool):
         top = rgba.height - y - height
         if x < 0 or top < 0 or width <= 0 or height <= 0 or (
             x + width > rgba.width or top + height > rgba.height
-        ) or width > 2048 or height > 2048:
+        ) or width > (8192 if large_static else 2048) or (
+            height > (8192 if large_static else 2048)
+        ):
             raise ValueError(f"Out-of-range source sprite rect: {path}")
         frames.append(rgba.crop((x, top, x + width, top + height)))
     # Very large authored explosion sheets use 1024px frames. Preserve
@@ -124,6 +126,14 @@ def source_frames(path: Path, animation: bool):
     if animation:
         while largest // divisor > 256 and ppu % (2 * divisor) == 0:
             divisor *= 2
+    elif large_static:
+        # The original Queen is a 6400x5120 single static sprite at PPU 8.
+        # Downsample both pixels and PPU together to fit native atlas bounds
+        # while retaining exact authored world dimensions and pivot.
+        while largest // divisor > 2048 and ppu % (2 * divisor) == 0:
+            divisor *= 2
+        if largest // divisor > 2048:
+            raise ValueError(f"Queen sprite cannot fit the native atlas: {path}")
     if divisor > 1:
         frames = [
             frame.resize((max(1, frame.width // divisor),
@@ -208,7 +218,10 @@ def pack(images, directory, magic, animated, palettes=None):
     entries = [(kind, name) for kind, name in enumerate(images) if name]
     data = bytearray(struct.pack("<4sH", magic, len(entries)))
     for kind, name in entries:
-        ppu, frames = source_frames(directory / name, animated)
+        ppu, frames = source_frames(
+            directory / name, animated,
+            large_static=(magic == b"BSS2" and kind == 17),
+        )
         if animated:
             data.extend(struct.pack("<BHH", kind, ppu, len(frames)))
             for frame in frames:
