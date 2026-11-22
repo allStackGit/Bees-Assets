@@ -193,6 +193,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_lineage_async_calibrated',
             'training_lineage_async_overlap_seconds',
             'training_lineage_async_wait_max_seconds',
+            'training_lineage_async_exposed_seconds',
             'training_lineage_async_lag_max_updates',
             'training_lineage_async_recalibrations',
             'training_lineage_async_discarded_steps',
@@ -1139,12 +1140,13 @@ class BottleneckEvidence {
                 // must never be summed as independent elapsed stages.
                 const simulation=seconds('worker_'+i+'_simulation_seconds');
                 const observation=seconds('worker_'+i+'_observation_seconds');
-                const asyncWait=seconds('worker_'+i+'_async_wait_seconds');
+                const asyncWait=seconds('worker_'+i+'_async_exposed_seconds');
                 const asyncOptimize=seconds('worker_'+i+'_async_optimizer_seconds');
-                // Independent lineages may collect another horizon while
-                // this one's PPO update runs. Raw collection wall is not
-                // exposed latency. Use only the collector join after SGD,
-                // measured on the same worker clock, to classify a stall.
+                // Independent lineages may overlap collection with the
+                // previous optimizer update. Raw collection wall is not
+                // exposed latency. Use the collector's directly measured
+                // exposed wall (initial collection plus post-SGD join), not
+                // the overlapping rollout duration, to classify a stall.
                 const criticalCollect=asyncWait!==null?asyncWait:collect;
                 const criticalOptimize=asyncOptimize!==null?asyncOptimize:optimize;
                 const fraction=(criticalCollect+criticalOptimize)>0
