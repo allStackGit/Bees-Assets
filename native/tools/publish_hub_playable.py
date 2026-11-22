@@ -39,6 +39,13 @@ def publish(
         raise ValueError("Hub job has no completed authenticated native learner round")
     if file_sha256(run_path) != source_sha256:
         raise ValueError("Hub source RunConfig changed after its machine allocation")
+    # Local jobs use this same physical run as their learner input.
+    # Distributed learners instead consume an empty bundle template, but
+    # the completed authoritative round records the exact original source
+    # bytes used to create the signed collector work orders. Do not publish
+    # a playable scene that was not the environment actually trained.
+    if result.get("source_run_config_sha256") != source_sha256:
+        raise ValueError("Hub playable scene differs from the verified physical training source")
     checkpoint = round_directory / "learner/checkpoint.pt"
     manifest = round_directory / "learner/manifest.json"
     checkpoint_sha = file_sha256(checkpoint)
