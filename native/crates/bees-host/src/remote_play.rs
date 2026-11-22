@@ -2189,7 +2189,7 @@ fn source_ship_names() -> &'static [String] {
 
 fn source_codex_entry(
     kind: usize, names: &[String],
-    live: Option<(i32, i32, i32, i32)>,
+    live: Option<(i32, i32, Option<i32>, Option<i32>)>,
 ) -> Value {
     json!({
         "ship_type": kind as u8,
@@ -2226,13 +2226,21 @@ fn current_state(
     let mut visible_class_vitals = [None; SHIP_TYPE_COUNT];
     let ships: Vec<_> = view.combat.render_ships().filter_map(|(ship, body)| {
         if visible_ids.as_ref().is_some_and(|ids| !ids.contains(&ship.entity_id)) { return None; }
+        let owner = view.roster.owning_squad(ship.entity_id);
+        let owned = !spectator && owner.is_some_and(|owner|
+            owns_player_side(view, owner, side));
         if !spectator {
             let kind = usize::from(ship.ship_type);
             if let Some(live) = visible_class_vitals.get_mut(kind) {
-                if live.is_none() {
+                // The Codex may name a visible enemy class and display
+                // its public health, but the owner's TSV/cargo remain
+                // private. Prefer an owned sample if one is present.
+                if live.is_none() || (owned && live.as_ref()
+                    .is_some_and(|previous| previous.2.is_none())) {
                     *live = Some((
                         ship.vitals.health(), ship.vitals.max_health(),
-                        ship.vitals.tsv(), ship.vitals.max_tsv(),
+                        owned.then(|| ship.vitals.tsv()),
+                        owned.then(|| ship.vitals.max_tsv()),
                     ));
                 }
             }
@@ -2242,9 +2250,6 @@ fn current_state(
                 }
             }
         }
-        let owner = view.roster.owning_squad(ship.entity_id);
-        let owned = !spectator && owner.is_some_and(|owner|
-            owns_player_side(view, owner, side));
         let overlay = owned && owner.is_some_and(|owner|
             overlay_squads.is_some_and(|squads| squads.contains(&owner)));
         let discovered = viewer.is_some_and(|side|
