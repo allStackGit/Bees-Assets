@@ -950,6 +950,22 @@ class RemoteBattleWindow:
                 ax, ay, bx, by = extent
                 self.canvas.create_rectangle(ax-8, ay-8, bx+8, by+8,
                                              outline=ENEMY, dash=(4, 3), width=2)
+            # A map-object health bar is only legal when the authoritative
+            # host explicitly disclosed max_health. Never estimate private
+            # asteroid durability from its prefab, kind, or outline.
+            maximum = obj.get("max_health")
+            health = obj.get("health")
+            if maximum is not None and health is not None and maximum > 0:
+                ax, ay, bx, by = extent
+                width = max(22.0, min(64.0, bx-ax))
+                mx, my = (ax+bx)*0.5, by+5
+                remaining = max(0.0, min(1.0, health/maximum))
+                self.canvas.create_rectangle(mx-width/2, my, mx+width/2, my+3,
+                                             fill="#422d3b", outline="")
+                self.canvas.create_rectangle(mx-width/2, my,
+                                             mx-width/2+width*remaining, my+3,
+                                             fill=MINERAL if obj["mining"] else ENEMY,
+                                             outline="")
         for shot in state.get("projectiles", []):
             x, y = self.to_screen(shot["x"], shot["y"])
             if -4 <= x <= self.view_width+4 and -4 <= y <= self.view_height+4:
