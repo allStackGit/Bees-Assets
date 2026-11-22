@@ -80,6 +80,73 @@ def source_types_in_order(actual, required) -> bool:
                for kind in actual)
 
 
+def titania_beenoculars_waves_match_source(scene: dict, level: dict) -> bool:
+    """The original Titania II timed Bee counterattack, including the
+    additional 15–405 second enhancement callbacks. All emitted hulls
+    remain in the same physical CombatWorld and source SavedSquads.
+
+    Fleet depletion is not patched with invented replacements: the
+    publisher requires an authored complete source roster for this route.
+    """
+    # Unity AddTitania2BeeWave routes every selected squad separately.
+    # Compare the ordered per-timer ship classes while preserving the
+    # original independent physical squad identities.
+    expected = {
+        15: [15], 20: [21], 25: [14], 30: [16],
+        60: [15, 21], 75: [15, 21],
+        120: [14, 22], 135: [14, 22],
+        210: [16, 15], 225: [16, 15],
+        300: [21, 22], 315: [21, 22],
+        375: [16, 15, 14, 22],
+        390: [16, 15], 405: [14, 22],
+    }
+    waves = level.get("reinforcements")
+    if not isinstance(waves, list):
+        return False
+    squads = {
+        squad["item_id"]: squad for squad in scene.get("squads", [])
+        if isinstance(squad, dict) and type(squad.get("item_id")) is int
+    }
+    ships = {
+        ship["entity_id"]: ship for ship in scene.get("ships", [])
+        if isinstance(ship, dict) and type(ship.get("entity_id")) is int
+    }
+    by_second = {}
+    reserved_squads = set()
+    for wave in waves:
+        if not isinstance(wave, dict) or (
+                set(wave) - {"after_seconds", "squad_item_ids", "spawn", "entry"}):
+            return False
+        delay = wave.get("after_seconds")
+        if type(delay) not in (float, int) or not 0 < delay < float("inf"):
+            return False
+        second = round(delay)
+        if second not in expected or abs(delay - second) > 0.0001:
+            return False
+        for point in ("spawn", "entry"):
+            coords = wave.get(point)
+            if (not isinstance(coords, list) or len(coords) != 2 or
+                    any(type(x) not in (int, float) or
+                        not -float("inf") < x < float("inf")
+                        for x in coords)):
+                return False
+        if same_point(wave["spawn"], wave["entry"]):
+            return False
+        group = wave.get("squad_item_ids")
+        if not isinstance(group, list) or any(
+                type(squad_id) is not int or squad_id in reserved_squads
+                for squad_id in group):
+            return False
+        reserved_squads.update(group)
+        types = source_wave_types(wave, squads, ships, scene.get("bee_side"))
+        if types is None:
+            return False
+        by_second.setdefault(second, []).extend(types)
+    return (set(by_second) == set(expected) and
+            all(by_second[second] == types
+                for second, types in expected.items()))
+
+
 def neptune_production_waves_match_source(scene: dict, level: dict) -> bool:
     """The original mining mission's real 120/240/360/480s waves, then 60s.
 
@@ -675,7 +742,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     for index, story in mission_stories.items():
         if story in ("pluto_pushback", "pluto_bluer_pastures", "neptune_of_production",
                      "uranus_on_the_defensive", "uranus_new_threat",
-                     "titania_minesweeper"):
+                     "titania_minesweeper", "titania_beenoculars"):
             if mission_advances.get(index, "finished") != "finished":
                 raise ValueError(
                     f"mission {index} story always advances on finished, not victory"
@@ -948,6 +1015,46 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             level["campaign_dialogue"] = {
                 "pluto_reinforcements": {
                     "player_side": args.player_side, "scout_id": first_id,
+                }
+            }
+        elif story == "titania_beenoculars":
+            objective = level.get("survival")
+            target = next((ship for ship in scene.get("ships", [])
+                           if isinstance(ship, dict) and
+                           isinstance(objective, dict) and
+                           ship.get("entity_id") == objective.get("protected_ship_id")), None)
+            duration = objective.get("seconds") if isinstance(objective, dict) else None
+            max_rounds = run.get("max_rounds")
+            fixed_dt = scene.get("fixed_dt_seconds")
+            if (scene.get("native_game_schema") != 1 or
+                    scene.get("human_side") != args.player_side or
+                    scene.get("activate_hivemind") is not True or
+                    not isinstance(run.get("hivemind"), dict) or
+                    run["hivemind"].get("issue_source_commands") is not True or
+                    not isinstance(objective, dict) or
+                    objective.get("defending_side") != args.player_side or
+                    type(duration) not in (int, float) or
+                    duration not in (330, 480) or
+                    not isinstance(target, dict) or
+                    target.get("ship_type") != 23 or
+                    target.get("side") != args.player_side or
+                    type(max_rounds) is not int or max_rounds <= 0 or
+                    type(fixed_dt) not in (int, float) or
+                    not 0 < fixed_dt < float("inf") or
+                    max_rounds * fixed_dt < duration or
+                    not titania_beenoculars_waves_match_source(scene, level) or
+                    level.get("campaign_dialogue") is not None or
+                    any(level.get(name) is not None for name in
+                        ("demolition", "escort", "extraction", "groups", "target_ship"))):
+                raise ValueError(
+                    "Titania Beenoculars requires the real HumanTarget base, "
+                    "a 330/480 second survival route and all original "
+                    "physical 15–405 second Bee counterattack waves"
+                )
+            level["campaign_dialogue"] = {
+                "titania_beenoculars": {
+                    "player_side": args.player_side,
+                    "under_heavy_fire": duration == 480,
                 }
             }
         elif story == "titania_minesweeper":
@@ -1592,6 +1699,22 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 "neptune_seize_means", "uranus_on_the_offensive",
                 "uranus_new_threat"):
             mission["bank_player_minerals"] = False
+        if mission_stories.get(index) == "titania_beenoculars":
+            # TitaniaRouteState carries the preceding real Minesweeper
+            # result. The default battle is the 330s victory route; the
+            # 480s defeat route must be a separately authored physical
+            # battle, not a runtime multiplier or guessed wave schedule.
+            if (index <= 1 or
+                    mission_stories.get(index - 1) != "titania_minesweeper" or
+                    index not in variants["defeat"] or
+                    variants["defeat"][index][0] != index - 1 or
+                    run["levels"][0]["survival"]["seconds"] != 330):
+                raise ValueError(
+                    "Titania Beenoculars needs the preceding Minesweeper "
+                    "and an authored 480-second --mission-defeat-variant"
+                )
+            mission["advance_on"] = "finished"
+            mission["grant_on"] = "finished"
         if mission_stories.get(index) == "pluto_pushback":
             # Pluto3Ending always advances and grants its FleetShips,
             # regardless of the ordinary physical elimination result.
@@ -1788,6 +1911,17 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     "--victory-grant MISSION:12:2:0 and "
                     "--victory-grant MISSION:7:1:0"
                 )
+        if mission_stories.get(index) == "titania_beenoculars":
+            # Original TitaniaOutcomePersistenceGuard awards the single
+            # prototype Carrier and its source SavedSquad even on defeat.
+            if (len(grants) != 1 or grants[0][1:3] != (5, 1) or
+                    len(squad_grants) != 1 or
+                    grants[0][3] != squad_grants[0][1] or
+                    mission.get("grant_on") != "finished"):
+                raise ValueError(
+                    "Titania Beenoculars grants one Carrier in a new "
+                    "SavedSquad on finished, including defeat"
+                )
         if mission_stories.get(index) == "neptune_seize_means":
             # Source Neptune1Ending grants exactly five Factory FleetShips
             # to the unassigned CurrentShips reserve ONLY on victory.
@@ -1838,6 +1972,13 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 mission_stories.get(index),
             )
             apply_story(index, variant_scene, variant_run)
+            if (mission_stories.get(index) == "titania_beenoculars" and
+                    (outcome != "defeat" or previous != index - 1 or
+                     variant_run["levels"][0]["survival"]["seconds"] != 480)):
+                raise ValueError(
+                    "Titania Beenoculars defeat variant must defend the "
+                    "actual Titania base for 480 seconds after losing Minesweeper"
+                )
             if provenance_variant["player_fleet_contract"] != stable_roster:
                 raise ValueError(
                     f"mission {index} conditional {outcome} battle changes the "
@@ -2159,12 +2300,12 @@ def mission_advance(value: str) -> tuple[int, str]:
 
 def mission_story(value: str) -> tuple[int, str]:
     match = re.fullmatch(
-        r"(\d+):(pluto_anomaly|pluto_reinforcements|pluto_pushback|titania_minesweeper|neptune_seize_means|neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_offensive|uranus_on_the_defensive|uranus_new_threat)",
+        r"(\d+):(pluto_anomaly|pluto_reinforcements|pluto_pushback|titania_minesweeper|titania_beenoculars|neptune_seize_means|neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_offensive|uranus_on_the_defensive|uranus_new_threat)",
         value,
     )
     if match is None or not 1 <= int(match.group(1)) <= 40:
         raise argparse.ArgumentTypeError(
-            "--mission-story needs MISSION:pluto_anomaly, pluto_reinforcements, pluto_pushback, titania_minesweeper, neptune_seize_means, neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures, uranus_on_the_offensive, uranus_on_the_defensive or uranus_new_threat"
+            "--mission-story needs MISSION:pluto_anomaly, pluto_reinforcements, pluto_pushback, titania_minesweeper, titania_beenoculars, neptune_seize_means, neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures, uranus_on_the_offensive, uranus_on_the_defensive or uranus_new_threat"
         )
     return int(match.group(1)), match.group(2)
 
