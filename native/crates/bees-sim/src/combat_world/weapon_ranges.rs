@@ -103,6 +103,10 @@ impl CombatWorld {
         // without stopping another side from discovering the same objects.
         if !self.map_objects.is_empty() {
             for (&ship_id, weapons) in &self.ship_weapons {
+                // The policy roster registers an empty ShipWeapons before
+                // its authored mounts arrive. No range can disclose a
+                // MapObject until a real mounted weapon exists.
+                if weapons.turrets.iter().all(Option::is_none) { continue; }
                 let owner_index = self.ship_by_id[&ship_id];
                 let body = &self.physics.ships()[owner_index];
                 if !body.active || self.ships[owner_index].vitals.is_dead() { continue; }
@@ -144,6 +148,10 @@ impl CombatWorld {
         }
         let mut has_ranges = false;
         for (&ship_id, weapons) in &mut self.ship_weapons {
+            // No mounted turret means no new range triggers, contact
+            // exits or projectile exit ownership. Avoid per-policy-agent
+            // ship-body, side and hostility hash lookups.
+            if weapons.turrets.iter().all(Option::is_none) { continue; }
             let owner_index = self.ship_by_id[&ship_id];
             let body = &self.physics.ships()[owner_index];
             let position = body.motion.position;
