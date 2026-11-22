@@ -298,3 +298,148 @@ class FrozenGpuFusion:
             gpu_fusion_qualification_seconds=self.qualification_seconds,
             gpu_fusion_profiles=len(self._profiles),
         )
+
+
+class FrozenGpuStreams:
+    """Measured parallel CUDA/HIP streams for *different* frozen networks.
+
+    Fusion requires identical neural structures. This separate strategy
+    overlaps independent small forward graphs even when architectures,
+    observations or batch sizes differ. The original serial policy forwards
+    remain the reference and fallback. A caller must preserve the returned
+    tensors until its own CUDA stream has consumed them; no internal
+    synchronization is added to the steady-state path.
+
+    This is a one-thread-owned executor: a trainer may create independent
+    instances for its own concurrent collectors, but must not invoke the
+    same instance concurrently from multiple Python threads.
+    """
+
+    def __init__(self, models: Sequence[nn.Module], *, max_streams=4,
+                 min_speedup=0.10, max_profiles=16, rtol=1e-5, atol=1e-6):
+        if (not isinstance(models, (list, tuple)) or not models or
+                not 1 <= max_streams <= 16 or
+                not 0 <= min_speedup <= 0.5 or
+                not 1 <= max_profiles <= 256):
+            raise ValueError("Invalid frozen multi-stream cohort or bounds")
+        self.models = tuple(models)
+        self.min_speedup, self.max_profiles = min_speedup, max_profiles
+        self.rtol, self.atol = rtol, atol
+        self.device = None
+        devices = set()
+        for model in self.models:
+            reference = next(iter(model.parameters()),
+                             next(iter(model.buffers()), None))
+            if reference is not None:
+                devices.add(reference.device)
+        if len(devices) == 1:
+            self.device = next(iter(devices))
+        self.enabled = (len(self.models) >= 2 and self.device is not None and
+                        self.device.type == "cuda" and
+                        all(not module.training for model in self.models
+                            for module in model.modules()) and
+                        all(not param.requires_grad for model in self.models
+                            for param in model.parameters()))
+        self.streams = []
+        self.max_streams = max_streams
+        self.profiles = OrderedDict()
+        self.calls = self.parallel_calls = self.qualifications = 0
+        self.last_issue = None
+
+    def _prepare(self, batches):
+        if len(batches) != len(self.models):
+            raise ValueError("Every stream model needs one batch")
+        args = [FrozenGpuFusion._args(batch) for batch in batches]
+        if any(not values or any(not isinstance(x, torch.Tensor)
+                                  or x.device != self.device for x in values)
+               for values in args):
+            raise ValueError("Frozen stream inputs must be device tensors")
+        signature = tuple(tuple((tuple(x.shape), x.dtype) for x in values)
+                          for values in args)
+        return args, signature
+
+    def _serial(self, args):
+        with torch.inference_mode():
+            return [model(*parts) for model, parts in zip(self.models, args)]
+
+    def _parallel(self, args):
+        if not self.streams:
+            self.streams = [torch.cuda.Stream(device=self.device)
+                            for _ in range(min(self.max_streams, len(self.models)))]
+        caller = torch.cuda.current_stream(self.device)
+        outputs = []
+        with torch.inference_mode():
+            for index, (model, parts) in enumerate(zip(self.models, args)):
+                stream = self.streams[index % len(self.streams)]
+                stream.wait_stream(caller)
+                with torch.cuda.stream(stream):
+                    outputs.append(model(*parts))
+                # The owner may release the source after run() returns, but
+                # CUDA kernels on another stream can still be reading it.
+                for tensor in parts:
+                    tensor.record_stream(stream)
+            for stream in self.streams:
+                caller.wait_stream(stream)
+            for result in outputs:
+                for tensor in _leaves(result):
+                    tensor.record_stream(caller)
+        return outputs
+
+    def _measure(self, fn):
+        started = perf_counter()
+        fn()
+        torch.cuda.synchronize(self.device)
+        return perf_counter()-started
+
+    def _qualify(self, args):
+        try:
+            reference = self._serial(args)
+            candidate = self._parallel(args)
+            if not all(_equivalent(a, b, self.rtol, self.atol)
+                       for a, b in zip(reference, candidate)):
+                return FusionDecision(False, "numerical_mismatch")
+            serial, parallel = [], []
+            for _ in range(3):
+                serial.append(self._measure(lambda: self._serial(args)))
+                parallel.append(self._measure(lambda: self._parallel(args)))
+            baseline, candidate = median(serial), median(parallel)
+            return FusionDecision(
+                candidate < baseline*(1-self.min_speedup),
+                "faster" if candidate < baseline*(1-self.min_speedup) else "no_measured_gain",
+                baseline, candidate)
+        except (RuntimeError, ValueError, TypeError, NotImplementedError) as error:
+            self.last_issue = str(error)[:220]
+            return FusionDecision(False, "unsupported")
+
+    def run(self, batches):
+        args, signature = self._prepare(batches)
+        self.calls += 1
+        if not self.enabled:
+            return self._serial(args)
+        decision = self.profiles.get(signature)
+        if decision is None:
+            self.qualifications += 1
+            decision = self._qualify(args)
+            self.profiles[signature] = decision
+            if len(self.profiles) > self.max_profiles:
+                self.profiles.popitem(last=False)
+        else:
+            self.profiles.move_to_end(signature)
+        if decision.fused:
+            try:
+                result = self._parallel(args)
+            except (RuntimeError, ValueError, TypeError, NotImplementedError) as error:
+                self.last_issue = str(error)[:220]
+                self.profiles[signature] = FusionDecision(False, "runtime_fallback")
+            else:
+                self.parallel_calls += 1
+                return result
+        return self._serial(args)
+
+    def metrics(self):
+        return dict(
+            gpu_stream_calls=self.calls,
+            gpu_stream_parallel_calls=self.parallel_calls,
+            gpu_stream_qualifications=self.qualifications,
+            gpu_stream_profiles=len(self.profiles),
+        )
