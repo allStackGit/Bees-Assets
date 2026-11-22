@@ -20,7 +20,7 @@ use bees_sim::combat_world::CombatEvent;
 use bees_sim::level_discovery::DiscoveryKind;
 use bees_sim::obstacle::ObstacleKind;
 use bees_sim::physics::ShipShape;
-use bees_sim::ship_assets::ShipAssetCatalog;
+use bees_sim::ship_assets::{ShipAssetCatalog, HUMAN_TARGET_TYPE, SHIP_TYPE_COUNT};
 use bees_sim::geometry::Vec2;
 use bees_sim::simulation::WorldId;
 use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerHeldFire};
@@ -2208,8 +2208,14 @@ fn current_state(
                 sources.covers(body.motion.position, measurements))
             .map(|(ship, _)| ship.entity_id).collect())
     } else { None };
+    let mut visible_ship_types = [false; SHIP_TYPE_COUNT];
     let ships: Vec<_> = view.combat.render_ships().filter_map(|(ship, body)| {
         if visible_ids.as_ref().is_some_and(|ids| !ids.contains(&ship.entity_id)) { return None; }
+        if !spectator && view.campaign_codex.is_none() {
+            if let Some(seen) = visible_ship_types.get_mut(usize::from(ship.ship_type)) {
+                *seen = true;
+            }
+        }
         let owner = view.roster.owning_squad(ship.entity_id);
         let owned = !spectator && owner.is_some_and(|owner|
             owns_player_side(view, owner, side));
@@ -2330,6 +2336,18 @@ fn current_state(
             "owned": owned, "discovered": discovered,
         }))
     }).collect();
+    // The local native Codex records genuinely encountered ship classes
+    // in non-campaign matches. A remote client can retain only these
+    // already-fog-visible identities as presentation history; it must not
+    // manufacture campaign unlocks or see unknown opposing fleet classes.
+    let visible_ship_classes = (!spectator && view.campaign_codex.is_none()).then(|| {
+        let names = source_ship_names();
+        visible_ship_types.iter().enumerate().filter_map(|(kind, &seen)| {
+            (seen && kind != usize::from(HUMAN_TARGET_TYPE)).then(|| json!({
+                "ship_type": kind as u8, "name": names[kind].as_str(),
+            }))
+        }).collect::<Vec<_>>()
+    });
     let obstacles: Vec<_> = view.combat.render_obstacles().filter_map(|(object, body)| {
         if fog && !sources.covers(body.pose.position, measurements) {
             return None;
@@ -2766,12 +2784,13 @@ fn current_state(
             .map(|(_, allowed)| {
                 let names = source_ship_names();
                 allowed.iter().enumerate().filter_map(|(kind, &known)| {
-                    known.then(|| json!({
+                    (known && kind != usize::from(HUMAN_TARGET_TYPE)).then(|| json!({
                         "ship_type": kind as u8,
                         "name": names[kind].as_str(),
                     }))
                 }).collect::<Vec<_>>()
             }),
+        "visible_ship_classes": visible_ship_classes,
         "ships": ships, "squads": squads, "obstacles": obstacles,
         "projectiles": projectiles,
         "asteroid_pieces": asteroid_pieces,
