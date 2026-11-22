@@ -24,6 +24,7 @@ pub enum NativeReinforcementActivation {
     AfterSeconds(f32),
     OnCampaignCue(NativeMissionCue),
     OnShipDestroyed(i64),
+    OnMapObjectDestroyed(i64),
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -77,6 +78,7 @@ pub(crate) struct ReinforcementWakeup {
     pub next_tick: Option<u64>,
     campaign_event: bool,
     ship_death_event: bool,
+    map_object_death_event: bool,
 }
 
 impl ReinforcementWakeup {
@@ -90,6 +92,8 @@ impl ReinforcementWakeup {
                     state.campaign_event = true,
                 ReinforcementDue::Event(NativeMissionEvent::ShipDestroyed(_)) =>
                     state.ship_death_event = true,
+                ReinforcementDue::Event(NativeMissionEvent::MapObjectDestroyed(_)) =>
+                    state.map_object_death_event = true,
             }
         }
         state
@@ -102,6 +106,10 @@ impl ReinforcementWakeup {
                 matches!(event, bees_sim::combat_world::CombatEvent::ShipDied {
                     end_kill: false, ..
                 })
+            )) ||
+            (self.map_object_death_event && world.events().iter().any(|event|
+                matches!(event,
+                    bees_sim::combat_world::CombatEvent::MapObjectDestroyed { .. })
             ))
     }
 }
@@ -159,6 +167,11 @@ impl ReinforcementWave {
     pub(crate) fn is_ship_death_triggered(&self) -> bool {
         matches!(self.due,
             ReinforcementDue::Event(NativeMissionEvent::ShipDestroyed(_))
+        )
+    }
+    pub(crate) fn is_map_object_death_triggered(&self) -> bool {
+        matches!(self.due,
+            ReinforcementDue::Event(NativeMissionEvent::MapObjectDestroyed(_))
         )
     }
     pub(crate) fn squad_count(&self) -> usize { self.squads.len() }
@@ -399,7 +412,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 }
                 NativeReinforcementActivation::OnCampaignCue(cue) => {
                     let event = NativeMissionEvent::CampaignCue(cue);
-                    if !event.valid_for(self.campaign_dialogue, |_| false) {
+                    if !event.valid_for(self.campaign_dialogue, |_| false, |_| false) {
                         return Err("Reinforcement campaign cue is unavailable in this Level");
                     }
                     ReinforcementDue::Event(event)
@@ -410,9 +423,22 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                         self.entities.iter().any(|entity| matches!(
                             entity,
                             NativeAuthoredEntity::Ship(ship) if ship.entity_id == id
-                        ))
+                        )), |_| false
                     ) {
                         return Err("Reinforcement ship-death trigger needs an authored source ship");
+                    }
+                    ReinforcementDue::Event(event)
+                }
+                NativeReinforcementActivation::OnMapObjectDestroyed(object_id) => {
+                    let event = NativeMissionEvent::MapObjectDestroyed(object_id);
+                    if !event.valid_for(self.campaign_dialogue, |_| false, |id|
+                        self.entities.iter().any(|entity| matches!(entity,
+                            NativeAuthoredEntity::MapObject { object, body }
+                                if object.entity_id == id &&
+                                    object.health > 0 && body.active
+                        ))
+                    ) {
+                        return Err("Reinforcement MapObject trigger requires a living authored physical object");
                     }
                     ReinforcementDue::Event(event)
                 }
