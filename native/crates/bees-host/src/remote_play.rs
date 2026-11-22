@@ -2221,6 +2221,13 @@ fn current_state(
             "source_root": owned && squad.mother_squad.is_none(),
             "locked_on": if owned { permissions.map(|p| p.locked_on) } else { None },
             "members": members,
+            // The locally controllable squad's original lead ship class
+            // drives its player-facing tab. Do not expose hidden enemy
+            // composition or create a second network-only squad registry.
+            "lead_ship_type": if owned {
+                squad.members.first().and_then(|&id|
+                    view.combat.ship(id).map(|ship| ship.ship_type))
+            } else { None },
             "source_number": if owned { squad.source_hotkey_number } else { None },
             // Source LevelInputManager wraps 1..0 against the original
             // squad count, not the number of survivors visible today.
