@@ -56,7 +56,8 @@ def source_battle(run_path: Path) -> tuple[dict, dict]:
         for wave in waves
     ):
         raise ValueError("native training reinforcement waves need real source squad IDs")
-    if (sum(key in level for key in ("survival", "demolition", "escort")) +
+    if (sum(key in level for key in (
+            "survival", "demolition", "escort", "target_ship")) +
             int("extraction" in level and "escort" not in level) > 1 or
             ("escort" in level and "extraction" not in level)):
         raise ValueError("native training Level has conflicting physical objectives")
@@ -82,6 +83,13 @@ def source_battle(run_path: Path) -> tuple[dict, dict]:
                 type(objective.get("seconds")) not in (int, float) or
                 not math.isfinite(objective["seconds"]) or objective["seconds"] <= 0):
             raise ValueError("native demolition training needs a physical MapObject, side and deadline")
+    if "target_ship" in level:
+        objective = level["target_ship"]
+        if (not isinstance(objective, dict) or
+                objective.get("attacking_side") not in (1, 2) or
+                type(objective.get("target_ship_id")) is not int or
+                objective["target_ship_id"] <= 0):
+            raise ValueError("native named-ship hunt requires a real enemy ship and attacking faction")
     if "survival" in level:
         objective = level["survival"]
         if ("extraction" in level or not isinstance(objective, dict) or
@@ -626,6 +634,15 @@ def convert(source: Path, destination: Path, archetypes: Path,
         if not any(obj.get("entity_id") == demolition["target_map_object_id"]
                    for obj in scene.get("map_objects", [])):
             raise ValueError("native demolition target is missing from the shared physical scene")
+    target_ship = run["levels"][0].get("target_ship")
+    if target_ship is not None:
+        if not any(
+            ship["entity_id"] == target_ship["target_ship_id"] and
+            ship["side"] != target_ship["attacking_side"] and
+            ship.get("health", 0) > 0
+            for ship in scene["ships"]
+        ):
+            raise ValueError("named-ship hunt target must be an initially authored living enemy hull")
     escort = run["levels"][0].get("escort")
     if escort is not None:
         deadline_ticks = math.ceil(escort["seconds"] / scene["fixed_dt_seconds"])
@@ -652,6 +669,8 @@ def convert(source: Path, destination: Path, archetypes: Path,
     )
     if escort is not None and escort["escorted_ship_id"] in reserved_ships:
         raise ValueError("escort ship must be initially deployed")
+    if target_ship is not None and target_ship["target_ship_id"] in reserved_ships:
+        raise ValueError("named-ship hunt cannot target an undeployed reinforcement")
     args = SimpleNamespace(
         policy_archetypes=archetypes, minutes=seconds / 60,
         deferred_reinforcement_ship_ids=reserved_ships,
@@ -723,6 +742,7 @@ def convert(source: Path, destination: Path, archetypes: Path,
             else "escort" if "escort" in run["levels"][0]
             else "extraction" if "extraction" in run["levels"][0]
             else "demolition" if "demolition" in run["levels"][0]
+            else "target_ship" if "target_ship" in run["levels"][0]
             else "elimination"
         ),
         "physical_ship_count": len(scene["ships"]),
