@@ -202,6 +202,16 @@ impl NativeSceneAssets {
         self.asteroid_stage.prefabs.contains(&prefab)
     }
 
+    /// A pre-placed full asteroid retains its original Create-time speed.
+    /// It must belong to the same Stage's [2, 2 + RandomInt(max)) pool
+    /// range as a newly spawned asteroid, not merely have a valid prefab.
+    pub fn has_stage_asteroid_speed(&self, speed: i32) -> bool {
+        let delta = i64::from(speed) -
+            i64::from(bees_sim::asteroid_spawn::MINIMUM_ASTEROID_SPEED);
+        let max = i64::from(self.asteroid_stage.settings.asteroid_max_speed_exclusive);
+        delta >= 0 && (if max == 0 { delta == 0 } else { delta < max })
+    }
+
     pub fn load_measurements(&self) -> NativeSceneAssetLoadMeasurements {
         self.load_measurements
     }
