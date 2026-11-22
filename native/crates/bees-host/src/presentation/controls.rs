@@ -123,6 +123,12 @@ impl NativeControls {
                     return Err(io::Error::new(io::ErrorKind::InvalidData,
                         "unsupported native control settings schema"));
                 }
+                // Existing source hotkey settings predate tactical
+                // Shift aliases. Never invalidate a user's chosen direct
+                // shooting bindings simply because a newly supplied
+                // default happens to occupy that key.
+                let has_tactical=stored.bindings.keys().any(|name|
+                    name.starts_with("Tactic: "));
                 for (action, letter) in stored.bindings {
                     let index=DEFAULTS.iter().chain(SHIFTED.iter())
                         .chain(TACTICAL_SHIFTED.iter())
@@ -137,6 +143,36 @@ impl NativeControls {
                     else { return Err(io::Error::new(io::ErrorKind::InvalidData,
                         format!("invalid native hotkey for {action}: {letter}"))) };
                     keys[index]=key;
+                }
+                if !has_tactical {
+                    // Legacy files have only the original non-shifted
+                    // commands and 16 shooting preferences. Validate that
+                    // original layout first; conflicting saved user keys
+                    // were invalid even before the new source shortcuts.
+                    let previous=DEFAULTS.len()+SHIFTED.len();
+                    if keys[..previous].iter().enumerate().map(|(i,&key)|
+                        (i>=DEFAULTS.len(),key)).collect::<HashSet<_>>()
+                            .len()!=previous
+                    {
+                        return Err(io::Error::new(io::ErrorKind::InvalidData,
+                            "legacy native hotkeys contain duplicate assignments"));
+                    }
+                    // Extend, rather than replace, those saved choices.
+                    // There are 26 shifted commands and 27 supported
+                    // shifted keys, so a free slot exists whenever a
+                    // newly added tactical default overlaps an old binding.
+                    for index in previous..keys.len() {
+                        if keys[..index].contains(&keys[index]) {
+                            let replacement=LETTERS.iter().copied()
+                                .chain(std::iter::once(Key::Comma))
+                                .find(|key|!keys[..index].contains(key) &&
+                                    !keys[index+1..].contains(key))
+                                .ok_or_else(||io::Error::new(
+                                    io::ErrorKind::InvalidData,
+                                    "no free source tactical shortcut"))?;
+                            keys[index]=replacement;
+                        }
+                    }
                 }
             },
             Err(err) if err.kind()==io::ErrorKind::NotFound => {},
