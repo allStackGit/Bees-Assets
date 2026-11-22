@@ -488,6 +488,31 @@ function miniCandidates(hub,o) {
     return candidates;
 }
 
+function verifyFrozenMini(options,source,suite) {
+    const directory=path.join(options.suites,'opponents',MINI_SUITE);
+    if(suite.suite_id!==MINI_SUITE||suite.opponent!=='mini'||
+        suite.opponent_dir!==directory||
+        suite.opponent_source_job!==source.id||
+        suite.opponent_checkpoint_sha256!==source.sha256||
+        !SHA256.test(String(suite.opponent_model_sha256||''))||
+        !SHA256.test(String(suite.opponent_manifest_sha256||'')))
+        throw Error('Existing frozen Mini suite does not match the selected completed training job.');
+    privateDirectory(directory);
+    for(const [name,expected] of [
+        ['model.onnx',suite.opponent_model_sha256],
+        ['manifest.json',suite.opponent_manifest_sha256],
+    ]) {
+        const file=presentFile(path.join(directory,name));
+        const stat=fs.lstatSync(file);
+        if(stat.uid!==process.getuid()||(stat.mode&0o077))
+            throw Error('Frozen Mini opponent file is not private and user-owned: '+name);
+        const actual=crypto.createHash('sha256')
+            .update(fs.readFileSync(file)).digest('hex');
+        if(actual!==expected)
+            throw Error('Frozen Mini opponent differs from its original approved fingerprint: '+name);
+    }
+}
+
 async function setupMini(hub,sourceJobId) {
     const o=localOptions(hub);
     prepareInstall(o);
@@ -497,8 +522,20 @@ async function setupMini(hub,sourceJobId) {
     if(!source)
         throw Error('No finished Batch-128 TinyBrains run with a pinned checkpoint was found.');
     const destination=path.join(o.suites,MINI_SUITE+'.json');
-    if(fs.existsSync(destination))
-        return {message:'Frozen Mini evaluation already approved; existing suite remains immutable.'};
+    if(fs.existsSync(destination)) {
+        const file=presentFile(destination);
+        const stat=fs.lstatSync(file);
+        if(stat.uid!==process.getuid()||(stat.mode&0o077))
+            throw Error('Frozen Mini suite file is not private and user-owned.');
+        const suite=JSON.parse(fs.readFileSync(file,'utf8'));
+        verifyFrozenMini(o,source,suite);
+        // An interrupted setup may have published the immutable suite before
+        // systemd installed its one-shot service and timer. Finish that
+        // installation instead of falsely reporting success.
+        await setup(hub);
+        return {message:'Previously approved frozen Mini opponent verified and evaluator schedule reconciled. '+
+            'Restart the local agent when idle to advertise the suite.'};
+    }
     // The trusted launcher is installed only by local setup; it never gets
     // an arbitrary checkout, path, container or command from the browser.
     await setup(hub);
@@ -530,16 +567,31 @@ async function setupMini(hub,sourceJobId) {
                 .update(fs.readFileSync(file)).digest('hex');
             if(actual!==hash)throw Error('Frozen Mini export changed after verification.');
         }
-        if(fs.existsSync(frozenPath)||fs.existsSync(destination))
-            throw Error('Frozen Mini version already exists; it cannot be overwritten.');
-        prepared=fs.mkdtempSync(path.join(opponents,'.mini-stage-'));
-        for(const [name] of files) {
-            const file=path.join(prepared,name);
-            fs.copyFileSync(path.join(exported,name),file,fs.constants.COPYFILE_EXCL);
-            fs.chmodSync(file,0o600);
+        if(fs.existsSync(destination))
+            throw Error('Frozen Mini suite was approved by a concurrent operation; existing definition is immutable.');
+        if(fs.existsSync(frozenPath)) {
+            // The last coordinator might have restarted between installing
+            // the frozen model and writing the suite. Reuse it only if both
+            // bytes match this newly verified checkpoint export exactly.
+            privateDirectory(frozenPath);
+            for(const [name,expected] of files) {
+                const file=presentFile(path.join(frozenPath,name));
+                const stat=fs.lstatSync(file);
+                if(stat.uid!==process.getuid()||(stat.mode&0o077)||
+                    crypto.createHash('sha256')
+                        .update(fs.readFileSync(file)).digest('hex')!==expected)
+                    throw Error('Orphaned frozen Mini opponent differs from the selected checkpoint; no files were replaced.');
+            }
+        }else{
+            prepared=fs.mkdtempSync(path.join(opponents,'.mini-stage-'));
+            for(const [name] of files) {
+                const file=path.join(prepared,name);
+                fs.copyFileSync(path.join(exported,name),file,fs.constants.COPYFILE_EXCL);
+                fs.chmodSync(file,0o600);
+            }
+            fs.renameSync(prepared,frozenPath);
+            prepared=null;
         }
-        fs.renameSync(prepared,frozenPath);
-        prepared=null;
         const suite={
             suite_id:MINI_SUITE,maps:['basic-tiny-2p'],
             seeds:Array.from({length:50},(_,i)=>813001+i),max_turns:300,

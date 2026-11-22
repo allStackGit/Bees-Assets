@@ -59,7 +59,8 @@
         }
         if(evaluatorMini)evaluatorMini.disabled=busy||
             !info?.tinybrains_available||!candidates.length||
-            info.entries?.some(item=>item.project==='tinybrains'&&item.id==='mini');
+            info.entries?.some(item=>item.project==='tinybrains'&&
+                item.id==='mini'&&item.installed&&item.managed);
         // Setup also reapproves a new immutable suite when Courier's
         // environment or evaluator runtime changes; keep it available.
         if(courierSetup)courierSetup.disabled=busy||!info?.courier_available;
