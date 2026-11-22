@@ -4493,6 +4493,15 @@ impl NativePhysicalScene {
                     "native game scene Stage does not match loaded physical assets",
                 ));
             }
+            if scene.entities.iter().any(|entity|
+                matches!(entity, NativeAuthoredEntity::FullCollisionAsteroid {
+                    profile, ..
+                } if !assets.has_stage_asteroid_prefab(profile.prefab_number))
+            ) {
+                return Err(NativeSnapshotError::InvalidNativeLayout(
+                    "native full asteroid prefab is not present in the authored Stage pool",
+                ));
+            }
             Ok(scene)
         } else {
             Self::parse_with_ship_catalog(json, assets.ship_catalog())
