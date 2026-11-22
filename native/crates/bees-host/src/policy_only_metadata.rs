@@ -1259,6 +1259,10 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
         self.fleet.record_combat_events(world);
     }
 
+    fn campaign_score_snapshot(&self) -> Option<(i32, i64)> {
+        self.fleet.campaign_score_snapshot()
+    }
+
     fn observe_fire_barge_chain_damage(&mut self, killer_ship_id: i64, tsv_loss: i32) {
         self.fleet.record_fire_barge_chain_damage(killer_ship_id, tsv_loss);
     }
