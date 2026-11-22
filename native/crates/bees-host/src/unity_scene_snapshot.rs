@@ -1493,16 +1493,18 @@ pub enum NativeSquadColorSetting {
 /// Stage/CombatWorld ship entity ID. Values are signed displacements from
 /// that ship's real source or player-selected preset formation slot.
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeSavedShipPlacement {
     pub fleet_ship_id: i64,
-    pub offset: [i16; 2],
+    /// Original SquadShip workspace units, including fractional positions.
+    /// Historical integer JSON coordinates deserialize as floats.
+    pub offset: [f32; 2],
 }
 
 /// Saved player squad preferences between native campaign missions.
 /// The server shooting ID is distinct from HiveMind command IDs.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeSavedSquadTactics {
     pub side: i32,
@@ -1534,7 +1536,7 @@ impl NativeSavedSquadTactics {
         let mut seen = HashSet::with_capacity(placements.len());
         placements.iter().all(|place| place.fleet_ship_id > 0 &&
             place.offset.iter().all(|&coord|
-                (-4096..=4096).contains(&i32::from(coord))) &&
+                coord.is_finite() && (-4096.0..=4096.0).contains(&coord)) &&
             seen.insert(place.fleet_ship_id))
     }
 }

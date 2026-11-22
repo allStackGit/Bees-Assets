@@ -2348,9 +2348,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 let mut parts = token.split(':');
                 let id = parts.next().unwrap_or("").parse::<i64>()?;
                 let x = parts.next().ok_or_else(|| invalid("ship placement needs fleet-id:x:y"))?
-                    .parse::<i16>()?;
+                    .parse::<f32>()?;
                 let y = parts.next().ok_or_else(|| invalid("ship placement needs fleet-id:x:y"))?
-                    .parse::<i16>()?;
+                    .parse::<f32>()?;
                 if parts.next().is_some() {
                     return Err(invalid("ship placement needs fleet-id:x:y").into());
                 }

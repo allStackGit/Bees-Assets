@@ -867,7 +867,7 @@ fn select_battle_inner(
                         }
                         let fine = window.is_key_down(Key::LeftShift) ||
                             window.is_key_down(Key::RightShift);
-                        let step = if fine { 1_i16 } else { 8_i16 };
+                        let step = if fine { 0.25_f32 } else { 8.0_f32 };
                         let dx = if window.is_key_pressed(Key::Left, KeyRepeat::Yes) { -step }
                             else if window.is_key_pressed(Key::Right, KeyRepeat::Yes) { step }
                             else { 0 };
@@ -884,10 +884,10 @@ fn select_battle_inner(
                                 });
                                 tactic_placements.last_mut().expect("position appended")
                             };
-                            place.offset[0] = place.offset[0]
-                                .saturating_add(dx).clamp(-4096, 4096);
-                            place.offset[1] = place.offset[1]
-                                .saturating_add(dy).clamp(-4096, 4096);
+                            place.offset[0] = (place.offset[0] + dx)
+                                .clamp(-4096.0, 4096.0);
+                            place.offset[1] = (place.offset[1] + dy)
+                                .clamp(-4096.0, 4096.0);
                         }
                     }
                     let shift = window.is_key_down(Key::LeftShift) ||
@@ -1137,7 +1137,7 @@ fn select_battle_inner(
             text::draw_centered(&mut pixels, WIDTH, 441,
                 if show_tactics {
                     if placing_ship {
-                        "Ship: arrows nudge 8, Shift+arrows 1 | PgUp/PgDn ship | Del reset | J done"
+                        "Ship: arrows move 8, Shift+arrows .25 | PgUp/PgDn ship | Del reset | J done"
                     } else {
                         "Arrows strategy | Shift+arrows move squad | J ship | F form W width O turn X mirror"
                     }

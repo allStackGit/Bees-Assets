@@ -280,8 +280,7 @@ impl NativePhysicalScene {
             // career ledger without moving an unrelated physical ship.
             let overrides = manually_placed.iter().map(|placement|
                 (placement.fleet_ship_id, Vec2::new(
-                    f32::from(placement.offset[0]),
-                    f32::from(placement.offset[1]),
+                    placement.offset[0], placement.offset[1],
                 ))).collect::<HashMap<_, _>>();
             let divisor = squad.members.len() as f32;
             let original_center = originals.iter().copied()
