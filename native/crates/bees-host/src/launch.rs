@@ -7425,6 +7425,58 @@ fn publish_failed_multiplayer_delivery(
     }
 }
 
+const FISH_TANK_UNLOCK_MARKER: &[u8] = b"bees-native-fish-tank-unlocked-v1\n";
+
+fn fish_tank_unlock_file(career_root: &Path) -> PathBuf {
+    career_root.join("fish-tank-unlocked.flag")
+}
+
+/// Original permanent player-mode entitlement. A partial or corrupt marker
+/// must not unlock a game; the native campaign writer owns its publication.
+fn read_fish_tank_unlocked(path: &Path) -> io::Result<bool> {
+    match fs::read(path) {
+        Ok(bytes) if bytes == FISH_TANK_UNLOCK_MARKER => Ok(true),
+        Ok(_) => Err(invalid("invalid Fish Tank unlock marker")),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+fn publish_fish_tank_unlock(path: &Path) -> io::Result<()> {
+    if read_fish_tank_unlocked(path)? { return Ok(()); }
+    let parent = path.parent().ok_or_else(|| invalid("missing campaign save root"))?;
+    let temporary = path.with_extension("pending");
+    if let Ok(metadata) = fs::symlink_metadata(&temporary) {
+        if !metadata.file_type().is_file() {
+            return Err(invalid("Fish Tank pending unlock is not a regular file"));
+        }
+    }
+    // The ordinary CampaignWriterLease is held throughout this battle.
+    // Flush the complete setting before its atomic rename; replay and
+    // model-only training never publish this user-owned entitlement.
+    let mut file = fs::OpenOptions::new().create(true).truncate(true)
+        .write(true).open(&temporary)?;
+    file.write_all(FISH_TANK_UNLOCK_MARKER)?;
+    file.sync_all()?;
+    fs::rename(&temporary, path)?;
+    #[cfg(unix)]
+    fs::File::open(parent)?.sync_all()?;
+    Ok(())
+}
+
+fn fish_tank_unlock_for_campaign_run(
+    mission: &CampaignMission<'_>, output: &Path,
+) -> Option<PathBuf> {
+    let battle = output.parent()?;
+    let career = battle.parent()?;
+    if output.file_name()?.to_str()? != "run" ||
+        !battle.file_name()?.to_str()?.starts_with("battle-") ||
+        career.file_name()?.to_str()? != mission.campaign_id {
+        return None;
+    }
+    Some(fish_tank_unlock_file(career))
+}
+
 fn run_battle(
     config_path: &Path, play: bool, view: bool, output: Option<&Path>,
     capture: Option<&Path>, replay_number: u64, replay_inputs: Option<&Path>,
@@ -7432,6 +7484,13 @@ fn run_battle(
 ) -> Result<Option<BattleRestart>, Box<dyn Error>> {
     let run_start = Instant::now();
     let root = config_path.parent().ok_or_else(|| invalid("missing config directory"))?;
+    let fish_tank_unlock_path = if replay_inputs.is_none() {
+        mission.as_ref().and_then(|mission| output.and_then(|path|
+            fish_tank_unlock_for_campaign_run(mission, path)))
+    } else { None };
+    let mut fish_tank_unlocked = fish_tank_unlock_path.as_ref()
+        .map(|path| read_fish_tank_unlocked(path))
+        .transpose()?.unwrap_or(false);
     let config_bytes = fs::read(config_path)?;
     let mut config: RunConfig = serde_json::from_slice(&config_bytes)?;
     if mission.is_some() && (config.levels.len() != 1 || config.episodes_per_world != 1) {
@@ -10145,6 +10204,44 @@ fn run_battle(
             }
         };
         rounds += u64::from(counts.rounds);
+        if !fish_tank_unlocked && (view || remote.is_some()) {
+            if let (Some(path), Some(live)) =
+                (fish_tank_unlock_path.as_ref(), host.render_world(0))
+            {
+                use bees_gameplay::campaign_dialogue::CampaignObjectiveKind as Story;
+                let pluto = matches!(live.campaign_objective,
+                    Some(Story::PlutoAnomaly | Story::PlutoReinforcements |
+                         Story::PlutoPushback | Story::PlutoEvacuation));
+                // Source FishTankTrigger's 1800-second ScaledTimer runs in
+                // Pluto I-IV only. Use actual fixed Level ticks, never idle
+                // wall time, a paused UI, or cumulative separate battles.
+                if pluto && live.fixed_step_seconds > 0.0 &&
+                    live.tick as f64 * f64::from(live.fixed_step_seconds) >=
+                        1800.0 - f64::from(live.fixed_step_seconds) * 0.5
+                {
+                    match publish_fish_tank_unlock(path) {
+                        Ok(()) => {
+                            fish_tank_unlocked = true;
+                            println!("{}", json!({
+                                "kind": "native_fish_tank_unlocked",
+                                "campaign": mission.as_ref().map(|value| value.campaign_id),
+                                "tick": live.tick,
+                                "source": "pluto_campaign_playtime",
+                            }));
+                            #[cfg(feature = "client")]
+                            if let Some(client) = client.as_mut() {
+                                client.report_move("Fish Tank unlocked");
+                            }
+                        }
+                        Err(error) => {
+                            failed_window = Some(format!(
+                                "persist original Fish Tank unlock: {error}"));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
         if let Some(server) = &mut remote {
             if let Some(world) = host.render_world(0) {
                 server.broadcast(&world, client_bounds[0]);
