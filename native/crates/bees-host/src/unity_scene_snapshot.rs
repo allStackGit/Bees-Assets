@@ -1217,6 +1217,38 @@ pub struct NativePlacedStaticPolygon {
     /// set explicitly for a resized/edited exact collider-local path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_vertices: Option<Vec<[f32; 2]>>,
+    /// Source prefab-scale multiplier for the existing concave collider
+    /// vertices. An explicitly edited local_vertices path takes precedence
+    /// only when scaling is absent; specifying both is invalid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_scale: Option<[f32; 2]>,
+}
+
+impl NativePlacedStaticPolygon {
+    fn resolved_vertices(
+        &self, catalog: &bees_sim::polygon_obstacle_assets::PolygonObstacleCatalog,
+    ) -> Result<Option<Vec<Vec2>>, NativeSnapshotError> {
+        let invalid = NativeSnapshotError::InvalidNativeLayout;
+        match (&self.local_vertices, self.local_scale) {
+            (Some(_), Some(_)) =>
+                Err(invalid("polygon placement cannot supply both edited vertices and scale")),
+            (Some(vertices), None) => {
+                if !(3..=8192).contains(&vertices.len()) {
+                    return Err(invalid("authored polygon requires 3..8192 vertices"));
+                }
+                let path = vertices.iter().map(|v| Vec2::new(v[0], v[1]))
+                    .collect::<Vec<_>>();
+                if path.iter().any(|v| !v.is_finite()) {
+                    return Err(invalid("authored polygon vertices must be finite"));
+                }
+                Ok(Some(path))
+            }
+            (None, Some(scale)) => catalog.scaled_local_vertices(scale)
+                .map(Some)
+                .map_err(|_| invalid("scaled source polygon collider is invalid")),
+            (None, None) => Ok(None),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -3475,15 +3507,9 @@ impl NativePhysicalScene {
             if !position.is_finite() || !pose.rotation_degrees.is_finite() {
                 return Err(invalid("new polygon has nonfinite authored placement"));
             }
-            if placement.local_vertices.as_ref().is_some_and(|vertices|
-                !(3..=8192).contains(&vertices.len())
-            ) {
-                return Err(invalid("native polygon path must contain 3 to 8192 vertices"));
-            }
-            let prepared = match &placement.local_vertices {
+            let prepared = match placement.resolved_vertices(polygons)? {
                 Some(vertices) => polygons.prepare_spawn_live_polygon(
-                    placement.entity_id, pose,
-                    vertices.iter().map(|v| Vec2::new(v[0], v[1])).collect(),
+                    placement.entity_id, pose, vertices,
                 ),
                 None => polygons.prepare_spawn(placement.entity_id, Some(pose)),
             };
@@ -3727,8 +3753,7 @@ impl NativePhysicalScene {
                     position: Vec2::new(placement.position[0], placement.position[1]),
                     rotation_degrees: placement.rotation_degrees,
                 }),
-                live_vertices: placement.local_vertices.as_ref().map(|vertices|
-                    vertices.iter().map(|v| Vec2::new(v[0], v[1])).collect()),
+                live_vertices: placement.resolved_vertices(polygons)?,
             });
         }
         if !layout.add_static_boxes.is_empty() || !layout.add_static_polygons.is_empty() {

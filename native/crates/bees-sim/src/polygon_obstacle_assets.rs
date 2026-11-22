@@ -99,6 +99,30 @@ impl PolygonObstacleCatalog {
         )
     }
 
+    /// Apply a current source transform scale to the original 208-vertex
+    /// physics outline. Preserve its concavity and winding instead of
+    /// replacing it with a convex hull or bounding box. This allocation
+    /// happens during scene installation, never in fixed-step physics.
+    pub fn scaled_local_vertices(
+        &self, scale: [f32; 2],
+    ) -> Result<Vec<Vec2>, PolygonObstacleAssetError> {
+        let [sx, sy] = scale;
+        if !sx.is_finite() || !sy.is_finite() ||
+            !(1.0e-4..=4096.0).contains(&sx) ||
+            !(1.0e-4..=4096.0).contains(&sy) {
+            return Err(PolygonObstacleAssetError::InvalidAsset);
+        }
+        let ShipShape::Polygon(vertices) = &self.shape else {
+            return Err(PolygonObstacleAssetError::InvalidAsset);
+        };
+        let scaled = vertices.iter().map(|v|
+            Vec2::new(v.x * sx, v.y * sy)).collect::<Vec<_>>();
+        if scaled.iter().any(|v| !v.is_finite()) {
+            return Err(PolygonObstacleAssetError::InvalidAsset);
+        }
+        Ok(scaled)
+    }
+
     /// The active Unity PolygonCollider2D path transformed into its owning
     /// obstacle's local coordinates. Source may resize/reparent the prefab;
     /// no convex-hull, bounding box or guessed scale substitutes are used.
