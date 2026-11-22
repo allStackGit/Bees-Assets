@@ -3066,7 +3066,12 @@ impl NativeSoftwareRenderer {
         self.line(x1, y1, x0, y1, edge);
         self.line(x0, y1, x0, y0, edge);
 
-        let fog = view.player_authority.player_fog_of_war_enabled();
+        // FreePlay's presentation-only fog switch must control both the
+        // main battlefield and this minimap. Otherwise the minimap could
+        // reveal nothing after a resize because the hidden fog stencil was
+        // no longer allocated when the override disabled the main mask.
+        let fog = !self.fog_override_off &&
+            view.player_authority.player_fog_of_war_enabled();
         if fog {
             // The same allocation already holds the main-view fog stencil.
             // It has already been used for that viewport's pixel mask; only
