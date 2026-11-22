@@ -5765,6 +5765,21 @@ fn run_campaign_game_menu(
             {
                 status.push_str(&format!("  [Score {delta:+}]"));
             }
+            if let Some(mission) = entry.mission.as_ref() {
+                if let Some((ships, minerals)) = progress.latest_mission_rewards(&mission.id) {
+                    if ships > 0 {
+                        status.push_str(&format!("  [+{ships} ships]"));
+                    }
+                    if mission.bank_player_minerals {
+                        match minerals {
+                            Some(amount) if amount > 0 =>
+                                status.push_str(&format!("  [+{amount} TSV]")),
+                            None => status.push_str("  [TSV history unknown]"),
+                            _ => (),
+                        }
+                    }
+                }
+            }
             if unlocked {
                 if let Some(mission) = entry.mission.as_ref() {
                     let path = resolve(root, entry.config_for(&progress));
