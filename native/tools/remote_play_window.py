@@ -695,6 +695,17 @@ class RemoteBattleWindow:
             self.notice(f"Weapon overlay unavailable: {error}")
         self.draw()
 
+    def publish_selection(self):
+        # Source story scripts (including Pluto Reinforcements) consume
+        # actual Select inputs. Highlighting in Tk alone cannot advance
+        # the authoritative campaign; submit the exact live lifetimes.
+        if self.console.spectator or not self.console.alive or self.state is None:
+            return
+        try:
+            self.console.submit_selection(self.state, self.selected_owners())
+        except (OSError, ValueError) as error:
+            self.notice(f"Squad selection not delivered: {error}")
+
     def select(self, owner, additive):
         if not additive:
             self.selected.clear()
@@ -703,6 +714,7 @@ class RemoteBattleWindow:
                 self.selected.append(owner)
             elif additive:
                 self.selected.remove(owner)
+        self.publish_selection()
         if self.weapon_overlay_on.get():
             self.update_weapon_interest()
         self.draw()
@@ -752,6 +764,7 @@ class RemoteBattleWindow:
         if owner is None:
             return
         self.selected = [owner]
+        self.publish_selection()
         self.focus_squad(owner)
         if self.weapon_overlay_on.get():
             self.update_weapon_interest()
@@ -767,6 +780,7 @@ class RemoteBattleWindow:
                 squad["owner"] for squad in self.state["squads"]
                 if squad["controllable"] and squad.get("source_root") is True
             ]
+            self.publish_selection()
             if self.weapon_overlay_on.get():
                 self.update_weapon_interest()
             self.draw()
@@ -827,6 +841,7 @@ class RemoteBattleWindow:
             if index < len(self.sidebar_owners) and
             self.sidebar_owners[index]["controllable"]
         ]
+        self.publish_selection()
         if self.weapon_overlay_on.get():
             self.update_weapon_interest()
         self.update_sidebar()
@@ -1000,6 +1015,7 @@ class RemoteBattleWindow:
                 for owner in owners:
                     if owner not in self.selected:
                         self.selected.append(owner)
+            self.publish_selection()
             self.drag_box = None
             self.draw()
             self.update_sidebar()
