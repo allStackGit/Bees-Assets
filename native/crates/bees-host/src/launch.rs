@@ -5973,6 +5973,7 @@ fn run_battle(
     let mut recycled_template_clone_count = 0_u64;
     let mut recycled_template_clone_wall = std::time::Duration::ZERO;
     let mut saved_squad_sources = Vec::new();
+    let mut source_supply_capacity_reports = Vec::new();
     let single_level = config.levels.len() == 1;
     for level in &mut config.levels {
         if level.level_id <= 0 || level.world_id == 0 ||
@@ -6459,13 +6460,15 @@ fn run_battle(
                 ).into());
             }
             let used = validate_source_supply_capacity(&source, capacity)?;
-            println!("{}", json!({
+            let report = json!({
                 "kind": "native_player_supply_preflight",
                 "world_id": level.world_id,
                 "side": capacity.player_side,
                 "selected_base_tsv": used,
                 "authored_capacity_tsv": capacity.max_tsv,
-            }));
+            });
+            println!("{report}");
+            source_supply_capacity_reports.push(report);
         }
         // A mission side needs real command authority in either runtime:
         // human player squads during ordinary play and authenticated group
@@ -8934,6 +8937,7 @@ fn run_battle(
         // Real startup work, measured independently of simulation steps
         // and captured in the durable run summary for Experiment Hub.
         "native_stage_asset_setup": asset_load,
+        "authored_supply_capacity": source_supply_capacity_reports,
         "source_scene_template_cache": {
             "distinct_source_documents": unique_source_documents,
             "distinct_parsed_layouts": unique_source_templates,
