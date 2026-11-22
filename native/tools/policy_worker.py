@@ -152,8 +152,18 @@ class DeviceInferenceInputs:
         self.allocations = 0
         self.staged_rows = 0
         self.reused_forwards = 0
+        # Host-side submission cost, not GPU-copy completion or GPU
+        # utilization. Sample at most once per 256 forwards so the
+        # measurement itself does not burden small policy networks.
+        self.staging_calls = 0
+        self.staging_timing_samples = 0
+        self.staging_sampled_host_nanoseconds = 0
+        self.staging_max_host_nanoseconds = 0
 
     def prepare(self, observations, allowed):
+        sampled_at = (perf_counter_ns() if self.device.type != "cpu" and
+                      self.staging_calls % 256 == 0 else None)
+        self.staging_calls += 1
         torch = self.torch
         source = torch.from_numpy(np.ascontiguousarray(observations))
         mask = torch.from_numpy(np.ascontiguousarray(allowed))
@@ -184,6 +194,16 @@ class DeviceInferenceInputs:
         device_obs.copy_(source)
         device_mask.copy_(mask)
         self.staged_rows += rows
+        if sampled_at is not None:
+            # .copy_ may enqueue device work asynchronously. This is the
+            # real host submission interval, NOT device transfer latency;
+            # never force a costly GPU synchronization for diagnostics.
+            elapsed = perf_counter_ns() - sampled_at
+            self.staging_timing_samples += 1
+            self.staging_sampled_host_nanoseconds += elapsed
+            self.staging_max_host_nanoseconds = max(
+                self.staging_max_host_nanoseconds, elapsed
+            )
         return device_obs, device_mask
 
 
@@ -877,6 +897,12 @@ def main() -> None:
                     "device_buffer_growths": staging.allocations,
                     "device_input_reused_forwards": staging.reused_forwards,
                     "device_rows_staged": staging.staged_rows,
+                    "host_staging_timing_sample_period_calls": 256,
+                    "host_staging_timing_samples": staging.staging_timing_samples,
+                    "sampled_host_staging_submit_nanoseconds":
+                        staging.staging_sampled_host_nanoseconds,
+                    "max_sampled_host_staging_submit_nanoseconds":
+                        staging.staging_max_host_nanoseconds,
                 }
                 for staging in dict.fromkeys(
                     model.input_staging for model in resident_models.values()
