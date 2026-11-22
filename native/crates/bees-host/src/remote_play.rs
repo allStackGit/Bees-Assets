@@ -1240,10 +1240,11 @@ impl NativeRemotePlay {
         // their existing reliable, bounded channel.
         let pending_audio = std::mem::take(&mut self.pending_audio);
         let music_location = self.music_location;
-        // The source briefing prevents both sides issuing physical orders,
-        // even when a local graphical commander (rather than a remote ACK)
-        // controls its pacing. Only dedicated servers request a remote ACK.
-        let briefing_paused=view.tick==0 && view.terminal_result.is_none() &&
+        // The source's introductory and mid-mission briefings prevent
+        // either side issuing physical orders. Local windows pace their
+        // source dialogue; dedicated servers require authenticated ACKs
+        // before the same single physical game can advance.
+        let briefing_paused=view.terminal_result.is_none() &&
             view.campaign_dialogue.is_some_and(|(_,cue)|cue.is_briefing());
         let requires_briefing_ack=self.dedicated_briefing_gate && briefing_paused;
         // Cooperative peers share one encoded side snapshot. Union only
@@ -2235,8 +2236,8 @@ fn current_state(
                 "ships_destroyed_by_player": kills,
             })),
         "player_minerals_mined": view.minerals_mined_for_side(side),
-        // Source-owned initial story pacing; never required for local
-        // hosts or after this World has taken its first physical step.
+        // Source-owned story pacing, including genuine encounters
+        // that occur after the first physics tick.
         "briefing_requires_ack": requires_briefing_ack,
         // Both sides use the one authoritative Level clock. The opposing
         // side sees only this pause flag, never the owner's private story.
