@@ -807,8 +807,12 @@ impl PeerClient {
                     let score = message["campaign_score_delta"].as_i64()
                         .map(|delta| format!("; score {delta:+}"))
                         .unwrap_or_default();
+                    let salvage = outcome["defeat_salvage_ships"].as_array()
+                        .filter(|ships| !ships.is_empty())
+                        .map(|ships|format!("; {} Bee reserve hulls salvaged",ships.len()))
+                        .unwrap_or_default();
                     let receipt = format!(
-                        "Campaign saved: {mission} ({}{score}); {awarded_ships} ships, {awarded_squads} squads awarded{evacuated}{banked}",
+                        "Campaign saved: {mission} ({}{score}); {awarded_ships} ships, {awarded_squads} squads awarded{salvage}{evacuated}{banked}",
                         if success { "victory" } else { "defeat" },
                     );
                     let details=&mut self.campaign_reward_details;
@@ -837,6 +841,32 @@ impl PeerClient {
                             let id=ship["fleet_ship_id"].as_i64().unwrap_or(0);
                             let squad=ship["saved_squad_id"].as_i64().unwrap_or(0);
                             details.push(format!("  FleetShip #{id}: {name}  Squad #{squad}"));
+                        }
+                    }
+                    // Neptune I's defeat conversion is a committed
+                    // original source reward to the Bee reserves, not an
+                    // ordinary player-purchased or spawned FleetShip. It
+                    // must remain visible even on a lost mission so the
+                    // human player knows exactly what was saved.
+                    if let Some(ships)=outcome["defeat_salvage_ships"].as_array() {
+                        if !ships.is_empty() {
+                            details.push(format!(
+                                "Bee reserve salvage from mined TSV: {} hulls", ships.len()
+                            ));
+                            let catalog=source_ship_catalog();
+                            let mut by_type=std::collections::BTreeMap::<u8,usize>::new();
+                            for ship in ships {
+                                if let Some(kind)=ship["ship_type"].as_u64()
+                                    .and_then(|kind|u8::try_from(kind).ok())
+                                {
+                                    *by_type.entry(kind).or_default() += 1;
+                                }
+                            }
+                            for (kind,count) in by_type {
+                                let name=catalog.by_type(kind)
+                                    .map_or("Unknown class",|asset|asset.name.as_str());
+                                details.push(format!("  {count} x {name} (unassigned reserve)"));
+                            }
                         }
                     }
                     if let Some(squads)=outcome["awarded_squads"].as_array() {
