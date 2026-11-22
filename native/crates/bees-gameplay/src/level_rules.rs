@@ -81,6 +81,10 @@ pub trait NativeLevelRewardMetadata {
     /// authorized player side. Non-campaign training need not store one.
     fn campaign_score_snapshot(&self) -> Option<(i32, i64)> { None }
 
+    /// Original GameState match counters: ships lost, returned, and
+    /// kills credited to the player. A None value is not a zero count.
+    fn player_match_counts(&self) -> Option<(u64, u64, u64)> { None }
+
     /// A death-triggered Fire Barge explosion can credit the original
     /// external killer for damage to its allies. Persistent FleetShip
     /// accounting uses the event processor's existing death-time owner.
