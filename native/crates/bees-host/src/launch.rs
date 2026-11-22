@@ -5142,6 +5142,18 @@ struct NativeLibraryGame {
     /// playable post-campaign mode (e.g. Challenge or Fish Tank).
     #[serde(default)]
     unlock_after: Option<NativeLibraryUnlock>,
+    /// Source FishTankTrigger unlocks at 1800 seconds within one playable
+    /// Pluto Level, not by reaching the Uranus III campaign finale.
+    #[serde(default)]
+    unlock_after_playtime: Option<NativeLibraryPlaytimeUnlock>,
+}
+
+#[cfg(feature = "client")]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeLibraryPlaytimeUnlock {
+    campaign_id: String,
+    seconds: u32,
 }
 
 #[cfg(feature = "client")]
@@ -5833,6 +5845,17 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
             ).into());
         }
     }
+    if let Some(gate) = static_battle.and_then(|index|
+        library.games[index].unlock_after_playtime.as_ref())
+    {
+        if !read_fish_tank_unlocked(&fish_tank_unlock_file(
+            &save_root.join("campaigns").join(&gate.campaign_id),
+        ))? {
+            return Err(invalid(
+                "multiplayer Fish Tank is locked until 30 minutes of Pluto campaign gameplay",
+            ).into());
+        }
+    }
     let trained_model = if custom_fleet || campaign_index.is_some() ||
         static_battle.is_some()
     {
@@ -6167,6 +6190,16 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
     // Cross-entry gates must resolve to a real campaign/mission in this
     // library; a misspelled gate must not make a mode permanently locked.
     for item in &library.games {
+        if let Some(gate) = &item.unlock_after_playtime {
+            if item.unlock_after.is_some() || item.kind != "battle" ||
+                gate.seconds != 1800 || !library.games.iter().any(|entry|
+                    entry.kind == "campaign" && entry.id == gate.campaign_id)
+            {
+                return Err(invalid(
+                    "Fish Tank playtime unlock requires an authored campaign and exactly 1800 seconds",
+                ).into());
+            }
+        }
         let Some(gate) = &item.unlock_after else { continue };
         let campaign_index = library.games.iter().position(|entry|
             entry.kind == "campaign" && entry.id == gate.campaign_id);
@@ -6263,15 +6296,24 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 Ok::<String, Box<dyn Error>>(format!("  [Career {complete}/{total}]"))
             }
         }).collect::<Result<Vec<_>,_>>()?;
-        let unlocked_games = library.games.iter().map(|game|
-            game.unlock_after.as_ref().is_none_or(|gate|
+        let unlocked_games = library.games.iter().map(|game| -> io::Result<bool> {
+            if let Some(gate) = game.unlock_after_playtime.as_ref() {
+                return read_fish_tank_unlocked(&fish_tank_unlock_file(
+                    &save_root.join("campaigns").join(&gate.campaign_id),
+                ));
+            }
+            Ok(game.unlock_after.as_ref().is_none_or(|gate|
                 completed_by_campaign.get(&gate.campaign_id)
-                    .is_some_and(|missions| missions.contains(&gate.mission_id)))
-        ).collect::<Vec<_>>();
+                    .is_some_and(|missions| missions.contains(&gate.mission_id))))
+        }).collect::<io::Result<Vec<_>>>()?;
         let status = status.into_iter().enumerate().map(|(index, text)| {
             if !unlocked_games[index] {
-                format!("  [Locked until {}]", library.games[index].unlock_after
-                    .as_ref().expect("locked game has an authored prerequisite").mission_id)
+                if library.games[index].unlock_after_playtime.is_some() {
+                    "  [Locked: 30 min in Pluto campaign]".to_owned()
+                } else {
+                    format!("  [Locked until {}]", library.games[index].unlock_after
+                        .as_ref().expect("locked game has an authored prerequisite").mission_id)
+                }
             } else { text }
         }).collect::<Vec<_>>();
         let mut rows = library.games.iter().enumerate().map(|(index, item)| {

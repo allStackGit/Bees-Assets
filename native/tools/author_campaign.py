@@ -2278,20 +2278,22 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     # Both use the existing library gate and committed campaign progress.
     postcampaign_sources = []
     unlockable_games = [
-        (game_id, side, source, uranus_finales, "Uranus III")
+        (game_id, side, source,
+         None if side == 0 else uranus_finales,
+         "Fish Tank" if side == 0 else "Uranus III")
         for game_id, side, source in args.postcampaign_game
     ] + [
         (game_id, side, source, pluto_finales, "Pluto IV")
         for game_id, side, source in args.training_room_game
     ]
     for game_id, side, run_source, unlocks, finale_name in unlockable_games:
-        if not unlocks:
+        if unlocks is not None and not unlocks:
             raise ValueError(
                 f"{game_id} requires the authored {finale_name} finale"
             )
         if finale_name == "Pluto IV" and side != args.player_side:
             raise ValueError("Training Room requires the native campaign player side")
-        unlock_id = f"mission-{unlocks[0]:03d}"
+        unlock_id = f"mission-{unlocks[0]:03d}" if unlocks is not None else None
         source_path = run_source.resolve(strict=True)
         game_scene, game_run, provenance = input_mission(
             source_path, side, require_career_fleet=False,
@@ -2326,15 +2328,19 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                       "Training Room: " if finale_name == "Pluto IV" else "") +
                 game_scene["level_name"],
             "kind": "battle", "config": run_file,
-            "unlock_after": {
+            **({"unlock_after_playtime": {
+                "campaign_id": slug[:40],
+                "seconds": 1800,
+            }} if side == 0 else {"unlock_after": {
                 "campaign_id": slug[:40],
                 "mission_id": unlock_id,
-            },
+            }}),
         })
         postcampaign_sources.append({
             "game_id": game_id,
             "player_side": side,
-            "unlocked_by": unlock_id,
+            "unlocked_by": unlock_id if unlock_id is not None
+                else "pluto_level_playtime_1800_seconds",
             **provenance,
         })
     receipt = {
