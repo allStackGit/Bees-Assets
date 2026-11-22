@@ -9,7 +9,7 @@ use bees_gameplay::player_inputs::{
     NativePlayerHeldFire, NativePlayerSquadCeaseFire, NativePlayerSquadCommands, NativePlayerSquadFire,
     NativePlayerSquadMoves, NativePlayerSquadSpecial, NativePlayerSquadMatchSpeed,
     NativePlayerSquadShooting, NativePlayerSquadLockOn,
-    NativePlayerSquadChase,
+    NativePlayerSquadChase, NativePlayerSquadSelection,
 };
 use bees_sim::simulation::WorldId;
 use bees_hivemind::session::SquadLifetime;
@@ -28,6 +28,7 @@ pub enum NativePlayerInput {
     Shooting(NativePlayerSquadShooting),
     LockOn(NativePlayerSquadLockOn),
     Chase(NativePlayerSquadChase),
+    Select(NativePlayerSquadSelection),
 }
 
 impl NativePlayerInput {
@@ -50,6 +51,7 @@ impl NativePlayerInput {
             Self::Shooting(v) => Some(&v.squads),
             Self::LockOn(v) => Some(&v.squads),
             Self::Chase(v) => Some(&v.squads),
+            Self::Select(v) => Some(&v.squads),
         }
     }
 
@@ -65,6 +67,7 @@ impl NativePlayerInput {
             Self::Shooting(input) => (input.world_id, input.episode_revision),
             Self::LockOn(input) => (input.world_id, input.episode_revision),
             Self::Chase(input) => (input.world_id, input.episode_revision),
+            Self::Select(input) => (input.world_id, input.episode_revision),
         }
     }
 }
