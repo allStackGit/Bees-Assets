@@ -889,8 +889,9 @@ impl NativeRemotePlay {
                                 let Some(receipt) = self.archived_receipts.get(original)
                                     .filter(|receipt|
                                         receipt.authorized_sides.contains(&side) ||
-                                        receipt.legacy_credentials_sha256.is_some_and(|prior|
-                                            prior == credential_digest(&self.side_tokens)))
+                                        (!spectator &&
+                                            receipt.legacy_credentials_sha256.is_some_and(|prior|
+                                                prior == credential_digest(&self.side_tokens))))
                                 else {
                                     peer.closed = true;
                                     break;
@@ -904,8 +905,9 @@ impl NativeRemotePlay {
                                     "recovered_host": true,
                                 }));
                                 if let Some(outcome) = receipt.campaign_outcome.as_ref()
-                                    .filter(|outcome| outcome["player_side"].as_i64()
-                                        == Some(i64::from(side)))
+                                    .filter(|outcome| !spectator &&
+                                        outcome["player_side"].as_i64()
+                                            == Some(i64::from(side)))
                                 {
                                     let _ = peer.enqueue(&json!({
                                         "kind": "campaign_receipt",
@@ -928,9 +930,11 @@ impl NativeRemotePlay {
                                      receipt.opposing_player_match_counts,
                                      receipt.opposing_loss_types, receipt.opposing_minerals_mined)
                                 };
-                                Self::attach_authorized_match_score(
-                                    &mut result, side, score, counts, loss_types, mined,
-                                );
+                                if !spectator {
+                                    Self::attach_authorized_match_score(
+                                        &mut result, side, score, counts, loss_types, mined,
+                                    );
+                                }
                                 let _ = peer.enqueue(&result);
                                 self.measurements.archived_terminal_receipts_sent += 1;
                                 peer.archived_terminal = true;
@@ -968,7 +972,8 @@ impl NativeRemotePlay {
                         }
                         peer.last_request_id = request_id;
                         peer_orders += 1;
-                        let valid = claimed_world == world_id.0 &&
+                        let valid = !peer.spectator &&
+                            claimed_world == world_id.0 &&
                             claimed_revision == revision &&
                             briefing == Some((peer.side.expect("authenticated"),sequence));
                         if valid {
@@ -1013,6 +1018,24 @@ impl NativeRemotePlay {
                             break;
                         }
                         peer.last_request_id = request_id;
+                        // Spectator credentials are not a weakened player
+                        // authority: refuse every command before it reaches
+                        // the canonical player-input journal or held-fire
+                        // lease table. Retain the same monotonic request
+                        // acknowledgment stream for malformed clients.
+                        if peer.spectator {
+                            if !peer.begin_input(request_id) {
+                                unreachable!("input receipt capacity checked before admission");
+                            }
+                            peer.finish_input(request_id, json!({
+                                "kind": "input_result", "request_id": request_id,
+                                "processed": false,
+                                "feedback": "spectator seat has no command authority",
+                            }));
+                            self.measurements.orders_rejected += 1;
+                            peer_orders += 1;
+                            continue;
+                        }
                         // The outer admission gate retains the complete
                         // frame in the bounded buffer while checkpointed
                         // receipts are pending. This cannot overflow here.
@@ -1128,7 +1151,7 @@ impl NativeRemotePlay {
         let mut viewers=0usize;
         let mut waiting=false;
         for peer in self.peers.iter().filter(|peer|
-            !peer.closed && peer.side==Some(owner_side)) {
+            !peer.closed && !peer.spectator && peer.side==Some(owner_side)) {
             viewers+=1;
             if self.briefing_ready.get(&peer.id)!=Some(&required) {
                 waiting=true;
@@ -1370,7 +1393,7 @@ impl NativeRemotePlay {
             "campaign_score_delta": campaign_score_delta,
         });
         for peer in self.peers.iter_mut().filter(|peer|
-            !peer.closed && peer.side == Some(player_side)
+            !peer.closed && !peer.spectator && peer.side == Some(player_side)
         ) {
             let _ = peer.enqueue(&receipt);
             if !peer.closed {
@@ -1437,13 +1460,15 @@ impl NativeRemotePlay {
             receipt["viewer_side"] = json!(peer.side);
             let owner = peer.side.expect("authenticated terminal recipient");
             let player_match = view.player_match_for_side(owner);
-            Self::attach_authorized_match_score(
-                &mut receipt, owner,
-                player_match.map(|(score, _)| (owner, score)),
-                player_match.and_then(|(_, counts)| counts),
-                view.loss_types_for_side(owner),
-                view.minerals_mined_for_side(owner),
-            );
+            if !peer.spectator {
+                Self::attach_authorized_match_score(
+                    &mut receipt, owner,
+                    player_match.map(|(score, _)| (owner, score)),
+                    player_match.and_then(|(_, counts)| counts),
+                    view.loss_types_for_side(owner),
+                    view.minerals_mined_for_side(owner),
+                );
+            }
             let _ = peer.enqueue(&receipt);
             if !peer.closed {
                 self.measurements.battle_result_receipts += 1;
