@@ -954,6 +954,10 @@ impl RolloutModel {
     fn reload_manifest(&mut self, manifest: &Path) -> Result<u64, PolicyProcessError> {
         self.resident.as_mut().ok_or(PolicyProcessError::Unavailable)?.reload_manifest(manifest)
     }
+
+    fn policy_reload_measurements(&self) -> Option<bees_host::policy_process::PolicyReloadMeasurements> {
+        self.resident.as_ref().map(ResidentPolicyProcess::reload_measurements)
+    }
 }
 
 impl NativePolicyInference for RolloutModel {
@@ -9049,6 +9053,7 @@ fn run_battle(
                         "policy_manifest_sha256": manifest_sha256,
                         "evaluation_before_update": evaluation_before_update,
                         "manifest": update.manifest,
+                        "policy_reload_measurements": host.model_mut().policy_reload_measurements(),
                     }));
                     segment_baseline = evaluation_before_update;
                     segment_start_round = rounds;
