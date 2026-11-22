@@ -139,6 +139,17 @@ impl CombatWorld {
         ).map(|state| state.zone.player_side)
     }
 
+    /// Only the source game retreat button transitions this authored
+    /// campaign's exit to active. The activation bit is already part of
+    /// the physical extraction checkpoint; no duplicate story timer or
+    /// client-side approximation is involved.
+    pub fn player_retreat_activated(&self, side: i32) -> bool {
+        self.extraction.as_ref().is_some_and(|state|
+            state.zone.retreat_on_exit && state.zone.requires_player_activation &&
+            state.zone.player_side == side && state.active
+        )
+    }
+
     /// The original retreat action opens an exit zone; it does not kill,
     /// teleport or award any ship. Actual saved hulls still have to cross
     /// the source collider on later real physics steps.
