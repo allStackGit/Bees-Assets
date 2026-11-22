@@ -2072,6 +2072,44 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 text::fit(&label,WIDTH-FIELD-24),1,
                 if selected.contains(&id){TEXT}else{MUTED});
         }
+        // The authoritative host supplies real FleetShip health/TSV and
+        // mined cargo only for this player's owned physical hulls. Count
+        // selected live ships in one pass; never derive enemy career value
+        // from a visible enemy silhouette or estimate missing older fields.
+        if !highlighted.is_empty() {
+            let mut health=0_i64;
+            let mut maximum=0_i64;
+            let mut tsv=0_i64;
+            let mut base_tsv=0_i64;
+            let mut mined=0_i64;
+            let mut owned_count=0_usize;
+            let mut financials_available=false;
+            for ship in state["ships"].as_array().into_iter().flatten() {
+                if ship["owned"]!=true || !ship["id"].as_i64()
+                    .is_some_and(|id|highlighted.contains(&id)) {continue;}
+                owned_count+=1;
+                health+=ship["health"].as_i64().unwrap_or(0);
+                maximum+=ship["max_health"].as_i64().unwrap_or(0);
+                if let (Some(value),Some(base),Some(cargo)) = (
+                    ship["tsv"].as_i64(),ship["base_tsv"].as_i64(),
+                    ship["mined_cargo"].as_i64(),
+                ) {
+                    tsv+=value;
+                    base_tsv+=base;
+                    mined+=cargo;
+                    financials_available=true;
+                }
+            }
+            if owned_count>0 {
+                let label=if financials_available {
+                    format!("HP {health}/{maximum}  TSV {tsv}/{base_tsv}  Mined {mined}")
+                } else {
+                    format!("{owned_count} selected ships  HP {health}/{maximum}")
+                };
+                text::draw_at(pixels,WIDTH,FIELD+14,405,
+                    text::fit(&label,WIDTH-FIELD-24),1,[198,231,248]);
+            }
+        }
         if let Some(squad)=first_selected(Some(state),selected) {
             let id=squad["owner"]["squad_id"].as_i64().unwrap_or(0);
             let shooting=squad["shooting"].as_u64().unwrap_or(0);
