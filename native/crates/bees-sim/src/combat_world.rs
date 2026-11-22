@@ -4026,8 +4026,13 @@ impl CombatWorld {
         body.tracks_body_contacts = is_asteroid;
         // MapBorder.OnTriggerEnter2D needs only ship entries. Keep the
         // old asteroid-only obstacle-pair and proximity search cost.
+        // A charging Barge is destroyed by StaticObstacle.ShipCollision,
+        // while noncharging ships pass through its ordinary source trigger.
+        // Use the same physical entry stream as MapBorder/CollisionAsteroid,
+        // not a new per-ship collision approximation.
         body.tracks_ship_contacts =
-            is_asteroid || obstacle_kind == ObstacleKind::MapBorder;
+            is_asteroid || matches!(obstacle_kind,
+                ObstacleKind::MapBorder | ObstacleKind::StaticObstacle);
         if let Some(&index) = self.free_obstacle_slots.last() {
             self.physics.replace_ended_obstacle(index, body)?;
             self.free_obstacle_slots.pop();
@@ -4854,6 +4859,50 @@ impl CombatWorld {
             (ObstacleKind::MapBorder, ObstacleKind::CollisionAsteroid) => Some(second.entity_id),
             _ => None,
         }
+    }
+
+    /// Source StaticObstacle.OnTriggerEnter2D -> ShipCollision kills a Barge
+    /// during its real ChargeForward, regardless of the other ship's side.
+    /// Only the physical static-body entry may cause this damage. The
+    /// existing ship-death path owns all FleetShip, policy and targeting
+    /// retirement; noncharging ships suffer no fabricated collision damage.
+    fn process_static_obstacle_ship_entries(&mut self) -> Result<(), CombatWorldError> {
+        for index in 0..self.physics.ship_obstacle_entries().len() {
+            let entry = self.physics.ship_obstacle_entries()[index];
+            let Some(&obstacle_index) = self.obstacle_by_id.get(&entry.obstacle_id)
+                else { continue };
+            if self.obstacles[obstacle_index].kind != ObstacleKind::StaticObstacle {
+                continue;
+            }
+            let Some(&ship_index) = self.ship_by_id.get(&entry.ship_id)
+                else { continue };
+            let ship = &self.ships[ship_index];
+            if ship.ship_type != 0 || ship.vitals.is_dead() ||
+                !self.physics.ships()[ship_index].active {
+                continue;
+            }
+            let is_charging = self.game_barge_charges.get(&entry.ship_id)
+                .is_some_and(|charge| charge.phase == 2) ||
+                self.policy_ship_runtime.get(&entry.ship_id)
+                    .and_then(|runtime| runtime.special)
+                    .is_some_and(|special| matches!(special,
+                        PolicyShipSpecial::Barge(barge) if barge.phase == 2));
+            if !is_charging { continue; }
+            let health = self.ships[ship_index].vitals.health();
+            if let Some(delta) = self.ships[ship_index].vitals
+                .apply_damage(health, false)? {
+                self.reservations.target_health_changed(
+                    entry.ship_id, self.ships[ship_index].vitals.health(),
+                );
+                self.events.push(CombatEvent::UnattributedDamage {
+                    target_id: entry.ship_id, delta,
+                });
+                if delta.killed {
+                    self.retire_dead_ship(ship_index, 0, 0)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Source MapBorder.OnTriggerEnter2D checks HasTargetDirection after
@@ -5781,6 +5830,11 @@ impl CombatWorld {
             self.resolve_game_barge_border_contacts()?;
             self.process_map_border_ship_entries()?;
         }
+        // StaticObstacle.OnTriggerEnter2D may destroy a charging Barge
+        // before it can damage another ship in the same contact frame.
+        // The physics broadphase/narrowphase is shared with all gameplay,
+        // headless and PPO consumers and retains its ordinary counters.
+        self.process_static_obstacle_ship_entries()?;
         self.resolve_policy_barge_contacts(collision_matrix)?;
         self.resolve_game_barge_contacts(collision_matrix)?;
         // Striker.CheckCarrierReload runs on the same Level timer clock.
