@@ -1331,6 +1331,10 @@ function createTinyBrainsPersistentDockerAdapter({
         Array.isArray(evaluationSuites)&&evaluationSuites.length) {
         const root=path.join(os.homedir(),'evaluation-audits/tinybrains/suites');
         const marker=path.join(root,'hub-approved-latest.json');
+        // Optional evaluation approvals are not required to execute PPO.
+        // A malformed approval must never disconnect the entire native
+        // agent or make Courier and TinyBrains disappear together.
+        try {
         if(fs.existsSync(marker)) {
             const stat=fs.lstatSync(marker);
             if(!stat.isFile()||stat.isSymbolicLink()||
@@ -1338,8 +1342,12 @@ function createTinyBrainsPersistentDockerAdapter({
                 stat.uid!==process.getuid()||stat.mode&0o077||stat.size>1024)
                 throw Error('Local TinyBrains evaluator approval changed or is unsafe.');
             const approval=JSON.parse(fs.readFileSync(marker,'utf8'));
+            const keys=approval&&Object.keys(approval).sort().join(',');
+            const legacyMini=keys==='micro,mini,nano,version'&&
+                approval.mini==='tinybrains_mini_batch128_v1'&&
+                fs.existsSync(path.join(root,approval.mini+'.json'));
             if(!approval||approval.version!==1||
-                Object.keys(approval).sort().join(',')!=='micro,nano,version')
+                (keys!=='micro,nano,version'&&!legacyMini))
                 throw Error('Invalid TinyBrains versioned evaluator approval.');
             for(const id of ['nano','micro']) {
                 const name=approval[id];
@@ -1355,7 +1363,12 @@ function createTinyBrainsPersistentDockerAdapter({
                 ...evaluationSuites,approval.nano,approval.micro,
             ])];
         }
+        }catch(error) {
+            console.warn('[hub-evaluations] Ignoring invalid optional Nano/Micro approval: '+
+                String(error.message||error).slice(0,160));
+        }
         const miniName='tinybrains_mini_batch128_v1';
+        try {
         const miniFile=path.join(root,miniName+'.json');
         if(fs.existsSync(miniFile)) {
             const stat=fs.lstatSync(miniFile);
@@ -1386,6 +1399,10 @@ function createTinyBrainsPersistentDockerAdapter({
             approvedEvaluationSuites=[...new Set([
                 ...approvedEvaluationSuites,miniName,
             ])];
+        }
+        }catch(error) {
+            console.warn('[hub-evaluations] Ignoring invalid optional frozen Mini approval: '+
+                String(error.message||error).slice(0,160));
         }
     }
     return {

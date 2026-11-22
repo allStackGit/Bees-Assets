@@ -38,8 +38,15 @@ function suiteNames(options) {
         stat.uid!==process.getuid()||stat.mode&0o077||stat.size>1024)
         throw Error('TinyBrains suite approval must be a private regular file.');
     const approved=JSON.parse(fs.readFileSync(marker,'utf8'));
+    const keys=approved&&Object.keys(approved).sort().join(',');
+    // A prior Mini installation accidentally persisted "mini" in this
+    // Nano/Micro-only marker. Accept that exact historic shape only when
+    // its immutable suite exists; never trust arbitrary marker additions.
+    const legacyMini=keys==='micro,mini,nano,version'&&
+        approved.mini===MINI_SUITE&&
+        fs.existsSync(path.join(options.suites,MINI_SUITE+'.json'));
     if(!approved||approved.version!==1||
-        Object.keys(approved).sort().join(',')!=='micro,nano,version'||
+        (keys!=='micro,nano,version'&&!legacyMini)||
         ['nano','micro'].some(id=>
             typeof approved[id]!=='string'||
             !new RegExp('^tinybrains_'+id+'_tiny_v(?:[3-9]|[1-9][0-9]{1,2})$').test(approved[id])))
@@ -433,8 +440,13 @@ async function refreshSuite(hub,id) {
             fs.writeFileSync(current.serviceFile,next[key].service,{mode:0o600});
             fs.writeFileSync(current.timerFile,next[key].timer,{mode:0o600});
         }
+        const names=suiteNames(o);
+        // Only Nano and Micro belong in the versioned approval marker.
+        // Mini's separately SHA-pinned suite is discovered from its file.
         fs.writeFileSync(marker,JSON.stringify({
-            version:1,...suiteNames(o),[id]:name,
+            version:1,
+            nano:id==='nano'?name:names.nano,
+            micro:id==='micro'?name:names.micro,
         },null,2)+'\n',{mode:0o600});
         await systemctl(['daemon-reload']);
         for(const current of units)
