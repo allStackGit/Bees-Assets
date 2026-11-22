@@ -648,6 +648,22 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     mission_grants = dict(args.mission_grant_on)
     mission_banks = dict(args.mission_bank_on)
     mission_stories = dict(args.mission_story)
+    # Exact source Level.Campaign.Endings Codex grants. Unlike hull
+    # purchases, these are player knowledge: a failed Pluto III still
+    # unlocks Wasps, while Neptune I Factories require a victory.
+    story_codex = {
+        "pluto_pushback": [(21, "finished")],
+        "pluto_bluer_pastures": [(16, "finished"), (22, "finished")],
+        "neptune_seize_means": [(4, "finished"), (9, "victory")],
+        "uranus_on_the_offensive": [(3, "finished")],
+        "uranus_new_threat": [(0, "finished"), (2, "finished"),
+                              (5, "finished"), (9, "finished"),
+                              (10, "finished"), (11, "finished"),
+                              (20, "finished")],
+    }
+    explicit_codex = {}
+    for index, kind, condition in args.mission_codex:
+        explicit_codex.setdefault(index, []).append((kind, condition))
     # These source endings advance their campaigns after a completed
     # battle, including defeat. Share that authored guarantee with route
     # validation, grant eligibility and downstream prerequisite analysis;
@@ -1265,6 +1281,17 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             "record_fleet_stats": True, "persist_fleet_losses": True,
             "bank_player_minerals": True,
         }
+        codex = dict(story_codex.get(mission_stories.get(index), []))
+        for kind, condition in explicit_codex.get(index, []):
+            if kind in codex and codex[kind] != condition:
+                raise ValueError(
+                    f"mission {index} Codex class {kind} conflicts with the original ending")
+            codex[kind] = condition
+        if codex:
+            mission["codex_reveals"] = [
+                {"ship_type": kind, "on": condition}
+                for kind, condition in sorted(codex.items())
+            ]
         if args.persist_enemy_losses:
             mission["persist_enemy_fleet_losses"] = True
         # Mining income is a source Level.Ending action, not an automatic
@@ -1536,6 +1563,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     catalog = {
         "campaign_id": slug, "battles": missions,
         "buildable_ships": fleet_classes,
+        "codex_initial": args.codex_initial,
     }
     if fleet_classes or args.victory_squad:
         catalog["max_squad_ships"] = args.max_squad_ships
@@ -1615,6 +1643,12 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         "campaign_id": slug, "player_side": args.player_side,
         "missions": sources,
         "postcampaign_games": postcampaign_sources,
+        "codex_initial": args.codex_initial,
+        "codex_progression": [
+            {"mission_index": index, "reveals": mission["mission"].get("codex_reveals", [])}
+            for index, mission in enumerate(missions, 1)
+            if mission["mission"].get("codex_reveals")
+        ],
         "shop_types": args.shop_types,
         "grant_only_types": args.grant_only_types,
         "mission_progression": [{
@@ -1768,6 +1802,18 @@ def mission_story(value: str) -> tuple[int, str]:
     return int(match.group(1)), match.group(2)
 
 
+def mission_codex(value: str) -> tuple[int, int, str]:
+    """Original source Codex knowledge: MISSION:SHIP_TYPE:finished|victory."""
+    match = re.fullmatch(r"(\d+):(\d+):(finished|victory)", value)
+    if match is None:
+        raise argparse.ArgumentTypeError(
+            "--mission-codex needs MISSION:TYPE:finished|victory")
+    index, kind, condition = int(match.group(1)), int(match.group(2)), match.group(3)
+    if not 1 <= index <= 40 or not 0 <= kind < 23:
+        raise argparse.ArgumentTypeError("Codex mission must be 1..40, class 0..22")
+    return index, kind, condition
+
+
 def mission_unlock_any(value: str) -> tuple[int, int, str]:
     """MISSION:PRIOR:finished|victory|defeat; alternative forward mission gate."""
     match = re.fullmatch(r"(\d+):(\d+):(finished|victory|defeat)", value)
@@ -1843,6 +1889,12 @@ def main() -> None:
     parser.add_argument("--mission-story", action="append", type=mission_story,
                         default=[], metavar="MISSION:STORY",
                         help="attach original native campaign dialogue and terminal cues to an authored mission")
+    parser.add_argument("--codex-initial", type=ship_types, default=[13, 18],
+                        metavar="TYPE[,TYPE]",
+                        help="originally known ship classes (human campaign: Gunship and Scout)")
+    parser.add_argument("--mission-codex", action="append", type=mission_codex,
+                        default=[], metavar="MISSION:TYPE:OUTCOME",
+                        help="additional source Codex class unlocked on completed mission or victory")
     parser.add_argument("--mission-scientists-met", type=int, action="append",
                         default=[], metavar="MISSION",
                         help="source Uranus II dialogue flag: Alejandra and Emilia were previously met on this campaign route")
@@ -1876,6 +1928,12 @@ def main() -> None:
             len({mission for mission, _ in args.mission_story}) != len(args.mission_story)):
         parser.error("--mission-story needs distinct existing mission indices")
     story_by_index = dict(args.mission_story)
+    if 23 in args.codex_initial or any(kind > 22 for kind in args.codex_initial):
+        parser.error("Codex entries must be playable hulls (0..22)")
+    if (any(index > len(args.mission) for index, _, _ in args.mission_codex) or
+            len({(index, kind) for index, kind, _ in args.mission_codex}) !=
+                len(args.mission_codex)):
+        parser.error("--mission-codex needs existing missions and unique mission/class pairs")
     game_ids = [game_id for game_id, _, _ in
                 [*args.postcampaign_game, *args.training_room_game]]
     if len(set(game_ids)) != len(game_ids) or any(
