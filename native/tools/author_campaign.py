@@ -1636,6 +1636,9 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 "pluto_evacuation": {
                     "player_side": args.player_side,
                     "protected_ship_id": objective["protected_ship_id"],
+                    # Resolved from actual post-casualty deployments by the
+                    # native mission launcher, not the immutable template.
+                    "speaker_mask": 0,
                 }
             }
 

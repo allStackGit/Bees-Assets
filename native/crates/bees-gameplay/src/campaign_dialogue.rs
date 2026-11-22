@@ -41,7 +41,13 @@ pub enum CampaignDialogueSpec {
     NeptuneSeizeMeans { player_side: i32 },
     /// Neptune II's real mining withdrawal and escalating source waves.
     NeptuneProduction { player_side: i32 },
-    PlutoEvacuation { player_side: i32, protected_ship_id: i64 },
+    PlutoEvacuation {
+        player_side: i32, protected_ship_id: i64,
+        /// The source Pluto IV officer roll call depends on actually
+        /// deployed surviving Scouts/Frigates/Gunships/Dreadnoughts.
+        #[serde(default)]
+        speaker_mask: u8,
+    },
     /// Source Uranus III protects exactly three real Barge hulls.
     UranusNewThreat { player_side: i32, barges: [i64; 3], has_cruiser: bool },
     /// Source Uranus II: survive six timed Bee waves, mine and withdraw
@@ -135,7 +141,7 @@ pub enum CampaignCue {
     NeptuneProductionRetreatOpened,
     NeptuneProductionWave { number: u32, line: u8 },
     NeptuneProductionEnding { last_ship_retreated: bool, player_victory: bool },
-    PlutoEvacuationBriefing,
+    PlutoEvacuationBriefing { speaker_mask: u8 },
     /// Original Pluto IV combat callouts come from actual Leafcutter
     /// SplitterShot creation and YellowJacket ship contact, respectively.
     PlutoEvacuationSplitterShot,
@@ -168,7 +174,7 @@ impl CampaignCue {
             Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. } |
             Self::PlutoPushbackBriefing { .. } |
             Self::NeptunePressingForwardBriefing | Self::NeptuneSeizeBriefing |
-            Self::PlutoEvacuationBriefing | Self::NeptuneProductionBriefing |
+            Self::PlutoEvacuationBriefing { .. } | Self::NeptuneProductionBriefing |
             Self::UranusNewThreatBriefing | Self::UranusDefensiveBriefing |
             Self::UranusOffensiveBriefing)
     }
@@ -205,6 +211,7 @@ enum DialogueMode {
     },
     PlutoEvacuation {
         protected_ship_id: i64,
+        #[serde(default)] speaker_mask: u8,
         #[serde(default)] splitter_seen: bool,
         #[serde(default)] splitter_reported: bool,
         #[serde(default)] yellow_jacket_contact_seen: bool,
@@ -340,13 +347,15 @@ impl CampaignDialogue {
                 },
                 CampaignCue::NeptuneProductionBriefing,
             ),
-            CampaignDialogueSpec::PlutoEvacuation { protected_ship_id, .. } => (
+            CampaignDialogueSpec::PlutoEvacuation {
+                protected_ship_id, speaker_mask, ..
+            } => (
                 DialogueMode::PlutoEvacuation {
-                    protected_ship_id,
+                    protected_ship_id, speaker_mask,
                     splitter_seen: false, splitter_reported: false,
                     yellow_jacket_contact_seen: false, yellow_jacket_contact_reported: false,
                 },
-                CampaignCue::PlutoEvacuationBriefing,
+                CampaignCue::PlutoEvacuationBriefing { speaker_mask },
             ),
             CampaignDialogueSpec::UranusNewThreat { barges, has_cruiser, .. } => (
                 DialogueMode::UranusNewThreat {
@@ -431,9 +440,11 @@ impl CampaignDialogue {
                 true,
             (DialogueMode::NeptuneProduction { .. },
                 DialogueMode::NeptuneProduction { .. }) => true,
-            (DialogueMode::PlutoEvacuation { protected_ship_id: saved, .. },
-                DialogueMode::PlutoEvacuation { protected_ship_id: authored, .. }) =>
-                saved == authored,
+            (DialogueMode::PlutoEvacuation {
+                protected_ship_id: saved, speaker_mask: saved_mask, ..
+            }, DialogueMode::PlutoEvacuation {
+                protected_ship_id: authored, speaker_mask: authored_mask, ..
+            }) => saved == authored && saved_mask == authored_mask,
             (DialogueMode::UranusNewThreat {
                 barges: saved, has_cruiser: saved_cruiser, ..
             }, DialogueMode::UranusNewThreat {
@@ -594,9 +605,12 @@ impl CampaignDialogue {
                 CampaignCue::NeptunePressingForwardDefeat { has_factory }) =>
                 sequence == 1 && *authored == has_factory,
             (DialogueMode::PlutoEvacuation {
+                speaker_mask: authored,
                 splitter_reported: false, yellow_jacket_contact_reported: false,
                 ..
-            }, CampaignCue::PlutoEvacuationBriefing) => sequence == 0,
+            }, CampaignCue::PlutoEvacuationBriefing { speaker_mask }) =>
+                sequence == 0 && *authored == speaker_mask &&
+                speaker_mask <= 0b1111,
             (DialogueMode::PlutoEvacuation {
                 splitter_seen: true, splitter_reported: true,
                 yellow_jacket_contact_reported, ..

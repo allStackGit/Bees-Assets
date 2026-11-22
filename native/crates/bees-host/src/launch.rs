@@ -7988,11 +7988,17 @@ fn run_battle(
             }));
         }
         use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
-        if let Some(CampaignDialogueSpec::PlutoPushback { player_side, .. }) =
-            level.campaign_dialogue
+        let officer_roll_call = match level.campaign_dialogue {
+            Some(CampaignDialogueSpec::PlutoPushback { player_side, .. }) |
+            Some(CampaignDialogueSpec::PlutoEvacuation { player_side, .. }) =>
+                Some(player_side),
+            _ => None,
+        };
+        if let Some(player_side) = officer_roll_call
         {
-            // Pluto III's original briefing includes the four
-            // Lieutenants only if their ship types are actually in play.
+            // Pluto III and IV introduce only officers whose ship classes
+            // are actually deployed. Both source missions call the same
+            // CurrentShips/HumanShipTypes ownership logic before gameplay.
             // Re-evaluate AFTER lost FleetShips, player purchases and
             // previous mission casualties have altered the deployed roster.
             // Do not use the publisher's frozen template or dormant reserves.
@@ -8017,9 +8023,18 @@ fn run_battle(
                     }
                 }
             }
-            level.campaign_dialogue = Some(CampaignDialogueSpec::PlutoPushback {
-                player_side, speaker_mask,
-            });
+            level.campaign_dialogue = match level.campaign_dialogue {
+                Some(CampaignDialogueSpec::PlutoPushback { .. }) =>
+                    Some(CampaignDialogueSpec::PlutoPushback {
+                        player_side, speaker_mask,
+                    }),
+                Some(CampaignDialogueSpec::PlutoEvacuation {
+                    protected_ship_id, ..
+                }) => Some(CampaignDialogueSpec::PlutoEvacuation {
+                    player_side, protected_ship_id, speaker_mask,
+                }),
+                other => other,
+            };
         }
         let factory_story_side = match level.campaign_dialogue {
             Some(CampaignDialogueSpec::NeptunePressingForward { player_side, .. }) |

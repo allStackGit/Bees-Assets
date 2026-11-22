@@ -4228,8 +4228,9 @@ impl NativePhysicalScene {
                             }] if destination.unity_equal(Vec2::ZERO)))) =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::PlutoEvacuation {
-                player_side, protected_ship_id,
-            }) if !setup.survival.is_some_and(|objective|
+                player_side, protected_ship_id, speaker_mask,
+            }) if speaker_mask > 0b1111 ||
+                    !setup.survival.is_some_and(|objective|
                     objective.defending_side == player_side &&
                     objective.protected_ship_id == protected_ship_id &&
                     (objective.seconds - 300.49).abs() <= 0.01) ||

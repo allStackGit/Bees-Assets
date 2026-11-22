@@ -379,7 +379,7 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
         // civilian-defense mission. Keep its casualty/fleet survival guidance
         // with the real five-minute HumanTarget and reinforcement schedule;
         // no separate tutorial simulation, timer or staged enemy is created.
-        CampaignCue::PlutoEvacuationBriefing => &[
+        CampaignCue::PlutoEvacuationBriefing { .. } => &[
             // Original line 0 was spoken in the prior mission's travel
             // preparation, not repeated inside Pluto4BluerPastures.
             ("Samuel", "Commander, these… What do we call the mysterious alien fleet, anyway?"),
@@ -517,13 +517,27 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
 pub(crate) fn displayed_lines(cue: CampaignCue) ->
     impl Iterator<Item = (&'static str, &'static str)>
 {
-    lines(cue).iter().copied().filter(move |(speaker, _)| match cue {
+    lines(cue).iter().copied().filter(move |(speaker, line)| match cue {
         CampaignCue::PlutoPushbackBriefing { speaker_mask } => {
             let bit = match *speaker {
                 "Oviya" => 0,
                 "Joey" => 1,
                 "Marco" => 2,
                 "Yoshiko" => 3,
+                _ => return true,
+            };
+            (speaker_mask & (1_u8 << bit)) != 0
+        }
+        CampaignCue::PlutoEvacuationBriefing { speaker_mask } => {
+            // Only original Pluto4BluerPastures lines 7..10 depend on
+            // available classes. The other lines from these same officers
+            // are unconditional; filtering an entire speaker would drop
+            // the original encounter and safety briefing.
+            let bit = match *speaker {
+                "Yoshiko" if *line == "We’ve got this, commander! Dreadnoughts standing by." => 3,
+                "Marco" if *line == "Gunships at the ready." => 2,
+                "Joey" if *line == "Frigates ready to go!" => 1,
+                "Oviya" if *line == "I’ve got the Scouts mapping an escape route." => 0,
                 _ => return true,
             };
             (speaker_mask & (1_u8 << bit)) != 0
