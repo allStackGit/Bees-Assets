@@ -769,6 +769,14 @@ impl NativeRemotePlay {
             }
             let mut start = 0;
             while !peer.closed {
+                // A legitimate burst must not disconnect a commander merely
+                // because the host spent longer than usual in a tick. Leave
+                // complete unprocessed lines in the bounded TCP read buffer
+                // for the next fixed-tick poll, preserving request order.
+                if peer.side.is_some() && (peer_orders >= MAX_ORDERS_PER_PEER_POLL ||
+                    orders.len() >= MAX_ORDERS_PER_POLL) {
+                    break;
+                }
                 let Some(end) = peer.incoming[start..].iter()
                     .position(|&c| c == b'\n').map(|i| start + i) else { break };
                 if end - start > MAX_LINE {
@@ -865,10 +873,6 @@ impl NativeRemotePlay {
                             continue;
                         }
                         peer.last_request_id = request_id;
-                        if peer_orders >= MAX_ORDERS_PER_PEER_POLL {
-                            peer.closed = true;
-                            break;
-                        }
                         peer_orders += 1;
                         let valid = claimed_world == world_id.0 &&
                             claimed_revision == revision &&
@@ -890,8 +894,7 @@ impl NativeRemotePlay {
                     }
                     Ok(WireInput::WeaponOverlay { request_id, world_id: claimed_world,
                         episode_revision: claimed_revision, squads }) if peer.side.is_some() => {
-                        if request_id <= peer.last_request_id ||
-                            peer_orders >= MAX_ORDERS_PER_PEER_POLL {
+                        if request_id <= peer.last_request_id {
                             peer.closed = true;
                             break;
                         }
@@ -916,11 +919,6 @@ impl NativeRemotePlay {
                             break;
                         }
                         peer.last_request_id = request_id;
-                        if orders.len() >= MAX_ORDERS_PER_POLL ||
-                           peer_orders >= MAX_ORDERS_PER_PEER_POLL {
-                            peer.closed = true;
-                            break;
-                        }
                         if !peer.begin_input(request_id) {
                             peer.closed = true;
                             break;
