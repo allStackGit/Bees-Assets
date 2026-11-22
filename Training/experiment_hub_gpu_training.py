@@ -328,7 +328,14 @@ class IndependentGpuTraining:
         output = (self._parallel(steps, inputs, width)
                   if mode == "parallel" else self._serial(steps))
         if sample is not None:
-            sample[1].record(torch.cuda.current_stream(self.device))
+            try:
+                sample[1].record(torch.cuda.current_stream(self.device))
+            except (RuntimeError, NotImplementedError):
+                # Training kernels have already been submitted. A missing
+                # timing-event capability must not turn a valid update into
+                # a failed or repeated optimization step.
+                self._sampling_enabled = False
+                sample = None
         if measuring:
             torch.cuda.current_stream(self.device).synchronize()
         seconds = perf_counter()-begun
@@ -356,10 +363,15 @@ class IndependentGpuTraining:
         return output
 
     def metrics(self):
-        with self._busy:
-            if not self._closed:
-                self._collect_completed()
-            return dict(
+        # A training callback may request metrics while run() owns the
+        # executor. Do not deadlock it on the same non-reentrant lock.
+        if self._busy.acquire(blocking=False):
+            try:
+                if not self._closed:
+                    self._collect_completed()
+            finally:
+                self._busy.release()
+        return dict(
             gpu_training_step_batches=self.calls,
             gpu_training_serial_batches=self.serial_calls,
             gpu_training_parallel_batches=self.concurrent_calls,
