@@ -77,6 +77,10 @@ pub trait NativeLevelRewardMetadata {
     /// can omit this optional observer.
     fn observe_fleet_combat_tick(&mut self, _world: &CombatWorld) {}
 
+    /// Read-only scoreboard supplied by the source Level, with its
+    /// authorized player side. Non-campaign training need not store one.
+    fn campaign_score_snapshot(&self) -> Option<(i32, i64)> { None }
+
     /// A death-triggered Fire Barge explosion can credit the original
     /// external killer for damage to its allies. Persistent FleetShip
     /// accounting uses the event processor's existing death-time owner.
