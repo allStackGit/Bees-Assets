@@ -85,6 +85,10 @@ pub enum NativeScriptedOrder {
     /// Beehive selection whenever this squad needs repairs.
     HealAvailable,
     FullRetreat { warp_gate_id: i64 },
+    /// Source FullRetreat finds the nearest live allied WarpGate when no
+    /// authored destination is supplied. Gate acquisition and the complete
+    /// warp timer/participant lifecycle stay in the command director.
+    FullRetreatNearest,
 }
 
 impl NativeScriptedOrder {
@@ -130,6 +134,8 @@ impl NativeScriptedOrder {
             Self::HealAvailable => NativeLocalCommandAction::HealAvailable,
             Self::FullRetreat { warp_gate_id } =>
                 NativeLocalCommandAction::FullRetreat { warp_gate_id },
+            Self::FullRetreatNearest =>
+                NativeLocalCommandAction::FullRetreatNearest,
         }
     }
 
@@ -155,7 +161,8 @@ impl NativeScriptedOrder {
             Self::BombingNearest | Self::ChargeNearest |
             Self::CircleNearest | Self::RightSwipeNearest |
             Self::LeftSwipeNearest | Self::InAndOutNearest |
-            Self::MiningNearest | Self::HealAvailable => true,
+            Self::MiningNearest | Self::HealAvailable |
+            Self::FullRetreatNearest => true,
             Self::Scouting { max_sight, human_side } =>
                 max_sight.is_finite() && max_sight >= 0.0 && human_side > 0,
             Self::Mining { asteroid_id } => asteroid_id > 0,
