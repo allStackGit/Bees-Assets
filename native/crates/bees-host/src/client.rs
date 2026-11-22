@@ -555,6 +555,7 @@ impl NativeClient {
             self.squad_tab_press = None;
             self.shooting_press = None;
             self.renderer.show_shooting_menu = false;
+            self.renderer.reset_squad_tab_view();
             self.right_press = None;
             self.support_mode = None;
             self.last_left_press = None;
@@ -848,6 +849,16 @@ impl NativeClient {
         // rather than zooming. Native mouse drivers may also provide a
         // genuine horizontal wheel axis; use the same camera owner.
         if let Some((horizontal, vertical)) = self.window.get_scroll_wheel() {
+            // Scroll the same live squad tabs used by pointer selection.
+            // Do not change the physical camera or carry a pressed squad
+            // across a viewport change.
+            let roster_scrolled = !self.show_controls_help &&
+                !self.renderer.show_shooting_menu &&
+                mouse.is_some_and(|(x, y)|
+                    self.renderer.scroll_squad_tabs(&view, x, y, vertical));
+            if roster_scrolled {
+                self.squad_tab_press = None;
+            } else {
             let shift = self.window.is_key_down(Key::LeftShift) ||
                 self.window.is_key_down(Key::RightShift);
             let control = self.window.is_key_down(Key::LeftCtrl) ||
@@ -879,6 +890,7 @@ impl NativeClient {
             if pan.x != 0.0 || pan.y != 0.0 {
                 self.renderer.camera.center += pan;
                 self.camera_wheel_pans += 1;
+            }
             }
         }
         let allows_input = !self.show_controls_help && !briefing &&
