@@ -1064,8 +1064,13 @@ impl NativeLevelBatchDriver {
         use bees_sim::combat_world::{
             BEEHIVE_TYPE, WARP_GATE_TYPE, is_mining_ship_type,
         };
+        // FullRetreatRun::start selects only same-side live gates.
+        // An enemy's surviving WarpGate cannot satisfy this squad's
+        // withdrawal order; advertising one to HiveMind otherwise wastes
+        // a command reservation and creates an impossible strategy.
         let has_gate = combat.ships().iter().any(|ship|
-            ship.ship_type == WARP_GATE_TYPE && !ship.vitals.is_dead()
+            ship.ship_type == WARP_GATE_TYPE && ship.side == acting.side &&
+            !ship.vitals.is_dead()
         );
         if acting.side != human_side || !has_gate ||
             acting.members.iter().all(|&id| combat.ship(id)
