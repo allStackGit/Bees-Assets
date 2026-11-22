@@ -527,6 +527,11 @@ pub struct NativeRuntimeStatus {
     pub special_game_barge_charges_started: u64,
     pub special_game_barge_charge_hits: u64,
     pub special_game_barge_charge_completions: u64,
+    /// Current episodes' on-demand source matchup special-weapon checks.
+    /// These are gauges because episode reset restarts the underlying counts.
+    pub special_matchup_validity_queries: u64,
+    pub special_matchup_bomb_candidates: u64,
+    pub special_matchup_charge_contact_candidates: u64,
     /// Authored Beehive.Kill secondary losses of ships actively healing
     /// inside its collider, not waiting ships holding a reservation.
     pub game_healing_cascade_kills: u64,
@@ -1401,6 +1406,9 @@ impl NativeLevelBatchDriver {
             special_game_barge_charges_started: 0,
             special_game_barge_charge_hits: 0,
             special_game_barge_charge_completions: 0,
+            special_matchup_validity_queries: 0,
+            special_matchup_bomb_candidates: 0,
+            special_matchup_charge_contact_candidates: 0,
             game_healing_cascade_kills: 0,
             game_healing_reserved_ships: 0,
             game_healing_active_ships: 0,
@@ -1488,6 +1496,11 @@ impl NativeLevelBatchDriver {
             status.special_game_barge_charges_started += game_barges.starts;
             status.special_game_barge_charge_hits += game_barges.hits;
             status.special_game_barge_charge_completions += game_barges.completions;
+            let matchup = world.state.combat.special_weapon_measurements();
+            status.special_matchup_validity_queries += matchup.matchup_validity_queries;
+            status.special_matchup_bomb_candidates += matchup.matchup_bomb_candidates;
+            status.special_matchup_charge_contact_candidates +=
+                matchup.matchup_charge_contact_candidates;
             status.game_healing_cascade_kills +=
                 world.state.combat.game_healing_cascade_kills();
             let (reserved, active) = world.state.combat.game_command_healing_gauges();
