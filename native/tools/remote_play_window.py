@@ -114,6 +114,12 @@ class RemoteBattleWindow:
         )
         if not console.spectator:
             self.codex_button.pack(side="left", padx=10)
+        self.campaign_details_button = ttk.Button(
+            self.footer, text="Campaign results",
+            command=self.show_campaign_details, state="disabled",
+        )
+        if not console.spectator:
+            self.campaign_details_button.pack(side="left", padx=10)
         self.info = tk.StringVar(value=(
             "Read-only faction view — wheel zoom, middle-drag pan"
             if console.spectator else
@@ -234,6 +240,23 @@ class RemoteBattleWindow:
             ("unlocked" if state.get("campaign_codex_gate") is True
              else "encountered") + "\n\n" +
             ("\n".join(rows) if rows else "No ship classes unlocked yet"),
+            parent=self.root,
+        )
+
+    def show_campaign_details(self):
+        if self.console.spectator:
+            return
+        receipt = self.console.campaign_receipt_snapshot()
+        if receipt is None:
+            self.notice("No committed campaign results for this battle")
+            return
+        classes = {
+            entry["ship_type"]: entry["name"]
+            for entry in self.console.codex_entries(self.state) or []
+        }
+        messagebox.showinfo(
+            "Committed campaign results",
+            self.console.campaign_reward_details(receipt, classes),
             parent=self.root,
         )
 
@@ -472,6 +495,13 @@ class RemoteBattleWindow:
         )
         self.codex_button.state(
             ["!disabled"] if has_codex else ["disabled"]
+        )
+        has_campaign_results = (
+            not self.console.spectator and
+            self.console.campaign_receipt_snapshot() is not None
+        )
+        self.campaign_details_button.state(
+            ["!disabled"] if has_campaign_results else ["disabled"]
         )
         terminal = self.console.battle_receipt_snapshot()
         campaign_receipt = self.console.campaign_receipt_snapshot()
