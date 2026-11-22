@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeMissionCue {
+    PlutoHoneybeeSpotted,
     FireTankSpotted,
     FireTankDestroyed,
     UranusBargeLost,
@@ -27,6 +28,7 @@ pub enum NativeMissionCue {
 impl NativeMissionCue {
     pub(crate) fn matches(self, cue: CampaignCue) -> bool {
         matches!((self, cue),
+            (Self::PlutoHoneybeeSpotted, CampaignCue::PlutoAnomalyHoneybeeSpotted) |
             (Self::FireTankSpotted, CampaignCue::FireTankSpotted { .. }) |
             (Self::FireTankDestroyed, CampaignCue::FireTankDestroyed { .. }) |
             (Self::UranusBargeLost, CampaignCue::UranusNewThreatBargeLost) |
@@ -42,6 +44,8 @@ impl NativeMissionCue {
 
     pub(crate) fn valid_for(self, spec: Option<CampaignDialogueSpec>) -> bool {
         match spec {
+            Some(CampaignDialogueSpec::PlutoAnomaly { .. }) =>
+                matches!(self, Self::PlutoHoneybeeSpotted),
             Some(CampaignDialogueSpec::TitaniaMinesweeper { .. }) =>
                 matches!(self, Self::FireTankSpotted | Self::FireTankDestroyed),
             Some(CampaignDialogueSpec::TitaniaBeenoculars { .. }) =>
@@ -50,7 +54,6 @@ impl NativeMissionCue {
             Some(CampaignDialogueSpec::UranusNewThreat { .. }) =>
                 matches!(self, Self::UranusBargeLost | Self::UranusBargeCharged |
                     Self::UranusReinforcements),
-            Some(CampaignDialogueSpec::PlutoAnomaly { .. }) |
             Some(CampaignDialogueSpec::PlutoPushback { .. }) |
             Some(CampaignDialogueSpec::NeptuneProduction { .. }) |
             Some(CampaignDialogueSpec::NeptuneSeizeMeans { .. }) |
