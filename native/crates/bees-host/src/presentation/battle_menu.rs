@@ -388,6 +388,8 @@ fn select_battle_inner(
     // committed Tactics action reaches the saved-squad ledger.
     let mut hex_color_input: Option<String> = None;
     let mut tactic_formation = NativeSavedSquadFormation::authored();
+    let mut preview_formation = None::<NativeSavedSquadFormation>;
+    let mut preview_slots = Vec::new();
     let mut show_names = false;
     let mut name_selected = 0_usize;
     let mut name_first = 0_usize;
@@ -946,12 +948,57 @@ fn select_battle_inner(
                 else if show_delete { "Delete saved squad" }
                 else if show_tactics { "Saved squad tactics" }
                 else { "Build fleet" }, 2, TEXT);
-            text::draw_centered(&mut pixels, WIDTH, 78,
-                if show_transfer { "Move owned ships between saved squads (no TSV cost)" }
-                else if show_create { "Enter: empty template   D: duplicate squad using matching reserve FleetShips" }
-                else if show_delete { "Created squads only; assigned ships return to fleet reserve" }
-                else if show_tactics { "Left/Right strategy, C chase, V fire, M speed, R palette, H custom RGB" }
-                else { "Purchase for deployment or buy into reserve; Enter spends mined TSV" }, 1, MUTED);
+            if show_tactics {
+                text::draw_at(&mut pixels, WIDTH, 72, 72,
+                    "Formation and saved ship tactics", 1, MUTED);
+                // Compute an illustrative eight-ship preview only when a
+                // formation setting changes. The real campaign preflight
+                // remains responsible for the actual fleet size and hulls.
+                if preview_formation != Some(tactic_formation) {
+                    preview_formation = Some(tactic_formation);
+                    preview_slots = tactic_formation.preview_slots(8).unwrap_or_default();
+                }
+                for y in 49..109 {
+                    pixels[y * WIDTH + 545..y * WIDTH + 765].fill(0x142235);
+                }
+                text::draw_at(&mut pixels, WIDTH, 556, 53,
+                    if tactic_formation.kind ==
+                        crate::unity_scene_snapshot::NativeSquadFormationKind::Authored {
+                        "Original ship positions"
+                    } else if preview_slots.is_empty() {
+                        "Unavailable eight-ship layout"
+                    } else {
+                        "Eight-ship formation example"
+                    }, 1, MUTED);
+                if !preview_slots.is_empty() {
+                    let extent_x = preview_slots.iter().fold(1.0_f32, |max, slot|
+                        max.max(slot.x.abs()));
+                    let extent_y = preview_slots.iter().fold(1.0_f32, |max, slot|
+                        max.max(slot.y.abs()));
+                    let scale = (100.0 / extent_x).min(16.0 / extent_y).min(2.0);
+                    let center_x = preview_slots.iter().map(|slot| slot.x).sum::<f32>() /
+                        preview_slots.len() as f32;
+                    let center_y = preview_slots.iter().map(|slot| slot.y).sum::<f32>() /
+                        preview_slots.len() as f32;
+                    for (index, slot) in preview_slots.iter().enumerate() {
+                        let x = (655.0 + (slot.x - center_x) * scale).round() as usize;
+                        let y = (91.0 - (slot.y - center_y) * scale).round() as usize;
+                        if (550..760).contains(&x) && (78..104).contains(&y) {
+                            let color = if index == 0 { 0xf7c778 } else { 0x75dbab };
+                            for row in y.saturating_sub(2)..(y + 3).min(108) {
+                                pixels[row * WIDTH + x.saturating_sub(2)..
+                                    row * WIDTH + (x + 3).min(WIDTH)].fill(color);
+                            }
+                        }
+                    }
+                }
+            } else {
+                text::draw_centered(&mut pixels, WIDTH, 78,
+                    if show_transfer { "Move owned ships between saved squads (no TSV cost)" }
+                    else if show_create { "Enter: empty template   D: duplicate squad using matching reserve FleetShips" }
+                    else if show_delete { "Created squads only; assigned ships return to fleet reserve" }
+                    else { "Purchase for deployment or buy into reserve; Enter spends mined TSV" }, 1, MUTED);
+            }
             if show_shop {
                 text::draw_centered(&mut pixels, WIDTH, 94,
                     &format!("Available mined TSV: {banked_tsv}"), 1, MUTED);

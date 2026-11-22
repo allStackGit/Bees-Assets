@@ -86,6 +86,14 @@ impl NativeSavedSquadFormation {
         }
     }
 
+    /// The campaign editor's illustrative layout uses precisely the same
+    /// slot algorithm as physical deployment. Source-authored formations
+    /// intentionally have no synthetic preview positions.
+    pub fn preview_slots(self, members: usize) -> Option<Vec<Vec2>> {
+        if self.kind == NativeSquadFormationKind::Authored { return None; }
+        source_formation_slots(self, members).ok()
+    }
+
     pub fn label(self) -> &'static str {
         use NativeSquadFormationKind::*;
         match self.kind {
