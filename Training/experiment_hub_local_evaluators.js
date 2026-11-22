@@ -389,10 +389,10 @@ async function refreshSuite(hub,id) {
         service:fs.readFileSync(current.serviceFile,'utf8'),
         timer:fs.readFileSync(current.timerFile,'utf8'),
     }));
-    for(const current of units)
-        await systemctl(['stop',current.timer]);
     let installed=false;
     try {
+        for(const current of units)
+            await systemctl(['stop',current.timer]);
         // Frozen suite files remain immutable; the approved single-suite
         // schedule and any installed same-checkpoint batch change together.
         fs.writeFileSync(suiteFile,JSON.stringify({
@@ -415,6 +415,10 @@ async function refreshSuite(hub,id) {
         installed=true;
     }finally {
         if(!installed) {
+            for(const current of units) {
+                try {await systemctl(['stop',current.timer]);}
+                catch { /* Best effort before restoring the approved units. */ }
+            }
             for(const previous of saved) {
                 fs.writeFileSync(previous.unit.serviceFile,previous.service,{mode:0o600});
                 fs.writeFileSync(previous.unit.timerFile,previous.timer,{mode:0o600});
