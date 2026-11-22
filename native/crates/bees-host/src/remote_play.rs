@@ -751,16 +751,17 @@ impl NativeRemotePlay {
             let mut budget = READ_BYTES_PER_POLL;
             let mut chunk = [0u8; 8192];
             while budget > 0 {
-                let limit = budget.min(chunk.len());
+                // Stop reading when the bounded per-peer buffer is full;
+                // process complete frames before accepting more socket data.
+                // Bursts of small valid commands are not oversized frames.
+                let room = (MAX_LINE * 2).saturating_sub(peer.incoming.len());
+                if room == 0 { break; }
+                let limit = budget.min(chunk.len()).min(room);
                 match peer.socket.read(&mut chunk[..limit]) {
                     Ok(0) => { peer.closed = true; break; }
                     Ok(n) => {
                         budget -= n;
                         peer.incoming.extend_from_slice(&chunk[..n]);
-                        if peer.incoming.len() > MAX_LINE * 2 {
-                            peer.closed = true;
-                            break;
-                        }
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
                     Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
@@ -987,7 +988,10 @@ impl NativeRemotePlay {
                 }
             }
             if start > 0 { peer.incoming.drain(..start); }
-            if peer.incoming.len() > MAX_LINE { peer.closed = true; }
+            // Reject an oversized unterminated frame; many individually
+            // valid queued commands may legitimately exceed MAX_LINE in total.
+            if peer.incoming.len() > MAX_LINE &&
+                !peer.incoming.contains(&b'\n') { peer.closed = true; }
             if !peer.closed { self.measurements.state_bytes += peer.flush(); }
         }
         if newly_authenticated {
