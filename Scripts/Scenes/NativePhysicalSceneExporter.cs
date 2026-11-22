@@ -157,7 +157,7 @@ internal static class NativePhysicalSceneExporter
     {
         public int weapon_id, power, slot;
         public Vector2 mount_offset;
-        public Vector2? linecast_offset;
+        public Vector2 linecast_offset;
         public SourceTrigger charge_range, proximity;
     }
 
@@ -1074,6 +1074,8 @@ internal static class NativePhysicalSceneExporter
         int slot = ship.Weapons.IndexOf(weapon);
         if (!(weapon is Bomb) || weapon.Id <= 0 || weapon.Power < 0 || slot < 0 || slot >= 5)
             throw new InvalidOperationException("Invalid actual special weapon: " + ship.Id);
+        if (ship is Barge && weapon.PieceTransform == null)
+            throw new InvalidOperationException("Barge Charge has no source linecast piece: " + ship.Id);
         SourceTrigger Capture(CircleCollider2D collider)
         {
             if (collider == null) throw new InvalidOperationException("Missing special trigger: " + ship.Id);
@@ -1093,10 +1095,10 @@ internal static class NativePhysicalSceneExporter
             // which can differ from Weapon.GetPosition (Barge base
             // Weapon uses the hull origin). Export that true local
             // collider ray origin without altering Bomb gameplay mounts.
-            linecast_offset = ship is Barge && weapon.PieceTransform != null
-                ? (Vector2?)ship.Transform.InverseTransformPoint(
+            linecast_offset = ship is Barge
+                ? (Vector2)ship.Transform.InverseTransformPoint(
                     weapon.PieceTransform.position)
-                : null,
+                : Vector2.zero,
             charge_range = ship is Barge ? Capture(weapon.RangeCollider?.Collider) : null,
             proximity = ship is Barge ? null : Capture(ship.ProximityCollider?.Collider),
         };
