@@ -3651,6 +3651,7 @@ fn original_fleet_source_squad(
     catalog: &battle_catalog::BattleCatalog,
     progress: &battle_catalog::CampaignProgress<'_>,
     root: &Path, side: i32, fleet_ship_id: i64,
+    require_reassignment: bool,
 ) -> Result<Option<i64>, Box<dyn Error>> {
     let has_upcoming = catalog.battles.iter().filter_map(|battle|
         battle.mission.as_ref()).any(|mission|
@@ -3670,7 +3671,7 @@ fn original_fleet_source_squad(
                         Some(ship.entity_id),
             _ => None,
         }) else { continue };
-        if !scene.can_reassign_authored_ship(side, parent) {
+        if require_reassignment && !scene.can_reassign_authored_ship(side, parent) {
             continue;
         }
         if let Some(squad) = scene.source_squads.iter().find(|squad|
@@ -3713,7 +3714,7 @@ fn run_reassign_authored_ship(
     if progress.authored_current_squad(fleet_ship_id).is_none() {
         // First ownership claim must match an actual playable source scene.
         if original_fleet_source_squad(
-            &catalog, &progress, root, side, fleet_ship_id,
+            &catalog, &progress, root, side, fleet_ship_id, true,
         )? != Some(from_squad) {
             return Err(invalid("original FleetShip source squad differs from active authored mission").into());
         }
@@ -3768,7 +3769,7 @@ fn run_name_fleet_ship(
         let root = catalog_path.parent()
             .ok_or_else(|| invalid("missing campaign catalog directory"))?;
         let source_squad = original_fleet_source_squad(
-            &catalog, &progress, root, side, fleet_ship_id,
+            &catalog, &progress, root, side, fleet_ship_id, false,
         )?.ok_or_else(|| invalid("FleetShip is not owned by an authored player squad"))?;
         // Do not mint an independent identity for a ship outside the
         // original playable scene. The same career ledger owns assignments
@@ -5767,8 +5768,8 @@ fn run_campaign_game_menu(
         // of their temporary squad assignment. The menu never fabricates
         // a source FleetShip identity from a Stage hull or type number.
         let mut fleet_name_targets = progress.nameable_fleet_ships();
-        fleet_name_targets.extend(original_choices.iter().map(|&(side, id, _, _)|
-            (side, id)));
+        fleet_name_targets.extend(source_owned.iter().filter_map(|&(side, id, _, _)|
+            progress.original_fleet_is_editable(side, id).then_some((side, id))));
         fleet_name_targets.sort_unstable();
         fleet_name_targets.dedup();
         for (side, fleet_ship_id) in fleet_name_targets {
