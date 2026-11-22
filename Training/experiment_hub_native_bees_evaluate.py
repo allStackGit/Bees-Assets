@@ -34,7 +34,11 @@ def read_suite(file: Path) -> dict:
         "learner_slot", "learner_side", "policy_seed", "trials",
     }
     if (not isinstance(suite, dict) or
-            set(suite) - {"success_metric", "inference_device", "physics_workers"} != keys or
+            set(suite) - {"success_metric", "inference_device", "physics_workers",
+                          "policy_runtime_sources_sha256"} != keys or
+            ("policy_runtime_sources_sha256" in suite and
+             (not isinstance(suite["policy_runtime_sources_sha256"], str) or
+              not SHA256.fullmatch(suite["policy_runtime_sources_sha256"]))) or
             ("physics_workers" in suite and
              (type(suite["physics_workers"]) is not int or
               not 1 <= suite["physics_workers"] <= 128)) or
@@ -64,6 +68,35 @@ def pinned_source(suite_file: Path, relative: str, digest: str) -> Path:
     if not path.is_file() or file_sha256(path) != digest:
         raise ValueError(f"Native Bees evaluation source changed: {relative}")
     return path
+
+
+def policy_runtime_sources_sha256(worker: Path) -> str:
+    """Pin repository-local imports used by native v26 model inference.
+
+    The worker installs the repository's structured actor and sampler at
+    runtime. Pinning its entrypoint alone would allow those imported
+    modules to change while an old Hub suite continued to claim the same
+    model evaluation contract. Normalize checkout line endings for parity.
+    The labels, not absolute paths, define the portable identity.
+    """
+    root = worker.resolve(strict=True).parents[2]
+    sources = (
+        "native/tools/native_gpu_allocation.py",
+        "native/tools/native_training_artifacts.py",
+        "Training/bees_mlagents_structured_policy.py",
+        "Training/bees_mlagents_ppo_compat.py",
+        "Training/bees_learner_stall_diagnostics.py",
+        "Training/bees_log_categories.py",
+    )
+    digest = hashlib.sha256(b"bees-native-policy-runtime-v1\\0")
+    for label in sources:
+        path = (root / label).resolve(strict=True)
+        if not path.is_file():
+            raise ValueError(f"Missing native policy runtime source: {label}")
+        digest.update(label.encode("utf-8") + b"\\0")
+        digest.update(normalized_python_source_sha256(path).encode("ascii"))
+        digest.update(b"\\n")
+    return digest.hexdigest()
 
 
 def source_inputs(suite_file: Path, suite: dict):
@@ -152,6 +185,10 @@ def source_inputs(suite_file: Path, suite: dict):
     worker = (run_file.parent / config["policy_worker"]).resolve(strict=True)
     if normalized_python_source_sha256(worker) != suite["policy_worker_sha256"]:
         raise ValueError("Native policy inference implementation changed.")
+    if ("policy_runtime_sources_sha256" in suite and
+            policy_runtime_sources_sha256(worker) !=
+            suite["policy_runtime_sources_sha256"]):
+        raise ValueError("Native v26 actor or sampler implementation changed.")
     return run_file, reference, scene, worker, expected_metric
 
 
@@ -417,6 +454,7 @@ def create_suite_main(arguments) -> int:
         "reference_manifest": relative(reference),
         "reference_manifest_sha256": file_sha256(reference),
         "policy_worker_sha256": normalized_python_source_sha256(worker),
+        "policy_runtime_sources_sha256": policy_runtime_sources_sha256(worker),
         "rollout_binary_sha256": file_sha256(binary),
         "learner_slot": args.learner_slot,
         "learner_side": args.learner_side,
