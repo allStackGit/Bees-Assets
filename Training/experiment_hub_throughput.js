@@ -33,7 +33,8 @@ function observedMeasure(progress) {
             return {name,kind:'counter',value:item.value};
     }
     const explicit=['training_useful_steps_per_second','useful_steps_per_second',
-        'engine_steps_per_second','simulation_match_steps_per_second'];
+        'ant_decisions_per_second','simulation_match_steps_per_second',
+        'engine_steps_per_second'];
     const extra=Object.keys(metrics).filter(name=>name.endsWith('_useful_steps_per_second'))
         .sort();
     for(const name of [...explicit,...extra]) {
