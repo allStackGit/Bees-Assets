@@ -41,6 +41,9 @@ pub struct NativeSocketWorker {
     // Socket-local flow control only; all pending request identity and
     // outcome correlation stays inside DurableHiveMindConnection.session.
     queued_requests: HashSet<i64>,
+    // Source-hash ordering scratch reused across ticks; the durable
+    // request objects and retry ownership stay inside the connection.
+    pending_hivemind_order: Vec<(i64, bool)>,
     measurements: NativeSocketMeasurements,
     queue_backpressure: u64,
 }
@@ -94,7 +97,7 @@ impl NativeSocketWorker {
         }).map_err(NativeSocketWorkerError::Spawn)?;
         Ok(Self { outgoing, incoming, ready: false, closed: false, queued_stores: HashSet::new(),
             retried_stores: HashSet::new(), transient_store_retries: 0,
-            queued_requests: HashSet::new(),
+            queued_requests: HashSet::new(), pending_hivemind_order: Vec::new(),
             measurements: NativeSocketMeasurements::default(), queue_backpressure: 0 })
     }
 
@@ -167,31 +170,39 @@ impl NativeSocketWorker {
         // the strategy following a prior targeting response. A temporary
         // sorted set of keys changes no durable state and keeps lookup,
         // owner validity and the original payload inside the session.
-        let mut due = Vec::new();
+        let mut due = std::mem::take(&mut self.pending_hivemind_order);
+        due.clear();
         due.extend(session.live_targeting_requests()
             .map(|request| (request.hash, true)));
         due.extend(session.live_strategy_requests()
             .map(|request| (request.hash, false)));
         due.sort_unstable_by_key(|&(hash, _)| hash);
-        let mut queued = 0;
-        for (hash, is_targeting) in due {
-            if self.queued_requests.contains(&hash) { continue; }
-            let prepared = if is_targeting {
-                let request = session.resend_targeting_request(hash)
-                    .ok_or(HiveMindSocketError::InvalidRequestOwnership)?;
-                PreparedSocketRequest::targeting(connection, request)?
-            } else {
-                let request = session.resend_request(hash)
-                    .ok_or(HiveMindSocketError::InvalidRequestOwnership)?;
-                PreparedSocketRequest::strategy(connection, request)?
-            };
-            match self.enqueue_hivemind(hash, prepared) {
-                Ok(()) => queued += 1,
-                Err(NativeSocketWorkerError::Backpressure) => break,
-                Err(error) => return Err(error),
+        // Keep the reserved allocation even on a transient full channel
+        // or malformed source request. Nothing in this buffer is durable.
+        let result = (|| {
+            let mut queued = 0;
+            for &(hash, is_targeting) in &due {
+                if self.queued_requests.contains(&hash) { continue; }
+                let prepared = if is_targeting {
+                    let request = session.resend_targeting_request(hash)
+                        .ok_or(HiveMindSocketError::InvalidRequestOwnership)?;
+                    PreparedSocketRequest::targeting(connection, request)?
+                } else {
+                    let request = session.resend_request(hash)
+                        .ok_or(HiveMindSocketError::InvalidRequestOwnership)?;
+                    PreparedSocketRequest::strategy(connection, request)?
+                };
+                match self.enqueue_hivemind(hash, prepared) {
+                    Ok(()) => queued += 1,
+                    Err(NativeSocketWorkerError::Backpressure) => break,
+                    Err(error) => return Err(error),
+                }
             }
-        }
-        Ok(queued)
+            Ok(queued)
+        })();
+        due.clear();
+        self.pending_hivemind_order = due;
+        result
     }
 
     /// Deliberate retry of the exact pending hash after a nonterminal
