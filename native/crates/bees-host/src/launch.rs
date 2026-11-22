@@ -5111,6 +5111,22 @@ fn native_library_save_root(output:Option<&Path>)->Option<&Path> {
         .and_then(Path::parent)
 }
 
+/// A standalone authored Level is portable as two files below the
+/// owning saved-levels directory. Do not let a hand-edited catalog resolve
+/// an absolute path, parent traversal or another game archive as a scene.
+#[cfg(feature = "client")]
+fn valid_portable_level_source(source:&Path)->bool {
+    use std::path::Component;
+    let mut parts=source.components();
+    let (Some(Component::Normal(directory)),Some(Component::Normal(filename)),None)
+        =(parts.next(),parts.next(),parts.next())
+    else {return false;};
+    filename=="run.json" &&
+        directory.to_str().and_then(|name|name.strip_prefix("level-"))
+            .is_some_and(|digits|digits.len()>=6 &&
+                digits.bytes().all(|byte|byte.is_ascii_digit()))
+}
+
 #[cfg(feature = "client")]
 fn save_freeplay_level(
     save_root:&Path,source:&Path,name:&str,
@@ -5185,11 +5201,16 @@ fn save_freeplay_level(
             let new_bytes=fs::read(&new_source)?;
             let new_run:RunConfig=serde_json::from_slice(&new_bytes)?;
             SavedFreeplayLevel {
-                schema_version:2,
+                schema_version:3,
                 name:name.to_owned(),
                 source_sha256:format!("{:x}",Sha256::digest(&new_bytes)),
                 assets_sha256:native_start_asset_digests(&new_source,&new_run)?,
-                source_config:new_source.canonicalize()?,
+                // A relative path means that a user's complete saved-
+                // levels folder is relocatable across Windows and Linux.
+                // The original run and physical scene remain immutable.
+                source_config:PathBuf::from(format!(
+                    "level-{number:06}/run.json",
+                )),
             }
         } else {
             SavedFreeplayLevel {
@@ -5242,9 +5263,12 @@ fn list_saved_freeplay_levels(save_root:&Path)
         let source=fs::read(&path)?;
         let Ok(level):Result<SavedFreeplayLevel,_>=serde_json::from_slice(&source)
         else {continue};
-        if !(1..=2).contains(&level.schema_version) ||
+        if !(1..=3).contains(&level.schema_version) ||
             !valid_freeplay_level_name(&level.name) ||
-            !level.source_config.is_absolute() ||
+            (level.schema_version==3 &&
+                !valid_portable_level_source(&level.source_config)) ||
+            (level.schema_version<3 &&
+                !level.source_config.is_absolute()) ||
             level.source_sha256.len()!=64 ||
             !level.source_sha256.bytes().all(|c|
                 c.is_ascii_digit() || (b'a'..=b'f').contains(&c)) ||
@@ -5256,20 +5280,40 @@ fn list_saved_freeplay_levels(save_root:&Path)
 }
 
 #[cfg(feature = "client")]
-fn verify_saved_freeplay_level(level:&SavedFreeplayLevel)
-    -> Result<PathBuf,Box<dyn Error>>
+fn verify_saved_freeplay_level(
+    save_root:&Path,level:&SavedFreeplayLevel,
+) -> Result<PathBuf,Box<dyn Error>>
 {
-    let source=level.source_config.canonicalize()?;
-    if source != level.source_config {
-        return Err(invalid("saved FreePlay Level source path changed").into());
-    }
+    let source=if level.schema_version==3 {
+        if !valid_portable_level_source(&level.source_config) {
+            return Err(invalid("portable native Level source path is invalid").into());
+        }
+        let root=save_root.join("saved-levels").canonicalize()?;
+        let path=root.join(&level.source_config);
+        // Component validation plus an exact canonical parent excludes
+        // symlink escapes and any unexpected external scene dependency.
+        if !fs::symlink_metadata(&path)?.file_type().is_file() {
+            return Err(invalid("portable native Level run must be a regular file").into());
+        }
+        let resolved=path.canonicalize()?;
+        if resolved.parent()!=path.parent() || !resolved.starts_with(&root) {
+            return Err(invalid("portable native Level source escaped its saved folder").into());
+        }
+        resolved
+    } else {
+        let resolved=level.source_config.canonicalize()?;
+        if resolved != level.source_config {
+            return Err(invalid("saved FreePlay Level source path changed").into());
+        }
+        resolved
+    };
     let bytes=fs::read(&source)?;
     if format!("{:x}",Sha256::digest(&bytes)) != level.source_sha256 {
         return Err(invalid("saved FreePlay Level source bytes have changed").into());
     }
     let run:RunConfig=serde_json::from_slice(&bytes)?;
-    if level.schema_version==2 {
-        // Version-2 saves are complete standalone scenes inside the
+    if level.schema_version>=2 {
+        // Version-2 and -3 saves are complete standalone scenes inside the
         // selected user library. Restrict references to their own folder,
         // not a mutable global package or an arbitrary external path.
         if source.file_name().is_none_or(|name|name!="run.json") ||
@@ -6307,7 +6351,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 else {return Ok::<(), Box<dyn Error>>(());};
                 if index<named_freeplay_levels.len() {
                     let level=&named_freeplay_levels[index];
-                    let source=verify_saved_freeplay_level(level)?;
+                    let source=verify_saved_freeplay_level(save_root,level)?;
                     // The selected user Level starts an ordinary fresh
                     // FreePlay match, never a copy of the old World, plus
                     // all existing writer leases and recovery guarantees.
