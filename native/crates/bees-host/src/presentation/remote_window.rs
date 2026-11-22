@@ -97,6 +97,7 @@ struct WireCounts {
     snapshot_pairs_interpolated: u64,
     interpolated_draw_frames: u64,
     ship_sprite_draws: u64,
+    carrier_deck_overlay_draws: u64,
     projectile_sprite_draws: u64,
     asteroid_sprite_draws: u64,
     asteroid_piece_sprite_draws: u64,
@@ -322,10 +323,11 @@ impl RemoteArtwork {
                 .zip(ship["animation_seconds"].as_f64().map(|seconds| seconds as f32))
                 .filter(|(variant, seconds)| *variant <= 1 &&
                     seconds.is_finite() && *seconds >= 0.0);
-            if self.raster.remote_ship_art(kind, point,
+            if let Some(deck) = self.raster.remote_ship_art(kind, point,
                 visual.heading(ship, fraction), color_rgb, animation) {
                 self.ships.insert(id);
                 stats.ship_sprite_draws += 1;
+                stats.carrier_deck_overlay_draws += u64::from(deck);
             }
         }
         self.raster.begin_death_scene(WorldId(episode.0), episode.1);
@@ -3464,6 +3466,7 @@ pub fn connect_remote(
         "snapshot_pairs_interpolated":peer.metrics.snapshot_pairs_interpolated,
         "interpolated_draw_frames":peer.metrics.interpolated_draw_frames,
         "ship_sprite_draws":peer.metrics.ship_sprite_draws,
+        "carrier_deck_overlay_draws":peer.metrics.carrier_deck_overlay_draws,
         "ship_deaths_received":peer.metrics.ship_deaths_received,
         "combat_impacts_received":peer.metrics.combat_impacts_received,
         "combat_impact_visual_draws":peer.metrics.combat_impact_visual_draws,
