@@ -227,6 +227,10 @@ pub struct NativeClient {
     pub window_update_wall_seconds: f64,
     pub culled_ship_draws: u64,
     pub ship_sprite_draws: u64,
+    pub map_background_pixels: u64,
+    pub map_background_cached_pixels: u64,
+    pub map_ring_layer_draws: u64,
+    pub map_fog_texture_pixels: u64,
     pub carrier_deck_overlay_draws: u64,
     pub barge_charge_effect_draws: u64,
     pub queen_part_sprite_draws: u64,
@@ -331,6 +335,8 @@ impl NativeClient {
             rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
             culled_ship_draws: 0, ship_sprite_draws: 0,
+            map_background_pixels: 0, map_background_cached_pixels: 0,
+            map_ring_layer_draws: 0, map_fog_texture_pixels: 0,
             carrier_deck_overlay_draws: 0,
             barge_charge_effect_draws: 0,
             queen_part_sprite_draws: 0,
@@ -2159,6 +2165,14 @@ impl NativeClient {
         );
         self.culled_ship_draws = self.culled_ship_draws.saturating_add(counts.culled_ships as u64);
         self.ship_sprite_draws = self.ship_sprite_draws.saturating_add(counts.ship_sprite_draws as u64);
+        self.map_background_pixels = self.map_background_pixels
+            .saturating_add(counts.map_background_pixels as u64);
+        self.map_background_cached_pixels = self.map_background_cached_pixels
+            .saturating_add(counts.map_background_cached_pixels as u64);
+        self.map_ring_layer_draws = self.map_ring_layer_draws
+            .saturating_add(counts.map_ring_layer_draws as u64);
+        self.map_fog_texture_pixels = self.map_fog_texture_pixels
+            .saturating_add(counts.fog_source_texture_pixels as u64);
         self.carrier_deck_overlay_draws = self.carrier_deck_overlay_draws
             .saturating_add(counts.carrier_deck_overlay_draws as u64);
         self.barge_charge_effect_draws = self.barge_charge_effect_draws
