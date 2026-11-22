@@ -275,6 +275,7 @@ pub enum NativeScriptedActivation {
     /// squad roster. The trigger is a real event, not an absent-ship poll.
     OnShipDestroyed(i64),
     OnMapObjectDestroyed(i64),
+    OnMiningAsteroidDepleted(i64),
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -337,6 +338,7 @@ impl NativePolicyOnlyMetadata {
         with_entry_order: &HashSet<i64>,
         known_ships: &HashSet<i64>,
         known_map_objects: &HashSet<i64>,
+        known_mining_asteroids: &HashSet<i64>,
         vacant_squads: &HashMap<i64, i32>,
         demolition_target: Option<(i32, i64)>,
         authored_fire_tanks: &HashSet<i64>,
@@ -421,7 +423,8 @@ impl NativePolicyOnlyMetadata {
                     NativeScriptedActivation::OnArrival |
                     NativeScriptedActivation::OnCampaignCue(_) |
                     NativeScriptedActivation::OnShipDestroyed(_) |
-                    NativeScriptedActivation::OnMapObjectDestroyed(_))) ||
+                    NativeScriptedActivation::OnMapObjectDestroyed(_) |
+                    NativeScriptedActivation::OnMiningAsteroidDepleted(_))) ||
                 (!is_deferred && matches!(plan.activation,
                     NativeScriptedActivation::OnDeployment |
                     NativeScriptedActivation::OnArrival)) {
@@ -434,7 +437,8 @@ impl NativePolicyOnlyMetadata {
             let required_event = match plan.activation {
                 NativeScriptedActivation::OnCampaignCue(cue) => {
                     let event = NativeMissionEvent::CampaignCue(cue);
-                    if !event.valid_for(campaign, |_| false, |_| false) {
+                    if !event.valid_for(campaign,
+                        |_| false, |_| false, |_| false) {
                         return Err("scripted campaign cue is not available in this Level");
                     }
                     Some(event)
@@ -442,7 +446,7 @@ impl NativePolicyOnlyMetadata {
                 NativeScriptedActivation::OnShipDestroyed(ship_id) => {
                     let event = NativeMissionEvent::ShipDestroyed(ship_id);
                     if !event.valid_for(campaign,
-                        |id| known_ships.contains(&id), |_| false) {
+                        |id| known_ships.contains(&id), |_| false, |_| false) {
                         return Err("scripted ship-death trigger needs an authored source ship");
                     }
                     Some(event)
@@ -450,9 +454,18 @@ impl NativePolicyOnlyMetadata {
                 NativeScriptedActivation::OnMapObjectDestroyed(object_id) => {
                     let event = NativeMissionEvent::MapObjectDestroyed(object_id);
                     if !event.valid_for(campaign, |_| false,
-                        |id| known_map_objects.contains(&id))
+                        |id| known_map_objects.contains(&id), |_| false)
                     {
                         return Err("scripted MapObject trigger needs a live physical source object");
+                    }
+                    Some(event)
+                }
+                NativeScriptedActivation::OnMiningAsteroidDepleted(asteroid_id) => {
+                    let event = NativeMissionEvent::MiningAsteroidDepleted(asteroid_id);
+                    if !event.valid_for(campaign, |_| false, |_| false,
+                        |id| known_mining_asteroids.contains(&id))
+                    {
+                        return Err("scripted ore-depletion trigger needs a live source mining asteroid");
                     }
                     Some(event)
                 }
@@ -464,7 +477,8 @@ impl NativePolicyOnlyMetadata {
                 NativeScriptedActivation::OnArrival |
                 NativeScriptedActivation::OnCampaignCue(_) |
                 NativeScriptedActivation::OnShipDestroyed(_) |
-                NativeScriptedActivation::OnMapObjectDestroyed(_) => 1,
+                NativeScriptedActivation::OnMapObjectDestroyed(_) |
+                NativeScriptedActivation::OnMiningAsteroidDepleted(_) => 1,
                 NativeScriptedActivation::AfterSeconds(seconds) => {
                     let tick = (f64::from(seconds) / f64::from(dt_seconds)).floor() + 1.0;
                     if !seconds.is_finite() || seconds <= 0.0 ||
@@ -619,6 +633,8 @@ impl NativePolicyOnlyMetadata {
                         counts.waiting_for_ship_death += 1,
                     Some(NativeMissionEvent::MapObjectDestroyed(_)) =>
                         counts.waiting_for_map_object_destruction += 1,
+                    Some(NativeMissionEvent::MiningAsteroidDepleted(_)) =>
+                        counts.waiting_for_mining_asteroid_depletion += 1,
                     None => unreachable!("ungated queue has no source event"),
                 }
             } else if roster.get(state.owner).is_none() {
