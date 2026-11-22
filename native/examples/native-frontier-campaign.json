@@ -37,6 +37,20 @@
         "persist_fleet_losses": true,
         "bank_player_minerals": true
       }
+    },
+    {
+      "title": "Fire Tank Siege Defense",
+      "config": "native-fire-tank-defense.run.json",
+      "mission": {
+        "id": "tank-defense",
+        "player_side": 1,
+        "record_fleet_stats": true,
+        "requires": [
+          "assault"
+        ],
+        "persist_fleet_losses": true,
+        "bank_player_minerals": true
+      }
     }
   ],
   "buildable_ships": [
