@@ -29,6 +29,9 @@ pub struct StepCounts {
     /// Physics already computes these counts during each fixed step.
     /// Export them without extra collision queries or clock reads.
     pub integrated_bodies: u64,
+    /// Exact lookup operations omitted during this physical tick.
+    pub navigation_lookups_skipped: u64,
+    pub steering_lookups_skipped: u64,
     /// Actual historical ship slots skipped on each successful step.
     pub inactive_ship_slots_skipped: u64,
     /// Inactive pooled projectile slots skipped during the actual physics tick.
@@ -95,6 +98,12 @@ pub struct Measurements {
     pub policy_roots_contacted: u64,
     pub policy_roots_near_missed: u64,
     pub integrated_bodies: u64,
+    /// Saved per-ship path/steering hash lookups during the actual game
+    /// tick. No speculative utilization model or extra query is involved.
+    #[serde(default)]
+    pub navigation_lookups_skipped: u64,
+    #[serde(default)]
+    pub steering_lookups_skipped: u64,
     /// Actual historical ship slots skipped on each successful step.
     pub inactive_ship_slots_skipped: u64,
     /// Inactive pooled projectile slots skipped during the actual physics tick.
@@ -180,6 +189,8 @@ impl Default for Measurements {
             policy_roots_contacted: 0,
             policy_roots_near_missed: 0,
             integrated_bodies: 0,
+            navigation_lookups_skipped: 0,
+            steering_lookups_skipped: 0,
             inactive_ship_slots_skipped: 0,
             inactive_projectile_slots_skipped: 0,
             inactive_ship_grid_slots_skipped: 0,
@@ -265,6 +276,8 @@ impl Measurements {
         self.policy_roots_contacted += counts.policy_roots_contacted;
         self.policy_roots_near_missed += counts.policy_roots_near_missed;
         self.integrated_bodies += counts.integrated_bodies;
+        self.navigation_lookups_skipped += counts.navigation_lookups_skipped;
+        self.steering_lookups_skipped += counts.steering_lookups_skipped;
         self.inactive_ship_slots_skipped += counts.inactive_ship_slots_skipped;
         self.inactive_projectile_slots_skipped += counts.inactive_projectile_slots_skipped;
         self.inactive_ship_grid_slots_skipped += counts.inactive_ship_grid_slots_skipped;
@@ -345,6 +358,8 @@ impl Measurements {
         self.policy_roots_contacted += other.policy_roots_contacted;
         self.policy_roots_near_missed += other.policy_roots_near_missed;
         self.integrated_bodies += other.integrated_bodies;
+        self.navigation_lookups_skipped += other.navigation_lookups_skipped;
+        self.steering_lookups_skipped += other.steering_lookups_skipped;
         self.inactive_ship_slots_skipped += other.inactive_ship_slots_skipped;
         self.inactive_projectile_slots_skipped += other.inactive_projectile_slots_skipped;
         self.inactive_ship_grid_slots_skipped += other.inactive_ship_grid_slots_skipped;
