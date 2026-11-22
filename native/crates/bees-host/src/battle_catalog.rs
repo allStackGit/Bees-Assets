@@ -752,8 +752,7 @@ impl CampaignProgress<'_> {
                 } else {
                     format!(" {}", self.squad_label(squad))
                 }).unwrap_or_default();
-            let type_label = purchase.map(|(_, ship)| ship.ship_type)
-                .or_else(|| self.fleet.get(&id).and_then(|row| row.ship_type))
+            let type_label = self.known_fleet_ship_type(id)
                 .or_else(|| scene.map(|(_, _, kind)| kind))
                 .map_or(String::new(), |kind| format!(" Type {kind}"));
             if let Some(ship) = self.fleet.get(&id) {
