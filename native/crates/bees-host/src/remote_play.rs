@@ -68,6 +68,10 @@ enum WireInput {
     /// Replaceable presentation interest, not a physical World input.
     WeaponOverlay { request_id: u64, world_id: u64,
         episode_revision: u64, squads: Vec<SquadLifetime> },
+    /// On-demand player-owned FleetShip career inspection. No gameplay
+    /// command, simulation state, or enemy fleet information is sent.
+    InspectShip { request_id: u64, world_id: u64,
+        episode_revision: u64, ship_id: i64 },
     /// UI acknowledgment only, without an alternative gameplay clock.
     BriefingReady { request_id: u64, world_id: u64,
         episode_revision: u64, sequence: u32 },
@@ -135,6 +139,7 @@ struct Peer {
     spectator: bool,
     last_request_id: u64,
     weapon_overlay: Option<(u64, u64, Vec<SquadLifetime>)>,
+    inspect_request: Option<(u64, u64, i64, u64)>,
     incoming: Vec<u8>,
     // At most one frame is on the socket. Reliable replies queue separately
     // and are never discarded, while stale unsent state is replaceable.
@@ -377,6 +382,12 @@ pub struct RemotePlayMeasurements {
     pub weapon_status_slots_projected: u64,
     #[serde(default)]
     pub weapon_overlay_requests: u64,
+    /// On-demand, authority-checked native FleetShip inspections, separate
+    /// from full-frame projection and physical simulation throughput.
+    #[serde(default)]
+    pub ship_inspection_requests: u64,
+    #[serde(default)]
+    pub ship_inspection_replies: u64,
     #[serde(default)]
     pub weapon_overlay_geometry_queries: u64,
     #[serde(default)]
@@ -935,7 +946,7 @@ impl NativeRemotePlay {
             self.peers.push(Peer {
                 id, socket, side: None, spectator: false,
                 last_request_id: 0, incoming: Vec::new(),
-                weapon_overlay: None,
+                weapon_overlay: None, inspect_request: None,
                 outgoing: Vec::new(), written: 0, writing_state: false,
                 reliable: VecDeque::new(), reliable_bytes: 0,
                 newest_state: None, input_replies: VecDeque::new(),
@@ -1307,6 +1318,41 @@ impl NativeRemotePlay {
                             // projection, not against client assertions.
                             peer.weapon_overlay = Some((claimed_world, claimed_revision, squads));
                             self.measurements.weapon_overlay_requests += 1;
+                        }
+                    }
+                    Ok(WireInput::InspectShip { request_id,
+                        world_id: claimed_world, episode_revision: claimed_revision,
+                        ship_id }) if peer.side.is_some() => {
+                        if request_id <= peer.last_request_id || peer.spectator {
+                            peer.closed = true;
+                            if peer.spectator {
+                                self.measurements.spectator_commands_rejected += 1;
+                            }
+                            break;
+                        }
+                        peer.last_request_id = request_id;
+                        peer_orders += 1;
+                        self.measurements.ship_inspection_requests += 1;
+                        if !self.archive_only && ship_id > 0 &&
+                            claimed_world == world_id.0 &&
+                            claimed_revision == revision
+                        {
+                            peer.inspect_request = Some((
+                                claimed_world, claimed_revision, ship_id, request_id,
+                            ));
+                            // The World may be paused, so an inspection must
+                            // trigger its own next presentation boundary.
+                            self.force_initial_state = true;
+                        } else {
+                            let _ = peer.enqueue(&json!({
+                                "kind": "ship_inspection_result",
+                                "request_id": request_id,
+                                "world_id": claimed_world,
+                                "episode_revision": claimed_revision,
+                                "ship_id": ship_id, "processed": false,
+                                "stats": null, "minerals_mined_this_level": null,
+                            }));
+                            self.measurements.ship_inspection_replies += 1;
                         }
                     }
                     Ok(WireInput::Input { request_id, mut action }) if peer.side.is_some() => {
@@ -1724,6 +1770,31 @@ impl NativeRemotePlay {
                 // so watching never silently erases game events.
                 measurements.spectator_idle_frames_deferred += 1;
                 continue;
+            }
+            if let Some((requested_world, requested_revision, ship_id, request_id)) =
+                peer.inspect_request.take()
+            {
+                let permitted = !spectator &&
+                    (requested_world, requested_revision) == episode &&
+                    view.combat.ship(ship_id).is_some_and(|ship|
+                        !ship.vitals.is_dead() && ship.side == side) &&
+                    view.roster.owning_squad(ship_id)
+                        .is_some_and(|owner| owns_player_side(view, owner, side));
+                let stats = permitted.then(|| view.fleet.combat_stats(ship_id))
+                    .flatten();
+                let minerals = stats.and_then(|_| view.fleet.get(ship_id))
+                    .map(|entry| entry.minerals_mined_this_level);
+                let _ = peer.enqueue(&json!({
+                    "kind": "ship_inspection_result",
+                    "request_id": request_id,
+                    "world_id": requested_world,
+                    "episode_revision": requested_revision,
+                    "ship_id": ship_id,
+                    "processed": stats.is_some(),
+                    "stats": stats,
+                    "minerals_mined_this_level": minerals,
+                }));
+                measurements.ship_inspection_replies += 1;
             }
             let encoded = snapshots.entry((side, spectator)).or_insert_with(|| {
                 let started = Instant::now();
