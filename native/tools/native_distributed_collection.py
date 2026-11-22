@@ -473,13 +473,19 @@ def expected_gpu_allocation(job):
     }
 
 
-def verify_bundle(path, job, orders):
-    # A partially delivered local receipt can be arbitrarily large. Bound
-    # allocation before JSON parsing or accepting an optimizer work item.
-    with path.open("rb") as stream:
+def read_bundle_receipt(path):
+    """Read the same bounded receipt bytes for local, archive and Hub consumers."""
+    with Path(path).open("rb") as stream:
         raw = stream.read(MAX_BUNDLE_RECEIPT_BYTES + 1)
     if not raw or len(raw) > MAX_BUNDLE_RECEIPT_BYTES:
         raise ValueError(f"distributed collector receipt is empty or oversized: {path}")
+    return raw
+
+
+def verify_bundle(path, job, orders):
+    # A partially delivered receipt can be arbitrarily large; limit memory
+    # before JSON parsing or admitting any optimizer work item.
+    raw = read_bundle_receipt(path)
     receipt = json.loads(raw)
     partition = receipt.get("partition")
     # A Hub-authorized one/two-GPU lease must produce its exact count of
