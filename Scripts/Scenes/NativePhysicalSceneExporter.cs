@@ -157,6 +157,7 @@ internal static class NativePhysicalSceneExporter
     {
         public int weapon_id, power, slot;
         public Vector2 mount_offset;
+        public Vector2? linecast_offset;
         public SourceTrigger charge_range, proximity;
     }
 
@@ -1088,6 +1089,14 @@ internal static class NativePhysicalSceneExporter
             // Weapon.GetPosition is authoritative; Bomb inherits the ship
             // origin even when its visual piece has an offset.
             mount_offset = Quaternion.Euler(0f, 0f, -ship.Rotation) * (weapon.GetPosition() - ship.GetPosition()),
+            // Weapon.HasClearLineOfFire uses PieceTransform.position,
+            // which can differ from Weapon.GetPosition (Barge base
+            // Weapon uses the hull origin). Export that true local
+            // collider ray origin without altering Bomb gameplay mounts.
+            linecast_offset = ship is Barge && weapon.PieceTransform != null
+                ? (Vector2?)ship.Transform.InverseTransformPoint(
+                    weapon.PieceTransform.position)
+                : null,
             charge_range = ship is Barge ? Capture(weapon.RangeCollider?.Collider) : null,
             proximity = ship is Barge ? null : Capture(ship.ProximityCollider?.Collider),
         };
