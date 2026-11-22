@@ -236,6 +236,21 @@ def physical_event_gate(scene: dict, event: str, source_id: int) -> dict:
     return {field: source_id}
 
 
+def deployed_source_ship(by_side, deferred_owner, source_side, source_type, event):
+    """One real initial hull, never a deferred reinforcement or synthetic ID."""
+    eligible = [
+        ship["entity_id"] for ship in by_side[source_side]
+        if ship["ship_type"] == source_type and
+        ship["entity_id"] not in deferred_owner
+    ]
+    if not eligible:
+        raise ValueError(
+            f"{event} trigger side {source_side} type {source_type} "
+            "has no initially deployed hull"
+        )
+    return eligible[0]
+
+
 def ship_exit_wave(value: str) -> tuple[str, int, int, int, int, int]:
     """EXIT|WARP:SOURCE_SIDE:SOURCE_TYPE:ARRIVING_SIDE:TYPE:COUNT."""
     parts = value.split(":")
@@ -533,6 +548,7 @@ def author(args) -> tuple[dict, dict, dict]:
     dialogue = getattr(args, "campaign_dialogue", None)
     cue_commands = getattr(args, "cue_commands", ())
     death_commands = getattr(args, "death_commands", ())
+    damage_commands = getattr(args, "damage_commands", ())
     physical_waves = getattr(args, "physical_reinforcements", ())
     physical_commands = getattr(args, "physical_commands", ())
     exit_waves = getattr(args, "exit_reinforcements", ())
@@ -549,6 +565,7 @@ def author(args) -> tuple[dict, dict, dict]:
     activation_targets = (
         [(side, kind) for _, side, kind in cue_commands] +
         [(side, kind) for _, _, side, kind in death_commands] +
+        [(side, kind) for _, _, side, kind in damage_commands] +
         [(side, kind) for _, _, side, kind in physical_commands] +
         [(side, kind) for _, _, _, side, kind in exit_commands]
     )
@@ -561,6 +578,10 @@ def author(args) -> tuple[dict, dict, dict]:
         (None, side, kind, count, ("death", trigger_side, trigger_kind), None)
         for trigger_side, trigger_kind, side, kind, count
         in args.death_reinforcements
+    ] + [
+        (None, side, kind, count, ("damage", trigger_side, trigger_kind), None)
+        for trigger_side, trigger_kind, side, kind, count
+        in args.damage_reinforcements
     ] + [
         (None, side, kind, count, ("cue", cue), None)
         for cue, side, kind, count in cue_waves
@@ -671,7 +692,7 @@ def author(args) -> tuple[dict, dict, dict]:
                 not 0 < hive_opponent < 1 << 64 or
                 type(hive_delay) is not int or not 0 <= hive_delay <= 3600 or
                 len(controlled) != 1 or
-                args.trainable or cue_commands or death_commands):
+                args.trainable or cue_commands or death_commands or damage_commands):
             raise ValueError(
                 "live HiveMind authoring needs an existing fresh source-command "
                 "run, one human-controlled side, explicit positive server "
@@ -985,21 +1006,16 @@ def author(args) -> tuple[dict, dict, dict]:
         (side, kind, {"kind": "on_campaign_cue", "cue": cue})
         for cue, side, kind in cue_commands
     ]
-    for trigger_side, trigger_kind, side, kind in death_commands:
-        eligible = [
-            ship["entity_id"] for ship in by_side[trigger_side]
-            if ship["ship_type"] == trigger_kind and
-            ship["entity_id"] not in deferred_owner
-        ]
-        if not eligible:
-            raise ValueError(
-                f"ship-death script trigger side {trigger_side} "
-                f"type {trigger_kind} has no initially deployed hull"
-            )
-        activations.append((
-            side, kind,
-            {"kind": "on_ship_destroyed", "ship_id": eligible[0]},
-        ))
+    for event, requests in (("destroyed", death_commands),
+                            ("damaged", damage_commands)):
+        for trigger_side, trigger_kind, side, kind in requests:
+            activations.append((
+                side, kind,
+                {"kind": "on_ship_" + event,
+                 "ship_id": deployed_source_ship(
+                    by_side, deferred_owner, trigger_side, trigger_kind,
+                    "ship-" + event)},
+            ))
     activations.extend(
         (side, kind, {"kind": "on_" + event, "object_id": source_id}
             if event == "map_object_destroyed" else
@@ -1173,18 +1189,17 @@ def author(args) -> tuple[dict, dict, dict]:
                          else "on_ship_warped")
                 activation = {field: ship_id}
             else:
-                _, trigger_side, trigger_kind = trigger
-                eligible = [
-                    ship["entity_id"] for ship in by_side[trigger_side]
-                    if ship["ship_type"] == trigger_kind and
-                    ship["entity_id"] not in deferred_owner
-                ]
-                if not eligible:
-                    raise ValueError(
-                        f"on-death reinforcement trigger side {trigger_side} "
-                        f"type {trigger_kind} has no initially deployed hull"
-                    )
-                activation = {"on_ship_destroyed": eligible[0]}
+                event, trigger_side, trigger_kind = trigger
+                if event not in ("death", "damage"):
+                    raise ValueError("unknown authored ship lifecycle trigger")
+                source_id = deployed_source_ship(
+                    by_side, deferred_owner, trigger_side, trigger_kind,
+                    "ship-" + event,
+                )
+                activation = {
+                    "on_ship_destroyed" if event == "death"
+                    else "on_ship_damaged": source_id,
+                }
             if route is not None:
                 activation["spawn"] = route[:2]
                 activation["entry"] = route[2:]
@@ -1204,7 +1219,8 @@ def author(args) -> tuple[dict, dict, dict]:
             if (deployments and last_wave_side == side and
                     all(deployments[-1].get(key) == activation.get(key)
                         for key in ("after_seconds", "on_campaign_cue",
-                                    "on_ship_destroyed", "on_map_object_destroyed",
+                                    "on_ship_destroyed", "on_ship_damaged",
+                                    "on_map_object_destroyed",
                                     "on_mining_asteroid_depleted",
                                     "on_ship_extracted", "on_ship_warped",
                                     "spawn", "entry"))):
@@ -1969,6 +1985,9 @@ def main() -> None:
     parser.add_argument("--reinforcement-on-death", action="append", default=[],
                         type=death_reinforcement, dest="death_reinforcements",
                         help="deploy when an initially active ship dies: TRIGGER_SIDE:TRIGGER_TYPE:SIDE:TYPE:COUNT")
+    parser.add_argument("--reinforcement-on-damage", action="append", default=[],
+                        type=death_reinforcement, dest="damage_reinforcements",
+                        help="deploy when a living authored ship takes effective damage: TRIGGER_SIDE:TRIGGER_TYPE:SIDE:TYPE:COUNT")
     parser.add_argument("--reinforcement-on-cue", action="append", default=[],
                         type=cue_reinforcement, dest="cue_reinforcements",
                         metavar="CUE:SIDE:TYPE:COUNT",
@@ -2001,6 +2020,10 @@ def main() -> None:
                         type=death_order, dest="death_commands",
                         metavar="TRIGGER_SIDE:TRIGGER_TYPE:SIDE:TYPE",
                         help="start initially deployed AI squad orders when an authored ship is destroyed")
+    parser.add_argument("--activate-on-damage", action="append", default=[],
+                        type=death_order, dest="damage_commands",
+                        metavar="TRIGGER_SIDE:TRIGGER_TYPE:SIDE:TYPE",
+                        help="start AI squad orders after real damage to an initially deployed ship")
     parser.add_argument("--campaign-dialogue",
                         choices=tuple(CAMPAIGN_CUES),
                         help="enable existing Titania mission dialogue and event cues")
@@ -2122,6 +2145,8 @@ def main() -> None:
         "cue_reinforcements": len(args.cue_reinforcements),
         "cue_command_activations": len(args.cue_commands),
         "death_command_activations": len(args.death_commands),
+        "damage_command_activations": len(args.damage_commands),
+        "damage_reinforcements": len(args.damage_reinforcements),
         "physical_event_reinforcements": len(args.physical_reinforcements),
         "physical_event_command_activations": len(args.physical_commands),
         "ship_exit_reinforcements": len(args.exit_reinforcements),
@@ -2136,6 +2161,7 @@ def main() -> None:
         "reinforcement_ships": (
             sum(wave[3] for wave in args.reinforcements) +
             sum(wave[4] for wave in args.death_reinforcements) +
+            sum(wave[4] for wave in args.damage_reinforcements) +
             sum(wave[3] for wave in args.cue_reinforcements) +
             sum(wave[4] for wave in args.physical_reinforcements) +
             sum(wave[5] for wave in args.exit_reinforcements)
