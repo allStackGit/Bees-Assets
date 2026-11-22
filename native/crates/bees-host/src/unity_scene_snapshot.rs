@@ -2101,6 +2101,10 @@ impl NativePhysicalScene {
             .map(|squad| squad.members.clone()).collect::<Vec<_>>();
         let center = bees_gameplay::campaign_dialogue::TITANIA_II_CENTER;
         let mut occupied = Vec::<(Vec2, f32)>::new();
+        // Resolve every squad against the unmodified physical scene.
+        // A later blocked fleet must not leave earlier hulls relocated
+        // when this one-time source Stage operation fails.
+        let mut staged_positions = Vec::<(usize, Vec2)>::new();
         let mut translated = 0;
         for members in user_squads {
             let mut group = Vec::new();
@@ -2124,6 +2128,13 @@ impl NativePhysicalScene {
                 group.push(index);
             }
             if group.is_empty() { continue; }
+            // Titania's HumanTarget is created only after the original
+            // fleet is staged. Imported live scenes may already contain
+            // this base; never move it with a player mobile squad.
+            if group.iter().any(|&index| matches!(&self.entities[index],
+                NativeAuthoredEntity::Ship(ship)
+                    if ship.ship_type == bees_sim::ship_assets::HUMAN_TARGET_TYPE
+            )) { continue; }
             let old_center = Vec2::new((min_x + max_x) * 0.5, (min_y + max_y) * 0.5);
             let radius = (max_x - min_x).max(max_y - min_y) * 0.5 + 8.0;
             if !old_center.is_finite() || !radius.is_finite() {
@@ -2184,16 +2195,26 @@ impl NativePhysicalScene {
             ))?;
             let delta = destination - old_center;
             for index in group {
-                let NativeAuthoredEntity::Ship(ship) = &mut self.entities[index] else {
+                let NativeAuthoredEntity::Ship(ship) = &self.entities[index] else {
                     unreachable!("ship index derived from the source roster")
                 };
-                ship.motion.position += delta;
-                if let Some(bounds) = &mut ship.target_geometry {
-                    bounds.bounds_latched = false;
+                let position = ship.motion.position + delta;
+                if !position.is_finite() {
+                    return Err(invalid("Titania II placement overflowed physical coordinates"));
                 }
+                staged_positions.push((index, position));
             }
             occupied.push((destination, radius));
             translated += 1;
+        }
+        for (index, position) in staged_positions {
+            let NativeAuthoredEntity::Ship(ship) = &mut self.entities[index] else {
+                unreachable!("staged positions came from original source ships")
+            };
+            ship.motion.position = position;
+            if let Some(bounds) = &mut ship.target_geometry {
+                bounds.bounds_latched = false;
+            }
         }
         // Source Stage sets the playable human home after staging every
         // real squad; HiveMind and camera read the same actual destination.
