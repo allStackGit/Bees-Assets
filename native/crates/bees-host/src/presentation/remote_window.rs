@@ -2629,7 +2629,10 @@ pub fn connect_remote(
     let mut peer=PeerClient::connect(
         address, token, expected_side, original.as_deref(), spectator,
     )?;
-    let mut window=Window::new("Bees | Native Multiplayer",WIDTH,HEIGHT,
+    let window_title = if spectator {
+        "Bees | Native Spectator (Read Only)"
+    } else { "Bees | Native Multiplayer" };
+    let mut window=Window::new(window_title,WIDTH,HEIGHT,
         WindowOptions::default())?;
     window.set_target_fps(30);
     let mut pixels=vec![0;WIDTH*HEIGHT];
@@ -3869,9 +3872,32 @@ pub fn connect_remote(
                 "F7: mute   F10/F11: effects   Shift+F10/F11: music",
                 "Space: pause local soundtrack (not remote battle)",
             ];
-            NativeSoftwareRenderer::draw_help_panel(
-                &mut pixels, WIDTH, HEIGHT, LINES, &[2, 6, 10, 17],
-            );
+            if peer.spectator {
+                // The observer may navigate the native camera, artwork,
+                // local soundtrack and diagnostics, but no control exists
+                // to arm a source command or release a campaign briefing.
+                const OBSERVER_HELP: &[&str] = &[
+                    "AUTHENTICATED SPECTATOR - READ ONLY",
+                    "Side-filtered battlefield and original fog of war",
+                    "CAMERA / DISPLAY",
+                    "Arrows: pan   Wheel: zoom   F: fit map",
+                    "Shift+wheel: horizontal pan   Ctrl+wheel: vertical pan",
+                    "B: weapon ranges   F6: source art / fast view",
+                    "NETWORK / AUDIO",
+                    "F5: reconnect   F8: network measurements",
+                    "F7: mute   F10/F11: effects   Shift+F10/F11: music",
+                    "Space: pause local soundtrack (not the live battle)",
+                    "No fleet orders, surrender or campaign acknowledgments",
+                    "Press F1 or Escape to close this panel",
+                ];
+                NativeSoftwareRenderer::draw_help_panel(
+                    &mut pixels, WIDTH, HEIGHT, OBSERVER_HELP, &[2,6,10],
+                );
+            } else {
+                NativeSoftwareRenderer::draw_help_panel(
+                    &mut pixels, WIDTH, HEIGHT, LINES, &[2, 6, 10, 17],
+                );
+            }
         }
         if show_diagnostics && !show_controls_help {
             let frames=peer.metrics.frames_rendered.max(1) as f64;
