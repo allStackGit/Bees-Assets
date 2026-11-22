@@ -129,33 +129,49 @@ class FrozenInferenceMicrobatcher:
         self._worker.start()
 
     def submit(self, model_id: str, inputs, *, version) -> BatchFuture:
-        if model_id not in self.models or self.versions[model_id] != version:
-            raise ValueError("Frozen model version/membership changed")
-        args = inputs if isinstance(inputs, tuple) else (inputs,)
-        if not args or any(not isinstance(x, torch.Tensor) or x.ndim < 1
-                           or x.device != self.device for x in args):
-            raise ValueError("Frozen inference inputs must be device tensors with a batch axis")
-        rows = args[0].shape[0]
-        if not 1 <= rows <= self.max_batch_rows or any(x.shape[0] != rows for x in args):
-            raise ValueError("Input rows exceed the fixed GPU batch envelope")
+        return self.submit_many([(model_id, inputs, version)])[0]
+
+    def submit_many(self, requests):
+        """Atomically enqueue independent inference work with one GPU event.
+
+        Each entry is (model_id, tensor_or_tuple_of_tensors, frozen_version).
+        Batches are never partially admitted: insufficient capacity rejects
+        the whole call. This lets an existing collector coalesce many small
+        policies without launching a producer thread for each network.
+        """
+        if not isinstance(requests, (list, tuple)) or not 1 <= len(requests) <= self.max_requests:
+            raise ValueError("Supply a bounded nonempty collection of frozen inference requests")
         ready = None
+        checked = []
+        for model_id, inputs, version in requests:
+            if model_id not in self.models or self.versions[model_id] != version:
+                raise ValueError("Frozen model version/membership changed")
+            args = inputs if isinstance(inputs, tuple) else (inputs,)
+            if not args or any(not isinstance(x, torch.Tensor) or x.ndim < 1
+                               or x.device != self.device for x in args):
+                raise ValueError("Frozen inference inputs must be device tensors with a batch axis")
+            rows = args[0].shape[0]
+            if not 1 <= rows <= self.max_batch_rows or any(x.shape[0] != rows for x in args):
+                raise ValueError("Input rows exceed the fixed GPU batch envelope")
+            checked.append((model_id,args,rows))
         if self.device.type == "cuda":
             ready = torch.cuda.Event()
             ready.record(torch.cuda.current_stream(self.device))
-        future = BatchFuture(self.device)
+        futures = [BatchFuture(self.device) for _ in checked]
         with self._condition:
             if self._closed:
                 raise RuntimeError("Frozen inference batcher was closed")
-            if self._outstanding >= self.max_pending:
-                self._counters["rejected"] += 1
+            if self._outstanding+len(checked)>self.max_pending:
+                self._counters["rejected"] += len(checked)
                 raise RuntimeError("Frozen inference queue reached its capacity")
-            self._pending.append(_Request(model_id, args, rows, future, ready))
-            self._outstanding += 1
-            self._counters["submitted"] += 1
+            self._pending.extend(_Request(model_id,args,rows,future,ready)
+                                 for (model_id,args,rows),future in zip(checked,futures))
+            self._outstanding += len(checked)
+            self._counters["submitted"] += len(checked)
             self._counters["max_queue_depth"] = max(
                 self._counters["max_queue_depth"], self._outstanding)
             self._condition.notify()
-        return future
+        return futures
 
     def _serve(self):
         context = torch.cuda.device(self.device) if self.device.type == "cuda" else nullcontext()
