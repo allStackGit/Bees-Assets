@@ -193,6 +193,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_async_ram_denied',
             'training_shared_async_probe_sps',
             'training_shared_serial_probe_sps',
+            'training_shared_confirm_probe_sps',
             'training_shared_overlap_seconds',
             'training_shared_collect_wait_seconds',
             'training_shared_exposed_fraction',
