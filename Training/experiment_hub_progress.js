@@ -94,7 +94,23 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         retain('ant_decisions_per_second',reported.ant_decisions_per_second);
         retain('simulation_match_steps_per_second',
             reported.simulation_match_steps_per_second);
-        for(const name of ['ppo_gpu_batch_target_pixels',
+        // The native, TinyBrains and Courier adapters all report useful
+        // progress in their own verified units. Surface rate metrics without
+        // assuming that hardware busy percent is equivalent to throughput.
+        let derivedRates=0;
+        for(const [name,value] of Object.entries(reported)) {
+            if(derivedRates>=12)break;
+            if(value?.unit==='rate'&&name.endsWith('_per_second')){
+                retain(name,value);
+                derivedRates++;
+            }
+        }
+        for(const name of [
+            'ppo_compiled_loss_active','ppo_compiled_loss_qualified',
+            'ppo_compiled_loss_mismatches','ppo_compile_calibration_complete',
+            'ppo_fused_adam_selected','ppo_fused_adam_settled',
+            'ppo_fused_adam_preflight_failed',
+            'ppo_gpu_batch_target_pixels',
             'ppo_gpu_batch_next_target','ppo_gpu_batch_settled',
             // Report exposed CPU-prep wait, not concurrent background work
             // as a separate portion of whole-update wall.
@@ -163,6 +179,13 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             retain(name,reported[name]);
         for(const name of ['training_end_to_end_steps_per_second',
             'training_useful_steps_per_second',
+            'training_async_ppo_overlap_seconds',
+            'training_async_exposed_wait_seconds',
+            'training_shared_policy_lag_updates',
+            'training_ppo_compiled_active',
+            'training_ppo_compile_settled',
+            'training_ppo_fused_adam_selected',
+            'training_ppo_fused_adam_preflight_failed',
             // Exposed Python simulation packing is a cross-project CPU
             // throughput clue, not an independent hardware saturation claim.
             'training_info_pack_max_seconds',
