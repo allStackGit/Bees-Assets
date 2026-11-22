@@ -3189,7 +3189,7 @@ impl NativeSoftwareRenderer {
     pub fn draw_controls_help(&mut self) {
         const LINES: &[&str] = &[
             "BEES NATIVE  /  CONTROLS",
-            "F1 or Esc: close this help panel",
+            "F1 or Esc: close this help panel   F2: United Fleet Codex",
             "SELECTION",
             "Left click: select ship   Drag: box select   Double click: ship type",
             "Ctrl+click: add/remove   Ctrl+A: all   1-0: numbered squads",
