@@ -96,7 +96,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             reported.simulation_match_steps_per_second);
         for(const name of ['ppo_compiled_forward_active',
             'ppo_compile_calibration_complete','ppo_compile_fallbacks',
-            'ppo_gradient_foreach_batches',
+            'ppo_compile_restored','ppo_gradient_foreach_batches',
             'ppo_gpu_batch_target_pixels',
             'ppo_gpu_batch_next_target','ppo_gpu_batch_settled',
             // Report exposed CPU-prep wait, not concurrent background work
