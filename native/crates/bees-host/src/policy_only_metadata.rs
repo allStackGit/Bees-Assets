@@ -432,6 +432,10 @@ pub struct NativePolicySourceLedgerCheckpoint {
     recycled_group_agent_ids: BTreeMap<i32, BTreeSet<u64>>,
     next_dynamic_group_agent_id: u64,
     player: NativePlayerSourceCheckpoint,
+    /// Source Stage.ActivateHiveMind can change on an authored mission
+    /// cue. Restore the live authority, not only the initial scene flag.
+    #[serde(default)]
+    hivemind_active: Option<bool>,
     exploration: BTreeMap<i32, TeamExplorationGrid>,
     scripted_queues: Vec<scripted::NativeScriptedQueueState>,
     scripted_counts: NativeScriptedQueueMeasurements,
@@ -468,6 +472,7 @@ pub struct NativePolicySourceLedgerPrepared {
     recycled_group_agent_ids: BTreeMap<i32, BTreeSet<u64>>,
     next_dynamic_group_agent_id: u64,
     player: NativeSourcePlayerInputs,
+    hivemind_active: Option<bool>,
     hivemind_squads: HashMap<SquadLifetime, bees_gameplay::level_host::NativeHiveMindSquadSource>,
     exploration: BTreeMap<i32, TeamExplorationGrid>,
     scripted_queues: Vec<scripted::NativeScriptedQueueState>,
@@ -524,6 +529,7 @@ impl NativePolicyOnlyMetadata {
             recycled_group_agent_ids: self.recycled_group_agent_ids.clone(),
             next_dynamic_group_agent_id: self.next_dynamic_group_agent_id,
             player: NativePlayerSourceCheckpoint::capture(&self.player, &self.hivemind_squads),
+            hivemind_active: self.hivemind_active,
             exploration: self.sides.iter().map(|(&side, value)|
                 (side, value.exploration.clone())
             ).collect(),
@@ -622,6 +628,17 @@ impl NativePolicyOnlyMetadata {
         {
             return Err(Error::InvalidPolicyAgents);
         }
+        // An authored stage may only turn on HiveMind after the Pluto II
+        // Scout tutorial. Other source stages have immutable activation.
+        // The optional field leaves earlier checkpoint ledgers readable.
+        let hivemind_active = saved.hivemind_active.or(self.hivemind_active);
+        if hivemind_active != self.hivemind_active &&
+            !(self.hivemind_active == Some(false) &&
+              hivemind_active == Some(true) &&
+              !self.pluto_tutorial_locked.is_empty())
+        {
+            return Err(Error::InvalidPlayerOwnership);
+        }
         let (player, hivemind_squads) = saved.player.prepare_restore(
             &self.player, &self.hivemind_squads,
         )?;
@@ -679,6 +696,7 @@ impl NativePolicyOnlyMetadata {
             recycled_group_agent_ids: saved.recycled_group_agent_ids,
             next_dynamic_group_agent_id: saved.next_dynamic_group_agent_id,
             player,
+            hivemind_active,
             hivemind_squads,
             exploration: saved.exploration,
             scripted_queues: saved.scripted_queues,
@@ -707,6 +725,7 @@ impl NativePolicyOnlyMetadata {
         self.recycled_group_agent_ids = staged.recycled_group_agent_ids;
         self.next_dynamic_group_agent_id = staged.next_dynamic_group_agent_id;
         self.player = staged.player;
+        self.hivemind_active = staged.hivemind_active;
         self.hivemind_squads = staged.hivemind_squads;
         for (side, saved) in staged.exploration {
             self.sides.get_mut(&side)
