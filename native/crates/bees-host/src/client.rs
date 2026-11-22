@@ -142,7 +142,8 @@ pub struct NativeClient {
     hovered_ship: Option<i64>,
     hover_started: Instant,
     hover_sampled: Instant,
-    ship_inspection_frames: u64,
+    pub ship_inspection_frames: u64,
+    pub ship_inspection_queries: u64,
     // Window titles are OS messages, not part of a physical simulation
     // step. Refresh their optional diagnostics at human-readable cadence.
     last_title_update: Option<Instant>,
@@ -260,7 +261,7 @@ impl NativeClient {
             codex_open: false,
             codex_selected: 18,
             hovered_ship: None, hover_started: now, hover_sampled: now,
-            ship_inspection_frames: 0,
+            ship_inspection_frames: 0, ship_inspection_queries: 0,
             last_title_update: None,
             performance: NativeLivePerformance::new(now),
             edge_scroll_enabled: false,
@@ -1023,6 +1024,7 @@ impl NativeClient {
                     self.renderer.squad_tab_at(&view, x, y).is_some() {
                     None
                 } else {
+                    self.ship_inspection_queries += 1;
                     self.renderer.pick_ship(&view, x, y)
                 }
             });

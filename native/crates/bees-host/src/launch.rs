@@ -10436,6 +10436,8 @@ fn run_battle(
     if let Some(client) = &client {
         println!("{}", json!({ "kind": "presentation_final", "run_id": config.run_id,
             "rendered_frames": client.rendered_frames,
+            "ship_inspection_frames": client.ship_inspection_frames,
+            "ship_inspection_queries": client.ship_inspection_queries,
             "hotseat_switches": client.hotseat_switches,
             "hotseat_final_side": client.hotseat_side(),
             "audio": client.audio_measurements(),
