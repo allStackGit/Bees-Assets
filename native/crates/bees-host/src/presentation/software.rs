@@ -3965,9 +3965,31 @@ impl NativeSoftwareRenderer {
             Some(None) => "Carrier: Unassigned".to_owned(),
             None => format!("Physical ship: {ship_id}"),
         };
+        let mut lines = vec![banner, life, resources, formation, state.to_owned()];
+        // Source ShowShipStats exposes the real FleetShip's shot, damage
+        // and kill counters. These are this battle's observations; lifetime
+        // totals are kept by campaign progression and must not be guessed.
+        // Hide private career information about enemy ships even when their
+        // physical hull is currently visible through fog.
+        if view.player_authority.player_viewer_side() == Some(ship.side) {
+            if let Some(stats) = view.fleet.combat_stats(ship_id) {
+                let kills = stats.source_kills.map(|value| value.to_string())
+                    .unwrap_or_else(|| "unavailable".to_owned());
+                lines.push(format!("This battle: {} shots | {kills} kills",
+                    stats.observed_turret_shots));
+                lines.push(format!("Damage: {} dealt | {} received (TSV)",
+                    stats.enemy_tsv_damage_done, stats.tsv_damage_received));
+                if let Some(entry) = view.fleet.get(ship_id) {
+                    if matches!(ship.ship_type, 4 | 9) {
+                        lines.push(format!("Minerals mined this battle: {}",
+                            entry.minerals_mined_this_level));
+                    }
+                }
+            }
+        }
+        let displayed = lines.iter().map(String::as_str).collect::<Vec<_>>();
         Self::draw_ship_inspection_panel(
-            &mut self.pixels, self.width, self.height,
-            &[&banner, &life, &resources, &formation, state],
+            &mut self.pixels, self.width, self.height, &displayed,
         );
         true
     }
@@ -3978,7 +4000,7 @@ impl NativeSoftwareRenderer {
     #[cfg(feature = "client")]
     pub(super) fn draw_ship_inspection_panel(
         pixels: &mut [u32], width: usize, height: usize,
-        lines: &[&str; 5],
+        lines: &[&str],
     ) {
         if width < 440 || height < 300 || pixels.len() != width * height {
             return;
@@ -3987,7 +4009,7 @@ impl NativeSoftwareRenderer {
             .max().unwrap_or(0) + 26).min(width.saturating_sub(28));
         let left = 14;
         let top = 65;
-        let bottom = (top + 5 * (text::HEIGHT + 7) + 18).min(height);
+        let bottom = (top + lines.len() * (text::HEIGHT + 7) + 18).min(height);
         for y in top..bottom {
             pixels[y * width + left..y * width + left + panel_width]
                 .fill(if y < top + 3 { 0x5985aa } else { 0x101c2b });
