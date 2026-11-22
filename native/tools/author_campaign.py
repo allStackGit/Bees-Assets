@@ -1449,6 +1449,60 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 {"ship_type": kind, "count": count, "saved_squad_id": saved_id}
                 for _, kind, count, saved_id in grants
             ]
+        if mission_stories.get(index) == "pluto_anomaly":
+            # Pluto1Ending makes three genuine Gunship FleetShips and one
+            # Scout, then builds one new Gunship and one Scout SavedSquad.
+            # These are real career receipts, not tutorial display hulls.
+            totals = {}
+            for _, kind, count, _ in grants:
+                totals[kind] = totals.get(kind, 0) + count
+            if totals != {13: 3, 18: 1} or len(squad_grants) != 2:
+                raise ValueError(
+                    "Pluto Anomaly requires original three Gunship/one Scout "
+                    "FleetShip rewards and two new saved squads: "
+                    "--victory-grant / --victory-squad"
+                )
+            physical = {ship["entity_id"]: ship for ship in scene["ships"]
+                        if type(ship.get("entity_id")) is int}
+            squads_by_id = {squad.get("saved_squad_id"): squad
+                            for squad in scene["squads"]
+                            if squad.get("side") == args.player_side}
+            def template_kind(template_id):
+                template = squads_by_id.get(template_id)
+                if template is None:
+                    return None
+                types = {physical.get(member, {}).get("ship_type")
+                         for member in squad_members(template)}
+                return next(iter(types)) if len(types) == 1 else None
+            new_kinds = {new_id: template_kind(template_id)
+                         for _, new_id, template_id in squad_grants}
+            if sorted(new_kinds.values()) != [13, 18]:
+                raise ValueError(
+                    "Pluto Anomaly new SavedSquads must clone original "
+                    "Gunship and Scout squads"
+                )
+            gunship_squad = next(saved for saved, kind in new_kinds.items()
+                                 if kind == 13)
+            scout_squad = next(saved for saved, kind in new_kinds.items()
+                               if kind == 18)
+            # One existing Gunship receives its first companion. Two go
+            # into the new Gunship squad; the new Scout joins its own squad.
+            expected = [(index, 13, 2, gunship_squad),
+                        (index, 18, 1, scout_squad)]
+            remaining = list(grants)
+            for required in expected:
+                if required not in remaining:
+                    raise ValueError(
+                        "Pluto Anomaly rewards must place two Gunships in "
+                        "the new Gunship squad and one Scout in its new squad"
+                    )
+                remaining.remove(required)
+            if len(remaining) != 1 or remaining[0][1:3] != (13, 1) or (
+                    remaining[0][3] not in authored_squads):
+                raise ValueError(
+                    "Pluto Anomaly's remaining Gunship must join an existing "
+                    "source-owned SavedSquad"
+                )
         if mission_stories.get(index) == "pluto_pushback":
             if sorted(grants) != sorted([
                 (index, 12, 2, 0), (index, 7, 1, 0),
