@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use bees_host::presentation::{select_library, BattleMenuRow};
 use bees_host::unity_scene_snapshot::{
-    NativeLevelLayout, NativePlacedStaticBox, NativePlacedStaticPolygon,
+    NativeMapBackdrop, NativeLevelLayout, NativePlacedStaticBox, NativePlacedStaticPolygon,
     NativeSquadClone, NativeSquadMerge,
     NativeSquadShortcut,
 };
@@ -404,6 +404,7 @@ pub(super) struct FleetChoice {
     mix: [FleetMix; 2],
     carrier_deck: usize,
     terrain: Terrain,
+    map_background: NativeMapBackdrop,
     fog_of_war: bool,
     /// Source's live CollisionAsteroid timer configuration. No per-mode
     /// implementation: the same native Level owns each timed spawn.
@@ -468,6 +469,7 @@ pub(super) fn choose_for_preferred_side(
     };
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain(fleet_sizes)? else { return Ok(None); };
+    let Some(map_background) = choose_planet()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
@@ -542,7 +544,7 @@ pub(super) fn choose_for_preferred_side(
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
+        player_side, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, map_background, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: mode == 3, benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
@@ -581,6 +583,7 @@ pub(super) fn choose_multiplayer(
     } else { None };
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain(fleet_sizes)? else { return Ok(None); };
+    let Some(map_background) = choose_planet()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
@@ -616,7 +619,7 @@ pub(super) fn choose_multiplayer(
     };
     Ok(Some(FleetChoice {
         player_side: if use_hivemind { authenticated_side } else { None },
-        fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
+        fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, map_background, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: false,
         benchmark: false,
         spectator_episodes: 1,
@@ -631,6 +634,7 @@ pub(super) fn choose_multiplayer(
 pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain(fleet_sizes)? else { return Ok(None); };
+    let Some(map_background) = choose_planet()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
@@ -683,13 +687,31 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(threads) = choose_resource("CPU physics workers", &workers)?
         else { return Ok(None); };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
+        player_side: None, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, map_background, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: true,
         benchmark: true,
         spectator_episodes: 1,
         ai_tactics, hivemind: None, objective, objective_side,
         reinforcements, benchmark_worlds: worlds, benchmark_workers: threads,
     }))
+}
+
+/// Source planetary Map.SpriteRenderer prefabs are independent of physical
+/// collision maps, gameplay, and the selected soundtrack. The same artwork
+/// is displayed to local and authenticated multiplayer commanders.
+fn choose_planet() -> Result<Option<NativeMapBackdrop>, Box<dyn Error>> {
+    let planets = [
+        (NativeMapBackdrop::Pluto, "Pluto", "Original 512-unit planet"),
+        (NativeMapBackdrop::Neptune, "Neptune", "Original 1024-unit planet"),
+        (NativeMapBackdrop::Titania, "Titania", "Original 512-unit moon"),
+        (NativeMapBackdrop::Uranus, "Uranus", "Original 1024-unit planet with rings"),
+    ];
+    let rows = planets.iter().map(|(_, title, caption)| BattleMenuRow {
+        title, status: caption, unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut selected = 0;
+    Ok(select_library(&rows, &mut selected, false)?
+        .map(|index| planets[index].0))
 }
 
 /// The authored Stage owns FogOfWarVision for gameplay, headless AI and
@@ -1603,6 +1625,7 @@ pub(super) fn archive(
 ) -> Result<PathBuf, Box<dyn Error>> {
     let mut scene: Value = serde_json::from_str(SOURCE_SCENE)?;
     let mut run: Value = serde_json::from_str(SOURCE_RUN)?;
+    scene["map_background"] = json!(selected.map_background);
     // This is the same native FogOfWarVision switch consumed by the
     // actual Level; camera and policy perception read that shared state.
     scene["activate_fog_of_war"] = json!(selected.fog_of_war);
@@ -2644,6 +2667,16 @@ pub(super) fn archive(
         if selected.arena_size.is_none() { "source" }
         else if selected.lethal_borders { "lethal" } else { "solid" },
     ));
+    let id = run["run_id"].as_str()
+        .ok_or_else(|| invalid("planetary art selection needs a saved run identity"))?
+        .to_owned();
+    let planet = match selected.map_background {
+        NativeMapBackdrop::Pluto => "pluto",
+        NativeMapBackdrop::Neptune => "neptune",
+        NativeMapBackdrop::Titania => "titania",
+        NativeMapBackdrop::Uranus => "uranus",
+    };
+    run["run_id"] = json!(format!("{id}-planet-{planet}"));
     if let Some([minimum,maximum])=selected.asteroid_timer {
         let identity=run["run_id"].as_str()
             .ok_or_else(||invalid("timed asteroid battle has no run identity"))?
