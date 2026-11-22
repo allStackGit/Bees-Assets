@@ -1128,9 +1128,14 @@ impl NativePolicyOnlyMetadata {
                         })
                     }).collect::<Result<Vec<_>, NativeLevelStepError>>()?;
                     if members.iter().any(|member| member.mobile) {
-                        let plan = issue_squad_move(world, &self.navigation, &members, entry, options)
-                            .map_err(|error| invalid(format!("{error:?}")))?;
-                        if plan.is_none() { return Err(invalid(format!("Reinforcement squad {} has no reachable entry", squad.owner.squad_id))); }
+                        // Unity Squad.Move returns without issuing an order if
+                        // Pathfinder cannot fit the formation at any reachable
+                        // destination. This is not a failed reinforcement:
+                        // the physical squad remains spawned at its authentic
+                        // position and can receive later commands normally.
+                        let _ = issue_squad_move(
+                            world, &self.navigation, &members, entry, options,
+                        ).map_err(|error| invalid(format!("{error:?}")))?;
                     }
                 }
                 squad.register(world, events.roster_mut()).map_err(|error| invalid(format!("{error:?}")))?;
