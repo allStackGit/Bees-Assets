@@ -239,7 +239,8 @@ pub struct CampaignDialogue {
 
 /// Read-only public mission identity, derived from the one campaign
 /// state machine. This is not another objective/lifecycle owner.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CampaignObjectiveKind {
     PlutoAnomaly,
     PlutoReinforcements,
