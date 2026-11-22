@@ -71,6 +71,16 @@ struct WireCounts {
     order_ack_latency_samples: u64,
     order_ack_latency_sum_seconds: f64,
     order_ack_latency_max_seconds: f64,
+    /// INPUT receipts without a retained start timestamp, including FIFO evictions.
+    order_latency_samples_lost: u64,
+    pending_order_timings_peak: usize,
+    /// Client-only render costs, separately measured from network polling.
+    artwork_seconds: f64,
+    artwork_max_seconds: f64,
+    hud_seconds: f64,
+    hud_max_seconds: f64,
+    present_seconds: f64,
+    present_max_seconds: f64,
     campaign_receipts: u64,
     battle_result_receipts: u64,
     interrupted_battle_notices: u64,
@@ -764,6 +774,7 @@ impl PeerClient {
                         .is_some_and(|(id,_)| *id < request)
                     {
                         self.pending_order_times.pop_front();
+                        self.metrics.order_latency_samples_lost+=1;
                     }
                     if self.pending_order_times.front()
                         .is_some_and(|(id,_)| *id == request)
@@ -826,8 +837,11 @@ impl PeerClient {
         self.enqueue_request(json!({"kind":"input","action":action}),notice)?;
         if self.pending_order_times.len()==MAX_PENDING_ORDER_TIMINGS {
             self.pending_order_times.pop_front();
+            self.metrics.order_latency_samples_lost+=1;
         }
         self.pending_order_times.push_back((request,submitted));
+        self.metrics.pending_order_timings_peak=self.metrics.pending_order_timings_peak
+            .max(self.pending_order_times.len());
         self.metrics.orders_sent+=1;
         Ok(())
     }
@@ -3228,16 +3242,21 @@ pub fn connect_remote(
         if visual_fraction < 1.0 && !peer.visual.previous.is_empty() {
             peer.metrics.interpolated_draw_frames += 1;
         }
+        let artwork_started=Instant::now();
         if let (Some(state),Some(cam))=(peer.state.as_ref(),camera) {
             artwork.paint(state,cam,&peer.visual,visual_fraction,
                 &mut peer.metrics,show_art);
         }
+        let artwork_seconds=artwork_started.elapsed().as_secs_f64();
+        peer.metrics.artwork_seconds+=artwork_seconds;
+        peer.metrics.artwork_max_seconds=peer.metrics.artwork_max_seconds.max(artwork_seconds);
         let mut hulls = 0_u64;
         let mut map_object_health_bars = 0_u64;
         let mut map_ships = 0_u64;
         let mut map_objectives = 0_u64;
         let mut fog_masked = 0_u64;
         let mut combat_hud_draws = [0_u64; 7];
+        let hud_started=Instant::now();
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
             held_fire_active,shooting_menu,shooting_focus,
@@ -3292,7 +3311,14 @@ pub fn connect_remote(
             text::draw_at(&mut pixels, WIDTH, 10, HEIGHT-43,
                 text::fit(receipt, FIELD-20), 1, [255, 211, 130]);
         }
+        let hud_seconds=hud_started.elapsed().as_secs_f64();
+        peer.metrics.hud_seconds+=hud_seconds;
+        peer.metrics.hud_max_seconds=peer.metrics.hud_max_seconds.max(hud_seconds);
+        let present_started=Instant::now();
         window.update_with_buffer(&pixels,WIDTH,HEIGHT)?;
+        let present_seconds=present_started.elapsed().as_secs_f64();
+        peer.metrics.present_seconds+=present_seconds;
+        peer.metrics.present_max_seconds=peer.metrics.present_max_seconds.max(present_seconds);
         peer.metrics.frames_rendered += 1;
     }
     let session_seconds = started.elapsed().as_secs_f64();
@@ -3367,6 +3393,21 @@ pub fn connect_remote(
         "order_ack_latency_max_milliseconds":if peer.metrics.order_ack_latency_samples>0 {
             Some(peer.metrics.order_ack_latency_max_seconds*1000.0)
         } else {None},
+        "order_latency_samples_lost":peer.metrics.order_latency_samples_lost,
+        "pending_order_timings_at_exit":peer.pending_order_times.len(),
+        "pending_order_timings_peak":peer.metrics.pending_order_timings_peak,
+        "artwork_mean_milliseconds_per_frame":if peer.metrics.frames_rendered>0 {
+            Some(1000.0*peer.metrics.artwork_seconds/peer.metrics.frames_rendered as f64)
+        } else {None},
+        "artwork_max_milliseconds":peer.metrics.artwork_max_seconds*1000.0,
+        "hud_mean_milliseconds_per_frame":if peer.metrics.frames_rendered>0 {
+            Some(1000.0*peer.metrics.hud_seconds/peer.metrics.frames_rendered as f64)
+        } else {None},
+        "hud_max_milliseconds":peer.metrics.hud_max_seconds*1000.0,
+        "present_mean_milliseconds_per_frame":if peer.metrics.frames_rendered>0 {
+            Some(1000.0*peer.metrics.present_seconds/peer.metrics.frames_rendered as f64)
+        } else {None},
+        "present_max_milliseconds":peer.metrics.present_max_seconds*1000.0,
         "campaign_receipts":peer.metrics.campaign_receipts,
         "battle_result_receipts":peer.metrics.battle_result_receipts,
         "interrupted_battle_notices":peer.metrics.interrupted_battle_notices,
