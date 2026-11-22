@@ -13,6 +13,13 @@ function fieldsFor(config,project) {
         for(const [key,value] of Object.entries(node)) {
             if(!/^[a-z][a-z0-9_]{0,63}$/i.test(key)||BAD_KEYS.has(key))continue;
             const path=segments.concat(key),joined=path.join('.');
+            if(project==='tinybrains'&&joined==='self_play.opponents'&&
+                Array.isArray(value)) {
+                fields.push({key:joined,section:'environment',
+                    label:'PPO opponent population',type:'enum',
+                    default:'frozen_current',options:['frozen_current']});
+                continue;
+            }
             if(value&&typeof value==='object'&&!Array.isArray(value)) {
                 if(path.length<7)visit(value,path);
                 continue;
@@ -133,7 +140,8 @@ function applyOverrides(config,project,overrides) {
             !(project==='tinybrains'&&key==='training.colony_batch_size'&&
                 target.algorithm==='colony_ppo'))
             throw Error('Design parameter missing: '+key);
-        target[segments.at(-1)]=value;
+        target[segments.at(-1)]=project==='tinybrains'&&key==='self_play.opponents'
+            ?['frozen','current']:value;
     }
     return result;
 }
