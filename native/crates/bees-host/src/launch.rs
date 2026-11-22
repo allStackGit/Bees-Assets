@@ -7113,7 +7113,7 @@ fn run_campaign_game_menu(
                 &(original.side, original.saved_squad_id)).is_ok())
             .map(|original| {
             let tactics = progress.tactics_for_squad(original.side, original.saved_squad_id)
-                .unwrap_or(original);
+                .unwrap_or_else(|| original.clone());
             // Discover owned FleetShips from the current career and the
             // original source roster. Never expose a transient Stage ID.
             let mut fleet_ships = Vec::new();
