@@ -1079,9 +1079,10 @@ pub struct CombatWorld {
     /// state for each bound ship; no secondary training-only movement world.
     // Stable ship-ID iteration is necessary for reproducible shot IDs.
     policy_ship_runtime: BTreeMap<i64, PolicyShipRuntime>,
-    // Exact number of live policy owners with either mining or healing.
-    // A sparse non-serialized work gauge: restored from canonical owners.
-    policy_capability_owner_count: usize,
+    // Only miners and healers need cooldown work; source ship-ID order
+    // remains deterministic, and recovery derives this sparse index from
+    // the canonical controller bindings rather than persisting it twice.
+    policy_capability_owners: BTreeSet<i64>,
     ship_weapons: BTreeMap<i64, ShipWeapons>,
     // Only ships with at least one real mount require weapon advancement
     // or RangeCollider sweeps. Ordered exactly like ship_weapons; rebuilt
@@ -1325,7 +1326,7 @@ impl CombatWorld {
             ship_bounds_overrides: HashSet::new(),
             map_border_measurements: GameMapBorderMeasurements::default(),
             policy_ship_runtime: BTreeMap::new(),
-            policy_capability_owner_count: 0,
+            policy_capability_owners: BTreeSet::new(),
             ship_weapons: BTreeMap::new(),
             armed_weapon_ships: BTreeSet::new(),
             automatic_weapon_measurements: AutomaticWeaponMeasurements::default(),
@@ -1594,9 +1595,8 @@ impl CombatWorld {
         }
         self.ship_target_front_offsets.remove(&victim_id);
         let departed_policy = self.policy_ship_runtime.remove(&victim_id);
-        if departed_policy.as_ref().is_some_and(|owner|
-            owner.mining.is_some() || owner.healing.is_some()) {
-            self.policy_capability_owner_count -= 1;
+        if departed_policy.is_some() {
+            self.policy_capability_owners.remove(&victim_id);
         }
         let policy_binding_revision = departed_policy
             .map(|binding| binding.bind_revision);
@@ -2455,9 +2455,10 @@ impl CombatWorld {
         let policy = snapshot.policy;
         self.policy_roster_revision = policy.roster_revision;
         self.policy_ship_runtime = policy.controllers;
-        self.policy_capability_owner_count = self.policy_ship_runtime.values()
-            .filter(|owner| owner.mining.is_some() || owner.healing.is_some())
-            .count();
+        self.policy_capability_owners = self.policy_ship_runtime.iter()
+            .filter_map(|(&id, owner)|
+                (owner.mining.is_some() || owner.healing.is_some()).then_some(id))
+            .collect();
         self.policy_decision_seen = policy.decision_seen;
         self.policy_pending_ship_specials = policy.pending_specials;
         self.policy_pending_mining = policy.pending_mining;
