@@ -463,7 +463,14 @@ class MeasuredGpuExecution:
 
     def __init__(self, models: Sequence[nn.Module], *, min_speedup=0.10,
                  max_profiles=16, max_streams=4, max_padding_ratio=1.5,
-                 max_stacked_bytes=128*1048576, rtol=1e-5, atol=1e-6):
+                 max_stacked_bytes=128*1048576, rtol=1e-5, atol=1e-6,
+                 allow_fusion=True):
+        # Some backends already provide an exact specialized grouped kernel.
+        # Their generic fallback should try independent GPU streams without
+        # retaining a second stacked model population.
+        if type(allow_fusion) is not bool:
+            raise ValueError("GPU fusion admission must be explicit")
+        self.allow_fusion = allow_fusion
         self.fusion = FrozenGpuFusion(
             models, min_speedup=min_speedup, max_profiles=max_profiles,
             max_padding_ratio=max_padding_ratio,
@@ -492,7 +499,7 @@ class MeasuredGpuExecution:
             # Only GPU jobs need the extra first-shape calibration. CPU and
             # mixed-device cohorts stay on the original serial model calls.
             if self.fusion.device is not None and self.fusion.device.type == "cuda":
-                if self.fusion.compatible:
+                if self.allow_fusion and self.fusion.compatible:
                     args, rows, fused_shape = self.fusion._prepare(batches)
                     if fused_shape is not None:
                         self.fusion.qualifications += 1
