@@ -415,7 +415,8 @@ def flush_receipt(args, suite: dict, pending: dict, expected_digest: str) -> Non
 
 
 def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint,
-                    evaluate_checkpoint, verify_checkpoint=None):
+                    evaluate_checkpoint, verify_checkpoint=None,
+                    select_checkpoint=None):
     suite_id = suite["suite_id"]
     state = args.scratch / f"{project}-evaluation-{args.machine}.{suite_id}.json"
     digest = suite_digest(suite)
@@ -468,15 +469,17 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint,
                     not job.get("monitor_only") or "final_checkpoint_sha256" in job
                 ):
                     continue
-                checkpoint = find_checkpoint(job)
+                cadence = job.get("every_n_checkpoints", 1)
+                if ("final_checkpoint_sha256" not in job and
+                    (type(cadence) is not int or not 1 <= cadence <= 1000000)):
+                    raise ValueError("Invalid checkpoint evaluation cadence.")
+                checkpoint = (select_checkpoint(job, cursor[dispatch], cadence)
+                              if select_checkpoint is not None else find_checkpoint(job))
                 if not checkpoint:
                     continue
                 update, file = checkpoint[:2]
                 coordinate = checkpoint[2] if len(checkpoint) > 2 else update
                 if "final_checkpoint_sha256" not in job:
-                    cadence = job.get("every_n_checkpoints", 1)
-                    if type(cadence) is not int or not 1 <= cadence <= 1000000:
-                        raise ValueError("Invalid checkpoint evaluation cadence.")
                     previous = cursor[dispatch]
                     if update <= previous or (previous > 0 and
                                               update - previous < cadence):
@@ -557,7 +560,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint,
 
 
 def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint,
-               verify_checkpoint=None):
+               verify_checkpoint=None, select_checkpoint=None):
     """Evaluate every required suite on one immutable checkpoint snapshot.
 
     suites: sequence of (frozen suite, receipt suite with trial count).
@@ -695,17 +698,18 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint,
                         "final_checkpoint_sha256" in jobs[0]
                     ):
                         continue
-                checkpoint = find_checkpoint(jobs[0])
+                cadence = jobs[0].get("every_n_checkpoints", 1)
+                if ("final_checkpoint_sha256" not in jobs[0] and
+                    (type(cadence) is not int or not 1 <= cadence <= 1000000 or
+                     any(job.get("every_n_checkpoints", 1) != cadence for job in jobs))):
+                    raise ValueError("Invalid or inconsistent checkpoint evaluation cadence.")
+                checkpoint = (select_checkpoint(jobs[0], cursor[dispatch], cadence)
+                              if select_checkpoint is not None else find_checkpoint(jobs[0]))
                 if not checkpoint:
                     continue
                 update, file = checkpoint[:2]
                 coordinate = checkpoint[2] if len(checkpoint) > 2 else update
                 if "final_checkpoint_sha256" not in jobs[0]:
-                    cadence = jobs[0].get("every_n_checkpoints", 1)
-                    if (type(cadence) is not int or not 1 <= cadence <= 1000000 or
-                        any(job.get("every_n_checkpoints", 1) != cadence
-                            for job in jobs)):
-                        raise ValueError("Invalid or inconsistent checkpoint evaluation cadence.")
                     previous = cursor[dispatch]
                     if update <= previous or (previous > 0 and
                                               update - previous < cadence):
