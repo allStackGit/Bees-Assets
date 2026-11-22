@@ -1097,6 +1097,11 @@ class RemoteBattleWindow:
                         if objective.get("kind") == "escort" else None)
         target_ship_id = (objective.get("target_ship_id")
                           if objective.get("kind") == "target_ship" else None)
+        # Rescue identities are disclosed only to the genuine original
+        # campaign player; never infer enemy objectives from visible types.
+        rescue_ship_ids = set(objective.get("barge_ids") or []) if (
+            objective.get("kind") == "barge_rescue"
+        ) else set()
         for ship in state["ships"]:
             if not self.collider_on_screen(ship):
                 continue
@@ -1165,7 +1170,7 @@ class RemoteBattleWindow:
                 self.canvas.create_rectangle(
                     left-4, top-4, right+4, bottom+4,
                     outline=ENEMY, dash=(3, 2), width=2)
-            if ship["id"] == protected_id:
+            if ship["id"] == protected_id or ship["id"] in rescue_ship_ids:
                 self.canvas.create_rectangle(left-5, top-5, right+5, bottom+5,
                                              outline=MINERAL, dash=(4, 3), width=2)
             if ship["id"] == target_ship_id:
