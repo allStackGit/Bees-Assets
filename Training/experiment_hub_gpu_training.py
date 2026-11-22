@@ -59,7 +59,9 @@ class IndependentGpuTraining:
     def __init__(self, models: Sequence[nn.Module],
                  optimizers: Sequence[torch.optim.Optimizer], *,
                  admit_independent_updates=False, max_streams=4,
-                 sample_windows=4, min_speedup=0.10):
+                 sample_windows=4, min_speedup=0.10,
+                 completion_sample_interval=16, retune_interval=256,
+                 retune_threshold=0.25):
         if not admit_independent_updates:
             raise ValueError("Independent optimizer execution needs explicit adapter approval")
         if (not isinstance(models, (list, tuple)) or
@@ -68,11 +70,16 @@ class IndependentGpuTraining:
                 not 2 <= len(models) <= 16 or
                 not 2 <= max_streams <= 16 or
                 not 2 <= sample_windows <= 32 or
-                not 0.05 <= min_speedup <= 0.5):
+                not 0.05 <= min_speedup <= 0.5 or
+                not 4 <= completion_sample_interval <= 256 or
+                not 64 <= retune_interval <= 65536 or
+                not 0.10 <= retune_threshold <= 0.75):
             raise ValueError("Invalid fixed optimizer execution cohort")
         self.models, self.optimizers = tuple(models), tuple(optimizers)
         self.max_streams, self.sample_windows = max_streams, sample_windows
         self.min_speedup = min_speedup
+        self.completion_sample_interval = completion_sample_interval
+        self.retune_interval, self.retune_threshold = retune_interval, retune_threshold
         identities, device, owned_optimizers = set(), None, set()
         forbidden_random = (nn.Dropout, nn.Dropout1d, nn.Dropout2d, nn.Dropout3d,
                             nn.AlphaDropout, nn.FeatureAlphaDropout, nn.RReLU)
@@ -140,6 +147,16 @@ class IndependentGpuTraining:
         self.phase = "calibrating"
         self.calls = self.serial_calls = self.concurrent_calls = 0
         self.work_dispatched = 0.0
+        self.work_confirmed = 0.0
+        self._pending_samples = deque()
+        self._recent_gpu_rates = deque(maxlen=12)
+        self._sample_generation = 0
+        self._settled_at_call = 0
+        self._completion_samples = 0
+        self._completion_sample_skips = 0
+        self._retunes = 0
+        self._sampling_enabled = True
+        self.live_gpu_rate = 0.0
         self.last_qualified_seconds = 0.0
         self.last_qualified_work_rate = 0.0
         self.selected = None
@@ -190,6 +207,44 @@ class IndependentGpuTraining:
         self.selected_streams = chosen
         self.selected = "parallel" if chosen else "serial"
         self.phase = "settled"
+        self._settled_at_call = self.calls
+        self._recent_gpu_rates.clear()
+        self._sample_generation += 1
+
+    def _collect_completed(self):
+        # A sample event follows the streams' caller-side wait edges.
+        # Thus event.query() confirms ALL previously submitted work on
+        # this executor's caller stream, without a host synchronization.
+        while self._pending_samples and self._pending_samples[0][1].query():
+            start, end, work_mark, batch_work, generation = self._pending_samples.popleft()
+            self.work_confirmed = max(self.work_confirmed, work_mark)
+            seconds = start.elapsed_time(end) / 1000.0
+            if seconds > 0 and generation == self._sample_generation:
+                self._completion_samples += 1
+                self._recent_gpu_rates.append(batch_work / seconds)
+        if self._recent_gpu_rates:
+            self.live_gpu_rate = median(self._recent_gpu_rates)
+        if (self.phase != "settled" or
+                self.calls-self._settled_at_call < self.retune_interval or
+                len(self._recent_gpu_rates) < 8):
+            return
+        measured = self.live_gpu_rate
+        selected_rates = (self.parallel_rates[self.selected_streams]
+                          if self.selected_streams else self.serial_rates)
+        baseline = median(selected_rates)
+        if (baseline > 0 and (measured < baseline*(1-self.retune_threshold) or
+                              measured > baseline*(1+self.retune_threshold))):
+            # Re-qualify using future distinct optimizer updates. No
+            # captured update is ever rerun, reset, or checkpoint-replayed.
+            self._retunes += 1
+            self.serial_rates.clear()
+            for rates in self.parallel_rates.values():
+                rates.clear()
+            self.probe_index = 0
+            self.phase = "calibrating"
+            self._recent_gpu_rates.clear()
+            self.live_gpu_rate = 0.0
+            self._sample_generation += 1
 
     def run(self, steps: Sequence[Callable[[], object]], *,
             inputs, work_units=None):
@@ -210,6 +265,8 @@ class IndependentGpuTraining:
             # cannot release its optimizer state or OS GPU lease until
             # all dependent stream work has finished.
             torch.cuda.current_stream(self.device).synchronize()
+            self.work_confirmed = self.work_dispatched
+            self._pending_samples.clear()
             self._closed = True
             self.streams.clear()
 
@@ -220,6 +277,7 @@ class IndependentGpuTraining:
         self.close()
 
     def _run(self, steps, inputs, work_units):
+        self._collect_completed()
         if (not isinstance(steps, (list, tuple)) or
                 len(steps) != len(self.models) or
                 any(not callable(step) for step in steps)):
@@ -251,14 +309,37 @@ class IndependentGpuTraining:
         measuring = self.phase != "settled"
         if measuring:
             torch.cuda.current_stream(self.device).synchronize()
+        sample = None
+        if (not measuring and self._sampling_enabled and
+                (self.calls+1) % self.completion_sample_interval == 0):
+            if len(self._pending_samples) < 32:
+                try:
+                    start_event = torch.cuda.Event(enable_timing=True)
+                    end_event = torch.cuda.Event(enable_timing=True)
+                    start_event.record(torch.cuda.current_stream(self.device))
+                    sample = (start_event, end_event)
+                except (RuntimeError, NotImplementedError):
+                    # Some accelerator builds do not expose timing events.
+                    # Execution stays asynchronous; only telemetry stops.
+                    self._sampling_enabled = False
+            else:
+                self._completion_sample_skips += 1
         begun = perf_counter()
         output = (self._parallel(steps, inputs, width)
                   if mode == "parallel" else self._serial(steps))
+        if sample is not None:
+            sample[1].record(torch.cuda.current_stream(self.device))
         if measuring:
             torch.cuda.current_stream(self.device).synchronize()
         seconds = perf_counter()-begun
         self.calls += 1
         self.work_dispatched += count
+        if measuring:
+            self.work_confirmed = self.work_dispatched
+        if sample is not None:
+            self._pending_samples.append((
+                sample[0], sample[1], self.work_dispatched, count,
+                self._sample_generation))
         self.serial_calls += int(mode == "serial")
         self.concurrent_calls += int(mode == "parallel")
         if measuring and seconds>0:
@@ -275,11 +356,20 @@ class IndependentGpuTraining:
         return output
 
     def metrics(self):
-        return dict(
+        with self._busy:
+            if not self._closed:
+                self._collect_completed()
+            return dict(
             gpu_training_step_batches=self.calls,
             gpu_training_serial_batches=self.serial_calls,
             gpu_training_parallel_batches=self.concurrent_calls,
             gpu_training_work_dispatched=self.work_dispatched,
+            gpu_training_work_confirmed=self.work_confirmed,
+            gpu_training_gpu_completion_samples=self._completion_samples,
+            gpu_training_completion_sample_skips=self._completion_sample_skips,
+            gpu_training_pending_completion_events=len(self._pending_samples),
+            gpu_training_live_work_per_second=self.live_gpu_rate,
+            gpu_training_retunes=self._retunes,
             gpu_training_calibration_serial=len(self.serial_rates),
             gpu_training_calibration_parallel=sum(map(len,self.parallel_rates.values())),
             gpu_training_selected_parallel=int(self.selected == "parallel"),
