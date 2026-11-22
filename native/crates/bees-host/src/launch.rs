@@ -5335,6 +5335,20 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             title: "Build Fleet Skirmish",
             status: "  [Custom native fleets]", unlocked: true,
         });
+        let saved_fleet_sources = recordings.iter().filter(|recording|
+            recording.game_id == fleet_builder::GAME_ID &&
+            matches!(&recording.source, recorded_library::RecordedSource::QuickBattle(_))
+        ).collect::<Vec<_>>();
+        let saved_fleet_index = rows.len();
+        rows.push(BattleMenuRow {
+            title: "Play Saved Fleet Again",
+            status: if saved_fleet_sources.is_empty() {
+                "  [No completed fleet setup]"
+            } else {
+                "  [New battle from prior physical fleet]"
+            },
+            unlocked: !saved_fleet_sources.is_empty(),
+        });
         let fleet_train_index = rows.len();
         let training_available = fleet_training::training_available();
         rows.push(BattleMenuRow {
@@ -5359,6 +5373,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let Some(index) = select_library(&rows, &mut selected, launch_failed)?
             else { break };
         let creating_fleet = index == fleet_builder_index;
+        let reusing_fleet = index == saved_fleet_index;
         let training_fleet = index == fleet_train_index;
         let inspecting_fleet_training = index == fleet_training_jobs_index;
         let benchmarking_fleet = index == fleet_benchmark_index;
@@ -5373,6 +5388,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 usize::from(join_available) + usize::from(host_available);
         let (game_id, game_kind, game_title) = if creating_fleet {
             (fleet_builder::GAME_ID, "custom_fleet", "Build Fleet Skirmish")
+        } else if reusing_fleet {
+            (fleet_builder::GAME_ID, "saved_fleet", "Play Saved Fleet Again")
         } else if training_fleet {
             ("fleet-training", "train", "Train Saved Fleet")
         } else if inspecting_fleet_training {
@@ -5429,6 +5446,47 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     "game_id": fleet_builder::GAME_ID,
                 }));
                 run_session(&source, true, true, Some(output), None, None, None)
+            })()
+        } else if reusing_fleet {
+            (|| {
+                // A completed custom game archives its original physical
+                // run and scene, not merely a transient UI fleet layout.
+                // Selecting one starts a NEW match; its old trace remains
+                // immutable and is never replayed into a career save.
+                let picks = saved_fleet_sources.iter().map(|recording|
+                    BattleMenuRow {
+                        title: &recording.title,
+                        status: "  [Start a new match]", unlocked: true,
+                    }
+                ).collect::<Vec<_>>();
+                let mut choice = 0_usize;
+                let Some(index) = select_library(&picks, &mut choice, false)?
+                    else { return Ok::<(), Box<dyn Error>>(()); };
+                let recorded = saved_fleet_sources[index];
+                let recorded_library::RecordedSource::QuickBattle(source) =
+                    &recorded.source
+                    else { return Err(invalid("saved fleet has no original physical run").into()); };
+                let _writer = battle_catalog::CampaignWriterLease::acquire(
+                    &save_root.join("battles").join(fleet_builder::GAME_ID),
+                )?;
+                if let Some((recovery_source, output)) = recover_generated_library_battle(
+                    save_root, fleet_builder::GAME_ID, false,
+                )? {
+                    // Existing interrupted game owns its frozen start and
+                    // must be completed before another new fleet is minted.
+                    return run_session(&recovery_source, true, true,
+                        Some(output), None, None, None);
+                }
+                let output = new_library_battle_output(save_root, fleet_builder::GAME_ID)?;
+                let start = QuickBattleStart::capture(source, false)?
+                    .ok_or_else(|| invalid("saved fleet source is no longer playable"))?;
+                save_native_quick_battle_start(&output, &start)?;
+                println!("{}", json!({
+                    "kind": "native_saved_fleet_battle_ready",
+                    "source": source, "run": output,
+                    "source_recording": recorded.trace,
+                }));
+                run_session(source, true, true, Some(output), None, None, None)
             })()
         } else if training_fleet {
             fleet_training::choose_and_train(save_root)
