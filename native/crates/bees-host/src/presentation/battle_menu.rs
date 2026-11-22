@@ -1,6 +1,7 @@
 //! Scenario selection using the same window and bitmap font as play.
 
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
+use std::sync::OnceLock;
 
 use super::text;
 use crate::unity_scene_snapshot::{NativeSquadColorSetting, NativeSavedSquadFormation};
@@ -240,11 +241,12 @@ pub fn select_battle(
     tactics_rows: &[NativeTacticsMenuRow],
     delete_rows: &[NativeDeleteSquadMenuRow],
     name_rows: &[NativeNameMenuRow],
+    codex_types: Option<&[u8]>,
     career_stats: NativeCampaignMenuStats,
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     select_battle_inner(rows, selected, launch_failed, fleet_rows, squad_rows,
         shop_rows, banked_tsv, transfer_rows, create_rows, tactics_rows,
-        delete_rows, name_rows, Some(career_stats), false)
+        delete_rows, name_rows, codex_types, Some(career_stats), false)
 }
 
 /// The packaged-game launcher uses the same list renderer without exposing
@@ -253,7 +255,7 @@ pub fn select_library(
     rows: &[BattleMenuRow<'_>], selected: &mut usize, launch_failed: bool,
 ) -> Result<Option<usize>, minifb::Error> {
     match select_battle_inner(rows, selected, launch_failed,
-        &[], &[], &[], 0, &[], &[], &[], &[], &[], None, true)? {
+        &[], &[], &[], 0, &[], &[], &[], &[], &[], None, None, true)? {
         Some(NativeBattleMenuAction::Play(index)) => Ok(Some(index)),
         _ => Ok(None),
     }
@@ -268,6 +270,7 @@ fn select_battle_inner(
     tactics_rows: &[NativeTacticsMenuRow],
     delete_rows: &[NativeDeleteSquadMenuRow],
     name_rows: &[NativeNameMenuRow],
+    codex_types: Option<&[u8]>,
     career_stats: Option<NativeCampaignMenuStats>,
     library_mode: bool,
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
@@ -286,6 +289,9 @@ fn select_battle_inner(
     // None is mission selection, false is ship careers, true is
     // saved-squad careers. Neither screen owns or mutates game data.
     let mut career_view: Option<bool> = None;
+    let mut show_codex = false;
+    let mut codex_selected = 0_usize;
+    let mut codex_first = 0_usize;
     let mut show_shop = false;
     let mut show_transfer = false;
     let mut show_create = false;
@@ -359,7 +365,9 @@ fn select_battle_inner(
         // ships, changing tactics or renaming a squad should not have to
         // abandon the entire battle launcher to reach mission selection.
         if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
-            if show_names {
+            if show_codex {
+                show_codex = false;
+            } else if show_names {
                 show_names = false;
             } else if show_shop || show_transfer || show_create ||
                 show_delete || show_tactics
@@ -382,6 +390,61 @@ fn select_battle_inner(
             // Otherwise one keypress would close the submenu and immediately
             // exit the parent battle launcher on the same stale input state.
             window.update();
+            continue;
+        }
+        if !library_mode && !show_tactics && !show_names &&
+            codex_types.is_some() &&
+            window.is_key_pressed(Key::F2, KeyRepeat::No)
+        {
+            show_codex = !show_codex;
+            show_shop = false;
+            show_transfer = false;
+            show_create = false;
+            show_delete = false;
+            career_view = None;
+            mouse_down = window.get_mouse_down(MouseButton::Left);
+            window.update();
+            continue;
+        }
+        if show_codex {
+            let types = codex_types.unwrap_or(&[]);
+            navigate_rows(&window, &mut codex_selected, &mut codex_first, types.len());
+            pixels.fill(0x080e19);
+            text::draw_centered(&mut pixels, WIDTH, 24,
+                "United Fleet Codex", 2, TEXT);
+            text::draw_centered(&mut pixels, WIDTH, 78,
+                "Ship classes earned through original campaign progression", 1, MUTED);
+            static SHIPS: OnceLock<bees_sim::ship_assets::ShipAssetCatalog> = OnceLock::new();
+            let catalog = SHIPS.get_or_init(|| bees_sim::ship_assets::ShipAssetCatalog::embedded()
+                .expect("native source ship catalog loaded by gameplay"));
+            if types.is_empty() {
+                text::draw_centered(&mut pixels, WIDTH, 215,
+                    "No Codex ship classes unlocked", 1, MUTED);
+            }
+            for (row, &kind) in types.iter().skip(codex_first).take(PAGE_SIZE).enumerate() {
+                let top = LIST_TOP + row * ROW_HEIGHT;
+                for y in top..top + ROW_HEIGHT - 4 {
+                    pixels[y * WIDTH + 100..y * WIDTH + 700].fill(
+                        if codex_selected == codex_first + row {
+                            0x294a66
+                        } else { 0x142235 }
+                    );
+                }
+                let name = catalog.by_type(kind).map(|ship| ship.name.as_str())
+                    .unwrap_or("Unknown ship");
+                let label = format!("Type {kind:02}  {name}");
+                text::draw_centered(&mut pixels, WIDTH, top + 8, &label, 1, TEXT);
+            }
+            if types.len() > PAGE_SIZE {
+                text::draw_centered(&mut pixels, WIDTH, 417,
+                    &format!("{}-{} of {} classes",
+                        codex_first + 1,
+                        (codex_first + PAGE_SIZE).min(types.len()), types.len()), 1, MUTED);
+            }
+            text::draw_centered(&mut pixels, WIDTH, 441,
+                "Up/Down / Wheel browse   F2 / Esc back", 1, MUTED);
+            mouse_down = window.get_mouse_down(MouseButton::Left);
+            window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
             continue;
         }
         if !library_mode && !show_tactics && !show_names &&
@@ -895,7 +958,7 @@ fn select_battle_inner(
         }
         text::draw_centered(&mut pixels, WIDTH, 441,
             if library_mode { "Enter open   Wheel / arrows / PageUp / PageDown browse   Esc exit" }
-            else { "Enter play   B build   T transfer   N new   D delete   P tactics   R name   F fleet   S squads" },
+            else { "Enter play  B build  T transfer  N new  D delete  P tactics  R name  F2 codex  F fleet  S squads" },
             1, MUTED);
         if launch_failed {
             text::draw_centered(&mut pixels, WIDTH, 468,
