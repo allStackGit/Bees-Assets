@@ -67,6 +67,9 @@ impl ShipVitals {
 
     pub fn health(&self) -> i32 { self.health }
     pub fn max_health(&self) -> i32 { self.max_health }
+    /// Source FleetShip.GetCapacity uses the immutable ship-class base TSV,
+    /// not the damaged, mined-cargo-inclusive live combat score.
+    pub fn max_tsv(&self) -> i32 { self.max_tsv }
     pub fn tsv(&self) -> i32 { self.tsv }
 
     /// Apply an authored mission's full-health capacity change at scene
