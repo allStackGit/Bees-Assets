@@ -236,6 +236,49 @@ def physical_event_gate(scene: dict, event: str, source_id: int) -> dict:
     return {field: source_id}
 
 
+def ship_exit_wave(value: str) -> tuple[str, int, int, int, int, int]:
+    """EXIT|WARP:SOURCE_SIDE:SOURCE_TYPE:ARRIVING_SIDE:TYPE:COUNT."""
+    parts = value.split(":")
+    if len(parts) != 6 or parts[0] not in ("extract", "warp"):
+        raise argparse.ArgumentTypeError(
+            "ship-exit reinforcement needs extract|warp:TRIGGER_SIDE:TRIGGER_TYPE:SIDE:TYPE:COUNT"
+        )
+    source_side, source_type, side, kind, count = death_reinforcement(":".join(parts[1:]))
+    return parts[0], source_side, source_type, side, kind, count
+
+
+def ship_exit_order(value: str) -> tuple[str, int, int, int, int]:
+    """EXIT|WARP:SOURCE_SIDE:SOURCE_TYPE:COMMAND_SIDE:COMMAND_TYPE."""
+    parts = value.split(":")
+    if len(parts) != 5 or parts[0] not in ("extract", "warp"):
+        raise argparse.ArgumentTypeError(
+            "ship-exit command needs extract|warp:TRIGGER_SIDE:TRIGGER_TYPE:SIDE:TYPE"
+        )
+    source_side, source_type, side, kind = death_order(":".join(parts[1:]))
+    return parts[0], source_side, source_type, side, kind
+
+
+def deployed_exit_source(by_side, deferred_owner, exit_kind, trigger_side,
+                         trigger_type, objective, objective_side):
+    if exit_kind == "extract" and (
+        objective not in ("extraction", "escort") or trigger_side != objective_side
+    ):
+        raise ValueError("ship extraction cue must name the actual objective's escaping faction")
+    if exit_kind == "warp" and not any(
+        ship["ship_type"] == 20 and ship["entity_id"] not in deferred_owner
+        for ship in by_side[trigger_side]
+    ):
+        raise ValueError("ship WarpGate exit cue requires a deployed same-side source WarpGate")
+    living = [
+        ship for ship in by_side[trigger_side]
+        if ship["ship_type"] == trigger_type and
+        ship["entity_id"] not in deferred_owner and ship["base_speed"] > 0
+    ]
+    if not living:
+        raise ValueError("ship-exit trigger needs an initially deployed mobile source ship")
+    return living[0]["entity_id"]
+
+
 def load_json(path: Path) -> dict:
     content = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(content, dict):
@@ -492,6 +535,8 @@ def author(args) -> tuple[dict, dict, dict]:
     death_commands = getattr(args, "death_commands", ())
     physical_waves = getattr(args, "physical_reinforcements", ())
     physical_commands = getattr(args, "physical_commands", ())
+    exit_waves = getattr(args, "exit_reinforcements", ())
+    exit_commands = getattr(args, "exit_commands", ())
     for event, source_id, *_ in [*physical_waves, *physical_commands]:
         physical_event_gate(scene, event, source_id)
     if (cue_waves or cue_commands) and dialogue is None:
@@ -504,7 +549,8 @@ def author(args) -> tuple[dict, dict, dict]:
     activation_targets = (
         [(side, kind) for _, side, kind in cue_commands] +
         [(side, kind) for _, _, side, kind in death_commands] +
-        [(side, kind) for _, _, side, kind in physical_commands]
+        [(side, kind) for _, _, side, kind in physical_commands] +
+        [(side, kind) for _, _, _, side, kind in exit_commands]
     )
     if len(set(activation_targets)) != len(activation_targets):
         raise ValueError("one scripted fleet type cannot have multiple conflicting start conditions")
@@ -521,6 +567,10 @@ def author(args) -> tuple[dict, dict, dict]:
     ] + [
         (None, side, kind, count, ("physical", event, source_id), None)
         for event, source_id, side, kind, count in physical_waves
+    ] + [
+        (None, side, kind, count,
+         ("exit", exit_kind, source_side, source_type), None)
+        for exit_kind, source_side, source_type, side, kind, count in exit_waves
     ]
     deferred_counts: dict[tuple[int, int], int] = {}
     prior_time = 0.0
@@ -956,6 +1006,16 @@ def author(args) -> tuple[dict, dict, dict]:
             {"kind": "on_mining_asteroid_depleted", "asteroid_id": source_id})
         for event, source_id, side, kind in physical_commands
     )
+    activations.extend(
+        (side, kind, {
+            "kind": ("on_ship_extracted" if exit_kind == "extract" else "on_ship_warped"),
+            "ship_id": deployed_exit_source(
+                by_side, deferred_owner, exit_kind, source_side, source_type,
+                args.objective, args.objective_side or (host if host is not None else 1),
+            ),
+        })
+        for exit_kind, source_side, source_type, side, kind in exit_commands
+    )
     for side, kind, activation in activations:
         if side in controlled:
             raise ValueError("player squads cannot be controlled by scripted event activations")
@@ -1103,6 +1163,15 @@ def author(args) -> tuple[dict, dict, dict]:
             elif trigger[0] == "physical":
                 _, event, source_id = trigger
                 activation = physical_event_gate(scene, event, source_id)
+            elif trigger[0] == "exit":
+                _, exit_kind, source_side, source_type = trigger
+                ship_id = deployed_exit_source(
+                    by_side, deferred_owner, exit_kind, source_side, source_type,
+                    args.objective, args.objective_side or (host if host is not None else 1),
+                )
+                field = ("on_ship_extracted" if exit_kind == "extract"
+                         else "on_ship_warped")
+                activation = {field: ship_id}
             else:
                 _, trigger_side, trigger_kind = trigger
                 eligible = [
@@ -1136,7 +1205,9 @@ def author(args) -> tuple[dict, dict, dict]:
                     all(deployments[-1].get(key) == activation.get(key)
                         for key in ("after_seconds", "on_campaign_cue",
                                     "on_ship_destroyed", "on_map_object_destroyed",
-                                    "on_mining_asteroid_depleted", "spawn", "entry"))):
+                                    "on_mining_asteroid_depleted",
+                                    "on_ship_extracted", "on_ship_warped",
+                                    "spawn", "entry"))):
                 deployments[-1]["squad_item_ids"].extend(arriving)
             else:
                 deployments.append({**activation, "squad_item_ids": arriving})
@@ -1852,6 +1923,16 @@ def main() -> None:
                         type=physical_event_order, dest="physical_commands",
                         metavar="EVENT:ENTITY_ID:SIDE:TYPE",
                         help="arm existing AI orders on a real authored object's destruction/depletion")
+    parser.add_argument("--reinforcement-on-ship-exit",
+                        action="append", default=[], type=ship_exit_wave,
+                        dest="exit_reinforcements",
+                        metavar="extract|warp:TRIGGER_SIDE:TRIGGER_TYPE:SIDE:TYPE:COUNT",
+                        help="deploy only after a mobile source ship actually extracts or enters its WarpGate")
+    parser.add_argument("--activate-on-ship-exit",
+                        action="append", default=[], type=ship_exit_order,
+                        dest="exit_commands",
+                        metavar="extract|warp:TRIGGER_SIDE:TRIGGER_TYPE:SIDE:TYPE",
+                        help="begin existing AI squad orders when a named source ship physically exits")
     parser.add_argument("--activate-on-cue", action="append", default=[],
                         type=cue_order, dest="cue_commands",
                         metavar="CUE:SIDE:TYPE",
@@ -1980,6 +2061,8 @@ def main() -> None:
         "death_command_activations": len(args.death_commands),
         "physical_event_reinforcements": len(args.physical_reinforcements),
         "physical_event_command_activations": len(args.physical_commands),
+        "ship_exit_reinforcements": len(args.exit_reinforcements),
+        "ship_exit_command_activations": len(args.exit_commands),
         "reserve_fleet_templates": [
             {"side": ship["side"], "ship_type": ship["ship_type"]}
             for ship in scene.get("fleet_templates", [])
@@ -1991,7 +2074,8 @@ def main() -> None:
             sum(wave[3] for wave in args.reinforcements) +
             sum(wave[4] for wave in args.death_reinforcements) +
             sum(wave[3] for wave in args.cue_reinforcements) +
-            sum(wave[4] for wave in args.physical_reinforcements)
+            sum(wave[4] for wave in args.physical_reinforcements) +
+            sum(wave[5] for wave in args.exit_reinforcements)
         ),
         "native_policy_run": (str(output / "battle.policy.run.json")
                               if args.trainable else None),
