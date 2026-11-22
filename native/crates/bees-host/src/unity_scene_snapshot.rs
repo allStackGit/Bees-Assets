@@ -1311,6 +1311,10 @@ pub struct NativePhysicalScene {
     // Present only when a native-game scene explicitly owns its mission
     // behavior. Legacy snapshots have no implicit/guessed mission scripts.
     native_mission: Option<NativeSceneMission>,
+    /// None means an imported Unity snapshot already contains its real
+    /// initial asteroids. A standalone native scene may instead request
+    /// source-palette randomized physical asteroids at World creation.
+    native_initial_full_asteroids: Option<usize>,
     // Native authored reserve classes: complete physical source prototypes,
     // deliberately excluded from the gameplay and training World.
     fleet_templates: Vec<NativeFleetTemplate>,
@@ -3641,6 +3645,25 @@ impl NativePhysicalScene {
             }
         }
         let [bee_side, human_side] = self.gameplay_sides();
+        // Unity snapshots describe an ALREADY spawned Stage. Randomizing
+        // more asteroids would duplicate its captured physical contents.
+        // Standalone native scenes are initial World definitions and can
+        // request extra source-palette asteroids using the same spawn RNG,
+        // fragments and collision rules as every other gameplay Level.
+        let initial_full_asteroids = match self.native_initial_full_asteroids {
+            Some(authored) if authored > 0 => {
+                if setup.initial_full_asteroids != 0 {
+                    return Err(NativePolicyOnlyLevelError::Snapshot(
+                        NativeSnapshotError::InvalidNativeLayout(
+                            "native scene and host both prescribe initial randomized asteroids",
+                        )
+                    ));
+                }
+                authored
+            }
+            Some(_) => setup.initial_full_asteroids,
+            None => 0,
+        };
         let mut episode = if self.source_episode.is_some() {
             self.exported_episode()
         } else if setup.groups.is_some() &&
@@ -4092,10 +4115,9 @@ impl NativePhysicalScene {
             seed: setup.seed,
             broadphase_cell_size: setup.broadphase_cell_size,
             decision_period: setup.decision_period,
-            // The snapshot already imports every existing full asteroid.
-            // Spawning extra randomized ones would duplicate the authored
-            // initial scene and invalidate the recorded discovery totals.
-            initial_full_asteroids: 0,
+            // Native initial worlds can author fresh random asteroids;
+            // imported Unity snapshots preserve their captured population.
+            initial_full_asteroids,
             episode,
             groups: setup.groups,
             navigation,
@@ -5552,6 +5574,7 @@ impl NativePhysicalScene {
             .map_err(NativeSnapshotError::Fleet)?;
         Ok(Self {
             native_mission: None,
+            native_initial_full_asteroids: None,
             bee_side: raw.bee_side,
             human_side: raw.human_side,
             source_frame_count: raw.source_frame_count,
