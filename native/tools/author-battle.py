@@ -1549,6 +1549,62 @@ def author(args) -> tuple[dict, dict, dict]:
                     "automated demolition requires an initially deployed, "
                     "mobile, turret-armed scripted squad"
                 )
+    elif args.objective == "target_ship":
+        if owner not in controlled and hive is None and not scripted_controller:
+            raise ValueError("named-ship hunt requires a live player, HiveMind, or scripted attacking controller")
+        enemy_side = 3 - owner
+        candidates = [
+            ship for ship in by_side[enemy_side]
+            if ship["entity_id"] not in deferred_owner and
+            ship.get("health", 0) > 0 and
+            (args.target_ship_type is None or
+             ship["ship_type"] == args.target_ship_type)
+        ]
+        if not candidates:
+            raise ValueError("named-ship hunt requires an initially deployed living enemy target")
+        # Original SavedSquad physical identity is the only source for a
+        # target. Prefer a commandable persistent hull over a free Carrier
+        # child or temporary support platform when no class was requested.
+        candidates.sort(key=lambda ship: (
+            ship.get("drone_carrier_id") is not None,
+            ship.get("base_speed", 0) <= 0,
+            ship["entity_id"],
+        ))
+        target = candidates[0]
+        level["target_ship"] = {
+            "attacking_side": owner,
+            "target_ship_id": target["entity_id"],
+        }
+        if owner not in controlled and hive is None:
+            target_squad_id = next(
+                squad["item_id"] for squad in by_side_squads[enemy_side]
+                if target["entity_id"] in squad["members"]
+            )
+            attackers = {
+                ship["entity_id"]: ship for ship in by_side[owner]
+            }
+            assigned = 0
+            for squad in by_side_squads[owner]:
+                queue = scripted_by_id.get(squad["item_id"])
+                if queue is None or "activation" in queue or (
+                    squad["item_id"] in deferred_squad_ids
+                ):
+                    continue
+                members = [attackers[id] for id in squad["members"]]
+                if not any(ship.get("base_speed", 0) > 0 and
+                           ship.get("turrets") for ship in members):
+                    continue
+                # The existing authenticated TargetEnemy command resolves
+                # the physical enemy squad on each activation; no cloned
+                # weapons, separate AI or hidden target lifetime.
+                queue["orders"] = [{
+                    "kind": "target_enemy",
+                    "enemy_squad_item_id": target_squad_id,
+                }]
+                queue["repeat"] = True
+                assigned += 1
+            if not assigned:
+                raise ValueError("automated named-ship hunt needs an initially deployed armed attacking squad")
     if dialogue is not None:
         if owner not in controlled:
             raise ValueError("campaign dialogue requires the real locally controlled objective faction")
@@ -1874,9 +1930,11 @@ def main() -> None:
     parser.add_argument("--title", default="Custom Native Battle")
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--minutes", type=int, default=4)
-    parser.add_argument("--objective", choices=("elimination", "survival", "extraction", "escort", "demolition"),
+    parser.add_argument("--objective", choices=(
+                        "elimination", "survival", "extraction",
+                        "escort", "demolition", "target_ship"),
                         default="elimination",
-                        help="native elimination, defense, extraction, escorted-ship delivery or demolition objective")
+                        help="native elimination, defense, extraction, escort, physical demolition or named-ship hunt")
     parser.add_argument("--objective-side", type=int, choices=(1, 2),
                         help="objective faction; defaults to local player side")
     parser.add_argument("--protect-type", type=int,
@@ -1898,6 +1956,8 @@ def main() -> None:
                         help="escort only: mobile ship type to deliver (otherwise prefers Scout)")
     parser.add_argument("--escort-seconds", type=float,
                         help="escort only: delivery deadline (default: battle duration)")
+    parser.add_argument("--target-ship-type", type=int,
+                        help="target_ship only: physical enemy ship class (default: first deployed commandable hull)")
     parser.add_argument("--demolition-target", type=int,
                         help="demolition only: physical MapObject entity ID (required when ambiguous)")
     parser.add_argument("--demolition-seconds", type=float,
@@ -1999,6 +2059,9 @@ def main() -> None:
     if args.objective != "demolition" and (
             args.demolition_target is not None or args.demolition_seconds is not None):
         parser.error("--demolition-target and --demolition-seconds require --objective demolition")
+    if args.target_ship_type is not None and (
+            args.objective != "target_ship" or not 0 <= args.target_ship_type < 24):
+        parser.error("--target-ship-type needs --objective target_ship and a source class 0..23")
     try:
         scene, run, library = author(args)
         policy = None
