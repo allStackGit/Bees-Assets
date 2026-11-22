@@ -55,6 +55,7 @@ HELP = """Commands:
   activate-retreat     Open your side's authored retreat exit
   rejoin               Reconnect to the SAME recovered native host session
   ships                List currently visible ships and their positions
+  inspect ID           Inspect your ship's actual battle career counters
   squads               List friendly and visible target squads
   obstacles            List visible map objects and mining asteroids
   weapons              Inspect live weapon status on selected ships
@@ -113,6 +114,8 @@ class RemoteConsole:
         self.surrender_requested_episode = None
         self.surrender_request_id = None
         self.weapon_overlay_enabled = False
+        # Request-scoped read-only career inspections, never a client fleet.
+        self.pending_inspections = {}
         # One host_session_id belongs to the original authoritative World
         # across native checkpoint recovery. Rejoining an unrelated host
         # with the same tokens must never carry old player authority.
@@ -288,6 +291,44 @@ class RemoteConsole:
                         self.held_scope = None
                         self.held_begin_request = None
                         note = "Held fire released by native host"
+                        self.notifications.put(note)
+                        if not self.silent:
+                            print(note)
+                    elif kind == "ship_inspection_result":
+                        request_id = message.get("request_id")
+                        with self.lock:
+                            issued = self.pending_inspections.pop(request_id, None)
+                        if (issued is None or
+                                issued != (message.get("world_id"),
+                                           message.get("episode_revision"),
+                                           message.get("ship_id")) or
+                                type(message.get("processed")) is not bool):
+                            raise ValueError("unsolicited native ship inspection receipt")
+                        if not message["processed"]:
+                            note = f"Ship {issued[2]} career unavailable or no longer owned"
+                        else:
+                            stats = message.get("stats")
+                            if not isinstance(stats, dict) or any(
+                                type(stats.get(key)) is not int or stats[key] < 0
+                                for key in ("observed_turret_shots",
+                                            "enemy_tsv_damage_done",
+                                            "tsv_damage_received")
+                            ):
+                                raise ValueError("invalid authoritative FleetShip counters")
+                            kills = stats.get("source_kills")
+                            if kills is not None and (type(kills) is not int or kills < 0):
+                                raise ValueError("invalid FleetShip kill history")
+                            kills_label = "unknown" if kills is None else str(kills)
+                            note = (
+                                f"Ship {issued[2]} battle: "
+                                f"{stats['observed_turret_shots']} shots, "
+                                f"{kills_label} kills, "
+                                f"{stats['enemy_tsv_damage_done']} enemy TSV damaged, "
+                                f"{stats['tsv_damage_received']} TSV received"
+                            )
+                            mined = message.get("minerals_mined_this_level")
+                            if type(mined) is int and mined >= 0:
+                                note += f", {mined} minerals mined"
                         self.notifications.put(note)
                         if not self.silent:
                             print(note)
@@ -654,6 +695,33 @@ class RemoteConsole:
         self.next_request += 1
         return packet["request_id"]
 
+    def request_ship_inspection(self, state, ship_id):
+        """Query one owned physical ship on the host; never expose enemy careers."""
+        if self.spectator or not any(
+            ship["id"] == ship_id and ship["owned"] is True
+            for ship in state["ships"]
+        ):
+            raise ValueError("inspection requires a visible player-owned ship")
+        request_id = self.next_request
+        scope = (state["world_id"], state["episode_revision"], ship_id)
+        with self.lock:
+            if len(self.pending_inspections) >= 16:
+                raise ValueError("too many outstanding ship inspections")
+            self.pending_inspections[request_id] = scope
+        packet = {
+            "kind": "inspect_ship", "request_id": request_id,
+            "world_id": scope[0], "episode_revision": scope[1],
+            "ship_id": ship_id,
+        }
+        try:
+            self.socket.sendall((json.dumps(packet, separators=(",", ":"))
+                                 + "\n").encode("utf-8"))
+        except OSError:
+            with self.lock:
+                self.pending_inspections.pop(request_id, None)
+            raise
+        self.next_request += 1
+
     def request_weapon_overlay(self, state, owners):
         """Ask the host to project exact physical range and contact data.
 
@@ -889,6 +957,15 @@ class RemoteConsole:
                       f"  ({ship['x']:8.1f}, {ship['y']:8.1f})"
                       f"  HP {ship['health']}/{ship['max_health']}{finances}"
                       f" {'ours' if ship['owned'] else 'ally' if ship['friendly'] else 'enemy'}")
+            return
+        if cmd == "inspect":
+            if len(argv) != 1:
+                raise ValueError("inspect requires one physical ship ID")
+            ship_id = int(argv[0])
+            if ship_id <= 0:
+                raise ValueError("inspect requires a positive ship identity")
+            self.request_ship_inspection(state, ship_id)
+            print(f"Requested authoritative career for ship {ship_id}")
             return
         if cmd == "squads":
             known = {entry["ship_type"]: entry["name"]
