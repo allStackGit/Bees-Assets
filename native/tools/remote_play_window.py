@@ -654,46 +654,21 @@ class RemoteBattleWindow:
                        self.offset[1] + self.canvas.winfo_height()/2 - py)
 
     def squad_shortcut(self, event):
-        # Tk propagates key events from comboboxes and text fields to the
-        # root. Only the actual game map can use source number shortcuts.
+        # Tk propagates keypresses from comboboxes to root. Only the
+        # focused tactical map consumes numbered or cyclic squad shortcuts.
         if (event.widget is not self.canvas or self.console.spectator or
                 not self.console.alive or self.state is None or
                 self.held_drag or self.visible_dialogue() is not None):
             return
-        squads = self.state["squads"]
-        owner = None
-        if event.char in "1234567890" and len(event.char) == 1:
-            # Original count is fixed at mission creation, not rebuilt
-            # from remaining live squads after casualties. Never silently
-            # reuse a destroyed squad's number for a survivor.
-            count = next((
-                row.get("original_squad_count") for row in squads
-                if row["controllable"] and row.get("source_number") is not None
-                and row.get("original_squad_count")
-            ), None)
-            if count:
-                number = 10 if event.char == "0" else int(event.char)
-                wanted = (number-1) % count + 1
-                owner = next((
-                    row["owner"] for row in squads if row["controllable"]
-                    and row.get("source_number") == wanted
-                ), None)
+        if len(event.char) == 1 and event.char in "0123456789":
+            owner = self.console.source_number_owner(self.state, int(event.char))
         elif event.keysym in ("Prior", "Next"):
-            # PageUp/PageDown cycle the source roster in actual host order;
-            # generated dependent minions do not acquire fake hotkeys.
-            eligible = [row["owner"] for row in squads
-                        if row["controllable"] and (
-                            row.get("source_number") is not None or
-                            (row.get("original_squad_count") is None and
-                             row.get("source_root") is True))]
-            if eligible:
-                current = self.selected[0] if self.selected else None
-                at = eligible.index(current) if current in eligible else None
-                forward = event.keysym == "Next"
-                at = ((at+1) % len(eligible) if forward else
-                      (at-1) % len(eligible)) if at is not None else (
-                          0 if forward else len(eligible)-1)
-                owner = eligible[at]
+            owner = self.console.cycle_source_owner(
+                self.state, self.selected[0] if self.selected else None,
+                event.keysym == "Next",
+            )
+        else:
+            return
         if owner is None:
             return
         self.selected = [owner]
