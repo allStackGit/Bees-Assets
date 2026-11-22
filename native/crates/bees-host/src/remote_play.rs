@@ -1996,6 +1996,12 @@ fn collect_remote_audio(
                 view.combat.ship_body(*victim_id)
                     .map(|body| body.motion.position),
             ),
+            // Source Heal.HealShips emits a cosmetic pulse once per live
+            // Beehive in that command. Project only the actual host position.
+            CombatEvent::CommandHealingCross { beehive_id } => (
+                "healing_cross",
+                view.combat.ship_body(*beehive_id).map(|body| body.motion.position),
+            ),
             CombatEvent::StrikerBombDropped { ship_id, .. } => (
                 "striker_bomb",
                 view.combat.ship_body(*ship_id).map(|body| body.motion.position),
@@ -2069,6 +2075,7 @@ fn collect_remote_audio(
             CombatEvent::Hit(hit) => Some(hit.target_id),
             CombatEvent::BombDetonated { target_id, .. } => Some(*target_id),
             CombatEvent::ShipDied { victim_id, .. } => Some(*victim_id),
+            CombatEvent::CommandHealingCross { beehive_id } => Some(*beehive_id),
             CombatEvent::StrikerBombDropped { ship_id, .. } |
             CombatEvent::ShipWarped { ship_id, .. } |
             CombatEvent::GameWeaponFired { ship_id, .. } |
@@ -2093,7 +2100,7 @@ fn collect_remote_audio(
                 pending.iter().position(|cue| cue["effect"] == "impact")
                     .or_else(|| pending.iter().position(|cue|
                         cue["effect"] == "projectile"))
-            } else if effect != "impact" {
+            } else if effect != "impact" && effect != "healing_cross" {
                 pending.iter().position(|cue| cue["effect"] == "impact")
             } else { None }
         } else { None };
@@ -2110,6 +2117,9 @@ fn collect_remote_audio(
                     // installation, never an independent client guess.
                     cue["weapon_sound_type"] = json!(sound);
                 }
+            }
+            if let CombatEvent::CommandHealingCross { beehive_id } = event {
+                cue["healing_cross"] = json!({"beehive_id": beehive_id});
             }
             if let Some((projectile_id, target_id, fatal)) = impact {
                 cue["combat_impact"] = json!({

@@ -124,6 +124,9 @@ struct WireCounts {
     ship_deaths_received: u64,
     combat_impacts_received: u64,
     combat_impact_visual_draws: u64,
+    healing_crosses_received: u64,
+    healing_crosses_drawn: u64,
+    healing_crosses_dropped: u64,
     combat_impact_visuals_dropped: u64,
     ship_remains_draws: u64,
     ship_remains_source_frame_draws: u64,
@@ -355,6 +358,18 @@ impl RemoteArtwork {
         }
         self.raster.begin_death_scene(WorldId(episode.0), episode.1);
         for cue in state["audio_events"].as_array().into_iter().flatten() {
+            if let (Some(beehive_id), Some(x), Some(y), Some(born_tick)) = (
+                cue["healing_cross"]["beehive_id"].as_i64(),
+                cue["x"].as_f64().map(|value| value as f32),
+                cue["y"].as_f64().map(|value| value as f32),
+                cue["tick"].as_u64(),
+            ) {
+                let (admitted, dropped) = self.raster.record_healing_cross(
+                    born_tick, beehive_id, Vec2::new(x, y),
+                );
+                stats.healing_crosses_received += u64::from(admitted);
+                stats.healing_crosses_dropped += u64::from(dropped);
+            }
             let impact = &cue["combat_impact"];
             if let (Some(projectile), Some(target), Some(fatal),
                     Some(x), Some(y), Some(born_tick)) = (
@@ -404,6 +419,8 @@ impl RemoteArtwork {
         stats.queen_explosion_layer_draws += queen_layers as u64;
         stats.combat_impact_visual_draws +=
             self.raster.draw_combat_impact_visuals(tick, dt) as u64;
+        stats.healing_crosses_drawn +=
+            self.raster.draw_healing_cross_visuals(tick, dt) as u64;
         let (candidates, opaque, blended) = self.raster.remote_raster_counts();
         stats.sprite_candidate_pixels += candidates;
         stats.sprite_opaque_pixels += opaque;
@@ -4381,6 +4398,9 @@ pub fn connect_remote(
         "ship_deaths_received":peer.metrics.ship_deaths_received,
         "combat_impacts_received":peer.metrics.combat_impacts_received,
         "combat_impact_visual_draws":peer.metrics.combat_impact_visual_draws,
+        "healing_crosses_received":peer.metrics.healing_crosses_received,
+        "healing_crosses_drawn":peer.metrics.healing_crosses_drawn,
+        "healing_crosses_dropped":peer.metrics.healing_crosses_dropped,
         "combat_impact_visuals_dropped":peer.metrics.combat_impact_visuals_dropped,
         "ship_remains_draws":peer.metrics.ship_remains_draws,
         "ship_remains_source_frame_draws":peer.metrics.ship_remains_source_frame_draws,
