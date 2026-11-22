@@ -2037,7 +2037,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             "side": side,
             "saved_squad_id": id,
             "name": progress.squad_name(id),
-            "has_recorded_battle": progress.saved_squad_ids_for_side(side).contains(&id),
+            "has_recorded_battle": progress.has_recorded_squad_battle(side, id),
         })).collect::<Vec<_>>());
         println!("{status}");
         return Ok(());
