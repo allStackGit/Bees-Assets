@@ -1178,6 +1178,48 @@ class RemoteBattleWindow:
         def point(x, y):
             return left+(x-x0)*scale, top+(y1-y)*scale
 
+        # The authored Level supplies actual objective areas, including
+        # retreat corridors that exist only after activation. A minimap
+        # never invents destinations from current fleet positions.
+        for field, color in (
+            ("escort_destination", FRIENDLY),
+            ("extraction_destination", MINERAL),
+        ):
+            area = state.get(field)
+            if area is None:
+                continue
+            (ax, ay), (bx, by) = area
+            px, py = point(ax, ay)
+            qx, qy = point(bx, by)
+            lx, rx = max(left, min(px, qx)), min(right, max(px, qx))
+            ty, by = max(top, min(py, qy)), min(bottom, max(py, qy))
+            if lx <= rx and ty <= by:
+                self.canvas.create_rectangle(
+                    lx, ty, rx, by, outline=color, dash=(3, 2),
+                )
+
+        objective = state.get("campaign_objective") or {}
+        objective_kind = objective.get("kind")
+        target_object = (objective.get("target_map_object_id")
+                         if objective_kind == "demolition" else None)
+        important_ship_ids = {
+            value for value in (
+                objective.get("protected_ship_id"),
+                objective.get("escorted_ship_id"),
+                objective.get("target_ship_id"),
+            ) if value is not None
+        }
+        important_ship_ids.update(objective.get("barge_ids") or [])
+        # Mission identity does not imply current visibility. Coordinates
+        # come solely from already-filtered physical ship/map-object rows.
+        for obj in state.get("obstacles", []):
+            if obj["id"] != target_object:
+                continue
+            px, py = point(obj["x"], obj["y"])
+            if left <= px <= right and top <= py <= bottom:
+                self.canvas.create_rectangle(px-4, py-4, px+4, py+4,
+                                             outline=ENEMY, width=2)
+
         # The host has already fog-culled its ships and mining objects.
         # Deduplicate subpixel markers to keep crowded battles cheap.
         cells = set()
@@ -1203,6 +1245,10 @@ class RemoteBattleWindow:
             if ship["id"] in selected_ship_ids:
                 self.canvas.create_oval(px-3, py-3, px+3, py+3,
                                         outline="#ffffff")
+            if ship["id"] in important_ship_ids:
+                self.canvas.create_rectangle(px-5, py-5, px+5, py+5,
+                                             outline=MINERAL if ship["friendly"]
+                                             else ENEMY, width=2)
         # Show actual camera coverage. Clamping keeps outlines inside
         # the minimap even while the player pans beyond world edges.
         wa, wb = self.to_world(0, 0), self.to_world(
