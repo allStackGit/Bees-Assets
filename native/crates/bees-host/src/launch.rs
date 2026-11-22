@@ -5557,11 +5557,15 @@ fn run_campaign_game_menu(
             let Ok(lost) = progress.lost_player_fleet_ids(side) else { continue };
             for purchased in progress.purchases_for_side(side) {
                 if lost.contains(&purchased.fleet_ship_id) { continue; }
+                let label = match progress.fleet_ship_name(purchased.fleet_ship_id) {
+                    Some(name) => format!("Fleet #{} ({name})", purchased.fleet_ship_id),
+                    None => format!("Fleet #{}", purchased.fleet_ship_id),
+                };
                 if purchased.saved_squad_id != 0 {
                     transfer_rows.push(NativeTransferMenuRow {
                         title: format!(
-                            "Fleet #{} (Type {})  {} -> Reserve",
-                            purchased.fleet_ship_id, purchased.ship_type,
+                            "{} (Type {})  {} -> Reserve",
+                            label, purchased.ship_type,
                             progress.squad_label(purchased.saved_squad_id),
                         ),
                         fleet_ship_id: purchased.fleet_ship_id,
@@ -5573,8 +5577,8 @@ fn run_campaign_game_menu(
                     if purchased.saved_squad_id == destination { continue; }
                     transfer_rows.push(NativeTransferMenuRow {
                         title: format!(
-                            "Fleet #{} (Type {})  {} -> {}",
-                            purchased.fleet_ship_id, purchased.ship_type,
+                            "{} (Type {})  {} -> {}",
+                            label, purchased.ship_type,
                             if purchased.saved_squad_id == 0 {
                                 "Reserve".to_string()
                             } else {
@@ -5592,11 +5596,15 @@ fn run_campaign_game_menu(
         for &(side, fleet_id, original_squad) in &original_choices {
             let current_squad = progress.authored_current_squad(fleet_id)
                 .unwrap_or(original_squad);
+            let label = match progress.fleet_ship_name(fleet_id) {
+                Some(name) => format!("Original Fleet #{fleet_id} ({name})"),
+                None => format!("Original Fleet #{fleet_id}"),
+            };
             if current_squad != 0 {
                 transfer_rows.push(NativeTransferMenuRow {
                     title: format!(
-                        "Original Fleet #{}  {} -> Reserve",
-                        fleet_id, progress.squad_label(current_squad),
+                        "{}  {} -> Reserve",
+                        label, progress.squad_label(current_squad),
                     ),
                     fleet_ship_id: fleet_id,
                     to_saved_squad_id: 0,
@@ -5609,8 +5617,8 @@ fn run_campaign_game_menu(
                 if current_squad == destination { continue; }
                 transfer_rows.push(NativeTransferMenuRow {
                     title: format!(
-                        "Original Fleet #{}  {} -> {}",
-                        fleet_id,
+                        "{}  {} -> {}",
+                        label,
                         if current_squad == 0 {
                             "Reserve".to_string()
                         } else {
