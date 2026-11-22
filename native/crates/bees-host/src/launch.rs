@@ -10067,6 +10067,7 @@ fn run_battle(
             // gameplay navigation maps are empty during policy simulation.
             "navigation_lookups_skipped": status.simulation.navigation_lookups_skipped,
             "steering_lookups_skipped": status.simulation.steering_lookups_skipped,
+            "unarmed_weapon_holders_skipped": status.simulation.unarmed_weapon_holders_skipped,
             "inactive_ship_slots_skipped": status.simulation.inactive_ship_slots_skipped,
             "inactive_projectile_slots_skipped":
                 status.simulation.inactive_projectile_slots_skipped,
