@@ -35,7 +35,7 @@ class ThroughputHistory {
             if(parsed.version!==1||!Array.isArray(parsed.windows))return;
             for(const entry of parsed.windows.slice(-MAX_KEYS)) {
                 if(!Array.isArray(entry)||entry.length!==2||
-                    typeof entry[0]!=='string'||entry[0].length>16384||
+                    typeof entry[0]!=='string'||entry[0].length>4096||
                     !Array.isArray(entry[1]))continue;
                 const samples=entry[1].filter(w=>w&&
                     Number.isSafeInteger(w.steps)&&w.steps>0&&
@@ -51,7 +51,8 @@ class ThroughputHistory {
         if(!this.file||!this.dirty)return;
         const tmp=this.file+'.'+process.pid+'.'+crypto.randomBytes(6).toString('hex')+'.tmp';
         try {
-            const body=JSON.stringify({version:1,windows:[...this.windows]})+'\\n';
+            const body=JSON.stringify({version:1,windows:[...this.windows]})+String.fromCharCode(10);
+            if(Buffer.byteLength(body)>2*1024*1024)throw Error('Throughput history exceeds size limit.');
             fs.writeFileSync(tmp,body,{flag:'wx',mode:0o600});
             fs.renameSync(tmp,this.file);
             this.dirty=0;
@@ -67,7 +68,7 @@ class ThroughputHistory {
         const deviceKey=JSON.stringify(Array.isArray(gpus)?gpus.slice().sort():[]);
         const steps=progress?.steps_completed;
         const time=Date.parse(progress?.source_modified_at);
-        if(!key||typeof machineId!=='string'||!machineId||
+        if(!key||key.length>4096||typeof machineId!=='string'||!machineId||
             !Number.isSafeInteger(steps)||steps<0||!Number.isFinite(time))return;
         const identity=String(job.id);
         const prior=this.last.get(identity);
