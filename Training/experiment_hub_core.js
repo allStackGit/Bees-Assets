@@ -2137,6 +2137,9 @@ class ExperimentHub {
     snapshot() {
         const snapshot = copy(this.state);
         snapshot.hub_observation_archive_issue=this.observations.error;
+        snapshot.throughput_placement_evidence=this.throughputHistory.summary();
+        snapshot.throughput_history_issue=this.throughputHistory.persist_issue||
+            this.throughputHistory.load_issue||null;
         snapshot.bundle_start_plans=(snapshot.bundle_start_plans||[]).map(plan=>{
             if(plan.status!=='pending')return plan;
             const jobs=plan.member_job_ids.map(id=>snapshot.jobs.find(job=>job.id===id));
