@@ -69,6 +69,15 @@ MAP_BACKGROUND_IMAGES = (
     "Uranus_ring_bg_texture.png",
 )
 
+# Exact SpriteRenderer overrides on the original four Map prefabs.
+# Their fog overlay uses uniform 56/255 gray tint at m_SortingOrder 1.
+# Pre-tint RGB once while importing; no RGB multiplies in the masked
+# screen-pixel loop or any headless simulation.
+MAP_FOG_IMAGES = (
+    "pluto_fog_of_war.png", "neptune fog of war.png",
+    "titania_fow.png", "uranus_fog_bg-export.png",
+)
+
 # Original ShipRemains and Beehive Shrinking sheets. The tuple is keyed
 # directly by ConfigData.ShipTypes; None denotes source classes without
 # authored wreck art. The 20-slice clips hold their final frame until the
@@ -239,7 +248,8 @@ def packed_color_mask(data: bytearray, frame, colors):
             count -= run
 
 
-def pack(images, directory, magic, animated, palettes=None, *, large_static=False):
+def pack(images, directory, magic, animated, palettes=None,
+         *, large_static=False, tint_rgb=None):
     entries = [(kind, name) for kind, name in enumerate(images) if name]
     data = bytearray(struct.pack("<4sH", magic, len(entries)))
     for kind, name in entries:
@@ -247,6 +257,13 @@ def pack(images, directory, magic, animated, palettes=None, *, large_static=Fals
             directory / name, animated,
             large_static=large_static or (magic == b"BSS2" and kind == 17),
         )
+        if tint_rgb is not None:
+            tinted = []
+            for frame in frames:
+                rgb = frame.convert("RGB").point(
+                    lambda channel: (channel * tint_rgb + 127) // 255)
+                tinted.append(Image.merge("RGBA", (*rgb.split(), frame.getchannel("A"))))
+            frames = tinted
         if animated:
             data.extend(struct.pack("<BHH", kind, ppu, len(frames)))
             for frame in frames:
@@ -396,6 +413,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--map-background-output", type=Path,
                         default=ROOT / "native/assets/map-backgrounds.rgba")
+    parser.add_argument("--map-fog-output", type=Path,
+                        default=ROOT / "native/assets/map-fog.rgba")
     parser.add_argument("--ship-output", type=Path,
                         default=ROOT / "native/assets/ship-sprites.rgba")
     parser.add_argument("--projectile-output", type=Path,
@@ -424,6 +443,10 @@ def main():
         MAP_BACKGROUND_IMAGES, ROOT / "Sprites/Backgrounds", b"BSS1",
         False, large_static=True,
     )
+    fog, fog_count = pack(
+        MAP_FOG_IMAGES, ROOT / "Sprites/Backgrounds", b"BSS1",
+        False, large_static=True, tint_rgb=56,
+    )
     animations, animation_count = pack_ship_animations(palettes)
     remains, remains_count = pack_ship_remains(palettes)
     decks = pack_carrier_decks()
@@ -441,6 +464,7 @@ def main():
         ASTEROID_IMAGES, ROOT / "Sprites/Asteroids", b"BAS1", False,
     )
     backgrounds_path = write_atomic(args.map_background_output, backgrounds)
+    fog_path = write_atomic(args.map_fog_output, fog)
     ships_path = write_atomic(args.ship_output, ships)
     projectiles_path = write_atomic(args.projectile_output, projectiles)
     asteroids_path = write_atomic(args.asteroid_output, asteroids)
@@ -460,6 +484,8 @@ def main():
           f"{len(animations)} bytes at {animations_path}")
     print(f"Planetary backdrops: {background_count} types, "
           f"{len(backgrounds)} bytes at {backgrounds_path}")
+    print(f"Original fog map overlays: {fog_count} types, "
+          f"{len(fog)} bytes at {fog_path}")
     print(f"Ship sprites: {ship_count} types, {len(ships)} bytes at {ships_path}")
     print(f"Projectile sprites: {projectile_count} types, "
           f"{len(projectiles)} bytes at {projectiles_path}")

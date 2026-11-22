@@ -167,6 +167,7 @@ struct WireCounts {
     /// host-authenticated current/decaying vision are not presented.
     fog_circle_stamps: u64,
     fog_masked_pixels: u64,
+    fog_source_texture_pixels: u64,
 }
 
 /// The existing native source-art renderer, reused for authenticated
@@ -457,20 +458,13 @@ impl RemoteArtwork {
             .max(self.raster.remote_ship_recolor_cache_size());
     }
 
-    fn mask_field(&self, pixels: &mut [u32]) -> u64 {
-        if !self.fog_enabled { return 0; }
-        let mut masked = 0u64;
-        for (row, sight) in pixels.chunks_exact_mut(WIDTH)
-            .zip(self.fog_coverage.chunks_exact(FIELD))
-        {
-            for (pixel, &visible) in row[..FIELD].iter_mut().zip(sight) {
-                if visible == 0 {
-                    *pixel = 0x080e19;
-                    masked += 1;
-                }
-            }
-        }
-        masked
+    fn mask_field(&self, pixels: &mut [u32]) -> (u64, u64) {
+        if !self.fog_enabled { return (0, 0); }
+        let masked = self.fog_coverage.iter().filter(|&&v| v == 0).count() as u64;
+        let textured = self.raster.mask_remote_fog(
+            pixels, &self.fog_coverage, WIDTH, FIELD, HEIGHT,
+        ) as u64;
+        (masked, textured)
     }
 }
 
@@ -2409,7 +2403,11 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         // local native renderer's exact circle raster. In particular,
         // remembered death sprites cannot outlive the authenticated
         // shrinking sight mask. HUD, dialogue and minimap are drawn after.
-        *fog_masked_pixels += artwork.mask_field(pixels);
+        let (masked, source_textured) = artwork.mask_field(pixels);
+        *fog_masked_pixels += masked;
+        // The source texture work is measured separately from circle
+        // visibility stamps and actual obscured presentation pixels.
+        stats.fog_source_texture_pixels += source_textured;
         // Objective markers use only the host's already-fog-filtered
         // ship/obstacle projection. A remote peer cannot look up a target
         // whose coordinates were withheld by the host.

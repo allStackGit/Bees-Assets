@@ -194,6 +194,8 @@ pub struct NativeRenderCounts {
     pub fog_sources: usize,
     pub fog_fading_sources: usize,
     pub fog_occluded_pixels: usize,
+    /// Pixels using source SpriteRenderer fog art, not estimated coverage.
+    pub fog_source_texture_pixels: usize,
     /// One non-stencil, fully exposed viewport this frame.
     pub fog_full_viewport_skips: usize,
     /// One direct dark fill with no player sight sources remaining.
@@ -822,6 +824,91 @@ fn load_source_art<T>(filename: &str, decoder: fn(&[u8]) -> io::Result<T>) -> Op
             None
         }
     }
+}
+
+fn source_map_fog_art() -> Option<&'static SourceShipAtlas> {
+    // Cosmetic source FogOfWar SpriteRenderer atlas, with prefab's 56/255
+    // RGB tint applied by the offline importer. Loading never touches
+    // gameplay, training, or the native policy worker.
+    static ATLAS: OnceLock<Option<SourceShipAtlas>> = OnceLock::new();
+    ATLAS.get_or_init(|| load_source_art(
+        "map-fog.rgba", SourceShipAtlas::decode,
+    )).as_ref()
+}
+
+/// Replace obscured pixels with the original tinted map fog texture.
+/// NEVER blend against rendered ships: a partly transparent fog texel
+/// must not reveal enemies withheld by the authoritative vision mask.
+/// The only underlying color is the known inert, dark backdrop.
+fn obscure_fog_pixels(
+    pixels: &mut [u32], coverage: Option<&[u8]>,
+    stride: usize, field_width: usize, field_height: usize,
+    camera: NativeCamera, background: Option<NativeMapBackdrop>,
+) -> usize {
+    const DARK: u32 = 0x080e19;
+    let art = background.and_then(|kind| {
+        let index = match kind {
+            NativeMapBackdrop::Pluto => 0,
+            NativeMapBackdrop::Neptune => 1,
+            NativeMapBackdrop::Titania => 2,
+            NativeMapBackdrop::Uranus => 3,
+        };
+        let half = if matches!(kind,
+            NativeMapBackdrop::Pluto | NativeMapBackdrop::Titania) {
+            256.0_f32
+        } else { 512.0 };
+        let sprite = &source_map_fog_art()?.sprites[index].as_ref()?.sprite;
+        Some((sprite, half))
+    });
+    let inv_ppu = if camera.pixels_per_unit > 0.0 &&
+        camera.pixels_per_unit.is_finite() {
+        camera.pixels_per_unit.recip()
+    } else { 0.0 };
+    let Some((sprite, half)) = art else {
+        for (y, row) in pixels.chunks_exact_mut(stride).take(field_height).enumerate() {
+            for (x, pixel) in row[..field_width].iter_mut().enumerate() {
+                if coverage.is_none_or(|mask|
+                    mask[y * field_width + x] == 0) {
+                    *pixel = DARK;
+                }
+            }
+        }
+        return 0;
+    };
+    let sx = sprite.width as f32 / (half * 2.0);
+    let sy = sprite.height as f32 / (half * 2.0);
+    let du = inv_ppu * sx;
+    let u_first = (camera.center.x +
+        (0.5 - field_width as f32 * 0.5) * inv_ppu + half) * sx;
+    let mut sampled = 0usize;
+    for (y, row) in pixels.chunks_exact_mut(stride).take(field_height).enumerate() {
+        let v = (half - camera.center.y +
+            (y as f32 + 0.5 - field_height as f32 * 0.5) * inv_ppu) * sy;
+        let source_row = (0.0..sprite.height as f32).contains(&v)
+            .then(|| v as usize * sprite.width);
+        for (x, pixel) in row[..field_width].iter_mut().enumerate() {
+            if coverage.is_some_and(|mask| mask[y * field_width + x] != 0) {
+                continue;
+            }
+            let u = u_first + x as f32 * du;
+            let rgba = source_row.and_then(|start|
+                (0.0..sprite.width as f32).contains(&u)
+                    .then(|| &sprite.pixels[(start + u as usize)*4..
+                                          (start + u as usize)*4 + 4])
+            );
+            *pixel = if let Some([r,g,b,a]) = rgba.and_then(|colors|
+                <&[u8;4]>::try_from(colors).ok()) {
+                let rgb = [*r,*g,*b];
+                sampled += 1;
+                if *a == 255 {
+                    u32::from(*r) << 16 | u32::from(*g) << 8 | u32::from(*b)
+                } else {
+                    text::blend(DARK, rgb, u32::from(*a))
+                }
+            } else { DARK };
+        }
+    }
+    sampled
 }
 
 fn source_map_backgrounds() -> Option<&'static SourceShipAtlas> {
@@ -2103,7 +2190,10 @@ impl NativeSoftwareRenderer {
         if counts.fog_sources == 0 && counts.fog_fading_sources == 0 {
             // An empty player fleet has no sight. Clearing the final image
             // directly avoids two full-resolution stencil passes.
-            self.pixels.fill(0x080e19);
+            counts.fog_source_texture_pixels = obscure_fog_pixels(
+                &mut self.pixels, None, self.width, self.width, self.height,
+                self.camera, self.map_background,
+            );
             counts.fog_occluded_pixels = self.pixels.len();
             counts.fog_empty_viewport_fills = 1;
             return;
@@ -2122,12 +2212,12 @@ impl NativeSoftwareRenderer {
             Self::reveal_fog_circle(stencil, camera, width, height,
                 fade.position, fade.current_radius(view.tick, view.fixed_step_seconds));
         }
-        for (pixel, visible) in self.pixels.iter_mut().zip(stencil.iter()) {
-            if *visible == 0 {
-                *pixel = 0x080e19;
-                counts.fog_occluded_pixels += 1;
-            }
-        }
+        counts.fog_occluded_pixels = stencil.iter()
+            .filter(|&&visible| visible == 0).count();
+        counts.fog_source_texture_pixels = obscure_fog_pixels(
+            &mut self.pixels, Some(stencil), self.width, self.width, self.height,
+            self.camera, self.map_background,
+        );
     }
 
     /// Use the authoritative hull and healing-zone colliders for clicks,
@@ -2256,6 +2346,18 @@ impl NativeSoftwareRenderer {
         if self.selection.squads().is_empty() { return None; }
         [Mode::Attack, Mode::FullRetreat, Mode::Heal, Mode::Mining].into_iter()
             .find_map(|mode| self.pick_support_action(view, mode, point, None))
+    }
+
+    /// Multiplayer's host-filtered projection uses exactly the same
+    /// authored map fog texture as local play, with its own authenticated
+    /// visibility stencil. No enemy pixels can pass a translucent texel.
+    #[cfg(feature = "client")]
+    pub(super) fn mask_remote_fog(
+        &self, pixels: &mut [u32], coverage: &[u8],
+        pitch: usize, field_width: usize, field_height: usize,
+    ) -> usize {
+        obscure_fog_pixels(pixels, Some(coverage), pitch, field_width,
+            field_height, self.camera, self.map_background)
     }
 
     pub fn set_map_background(&mut self, background: Option<NativeMapBackdrop>) {
