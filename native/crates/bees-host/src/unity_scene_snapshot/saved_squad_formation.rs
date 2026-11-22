@@ -296,9 +296,10 @@ impl NativePhysicalScene {
                     _ => None,
                 });
                 let custom = fleet_id.and_then(|key| overrides.get(&key)).copied();
-                // A manual assignment replaces one squad slot while all
-                // other ships retain source/automatic formation order.
-                let offset = custom.unwrap_or(slot - slot_center);
+                // Manual placement is an additive nudge from the original
+                // authored/preset slot. Zero never teleports a ship to the
+                // squad center. Unedited ships retain their exact layout.
+                let offset = slot - slot_center + custom.unwrap_or(Vec2::ZERO);
                 let destination = original_center + offset + translation;
                 // An individual saved placement must not disturb the
                 // remaining source-authored ships. Skip untouched owners

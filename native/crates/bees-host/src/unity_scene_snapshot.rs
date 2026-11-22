@@ -1490,7 +1490,9 @@ pub enum NativeSquadColorSetting {
 }
 
 /// Stable FleetShip placement in a saved squad, not the transient source
-/// Stage/CombatWorld ship entity ID. Values are relative to squad center.
+/// Stage/CombatWorld ship entity ID. Values are signed displacements from
+/// that ship's real source or player-selected preset formation slot.
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeSavedShipPlacement {

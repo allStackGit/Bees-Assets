@@ -865,11 +865,14 @@ fn select_battle_inner(
                         if window.is_key_pressed(Key::Delete, KeyRepeat::No) {
                             tactic_placements.retain(|place| place.fleet_ship_id != id);
                         }
-                        let dx = if window.is_key_pressed(Key::Left, KeyRepeat::Yes) { -8_i16 }
-                            else if window.is_key_pressed(Key::Right, KeyRepeat::Yes) { 8 }
+                        let fine = window.is_key_down(Key::LeftShift) ||
+                            window.is_key_down(Key::RightShift);
+                        let step = if fine { 1_i16 } else { 8_i16 };
+                        let dx = if window.is_key_pressed(Key::Left, KeyRepeat::Yes) { -step }
+                            else if window.is_key_pressed(Key::Right, KeyRepeat::Yes) { step }
                             else { 0 };
-                        let dy = if window.is_key_pressed(Key::Up, KeyRepeat::Yes) { 8_i16 }
-                            else if window.is_key_pressed(Key::Down, KeyRepeat::Yes) { -8 }
+                        let dy = if window.is_key_pressed(Key::Up, KeyRepeat::Yes) { step }
+                            else if window.is_key_pressed(Key::Down, KeyRepeat::Yes) { -step }
                             else { 0 };
                         if dx != 0 || dy != 0 {
                             let place = if let Some(index) = tactic_placements.iter()
@@ -1011,8 +1014,8 @@ fn select_battle_inner(
                     tactics_rows.get(shop_selected).and_then(|row|
                         row.fleet_ships.get(tactic_ship_index)).map(|&id| {
                         match tactic_placements.iter().find(|p| p.fleet_ship_id == id) {
-                            Some(p) => format!("FleetShip #{id} offset {},{}", p.offset[0], p.offset[1]),
-                            None => format!("FleetShip #{id} - original slot"),
+                            Some(p) => format!("FleetShip #{id} nudge {},{}", p.offset[0], p.offset[1]),
+                            None => format!("FleetShip #{id} - unchanged slot"),
                         }
                     }).unwrap_or_else(|| "Select a deployed FleetShip".to_owned())
                 } else { "Formation and saved ship tactics".to_owned() };
@@ -1134,7 +1137,7 @@ fn select_battle_inner(
             text::draw_centered(&mut pixels, WIDTH, 441,
                 if show_tactics {
                     if placing_ship {
-                        "Ship: arrows move 8 | PgUp/PgDn choose | Del clear | J done | Enter save"
+                        "Ship: arrows nudge 8, Shift+arrows 1 | PgUp/PgDn ship | Del reset | J done"
                     } else {
                         "Arrows strategy | Shift+arrows move squad | J ship | F form W width O turn X mirror"
                     }
