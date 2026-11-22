@@ -120,6 +120,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'ppo_gpu_metadata_packs',
             'ppo_gpu_metadata_copies_avoided',
             'ppo_gpu_metadata_packed_bytes',
+            'ppo_gpu_index_uploads_saved','ppo_gpu_index_upload_bytes',
             'async_snapshot_replica_allocations',
             'async_snapshot_replica_reuses',
             'async_snapshot_replica_live',
