@@ -614,6 +614,42 @@ def verify_bundle(path, job, orders):
                 sum(item["successful_world_steps"] for item in device_rows) != metrics["successful_world_steps"] or
                 sum(item["successful_policy_rows"] for item in device_rows) != metrics["successful_policy_rows"]):
             raise ValueError(f"dual-GPU collector physical work attribution does not reconcile: {path}")
+    # Optional GPU staging observations originate from the resident policy
+    # worker. Reject impossible quantities before they can become a signed
+    # optimizer input or be aggregated into an Experiment Hub chart.
+    if isinstance(metrics.get("gpu_inference"), dict):
+        evidence = metrics["gpu_inference"]
+        staging = evidence.get("accelerator_input_staging")
+        if staging is not None:
+            fields = ("device_buffer_growths", "device_input_reused_forwards",
+                      "device_rows_staged")
+            if (not isinstance(staging, dict) or
+                    type(staging.get("workers_observed")) is not int or
+                    not 1 <= staging["workers_observed"] <= evidence["verified_workers"] or
+                    any(type(staging.get(key)) is not int or staging[key] < 0
+                        for key in fields) or
+                    staging["device_buffer_growths"] +
+                        staging["device_input_reused_forwards"] >
+                        evidence["model_forwards"] or
+                    staging["device_rows_staged"] > evidence["agent_rows"]):
+                raise ValueError(f"native collector reported impossible GPU staging work: {path}")
+        devices = evidence.get("per_device", [])
+        for device in devices:
+            device_staging = device.get("accelerator_input_staging")
+            if device_staging is None:
+                continue
+            if (not isinstance(device_staging, dict) or
+                    type(device_staging.get("workers_observed")) is not int or
+                    not 1 <= device_staging["workers_observed"] <= device["rollout_processes"] or
+                    any(type(device_staging.get(key)) is not int or
+                        device_staging[key] < 0 for key in (
+                            "device_buffer_growths", "device_input_reused_forwards",
+                            "device_rows_staged")) or
+                    device_staging["device_buffer_growths"] +
+                        device_staging["device_input_reused_forwards"] >
+                        device["model_forwards"] or
+                    device_staging["device_rows_staged"] > device["gpu_agent_rows"]):
+                raise ValueError(f"native collector has invalid per-device GPU staging: {path}")
     requested = metrics.get("requested_physics_worker_slots")
     capacity = receipt["rollout_processes"] * per_process
     # Historical bundles did not record model-step CPU limits. Their
