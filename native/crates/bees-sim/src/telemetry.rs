@@ -32,6 +32,9 @@ pub struct StepCounts {
     /// Exact lookup operations omitted during this physical tick.
     pub navigation_lookups_skipped: u64,
     pub steering_lookups_skipped: u64,
+    /// Count of existing empty weapon holders omitted from the two
+    /// physical mounted-weapon ownership sweeps this fixed tick.
+    pub unarmed_weapon_holders_skipped: u64,
     /// Actual historical ship slots skipped on each successful step.
     pub inactive_ship_slots_skipped: u64,
     /// Inactive pooled projectile slots skipped during the actual physics tick.
@@ -104,6 +107,10 @@ pub struct Measurements {
     pub navigation_lookups_skipped: u64,
     #[serde(default)]
     pub steering_lookups_skipped: u64,
+    /// Existing zero-mount weapon holders omitted from every fixed step's
+    /// mounted weapon and range passes, not inferred CPU utilization.
+    #[serde(default)]
+    pub unarmed_weapon_holders_skipped: u64,
     /// Actual historical ship slots skipped on each successful step.
     pub inactive_ship_slots_skipped: u64,
     /// Inactive pooled projectile slots skipped during the actual physics tick.
@@ -191,6 +198,7 @@ impl Default for Measurements {
             integrated_bodies: 0,
             navigation_lookups_skipped: 0,
             steering_lookups_skipped: 0,
+            unarmed_weapon_holders_skipped: 0,
             inactive_ship_slots_skipped: 0,
             inactive_projectile_slots_skipped: 0,
             inactive_ship_grid_slots_skipped: 0,
@@ -278,6 +286,7 @@ impl Measurements {
         self.integrated_bodies += counts.integrated_bodies;
         self.navigation_lookups_skipped += counts.navigation_lookups_skipped;
         self.steering_lookups_skipped += counts.steering_lookups_skipped;
+        self.unarmed_weapon_holders_skipped += counts.unarmed_weapon_holders_skipped;
         self.inactive_ship_slots_skipped += counts.inactive_ship_slots_skipped;
         self.inactive_projectile_slots_skipped += counts.inactive_projectile_slots_skipped;
         self.inactive_ship_grid_slots_skipped += counts.inactive_ship_grid_slots_skipped;
@@ -360,6 +369,7 @@ impl Measurements {
         self.integrated_bodies += other.integrated_bodies;
         self.navigation_lookups_skipped += other.navigation_lookups_skipped;
         self.steering_lookups_skipped += other.steering_lookups_skipped;
+        self.unarmed_weapon_holders_skipped += other.unarmed_weapon_holders_skipped;
         self.inactive_ship_slots_skipped += other.inactive_ship_slots_skipped;
         self.inactive_projectile_slots_skipped += other.inactive_projectile_slots_skipped;
         self.inactive_ship_grid_slots_skipped += other.inactive_ship_grid_slots_skipped;
