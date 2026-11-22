@@ -75,7 +75,7 @@ def artifact_paths(receipt):
     return files
 
 
-def verify_bundle_files(receipt_path):
+def verify_bundle_files(receipt_path, *, expected_receipt_sha256=None):
     """Verify a published collector's captures at the consumer boundary.
 
     Work-order verification checks the receipt identity; this check pins the
@@ -88,7 +88,14 @@ def verify_bundle_files(receipt_path):
     if (root.is_symlink() or not root.is_dir() or
             receipt_path.is_symlink() or not receipt_path.is_file()):
         raise ValueError("native collector has no owned published receipt")
-    expected = artifact_paths(json.loads(read_bundle_receipt(receipt_path)))
+    raw = read_bundle_receipt(receipt_path)
+    # A collector may update a local inbox concurrently. Bind the capture
+    # files to the exact receipt already checked against the issued order;
+    # never accept a different manifest between these two validations.
+    if (expected_receipt_sha256 is not None and
+            hashlib.sha256(raw).hexdigest() != expected_receipt_sha256):
+        raise ValueError("collector receipt changed after work-order validation")
+    expected = artifact_paths(json.loads(raw))
     canonical = root.resolve(strict=True)
     for name, digest in expected.items():
         target = root
@@ -357,8 +364,8 @@ def completed_uploaded_bundle(inbox, job, orders):
     # The file identities alone cannot authorize another training input:
     # revalidate the published capture receipt against the currently issued
     # work order before acknowledging a retry after a receiver restart.
-    verify_bundle(receipt, job, orders)
-    verify_bundle_files(receipt)
+    verified = verify_bundle(receipt, job, orders)
+    verify_bundle_files(receipt, expected_receipt_sha256=verified["sha256"])
     return {
         "kind": "native_bundle_received",
         "collector_id": job["id"],
