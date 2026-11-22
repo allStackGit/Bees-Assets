@@ -308,46 +308,55 @@ class RemoteConsole:
                             note = f"Ship {issued[2]} career unavailable or no longer owned"
                         else:
                             stats = message.get("stats")
-                            if not isinstance(stats, dict) or any(
-                                type(stats.get(key)) is not int or stats[key] < 0
-                                for key in ("observed_turret_shots",
-                                            "enemy_tsv_damage_done",
-                                            "tsv_damage_received",
-                                            "striker_bombs_dropped",
-                                            "fire_barge_explosions",
-                                            "yellow_jacket_detonations",
-                                            "barge_charges_started",
-                                            "scout_beacons_deployed",
-                                            "queen_minions_spawned")
-                            ) or type(stats.get("special_actions_recorded")) is not bool:
-                                raise ValueError("invalid authoritative FleetShip counters")
-                            kills = stats.get("source_kills")
-                            if kills is not None and (type(kills) is not int or kills < 0):
-                                raise ValueError("invalid FleetShip kill history")
-                            kills_label = "unknown" if kills is None else str(kills)
-                            note = (
-                                f"Ship {issued[2]} battle: "
-                                f"{stats['observed_turret_shots']} shots, "
-                                f"{kills_label} kills, "
-                                f"{stats['enemy_tsv_damage_done']} enemy TSV damaged, "
-                                f"{stats['tsv_damage_received']} TSV received"
-                            )
-                            mined = message.get("minerals_mined_this_level")
-                            if type(mined) is int and mined > 0:
-                                note += f", {mined} minerals mined"
-                            if stats["special_actions_recorded"]:
-                                special = (
-                                    ("barge_charges_started", "charges"),
-                                    ("fire_barge_explosions", "explosions"),
-                                    ("yellow_jacket_detonations", "detonations"),
-                                    ("striker_bombs_dropped", "bombs"),
-                                    ("scout_beacons_deployed", "beacons"),
-                                    ("queen_minions_spawned", "minions"),
+                            in_combat = message.get("in_combat")
+                            if in_combat is not None and type(in_combat) is not bool:
+                                raise ValueError("invalid authenticated ship combat activity")
+                            if stats is None:
+                                note = f"Ship {issued[2]}: permanent FleetShip career unavailable"
+                            else:
+                                if not isinstance(stats, dict) or any(
+                                    type(stats.get(key)) is not int or stats[key] < 0
+                                    for key in ("observed_turret_shots",
+                                                "enemy_tsv_damage_done",
+                                                "tsv_damage_received",
+                                                "striker_bombs_dropped",
+                                                "fire_barge_explosions",
+                                                "yellow_jacket_detonations",
+                                                "barge_charges_started",
+                                                "scout_beacons_deployed",
+                                                "queen_minions_spawned")
+                                ) or type(stats.get("special_actions_recorded")) is not bool:
+                                    raise ValueError("invalid authoritative FleetShip counters")
+                                kills = stats.get("source_kills")
+                                if kills is not None and (type(kills) is not int or kills < 0):
+                                    raise ValueError("invalid FleetShip kill history")
+                                kills_label = "unknown" if kills is None else str(kills)
+                                note = (
+                                    f"Ship {issued[2]} battle: "
+                                    f"{stats['observed_turret_shots']} shots, "
+                                    f"{kills_label} kills, "
+                                    f"{stats['enemy_tsv_damage_done']} enemy TSV damaged, "
+                                    f"{stats['tsv_damage_received']} TSV received"
                                 )
-                                note += "".join(
-                                    f", {stats[key]} {name}"
-                                    for key, name in special if stats[key] > 0
-                                )
+                                mined = message.get("minerals_mined_this_level")
+                                if type(mined) is int and mined > 0:
+                                    note += f", {mined} minerals mined"
+                                if stats["special_actions_recorded"]:
+                                    special = (
+                                        ("barge_charges_started", "charges"),
+                                        ("fire_barge_explosions", "explosions"),
+                                        ("yellow_jacket_detonations", "detonations"),
+                                        ("striker_bombs_dropped", "bombs"),
+                                        ("scout_beacons_deployed", "beacons"),
+                                        ("queen_minions_spawned", "minions"),
+                                    )
+                                    note += "".join(
+                                        f", {stats[key]} {name}"
+                                        for key, name in special if stats[key] > 0
+                                    )
+                            if in_combat is not None:
+                                note += (", engaged in combat" if in_combat
+                                         else ", not currently in combat")
                         self.notifications.put(note)
                         if not self.silent:
                             print(note)
