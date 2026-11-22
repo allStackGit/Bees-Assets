@@ -4913,12 +4913,12 @@ impl CombatWorld {
     ) -> Result<(), CombatWorldError> {
             let entry = crate::physics::ShipObstacleContact { ship_id, obstacle_id };
             let Some(&obstacle_index) = self.obstacle_by_id.get(&entry.obstacle_id)
-                else { continue };
+                else { return Ok(()); };
             if self.obstacles[obstacle_index].kind != ObstacleKind::StaticObstacle {
                 return Ok(());
             }
             let Some(&ship_index) = self.ship_by_id.get(&entry.ship_id)
-                else { continue };
+                else { return Ok(()); };
             let ship = &self.ships[ship_index];
             if ship.vitals.is_dead() ||
                 !self.physics.ships()[ship_index].active {
