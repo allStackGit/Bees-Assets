@@ -903,25 +903,12 @@ impl NativeGameAudio {
                 self.measurements.sound_effects_dropped += 1;
             }
         }
-        // Retain compatibility with surviving projectiles from older
-        // host versions or a client that joined between fixed steps.
-        // Every launch already sounded above is marked, so it cannot be
-        // sounded twice merely because its projectile is still active.
-        for (projectile, body) in combat.render_projectiles() {
-            if self.seen_projectiles.insert(projectile.entity_id, tick).is_some() {
-                continue;
-            }
-            if first_snapshot || !on_screen(visible, body.motion.position) { continue; }
-            if let Some(effect) = Effect::projectile(projectile.projectile_type) {
-                if budget > 0 {
-                    budget -= 1;
-                    new_effects[new_effects_len] = Some(effect);
-                    new_effects_len += 1;
-                } else {
-                    self.measurements.sound_effects_dropped += 1;
-                }
-            }
-        }
+        // Every native turret launch produces a GameWeaponFired or
+        // PolicyWeaponFired event in this same fixed step. The old
+        // render_projectiles() fallback iterated every live projectile at
+        // every catch-up tick, turning audio work into O(active shots) even
+        // when none fired. Sounds now follow the actual launch events,
+        // including shots that collide and disappear in the same step.
         self.seen_projectiles.retain(|_, seen| *seen == tick);
         for event in combat.events() {
             let (effect, point): (Effect, Option<Vec2>) = match event {
