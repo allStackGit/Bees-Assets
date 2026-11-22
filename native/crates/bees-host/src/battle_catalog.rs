@@ -515,6 +515,8 @@ impl CampaignProgress<'_> {
         // still owns its original player FleetShips. Never require a
         // fictitious played battle just to enable its fleet editor.
         self.battles_without_fleet_data == 0 &&
+        self.authored_roster.get(&fleet_id)
+            .is_none_or(|owner| owner.side == side) &&
         self.fleet.get(&fleet_id)
             .is_none_or(|record| record.side == side && !record.is_dead &&
                 record.loss_history_complete) &&
@@ -1189,6 +1191,8 @@ impl BattleCatalog {
             from_squad < 0 || to_squad < 0 || from_squad == to_squad ||
             (to_squad > 0 && progress.is_retired_saved_squad(to_squad)) ||
             progress.purchased_ship(fleet_ship_id).is_some() ||
+            progress.authored_roster.get(&fleet_ship_id)
+                .is_some_and(|owner| owner.side != side) ||
             progress.authored_current_squad(fleet_ship_id)
                 .is_some_and(|saved| saved != from_squad) ||
             progress.fleet.get(&fleet_ship_id)
