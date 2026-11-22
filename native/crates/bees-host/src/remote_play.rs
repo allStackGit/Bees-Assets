@@ -2476,6 +2476,14 @@ fn current_state(
             "type": shot.projectile_type,
             "x": position.x, "y": position.y,
             "rotation": body.rotation_degrees,
+            // The shared CombatWorld owns each mutable projectile's true
+            // collider, including stretched beams and growing explosions.
+            // Never approximate combat range from a static projectile type.
+            "collider": body.shape().map(wire_primary_hull),
+            "collider_bounds": body.primary_bounds().map(|bounds| [
+                [bounds.min.x, bounds.min.y],
+                [bounds.max.x, bounds.max.y],
+            ]),
         }))
     }).collect();
     // Preserve the authoritative source registration order for LAN tab,
