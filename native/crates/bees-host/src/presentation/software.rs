@@ -2507,6 +2507,23 @@ impl NativeSoftwareRenderer {
                     &label, 1, [239, 196, 129]);
             }
         }
+        // The player may inspect their current original campaign score
+        // without waiting for the terminal summary. A LAN opponent or
+        // spectator cannot inherit the campaign owner's private HUD.
+        if view.terminal_result.is_none() {
+            if let Some((score_side, score)) = view.campaign_score {
+                if view.player_authority.player_viewer_side() == Some(score_side) {
+                    let label = format!("Mission score {score:+}");
+                    let y = if view.survival.is_some() || view.demolition.is_some() ||
+                        view.escort.is_some() || view.combat.extraction_objective().is_some() ||
+                        view.rescue_barges.is_some() || view.campaign_objective.is_some() ||
+                        view.reinforcement_waves_pending > 0
+                    { 8 + 2 * (text::HEIGHT + 4) } else { 8 };
+                    text::draw_centered(&mut self.pixels, self.width, y,
+                        &label, 1, [198, 231, 248]);
+                }
+            }
+        }
         if self.show_minimap {
             let (ships, enemies, escort_exits) = self.draw_minimap(view, bounds);
             counts.minimap_ship_markers = ships;
