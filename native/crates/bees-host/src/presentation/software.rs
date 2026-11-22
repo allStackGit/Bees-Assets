@@ -2509,6 +2509,18 @@ impl NativeSoftwareRenderer {
             };
             text::draw_centered(&mut self.pixels, self.width, 8,
                 objective, 1, [239, 247, 255]);
+        } else if let Some(target) = view.target_ship {
+            // Only the named source ship matters. An entire surviving
+            // enemy faction is not the win condition of this mission.
+            let defender = view.player_authority.player_viewer_side()
+                .is_some_and(|side| side != target.attacking_side);
+            let label = if defender {
+                "Protect the mission target from the opposing fleet".to_owned()
+            } else {
+                format!("Eliminate target ship #{}", target.target_ship_id)
+            };
+            text::draw_centered(&mut self.pixels, self.width, 8,
+                &label, 1, [239, 247, 255]);
         }
         // The durable Level notification records arrivals exactly once.
         // A short visual acknowledgement survives an outbox ACK, but
@@ -2516,7 +2528,8 @@ impl NativeSoftwareRenderer {
         // games do not consume its time and no frame timer is allocated.
         if view.terminal_result.is_none() {
             let y = if view.survival.is_some() || view.demolition.is_some() ||
-                view.escort.is_some() || view.combat.extraction_objective().is_some() ||
+                view.target_ship.is_some() || view.escort.is_some() ||
+                view.combat.extraction_objective().is_some() ||
                 view.rescue_barges.is_some() ||
                 view.campaign_objective.is_some() {
                 8 + text::HEIGHT + 4
