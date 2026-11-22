@@ -400,6 +400,17 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     latency = evaluation_forward_latency(
         output / "evaluation.log", manifest_sha, summary.get("resident_policy_exit_clean"),
     )
+    # Preserve observed execution-only throughput separately from the
+    # startup/finalization-inclusive wall rate. Worker wall seconds are a
+    # SUM of independently timed parallel worker tasks, not process CPU
+    # utilization or the elapsed duration of the evaluation.
+    execution_seconds = throughput.get("execution_wall_seconds")
+    execution_rate = throughput.get("world_steps_per_execution_second")
+    worker_seconds = throughput.get("parallel_worker_cpu_wall_seconds_sum")
+    if (any(type(value) not in (int, float) or not math.isfinite(value)
+            for value in (execution_seconds, execution_rate, worker_seconds)) or
+            execution_seconds <= 0 or execution_rate <= 0 or worker_seconds < 0):
+        raise ValueError("Native evaluation has invalid measured execution throughput.")
     receipt = {
         "schema_version": 1, "kind": "native_policy_evaluation_complete",
         **({"policy_forward_latency": latency} if latency is not None else {}),
@@ -421,6 +432,9 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
            if observation_work is not None else {}),
         "wall_seconds": throughput["wall_seconds"],
         "world_steps_per_wall_second": throughput["world_steps_per_wall_second"],
+        "execution_wall_seconds": execution_seconds,
+        "world_steps_per_execution_second": execution_rate,
+        "parallel_worker_wall_seconds_sum": worker_seconds,
         "requested_physics_workers": selected_workers,
         "peak_parallel_physics_workers": throughput["peak_parallel_physics_workers"],
         "parallel_physics_rounds": throughput.get("parallel_physics_rounds", 0),
