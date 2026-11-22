@@ -19,6 +19,43 @@ function workloadKey(job) {
         job.resources.gpu_compute_pct,job.resources.min_gpu_vram_mb]);
 }
 
+
+const MEASURE_NAME=/^[a-z][a-z0-9_]{0,63}$/;
+
+// Progress steps count completed trainer updates in several backends, not
+// useful simulation decisions. Prefer a monotonic useful-work counter and
+// then a producer-reported useful-work rate. Only fall back to update rate.
+function observedMeasure(progress) {
+    const metrics=progress?.metrics||{};
+    for(const name of ['training_total_useful_steps','useful_steps_completed']) {
+        const item=metrics[name];
+        if(item?.unit==='count'&&Number.isSafeInteger(item.value)&&item.value>=0)
+            return {name,kind:'counter',value:item.value};
+    }
+    const explicit=['training_useful_steps_per_second','useful_steps_per_second',
+        'engine_steps_per_second','simulation_match_steps_per_second'];
+    const extra=Object.keys(metrics).filter(name=>name.endsWith('_useful_steps_per_second'))
+        .sort();
+    for(const name of [...explicit,...extra]) {
+        const item=metrics[name];
+        if(item?.unit==='rate'&&Number.isFinite(item.value)&&item.value>=0)
+            return {name,kind:'rate',value:item.value};
+    }
+    return {name:'progress_updates',kind:'counter',value:progress.steps_completed};
+}
+function rateEvidence(windows,now=Date.now()) {
+    const fresh=windows.filter(w=>w.recorded_at<=now&&
+        now-w.recorded_at<=MAX_SAMPLE_AGE_MS);
+    const measure=fresh.at(-1)?.measure||'progress_updates';
+    const matched=fresh.filter(w=>(w.measure||'progress_updates')===measure);
+    if(matched.length<MIN_WINDOWS)return null;
+    const seconds=matched.reduce((sum,w)=>sum+w.seconds,0);
+    const work=matched.reduce((sum,w)=>sum+(w.work??w.steps),0);
+    if(!(seconds>0)||!Number.isFinite(work)||work<0)return null;
+    return {measure,rate:work/seconds,samples:matched.length,
+        last_observed_at:new Date(Math.max(...matched.map(w=>w.recorded_at))).toISOString()};
+}
+
 class ThroughputHistory {
     constructor(root=null) {
         this.last=new Map();
@@ -42,7 +79,11 @@ class ThroughputHistory {
                     Number.isSafeInteger(w.steps)&&w.steps>0&&
                     Number.isFinite(w.seconds)&&w.seconds>=1&&w.seconds<=3600&&
                     Number.isFinite(w.recorded_at)&&w.recorded_at<=Date.now()&&
-                    Date.now()-w.recorded_at<=MAX_SAMPLE_AGE_MS)
+                    Date.now()-w.recorded_at<=MAX_SAMPLE_AGE_MS&&
+                    (w.measure===undefined||
+                        typeof w.measure==='string'&&MEASURE_NAME.test(w.measure))&&
+                    (w.work===undefined||
+                        Number.isFinite(w.work)&&w.work>=0&&w.work<=1e15))
                     .slice(-MAX_WINDOWS);
                 if(samples.length)this.windows.set(entry[0],samples);
             }
@@ -73,22 +114,34 @@ class ThroughputHistory {
         const time=Date.parse(progress?.source_modified_at);
         if(!key||key.length>4096||typeof machineId!=='string'||!machineId||
             !Number.isSafeInteger(steps)||steps<0||!Number.isFinite(time))return;
+        const measure=observedMeasure(progress);
         const identity=JSON.stringify([job.id,job.dispatch_id||null,
             progress.segment_id||null]);
         const prior=this.last.get(identity);
+        // Ignore duplicate/out-of-order progress; replacing the baseline
+        // here would overstate the next completed update's useful SPS.
+        if(prior&&(time<=prior.time||steps===prior.steps))return;
+        const next={key,machineId,deviceKey,steps,time,measure};
         this.last.delete(identity);
-        this.last.set(identity,{key,machineId,deviceKey,steps,time});
+        this.last.set(identity,next);
         if(this.last.size>MAX_KEYS*4)this.last.delete(this.last.keys().next().value);
-        if(!prior||prior.key!==key||prior.machineId!==machineId||prior.deviceKey!==deviceKey||
-            steps<=prior.steps||time<=prior.time)return;
+        if(!prior||prior.key!==key||prior.machineId!==machineId||
+            prior.deviceKey!==deviceKey||steps<prior.steps||
+            prior.measure.name!==measure.name||
+            prior.measure.kind!==measure.kind)return;
         const seconds=(time-prior.time)/1000;
-        // Reject pathological clocks and stale sparse measurements.
         if(seconds<1||seconds>3600)return;
-        const rate=(steps-prior.steps)/seconds;
-        if(!Number.isFinite(rate)||rate<=0)return;
+        const work=measure.kind==='rate'
+            ?measure.value*seconds:measure.value-prior.measure.value;
+        if(!Number.isFinite(work)||work<0||work>1e15)return;
         const id=JSON.stringify([key,machineId,deviceKey]);
         let windows=this.windows.get(id)||[];
-        windows.push({steps:steps-prior.steps,seconds,recorded_at:Date.now()});
+        // Never combine PPO updates and actual useful decisions in one
+        // placement score, or mix different backends' rate definitions.
+        if(windows.length&&(windows.at(-1).measure||'progress_updates')!==measure.name)
+            windows=[];
+        windows.push({steps:steps-prior.steps,work,measure:measure.name,
+            seconds,recorded_at:Date.now()});
         if(windows.length>MAX_WINDOWS)windows.shift();
         this.windows.delete(id);
         this.windows.set(id,windows);
@@ -101,19 +154,23 @@ class ThroughputHistory {
             let parts;
             try{parts=JSON.parse(identity);}catch{continue;}
             if(!Array.isArray(parts)||parts.length!==3)continue;
-            const valid=windows.filter(w=>w.recorded_at<=now&&
-                now-w.recorded_at<=MAX_SAMPLE_AGE_MS);
-            if(valid.length<MIN_WINDOWS)continue;
-            const seconds=valid.reduce((sum,w)=>sum+w.seconds,0);
-            const steps=valid.reduce((sum,w)=>sum+w.steps,0);
+            const evidence=rateEvidence(windows,now);
+            if(!evidence)continue;
             let project,gpus;
             try{project=JSON.parse(parts[0])[0];gpus=JSON.parse(parts[2]);}catch{continue;}
             if(typeof project!=='string'||!Array.isArray(gpus))continue;
-            rows.push({project_id:project,machine_id:parts[1],
+            const row={project_id:project,machine_id:parts[1],
                 gpu_ids:gpus,
                 configuration_hash:crypto.createHash('sha256').update(parts[0]).digest('hex').slice(0,16),
-                useful_steps_per_second:steps/seconds,samples:valid.length,
-                last_observed_at:new Date(Math.max(...valid.map(w=>w.recorded_at))).toISOString()});
+                work_measure:evidence.measure,
+                observed_work_per_second:evidence.rate,
+                samples:evidence.samples,
+                last_observed_at:evidence.last_observed_at};
+            if(evidence.measure==='training_total_useful_steps'||
+                evidence.measure==='useful_steps_completed'||
+                evidence.measure.endsWith('_useful_steps_per_second'))
+                row.useful_steps_per_second=evidence.rate;
+            rows.push(row);
         }
         return rows;
     }
@@ -122,21 +179,16 @@ class ThroughputHistory {
         if(!key)return 0;
         const score=placement=>{
             const devices=JSON.stringify((placement.suggested_gpus||[]).slice().sort());
-            const windows=(this.windows.get(JSON.stringify([key,placement.machine_id,devices]))||[])
-                .filter(w=>Date.now()-w.recorded_at<=MAX_SAMPLE_AGE_MS&&
-                    w.recorded_at<=Date.now());
-            if(windows.length<MIN_WINDOWS)return null;
-            const total=windows.reduce((v,w)=>v+w.steps,0);
-            const seconds=windows.reduce((v,w)=>v+w.seconds,0);
-            return total/seconds;
+            const windows=this.windows.get(JSON.stringify([
+                key,placement.machine_id,devices]))||[];
+            return rateEvidence(windows);
         };
         const left=score(a),right=score(b);
-        // Missing evidence is neutral. Only like-for-like workloads compete.
-        if(left===null||right===null)return 0;
-        // Avoid flipping placements on measurement noise; this is a
-        // scheduling preference, not a claim of statistically proven speedup.
-        if(Math.abs(right-left)<=0.05*Math.max(left,right))return 0;
-        return right-left;
+        // Missing or non-comparable measurements are neutral, not zero SPS.
+        if(!left||!right||left.measure!==right.measure)return 0;
+        if(Math.abs(right.rate-left.rate)<=0.05*Math.max(left.rate,right.rate))
+            return 0;
+        return right.rate-left.rate;
     }
 }
 module.exports={ThroughputHistory,workloadKey};
