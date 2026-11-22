@@ -170,7 +170,7 @@ class RemoteBattleWindow:
         self.view_height = 1
         self.performance_enabled = False
         self.performance_started_ns = time.perf_counter_ns()
-        self.performance_counts = [0] * 10
+        self.performance_counts = [0] * 12
         self.performance_label = ""
 
         if not console.spectator:
@@ -1274,7 +1274,7 @@ class RemoteBattleWindow:
     def toggle_performance(self, _event=None):
         self.performance_enabled = not self.performance_enabled
         self.performance_started_ns = time.perf_counter_ns()
-        self.performance_counts = [0] * 10
+        self.performance_counts = [0] * 12
         self.performance_label = ""
         self.draw()
 
@@ -1294,6 +1294,28 @@ class RemoteBattleWindow:
         left, top = self.to_screen(x0, y1)
         right, bottom = self.to_screen(x1, y0)
         self.canvas.create_rectangle(left, top, right, bottom, outline="#40546c", width=2)
+        # Side-authenticated fog sources come from the native combat
+        # observer. This visual backdrop cannot reveal any undisclosed
+        # objects: the host still filters all ships, projectiles, shards,
+        # asteroids and squad targets before serialization.
+        fog_circles_drawn = fog_circles_culled = 0
+        if state.get("fog_enabled"):
+            world_scale = self.transform()[0]
+            for source in state.get("fog_sources", []):
+                x, y = self.to_screen(source["x"], source["y"])
+                radius = source["radius"] * world_scale
+                if (x+radius < 0 or y+radius < 0 or
+                        x-radius > self.view_width or
+                        y-radius > self.view_height):
+                    if measuring:
+                        fog_circles_culled += 1
+                    continue
+                if measuring:
+                    fog_circles_drawn += 1
+                self.canvas.create_oval(
+                    x-radius, y-radius, x+radius, y+radius,
+                    fill="#1b2d3d", outline="",
+                )
         # These destinations are public objective geometry from the host.
         # Rendering never guesses target areas from visible ship positions.
         for field, caption, color in (
@@ -1653,6 +1675,7 @@ class RemoteBattleWindow:
                 1, elapsed_ns, ships_drawn, ships_culled,
                 obstacles_drawn, obstacles_culled, shots_drawn,
                 pieces_drawn, pieces_culled, shots_culled,
+                fog_circles_drawn, fog_circles_culled,
             )):
                 stats[index] += addition
             sampled_ns = time.perf_counter_ns() - self.performance_started_ns
@@ -1664,10 +1687,11 @@ class RemoteBattleWindow:
                     f"Ships {stats[2] / frames:.0f} drawn / {stats[3] / frames:.0f} culled"
                     f"  |  objects {stats[4] / frames:.0f} drawn / {stats[5] / frames:.0f} culled"
                     f"  |  shots {stats[6] / frames:.0f} / {stats[9] / frames:.0f} culled"
-                    f"  |  pieces {stats[7] / frames:.0f} / {stats[8] / frames:.0f} culled"
+                    f"  |  pieces {stats[7] / frames:.0f} / {stats[8] / frames:.0f} culled\n"
+                    f"Vision circles {stats[10] / frames:.0f} / {stats[11] / frames:.0f} culled"
                 )
                 self.performance_started_ns = time.perf_counter_ns()
-                self.performance_counts = [0] * 10
+                self.performance_counts = [0] * 12
             if self.performance_label:
                 self.canvas.create_text(
                     self.view_width-14, 14, text=self.performance_label,
