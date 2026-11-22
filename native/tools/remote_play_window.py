@@ -525,6 +525,23 @@ class RemoteBattleWindow:
     def obstacle_screen_shape(self, obj):
         return self.collider_screen_shape(obj)
 
+    def collider_on_screen(self, obj, margin=24):
+        """Skip drawing remote physical hulls outside the current viewport.
+
+        CombatWorld's already-cached world AABB encloses rotated and
+        irregular shapes, so offscreen pruning cannot hide an intersecting
+        hull even when its centre is far beyond the camera.
+        """
+        bounds = obj.get("collider_bounds")
+        if bounds is None:
+            return True
+        ax, ay = self.to_screen(*bounds[0])
+        bx, by = self.to_screen(*bounds[1])
+        width = self.canvas.winfo_width()
+        height = self.canvas.winfo_height()
+        return (max(ax, bx) >= -margin and min(ax, bx) <= width + margin and
+                max(ay, by) >= -margin and min(ay, by) <= height + margin)
+
     @staticmethod
     def collider_screen_bounds(shape, points):
         if shape in ("oval", "bounds"):
@@ -910,6 +927,8 @@ class RemoteBattleWindow:
         demolition_target = (objective.get("target_map_object_id")
                              if objective.get("kind") == "demolition" else None)
         for obj in state.get("obstacles", []):
+            if not self.collider_on_screen(obj):
+                continue
             shape, points = self.obstacle_screen_shape(obj)
             color = MINERAL if obj["mining"] else NEUTRAL
             if shape == "polygon":
@@ -933,7 +952,9 @@ class RemoteBattleWindow:
                                              outline=ENEMY, dash=(4, 3), width=2)
         for shot in state.get("projectiles", []):
             x, y = self.to_screen(shot["x"], shot["y"])
-            self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="#ffe4a2", outline="")
+            if -4 <= x <= self.view_width+4 and -4 <= y <= self.view_height+4:
+                self.canvas.create_oval(x-2, y-2, x+2, y+2,
+                                        fill="#ffe4a2", outline="")
         selected = self.selected_owners()
         selected_ship_ids = {
             sid for squad in state["squads"] if squad["owner"] in selected
@@ -970,6 +991,8 @@ class RemoteBattleWindow:
         target_ship_id = (objective.get("target_ship_id")
                           if objective.get("kind") == "target_ship" else None)
         for ship in state["ships"]:
+            if not self.collider_on_screen(ship):
+                continue
             x, y = self.to_screen(ship["x"], ship["y"])
             if self.weapon_overlay_on.get() and ship["id"] in selected_ship_ids:
                 for weapon in ship.get("weapons", []):
