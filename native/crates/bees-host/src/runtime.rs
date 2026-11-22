@@ -60,6 +60,7 @@ pub enum NativePlayerInputOutcome {
     LockOn(bees_gameplay::player_inputs::NativePlayerCommandCounts),
     Chase(bees_gameplay::player_inputs::NativePlayerCommandCounts),
     Select(usize),
+    RetreatActivated,
     Surrender,
 }
 
@@ -699,6 +700,50 @@ where
             Input::LockOn(value) => self.player_lock_on_squads(value).map(Outcome::LockOn),
             Input::Chase(value) => self.player_chase_squads(value).map(Outcome::Chase),
             Input::Select(value) => self.player_select_squads(value).map(Outcome::Select),
+            Input::ActivateRetreat { world_id, episode_revision, side } => {
+                let index = (0..self.simulation.world_count()).find(|&index|
+                    self.simulation.world(index).is_some_and(|world|
+                        world.id == *world_id)
+                ).ok_or(HostPlayerInputError::Gameplay(
+                    NativePlayerInputError::StaleWorld
+                ))?;
+                let world = self.simulation.world(index).expect("located world");
+                if world.episode_revision() != *episode_revision {
+                    return Err(HostPlayerInputError::Gameplay(
+                        NativePlayerInputError::StaleWorld
+                    ));
+                }
+                if world.is_failed() || world.state.events.is_failed() ||
+                    world.state.events.completed() {
+                    return Err(HostPlayerInputError::Gameplay(
+                        NativePlayerInputError::InactiveWorld
+                    ));
+                }
+                let state = &world.state;
+                if state.metadata.player_viewer_side() != Some(*side) ||
+                    !state.events.roster().active_lifetimes().any(|owner|
+                        state.events.roster().get(owner).is_some_and(|squad|
+                            squad.side == *side &&
+                            state.metadata.player_owns_squad(owner, *side) &&
+                            state.metadata.player_permissions(owner)
+                                .is_some_and(|p| p.can_accept_input))) ||
+                    !state.combat.retreat_activation_available(*side)
+                {
+                    return Err(HostPlayerInputError::Gameplay(
+                        NativePlayerInputError::NotControllable
+                    ));
+                }
+                self.driver.invalidate_environment(index)
+                    .map_err(HostPlayerInputError::Driver)?;
+                if !self.simulation.world_mut(index).expect("located world")
+                    .state.combat.activate_player_retreat(*side)
+                {
+                    return Err(HostPlayerInputError::Gameplay(
+                        NativePlayerInputError::InvalidAction
+                    ));
+                }
+                Ok(Outcome::RetreatActivated)
+            }
             Input::Surrender { world_id, episode_revision, side } => {
                 let index = (0..self.simulation.world_count()).find(|&index|
                     self.simulation.world(index).is_some_and(|world| world.id == *world_id)
