@@ -93,6 +93,9 @@ impl UploadMilestone {
 pub enum CampaignCue {
     PlutoAnomalyBriefing,
     PlutoAnomalyHoneybeeSpotted,
+    /// The player completed the Scout report; existing source-authored
+    /// deferred Gunship squads may now enter the same physical World.
+    PlutoAnomalyScoutReportComplete,
     PlutoAnomalyHoneybeeDestroyed,
     PlutoAnomalyVictory,
     PlutoAnomalyDefeat,
@@ -138,6 +141,7 @@ pub enum CampaignCue {
 impl CampaignCue {
     pub fn is_briefing(self) -> bool {
         matches!(self, Self::PlutoAnomalyBriefing |
+            Self::PlutoAnomalyHoneybeeSpotted |
             Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. } |
             Self::PlutoPushbackBriefing { .. } |
             Self::NeptunePressingForwardBriefing | Self::NeptuneSeizeBriefing |
@@ -152,7 +156,10 @@ impl CampaignCue {
 enum DialogueMode {
     PlutoAnomaly {
         scout_id: i64, honeybee_id: i64,
-        spotted: bool, honeybee_destroyed: bool,
+        spotted: bool,
+        #[serde(default)]
+        report_completed: bool,
+        honeybee_destroyed: bool,
     },
     Minesweeper { tracked_tank: Option<i64> },
     Beenoculars { under_heavy_fire: bool, next_milestone: usize },
@@ -236,7 +243,8 @@ impl CampaignDialogue {
             CampaignDialogueSpec::PlutoAnomaly { scout_id, honeybee_id, .. } => (
                 DialogueMode::PlutoAnomaly {
                     scout_id, honeybee_id,
-                    spotted: false, honeybee_destroyed: false,
+                    spotted: false, report_completed: false,
+                    honeybee_destroyed: false,
                 },
                 CampaignCue::PlutoAnomalyBriefing,
             ),
@@ -366,28 +374,38 @@ impl CampaignDialogue {
         let valid = match (&mode, cue) {
             (DialogueMode::PlutoAnomaly {
                 scout_id, honeybee_id, spotted: false,
-                honeybee_destroyed: false,
+                report_completed: false, honeybee_destroyed: false,
             }, CampaignCue::PlutoAnomalyBriefing) =>
                 *scout_id > 0 && *honeybee_id > 0 &&
                 scout_id != honeybee_id && sequence == 0,
             (DialogueMode::PlutoAnomaly {
                 scout_id, honeybee_id, spotted: true,
-                honeybee_destroyed: false,
+                report_completed: false, honeybee_destroyed: false,
             }, CampaignCue::PlutoAnomalyHoneybeeSpotted) =>
                 *scout_id > 0 && *honeybee_id > 0 &&
                 scout_id != honeybee_id && sequence == 1,
             (DialogueMode::PlutoAnomaly {
                 scout_id, honeybee_id, spotted: true,
-                honeybee_destroyed: true,
-            }, CampaignCue::PlutoAnomalyHoneybeeDestroyed) =>
+                report_completed: true, honeybee_destroyed: false,
+            }, CampaignCue::PlutoAnomalyScoutReportComplete) =>
                 *scout_id > 0 && *honeybee_id > 0 &&
                 scout_id != honeybee_id && sequence == 2,
             (DialogueMode::PlutoAnomaly {
-                scout_id, honeybee_id, spotted, honeybee_destroyed,
+                scout_id, honeybee_id, spotted: true,
+                report_completed: true, honeybee_destroyed: true,
+            }, CampaignCue::PlutoAnomalyHoneybeeDestroyed) =>
+                *scout_id > 0 && *honeybee_id > 0 &&
+                scout_id != honeybee_id && sequence == 3,
+            (DialogueMode::PlutoAnomaly {
+                scout_id, honeybee_id, spotted, report_completed,
+                honeybee_destroyed,
             }, CampaignCue::PlutoAnomalyVictory | CampaignCue::PlutoAnomalyDefeat) =>
                 *scout_id > 0 && *honeybee_id > 0 &&
-                scout_id != honeybee_id && (!*honeybee_destroyed || *spotted) &&
+                scout_id != honeybee_id &&
+                (!*report_completed || *spotted) &&
+                (!*honeybee_destroyed || *report_completed) &&
                 sequence == 1 + u32::from(*spotted) +
+                    u32::from(*report_completed) +
                     u32::from(*honeybee_destroyed),
             (DialogueMode::Minesweeper { tracked_tank: None },
                 CampaignCue::MinesweeperBriefing) => sequence == 0,
@@ -540,7 +558,7 @@ impl CampaignDialogue {
 
     pub fn pluto_anomaly_target(&self) -> Option<(i64, i64)> {
         match self.mode {
-            DialogueMode::PlutoAnomaly { scout_id, honeybee_id, spotted: false } =>
+            DialogueMode::PlutoAnomaly { scout_id, honeybee_id, spotted: false, .. } =>
                 Some((scout_id, honeybee_id)),
             _ => None,
         }
@@ -762,11 +780,20 @@ impl CampaignDialogue {
         source_pluto_honeybee_spotted: bool,
     ) -> Option<CampaignCue> {
         if let DialogueMode::PlutoAnomaly {
-            honeybee_id, spotted, honeybee_destroyed, ..
+            honeybee_id, spotted, report_completed, honeybee_destroyed, ..
         } = &mut self.mode {
             if !*spotted && source_pluto_honeybee_spotted {
                 *spotted = true;
                 return Some(CampaignCue::PlutoAnomalyHoneybeeSpotted);
+            }
+            // Local play withholds the next physical tick while this
+            // briefing is visible. Dedicated LAN hosts wait on their
+            // existing authenticated briefing_ready receipt. Therefore
+            // the next fixed tick is the authoritative dialogue break,
+            // with no wall-time timer or separate input/gameplay stream.
+            if *spotted && !*report_completed {
+                *report_completed = true;
+                return Some(CampaignCue::PlutoAnomalyScoutReportComplete);
             }
             if *spotted && !*honeybee_destroyed && world.ship(*honeybee_id)
                 .is_some_and(|ship| ship.vitals.is_dead())
