@@ -1707,6 +1707,19 @@ def main():
         poca_completed_gpu_execution_metrics, poca_learner_optimization_options,
     )
     graph_counts = poca_completed_gpu_execution_metrics()
+    optimizer_minibatch_execution = {
+        name: graph_counts.get(name)
+        for name in (
+            "completed_minibatches", "update_wall_seconds",
+            "minibatches_per_wall_second",
+            "cpu_prepare_workers", "cpu_prepare_affinity_cpus",
+            "cpu_prepare_torch_threads", "cpu_prepare_cpu_budget",
+            "cpu_prepare_mode", "tensor_cache_storage",
+            "tensor_cache_bytes", "group_cache_storage",
+            "group_cache_bytes",
+        )
+        if name in graph_counts
+    }
     graph_execution = {
         "graph_captures": graph_counts.get("graph_captures", 0),
         "graph_replays": graph_counts.get("graph_replays", 0),
@@ -1769,6 +1782,7 @@ def main():
             "fused_adam_active": int(fused_adam_active),
             "cuda_graph_requested": int(cuda_graph_requested),
             "learner_execution_settings": learner_execution_settings,
+            "measured_minibatch_execution": optimizer_minibatch_execution,
             **({"graph_execution": graph_execution} if graph_execution is not None else {}),
             "update_resource_measurements": resource_metrics,
             **cuda_metrics,
@@ -1978,6 +1992,7 @@ def main():
             if gpu_worker_metrics is not None else int(fused_adam_active)),
         "optimizer_cuda_graph_requested": int(cuda_graph_requested),
         "optimizer_execution_settings": learner_execution_settings,
+        "optimizer_measured_minibatch_execution": optimizer_minibatch_execution,
         **({"optimizer_graph_execution": graph_execution} if graph_execution is not None else {}),
         **cuda_metrics,
         "optimizer_update_resource_measurements": resource_metrics,

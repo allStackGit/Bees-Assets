@@ -7623,8 +7623,42 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 "graph_full_captures", "graph_full_replays",
                 "graph_adam_captures", "graph_adam_replays")
         }
-        _POCA_TIMING_STATE.last_update_execution_metrics[
-            "completed_minibatches"] = int(completed_minibatches)
+        _POCA_TIMING_STATE.last_update_execution_metrics.update({
+            "completed_minibatches": int(completed_minibatches),
+            # These are actual completed update observations, not guessed
+            # GPU utilization or hypothetical speedup multipliers.
+            "update_wall_seconds": float(update_seconds),
+            "minibatches_per_wall_second": (
+                float(completed_minibatches / update_seconds)
+                if update_seconds > 0 else 0.0
+            ),
+            "cpu_prepare_workers": int(
+                cpu_preparer.workers if cpu_preparer is not None and
+                cpu_preparer.enabled else 0
+            ),
+            "cpu_prepare_affinity_cpus": int(
+                cpu_preparer.effective_cpus if cpu_preparer is not None and
+                cpu_preparer.enabled else 0
+            ),
+            "cpu_prepare_torch_threads": int(
+                cpu_preparer.torch_threads if cpu_preparer is not None and
+                cpu_preparer.enabled else 0
+            ),
+            "cpu_prepare_cpu_budget": int(
+                cpu_preparer.cpu_budget if cpu_preparer is not None and
+                cpu_preparer.enabled else 0
+            ),
+            "cpu_prepare_mode": (
+                "full" if cpu_preparer is not None and cpu_preparer.enabled
+                and cpu_preparer.full_minibatch else
+                "group-only" if cpu_preparer is not None and
+                cpu_preparer.enabled else "off"
+            ),
+            "tensor_cache_storage": str(device_cache.get("storage", "off")),
+            "tensor_cache_bytes": int(device_cache.get("bytes", 0)),
+            "group_cache_storage": str(device_cache.get("group_storage", "off")),
+            "group_cache_bytes": int(device_cache.get("group_bytes", 0)),
+        })
         _POCA_TIMING_STATE.timing_totals = None
         _POCA_TIMING_STATE.timing_counts = None
         _POCA_TIMING_STATE.timing_samples = None
