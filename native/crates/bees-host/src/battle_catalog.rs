@@ -587,6 +587,14 @@ impl CampaignProgress<'_> {
         self.squad_names.get(&saved_squad_id).map(String::as_str)
     }
 
+    /// Physical class established by an actual battle or paid source
+    /// purchase, never inferred from a different future mission layout.
+    pub fn known_fleet_ship_type(&self, fleet_ship_id: i64) -> Option<u8> {
+        self.fleet.get(&fleet_ship_id).and_then(|row| row.ship_type)
+            .or_else(|| self.purchased_ship(fleet_ship_id)
+                .map(|(_, ship)| ship.ship_type))
+    }
+
     pub fn fleet_ship_name(&self, fleet_ship_id: i64) -> Option<&str> {
         self.fleet_names.get(&fleet_ship_id).map(String::as_str)
     }
