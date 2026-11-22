@@ -998,7 +998,8 @@ function rolloutPolicyObservationMeasurements(rollout) {
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
     learnerSlot, collectOnly = false, bundleInbox, modelInbox, rocrGpuUuids = {},
-    evaluationRoot, evaluationSuites, gameLibrarySaveRoot, distributedOptimizer,
+    evaluationRoot, evaluationSuites, gameLibrarySaveRoot, gameLibrarySourceRun,
+    distributedOptimizer,
     curriculumPlan, continualReleasePlan,
 }) {
     if (typeof collectOnly !== 'boolean') throw Error('Invalid native Bees collection mode.');
@@ -1135,10 +1136,23 @@ function createNativeBeesAdapter({
     // parameter, Hub server path, or new training artifact store. The same
     // verified learner is playable using the existing game library.
     let gallery = null;
+    let galleryRun = null;
+    if (gameLibrarySourceRun !== undefined && gameLibrarySaveRoot === undefined)
+        throw Error('A native gallery source run requires a configured player-save root.');
     if (gameLibrarySaveRoot !== undefined) {
-        if (collectOnly || inboxLearner || bundleRound ||
-            learnerSlot === undefined)
-            throw Error('Native Bees Hub gallery needs a physical-Level learner with an explicit slot.');
+        if (collectOnly || distributedOptimizer?.role === 'worker' ||
+            learnerSlot === undefined ||
+            (bundleRound && gameLibrarySourceRun === undefined) ||
+            (!bundleRound && gameLibrarySourceRun !== undefined))
+            throw Error('Native Bees gallery needs the checkpoint owner and an explicitly approved physical run for bundle-only learning.');
+        galleryRun = bundleRound ? trustedFile(gameLibrarySourceRun) : run;
+        if (bundleRound) {
+            const source = JSON.parse(fs.readFileSync(galleryRun, 'utf8'));
+            if (Object.hasOwn(source, 'rollout_bundles') ||
+                !Array.isArray(source.levels) || !source.levels.length ||
+                source.hivemind != null || source.model_updates?.length)
+                throw Error('Native distributed gallery must use a real model-only physical source run.');
+        }
         if (typeof gameLibrarySaveRoot !== 'string' ||
             !path.isAbsolute(gameLibrarySaveRoot))
             throw Error('Native Bees game library root must be an absolute machine-local directory.');
@@ -1167,6 +1181,11 @@ function createNativeBeesAdapter({
         ...[trainer, input, manifest].map(file => [file, sha256(fs.readFileSync(file))]),
     ]);
     const sourcePins = nativeSourceDependencies(run, config);
+    const gallerySourcePins = gallery && galleryRun !== run
+        ? nativeSourceDependencies(galleryRun, JSON.parse(fs.readFileSync(galleryRun, 'utf8')))
+        : new Map();
+    if (gallery && galleryRun !== run)
+        gallerySourcePins.set(galleryRun, sha256(fs.readFileSync(galleryRun)));
     const curriculumModule=curriculumFile
         ?trustedFile(path.resolve(__dirname,'../native/tools/native_curriculum.py'))
         :null;
@@ -1233,6 +1252,7 @@ function createNativeBeesAdapter({
     const pins = new Map([
         ...basePins,
         ...sourcePins,
+        ...gallerySourcePins,
         ...curriculumPins,
         ...[runner, contractScript, gpuAllocationScript,
             ...trainingSources, ...releaseSources, ...(binary ? [binary] : []), ...gallerySources]
@@ -2301,14 +2321,16 @@ function createNativeBeesAdapter({
                     // handoff; repeated Inspect requests retry it safely.
                     // The async child leaves the agent heartbeat responsive.
                     try {
-                        for (const file of gallerySources) {
+                        for (const file of [...gallerySources, ...gallerySourcePins.keys()]) {
                             if (sha256(fs.readFileSync(file)) !== pins.get(file))
-                                throw Error('Native Bees gallery publisher changed after adapter installation.');
+                                throw Error('Native Bees gallery source or publisher changed after adapter installation.');
                         }
+                        if (round.receipt.source_run_config_sha256 !== pins.get(galleryRun))
+                            throw Error('Native game gallery physical source differs from verified collector run.');
                         const gameId = 'hub-' + context.job_id;
                         const {stdout} = await execFileAsync(executable, [
-                            '-B', publisher, run, output, gallery, gameId,
-                            String(learnerSlot), pins.get(run),
+                            '-B', publisher, galleryRun, output, gallery, gameId,
+                            String(learnerSlot), pins.get(galleryRun),
                         ], {
                             cwd: path.dirname(publisher),
                             timeout: 120000,
