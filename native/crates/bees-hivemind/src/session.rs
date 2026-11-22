@@ -294,15 +294,17 @@ impl HiveMindSession {
     /// Called at squad death, enemy-policy ownership change or Level reset.
     /// Keep reservations recoverable if a reply was already in flight.
     pub fn retire_squad(&mut self, owner: SquadLifetime) {
-        self.latest_by_squad.remove(&owner);
-        for pending in self.pending.values_mut() {
-            if pending.owner == owner {
+        // Replaced requests were retired by request_strategy/targeting at
+        // insertion. Only the latest request for this exact squad lifetime
+        // can still be live. Preserve all pending hashes for late-response
+        // reservation discards without scanning every other squad's requests.
+        if let Some(hash) = self.latest_by_squad.remove(&owner) {
+            if let Some(pending) = self.pending.get_mut(&hash) {
                 pending.retired = true;
             }
         }
-        self.latest_targeting_by_squad.remove(&owner);
-        for pending in self.pending_targeting.values_mut() {
-            if pending.owner == owner {
+        if let Some(hash) = self.latest_targeting_by_squad.remove(&owner) {
+            if let Some(pending) = self.pending_targeting.get_mut(&hash) {
                 pending.retired = true;
             }
         }
