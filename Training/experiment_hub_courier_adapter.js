@@ -103,6 +103,11 @@ const COURIER_METRIC_CATALOG={
         'training_gpu_independent_snapshot_reuses',
         'training_gpu_independent_snapshot_bytes',
         'training_gpu_independent_reused_bytes',
+        'training_gpu_compiled_loss_active',
+        'training_gpu_compiled_loss_selected',
+        'training_gpu_compiled_loss_qualified',
+        'training_gpu_compiled_loss_batches',
+        'training_gpu_compiled_loss_fallbacks',
         'training_gpu_fused_adam_active',
         'training_gpu_fused_adam_selected',
         'training_gpu_fused_adam_settled',
@@ -231,6 +236,11 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_independent_policy_reused',
     'training_gpu_independent_policy_kept',
     'training_gpu_independent_snapshot_reuses',
+    'training_gpu_compiled_loss_active',
+    'training_gpu_compiled_loss_selected',
+    'training_gpu_compiled_loss_qualified',
+    'training_gpu_compiled_loss_batches',
+    'training_gpu_compiled_loss_fallbacks',
     'training_gpu_fused_adam_active',
     'training_gpu_fused_adam_selected',
     'training_gpu_fused_adam_settled',
@@ -376,6 +386,7 @@ function courierMetrics(source) {
     ].includes(name)||name.startsWith('training_broker_')||
         name.startsWith('training_live_')||
         name.startsWith('training_gpu_memory_')||
+        name.startsWith('training_gpu_compiled_loss_')||
         name.startsWith('training_gpu_fused_adam_')||
         name.startsWith('training_gpu_foreach_')||
         name.startsWith('training_async_')||
