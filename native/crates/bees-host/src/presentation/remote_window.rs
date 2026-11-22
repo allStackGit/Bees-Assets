@@ -2497,6 +2497,10 @@ pub fn connect_remote(
     let mut camera:Option<NativeCamera>=None;
     let mut current_episode=(0_u64,0_u64);
     let mut selected:Vec<i64>=Vec::new();
+    // One actual selection receipt per source lifetime change, not per
+    // network snapshot or pointer hover. Follows the same authenticated
+    // input stream as native tactical commands.
+    let mut submitted_selection:Option<(u64,u64,Vec<Value>)>=None;
     let mut mode:Option<TargetMode>=None;
     let mut patrol_start:Option<Vec2>=None;
     let mut last_left=false;
@@ -2746,6 +2750,7 @@ pub fn connect_remote(
             sent_weapon_overlay=None;
             peer.visual=RemoteVisual::default();
             selected.clear();
+            submitted_selection=None;
             mode=None;patrol_start=None;drag_start=None;
             last_left=false;last_right=false;
             last_selection_press=None;double_left_press=false;
@@ -2840,6 +2845,7 @@ pub fn connect_remote(
                     camera=Some(NativeCamera::fit(map,FIELD,HEIGHT));
                     current_episode=episode;
                     selected.clear();
+                    submitted_selection=None;
                     mode=None;
                     patrol_start=None;
                     drag_start=None;
@@ -3444,6 +3450,38 @@ pub fn connect_remote(
             // as a new press when the overlay is dismissed.
             last_left=window.get_mouse_down(MouseButton::Left);
             last_right=window.get_mouse_down(MouseButton::Right);
+        }
+        // Unlike tactical hover/box preview, a real user selection is a
+        // checkpointed game input because original Pluto II requires the
+        // actual first Scout selection to unlock the combat tutorial.
+        // Publish only authenticated live source lifetimes (never numeric
+        // squad IDs alone), and only after the host briefing releases.
+        if peer.connected && peer.authenticated && !peer.input_suppressed {
+            if let Some(state)=peer.state.as_ref() {
+                let request=(
+                    state["world_id"].as_u64().unwrap_or(0),
+                    state["episode_revision"].as_u64().unwrap_or(0),
+                    PeerClient::selected_owners(state,&selected),
+                );
+                if submitted_selection.as_ref()!=Some(&request) {
+                    if request.2.is_empty() && submitted_selection.is_none() {
+                        submitted_selection=Some(request);
+                    } else {
+                        let action=json!({
+                            "kind":"select",
+                            "input":{
+                                "world_id":request.0,
+                                "episode_revision":request.1,
+                                "squads":&request.2,
+                            }
+                        });
+                        match peer.send_action(action,"Squad selection updated".into()) {
+                            Ok(())=>submitted_selection=Some(request),
+                            Err(error)=>peer.notice=error.to_string(),
+                        }
+                    }
+                }
+            }
         }
         // Interest changes only with the selected live lifetimes, toggle,
         // or episode. It never enters the authoritative input trace.
