@@ -2247,6 +2247,7 @@ fn current_state(
                 "ships_lost": lost,
                 "ships_returned": returned,
                 "ships_destroyed_by_player": kills,
+                "ships_lost_by_type": view.loss_types_for_side(side),
             })),
         "player_minerals_mined": view.minerals_mined_for_side(side),
         // Source-owned story pacing, including genuine encounters
