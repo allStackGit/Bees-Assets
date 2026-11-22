@@ -730,6 +730,10 @@ class RemoteBattleWindow:
             return
         self.sidebar_updating = True
         try:
+            known_classes = {
+                entry["ship_type"]: entry["name"]
+                for entry in self.console.codex_entries(self.state) or []
+            }
             self.sidebar_owners = [
                 s for s in self.state["squads"] if s["owned"]
             ]
@@ -739,8 +743,10 @@ class RemoteBattleWindow:
                 number = squad.get("source_number")
                 label = f"#{number}" if number is not None else f"ID {owner['squad_id']}"
                 active = squad.get("command") or "Idle"
+                lead = squad.get("lead_ship_type")
+                ship_class = known_classes.get(lead, f"Type {lead}" if lead is not None else "Fleet")
                 self.squad_list.insert(tk.END,
-                    f"{label:>6}  {len(squad['members']):>2} ships  {active}"
+                    f"{label:>6}  {len(squad['members']):>2} ships  {ship_class}  {active}"
                     f"{' (orders disabled)' if not squad['controllable'] else ''}")
             for idx, squad in enumerate(self.sidebar_owners):
                 if squad["owner"] in self.selected:
