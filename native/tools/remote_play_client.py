@@ -581,9 +581,11 @@ class RemoteConsole:
             return state.get("campaign_codex_entries")
         if state.get("visible_ship_classes") is None:
             return None
+        live = {entry["ship_type"]: entry.get("live")
+                for entry in state.get("visible_ship_classes") or []}
         with self.lock:
-            return [{"ship_type": kind, "name": name} for kind, name
-                    in sorted(self.seen_ship_classes.items())]
+            return [{"ship_type": kind, "name": name, "live": live.get(kind)}
+                    for kind, name in sorted(self.seen_ship_classes.items())]
 
     def selected_owners(self, state):
         squads = {row["owner"]["squad_id"]: row["owner"]
@@ -845,7 +847,11 @@ class RemoteConsole:
                      else "encountered")
             print(f"Fleet Codex — {len(entries)} {label} ship classes")
             for entry in entries:
-                print(f"  {entry['ship_type']:>2}  {entry['name']}")
+                live = entry.get("live")
+                detail = (f" | Health {live['health']}/{live['max_health']}"
+                          f" | TSV {live['tsv']}/{live['max_tsv']}"
+                          if live is not None else "")
+                print(f"  {entry['ship_type']:>2}  {entry['name']}{detail}")
             return
         if cmd == "ships":
             known = {entry["ship_type"]: entry["name"]
