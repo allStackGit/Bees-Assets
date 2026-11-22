@@ -108,6 +108,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         }
         for(const name of ['ppo_compiled_loss_active',
             'ppo_compile_calibration_complete','ppo_compile_fallbacks',
+            'ppo_compiled_loss_qualified','ppo_compiled_loss_mismatches',
             'ppo_graph_mode_requested',
             'ppo_fused_adam_active','ppo_fused_adam_selected',
             'ppo_fused_adam_settled','ppo_fused_adam_steps',
