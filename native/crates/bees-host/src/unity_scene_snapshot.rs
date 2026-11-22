@@ -1161,7 +1161,7 @@ pub struct NativePlacedStaticBox {
     /// local_corners instead for a rotated or edited child collider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_scale: Option<[f32; 2]>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default)]
     pub kills_ships_on_contact: bool,
 }
 
