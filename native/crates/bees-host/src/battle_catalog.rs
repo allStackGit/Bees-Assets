@@ -810,6 +810,92 @@ impl CampaignProgress<'_> {
         rows
     }
 
+    /// Original Ships.GetSquadRanking for living SavedSquad identities.
+    /// Deleted created squads remain visible in the career history, but
+    /// cannot compete in the current source ranking table. New authored
+    /// squads and empty created squads participate with zero statistics.
+    pub fn squad_ranking_rows_with_source(
+        &self, source: &[(i32, i64)],
+    ) -> [Vec<String>; 5] {
+        #[derive(Clone, Copy)]
+        struct Candidate<'a> {
+            id: i64,
+            side: i32,
+            stats: Option<&'a SquadProgress>,
+        }
+        let created = self.created_squads.iter().map(|squad|
+            (squad.saved_squad_id, squad.side)).collect::<HashMap<_, _>>();
+        let imported = source.iter().map(|&(side, id)| (id, side))
+            .collect::<HashMap<_, _>>();
+        let mut ids = self.squads.keys().copied()
+            .chain(created.keys().copied())
+            .chain(imported.keys().copied()).collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids.dedup();
+        let candidates = ids.into_iter().filter_map(|id| {
+            if self.retired_squad_ids.contains(&id) { return None; }
+            let stats = self.squads.get(&id);
+            let side = stats.map(|record| record.side)
+                .or_else(|| created.get(&id).copied())
+                .or_else(|| imported.get(&id).copied())?;
+            matches!(side, 1 | 2).then_some(Candidate { id, side, stats })
+        }).collect::<Vec<_>>();
+        let score = |entry: &Candidate<'_>, metric: usize| -> (u64, u64) {
+            match metric {
+                0 => (entry.stats.map_or(0, |row| row.damage_done), 1),
+                1 => (entry.stats.map_or(0, |row| row.damage_received), 1),
+                2 => (entry.stats.map_or(0, |row| row.kills), 1),
+                3 => (entry.stats.map_or(0, |row| row.ships_lost), 1),
+                _ => entry.stats.filter(|row| row.battles_fought > 0)
+                    .map_or((0, 1), |row| (row.battles_won, row.battles_fought)),
+            }
+        };
+        let cmp = |a: (u64, u64), b: (u64, u64)| {
+            (u128::from(a.0) * u128::from(b.1))
+                .cmp(&(u128::from(b.0) * u128::from(a.1)))
+        };
+        std::array::from_fn(|metric| {
+            if self.battles_without_squad_data > 0 {
+                return vec![
+                    "Ranking unavailable: older battles lack squad records".to_owned(),
+                ];
+            }
+            let mut ranked = candidates.clone();
+            ranked.sort_unstable_by(|a, b|
+                a.side.cmp(&b.side)
+                    .then_with(|| cmp(score(b, metric), score(a, metric)))
+                    .then_with(|| a.id.cmp(&b.id))
+            );
+            let mut rows = Vec::with_capacity(ranked.len());
+            let mut side = 0;
+            let mut previous = (0_u64, 1_u64);
+            let mut rank = 0;
+            let mut side_count = 0;
+            for entry in ranked {
+                let value = score(&entry, metric);
+                if entry.side != side {
+                    rank = 1;
+                    side_count = 0;
+                } else if cmp(value, previous) != std::cmp::Ordering::Equal {
+                    rank = side_count + 1;
+                }
+                let amount = if metric == 4 {
+                    format!("W{}/{} ({:.1}%)", value.0,
+                        entry.stats.map_or(0, |row| row.battles_fought),
+                        value.0 as f64 / value.1 as f64 * 100.0)
+                } else { value.0.to_string() };
+                rows.push(format!(
+                    "S{}  Rank {}  {}  {}",
+                    entry.side, rank, self.squad_label(entry.id), amount,
+                ));
+                previous = value;
+                side = entry.side;
+                side_count += 1;
+            }
+            rows
+        })
+    }
+
     pub fn squad_rows(&self) -> Vec<String> {
         let mut ids = self.squads.keys().copied().chain(
             self.created_squads.iter().map(|squad| squad.saved_squad_id)
