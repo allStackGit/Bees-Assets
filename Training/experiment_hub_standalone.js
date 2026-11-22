@@ -23,6 +23,37 @@ const BODY_LIMIT=65536;
 const SHA=/^[a-f0-9]{40}$/;
 const VERSION_FILE='hub-software-activation.json';
 
+// Files imported exclusively by the coordinator or the local worker agent.
+// Shared modules conservatively require both processes to reload at a safe
+// lifecycle boundary; browser assets never require a service restart.
+const COORDINATOR_ONLY=new Set([
+    'experiment_hub_standalone.js','experiment_hub_core.js',
+    'experiment_hub_admin.js','experiment_hub_releases.js',
+    'experiment_hub_local_services.js','experiment_hub_job_export.js',
+    'experiment_hub_history.js','experiment_hub_evaluation_history.js',
+    'experiment_hub_observations.js','experiment_hub_evaluation.js',
+    'experiment_hub_design_fields.js',
+]);
+const AGENT_ONLY=new Set([
+    'experiment_hub_agent.js','experiment_hub_host.js',
+    'experiment_hub_execution.js','experiment_hub_artifact_agent.js',
+    'experiment_hub_evaluator_health.js',
+    'experiment_hub_remote_evaluator_control.js',
+    'experiment_hub_gpu_inventory.js',
+    'experiment_hub_worker_updater.js',
+]);
+function workerActivationImpact(changes) {
+    const impact={coordinator:false,agent:false};
+    for(const file of changes) {
+        if(FRONTEND_PATHS.has(file)||/\.(?:md|meta)$/.test(file)||
+            /(?:_test|_tests)\.(?:js|py)$/.test(file))continue;
+        const name=path.basename(file);
+        if(!AGENT_ONLY.has(name))impact.coordinator=true;
+        if(!COORDINATOR_ONLY.has(name))impact.agent=true;
+    }
+    return impact;
+}
+
 // Snapshot the running source at process start, rather than showing a newer
 // checkout while the old coordinator generation is still serving requests.
 function activeHubVersion(root,checkout=path.resolve(__dirname,'..')) {
@@ -284,6 +315,8 @@ function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null}={}
                     frontend_commit:frontend.current.source_commit,
                     pending_commit:frontend.backendPending&&SHA.test(candidate||'')&&
                         candidate!==runtime?.source_commit?candidate:null,
+                    pending_agent_commit:frontend.agentPending&&SHA.test(candidate||'')&&
+                        candidate!==runtime?.source_commit?candidate:null,
                 });
             }
             if(req.method==='GET'&&route==='/api/hub/software/releases')
@@ -376,7 +409,7 @@ async function main(argv=process.argv.slice(2)) {
     const runtime=activeHubVersion(root);
     const initialFrontend=frontendSnapshot(runtime);
     const frontend={current:initialFrontend,checkedSource:runtime.source_commit,
-        backendPending:false,snapshots:new Map([
+        backendPending:false,agentPending:false,snapshots:new Map([
             [initialFrontend.revision,initialFrontend]])};
     const releases=new ReleaseStore(root);
     const admin=createAdminServer(hub,{frontend,dataRoot:root,releases,runtime});
@@ -431,11 +464,12 @@ async function main(argv=process.argv.slice(2)) {
                 }
             }
             const candidate=releases.latest.worker?.source_commit;
-            frontend.backendPending=Boolean(candidate&&
-                candidate!==runtime.source_commit&&
-                (await workerChangedPaths(releases.sources.worker.path,
-                    runtime.source_commit,candidate))
-                    .some(file=>!FRONTEND_PATHS.has(file)));
+            const publishedImpact=workerActivationImpact(candidate&&
+                candidate!==runtime.source_commit
+                ?await workerChangedPaths(releases.sources.worker.path,
+                    runtime.source_commit,candidate):[]);
+            frontend.backendPending=publishedImpact.coordinator;
+            frontend.agentPending=publishedImpact.agent;
             const active=hub.state.jobs.some(job=>job.dispatch_id&&
                 !job.capacity_released_at&&
                 !['finished','failed','stopped','cancelled'].includes(job.status));
@@ -448,40 +482,61 @@ async function main(argv=process.argv.slice(2)) {
             if(!override&&hub.automation.enabled&&!hub.state.automation_restart)return;
             hub.softwareMaintenance=true;
             const result=await releases.applyLocalWhenIdle(hub,override);
-            // If fast-forward succeeded but a service restart failed, a later
-            // cycle must retry activation. No additional checkout change will
-            // be reported after that first successful fast-forward.
-            const pendingGeneration=Object.entries(releases.latest).some(
-                ([name,entry])=>entry.source_commit!==releases.bootVersions[name]&&
-                    releases.localVersions[name]===entry.source_commit);
-            if(!result.changed.length&&!pendingGeneration)return;
+            // Compare with the running coordinator's commit, not merely
+            // against the previous release. If an earlier restart failed,
+            // the same unloaded code still needs activation.
+            const installedWorker=releases.localVersions.worker;
+            const impact=workerActivationImpact(installedWorker&&
+                installedWorker!==runtime.source_commit
+                ?await workerChangedPaths(releases.sources.worker.path,
+                    runtime.source_commit,installedWorker):[]);
+            const pendingSimulations=Object.entries(releases.latest)
+                .filter(([name,entry])=>name!=='worker'&&
+                    entry.source_commit!==releases.bootVersions[name]&&
+                    releases.localVersions[name]===entry.source_commit)
+                .map(([name])=>name);
+            const agentNeedsRestart=impact.agent||pendingSimulations.length>0;
+            const coordinatorNeedsRestart=impact.coordinator;
+            if(!agentNeedsRestart&&!coordinatorNeedsRestart) {
+                // Frontend assets were activated separately; no native
+                // process needs to be touched.
+                if(installedWorker)releases.bootVersions.worker=installedWorker;
+                return;
+            }
+            if(active&&agentNeedsRestart) {
+                console.log('[hub-updates] Agent runtime activation deferred until jobs are idle.');
+                return;
+            }
             if(result.changed.length)
                 console.log('[hub-updates] Local fast-forwarded software: '+
                     result.changed.join(', '));
-            else console.log('[hub-updates] Retrying activation of locally installed software.');
-            if(result.changed.includes('worker')) {
-                try {recordHubActivation(root,releases.localVersions.worker);}
-                catch(error) {
-                    // Version reporting must never hold back an otherwise
-                    // successful, safe software activation.
-                    console.error('[hub-updates] Activation timestamp: '+error.message);
+            if(agentNeedsRestart) {
+                const agent=spawnSync('systemctl',
+                    ['--user','is-active','--quiet','bees-experiment-hub-agent.service'],
+                    {timeout:5000,windowsHide:true});
+                if(agent.status===0) {
+                    const restart=spawnSync('systemctl',
+                        ['--user','restart','bees-experiment-hub-agent.service'],
+                        {timeout:60000,windowsHide:true});
+                    if(restart.status!==0)
+                        throw Error('Learner source activated but local agent restart failed.');
                 }
             }
-            // A service restart refreshes adapter catalogs and protocol
-            // modules after safe local source activation. No native job is
-            // stopped; this path runs only with no unresolved native jobs.
-            const agent=spawnSync('systemctl',
-                ['--user','is-active','--quiet','bees-experiment-hub-agent.service'],
-                {timeout:5000,windowsHide:true});
-            if(agent.status===0) {
-                const restart=spawnSync('systemctl',
-                    ['--user','restart','bees-experiment-hub-agent.service'],
-                    {timeout:60000,windowsHide:true});
-                if(restart.status!==0)
-                    throw Error('Learner source activated but local agent restart failed.');
+            for(const name of pendingSimulations)
+                releases.bootVersions[name]=releases.localVersions[name];
+            if(!coordinatorNeedsRestart) {
+                // No coordinator modules changed. The authenticated release
+                // can now be offered to remote workers without forcing a
+                // pointless restart of the dashboard or its API.
+                if(installedWorker)releases.bootVersions.worker=installedWorker;
+                return;
             }
-            // Restart the coordinator from systemd; reloaded module versions
-            // are necessary before remote release activation is authorized.
+            try {recordHubActivation(root,installedWorker);}
+            catch(error) {
+                console.error('[hub-updates] Activation timestamp: '+error.message);
+            }
+            // Backend code alone requires a coordinator generation change.
+            // Unchanged agents and all separately owned training jobs remain.
             const proc=spawn('systemctl',
                 ['--user','restart','bees-experiment-hub-standalone.service'],
                 {detached:true,stdio:'ignore',windowsHide:true});
