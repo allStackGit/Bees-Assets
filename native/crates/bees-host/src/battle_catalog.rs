@@ -403,6 +403,10 @@ pub struct CampaignProgress<'a> {
     battles_without_squad_data: u64,
     banked_minerals: u64,
     bank_history_complete: bool,
+    /// Exact cumulative source campaign score reconstructed only from
+    /// committed terminal battle receipts, including defeated missions.
+    campaign_score: i64,
+    score_history_complete: bool,
     spent_minerals: u64,
     purchases: Vec<(i32, NativePurchasedShip)>,
     /// Awarded FleetShips share the ordinary deployment/transfer path
@@ -452,6 +456,7 @@ struct MissionProgress {
     latest_victory: bool,
     grants_claimed: bool,
     evacuated_personnel: Option<u32>,
+    latest_score_delta: Option<i64>,
 }
 
 impl CampaignProgress<'_> {
@@ -1245,7 +1250,9 @@ impl BattleCatalog {
     /// tally from that battle's Level-owned FleetShip inventory.
     pub fn load_progress<'a>(&'a self, output: &Path) -> io::Result<CampaignProgress<'a>> {
         let mut progress = CampaignProgress {
-            bank_history_complete: true, ..CampaignProgress::default()
+            bank_history_complete: true,
+            score_history_complete: true,
+            ..CampaignProgress::default()
         };
         let Some(campaign) = &self.campaign_id else { return Ok(progress) };
         let record = |directory: &Path, progress: &mut CampaignProgress<'a>| -> io::Result<()> {
@@ -1266,6 +1273,9 @@ impl BattleCatalog {
                 campaign_squads: Option<Vec<super::CampaignSquadOutcome>>,
                 #[serde(default)]
                 campaign_banked_minerals: Option<u64>,
+                /// Older campaign receipts had no event-based score.
+                #[serde(default)]
+                campaign_score_delta: Option<i64>,
             }
 
             let bytes = match fs::read(directory.join("rollout-summary.json")) {
@@ -1279,6 +1289,7 @@ impl BattleCatalog {
                 kind, failed_window, cleanup_errors, user_closed,
                 campaign_outcome: Some(outcome), campaign_fleet,
                 campaign_squads, campaign_banked_minerals,
+                campaign_score_delta,
             }) = serde_json::from_slice(&bytes) else { return Ok(()) };
             if outcome.campaign_id != *campaign { return Ok(()); }
             // Source progress can only come from the immutable successful
@@ -1304,7 +1315,17 @@ impl BattleCatalog {
                 state.attempted = true;
                 state.latest_victory = outcome.mission_victory();
                 state.evacuated_personnel = outcome.evacuated_personnel;
+                state.latest_score_delta = campaign_score_delta;
                 state.completed |= matches!(mission.advance_on, AdvanceOn::Finished) || state.latest_victory;
+                if let Some(delta) = campaign_score_delta {
+                    progress.campaign_score = progress.campaign_score
+                        .checked_add(delta)
+                        .ok_or_else(|| invalid("campaign score accumulation overflow"))?;
+                } else {
+                    // Do not misrepresent an older unscored career as
+                    // exactly zero. All other progression remains valid.
+                    progress.score_history_complete = false;
+                }
                 // Awarded hulls and SavedSquads are one atomic campaign
                 // outcome. They are reconstructed together from this
                 // immutable winning battle, not from player-edit receipts.
@@ -2069,6 +2090,8 @@ impl BattleCatalog {
             "battles_without_fleet_data": progress.battles_without_fleet_data,
             "battles_without_squad_data": progress.battles_without_squad_data,
             "banked_minerals": progress.banked_minerals,
+            "campaign_score": progress.campaign_score,
+            "campaign_score_history_complete": progress.score_history_complete,
             "spent_minerals": progress.spent_minerals,
             "available_minerals": progress.unspent_minerals().expect("validated account balance"),
             "bank_history_complete": progress.bank_history_complete,
