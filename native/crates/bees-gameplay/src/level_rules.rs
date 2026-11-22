@@ -410,6 +410,15 @@ impl NativeNavigationWorkerMeasurements {
     /// geometry, preserving Level.State.Squads order. Command activation
     /// and timer callbacks use this same authoritative view.
 pub trait NativeLevelCommandContext {
+    /// Source Ship.MoveToTargetCoordinates reapplies Squad.CurrentSpeed
+    /// during normal point movement. A temporary ability may have changed
+    /// the physical speed since Squad.MatchSpeed was selected. Real game
+    /// adapters reconcile their existing squad setting before physics;
+    /// ordinary policy arenas have no player speed settings and pay nothing.
+    fn reconcile_player_match_speed(
+        &self, _world: &mut CombatWorld, _roster: &NativeSquadRoster,
+    ) -> Result<(), GameCommandError> { Ok(()) }
+
     /// While a mission queue owns a SquadLifetime, its saved scripted
     /// commands have priority over requests made before it was armed.
     /// Returning false is the generic Level default; only an authored
@@ -1560,6 +1569,11 @@ where
             state.metadata.advance_navigation_for_tick(
                 &mut state.combat, completed_tick,
             )?;
+        state.metadata.reconcile_player_match_speed(
+            &mut state.combat, state.events.roster(),
+        ).map_err(|error| NativeLevelStepError::Events(
+            NativeLevelEventError::Commands(error),
+        ))?;
         // No independent policy/physics rules in gameplay or training:
         // both adapters invoke CombatWorld's one canonical transaction.
         let events = &state.events;

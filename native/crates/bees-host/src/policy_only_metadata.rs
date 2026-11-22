@@ -1494,6 +1494,32 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
+    fn reconcile_player_match_speed(
+        &self, world: &mut CombatWorld, roster: &NativeSquadRoster,
+    ) -> Result<(), GameCommandError> {
+        // MatchSpeed immediately updates all ships when the player
+        // selects it. Afterwards, source Ship.MoveToTargetCoordinates
+        // restores that squad speed every movement tick. A Barge charge
+        // and other temporary motion locks must keep their own speed
+        // until they release control. Read only the existing player
+        // preference: no parallel gameplay speed table is introduced.
+        for (&owner, &speed) in &self.player.matching_speeds {
+            let Some(squad) = roster.get(owner) else { continue };
+            for &ship_id in &squad.members {
+                let Some(body) = world.ship_body(ship_id) else { continue };
+                let motion = &body.motion;
+                if !body.active || !motion.has_target_coordinates ||
+                    motion.cannot_change_movement_orders ||
+                    (motion.is_policy_controlled && !motion.user_controlled) ||
+                    motion.current_speed == speed.min(motion.base_speed) {
+                    continue;
+                }
+                world.set_ship_game_speed(ship_id, speed)?;
+            }
+        }
+        Ok(())
+    }
+
     fn pluto_anomaly_honeybee_spotted(
         &self, world: &CombatWorld, scout_id: i64, honeybee_id: i64,
     ) -> bool {
