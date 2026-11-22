@@ -4,6 +4,23 @@ use bees_gameplay::campaign_dialogue::{CampaignCue, UploadMilestone};
 
 pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)] {
     match cue {
+        // Pluto I's first story beat follows the genuine Scout/Honeybee
+        // physical proximity event, not a staged timer or predicted sight.
+        CampaignCue::PlutoAnomalyBriefing => &[
+            ("Samuel", "Scout and explore around Pluto. Report any unidentified vessels."),
+        ],
+        CampaignCue::PlutoAnomalyHoneybeeSpotted => &[
+            ("Samuel", "A Scout is reporting an unidentified vessel approaching military airspace. What should we do?"),
+            ("Samuel", "Right away, sir. Contacting the vessel."),
+            ("Samuel", "It isn't responding, sir."),
+            ("Samuel", "Understood, sir. We'll send Lieutenant Tom out immediately."),
+        ],
+        CampaignCue::PlutoAnomalyVictory => &[
+            ("Samuel", "The unidentified vessel is down, commander."),
+        ],
+        CampaignCue::PlutoAnomalyDefeat => &[
+            ("Samuel", "We've lost contact with our scouting force, commander."),
+        ],
         // Original Neptune_OfProduction sections (source dialogue IDs 2-17).
         CampaignCue::NeptuneProductionBriefing => &[
             ("Oviya", "The mining asteroids can be found at these locations."),
