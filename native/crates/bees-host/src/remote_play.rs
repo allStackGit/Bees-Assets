@@ -1962,6 +1962,12 @@ fn current_state(
                 view.combat.game_striker_bomb_ready(ship.entity_id)
                     .or_else(|| view.combat.policy_striker_bomb_ready(ship.entity_id))
             } else { None },
+            // Only physical, already fog-visible ships expose their real
+            // Barge charge visual phase. The LAN viewer never runs its
+            // own charge timer or a parallel client-side combat machine.
+            "barge_charge": if ship.ship_type == 0 {
+                view.combat.barge_charge_visual_phase(ship.entity_id)
+            } else { None },
             "x": body.motion.position.x, "y": body.motion.position.y,
             "rotation": body.motion.rotation_degrees,
             "collider": wire_primary_hull(body.shape()),
