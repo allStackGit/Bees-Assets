@@ -2382,6 +2382,15 @@ fn current_state(
                 "kind": "campaign_elimination",
                 "attacking_side": view.campaign_dialogue_side,
             }))
+        } else if let Some(target) = view.target_ship {
+            // Goal identity is public mission rules, but current target
+            // HP and coordinates still obey the normal fog-filtered ship
+            // projection and are never copied into this summary.
+            Some(json!({
+                "kind": "target_ship",
+                "attacking_side": target.attacking_side,
+                "target_ship_id": target.target_ship_id,
+            }))
         } else { None },
         // An authored exit is also public to both opponents in the local
         // native game; it cannot disclose a hidden hull or current position.
