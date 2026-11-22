@@ -3268,9 +3268,7 @@ impl NativeSoftwareRenderer {
     /// stats as permanent class upgrades or estimate an unseen enemy.
     #[cfg(feature = "client")]
     pub fn draw_fleet_codex(
-        &mut self, view: &NativeRenderWorldView<'_>,
-        discovered: &[bool; bees_sim::ship_assets::SHIP_TYPE_COUNT],
-        selected: u8,
+        &mut self, view: &NativeRenderWorldView<'_>, selected: u8,
     ) {
         static SHIPS: OnceLock<bees_sim::ship_assets::ShipAssetCatalog> = OnceLock::new();
         let catalog = SHIPS.get_or_init(|| bees_sim::ship_assets::ShipAssetCatalog::embedded()
@@ -3290,7 +3288,7 @@ impl NativeSoftwareRenderer {
             "F2 / Esc close   Up / Down browse   Source ship classes encountered", 1,
             [155, 178, 206]);
 
-        let mut entries = discovered.iter().enumerate().filter(|(kind, seen)|
+        let mut entries = self.codex_seen.iter().enumerate().filter(|(kind, seen)|
             **seen && *kind != usize::from(bees_sim::ship_assets::HUMAN_TARGET_TYPE)
         ).map(|(kind, _)| kind as u8).collect::<Vec<_>>();
         entries.sort_unstable();
