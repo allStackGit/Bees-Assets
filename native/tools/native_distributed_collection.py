@@ -17,7 +17,7 @@ from native_training_artifacts import (
     atomic_json, file_sha256, native_source_contract_sha256,
     verified_source_scene_cache, combined_source_scene_cache,
     combined_rollout_lifecycle_metrics,
-    verified_physics_collision_work, combined_physics_collision_work,
+    combined_physics_collision_work,
 )
 from native_gpu_allocation import GPU_MASK_ENVIRONMENTS
 from native_mission_contract import (
