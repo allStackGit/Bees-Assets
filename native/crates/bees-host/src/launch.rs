@@ -6154,9 +6154,11 @@ fn run_campaign_game_menu(
                     .unwrap_or(NativeSavedSquadFormation::authored()),
             }
         }).collect::<Vec<_>>();
+        let codex_known = catalog.codex_known_types(&progress);
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
             &fleet_rows, &squad_rows, &shop_rows, available, &transfer_rows,
             &create_rows, &tactics_rows, &delete_rows, &name_rows,
+            codex_known.as_deref(),
             {
                 let (score, score_complete) = progress.campaign_score_summary();
                 let (counts, match_history_complete) = progress.player_match_summary();
