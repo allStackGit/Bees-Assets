@@ -263,6 +263,25 @@ function placementAlternatives(machines,reservations,input) {
     return alternatives;
 }
 
+// Favor available GPU compute capacity for cooperative independent jobs.
+// A 25% advisory compute claim is not a 25% hardware-utilization sample;
+// this simply spreads jobs over physical GPUs when comparable useful-SPS
+// evidence has not shown that co-location is faster. It never changes the
+// resources the user requested or creates additional capacity.
+function gpuReservationPreference(a,b,resources) {
+    if(resources.gpu_mode!=='shared'||resources.gpu_count!==1)
+        return 0;
+    const remaining=placement=>{
+        const id=placement.suggested_gpus?.[0];
+        if(!id)return null;
+        const capacity=placement.available?.gpu_capacity?.find(g=>g.id===id);
+        return capacity&&Number.isSafeInteger(capacity.available_compute_pct)
+            ?capacity.available_compute_pct:null;
+    };
+    const left=remaining(a),right=remaining(b);
+    return left===null||right===null?0:right-left;
+}
+
 // Observed pressure breaks ties only *after* feasibility/headroom, never
 // creates capacity. CPU-only jobs prefer hosts with less current total CPU
 // activity (including Bees). Single-GPU jobs favor more physical free VRAM,
@@ -411,4 +430,5 @@ function approvedEndpointSubset(approved,selected) {
 }
 
 module.exports={request,matchingLeaseBudget,remaining,placements,placementAlternatives,plan,startHeadroom,
-    observedLoadPreference,ensureLocalCpuRamCapacity,fixedCpuParallelism,approvedEndpointSubset};
+    observedLoadPreference,gpuReservationPreference,ensureLocalCpuRamCapacity,
+    fixedCpuParallelism,approvedEndpointSubset};
