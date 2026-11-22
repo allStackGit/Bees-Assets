@@ -101,16 +101,48 @@ def poll(args, suites):
             # The coordinator's final_steps_completed remains available.
             return final
         return latest_numbered_checkpoint(args.artifact_root, job)
+    def select_checkpoint(job, previous, cadence):
+        # Training can write retained update-N.pt checkpoints faster than
+        # independent matches complete. Consume the oldest saved checkpoint
+        # satisfying this run's update cadence before following latest.pt.
+        # The shared poller still checks the durable receipt/archive cursor,
+        # and the copied snapshot is verified against its recorded update.
+        newest = find_checkpoint(job)
+        if newest is None or "final_checkpoint_sha256" in job:
+            return newest
+        directory = newest[1].parent
+        start = newest[0] - newest[2] if len(newest) == 3 else None
+        minimum = previous + cadence if previous else 1
+        selected = None
+        for file in directory.iterdir():
+            match = CHECKPOINT.fullmatch(file.name)
+            if not match:
+                continue
+            update = int(match[1])
+            if (update < minimum or update > newest[0] or
+                selected is not None and update >= selected[0]):
+                continue
+            # Reject redirected snapshots; only the trainer-owned regular
+            # checkpoint is copied into private evaluator scratch.
+            if file.resolve(strict=True) != file or not file.is_file():
+                raise ValueError("TinyBrains retained checkpoint is redirected or unavailable.")
+            if start is not None and update < start:
+                continue
+            selected = (update, file, update - start) if start is not None else (update, file)
+        return selected if selected is not None else newest
+
     pairs = [(suite, {**suite, "trials":
                       2 * len(suite["maps"]) * len(suite["seeds"])}) for suite in suites]
     if len(pairs) == 1:
         poll_checkpoint(args, "tinybrains", *pairs[0], find_checkpoint,
                         lambda job, file, digest, work:
                             evaluated(job, file, digest, work, suites[0]),
-                        verify_checkpoint=verify_frozen)
+                        verify_checkpoint=verify_frozen,
+                        select_checkpoint=select_checkpoint)
     else:
         poll_batch(args, "tinybrains", pairs, find_checkpoint, evaluated,
-                   verify_checkpoint=verify_frozen)
+                   verify_checkpoint=verify_frozen,
+                   select_checkpoint=select_checkpoint)
 
 
 def main():
