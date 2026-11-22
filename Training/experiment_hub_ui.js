@@ -6938,6 +6938,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(!latest)summary='Latest release unavailable';
                 else if(!installed)summary='Active version unverified';
                 else if(matches)summary='Up to date';
+                else if(latest.activation_ready===false)
+                    summary='Published update awaiting safe Hub source activation';
                 else summary='Update available';
                 if(m.status!=='connected')summary='Last reported: '+summary;
                 if(problem)summary+=' · Release check issue';
@@ -6947,7 +6949,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 line.append(versions);
                 if(report&&report.status!=='active') {
                     const pending=document.createElement('div');
-                    pending.textContent='Update '+report.status+' ('+short(report)+')';
+                    pending.textContent='Update '+report.status+' ('+short(report)+')'+
+                        (report.message?' · '+report.message:'');
                     line.append(pending);
                 }
                 line.title=[
@@ -8412,6 +8415,34 @@ document.addEventListener('DOMContentLoaded', () => {
         const ppoReady=!needsRemotePpoSettings||
             machine?.courier_remote_ppo_settings===true&&
             available.every(host=>host.courier_lineage_remote_ppo_settings===true);
+        const ppoBlockers=needsRemotePpoSettings?[
+            ...(machine?.courier_remote_ppo_settings===true?[]:
+                machine?[machine]:[]),
+            ...available.filter(host=>host.courier_lineage_remote_ppo_settings!==true),
+        ].filter((host,index,array)=>array.findIndex(item=>item.id===host.id)===index)
+            .map(host=>{
+                const report=state.machine_software?.[host.id]?.courier;
+                const installed=state.machine_active_software?.[host.id]?.courier;
+                const latest=state.software_release_catalog?.components?.courier;
+                const label=(host.name||host.id)+' ('+host.id+')';
+                if(report?.status==='failed')
+                    return label+': Courier update failed'+
+                        (report.message?' — '+report.message:'');
+                if(!latest)
+                    return label+': Courier update release unavailable'+
+                        (state.software_release_catalog?.errors?.courier
+                            ?' — '+state.software_release_catalog.errors.courier:'');
+                if(latest.activation_ready===false)
+                    return label+': new backend release is staged but the Hub has not yet safely activated its own matching source'+
+                        (state.automation?.enabled&&!state.automation?.resume_after_restart
+                            ?' (unattended scheduling is armed without restart recovery)':'');
+                if(report&&['waiting','staged','activating'].includes(report.status))
+                    return label+': updater '+report.status+
+                        (report.message?' — '+report.message:'');
+                if(installed?.version!==latest.version)
+                    return label+': installed Courier release differs from Hub latest; check this machine\'s updater service or scheduled task';
+                return label+': latest Courier release is recorded but PPO capability is not advertised; inspect the installed backend and restart the native agent';
+            }):[];
         const ready=Boolean(machine&&state.projects.some(p=>p.id==='courier_lineage')&&
             capacity>0&&available.length>0&&localCapacity&&remoteCapacity&&ppoReady&&
             (subset||capacity>=endpoints.length&&available.length===endpoints.length));
@@ -8426,7 +8457,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             ' Keep slot-to-machine binding checked for repeated hosts.':'')
                     :' Leave at least one PPO lineage on the learner.')
             :!ppoReady
-                ?'The selected Courier learner or remote workers lack frozen PPO-settings support. Install the updated Courier backend on each host, then restart the native agents.'
+                ?'Courier PPO settings capability is missing. '+
+                    ppoBlockers.join(' · ')+
+                    '. Training will remain blocked until authenticated workers advertise this feature.'
                 :'Register the Courier lineage project and connect the approved workers.';
     }
     courierMachine.addEventListener('change',renderCourierDistributedGroup);
