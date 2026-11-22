@@ -44,29 +44,33 @@ def publish(
     # the completed authoritative round records the exact original source
     # bytes used to create the signed collector work orders. Do not publish
     # a playable scene that was not the environment actually trained.
-    if result.get("source_run_config_sha256") != source_sha256:
-        raise ValueError("Hub playable scene differs from the verified physical training source")
     if result.get("collection_orders_sha256") is not None:
-        # Verify both source bytes and the portable physical Level contract.
-        # The latter pins source scene/Stage content across the independent
-        # Windows/Linux collector installations; matching run JSON alone
-        # would not prove the training and playable arenas are identical.
+        # The original collector can run on a different OS with different
+        # Python, Stage and scene paths. Its v2 physical source digest
+        # authenticates the SAME gameplay content independently of those
+        # machine-local paths; byte equality is not the portable contract.
         orders_path = Path(result["collection_orders"]).resolve(strict=True)
         if file_sha256(orders_path) != result["collection_orders_sha256"]:
             raise ValueError("Hub distributed collector work order changed after training")
         orders = read_json(orders_path)
         version = orders.get("source_run_contract_version")
         if (orders.get("kind") != "native_distributed_collection_orders" or
-                orders.get("source_run_config_sha256") != source_sha256 or
+                orders.get("source_run_config_sha256") !=
+                    result.get("source_run_config_sha256") or
                 version not in (None, 2)):
-            raise ValueError("Distributed playable source does not match its issued collectors")
+            raise ValueError("Distributed playable source does not match issued collectors")
         expected = orders.get("source_run_contract_sha256")
         if expected is not None:
             actual = native_source_contract_sha256(
                 run_path, include_allocation=version != 2,
             )
             if actual != expected:
-                raise ValueError("Playable native scene/Stage content differs from the collector contract")
+                raise ValueError("Playable native scene/Stage content differs from collector contract")
+        elif result.get("source_run_config_sha256") != source_sha256:
+            # Historical exact-byte work orders without a portable digest.
+            raise ValueError("Legacy source bytes differ from verified collector run")
+    elif result.get("source_run_config_sha256") != source_sha256:
+        raise ValueError("Hub playable scene differs from verified physical training source")
     checkpoint = round_directory / "learner/checkpoint.pt"
     manifest = round_directory / "learner/manifest.json"
     checkpoint_sha = file_sha256(checkpoint)
