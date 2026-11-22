@@ -2508,29 +2508,65 @@ impl KinematicPhysics {
         // CollisionAsteroid also has a separate proximity collider; that
         // proximity state must be imported before combat damage is enabled.
         self.proximity_obstacle_current.clear();
+        self.obstacle_pairs_current.clear();
         if active_obstacle_count > 1 && has_body_contact_obstacles {
-            for &slot in &self.active_obstacle_indices {
-                let source = &self.obstacles[slot];
+            // Moving asteroids need both their large proximity zone and
+            // their exact physical hull contacts. Query the SAME obstacle
+            // grid once per source, using the union of both AABBs, then
+            // run the original independent narrowphase tests. This avoids
+            // duplicate spatial hash probes in densely populated fields
+            // without changing which contacts are emitted or their sort.
+            for &source_index in &self.active_obstacle_indices {
+                let source = &self.obstacles[source_index];
                 if !source.active || !source.tracks_body_contacts { continue; }
-                let (Some(proximity), Some(layer)) = (
-                    source.proximity_collider.as_ref(), source.proximity_layer,
-                ) else { continue };
-                let Some(bounds) = proximity.bounds else { continue };
-                self.grid.candidates(bounds, &mut self.candidates);
+                let proximity = source.proximity_collider.as_ref()
+                    .zip(source.proximity_layer)
+                    .and_then(|(collider, layer)| collider.bounds
+                        .map(|bounds| (collider, layer, bounds)));
+                let hull_bounds = source.collider.bounds;
+                let query = match (hull_bounds, proximity.as_ref()) {
+                    (Some(hull), Some((_, _, vicinity))) => Aabb {
+                        min: Vec2::new(hull.min.x.min(vicinity.min.x),
+                            hull.min.y.min(vicinity.min.y)),
+                        max: Vec2::new(hull.max.x.max(vicinity.max.x),
+                            hull.max.y.max(vicinity.max.y)),
+                    },
+                    (Some(hull), None) => hull,
+                    (None, Some((_, _, vicinity))) => *vicinity,
+                    (None, None) => continue,
+                };
+                self.grid.candidates(query, &mut self.candidates);
                 self.counts.broadphase_candidates += self.candidates.len() as u64;
                 for &index in &self.candidates {
                     let other = &self.obstacles[index];
-                    if !other.active || other.id == source.id ||
-                        !collision_matrix.allows(layer, other.layer) {
-                        continue;
-                    }
+                    if !other.active || other.id == source.id { continue; }
                     let Some(other_bounds) = other.collider.bounds else { continue };
-                    if !bounds.overlaps(other_bounds) { continue; }
-                    self.counts.narrowphase_tests += 1;
-                    if proximity.overlaps(&other.collider) {
-                        self.proximity_obstacle_current.push(ObstacleProximityContact {
-                            source_obstacle_id: source.id, other_obstacle_id: other.id,
-                        });
+                    if let Some((collider, layer, bounds)) = proximity {
+                        if collision_matrix.allows(layer, other.layer) &&
+                            bounds.overlaps(other_bounds)
+                        {
+                            self.counts.narrowphase_tests += 1;
+                            if collider.overlaps(&other.collider) {
+                                self.proximity_obstacle_current.push(ObstacleProximityContact {
+                                    source_obstacle_id: source.id,
+                                    other_obstacle_id: other.id,
+                                });
+                            }
+                        }
+                    }
+                    if let Some(bounds) = hull_bounds {
+                        if !(other.tracks_body_contacts && index < source_index) &&
+                            collision_matrix.allows(source.layer, other.layer) &&
+                            bounds.overlaps(other_bounds)
+                        {
+                            self.counts.narrowphase_tests += 1;
+                            if source.collider.overlaps(&other.collider) {
+                                self.obstacle_pairs_current.push(ObstaclePairContact {
+                                    first_obstacle_id: source.id.min(other.id),
+                                    second_obstacle_id: source.id.max(other.id),
+                                });
+                            }
+                        }
                     }
                 }
             }
@@ -2567,33 +2603,6 @@ impl KinematicPhysics {
                     self.ship_obstacle_current.push(ShipObstacleContact {
                         ship_id: ship.id, obstacle_id: obstacle.id,
                     });
-                }
-            }
-        }
-        self.obstacle_pairs_current.clear();
-        if active_obstacle_count > 1 && has_body_contact_obstacles {
-            for &source_index in &self.active_obstacle_indices {
-                let source = &self.obstacles[source_index];
-                if !source.active || !source.tracks_body_contacts { continue; }
-                let Some(bounds) = source.collider.bounds else { continue };
-                self.grid.candidates(bounds, &mut self.candidates);
-                self.counts.broadphase_candidates += self.candidates.len() as u64;
-                for &index in &self.candidates {
-                    let other = &self.obstacles[index];
-                    if !other.active || index == source_index ||
-                        (other.tracks_body_contacts && index < source_index) ||
-                        !collision_matrix.allows(source.layer, other.layer) {
-                        continue;
-                    }
-                    let Some(other_bounds) = other.collider.bounds else { continue };
-                    if !bounds.overlaps(other_bounds) { continue; }
-                    self.counts.narrowphase_tests += 1;
-                    if source.collider.overlaps(&other.collider) {
-                        self.obstacle_pairs_current.push(ObstaclePairContact {
-                            first_obstacle_id: source.id.min(other.id),
-                            second_obstacle_id: source.id.max(other.id),
-                        });
-                    }
                 }
             }
         }
