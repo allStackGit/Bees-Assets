@@ -225,8 +225,8 @@ def per_scene_results(score, learner_side, episodes):
     return results
 
 
-def evaluation_forward_latency(log_path, manifest_sha, clean_exit):
-    """Read complete per-slot backend timing, never a periodic/partial sample."""
+def final_policy_efficiency(log_path, manifest_sha, clean_exit):
+    """Find the single completed worker report for these immutable weights."""
     if clean_exit is not True:
         return None
     final = []
@@ -240,14 +240,28 @@ def evaluation_forward_latency(log_path, manifest_sha, clean_exit):
                 continue
             if (row.get("kind") == "native_policy_inference_efficiency" and
                     row.get("final") is True and
-                    row.get("manifest_sha256") == manifest_sha and
-                    "forward_latency_by_slot" in row):
+                    row.get("manifest_sha256") == manifest_sha):
                 final.append(row)
     if not final:
         return None
     if len(final) != 1:
         raise ValueError("native evaluation has ambiguous final inference measurements")
-    timings = final[0]["forward_latency_by_slot"]
+    return final[0]
+
+
+def evaluation_forward_latency(log_path, manifest_sha, clean_exit, final_report=None):
+    """Read complete per-slot backend timing, never a periodic/partial sample.
+
+    The optional final report avoids parsing the log a second time when a
+    holdout also records genuine CPU/GPU model execution identities.
+    """
+    if clean_exit is not True:
+        return None
+    if final_report is None:
+        final_report = final_policy_efficiency(log_path, manifest_sha, clean_exit)
+    if final_report is None or "forward_latency_by_slot" not in final_report:
+        return None
+    timings = final_report["forward_latency_by_slot"]
     if not isinstance(timings, dict) or not timings:
         raise ValueError("native evaluation has no completed slot latency observations")
     for slot, row in timings.items():
@@ -263,6 +277,25 @@ def evaluation_forward_latency(log_path, manifest_sha, clean_exit):
         "by_slot": timings,
     }
 
+
+def evaluation_execution_evidence(final_report):
+    """Actual completed model device/forward observations, not a requested lease."""
+    if final_report is None:
+        return None
+    execution = final_report.get("model_execution")
+    calls = final_report.get("gpu_forward_calls")
+    rows = final_report.get("gpu_forward_rows")
+    if (not isinstance(execution, dict) or
+            any(not isinstance(slot, str) or not slot.isdecimal() or
+                not isinstance(model, dict) for slot, model in execution.items()) or
+            type(calls) is not int or calls < 0 or
+            type(rows) is not int or rows < 0 or
+            (calls == 0 and rows != 0)):
+        raise ValueError("Invalid native evaluation GPU inference evidence.")
+    return {
+        "gpu_forward_calls": calls, "gpu_forward_rows": rows,
+        "model_execution": execution,
+    }
 
 def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
              physics_workers=None, inference_device=None):
@@ -397,9 +430,14 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     check_native_input_dependencies({"source_dependencies": source_dependencies})
     if native_manifest_model_dependencies(manifest, model_store) != model_dependencies:
         raise ValueError("native evaluation model paths changed during the holdout")
-    latency = evaluation_forward_latency(
+    worker_report = final_policy_efficiency(
         output / "evaluation.log", manifest_sha, summary.get("resident_policy_exit_clean"),
     )
+    latency = evaluation_forward_latency(
+        output / "evaluation.log", manifest_sha,
+        summary.get("resident_policy_exit_clean"), worker_report,
+    )
+    execution = evaluation_execution_evidence(worker_report)
     # Preserve observed execution-only throughput separately from the
     # startup/finalization-inclusive wall rate. Worker wall seconds are a
     # SUM of independently timed parallel worker tasks, not process CPU
@@ -414,6 +452,7 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     receipt = {
         "schema_version": 1, "kind": "native_policy_evaluation_complete",
         **({"policy_forward_latency": latency} if latency is not None else {}),
+        **({"policy_execution": execution} if execution is not None else {}),
         "source_run_config": str(source_path), "source_run_config_sha256": source_sha,
         "source_dependencies": source_dependencies,
         "model_dependencies": model_dependencies,
