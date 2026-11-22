@@ -39,10 +39,8 @@ def original_level(document, number):
     if level.get("Side") != 1 or level.get("EnemyExistingSquads") != [] or (
             level.get("EnemyReinforcementsOption") != 0):
         raise ValueError("unsupported original enemy reinforcement/reuse setting")
-    if level.get("AsteroidOption") != 0:
-        # Challenge collision asteroids use a separate source Stage timer;
-        # a stationary guessed asteroid field would change gameplay.
-        raise ValueError("original Challenge collision-asteroid timer not yet authored in native Stage")
+    if level.get("AsteroidOption") not in (0, 1, 2, 3):
+        raise ValueError("unrecognized original Challenge collision-asteroid option")
     if level.get("Mining") != 0 or not isinstance(level.get("EnemySquads"), list):
         raise ValueError("unsupported Challenge resource/squad contract")
     if level.get("Obstacles") not in ("", "No") or (
@@ -172,6 +170,10 @@ def main():
     parser.add_argument("--original-levels", type=Path, default=LEVELS)
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--minutes", type=int, default=15)
+    parser.add_argument("--stage-asteroid-minimum-rate", type=int,
+                        help="source Stage.AsteroidMinimumSpawnRate (seconds)")
+    parser.add_argument("--stage-asteroid-maximum-rate", type=int,
+                        help="source Stage.AsteroidMaxSpawnRate (seconds)")
     args = parser.parse_args()
     try:
         original = json.loads(args.original_levels.read_text(encoding="utf-8"))
@@ -209,6 +211,26 @@ def main():
         boxes = original_obstacles(scene, level)
         run["levels"][0]["supply_capacity"] = {
             "player_side": 2, "max_tsv": level["SupplyCapacity"]}
+        asteroid_option = level["AsteroidOption"]
+        if asteroid_option:
+            minimum = args.stage_asteroid_minimum_rate
+            maximum = args.stage_asteroid_maximum_rate
+            if (type(minimum) is not int or type(maximum) is not int or
+                    not 1 <= minimum <= maximum <= 3600):
+                raise ValueError(
+                    "Challenge collision asteroids require verified source "
+                    "Stage minimum/maximum spawn rates in seconds"
+                )
+            if asteroid_option == 2:
+                minimum = max(1, minimum // 2)
+                maximum = max(minimum, maximum // 2)
+            elif asteroid_option == 3:
+                minimum = 1
+                maximum = max(minimum, maximum // 2)
+            scene["activate_collision_asteroids"] = True
+            run["levels"][0]["collision_asteroid_timer"] = {
+                "minimum_seconds": minimum, "maximum_seconds": maximum,
+            }
         run["levels"][0]["scene"] = "challenge.scene.json"
         # A failed/interrupted stage must resume the same physical fleet;
         # source Challenge progression is committed only on a terminal run.
@@ -217,6 +239,13 @@ def main():
         source_identity = {
             "schema_version": 1, "source_level_id": level["Id"],
             "source_name": level["Name"], "source_map_index": level["MapIndex"],
+            "source_asteroid_option": level["AsteroidOption"],
+            "source_asteroid_spawn_rates": (
+                None if not asteroid_option else {
+                    "minimum": args.stage_asteroid_minimum_rate,
+                    "maximum": args.stage_asteroid_maximum_rate,
+                }
+            ),
             "original_squads": [{
                 "source_id": squad["Id"], "source_name": squad["Name"],
                 "native_item_id": scene["squads"][i]["item_id"],
@@ -240,7 +269,9 @@ def main():
         "source_name": level["Name"], "source_map_index": level["MapIndex"],
         "source_supply_tsv": level["SupplyCapacity"],
         "enemy_squads": squads, "enemy_ships": ships,
-        "obstacle_colliders": boxes, "run": str(output / "challenge.run.json"),
+        "obstacle_colliders": boxes,
+        "collision_asteroid_timer": run["levels"][0].get("collision_asteroid_timer"),
+        "run": str(output / "challenge.run.json"),
     }, sort_keys=True))
 
 if __name__ == "__main__":
