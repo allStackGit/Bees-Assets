@@ -731,6 +731,8 @@ impl CampaignProgress<'_> {
     pub fn fleet_rows_with_source(&self, source: &[(i32, i64, i64, u8)]) -> Vec<String> {
         let source_by_id = source.iter().map(|&(side, id, squad, kind)|
             (id, (side, squad, kind))).collect::<HashMap<_, _>>();
+        let purchased_by_id = self.purchases.iter().map(|(side, ship)|
+            (ship.fleet_ship_id, (*side, *ship))).collect::<HashMap<_, _>>();
         let mut ids = self.fleet.keys().copied()
             .chain(self.purchases.iter().map(|(_, ship)| ship.fleet_ship_id))
             .chain(self.authored_roster.keys().copied())
@@ -741,7 +743,7 @@ impl CampaignProgress<'_> {
         ids.into_iter().filter_map(|id| {
             let name = self.fleet_ship_name(id)
                 .map_or(String::new(), |name| format!(" ({name})"));
-            let purchase = self.purchased_ship(id);
+            let purchase = purchased_by_id.get(&id).copied();
             let authored = self.authored_roster.get(&id);
             let scene = source_by_id.get(&id).copied();
             let assignment = purchase.map(|(_, ship)| ship.saved_squad_id)
@@ -2004,9 +2006,11 @@ impl BattleCatalog {
         let playable_sides = self.battles.iter()
             .filter_map(|entry| entry.mission.as_ref().map(|mission| mission.player_side))
             .collect::<HashSet<_>>();
+        let purchased_by_id = progress.purchases.iter().map(|(side, ship)|
+            (ship.fleet_ship_id, (*side, *ship))).collect::<HashMap<_, _>>();
         let fleet_roster = roster_ids.into_iter().filter_map(|id| {
             let history = progress.fleet.get(&id);
-            let purchased = progress.purchased_ship(id);
+            let purchased = purchased_by_id.get(&id).copied();
             let authored = progress.authored_roster.get(&id);
             let side = history.map(|record| record.side)
                 .or_else(|| purchased.map(|(side, _)| side))
