@@ -2045,7 +2045,15 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 combat_hud_draws[4]+=1;
             }
             if selected_ship {
-                outline(pixels,center.0-15,center.1-17,30,34,0xf9f0a1);
+                // The original game selects the actual physical ShipBody,
+                // including large/rotated flagships and child hulls. The
+                // highlight follows the same source shape as picking and
+                // collision; old shapeless snapshots retain a small box.
+                if let Some(hull)=remote_primary_hull(ship,point,heading) {
+                    hull.draw(pixels,camera,0xf9f0a1);
+                } else {
+                    outline(pixels,center.0-15,center.1-17,30,34,0xf9f0a1);
+                }
                 for weapon in ship["weapons"].as_array().into_iter().flatten() {
                     let Some(slot)=weapon["slot"].as_u64().filter(|&slot|slot<5) else {continue};
                     if let Some(charge)=weapon["charge"].as_array().filter(|v|v.len()==3) {
