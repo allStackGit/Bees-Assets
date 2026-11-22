@@ -18,13 +18,13 @@ import tarfile
 import time
 from tempfile import TemporaryDirectory, NamedTemporaryFile
 
-from native_distributed_collection import verify_bundle
+from native_distributed_collection import verify_bundle, MAX_BUNDLE_RECEIPT_BYTES
 from native_training_artifacts import file_sha256, sync_directory
 
 
 DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 BUNDLE_NAME = re.compile(r"[A-Za-z0-9_-]{1,96}\Z")
-MAX_RECEIPT_BYTES = 2 * 1024 * 1024
+MAX_RECEIPT_BYTES = MAX_BUNDLE_RECEIPT_BYTES
 CHUNK = 1024 * 1024
 UPLOAD_RECEIPT = ".native-upload-receipt.json"
 
