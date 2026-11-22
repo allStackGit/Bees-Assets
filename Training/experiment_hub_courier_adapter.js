@@ -80,8 +80,8 @@ const COURIER_METRIC_CATALOG={
         'training_shared_async_collector_overlap',
         'training_shared_async_next_started',
         'training_shared_policy_lag_updates',
-        'training_shared_async_ppo_overlap_seconds',
-        'training_shared_async_exposed_wait_seconds',
+        'training_async_ppo_overlap_seconds',
+        'training_async_exposed_wait_seconds',
         'training_async_next_collecting',
         'training_ppo_gradient_foreach_batches',
         'training_ppo_compiled_active','training_ppo_compiled_batches',
@@ -297,6 +297,10 @@ function courierMetrics(source) {
     ].includes(name)||name.startsWith('training_broker_')||
         name.startsWith('training_live_')||
         name.startsWith('training_gpu_memory_')||
+        name.startsWith('training_async_')||
+        name.startsWith('training_shared_async_')||
+        name==='training_shared_policy_lag_updates'||
+        name.startsWith('training_ppo_compile')||
         name.startsWith('training_gpu_placement_')||
         name.startsWith('training_gpu_output_')||
         name.startsWith('training_gpu_input_device_')||
