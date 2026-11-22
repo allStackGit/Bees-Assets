@@ -1502,6 +1502,35 @@ impl NativeSoftwareRenderer {
         self.squad_tab_offset = 0;
     }
 
+    /// Reveal an exact source squad selected through the keyboard, without
+    /// maintaining a separate mutable squad list in the window.
+    pub fn reveal_squad_tab(
+        &mut self, view: &NativeRenderWorldView<'_>,
+        target: bees_hivemind::session::SquadLifetime,
+    ) {
+        let visible = self.squad_tab_capacity();
+        if visible == 0 { return; }
+        let mut index = 0usize;
+        for &owner in view.roster.source_order() {
+            let Some(squad) = view.roster.get(owner) else { continue };
+            if squad.source_hotkey_number.is_none() ||
+                !view.is_local_player_squad(owner) ||
+                !squad.members.first().is_some_and(|&id|
+                    view.combat.ship(id).is_some()) {
+                continue;
+            }
+            if owner == target {
+                if index < self.squad_tab_offset {
+                    self.squad_tab_offset = index;
+                } else if index >= self.squad_tab_offset.saturating_add(visible) {
+                    self.squad_tab_offset = index + 1 - visible;
+                }
+                return;
+            }
+            index += 1;
+        }
+    }
+
     /// Returns true only when the mouse wheel was consumed by a genuine,
     /// overflowing squad strip. World cameras retain their existing zoom
     /// behavior elsewhere and on small squad rosters.
@@ -1514,7 +1543,7 @@ impl NativeSoftwareRenderer {
         }
         let visible = self.squad_tab_capacity();
         let maximum = self.squad_tab_count(view).saturating_sub(visible);
-        if maximum == 0 { return false; }
+        if visible == 0 || maximum == 0 { return false; }
         self.squad_tab_offset = if vertical > 0.0 {
             self.squad_tab_offset.saturating_sub(vertical.ceil() as usize)
         } else {
@@ -1530,6 +1559,7 @@ impl NativeSoftwareRenderer {
         x: f32, y: f32,
     ) -> Option<bees_hivemind::session::SquadLifetime> {
         if self.show_shooting_menu { return None; }
+        let visible = self.squad_tab_capacity();
         let mut row = 0usize;
         let mut skipped = 0usize;
         for &owner in view.roster.source_order() {
@@ -1552,7 +1582,7 @@ impl NativeSoftwareRenderer {
                 text::width(&label, 1))?;
             if rect.contains(x, y) { return Some(owner); }
             row += 1;
-            if row == self.squad_tab_capacity() { break; }
+            if row == visible { break; }
         }
         None
     }
@@ -2958,7 +2988,7 @@ impl NativeSoftwareRenderer {
                 &label, 1, if selected { [255, 241, 194] }
                     else { [182, 211, 239] });
             row += 1;
-            if row == self.squad_tab_capacity() { break; }
+            if row == visible { break; }
         }
         row
     }
