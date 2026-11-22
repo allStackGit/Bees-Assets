@@ -2123,6 +2123,9 @@ impl KinematicPhysics {
         Ok(closest)
     }
     pub fn ship_obstacle_entries(&self) -> &[ShipObstacleContact] { &self.ship_obstacle_enters }
+    /// Existing sorted fixed-tick hull contacts, reused by static obstacle
+    /// OnTriggerStay2D without a second sensor or collision allocation.
+    pub fn ship_obstacle_overlaps(&self) -> &[ShipObstacleContact] { &self.ship_obstacle_current }
     pub fn ship_obstacle_exits(&self) -> &[ShipObstacleContact] { &self.ship_obstacle_exits }
     pub fn obstacle_pair_entries(&self) -> &[ObstaclePairContact] { &self.obstacle_pair_enters }
     pub fn obstacle_pair_exits(&self) -> &[ObstaclePairContact] { &self.obstacle_pair_exits }

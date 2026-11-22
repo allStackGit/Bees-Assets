@@ -866,6 +866,8 @@ struct CombatWorldMovementCheckpoint {
     /// Historic checkpoints predate authored lethal statics and default empty.
     #[serde(default)]
     lethal_static_obstacle_ids: HashSet<i64>,
+    #[serde(default)]
+    static_stay_counts: HashMap<i64, u8>,
     collision_profiles: HashMap<i64, ShipCollisionProfile>,
     original_ship_health: HashMap<i64, i32>,
     fleet_ids: HashMap<i64, i64>,
@@ -1083,6 +1085,7 @@ pub struct CombatWorld {
     game_ship_steering: HashMap<i64, GameShipSteering>,
     ship_bounds_overrides: HashSet<i64>,
     lethal_static_obstacle_ids: HashSet<i64>,
+    static_stay_counts: HashMap<i64, u8>,
     map_border_measurements: GameMapBorderMeasurements,
     /// The Level-owned policy controller stores actual ongoing action
     /// state for each bound ship; no secondary training-only movement world.
@@ -1334,6 +1337,7 @@ impl CombatWorld {
             game_ship_steering: HashMap::new(),
             ship_bounds_overrides: HashSet::new(),
             lethal_static_obstacle_ids: HashSet::new(),
+            static_stay_counts: HashMap::new(),
             map_border_measurements: GameMapBorderMeasurements::default(),
             policy_ship_runtime: BTreeMap::new(),
             policy_capability_owners: BTreeSet::new(),
@@ -1803,6 +1807,7 @@ impl CombatWorld {
                 point_orders_latest: self.latest_game_point_orders.clone(),
                 ship_bounds_overrides: self.ship_bounds_overrides.clone(),
                 lethal_static_obstacle_ids: self.lethal_static_obstacle_ids.clone(),
+                static_stay_counts: self.static_stay_counts.clone(),
                 collision_profiles: self.ship_collision_profiles.clone(),
                 original_ship_health: self.authored_original_ship_health.clone(),
                 fleet_ids: self.fleet_id_by_ship.clone(),
@@ -2265,6 +2270,11 @@ impl CombatWorld {
                 .iter().copied()
                 .filter(|id| obstacle_by_id.contains_key(id))
                 .collect::<HashSet<_>>() ||
+            movement.static_stay_counts.iter().any(|(&id, &count)|
+                count >= 25 ||
+                !obstacle_by_id.get(&id).is_some_and(|&index|
+                    snapshot.obstacles[index].kind == ObstacleKind::StaticObstacle)
+            ) ||
             movement.collision_profiles.iter().any(|(&id, profile)|
                 !registered_ship(id) || !profile.valid()
             ) ||
@@ -2522,6 +2532,7 @@ impl CombatWorld {
         self.latest_game_point_orders = movement.point_orders_latest;
         self.ship_bounds_overrides = movement.ship_bounds_overrides;
         self.lethal_static_obstacle_ids = movement.lethal_static_obstacle_ids;
+        self.static_stay_counts = movement.static_stay_counts;
         self.ship_collision_profiles = movement.collision_profiles;
         self.authored_original_ship_health = movement.original_ship_health;
         self.fleet_id_by_ship = movement.fleet_ids;
@@ -4895,26 +4906,26 @@ impl CombatWorld {
 
     /// Source StaticObstacle.OnTriggerEnter2D -> ShipCollision kills a Barge
     /// during its real ChargeForward, regardless of the other ship's side.
-    /// Only the physical static-body entry may cause this damage. The
-    /// existing ship-death path owns all FleetShip, policy and targeting
-    /// retirement; noncharging ships suffer no fabricated collision damage.
-    fn process_static_obstacle_ship_entries(&mut self) -> Result<(), CombatWorldError> {
-        for index in 0..self.physics.ship_obstacle_entries().len() {
-            let entry = self.physics.ship_obstacle_entries()[index];
+    /// KillsShipsOnContact instead kills any touching ship. The same shared
+    /// damage/death pipeline serves entry and every 25th OnTriggerStay2D.
+    fn apply_static_obstacle_ship_contact(
+        &mut self, obstacle_id: i64, ship_id: i64,
+    ) -> Result<(), CombatWorldError> {
+            let entry = crate::physics::ShipObstacleContact { ship_id, obstacle_id };
             let Some(&obstacle_index) = self.obstacle_by_id.get(&entry.obstacle_id)
                 else { continue };
             if self.obstacles[obstacle_index].kind != ObstacleKind::StaticObstacle {
-                continue;
+                return Ok(());
             }
             let Some(&ship_index) = self.ship_by_id.get(&entry.ship_id)
                 else { continue };
             let ship = &self.ships[ship_index];
             if ship.vitals.is_dead() ||
                 !self.physics.ships()[ship_index].active {
-                continue;
+                return Ok(());
             }
             let source_lethal = self.lethal_static_obstacle_ids.contains(&entry.obstacle_id);
-            if !source_lethal && ship.ship_type != 0 { continue; }
+            if !source_lethal && ship.ship_type != 0 { return Ok(()); }
             let is_charging = ship.ship_type == 0 &&
                 (self.game_barge_charges.get(&entry.ship_id)
                 .is_some_and(|charge| charge.phase == 2) ||
@@ -4922,7 +4933,7 @@ impl CombatWorld {
                     .and_then(|runtime| runtime.special)
                     .is_some_and(|special| matches!(special,
                         PolicyShipSpecial::Barge(barge) if barge.phase == 2)));
-            if !source_lethal && !is_charging { continue; }
+            if !source_lethal && !is_charging { return Ok(()); }
             let health = self.ships[ship_index].vitals.health();
             if let Some(delta) = self.ships[ship_index].vitals
                 .apply_damage(health, false)? {
@@ -4935,6 +4946,37 @@ impl CombatWorld {
                 if delta.killed {
                     self.retire_dead_ship(ship_index, 0, 0)?;
                 }
+            }
+        Ok(())
+    }
+
+    /// Source StaticObstacle.OnTriggerStay2D increments one obstacle-owned
+    /// counter for each physical ship overlap. Every 25 callbacks, invoke
+    /// the same death rules as OnTriggerEnter2D. No collider-center
+    /// approximation or per-frame allocation is introduced.
+    fn process_static_obstacle_ship_entries(&mut self) -> Result<(), CombatWorldError> {
+        for index in 0..self.physics.ship_obstacle_entries().len() {
+            let contact = self.physics.ship_obstacle_entries()[index];
+            self.apply_static_obstacle_ship_contact(
+                contact.obstacle_id, contact.ship_id,
+            )?;
+        }
+        for index in 0..self.physics.ship_obstacle_overlaps().len() {
+            let contact = self.physics.ship_obstacle_overlaps()[index];
+            if !self.obstacle_by_id.get(&contact.obstacle_id)
+                .is_some_and(|&index|
+                    self.obstacles[index].kind == ObstacleKind::StaticObstacle)
+            {
+                continue;
+            }
+            let count = self.static_stay_counts.entry(contact.obstacle_id)
+                .or_insert(0);
+            *count += 1;
+            if *count == 25 {
+                *count = 0;
+                self.apply_static_obstacle_ship_contact(
+                    contact.obstacle_id, contact.ship_id,
+                )?;
             }
         }
         Ok(())
