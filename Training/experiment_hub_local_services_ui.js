@@ -53,7 +53,9 @@
             line.className='hub-controls';
             const title=document.createElement('strong');
             title.textContent=item.project==='courier'?'Courier survival':
-                item.id==='nano'?'TinyBrains Nano':'TinyBrains Micro';
+                item.id==='nano'?'TinyBrains Nano (separate cadence)':
+                    item.id==='micro'?'TinyBrains Micro (separate cadence)':
+                        'TinyBrains Nano + Micro (same checkpoint)';
             const status=document.createElement('span');
             status.textContent=!item.installed?(item.reason||'Not installed'):
                 !item.managed?'Not ready: '+(item.reason||'unmanaged service'):
@@ -70,7 +72,8 @@
                     evaluatorButton('Run now','run',item.id,busy||item.running,item.project),
                     evaluatorButton('Stop','stop',item.id,busy||!item.active,item.project)
                 );
-                if(item.project==='tinybrains')line.append(
+                if(item.project==='tinybrains'&&
+                    ['nano','micro'].includes(item.id))line.append(
                     evaluatorButton('Refresh suite','refresh',item.id,
                         busy||item.running,item.project));
             }
