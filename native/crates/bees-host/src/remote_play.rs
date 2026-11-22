@@ -55,6 +55,7 @@ const MAX_PENDING_INPUT_REPLIES: usize = 256;
 const STATE_EVERY_TICKS: u64 = 5;
 const SPECTATOR_IDLE_STATE_EVERY_TICKS: u64 = STATE_EVERY_TICKS * 2;
 const MAX_PENDING_AUDIO_EVENTS: usize = 32;
+const MAX_PENDING_SHIP_INSPECTIONS: usize = 16;
 
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -139,7 +140,7 @@ struct Peer {
     spectator: bool,
     last_request_id: u64,
     weapon_overlay: Option<(u64, u64, Vec<SquadLifetime>)>,
-    inspect_request: Option<(u64, u64, i64, u64)>,
+    inspect_requests: VecDeque<(u64, u64, i64, u64)>,
     incoming: Vec<u8>,
     // At most one frame is on the socket. Reliable replies queue separately
     // and are never discarded, while stale unsent state is replaceable.
@@ -946,7 +947,7 @@ impl NativeRemotePlay {
             self.peers.push(Peer {
                 id, socket, side: None, spectator: false,
                 last_request_id: 0, incoming: Vec::new(),
-                weapon_overlay: None, inspect_request: None,
+                weapon_overlay: None, inspect_requests: VecDeque::new(),
                 outgoing: Vec::new(), written: 0, writing_state: false,
                 reliable: VecDeque::new(), reliable_bytes: 0,
                 newest_state: None, input_replies: VecDeque::new(),
@@ -1335,9 +1336,10 @@ impl NativeRemotePlay {
                         self.measurements.ship_inspection_requests += 1;
                         if !self.archive_only && ship_id > 0 &&
                             claimed_world == world_id.0 &&
-                            claimed_revision == revision
+                            claimed_revision == revision &&
+                            peer.inspect_requests.len() < MAX_PENDING_SHIP_INSPECTIONS
                         {
-                            peer.inspect_request = Some((
+                            peer.inspect_requests.push_back((
                                 claimed_world, claimed_revision, ship_id, request_id,
                             ));
                             // The World may be paused, so an inspection must
@@ -1771,8 +1773,8 @@ impl NativeRemotePlay {
                 measurements.spectator_idle_frames_deferred += 1;
                 continue;
             }
-            if let Some((requested_world, requested_revision, ship_id, request_id)) =
-                peer.inspect_request.take()
+            while let Some((requested_world, requested_revision, ship_id, request_id)) =
+                peer.inspect_requests.pop_front()
             {
                 let permitted = !spectator &&
                     (requested_world, requested_revision) == episode &&
