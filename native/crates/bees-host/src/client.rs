@@ -553,6 +553,26 @@ impl NativeClient {
                 "Audio muted"
             } else { "Audio enabled" };
         }
+        // Native player audio settings apply to all current and future
+        // soundtrack/effect voices, including source WarpGate loops. Shift
+        // adjusts the music channel; unmodified F10/F11 adjust effects.
+        // No audio mixer work is added to the physical game or PPO loop.
+        if self.window.is_active() {
+            let decrease = self.window.is_key_pressed(Key::F10, KeyRepeat::No);
+            let increase = self.window.is_key_pressed(Key::F11, KeyRepeat::No);
+            if decrease || increase {
+                let music = self.window.is_key_down(Key::LeftShift) ||
+                    self.window.is_key_down(Key::RightShift);
+                let delta = if increase { 0.1 } else { -0.1 };
+                self.audio.adjust_levels(music, delta);
+                self.input_feedback = match (music, increase) {
+                    (true, true) => "Music louder (Shift+F10/F11)",
+                    (true, false) => "Music quieter (Shift+F10/F11)",
+                    (false, true) => "Effects louder (F10/F11)",
+                    (false, false) => "Effects quieter (F10/F11)",
+                };
+            }
+        }
         if self.window.is_active() && self.window.is_key_pressed(Key::F8, KeyRepeat::No) {
             self.performance.enabled = !self.performance.enabled;
             // A disabled interval must not dilute the next measured SPS.
