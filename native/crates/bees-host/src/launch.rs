@@ -6524,6 +6524,17 @@ fn run_campaign_game_menu(
                 }
                 continue;
             }
+            NativeBattleMenuAction::DuplicateSquad { side, template_saved_squad_id } => {
+                let result = run_duplicate_saved_squad(
+                    &catalog_path, output_root, side, template_saved_squad_id,
+                );
+                progress = catalog.load_progress(output_root)?;
+                launch_failed = result.is_err();
+                if let Err(error) = result {
+                    eprintln!("Could not duplicate SavedSquad #{template_saved_squad_id}: {error}");
+                }
+                continue;
+            }
             NativeBattleMenuAction::NameFleetShip { side, fleet_ship_id, name } => {
                 let result = run_name_fleet_ship(
                     &catalog_path, output_root, side, fleet_ship_id, &name,

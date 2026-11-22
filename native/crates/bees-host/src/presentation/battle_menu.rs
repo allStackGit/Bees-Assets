@@ -217,6 +217,7 @@ pub struct NativeTacticsMenuRow {
 pub enum NativeBattleMenuAction {
     Play(usize),
     CreateSquad { side: i32, template_saved_squad_id: i64 },
+    DuplicateSquad { side: i32, template_saved_squad_id: i64 },
     DeleteSquad { side: i32, saved_squad_id: i64 },
     NameSquad { side: i32, saved_squad_id: i64, name: String },
     NameFleetShip { side: i32, fleet_ship_id: i64, name: String },
@@ -811,6 +812,14 @@ fn select_battle_inner(
                     }
                 }
             }
+            if show_create && window.is_key_pressed(Key::D, KeyRepeat::No) {
+                if let Some(row) = create_rows.get(shop_selected) {
+                    return Ok(Some(NativeBattleMenuAction::DuplicateSquad {
+                        side: row.side,
+                        template_saved_squad_id: row.template_saved_squad_id,
+                    }));
+                }
+            }
             if window.is_key_pressed(Key::Enter, KeyRepeat::No) {
                 if let Some(action) = choose(shop_selected, tactic_edit_index,
                         tactic_strategy, tactic_chase, tactic_cease_fire,
@@ -855,7 +864,7 @@ fn select_battle_inner(
                 else { "Build fleet" }, 2, TEXT);
             text::draw_centered(&mut pixels, WIDTH, 78,
                 if show_transfer { "Move owned ships between saved squads (no TSV cost)" }
-                else if show_create { "Choose a player squad to copy its command settings" }
+                else if show_create { "Enter: empty template   D: duplicate squad using matching reserve FleetShips" }
                 else if show_delete { "Created squads only; assigned ships return to fleet reserve" }
                 else if show_tactics { "Left/Right strategy, C chase, V fire, M speed, R palette, H custom RGB" }
                 else { "Purchase for deployment or buy into reserve; Enter spends mined TSV" }, 1, MUTED);
