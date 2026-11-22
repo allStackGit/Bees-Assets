@@ -674,7 +674,10 @@ where
                 .ok_or(HostPlayerInputError::Gameplay(
                     NativePlayerInputError::MissingSquad
                 ))?;
-            if !world.state.metadata.player_owns_squad(owner, squad.side) {
+            if !world.state.metadata.player_owns_squad(owner, squad.side) ||
+                !world.state.metadata.player_permissions(owner)
+                    .is_some_and(|permission| permission.can_accept_input)
+            {
                 return Err(HostPlayerInputError::Gameplay(
                     NativePlayerInputError::NotControllable
                 ));
