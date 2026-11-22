@@ -409,6 +409,11 @@ function learnerMeasurements(metrics) {
                     ['interop_threads',worker.torch_interop_threads,'count'],
                     ['peak_allocated_bytes',worker.torch_cuda_process_peak_allocated_bytes,'bytes'],
                     ['peak_reserved_bytes',worker.torch_cuda_process_peak_reserved_bytes,'bytes'],
+                    // Actual per-rank dispatch, not an aggregate host load.
+                    ...(worker.fused_adam_active === undefined ? [] :
+                        [['fused_adam_active',worker.fused_adam_active,'count']]),
+                    ...(worker.cuda_graph_requested === undefined ? [] :
+                        [['cuda_graph_requested',worker.cuda_graph_requested,'count']]),
                 ]) report['optimizer_gpu_'+index+'_'+name]={value,unit};
                 optimizerResourceMeasurements(report,'optimizer_gpu_'+index+'_',
                     worker.update_resource_measurements);
