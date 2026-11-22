@@ -919,9 +919,24 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         // ship or squad. The subsequent commit phase cannot fail on late
         // formation geometry or Carrier group membership.
         let mut planned_positions = HashMap::new();
-        let mut offscreen_waves = Vec::with_capacity(waves.len());
+        let mut offscreen_waves = vec![false; waves.len()];
         let bounds = self.broadphase_bounds;
         let has_obstacles = self.metadata.player_formation_options().has_obstacles;
+        // One source Pathfinder raster serves BOTH constructor placement
+        // passes for every authored wave; never rebuild it per squad.
+        if has_obstacles && spawn_centers.iter().any(Option::is_some) {
+            let bodies = crate::campaign_staging::authored_obstacle_bodies(&self.entities)?;
+            self.metadata.navigation.refresh_static(
+                bodies.iter().filter(|body| body.layer == 19)
+                    .map(|body| (body.id, body)),
+            ).map_err(|_| "Reinforcement static navigation map is invalid")?;
+            self.metadata.navigation.refresh_dynamic(
+                self.metadata.activate_collision_asteroids,
+                bodies.iter().filter(|body|
+                    body.source_asteroid_prefab_number.is_some()
+                ).map(|body| (body.id, body)),
+            ).map_err(|_| "Reinforcement asteroid navigation map is invalid")?;
+        }
         for (wave_idx, ids) in planned_squad_order.iter().enumerate() {
             let Some(spawn) = spawn_centers[wave_idx] else { continue };
             let squads: Vec<&NativeAuthoredSquad> = ids.iter()
@@ -936,7 +951,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                     !spawn.unity_equal(entry) &&
                     entry.x >= bounds.min.x && entry.x <= bounds.max.x &&
                     entry.y >= bounds.min.y && entry.y <= bounds.max.y);
-            offscreen_waves.push(offscreen);
+            offscreen_waves[wave_idx] = offscreen;
             let positions = if offscreen {
                 plan_offscreen_reinforcement(
                     &squads, &source_ships, spawn, &self.metadata,
@@ -947,41 +962,6 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 )?
             };
             planned_positions.extend(positions);
-        }
-        // Source SetStartingPosition searches the same Pathfinder clearance
-        // raster used by ordinary game movement, not an obstacle radius
-        // approximation. Do this before taking any authored scene members.
-        if has_obstacles && !planned_positions.is_empty() {
-            let bodies = crate::campaign_staging::authored_obstacle_bodies(&self.entities)?;
-            self.metadata.navigation.refresh_static(
-                bodies.iter().filter(|body| body.layer == 19)
-                    .map(|body| (body.id, body)),
-            ).map_err(|_| "Reinforcement static navigation map is invalid")?;
-            self.metadata.navigation.refresh_dynamic(
-                self.metadata.activate_collision_asteroids,
-                bodies.iter().filter(|body|
-                    body.source_asteroid_prefab_number.is_some()
-                ).map(|body| (body.id, body)),
-            ).map_err(|_| "Reinforcement asteroid navigation map is invalid")?;
-            for (wave_idx, ids) in planned_squad_order.iter().enumerate() {
-                if spawn_centers[wave_idx].is_none() || offscreen_waves[wave_idx] {
-                    continue;
-                }
-                for squad_id in ids {
-                    let squad = source_squads[squad_id];
-                    // Legacy physical exports can lack clearance when no
-                    // entry order was authored. Preserve their original
-                    // validated starting position rather than inventing one.
-                    if squad.members.iter().all(|&id|
-                        self.metadata.current_path_clearance(id).is_some()
-                    ) {
-                        place_reinforcement_formation(
-                            squad, &source_ships, &mut planned_positions,
-                            &self.metadata, self.broadphase_bounds,
-                        )?;
-                    }
-                }
-            }
         }
         // An explicit spawn on an obstacle-bearing map is valid when the
         // complete original two-pass squad formation fits at that exact
