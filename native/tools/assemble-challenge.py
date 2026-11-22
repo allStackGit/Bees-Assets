@@ -11,13 +11,14 @@ import json
 from pathlib import Path
 
 LEVEL_COUNT = 10
+SOURCE_CAPACITIES = (25, 175, 150, 500, 500, 750, 750, 1500, 1500, 2500)
 
 def load(path, root):
     if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(root):
         raise ValueError(f"untrusted or missing native Challenge source: {path}")
     return json.loads(path.read_text(encoding="utf-8"))
 
-def assemble(root, gate):
+def assemble(root, gate, base_library):
     original = []
     battles = []
     persistent = {}
@@ -40,10 +41,7 @@ def assemble(root, gate):
                 len(run.get("levels", [])) != 1 or
                 run["levels"][0].get("scene") != "challenge.scene.json" or
                 run["levels"][0].get("supply_capacity") != {
-                    "player_side": 2, "max_tsv":
-                        next((v for v in [25, 175, 150, 500, 500,
-                                           750, 750, 1500, 1500, 2500]
-                              if v == run["levels"][0].get("supply_capacity", {}).get("max_tsv")), None)
+                    "player_side": 2, "max_tsv": SOURCE_CAPACITIES[index]
                 }):
             raise ValueError(f"original Challenge level {index} has a mismatched native source contract")
         # Explicit source identity and manifest are not independently
@@ -101,14 +99,40 @@ def assemble(root, gate):
         "campaign_id": "original-human-challenge",
         "battles": battles,
     }
-    library = {"library_schema": 1, "games": [{
+    # The library resolves every unlock prerequisite against a campaign
+    # actually present in that same library. Do not create a Challenge that
+    # appears unlocked but can never be entered.
+    games = []
+    if base_library is not None:
+        loaded = load(base_library, root)
+        if loaded.get("library_schema") != 1 or not isinstance(loaded.get("games"), list):
+            raise ValueError("base native library needs schema 1 and a game list")
+        games = loaded["games"].copy()
+    if any(game.get("id") == "original-human-challenge" for game in games):
+        raise ValueError("the base native library already contains this Challenge")
+    if gate is not None:
+        matched = [entry for entry in games if
+                   entry.get("kind") == "campaign" and entry.get("id") == gate[0]]
+        if len(matched) != 1:
+            raise ValueError("Challenge unlock campaign must exist in the same supplied library")
+        config = matched[0].get("config")
+        if (not isinstance(config, str) or not config or
+                Path(config).is_absolute() or ".." in Path(config).parts):
+            raise ValueError("Challenge unlock catalog path is invalid")
+        main_campaign = load(root / config, root)
+        if main_campaign.get("campaign_id") != gate[0] or not any(
+                battle.get("mission", {}).get("id") == gate[1]
+                for battle in main_campaign.get("battles", [])):
+            raise ValueError("Challenge unlock milestone does not exist in the source campaign")
+    games.append({
         "id": "original-human-challenge",
         "title": "Challenge (10 original levels)",
         "kind": "challenge", "config": "challenge.catalog.json",
         **({"unlock_after": {
             "campaign_id": gate[0], "mission_id": gate[1],
         }} if gate else {}),
-    }]}
+    })
+    library = {"library_schema": 1, "games": games}
     return catalog, library, original, persistent
 
 def main():
@@ -117,6 +141,8 @@ def main():
                         help="folder containing level-00 ... level-09 authored battles")
     parser.add_argument("--unlock-after", metavar="CAMPAIGN:MISSION",
                         help="actual completed main-campaign mission that unlocks Challenge")
+    parser.add_argument("--base-library", type=Path,
+                        help="existing native library in this output directory (required with --unlock-after)")
     args = parser.parse_args()
     gate = None
     if args.unlock_after is not None:
@@ -125,10 +151,16 @@ def main():
             parser.error("--unlock-after requires CAMPAIGN:MISSION")
         gate = split
     root = args.root.resolve()
+    if args.unlock_after and args.base_library is None:
+        parser.error("--unlock-after requires --base-library with the referenced campaign")
+    if args.base_library is not None and not args.base_library.resolve().is_relative_to(root):
+        parser.error("--base-library must be an existing library inside the Challenge root")
     if not root.is_dir():
         parser.error("Challenge career folder does not exist")
     try:
-        catalog, library, original, fleet = assemble(root, gate)
+        catalog, library, original, fleet = assemble(
+            root, gate, args.base_library,
+        )
         for name, document in (
             ("challenge.catalog.json", catalog),
             ("library.json", library),
