@@ -2026,21 +2026,6 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 text::draw_at(pixels, WIDTH, 16, 23,
                     text::fit(label, FIELD - 32), 1, [255, 211, 130]);
             }
-            if objective.get("kind").and_then(Value::as_str) == Some("pluto_reinforcements") {
-                let owner = objective.get("player_side").and_then(Value::as_i64)
-                    == Some(i64::from(side));
-                let label = if !owner {
-                    "Break the Pluto defense fleet"
-                } else if objective["combat_ready"] == true {
-                    "Repel the incoming Honeybee and Hornet squads"
-                } else if objective["scout_selected"] == true {
-                    "Review squad controls  |  Prepare for the Bee attack"
-                } else {
-                    "Select the first Scout to unlock squad controls"
-                };
-                text::draw_at(pixels, WIDTH, 16, 23,
-                    text::fit(label, FIELD - 32), 1, [255, 211, 130]);
-            }
             if objective.get("kind").and_then(Value::as_str) == Some("pluto_pushback") {
                 let owner = objective.get("player_side").and_then(Value::as_i64)
                     == Some(i64::from(side));
@@ -2086,6 +2071,10 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                         "Survive and mine minerals  |  Retreat through the marked zone",
                     (true, true) => "Withdraw surviving fleet through the marked retreat zone",
                     (false, true) => "Intercept enemy fleet before its withdrawal",
+                    (true, false) if objective["titania_minesweeper"] == true =>
+                        "Reach Titania's center or clear the Bees",
+                    (false, false) if objective["titania_minesweeper"] == true =>
+                        "Stop the opposing fleet from reaching Titania",
                     (true, false) => "Extract your fleet to the marked exit",
                     (false, false) => "Intercept enemy fleet before extraction",
                 };

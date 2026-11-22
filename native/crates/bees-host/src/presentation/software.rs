@@ -1844,9 +1844,17 @@ impl NativeSoftwareRenderer {
         self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
             half_extents: (bounds.max - bounds.min) * 0.5 },
             Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x33455e);
-        if let Some(zone) = view.combat.active_extraction_bounds()
-            .or_else(|| view.combat.extraction_objective().map(|(_, bounds, _)| bounds))
-        {
+        // Titania I creates its exit only when a real player ship
+        // approaches the planet. Other authored exits are known from
+        // the outset and remain visible to the commander.
+        let exit_zone = view.combat.active_extraction_bounds().or_else(|| {
+            if view.campaign_objective == Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaMinesweeper) {
+                None
+            } else {
+                view.combat.extraction_objective().map(|(_, bounds, _)| bounds)
+            }
+        });
+        if let Some(zone) = exit_zone {
             self.shape(&ShipShape::Box { offset: (zone.min + zone.max) * 0.5,
                 half_extents: (zone.max - zone.min) * 0.5 },
                 Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x75dbab);
@@ -2434,6 +2442,10 @@ impl NativeSoftwareRenderer {
                     ) => "Survive and mine minerals  |  Retreat through the marked zone",
                     (true, true) => "Withdraw surviving fleet through the marked retreat zone",
                     (false, true) => "Intercept enemy fleet before it withdraws",
+                    (true, false) if view.campaign_objective == Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaMinesweeper) =>
+                        "Reach Titania's center or clear the Bees",
+                    (false, false) if view.campaign_objective == Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaMinesweeper) =>
+                        "Stop the opposing fleet from reaching Titania",
                     (true, false) => "Extract your mobile fleet to the marked exit",
                     (false, false) => "Intercept enemy fleet before it extracts",
                 };
@@ -2502,27 +2514,6 @@ impl NativeSoftwareRenderer {
                 "Unidentified vessel located  |  Stand by for Lieutenant Tom"
             } else {
                 "Scout and explore around Pluto"
-            };
-            text::draw_centered(&mut self.pixels, self.width, 8,
-                label, 1, [239, 247, 255]);
-        } else if view.campaign_objective == Some(
-            bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoReinforcements,
-        ) {
-            use bees_gameplay::campaign_dialogue::CampaignCue;
-            let label = if view.player_authority.player_viewer_side()
-                != view.campaign_dialogue_side
-            {
-                "Break the Pluto defense fleet"
-            } else if view.campaign_dialogue.is_some_and(|(_, cue)|
-                matches!(cue, CampaignCue::PlutoReinforcementsCombatReady))
-            {
-                "Repel the incoming Honeybee and Hornet squads"
-            } else if view.campaign_dialogue.is_some_and(|(_, cue)|
-                matches!(cue, CampaignCue::PlutoReinforcementsScoutSelected))
-            {
-                "Review squad controls  |  Prepare for the Bee attack"
-            } else {
-                "Select the first Scout to unlock squad controls"
             };
             text::draw_centered(&mut self.pixels, self.width, 8,
                 label, 1, [239, 247, 255]);
@@ -2816,7 +2807,10 @@ impl NativeSoftwareRenderer {
         // hidden enemy unit. Show it before physics activates its trigger
         // so the player can actually command the convoy across the map.
         let mut escort_exits = 0usize;
-        if let Some((_, exit, _)) = view.combat.extraction_objective() {
+        if let Some((_, exit, _)) = view.combat.extraction_objective()
+            .filter(|_| view.campaign_objective != Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaMinesweeper) ||
+                view.combat.active_extraction_bounds().is_some())
+        {
             if let (Some((x0, y0)), Some((x1, y1))) = (
                 layout.project(exit.min), layout.project(exit.max),
             ) {

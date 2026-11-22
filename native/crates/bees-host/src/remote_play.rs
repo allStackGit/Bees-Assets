@@ -2317,6 +2317,8 @@ fn current_state(
                 "kind": "extraction",
                 "exiting_side": exiting_side,
                 "retreat_on_exit": view.combat.extraction_is_withdrawal(),
+                "titania_minesweeper": view.campaign_objective ==
+                    Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaMinesweeper),
                 "mine_and_withdraw": matches!(view.campaign_objective,
                     Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusDefensive |
                          bees_gameplay::campaign_dialogue::CampaignObjectiveKind::NeptuneProduction)),
@@ -2387,23 +2389,6 @@ fn current_state(
                             bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeDestroyed))),
             }))
         } else if view.campaign_objective == Some(
-            bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoReinforcements,
-        ) {
-            // The opponent sees the public goal, not the campaign
-            // commander's private tutorial stage or dialogue.
-            let own = view.campaign_dialogue_side == Some(side);
-            Some(json!({
-                "kind": "pluto_reinforcements",
-                "player_side": view.campaign_dialogue_side,
-                "scout_selected": own.then(|| view.campaign_dialogue.is_some_and(|(_, cue)|
-                    matches!(cue,
-                        bees_gameplay::campaign_dialogue::CampaignCue::PlutoReinforcementsScoutSelected |
-                        bees_gameplay::campaign_dialogue::CampaignCue::PlutoReinforcementsCombatReady))),
-                "combat_ready": own.then(|| view.campaign_dialogue.is_some_and(|(_, cue)|
-                    matches!(cue,
-                        bees_gameplay::campaign_dialogue::CampaignCue::PlutoReinforcementsCombatReady))),
-            }))
-        } else if view.campaign_objective == Some(
             bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoPushback,
         ) {
             Some(json!({
@@ -2436,7 +2421,11 @@ fn current_state(
             ])
         ),
         "extraction_destination": view.combat.extraction_objective()
-            .filter(|(_, _, escort)| !*escort)
+            // The Titania I zone does not exist until the first actual
+            // player proximity trigger. Never reveal an uncreated collider.
+            .filter(|(_, _, escort)| !*escort &&
+                (view.campaign_objective != Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaMinesweeper) ||
+                 view.combat.active_extraction_bounds().is_some()))
             .map(|(_, bounds, _)| [
                 [bounds.min.x, bounds.min.y],
                 [bounds.max.x, bounds.max.y],
