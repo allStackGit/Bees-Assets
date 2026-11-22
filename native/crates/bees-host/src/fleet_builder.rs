@@ -627,7 +627,8 @@ fn choose_visibility() -> Result<Option<bool>, Box<dyn Error>> {
 fn choose_mining_field(
     terrain: Terrain, arena_size: Option<u32>,
 ) -> Result<Option<usize>, Box<dyn Error>> {
-    if !matches!(terrain, Terrain::Open | Terrain::Original) {
+    if !matches!(terrain, Terrain::Open | Terrain::Original |
+        Terrain::AsteroidField | Terrain::AsteroidStorm) {
         return Ok(Some(0));
     }
     let mut choices = vec![
@@ -1468,7 +1469,8 @@ pub(super) fn archive(
             !matches!(selected.ore_count, 2 | 8 | 16) ||
             (selected.ore_count > 2 &&
                 !selected.arena_size.is_some_and(|size| size >= 512)) ||
-            !matches!(selected.terrain, Terrain::Open | Terrain::Original)
+            !matches!(selected.terrain, Terrain::Open | Terrain::Original |
+                Terrain::AsteroidField | Terrain::AsteroidStorm)
         {
             return Err(invalid("native mineral field needs a valid physical arena and source ore").into());
         }
