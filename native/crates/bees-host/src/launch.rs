@@ -2844,6 +2844,7 @@ fn archived_native_remote_receipts_from_root(
             battle_result: result.clone(),
             campaign_outcome: campaign,
             banked_minerals: summary["campaign_banked_minerals"].as_u64(),
+            campaign_score_delta: summary["campaign_score_delta"].as_i64(),
         });
     }
     Ok(receipts)
@@ -9636,6 +9637,7 @@ fn run_battle(
             server.publish_campaign_receipt(
                 outcome.player_side, &final_summary["campaign_outcome"],
                 campaign_banked_minerals,
+                campaign_score_delta,
             );
         }
     }
