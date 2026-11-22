@@ -67,6 +67,17 @@ pub trait NativePlayerAuthority {
     fn player_squad_color_rgb(&self, _owner: SquadLifetime) -> Option<[u8; 3]> { None }
 }
 
+/// One actual player selection change, serialized alongside commands and
+/// playback inputs. Selecting a squad is ordinarily UI-only, but original
+/// campaign tutorials observe it to unlock the next gameplay stage.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativePlayerSquadSelection {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub squads: Vec<SquadLifetime>,
+}
+
 pub trait NativeLevelPlayerContext: NativeLevelActivationContext + NativePlayerAuthority {
     fn player_formation_options(&self) -> SquadFormationOptions;
     fn set_player_shooting_strategy(&mut self, owner: SquadLifetime,
