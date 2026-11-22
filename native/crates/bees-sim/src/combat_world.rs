@@ -5664,6 +5664,8 @@ impl CombatWorld {
         // create a new steering controller or enqueue a path.
         let has_game_steering = !self.game_ship_steering.is_empty();
         let has_navigation_paths = self.navigation_requests.has_active_paths();
+        let mut navigation_lookups_skipped = 0_u64;
+        let mut steering_lookups_skipped = 0_u64;
         let (active_slots, bodies) = self.physics.active_ships_mut();
         for &index in active_slots {
             let ship = &mut bodies[index];
@@ -5682,9 +5684,12 @@ impl CombatWorld {
                 if has_asteroid_path_refresh {
                     self.asteroid_navigation_refresh.remove(&ship.id);
                 }
-                if has_navigation_paths &&
-                    self.navigation_requests.is_pathfinding(ship.id) {
-                    self.navigation_requests.invalidate(ship.id)?;
+                if has_navigation_paths {
+                    if self.navigation_requests.is_pathfinding(ship.id) {
+                        self.navigation_requests.invalidate(ship.id)?;
+                    }
+                } else {
+                    navigation_lookups_skipped += 1;
                 }
                 if has_game_steering {
                     if let Some(steering) = self.game_ship_steering.get_mut(&ship.id) {
@@ -5692,13 +5697,18 @@ impl CombatWorld {
                             steering.await_path(&mut ship.motion);
                         }
                     }
+                } else {
+                    steering_lookups_skipped += 1;
                 }
             }
             let policy_step = ship.motion.fixed_step_rl(dt);
-            if has_game_steering &&
-                matches!(policy_step, MotionUpdate::NotPolicyControlled) {
-                if let Some(steering) = self.game_ship_steering.get_mut(&ship.id) {
-                    steering.fixed_step(&mut ship.motion, dt);
+            if matches!(policy_step, MotionUpdate::NotPolicyControlled) {
+                if has_game_steering {
+                    if let Some(steering) = self.game_ship_steering.get_mut(&ship.id) {
+                        steering.fixed_step(&mut ship.motion, dt);
+                    }
+                } else {
+                    steering_lookups_skipped += 1;
                 }
             }
         }
@@ -5773,6 +5783,8 @@ impl CombatWorld {
             special_weapon_body_entries: self.special_weapon_measurements.body_entries - special_before.body_entries,
             automatic_weapon_shots: self.automatic_weapon_measurements.shots - automatic_before.shots,
             integrated_bodies: physics_counts.integrated_bodies,
+            navigation_lookups_skipped,
+            steering_lookups_skipped,
             inactive_ship_slots_skipped: physics_counts.inactive_ship_slots_skipped,
             inactive_projectile_slots_skipped: physics_counts.inactive_projectile_slots_skipped,
             inactive_ship_grid_slots_skipped: physics_counts.inactive_ship_grid_slots_skipped,
