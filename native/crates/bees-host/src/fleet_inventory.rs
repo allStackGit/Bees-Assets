@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 use bees_gameplay::level_rules::NativeLevelRewardMetadata;
 use bees_sim::rl_shaping::DamageRewardMetadata;
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
+use bees_sim::ship_assets::{BEACON_TYPE, HUMAN_TARGET_TYPE};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,6 +73,13 @@ pub struct NativeFleetInventory {
     killed: HashSet<i64>,
     combat: HashMap<i64, NativeFleetCombatStats>,
     career_tracking: bool,
+    /// Source GameState.PlayerScore: signed full-health TSV gained for
+    /// genuine enemy deaths and lost for player deaths. This is independent
+    /// of whether a mission records persistent fleet career statistics.
+    #[serde(default)]
+    campaign_player_side: Option<i32>,
+    #[serde(default)]
+    campaign_score: i64,
 }
 
 /// Durable FleetShip career/mining credit, distinct from physical hull TSV.
@@ -112,7 +120,9 @@ impl NativeFleetInventory {
             return Err(Error::InvalidVersion);
         }
         let restored = checkpoint.source;
-        if self.career_tracking != restored.career_tracking {
+        if self.career_tracking != restored.career_tracking ||
+            self.campaign_player_side != restored.campaign_player_side
+        {
             return Err(Error::ChangedFleetOwnership);
         }
         for (&ship, old) in &self.entries {
@@ -165,6 +175,7 @@ impl NativeFleetInventory {
         Ok(Self {
             entries, killed: HashSet::new(), combat: HashMap::new(),
             career_tracking: false,
+            campaign_player_side: None, campaign_score: 0,
         })
     }
 
@@ -181,6 +192,18 @@ impl NativeFleetInventory {
     /// traffic and unneeded allocations in the hot training loop.
     pub fn enable_career_tracking(&mut self) {
         self.career_tracking = true;
+    }
+
+    /// Campaign GameState score is recorded even on source missions which
+    /// do not persist individual FleetShip statistics. This is a single
+    /// event-counter on the real physical game, not a training reward.
+    pub fn enable_campaign_score(&mut self, player_side: i32) {
+        assert!(matches!(player_side, 1 | 2));
+        self.campaign_player_side = Some(player_side);
+    }
+
+    pub fn campaign_player_score(&self) -> Option<i64> {
+        self.campaign_player_side.map(|_| self.campaign_score)
     }
 
     pub fn combat_stats(&self, ship_id: i64) -> Option<NativeFleetCombatStats> {
@@ -216,7 +239,9 @@ impl NativeFleetInventory {
     /// tick. No extra full-fleet scan, independent damage ledger, or work
     /// in quiet ticks. All three source gameplay paths share these events.
     pub fn record_combat_events(&mut self, world: &CombatWorld) {
-        if !self.career_tracking { return; }
+        if !self.career_tracking && self.campaign_player_side.is_none() {
+            return;
+        }
         for event in world.events() {
             match event {
                 CombatEvent::GameWeaponFired { ship_id, .. } |
@@ -278,8 +303,28 @@ impl NativeFleetInventory {
                             .saturating_add(delta.tsv_loss.max(0) as u64);
                     }
                 }
-                CombatEvent::ShipDied { victim_id, killer_id, .. } => {
-                    if killer_id == victim_id || *killer_id <= 0 {
+                CombatEvent::ShipDied { victim_id, killer_id, end_kill, .. } => {
+                    // Source Ship.Kill only calls LogKilledStats for actual
+                    // deaths, never safe extraction/EndKill or Beacon
+                    // retirement. A friendly HumanTarget is a protected
+                    // objective, not a fleet score penalty.
+                    if !end_kill {
+                        if let Some(side) = self.campaign_player_side {
+                            if let Some(victim) = world.ship(*victim_id) {
+                                if victim.ship_type != BEACON_TYPE &&
+                                    !(victim.side == side &&
+                                      victim.ship_type == HUMAN_TARGET_TYPE)
+                                {
+                                    let tsv = i64::from(victim.vitals.max_tsv());
+                                    self.campaign_score = self.campaign_score.saturating_add(
+                                        if victim.side == side { -tsv } else { tsv }
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    if !self.career_tracking ||
+                        killer_id == victim_id || *killer_id <= 0 {
                         continue;
                     }
                     let opposing = world.ship(*killer_id).zip(world.ship(*victim_id))
