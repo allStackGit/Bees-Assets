@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Seek, SeekFrom};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 
 use bees_gameplay::player_inputs::{
@@ -213,11 +213,23 @@ fn trace_error(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
+// A HiveMind trace frame is already limited to 8 MiB. Allow room for
+// the surrounding record and level manifest without trusting a corrupt
+// file to allocate unbounded memory before replay validation starts.
+const MAX_TRACE_RECORD_BYTES: u64 = 16 * 1024 * 1024;
+
 fn read_record(reader: &mut BufReader<File>, line: &mut String)
     -> io::Result<Option<TraceRecord>>
 {
     line.clear();
-    if reader.read_line(line)? == 0 { return Ok(None); }
+    // BufRead::read_line alone can grow without limit on an unterminated
+    // record. Take preserves the buffered reader's next-record position
+    // while bounding both the validation pass and streaming playback.
+    let read = reader.take(MAX_TRACE_RECORD_BYTES + 1).read_line(line)?;
+    if read == 0 { return Ok(None); }
+    if read as u64 > MAX_TRACE_RECORD_BYTES {
+        return Err(trace_error("player trace record exceeds maximum size"));
+    }
     serde_json::from_str(line).map(Some).map_err(io::Error::from)
 }
 
