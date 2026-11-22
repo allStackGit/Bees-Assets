@@ -10,7 +10,8 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use bees_host::presentation::{select_library, BattleMenuRow};
+use bees_host::presentation::{select_library, BattleMenuRow, SQUAD_COLORS};
+use bees_hivemind::protocol::SHOOTING_STRATEGIES;
 use bees_host::unity_scene_snapshot::{
     NativeMapBackdrop, NativeLevelLayout, NativePlacedStaticBox, NativePlacedStaticPolygon,
     NativeSquadClone, NativeSquadMerge,
@@ -405,6 +406,10 @@ pub(super) struct FleetChoice {
     carrier_deck: usize,
     terrain: Terrain,
     map_background: NativeMapBackdrop,
+    /// Optional authored SavedSquad colors, applied to the same original
+    /// live source squads that native placement later clones.
+    colors: [Option<[u8; 3]>; 2],
+    shooting_priorities: [u8; 2],
     fog_of_war: bool,
     /// Source's live CollisionAsteroid timer configuration. No per-mode
     /// implementation: the same native Level owns each timed spawn.
@@ -474,6 +479,7 @@ pub(super) fn choose_for_preferred_side(
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
+    let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(specialist_squad_sizes) =
@@ -544,7 +550,7 @@ pub(super) fn choose_for_preferred_side(
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, map_background, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
+        player_side, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: mode == 3, benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
@@ -588,6 +594,7 @@ pub(super) fn choose_multiplayer(
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
+    let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(specialist_squad_sizes) =
@@ -619,7 +626,7 @@ pub(super) fn choose_multiplayer(
     };
     Ok(Some(FleetChoice {
         player_side: if use_hivemind { authenticated_side } else { None },
-        fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, map_background, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
+        fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: false,
         benchmark: false,
         spectator_episodes: 1,
@@ -639,6 +646,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
+    let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(specialist_squad_sizes) =
@@ -687,13 +695,53 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(threads) = choose_resource("CPU physics workers", &workers)?
         else { return Ok(None); };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, map_background, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
+        player_side: None, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: true,
         benchmark: true,
         spectator_episodes: 1,
         ai_tactics, hivemind: None, objective, objective_side,
         reinforcements, benchmark_worlds: worlds, benchmark_workers: threads,
     }))
+}
+
+/// All 40 source shooting strategies and the original saved-squad
+/// color palette are part of the built playable roster, not presentation
+/// state layered on top of the simulation. The clone and restart paths
+/// consume these exact scene bytes without any second squad builder.
+fn choose_squad_preferences()
+    -> Result<Option<([Option<[u8; 3]>; 2], [u8; 2])>, Box<dyn Error>>
+{
+    let mut colors = [None; 2];
+    let mut strategies = [1; 2];
+    for side in 0..2 {
+        let faction = if side == 0 { "Bee" } else { "Human" };
+        let color_titles = std::iter::once(format!("{faction}: source squad colors"))
+            .chain(SQUAD_COLORS.iter().map(|&rgb| format!(
+                "{faction}: custom #{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2],
+            ))).collect::<Vec<_>>();
+        let color_rows = color_titles.iter().map(|title| BattleMenuRow {
+            title, status: "Original SavedSquad artwork palette", unlocked: true,
+        }).collect::<Vec<_>>();
+        let mut initial = 0;
+        let Some(color) = select_library(&color_rows, &mut initial, false)? else {
+            return Ok(None);
+        };
+        colors[side] = color.checked_sub(1).map(|index| SQUAD_COLORS[index]);
+
+        let titles = SHOOTING_STRATEGIES.iter().enumerate().map(|(index, name)|
+            format!("{faction} squad targeting {}: {name}", index + 1)
+        ).collect::<Vec<_>>();
+        let rows = titles.iter().map(|title| BattleMenuRow {
+            title, status: "Original automatic weapon target priority", unlocked: true,
+        }).collect::<Vec<_>>();
+        let mut initial = 0;
+        let Some(choice) = select_library(&rows, &mut initial, false)? else {
+            return Ok(None);
+        };
+        strategies[side] = u8::try_from(choice + 1)
+            .expect("source has exactly 40 shooting priorities");
+    }
+    Ok(Some((colors, strategies)))
 }
 
 /// Source planetary Map.SpriteRenderer prefabs are independent of physical
@@ -3008,6 +3056,37 @@ pub(super) fn archive(
         }
     }
     run["levels"][0]["scripted_queues"] = json!(queues);
+    // Direct and cloned squads share the same authored Scene source. Every
+    // spawned reinforcement, child Carrier squad and default fighter gets
+    // the correct target strategy and custom color through the ONE Level
+    // materializer rather than a second post-spawn UI authority.
+    for squad in scene["squads"].as_array_mut()
+        .ok_or_else(|| invalid("fleet archive lost its original squad registry"))?
+    {
+        let side = squad["side"].as_u64()
+            .and_then(|side| side.checked_sub(1))
+            .and_then(|side| usize::try_from(side).ok())
+            .filter(|&side| side < 2)
+            .ok_or_else(|| invalid("original fleet squad has an invalid side"))?;
+        squad["shooting_strategy_id"] = json!(selected.shooting_priorities[side]);
+        if let Some(rgb) = selected.colors[side] {
+            squad["custom_color_rgb"] = json!(rgb);
+        }
+    }
+    // Preserve every visual/tactical selection in the durable physical
+    // run identity used by replays and native training conversions.
+    let identity = run["run_id"].as_str()
+        .ok_or_else(|| invalid("squad preferences need a source run identity"))?
+        .to_owned();
+    let paint = |color: Option<[u8; 3]>| color.map_or_else(
+        || "source".to_owned(),
+        |rgb| format!("{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]),
+    );
+    run["run_id"] = json!(format!(
+        "{identity}-priority-{}v{}-paint-{}v{}",
+        selected.shooting_priorities[0], selected.shooting_priorities[1],
+        paint(selected.colors[0]), paint(selected.colors[1]),
+    ));
     if selected.benchmark {
         // Every independent World must have the same fully authored AI
         // commands, physical hulls and objectives. Fan out only AFTER

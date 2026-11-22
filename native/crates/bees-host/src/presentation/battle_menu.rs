@@ -13,7 +13,7 @@ use crate::fleet_inventory::NativePlayerMatchCounts;
 
 /// The on-screen palette is a convenience; the CLI accepts any RGB.
 /// Presets affect artwork only, never ship ownership or physics.
-const SQUAD_COLORS: [[u8; 3]; 6] = [
+pub const SQUAD_COLORS: [[u8; 3]; 6] = [
     [0x75, 0xdb, 0xab], [0x62, 0xb9, 0xff], [0xe1, 0xa3, 0x4b],
     [0xc2, 0x9b, 0xe8], [0xeb, 0x78, 0x85], [0xed, 0xe1, 0x94],
 ];
