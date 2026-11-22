@@ -496,11 +496,9 @@ fn plan_reinforcement_constructor(
     // source GetPosition/GetWidth. Calculate first-pass bounds without
     // changing the authored ships; failures preserve the entire scene.
     let mut first_pass = Vec::with_capacity(squads.len());
+    let obstacle_aware = metadata.player_formation_options().has_obstacles;
     for squad in squads {
-        let mut left = f32::INFINITY;
-        let mut right = f32::NEG_INFINITY;
-        let mut bottom = f32::INFINITY;
-        let mut top = f32::NEG_INFINITY;
+        let mut initial_positions = HashMap::with_capacity(squad.members.len());
         for &ship_id in &squad.members {
             let ship = ships.get(&ship_id)
                 .ok_or("Reinforcement squad has no physical ship")?;
@@ -510,10 +508,30 @@ fn plan_reinforcement_constructor(
                 ship.ship_type, squad.members.len(), offset,
             );
             let position = spawn + adjusted;
+            if !position.is_finite() {
+                return Err("Reinforcement first placement overflowed world coordinates");
+            }
+            initial_positions.insert(ship_id, position);
+        }
+        // PositionSquads first calls SetStartingPosition for every squad,
+        // before calculating its widths or moving Carrier child formations.
+        if obstacle_aware && squad.members.iter().all(|&id|
+            metadata.current_path_clearance(id).is_some()
+        ) {
+            place_reinforcement_formation(
+                squad, ships, &mut initial_positions, metadata, metadata.bounds,
+            )?;
+        }
+        let mut left = f32::INFINITY;
+        let mut right = f32::NEG_INFINITY;
+        let mut bottom = f32::INFINITY;
+        let mut top = f32::NEG_INFINITY;
+        for &ship_id in &squad.members {
+            let ship = ships[&ship_id];
+            let position = initial_positions[&ship_id];
             let size = metadata.ship_catalog.sprite_size(ship.ship_type)
                 .ok_or("Reinforcement ship has no authored sprite size")?;
-            if !position.is_finite() || !size.is_finite() ||
-                size.x <= 0.0 || size.y <= 0.0 {
+            if !size.is_finite() || size.x <= 0.0 || size.y <= 0.0 {
                 return Err("Reinforcement spawn and sprite geometry must be finite and positive");
             }
             let half = size * 0.5;
@@ -579,9 +597,29 @@ fn plan_reinforcement_constructor(
             }
             placements.insert(ship_id, physical_position);
         }
+        // Second SetStartingPosition searches once more at the actual
+        // centered/alternating constructor location. In the original Level
+        // this can move the first family, which also changes the Y origin
+        // used to stage all subsequent Carrier children.
+        if obstacle_aware && squad.members.iter().all(|&id|
+            metadata.current_path_clearance(id).is_some()
+        ) {
+            place_reinforcement_formation(
+                squad, ships, &mut placements, metadata, metadata.bounds,
+            )?;
+        }
         if ordinal == 0 {
-            // Unity's GetPosition includes the authored sprite-bounds bias.
-            first_squad_center = position + (initial_center - spawn);
+            let mut low = f32::INFINITY;
+            let mut high = f32::NEG_INFINITY;
+            for &ship_id in &squad.members {
+                let ship = ships[&ship_id];
+                let half_y = metadata.ship_catalog.sprite_size(ship.ship_type)
+                    .ok_or("Reinforcement first squad has no sprite height")?.y * 0.5;
+                let y = placements[&ship_id].y;
+                low = low.min(y - half_y);
+                high = high.max(y + half_y);
+            }
+            first_squad_center = Vec2::new(position.x, (low + high) * 0.5);
             if !first_squad_center.is_finite() {
                 return Err("Reinforcement first squad center is invalid");
             }
