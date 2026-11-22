@@ -98,6 +98,8 @@ pub struct NativeRenderCounts {
     /// Original wind-up / active Barge charge clip overlays, drawn on
     /// physically charged hulls only, never on an inferred UI timer.
     pub barge_charge_effect_draws: usize,
+    /// Original Queen.prefab crown/eye sprites rendered from the real hull.
+    pub queen_part_sprite_draws: usize,
     /// Frames from original Carpenter, Factory and WarpGate clips.
     pub ship_animated_sprite_draws: usize,
     pub ship_animation_clips_loaded: usize,
@@ -769,6 +771,15 @@ fn source_ship_art() -> Option<&'static SourceShipAtlas> {
     )).as_ref()
 }
 
+fn source_queen_parts() -> Option<&'static SourceShipAtlas> {
+    // BSS1 is the same immutable source sprite envelope without color
+    // masks. This is loaded only if the player actually sees a Queen.
+    static PARTS: OnceLock<Option<SourceShipAtlas>> = OnceLock::new();
+    PARTS.get_or_init(|| load_source_art(
+        "queen-parts.rgba", SourceShipAtlas::decode,
+    )).as_ref()
+}
+
 fn source_ship_animation_art() -> Option<&'static SourceShipAnimationAtlas> {
     static ATLAS: OnceLock<Option<SourceShipAnimationAtlas>> = OnceLock::new();
     ATLAS.get_or_init(|| load_source_art(
@@ -1139,6 +1150,36 @@ impl NativeSoftwareRenderer {
         )
     }
 
+    /// Queen.prefab contains an independent Crown and four Queen Eye
+    /// SpriteRenderers. Offsets, color-independent source art and the 1.1x
+    /// eye scale come directly from its serialized child transforms.
+    /// These are presentation-only, on the same parent hull pose that local
+    /// gameplay and authenticated remote snapshots already use.
+    fn draw_queen_parts(&mut self, origin: Vec2, radians: f32) -> usize {
+        let Some(parts) = source_queen_parts() else { return 0; };
+        const ATTACHMENTS: [(usize, f32, f32, f32); 5] = [
+            (0, 0.0, 54.0, 1.0),
+            (1, 65.6, 46.8, 1.1),
+            (1, -65.29, 47.06, 1.1),
+            (1, -59.2, 12.4, 1.1),
+            (1, 59.2, 12.4, 1.1),
+        ];
+        let (sin, cos) = radians.sin_cos();
+        let mut drawn = 0;
+        for (index, x, y, scale) in ATTACHMENTS {
+            let Some(art) = parts.sprites[index].as_ref() else { continue; };
+            let point = origin + Vec2::new(
+                x * cos - y * sin, x * sin + y * cos,
+            );
+            drawn += usize::from(self.draw_sprite(
+                &art.sprite, point, radians,
+                self.camera.pixels_per_unit / art.pixels_per_unit * scale,
+                1.0,
+            ));
+        }
+        drawn
+    }
+
     /// The source Barge prefab owns three independent presentation clips:
     /// wind-up (0), active rush (1), and a charge-image trail (2). Phase
     /// and elapsed time always come from the real CombatWorld. The trail
@@ -1231,7 +1272,7 @@ impl NativeSoftwareRenderer {
         &mut self, ship_type: u8, point: Vec2, rotation_degrees: f32,
         color_rgb: Option<[u8; 3]>, animation: Option<(u8, f32)>,
         barge_charge: Option<(u8, f32)>,
-    ) -> Option<(bool, usize)> {
+    ) -> Option<(bool, usize, usize)> {
         // Authenticated host packets select a presentation clip only for
         // already visible ships. Both local and remote use the *same*
         // native original-art decoder and exact source squad recolor mask.
@@ -1290,6 +1331,8 @@ impl NativeSoftwareRenderer {
             if ship_type == 0 {
                 self.draw_barge_charge_effect(barge_charge, color_rgb, point, radians)
             } else { 0 },
+            if ship_type == 17 { self.draw_queen_parts(point, radians) }
+            else { 0 },
         ))
     }
 
@@ -1974,6 +2017,11 @@ impl NativeSoftwareRenderer {
                     counts.barge_charge_effect_draws += self.draw_barge_charge_effect(
                         view.combat.barge_charge_visual_phase(ship.entity_id),
                         custom_rgb, pose.position, pose.rotation_degrees.to_radians(),
+                    );
+                }
+                if ship.ship_type == 17 {
+                    counts.queen_part_sprite_draws += self.draw_queen_parts(
+                        pose.position, pose.rotation_degrees.to_radians(),
                     );
                 }
             } else {
