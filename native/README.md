@@ -1024,6 +1024,14 @@ python Training/experiment_hub_native_bees_evaluate.py create-suite \
   --output /absolute/path/to/evaluation-suites/bees_native_duel.json
 ```
 
+For an independently evaluated GPU learner, add `--inference-device cuda:0`
+on a machine with an explicitly allocated CUDA or ROCm GPU. The default is
+CPU; CPU-only ONNX opponents remain on their pinned CPU provider. Add
+`--physics-workers N` to freeze the evaluator's native physics CPU budget.
+Both selections become part of the suite fingerprint and remain fixed across
+candidates. GPU validation uses completed resident-worker forward evidence,
+not just the requested device.
+
 Configure the native Bees Hub adapter's `evaluationRoot` to an independent
 receipt directory and `evaluationSuites` to `["bees_native_duel"]`.
 To make a completed `bees_native` Hub learner available to the native
