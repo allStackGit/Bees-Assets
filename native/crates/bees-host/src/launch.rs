@@ -5264,11 +5264,15 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
         return Err(invalid("native multiplayer host requires a private-network listen address").into());
     }
     let custom_fleet = settings.game_id == fleet_builder::GAME_ID;
+    // The original ten-stage Challenge is a career, not a stateless
+    // quick battle or trained-policy registration. The same multiplayer
+    // mission path already owns authenticated orders, rewards and recovery.
     let campaign_index = library.games.iter().position(|entry|
-        entry.id == settings.game_id && entry.kind == "campaign");
+        entry.id == settings.game_id &&
+        matches!(entry.kind.as_str(), "campaign" | "challenge"));
     let static_battle = library.games.iter().position(|entry|
         entry.id == settings.game_id && entry.kind == "battle");
-    if let Some(gate) = static_battle.and_then(|index|
+    if let Some(gate) = static_battle.or(campaign_index).and_then(|index|
         library.games[index].unlock_after.as_ref())
     {
         // A saved multiplayer host selection must obey the same authored
@@ -5295,7 +5299,7 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     } else {
         Some(trained.iter().find(|model| model.id == settings.game_id)
             .ok_or_else(|| invalid(
-                "multiplayer host game ID is not a native campaign, battle or registered checkpoint",
+                "multiplayer host game ID is not a native career, challenge, battle or registered checkpoint",
             ))?)
     };
     // Static game sources can be launched directly. A trained publication
@@ -5330,8 +5334,13 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     // Recovery of a terminal result is a different lifecycle from
     // launching a new battle. Offer the same saved multiplayer host and
     // side-token configuration without allocating a new physical World.
-    let receipt_root = if campaign_index.is_some() {
-        save_root.join("campaigns")
+    let receipt_root = if let Some(index) = campaign_index {
+        // A Challenge has its own original player fleet, match scoreboard
+        // and victory-gated career history. A hosted battle must not write
+        // into the main campaign's bank or resume its prior World.
+        save_root.join(if library.games[index].kind == "challenge" {
+            "challenges"
+        } else { "campaigns" })
     } else {
         save_root.join("battles")
     }.join(&settings.game_id);
@@ -5370,7 +5379,9 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     // applies unlocks, persistent fleet edits and durable battle receipts.
     // Do not turn a campaign into a stateless quick battle.
     let campaign = if let Some(index) = campaign_index {
-        let career_root = save_root.join("campaigns").join(&settings.game_id);
+        let career_root = save_root.join(if library.games[index].kind == "challenge" {
+            "challenges"
+        } else { "campaigns" }).join(&settings.game_id);
         // Hosting uses the SAME native campaign menu as local play, including
         // persistent ship purchases, transfers, saved squad editing, mission
         // unlocks and interrupted-World recovery. It returns a mission ID,
