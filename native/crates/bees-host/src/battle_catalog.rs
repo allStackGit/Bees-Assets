@@ -570,6 +570,11 @@ impl CampaignProgress<'_> {
         self.retired_squad_ids.contains(&saved_squad_id)
     }
 
+    pub fn has_recorded_squad_battle(&self, side: i32, saved_squad_id: i64) -> bool {
+        self.squads.get(&saved_squad_id)
+            .is_some_and(|record| record.side == side && record.battles_fought > 0)
+    }
+
     pub fn squad_name(&self, saved_squad_id: i64) -> Option<&str> {
         self.squad_names.get(&saved_squad_id).map(String::as_str)
     }
