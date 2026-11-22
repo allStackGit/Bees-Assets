@@ -159,7 +159,7 @@ pub struct NativeCampaignMenuStats {
     pub ships_lost: u64,
     pub ships_returned: u64,
     pub credited_kills: u64,
-    pub total_mined_tsv: u64,
+    pub total_mined_tsv: Option<u64>,
     pub match_history_complete: bool,
 }
 
@@ -864,11 +864,16 @@ fn select_battle_inner(
             if library_mode { "Campaigns and quick battles" }
             else { "Choose a battle to play" }, 1, MUTED);
         if let Some(career) = &career_stats {
+            let known_mining = career.total_mined_tsv.map_or(
+                "unknown".to_owned(), |value| value.to_string(),
+            );
             text::draw_centered(&mut pixels, WIDTH, 96, &format!(
                 "Score {:+} | Lost {} Returned {} Kills {} | Mined {} TSV{}",
                 career.score, career.ships_lost, career.ships_returned,
-                career.credited_kills, career.total_mined_tsv,
-                if career.score_complete && career.match_history_complete {
+                career.credited_kills, known_mining,
+                if career.score_complete && career.match_history_complete &&
+                    career.total_mined_tsv.is_some()
+                {
                     ""
                 } else { " (partial older history)" },
             ), 1, MUTED);

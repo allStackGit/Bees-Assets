@@ -1286,11 +1286,11 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
     }
 
     fn player_minerals_mined(&self) -> Option<u64> {
-        self.fleet.player_match_counts().map(|row| row.player_minerals_mined)
+        self.fleet.player_match_counts().and_then(|row| row.player_minerals_mined)
     }
 
     fn opponent_minerals_mined(&self) -> Option<u64> {
-        self.fleet.opponent_match_counts().map(|row| row.player_minerals_mined)
+        self.fleet.opponent_match_counts().and_then(|row| row.player_minerals_mined)
     }
 
     fn observe_fire_barge_chain_damage(&mut self, killer_ship_id: i64, tsv_loss: i32) {
