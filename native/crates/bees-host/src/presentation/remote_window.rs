@@ -562,6 +562,7 @@ struct PeerClient {
     /// It is cleared on reconnect and World turnover.
     pause_owned: bool,
     pause_pending: Option<(u64,bool)>,
+    step_pending: Option<u64>,
     pause_episode: Option<(u64,u64)>,
     authenticated: bool,
     connected: bool,
@@ -625,7 +626,8 @@ impl PeerClient {
             last_response_request: 0, pending_order_times: VecDeque::new(),
             briefing_pending: None, briefing_approved: None,
             briefing_rejected: None,
-            pause_owned: false, pause_pending: None, pause_episode: None,
+            pause_owned: false, pause_pending: None, step_pending: None,
+            pause_episode: None,
             authenticated: false, connected: true,
             input_suppressed: spectator, spectator, side,
             host_session_id: None,
@@ -756,6 +758,7 @@ impl PeerClient {
                     if self.pause_episode != Some((world_id,revision)) {
                         self.pause_owned = false;
                         self.pause_pending = None;
+                        self.step_pending = None;
                         self.pause_episode = Some((world_id,revision));
                     }
                     if new_episode {
@@ -995,6 +998,25 @@ impl PeerClient {
                         "Authoritative battle resumed".into()
                     };
                 }
+                Some("step_result") => {
+                    if !self.authenticated || self.spectator {
+                        return Err(invalid("unauthorized fixed-step receipt").into());
+                    }
+                    let request = message["request_id"].as_u64()
+                        .ok_or_else(|| invalid("fixed-step receipt lacks request ID"))?;
+                    let processed = message["processed"].as_bool()
+                        .ok_or_else(|| invalid("fixed-step receipt lacks admission result"))?;
+                    let feedback = message["feedback"].as_str()
+                        .filter(|text| !text.is_empty())
+                        .ok_or_else(|| invalid("fixed-step receipt lacks feedback"))?;
+                    if self.step_pending != Some(request) {
+                        return Err(invalid("fixed-step receipt does not match request").into());
+                    }
+                    self.step_pending = None;
+                    self.notice = if processed {
+                        "Advanced one authoritative physical tick".into()
+                    } else { feedback.to_owned() };
+                }
                 Some("input_result") => {
                     if !self.authenticated {
                         return Err(invalid("native host acknowledged an unauthenticated order").into());
@@ -1127,6 +1149,22 @@ impl PeerClient {
             "episode_revision":revision,"paused":paused
         }), if paused { "Requesting battle pause" } else { "Resuming battle" }.into())?;
         self.pause_pending=Some((id,paused));
+        Ok(())
+    }
+
+    fn request_step(&mut self, world:u64, revision:u64)
+        -> Result<(), Box<dyn Error>>
+    {
+        if !self.authenticated || !self.connected || self.spectator ||
+            !self.pause_owned || self.pause_pending.is_some() ||
+            self.step_pending.is_some() {
+            return Err(invalid("single-step requires your active pause and no pending requests").into());
+        }
+        let id=self.next_request;
+        self.enqueue_request(json!({
+            "kind":"step","world_id":world,"episode_revision":revision,
+        }),"Advancing one physical tick".into())?;
+        self.step_pending=Some(id);
         Ok(())
     }
 
@@ -3226,6 +3264,20 @@ pub fn connect_remote(
                 }
             }
         }
+        if !show_controls_help && !peer.spectator &&
+            window.is_key_pressed(Key::N, KeyRepeat::No)
+        {
+            if let Some((world,revision))=peer.state.as_ref()
+                .and_then(|state|Some((
+                    state["world_id"].as_u64()?,
+                    state["episode_revision"].as_u64()?,
+                )))
+            {
+                if let Err(error)=peer.request_step(world,revision) {
+                    peer.notice=error.to_string();
+                }
+            }
+        }
         audio.set_paused(soundtrack_paused || peer.state.as_ref()
             .is_some_and(|state|state["commander_paused"]==true));
         // Backspace mirrors the local tactical client's cancellation
@@ -4514,7 +4566,7 @@ pub fn connect_remote(
                 "C or F2: inspect the Fleet Codex",
                 "S: request surrender (commander only; confirmation required)",
                 "Q: disconnect from the host and close this window",
-                "Space: request shared pause / release your vote",
+                "Space: pause / resume   N: single fixed-step while paused",
             ];
             NativeSoftwareRenderer::draw_help_panel(
                 &mut pixels,WIDTH,HEIGHT,ROWS,&[0,6],
@@ -4589,7 +4641,7 @@ pub fn connect_remote(
                 "NETWORK / AUDIO",
                 "F4: surrender   F5: reconnect   F8: network measurements",
                 "F7: mute   F10/F11: effects   Shift+F10/F11: music",
-                "Space: request / release shared battle pause",
+                "Space: shared battle pause   N: single tick while paused",
             ];
             if peer.spectator {
                 // The observer may navigate the native camera, artwork,

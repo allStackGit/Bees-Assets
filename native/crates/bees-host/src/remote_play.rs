@@ -75,6 +75,10 @@ enum WireInput {
     /// order: the one authoritative World simply stops advancing ticks.
     Pause { request_id: u64, world_id: u64,
         episode_revision: u64, paused: bool },
+    /// Explicit single fixed-step request while this remote commander
+    /// owns a live pause; it has no alternative simulation or input path.
+    Step { request_id: u64, world_id: u64,
+        episode_revision: u64 },
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -341,6 +345,12 @@ pub struct RemotePlayMeasurements {
     pub commander_pause_rejections: u64,
     #[serde(default)]
     pub commander_paused_polls: u64,
+    #[serde(default)]
+    pub commander_step_requests: u64,
+    #[serde(default)]
+    pub commander_step_rejections: u64,
+    #[serde(default)]
+    pub commander_step_ticks: u64,
     pub state_frames: u64,
     pub state_bytes: u64,
     pub states_superseded: u64,
@@ -512,6 +522,9 @@ pub struct NativeRemotePlay {
     /// and disconnect, with no durable replay/gameplay side effects.
     pause_episode: Option<(u64, u64)>,
     pause_peers: HashSet<u64>,
+    /// At most one admitted step on the active authoritative World.
+    /// The requesting pause owner must remain connected until execution.
+    paused_step_owner: Option<u64>,
     measurements: RemotePlayMeasurements,
 }
 
@@ -614,6 +627,7 @@ impl NativeRemotePlay {
             held_fire: HashMap::new(), pending_releases: Vec::new(),
             briefing_ready: HashMap::new(),
             pause_episode: None, pause_peers: HashSet::new(),
+            paused_step_owner: None,
             measurements: RemotePlayMeasurements::default(),
         }))
     }
@@ -776,6 +790,7 @@ impl NativeRemotePlay {
         self.briefing_ready.clear();
         self.pause_peers.clear();
         self.pause_episode = None;
+        self.paused_step_owner = None;
         self.last_audio_tick = None;
         self.measurements = saved.measurements;
         self.measurements.held_fire_disconnect_releases += previous.len() as u64;
@@ -817,6 +832,7 @@ impl NativeRemotePlay {
         if self.pause_episode != Some((world_id.0, revision)) {
             self.pause_episode = Some((world_id.0, revision));
             self.pause_peers.clear();
+            self.paused_step_owner = None;
             self.force_initial_state = true;
         }
         let mut retired_no_live = Vec::new();
@@ -1137,7 +1153,12 @@ impl NativeRemotePlay {
                             } else {
                                 self.pause_peers.remove(&peer.id)
                             };
-                            if changed { self.force_initial_state = true; }
+                            if changed {
+                                self.force_initial_state = true;
+                                if !paused && self.paused_step_owner == Some(peer.id) {
+                                    self.paused_step_owner = None;
+                                }
+                            }
                             self.measurements.commander_pause_requests += 1;
                         } else {
                             self.measurements.commander_pause_rejections += 1;
@@ -1148,6 +1169,40 @@ impl NativeRemotePlay {
                             "processed": accepted,
                             "owned": self.pause_peers.contains(&peer.id),
                             "paused": !self.pause_peers.is_empty(),
+                        }));
+                    }
+                    Ok(WireInput::Step {
+                        request_id, world_id: claimed_world,
+                        episode_revision: claimed_revision,
+                    }) if peer.side.is_some() => {
+                        if request_id <= peer.last_request_id {
+                            self.measurements.commander_step_rejections += 1;
+                            peer.closed = true;
+                            break;
+                        }
+                        peer.last_request_id = request_id;
+                        peer_orders += 1;
+                        let permitted = self.dedicated_briefing_gate &&
+                            !peer.spectator && !self.archive_only &&
+                            claimed_world == world_id.0 &&
+                            claimed_revision == revision &&
+                            self.pause_peers.contains(&peer.id) &&
+                            self.paused_step_owner.is_none();
+                        if permitted {
+                            self.paused_step_owner = Some(peer.id);
+                            self.measurements.commander_step_requests += 1;
+                        } else {
+                            self.measurements.commander_step_rejections += 1;
+                        }
+                        let _ = peer.enqueue(&json!({
+                            "kind": "step_result",
+                            "request_id": request_id,
+                            "processed": permitted,
+                            "feedback": if permitted {
+                                "One authoritative fixed tick admitted"
+                            } else {
+                                "Step requires an idle dedicated host and your own active pause"
+                            },
                         }));
                     }
                     Ok(WireInput::WeaponOverlay { request_id, world_id: claimed_world,
@@ -1349,6 +1404,19 @@ impl NativeRemotePlay {
             !self.pause_peers.is_empty();
         if paused { self.measurements.commander_paused_polls += 1; }
         paused
+    }
+
+    /// Claim at most one normal physical tick from an active paused
+    /// session. The launcher still uses its only CombatWorld::run_window
+    /// path, including real HiveMind scheduling and replay receipts.
+    pub fn take_paused_step(&mut self) -> bool {
+        let Some(owner) = self.paused_step_owner.take() else { return false };
+        if !self.pause_peers.contains(&owner) { return false; }
+        self.measurements.commander_step_ticks += 1;
+        // Render the result even if that tick is not a normal every-fifth
+        // multiplayer snapshot; other clients see the exact same World.
+        self.force_initial_state = true;
+        true
     }
 
     pub fn reply(&mut self, peer_id: u64, request_id: u64, result: Result<&str, &str>) {
@@ -1810,6 +1878,10 @@ impl NativeRemotePlay {
                 client.side.is_some() && !client.spectator));
         if paused_before != self.pause_peers.len() {
             self.force_initial_state = true;
+        }
+        if self.paused_step_owner.is_some_and(|owner|
+            !self.pause_peers.contains(&owner)) {
+            self.paused_step_owner = None;
         }
         self.measurements.disconnected_peers += (before - self.peers.len()) as u64;
     }

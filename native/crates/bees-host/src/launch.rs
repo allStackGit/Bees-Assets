@@ -9307,15 +9307,20 @@ fn run_battle(
         // simulation clock remain untouched until every vote is released.
         // Disconnect or World turnover clears that peer's vote in the
         // existing network reaper. Headless training never has a listener.
+        let mut remote_single_step = false;
         if let Some(server) = remote.as_mut() {
             let world = host.simulation().world(0).expect("remote Level registered");
             if server.commander_paused(world.id, world.episode_revision()) {
-                if let Some(view) = host.render_world(0) {
-                    server.broadcast_initial_if_pending(&view, client_bounds[0]);
+                if server.take_paused_step() {
+                    remote_single_step = true;
+                } else {
+                    if let Some(view) = host.render_world(0) {
+                        server.broadcast_initial_if_pending(&view, client_bounds[0]);
+                    }
+                    std::thread::sleep(Duration::from_millis(16));
+                    remote_deadline = Instant::now();
+                    continue 'battle;
                 }
-                std::thread::sleep(Duration::from_millis(16));
-                remote_deadline = Instant::now();
-                continue 'battle;
             }
         }
         let until_update = config.model_updates.get(next_model_update)
@@ -9350,7 +9355,7 @@ fn run_battle(
         // interactive rounds still run the ordinary fixed-step host pipeline.
         let checkpoint_limit = if input_trace.is_some() { 64 - rounds % 64 } else { u64::MAX };
         let count = nonzero(remaining.min(source_pulse_limit).min(checkpoint_limit)
-            .min(u64::from(if remote.is_some() { 1 }
+            .min(u64::from(if remote_single_step || remote.is_some() { 1 }
                 else if view || playback.is_some() { client_step_budget }
                 else { window.get() })) as u32, "window")?;
         let physical_result = if !view && playback.is_none() &&
