@@ -16,6 +16,10 @@ const SUITES=Object.freeze({
     nano:'tinybrains_nano_tiny_v3',
     micro:'tinybrains_micro_tiny_v3',
 });
+// Single-suite timers serve independent cadences; the paired timer serves
+// same-checkpoint Nano+Micro monitoring/stop policies.
+const BATCH_ID='nano-micro';
+const SCHEDULED_IDS=[...Object.keys(SUITES),BATCH_ID];
 function suiteNames(options) {
     const marker=path.join(options.suites,'hub-approved-latest.json');
     if(!fs.existsSync(marker))return SUITES;
@@ -213,14 +217,16 @@ function launcherText(o) {
         '',
     ].join('\n');
 }
-function definitions(options) {
-    const files=validateInstall(options);
-    return Object.fromEntries(Object.entries(files).map(([id,suite])=>[
+function definitions(options,overrides={}) {
+    const files={...validateInstall(options),...overrides};
+    const schedules=[...Object.entries(files).map(([id,file])=>[id,[file]]),
+        [BATCH_ID,Object.values(files)]];
+    return Object.fromEntries(schedules.map(([id,suites])=>[
         id,evaluatorDefinition({
             project:'tinybrains',machine:options.machine,
             trainingDir:path.join(options.hubRoot,'Training'),
             pythonPath:presentFile(options.launcher),
-            suites:[suite],artifactRoot:options.artifacts,
+            suites,artifactRoot:options.artifacts,
             scratch:options.scratch,receiptRoot:options.receipts,
             enginePath:options.engine,cpus:'2',ramMb:'4096',
             interval:'180',timeout:'7200',unitId:id,
@@ -269,7 +275,7 @@ async function status(hub) {
         return {available:false,reason:String(error.message||error),entries:[]};
     }
     const entries=[];
-    for(const id of Object.keys(SUITES)) {
+    for(const id of SCHEDULED_IDS) {
         const names=unitFiles(options,id);
         const serviceExists=fs.existsSync(names.serviceFile);
         const timerExists=fs.existsSync(names.timerFile);
@@ -301,7 +307,7 @@ async function status(hub) {
                 if(!managed)reason='Installed evaluator requires systemd reload.';
             }catch(error){reason=String(error.message||error);}
         }
-        entries.push({id,suite_id:suiteNames(options)[id],installed,managed,
+        entries.push({id,suite_id:id===BATCH_ID?null:suiteNames(options)[id],installed,managed,
             active,running,last_result:lastResult,last_error:lastError,reason});
     }
     return {available:true,machine:options.machine,entries};
@@ -330,17 +336,26 @@ async function setup(hub) {
         else installEvaluatorUnits(definition,o.home,{repairPartial:true});
     }
     await systemctl(['daemon-reload']);
-    for(const id of Object.keys(SUITES))
+    for(const id of SCHEDULED_IDS)
         await systemctl(['start',unitFiles(o,id).timer]);
     return {message:'Approved Nano and Micro evaluation timers installed and started.'};
 }
 async function refreshSuite(hub,id) {
     const o=localOptions(hub);
-    const original=definitions(o)[id];
-    const unit=approvedUnit(o,id,original);
-    const service=await properties(unit.service);
-    if(['active','activating'].includes(service.ActiveState))
-        throw Error('Finish the active evaluation before approving a new suite.');
+    const approved=definitions(o);
+    const unit=approvedUnit(o,id,approved[id]);
+    const pairNames=unitFiles(o,BATCH_ID);
+    const pairFiles=[pairNames.serviceFile,pairNames.timerFile]
+        .map(file=>fs.existsSync(file));
+    if(pairFiles[0]!==pairFiles[1])
+        throw Error('Incomplete Nano/Micro evaluator pair; use Set up to repair it.');
+    const pair=pairFiles[0]?approvedUnit(o,BATCH_ID,approved[BATCH_ID]):null;
+    const units=pair?[unit,pair]:[unit];
+    for(const current of units) {
+        const service=await properties(current.service);
+        if(['active','activating'].includes(service.ActiveState))
+            throw Error('Finish the active evaluation before approving a new suite.');
+    }
     const {stdout}=await run(presentFile(o.launcher),[
         '-B',path.join(o.hubRoot,'Training/experiment_hub_evaluation_runtime.py'),
         '--project','tinybrains','--engine-path',o.engine,
@@ -369,45 +384,48 @@ async function refreshSuite(hub,id) {
         throw Error('New frozen TinyBrains suite already exists.');
     const marker=path.join(o.suites,'hub-approved-latest.json');
     const beforeMarker=fs.existsSync(marker)?fs.readFileSync(marker,'utf8'):null;
-    const oldService=fs.readFileSync(unit.serviceFile,'utf8');
-    const oldTimer=fs.readFileSync(unit.timerFile,'utf8');
-    await systemctl(['stop',unit.timer]);
+    const saved=units.map(current=>({
+        unit:current,
+        service:fs.readFileSync(current.serviceFile,'utf8'),
+        timer:fs.readFileSync(current.timerFile,'utf8'),
+    }));
+    for(const current of units)
+        await systemctl(['stop',current.timer]);
     let installed=false;
     try {
-        // Frozen suite files are never overwritten; only the approved
-        // schedule changes, after explicit operator confirmation.
+        // Frozen suite files remain immutable; the approved single-suite
+        // schedule and any installed same-checkpoint batch change together.
         fs.writeFileSync(suiteFile,JSON.stringify({
             ...oldSuite,suite_id:name,runtime_sha256:digest,
             opponent_model_sha256:modelSha,
             opponent_manifest_sha256:manifestSha,
         },null,2)+'\n',{flag:'wx',mode:0o600});
-        const next=evaluatorDefinition({
-            project:'tinybrains',machine:o.machine,
-            trainingDir:path.join(o.hubRoot,'Training'),
-            pythonPath:o.launcher,
-            suites:[suiteFile],artifactRoot:o.artifacts,
-            scratch:o.scratch,receiptRoot:o.receipts,
-            enginePath:o.engine,cpus:'2',ramMb:'4096',
-            interval:'180',timeout:'7200',unitId:id,
-        });
-        fs.writeFileSync(unit.serviceFile,next.service,{mode:0o600});
-        fs.writeFileSync(unit.timerFile,next.timer,{mode:0o600});
+        const next=definitions(o,{[id]:suiteFile});
+        for(const current of units) {
+            const key=current===unit?id:BATCH_ID;
+            fs.writeFileSync(current.serviceFile,next[key].service,{mode:0o600});
+            fs.writeFileSync(current.timerFile,next[key].timer,{mode:0o600});
+        }
         fs.writeFileSync(marker,JSON.stringify({
             version:1,...suiteNames(o),[id]:name,
         },null,2)+'\n',{mode:0o600});
         await systemctl(['daemon-reload']);
-        await systemctl(['start',unit.timer]);
+        for(const current of units)
+            await systemctl(['start',current.timer]);
         installed=true;
     }finally {
         if(!installed) {
-            fs.writeFileSync(unit.serviceFile,oldService,{mode:0o600});
-            fs.writeFileSync(unit.timerFile,oldTimer,{mode:0o600});
+            for(const previous of saved) {
+                fs.writeFileSync(previous.unit.serviceFile,previous.service,{mode:0o600});
+                fs.writeFileSync(previous.unit.timerFile,previous.timer,{mode:0o600});
+            }
             if(beforeMarker===null) {
                 if(fs.existsSync(marker))fs.unlinkSync(marker);
             }else fs.writeFileSync(marker,beforeMarker,{mode:0o600});
             try {
                 await systemctl(['daemon-reload']);
-                await systemctl(['start',unit.timer]);
+                for(const current of units)
+                    await systemctl(['start',current.timer]);
             }catch { /* Leave the initial service failure visible. */ }
         }
     }
@@ -418,8 +436,9 @@ async function action(hub,value) {
         throw Error('Explicit evaluator action confirmation is required.');
     if(value.action==='setup'&&value.id===undefined)
         return setup(hub);
-    if(!Object.hasOwn(SUITES,value.id)||
-        !['start','restart','stop','run','refresh'].includes(value.action))
+    if(!SCHEDULED_IDS.includes(value.id)||
+        !['start','restart','stop','run','refresh'].includes(value.action)||
+        (value.id===BATCH_ID&&value.action==='refresh'))
         throw Error('Unknown approved local evaluator action.');
     if(value.action==='refresh')return refreshSuite(hub,value.id);
     const o=localOptions(hub);
