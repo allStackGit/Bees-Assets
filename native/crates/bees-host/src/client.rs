@@ -1067,6 +1067,7 @@ impl NativeClient {
             if let Some(owner) = selected {
                 if was_numbered { self.numbered_shortcut_selections += 1; }
                 else { self.cycled_shortcut_selections += 1; }
+                self.renderer.reveal_squad_tab(&view, owner);
                 self.focus_selected_squad(&view, owner);
             }
         }
