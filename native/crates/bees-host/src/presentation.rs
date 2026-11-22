@@ -141,8 +141,21 @@ pub(crate) fn battle_outcome_reason(
         "Extraction"
     } else if view.combat.extraction_retreat_completed() {
         "Fleet withdrew"
-    } else if view.survival.is_some() {
-        "Defense"
+    } else if let Some(objective) = view.survival {
+        if result.winner_side == objective.defending_side {
+            "Defense held"
+        } else {
+            "Defense failed"
+        }
+    } else if let Some(objective) = view.target_ship {
+        // The named target, not elimination of every enemy unit, is the
+        // actual campaign result condition. Use the same authoritative
+        // terminal outcome in the local window and LAN receipts.
+        if result.winner_side == objective.attacking_side {
+            "Mission target destroyed"
+        } else {
+            "Mission target defended"
+        }
     } else if let Some(objective) = view.demolition {
         if result.winner_side == objective.attacking_side {
             "Demolition"
