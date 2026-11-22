@@ -320,7 +320,9 @@ function learnerMeasurements(metrics) {
         'dynamic_policy_decision_rows', 'dynamic_policy_learner_decision_rows',
         'dynamic_policy_peak_live_agents', 'recycled_policy_bindings',
         'capture_ungrouped_policy_decisions', 'reward_journal_events',
-        'optimizer_torch_intraop_threads', 'optimizer_torch_interop_threads'])
+        'optimizer_torch_intraop_threads', 'optimizer_torch_interop_threads',
+        'optimizer_fused_adam_active', 'optimizer_fused_adam_rank_count',
+        'optimizer_cuda_graph_requested'])
         add(name, 'count');
     add('reward_journal_payload_bytes', 'bytes');
     add('optimizer_steps_per_update_second', 'rate');
