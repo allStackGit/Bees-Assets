@@ -6771,6 +6771,22 @@ fn run_battle(
                 level, template.as_ref(), &source, mission.player_side,
             )?;
         }
+        if let Some(source_dialogue) = source.native_mission()
+            .and_then(|authored| authored.campaign_dialogue)
+        {
+            // Native-game missions are allowed to own their briefing in
+            // the physical scene. Install that exact source identity into
+            // the same existing career staging, conditional fleet dialogue
+            // and launcher checks used by Unity-imported missions.
+            match level.campaign_dialogue {
+                Some(configured) if configured != source_dialogue =>
+                    return Err(invalid(
+                        "native scene and run config disagree on campaign dialogue",
+                    ).into()),
+                None => level.campaign_dialogue = Some(source_dialogue),
+                _ => {}
+            }
+        }
         if let Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::TitaniaBeenoculars {
             player_side, ..
         }) = level.campaign_dialogue
@@ -6984,6 +7000,11 @@ fn run_battle(
                 ).into());
             }
         }
+        // Fleet losses, purchases and scientist contact may change the
+        // briefing's source parameters. Keep the native scene's mission
+        // and run setup identical before either the common Level builder
+        // or the durable game identity is constructed.
+        source.set_native_campaign_dialogue(level.campaign_dialogue);
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
         }
@@ -7128,7 +7149,8 @@ fn run_battle(
                 (m.demolition.is_some() && level.demolition.is_some()) ||
                 (m.escort.is_some() && level.escort.is_some()) ||
                 (m.target_ship.is_some() && level.target_ship.is_some()) ||
-                (m.campaign_dialogue.is_some() && level.campaign_dialogue.is_some()) ||
+                (m.campaign_dialogue.is_some() && level.campaign_dialogue.is_some() &&
+                    m.campaign_dialogue != level.campaign_dialogue) ||
                 (!m.reinforcements.is_empty() && !level.reinforcements.is_empty()) ||
                 (!m.scripted_queues.is_empty() && !level.scripted_queues.is_empty())
             {
@@ -9077,6 +9099,7 @@ fn run_battle(
                 // Only the per-episode clone changes; the reusable source
                 // template retains its original authored identities.
                 scene.remap_native_mission_squad_ids(&remapped);
+                scene.set_native_campaign_dialogue(level.campaign_dialogue);
                 let seed = level.episode_seed(completed_episodes[index]);
                 if let Some(group) = &level.groups {
                     bind_group_routes(
