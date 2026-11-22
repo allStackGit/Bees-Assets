@@ -100,6 +100,7 @@ const TINYBRAINS_METRIC_CATALOG={
         'rollout_opponent_vmap_graph_replays',
         'rollout_board_packed_bank_reuses',
         'ppo_pinned_upload_reuses',
+        'ppo_gpu_index_uploads_saved','ppo_gpu_index_upload_bytes',
     ],
     remote_rollouts:[
         'remote_policy_snapshot_seconds','remote_opponent_snapshot_seconds',
@@ -221,6 +222,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_compile_restored','ppo_gradient_foreach_batches',
         'ppo_prep_batches','ppo_prep_async_h2d_copies',
         'ppo_prep_background_chunks',
+        'ppo_gpu_index_uploads_saved',
         'ppo_diagnostic_readbacks','ppo_diagnostic_rows',
         'ppo_gpu_pixel_budget',
         'ppo_gpu_batch_target_pixels','ppo_gpu_batch_next_target',
@@ -410,6 +412,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
     add('ppo_prep_board_bytes',row.ppo_prep_board_bytes,'bytes');
     add('ppo_prep_async_h2d_bytes',row.ppo_prep_async_h2d_bytes,'bytes');
+    add('ppo_gpu_index_upload_bytes',row.ppo_gpu_index_upload_bytes,'bytes');
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
     add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
     add('remote_policy_shared_bytes',row.remote_policy_shared_bytes,'bytes');
