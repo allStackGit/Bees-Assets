@@ -534,6 +534,7 @@ struct PeerClient {
     held_fire_rejected: bool,
     campaign_receipt: Option<String>,
     battle_result_receipt: Option<String>,
+    battle_loss_breakdown: Vec<String>,
     metrics: WireCounts,
 }
 
@@ -578,6 +579,7 @@ impl PeerClient {
             notice: "Authenticating with native host".to_owned(),
             held_fire_begin_request: None, held_fire_rejected: false,
             campaign_receipt: None, battle_result_receipt: None,
+            battle_loss_breakdown: Vec::new(),
             metrics: WireCounts::default(),
         })
     }
@@ -761,6 +763,24 @@ impl PeerClient {
                     let mined = message["player_match_counts"]["player_minerals_mined"]
                         .as_u64().filter(|&amount| amount != 0)
                         .map_or(String::new(), |amount| format!("  Mined {amount} TSV"));
+                    // Present the original GameState per-type casualty ledger
+                    // only after the authoritative result, never inferred
+                    // from the client's incomplete, fog-filtered ship list.
+                    self.battle_loss_breakdown.clear();
+                    if let Some(losses) = message["player_match_counts"]["ships_lost_by_type"].as_array() {
+                        let catalog = bees_sim::ship_assets::ShipAssetCatalog::embedded().ok();
+                        let entries: Vec<String> = losses.iter().enumerate()
+                            .filter_map(|(kind, count)| {
+                                let amount = count.as_u64().filter(|&amount| amount > 0)?;
+                                let name = catalog.as_ref()
+                                    .and_then(|catalog| catalog.by_type(u8::try_from(kind).ok()?))
+                                    .map_or_else(|| format!("Type {kind}"), |ship| ship.name.clone());
+                                Some(format!("{name} {amount}"))
+                            }).collect();
+                        for chunk in entries.chunks(5) {
+                            self.battle_loss_breakdown.push(format!("Losses: {}", chunk.join("  |  ")));
+                        }
+                    }
                     let text = format!("{label}{score}{mined}: {reason}");
                     self.battle_result_receipt = Some(text.clone());
                     self.notice = text;
@@ -3640,6 +3660,10 @@ pub fn connect_remote(
         if let Some(result) = peer.battle_result_receipt.as_deref() {
             text::draw_at(&mut pixels, WIDTH, 10, HEIGHT-61,
                 text::fit(result, FIELD-20), 1, [255, 211, 130]);
+            for (index, line) in peer.battle_loss_breakdown.iter().rev().take(4).enumerate() {
+                text::draw_at(&mut pixels, WIDTH, 10, HEIGHT-79-index*18,
+                    text::fit(line, FIELD-20), 1, [255, 211, 130]);
+            }
         }
         // The authoritative commit receipt outlives the last world frame and
         // socket close. A transport status line cannot hide saved progression.
