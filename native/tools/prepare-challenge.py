@@ -56,6 +56,77 @@ def run_stage(command):
     subprocess.run(command, check=True)
 
 
+def challenge_library_install(output, library_path, gate):
+    """Bind an existing native campaign and its source milestone without copying games."""
+    if library_path.is_symlink() or not library_path.is_file():
+        raise ValueError("existing native game library must be a regular file")
+    root = library_path.parent.resolve()
+    if output.parent.resolve() != root:
+        raise ValueError("installed Challenge must be a direct child of the existing game root")
+    original_bytes = library_path.read_bytes()
+    library = json.loads(original_bytes)
+    if library.get("library_schema") != 1 or not isinstance(library.get("games"), list):
+        raise ValueError("existing native game library requires schema 1 and games")
+    if any(game.get("id") == "original-human-challenge" for game in library["games"]):
+        raise ValueError("Challenge is already installed in this game library")
+    matches = [game for game in library["games"]
+               if game.get("id") == gate[0] and game.get("kind") == "campaign"]
+    if len(matches) != 1:
+        raise ValueError("Challenge unlock campaign is absent or ambiguous")
+    config = matches[0].get("config")
+    if not isinstance(config, str) or not config:
+        raise ValueError("unlock campaign has no native catalog path")
+    relative = Path(config)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("unlock campaign path must remain within the game root")
+    source_catalog = (root / relative).resolve()
+    if not source_catalog.is_relative_to(root) or not source_catalog.is_file():
+        raise ValueError("unlock campaign catalog is missing or outside the game root")
+    catalog = json.loads(source_catalog.read_text(encoding="utf-8"))
+    if catalog.get("campaign_id") != gate[0] or not any(
+            battle.get("mission", {}).get("id") == gate[1]
+            for battle in catalog.get("battles", [])):
+        raise ValueError("Challenge unlock milestone is absent from its source campaign")
+    return library, original_bytes
+
+
+def publish_challenge_library(library_path, library, original_bytes, gate, challenge_dir):
+    """Publish a visible menu entry only after every Challenge stage is complete.
+
+    A failed write cannot expose a partial catalog. An unrelated library edit
+    made while authoring is never silently overwritten.
+    """
+    if library_path.read_bytes() != original_bytes:
+        raise ValueError("native game library changed during Challenge authoring")
+    updated = dict(library)
+    updated["games"] = list(library["games"]) + [{
+        "id": "original-human-challenge",
+        "title": "Challenge (10 original levels)",
+        "kind": "challenge",
+        "config": f"{challenge_dir.name}/challenge.catalog.json",
+        "unlock_after": {"campaign_id": gate[0], "mission_id": gate[1]},
+    }]
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=library_path.parent,
+            prefix=".bees-library-", suffix=".json", delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            json.dump(updated, stream, indent=2, ensure_ascii=False)
+            stream.write("\\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        # The updated menu becomes visible atomically. The catalog and all
+        # ten original scenes were already published by the directory rename.
+        if library_path.read_bytes() != original_bytes:
+            raise ValueError("native game library changed during Challenge publication")
+        os.replace(temporary, library_path)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output_dir", type=Path, help="new complete Challenge career directory")
@@ -73,16 +144,36 @@ def main():
     parser.add_argument("--stage-asteroid-maximum-rate", type=int)
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--minutes", type=int, default=15)
+    parser.add_argument("--install-into-library", type=Path,
+                        help="existing native game root library.json to extend atomically")
+    parser.add_argument("--unlock-after", metavar="CAMPAIGN:MISSION",
+                        help="original completed campaign milestone unlocking Challenge")
     args = parser.parse_args()
     output = args.output_dir.expanduser().absolute()
     parent = output.parent.resolve()
     if output.exists() or output.is_symlink() or not parent.is_dir():
         parser.error("output must be a new directory under an existing parent")
+    if (args.install_into_library is None) != (args.unlock_after is None):
+        parser.error("--install-into-library and --unlock-after must be supplied together")
+    gate = None
+    if args.unlock_after is not None:
+        parts = args.unlock_after.split(":", 1)
+        if len(parts) != 2 or not all(parts):
+            parser.error("--unlock-after requires CAMPAIGN:MISSION")
+        gate = parts
     if not 1 <= args.max_squad_size <= 1024:
         parser.error("max squad size must be the actual source value in 1..1024")
     if args.minutes < 1 or args.seed < 0:
         parser.error("seed must be nonnegative and minutes positive")
     try:
+        install_path = (args.install_into_library.expanduser().absolute()
+                        if args.install_into_library is not None else None)
+        original_library = None
+        original_library_bytes = None
+        if install_path is not None:
+            original_library, original_library_bytes = challenge_library_install(
+                output, install_path, gate,
+            )
         source = json.loads(SOURCE.read_text(encoding="utf-8"))
         levels = source["Levels"]
         if len(levels) != 10 or sorted(level["Id"] for level in levels) != list(range(10)):
@@ -142,6 +233,14 @@ def main():
             if output.exists() or output.is_symlink():
                 raise ValueError("Challenge destination appeared during authoring")
             staging.rename(output)
+            if install_path is not None:
+                # Standalone stage assembly deliberately does not reference
+                # the source campaign's paths. The original shared library
+                # alone links both careers under the existing native root.
+                publish_challenge_library(
+                    install_path, original_library, original_library_bytes,
+                    gate, output,
+                )
         finally:
             # After publication the temporary pathname no longer exists.
             # Before publication, even a failed stage leaves no half-built
@@ -155,6 +254,8 @@ def main():
             "max_squad_ships": args.max_squad_size,
             "library": str(output / "library.json"),
             "catalog": str(output / "challenge.catalog.json"),
+            "installed_library": str(install_path) if install_path else None,
+            "unlocked_after": args.unlock_after,
         }, sort_keys=True))
     except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
         parser.exit(2, f"original native Challenge preparation failed: {error}\n")
