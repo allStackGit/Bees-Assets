@@ -1697,7 +1697,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees hivemind-reconcile <connection-checkpoint.json> --review <review.json>
        bees menu <catalog.json> --output-dir <battle-runs>
        bees library <library.json> --output-dir <player-save-root>
-       bees connect <host:port> --token-file <private-file> --side <1|2>
+       bees connect <host:port> --token-file <private-file> --side <1|2> [--spectate]
        bees serve-receipts <saved-game-battle-root>
        bees status <catalog.json> --output-dir <battle-runs>
        bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id>
@@ -2405,6 +2405,11 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             }
             let side: i32 = args.next().ok_or_else(|| invalid(USAGE))?
                 .to_string_lossy().parse()?;
+            let spectator = match args.next() {
+                None => false,
+                Some(value) if value == "--spectate" => true,
+                _ => return Err(invalid(USAGE).into()),
+            };
             if args.next().is_some() { return Err(invalid(USAGE).into()); }
             // A direct CLI client must recover the same original session
             // after its own process exits. Isolate sessions by endpoint,
@@ -2422,7 +2427,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 .join("audio-settings.json");
             return bees_host::presentation::connect_remote(
                 &address.to_string_lossy(), &token_file, side,
-                Some(&session_file), Some(&audio_preferences),
+                Some(&session_file), Some(&audio_preferences), spectator,
             );
         }
         #[cfg(not(feature = "client"))]
@@ -4699,6 +4704,9 @@ struct NativeSavedNetwork {
     address: String,
     side: i32,
     token_file: PathBuf,
+    /// Explicit view-only side credentials, never commander privileges.
+    #[serde(default)]
+    spectator: bool,
 }
 
 #[cfg(feature = "client")]
@@ -5716,9 +5724,16 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 } else {
                     save_root.join(connection.token_file)
                 };
+                let session_name = if connection.spectator {
+                    "multiplayer-spectator-session.json"
+                } else {
+                    "multiplayer-session.json"
+                };
                 bees_host::presentation::connect_remote(
                     &connection.address, &token_file, connection.side,
-                    Some(&save_root.join("multiplayer-session.json")),
+                    Some(&save_root.join(session_name)),
+                    Some(&save_root.join("audio-settings.json")),
+                    connection.spectator,
                 )
             })()
         } else if hosting {
