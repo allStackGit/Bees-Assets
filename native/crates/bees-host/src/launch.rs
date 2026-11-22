@@ -5622,10 +5622,28 @@ fn run_campaign_game_menu(
         }
         let mut shop_rows = Vec::new();
         for ship in catalog.buildable_ships.iter().filter(|ship| ship.purchasable) {
+            let unlocked = progress.is_ship_unlocked(ship);
+            let affordable = unlocked && progress.bank_history_complete() &&
+                available >= ship.price_tsv;
+            // A purchase belongs to the long-lived fleet, not necessarily
+            // to a deployed squad. The existing source archetype preflight
+            // verifies reserve hulls without spawning them into a battle.
+            shop_rows.push(NativeShopMenuRow {
+                title: format!(
+                    "Type {}  ->  Reserve   TSV {}{}",
+                    ship.ship_type, ship.price_tsv,
+                    if !unlocked { "  [Locked]" }
+                    else if available < ship.price_tsv { "  [Insufficient]" }
+                    else { "" },
+                ),
+                unlocked: affordable,
+                side: ship.player_side,
+                ship_type: ship.ship_type,
+                saved_squad_id: 0,
+            });
             for &squad_id in squad_destinations.get(&ship.player_side)
                 .into_iter().flatten()
             {
-                let unlocked = progress.is_ship_unlocked(ship);
                 shop_rows.push(NativeShopMenuRow {
                     title: format!(
                         "Type {}  ->  {}   TSV {}{}",
@@ -5634,8 +5652,7 @@ fn run_campaign_game_menu(
                         else if available < ship.price_tsv { "  [Insufficient]" }
                         else { "" },
                     ),
-                    unlocked: unlocked && progress.bank_history_complete() &&
-                        available >= ship.price_tsv,
+                    unlocked: affordable,
                     side: ship.player_side,
                     ship_type: ship.ship_type,
                     saved_squad_id: squad_id,
