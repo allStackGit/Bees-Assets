@@ -217,6 +217,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_independent_snapshot_copy_max_seconds',
             'training_gpu_independent_snapshot_bytes',
             'training_gpu_foreach_clip_norm_reused_batches',
+            'training_gpu_snapshot_foreach_tensors',
+            'training_gpu_snapshot_foreach_groups',
             'training_shared_snapshot_copy_groups',
             'training_shared_snapshot_tensors',
             'training_shared_snapshot_copy_seconds',
