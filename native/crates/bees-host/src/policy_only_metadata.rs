@@ -1415,6 +1415,16 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
+    fn pluto_anomaly_honeybee_spotted(
+        &self, world: &CombatWorld, scout_id: i64, honeybee_id: i64,
+    ) -> bool {
+        // Source Pluto I explicitly raises the first Scout's temporary
+        // ProximityCollider sight to 60, then restores its normal sight.
+        // CombatWorld uses the original enemy primary hull and a physical
+        // collider overlap, shared by playable and headless simulation.
+        world.scout_source_proximity_contact(scout_id, honeybee_id, 60.0)
+    }
+
     fn uranus_offensive_bumblebee_discovered(
         &self, world: &CombatWorld, player_side: i32, bumblebee_id: i64,
     ) -> bool {
