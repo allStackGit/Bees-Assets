@@ -3212,7 +3212,7 @@ impl NativePhysicalScene {
                 if player_side != human_side || scout_id <= 0 ||
                     !self.pluto_reinforcements_authored(
                         player_side, scout_id, &setup.reinforcements,
-                    ) || self.activate_hivemind == Some(true) ||
+                    ) || self.activate_hivemind != Some(false) ||
                     setup.groups.is_some() || setup.survival.is_some() ||
                     setup.demolition.is_some() || setup.escort.is_some() ||
                     setup.extraction.is_some() || setup.target_ship.is_some() =>

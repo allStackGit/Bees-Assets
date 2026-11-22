@@ -628,18 +628,7 @@ impl NativePolicyOnlyMetadata {
         {
             return Err(Error::InvalidPolicyAgents);
         }
-        // An authored stage may only turn on HiveMind after the Pluto II
-        // Scout tutorial. Other source stages have immutable activation.
-        // The optional field leaves earlier checkpoint ledgers readable.
-        let hivemind_active = saved.hivemind_active.or(self.hivemind_active);
-        if hivemind_active != self.hivemind_active &&
-            !(self.hivemind_active == Some(false) &&
-              hivemind_active == Some(true) &&
-              !self.pluto_tutorial_locked.is_empty())
-        {
-            return Err(Error::InvalidPlayerOwnership);
-        }
-        let (player, hivemind_squads) = saved.player.prepare_restore(
+         let (player, hivemind_squads) = saved.player.prepare_restore(
             &self.player, &self.hivemind_squads,
         )?;
         let known_queues = self.scripted_queues.iter().map(|queue|
@@ -681,6 +670,28 @@ impl NativePolicyOnlyMetadata {
         {
             return Err(Error::InvalidReinforcementQueue);
         }
+        // The source queue is authoritative evidence for the original
+        // Pluto II combat-release cue. The wave and Stage.ActivateHiveMind
+        // change at the same fixed-step boundary. This also recovers older
+        // ledgers that did not serialize the mutable Stage flag.
+        let hivemind_active = if self.pluto_tutorial_locked.is_empty() {
+            if saved.hivemind_active.is_some() &&
+                saved.hivemind_active != self.hivemind_active
+            {
+                return Err(Error::InvalidPlayerOwnership);
+            }
+            self.hivemind_active
+        } else {
+            let released = self.reinforcements.iter()
+                .take(reinforcement_drop_count)
+                .any(|wave| wave.is_pluto_combat_wave());
+            if self.hivemind_active != Some(false) ||
+                saved.hivemind_active.is_some_and(|active| active != released)
+            {
+                return Err(Error::InvalidReinforcementQueue);
+            }
+            Some(released)
+        };
         let fleet = self.fleet.prepare_restore(saved.fleet).map_err(Error::Fleet)?;
         if saved.authored_ships.keys().any(|id| fleet.get(*id).is_none()) {
             return Err(Error::InvalidPolicyAgents);

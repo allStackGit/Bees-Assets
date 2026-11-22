@@ -105,6 +105,17 @@ impl ReinforcementWakeup {
 }
 
 impl ReinforcementWave {
+    /// True only for Pluto II's actual deferred combat deployment. The
+    /// checkpoint stores the remaining queue, so its consumed prefix is
+    /// evidence that the original tutorial released the Bee wave.
+    pub(crate) fn is_pluto_combat_wave(&self) -> bool {
+        matches!(self.due, ReinforcementDue::Event(
+            NativeMissionEvent::CampaignCue(
+                NativeMissionCue::PlutoReinforcementsCombatReady
+            )
+        ))
+    }
+
     pub(crate) fn identity(&self) -> ReinforcementWaveIdentity {
         ReinforcementWaveIdentity {
             due: self.due,
