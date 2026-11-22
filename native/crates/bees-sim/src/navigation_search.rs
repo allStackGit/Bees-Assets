@@ -47,6 +47,9 @@ pub struct NavigationSearch {
     closed_stamp: Vec<u32>,
     search_stamp: u32,
     heap: Vec<usize>,
+    // Direct cell-to-heap positions. A relaxation lowers an existing key
+    // in place instead of appending another copy of the same cell.
+    heap_position: Vec<usize>,
 }
 
 impl NavigationSearch {
@@ -69,6 +72,7 @@ impl NavigationSearch {
             closed_stamp: vec![0; n],
             search_stamp: 0,
             heap: Vec::new(),
+            heap_position: vec![NO_PARENT; n],
         })
     }
 
@@ -451,6 +455,11 @@ impl NavigationSearch {
     }
 
     fn begin_search(&mut self) -> u32 {
+        // A successful search commonly leaves a frontier. Only reset its
+        // occupied positions, not the entire map-sized position array.
+        for &node in &self.heap {
+            self.heap_position[node] = NO_PARENT;
+        }
         self.heap.clear();
         self.search_stamp = self.search_stamp.wrapping_add(1);
         if self.search_stamp == 0 {
@@ -472,23 +481,32 @@ impl NavigationSearch {
         a < b
     }
 
-    /// Unity's integer min-heap is an array of cell IDs. The keys live in
-    /// the search arrays and can be updated before an ID is pushed again.
+    /// One indexed min-heap over the canonical cell costs. Relaxation
+    /// changes a cell's key only downward, so existing nodes need a sift-up
+    /// rather than a second heap entry. Preserve the source ordering by
+    /// total cost, heuristic cost, then cell ID at every comparison.
     fn push(&mut self, node: usize) {
-        self.heap.push(node);
-        let mut index = self.heap.len() - 1;
+        let mut index = self.heap_position[node];
+        if index == NO_PARENT {
+            index = self.heap.len();
+            self.heap.push(node);
+        }
         while index > 0 {
             let parent = (index - 1) / 2;
-            if self.higher_priority(self.heap[parent], node) { break; }
-            self.heap[index] = self.heap[parent];
+            if !self.higher_priority(node, self.heap[parent]) { break; }
+            let parent_node = self.heap[parent];
+            self.heap[index] = parent_node;
+            self.heap_position[parent_node] = index;
             index = parent;
         }
         self.heap[index] = node;
+        self.heap_position[node] = index;
     }
 
     fn pop(&mut self) -> Option<usize> {
         let result = *self.heap.first()?;
         let last = self.heap.pop().expect("nonempty heap");
+        self.heap_position[result] = NO_PARENT;
         if self.heap.is_empty() { return Some(result); }
         let mut index = 0;
         loop {
@@ -500,10 +518,13 @@ impl NavigationSearch {
                 right
             } else { left };
             if self.higher_priority(last, self.heap[child]) { break; }
-            self.heap[index] = self.heap[child];
+            let child_node = self.heap[child];
+            self.heap[index] = child_node;
+            self.heap_position[child_node] = index;
             index = child;
         }
         self.heap[index] = last;
+        self.heap_position[last] = index;
         Some(result)
     }
 }
