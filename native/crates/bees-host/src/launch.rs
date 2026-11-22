@@ -4235,9 +4235,22 @@ fn run_duplicate_saved_squad(
                 .2 = new_id;
         }
     }
-    let tactics = progress.tactics_for_squad(side, template_id)
-        .map(|saved| NativeSavedSquadTactics { saved_squad_id: new_id, ..saved });
-    let copied_tactics = tactics.into_iter().collect::<Vec<_>>();
+    // Unity duplicates the currently effective SavedSquad settings, not
+    // just explicit user-edited tactics receipts. Source command defaults
+    // matter when this template was never edited in the career menu.
+    let copied_tactics = vec![NativeSavedSquadTactics {
+        side, saved_squad_id: new_id,
+        shooting_strategy_id: squad.shooting.id,
+        should_chase: squad.should_chase,
+        cease_fire: squad.cease_fire.unwrap_or(false),
+        match_speed: Some(squad.matching_speed.is_some()),
+        color_setting: Some(match squad.custom_color_rgb {
+            Some(rgb) => NativeSquadColorSetting::Custom(rgb),
+            None => NativeSquadColorSetting::Clear,
+        }),
+        formation: progress.tactics_for_squad(side, template_id)
+            .and_then(|saved| saved.formation),
+    }];
     preflight_native_fleet_edit_with_squads_and_tactics(
         &catalog, root, &progress, side, &projected_purchases,
         &projected_authored, new_id, &[created], &copied_tactics,
