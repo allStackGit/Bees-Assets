@@ -3984,6 +3984,20 @@ impl NativeSoftwareRenderer {
                         lines.push(format!("Minerals mined this battle: {minerals}"));
                     }
                 }
+                if stats.special_actions_recorded {
+                    let special = match ship.ship_type {
+                        0 => Some(("Charges started", stats.barge_charges_started)),
+                        10 => Some(("Explosions", stats.fire_barge_explosions)),
+                        17 => Some(("Minions spawned", stats.queen_minions_spawned)),
+                        18 => Some(("Beacons deployed", stats.scout_beacons_deployed)),
+                        19 => Some(("Bombs dropped", stats.striker_bombs_dropped)),
+                        22 => Some(("Detonations", stats.yellow_jacket_detonations)),
+                        _ => None,
+                    };
+                    if let Some((name, count)) = special {
+                        lines.push(format!("{name} this battle: {count}"));
+                    }
+                }
             }
         }
         let displayed = lines.iter().map(String::as_str).collect::<Vec<_>>();
