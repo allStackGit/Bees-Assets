@@ -57,6 +57,61 @@ const PAGE_SIZE: usize = 7;
 const TEXT: [u8; 3] = [232, 240, 250];
 const MUTED: [u8; 3] = [155, 178, 206];
 
+/// One list-navigation contract for mission selection, shop, squad management,
+/// and career history. Keep the selected row visible even for very large
+/// authored campaigns, without allocating a second UI model.
+fn navigate_rows(window: &Window, selected: &mut usize, first: &mut usize, count: usize) {
+    if count == 0 {
+        *selected = 0;
+        *first = 0;
+        return;
+    }
+    *selected = (*selected).min(count - 1);
+    if window.is_key_pressed(Key::Home, KeyRepeat::No) {
+        *selected = 0;
+    } else if window.is_key_pressed(Key::End, KeyRepeat::No) {
+        *selected = count - 1;
+    } else if window.is_key_pressed(Key::PageUp, KeyRepeat::Yes) {
+        *selected = selected.saturating_sub(PAGE_SIZE);
+    } else if window.is_key_pressed(Key::PageDown, KeyRepeat::Yes) {
+        *selected = selected.saturating_add(PAGE_SIZE).min(count - 1);
+    } else if window.is_key_pressed(Key::Up, KeyRepeat::Yes) {
+        *selected = selected.saturating_sub(1);
+    } else if window.is_key_pressed(Key::Down, KeyRepeat::Yes) {
+        *selected = selected.saturating_add(1).min(count - 1);
+    }
+    if let Some((_, vertical)) = window.get_scroll_wheel() {
+        // Wheel direction follows native window conventions: positive is up.
+        // Fractional high-resolution wheel movement still advances one row.
+        let rows = vertical.abs().ceil() as usize;
+        if vertical > 0.0 {
+            *selected = selected.saturating_sub(rows);
+        } else if vertical < 0.0 {
+            *selected = selected.saturating_add(rows).min(count - 1);
+        }
+    }
+    if *selected < *first {
+        *first = *selected;
+    } else if *selected >= first.saturating_add(PAGE_SIZE) {
+        *first = *selected + 1 - PAGE_SIZE;
+    }
+}
+
+/// Renaming consumes its own key stream so ordinary typing never activates
+/// mission shortcuts; it uses the same row paging bounds as other menus.
+fn renamed_row_index(index: usize, count: usize, key: Key) -> usize {
+    if count == 0 { return 0; }
+    match key {
+        Key::Up => index.saturating_sub(1),
+        Key::Down => index.saturating_add(1).min(count - 1),
+        Key::PageUp => index.saturating_sub(PAGE_SIZE),
+        Key::PageDown => index.saturating_add(PAGE_SIZE).min(count - 1),
+        Key::Home => 0,
+        Key::End => count - 1,
+        _ => index,
+    }
+}
+
 pub struct BattleMenuRow<'a> {
     pub title: &'a str,
     pub status: &'a str,
@@ -230,12 +285,9 @@ fn select_battle_inner(
             for key in window.get_keys_pressed(KeyRepeat::Yes) {
                 match key {
                     Key::Tab => { show_names = false; break; },
-                    Key::Up | Key::Down => {
-                        let next = if key == Key::Up {
-                            name_selected.saturating_sub(1)
-                        } else {
-                            (name_selected + 1).min(name_rows.len().saturating_sub(1))
-                        };
+                    Key::Up | Key::Down | Key::PageUp | Key::PageDown |
+                    Key::Home | Key::End => {
+                        let next = renamed_row_index(name_selected, name_rows.len(), key);
                         if next != name_selected {
                             name_selected = next;
                             name_input = name_rows.get(next)
@@ -265,6 +317,20 @@ fn select_battle_inner(
                 }
             }
             if show_names {
+                if let Some((_, vertical)) = window.get_scroll_wheel() {
+                    let rows = vertical.abs().ceil() as usize;
+                    let next = if vertical > 0.0 {
+                        name_selected.saturating_sub(rows)
+                    } else {
+                        name_selected.saturating_add(rows)
+                            .min(name_rows.len().saturating_sub(1))
+                    };
+                    if next != name_selected {
+                        name_selected = next;
+                        name_input = name_rows.get(next)
+                            .map_or(String::new(), |row| row.name.clone());
+                    }
+                }
                 if name_selected < name_first { name_first = name_selected; }
                 if name_selected >= name_first + PAGE_SIZE {
                     name_first = name_selected + 1 - PAGE_SIZE;
@@ -429,19 +495,7 @@ fn select_battle_inner(
                         })
                 }
             };
-            shop_selected = shop_selected.min(count.saturating_sub(1));
-            shop_first = shop_first.min(shop_selected);
-            if window.is_key_pressed(Key::Up, KeyRepeat::Yes) {
-                shop_selected = shop_selected.saturating_sub(1);
-            }
-            if window.is_key_pressed(Key::Down, KeyRepeat::Yes) {
-                shop_selected = (shop_selected + 1)
-                    .min(count.saturating_sub(1));
-            }
-            if shop_selected < shop_first { shop_first = shop_selected; }
-            if shop_selected >= shop_first + PAGE_SIZE {
-                shop_first = shop_selected + 1 - PAGE_SIZE;
-            }
+            navigate_rows(&window, &mut shop_selected, &mut shop_first, count);
             if show_tactics {
                 if let Some(row) = tactics_rows.get(shop_selected) {
                     if tactic_edit_index != Some(shop_selected) {
@@ -608,19 +662,7 @@ fn select_battle_inner(
             // Each screen has a different set of persisted identities.
             // Clamp when switching between long ship lists and short
             // squad lists, rather than rendering an apparently empty page.
-            fleet_selected = fleet_selected.min(career_rows.len().saturating_sub(1));
-            fleet_first = fleet_first.min(fleet_selected);
-            if window.is_key_pressed(Key::Up, KeyRepeat::Yes) {
-                fleet_selected = fleet_selected.saturating_sub(1);
-            }
-            if window.is_key_pressed(Key::Down, KeyRepeat::Yes) {
-                fleet_selected = (fleet_selected + 1)
-                    .min(career_rows.len().saturating_sub(1));
-            }
-            if fleet_selected < fleet_first { fleet_first = fleet_selected; }
-            if fleet_selected >= fleet_first + PAGE_SIZE {
-                fleet_first = fleet_selected + 1 - PAGE_SIZE;
-            }
+            navigate_rows(&window, &mut fleet_selected, &mut fleet_first, career_rows.len());
             pixels.fill(0x080e19);
             text::draw_centered(&mut pixels, WIDTH, 24,
                 if show_squads { "Saved squads" } else { "Fleet career" }, 2, TEXT);
@@ -649,19 +691,12 @@ fn select_battle_inner(
                 text::draw_centered(&mut pixels, WIDTH, 417, &page, 1, MUTED);
             }
             text::draw_centered(&mut pixels, WIDTH, 441,
-                "F fleet   S squads   Up / Down scroll   Esc exit", 1, MUTED);
+                "F fleet   S squads   Wheel / arrows / PageUp / PageDown browse   Esc exit", 1, MUTED);
             mouse_down = window.get_mouse_down(MouseButton::Left);
             window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
             continue;
         }
-        if window.is_key_pressed(Key::Up, KeyRepeat::Yes) {
-            *selected = selected.saturating_sub(1);
-        }
-        if window.is_key_pressed(Key::Down, KeyRepeat::Yes) {
-            *selected = (*selected + 1).min(titles.len() - 1);
-        }
-        if *selected < first { first = *selected; }
-        if *selected >= first + PAGE_SIZE { first = *selected + 1 - PAGE_SIZE; }
+        navigate_rows(&window, selected, &mut first, titles.len());
         if window.is_key_pressed(Key::Enter, KeyRepeat::No) && rows[*selected].unlocked {
             return Ok(Some(NativeBattleMenuAction::Play(*selected)));
         }
@@ -704,7 +739,7 @@ fn select_battle_inner(
             text::draw_centered(&mut pixels, WIDTH, 417, &page, 1, MUTED);
         }
         text::draw_centered(&mut pixels, WIDTH, 441,
-            if library_mode { "Enter open   Up / Down navigate   Esc exit" }
+            if library_mode { "Enter open   Wheel / arrows / PageUp / PageDown browse   Esc exit" }
             else { "Enter play   B build   T transfer   N new   D delete   P tactics   R name   F fleet   S squads" },
             1, MUTED);
         if launch_failed {
