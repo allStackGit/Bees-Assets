@@ -3702,7 +3702,7 @@ impl NativeSoftwareRenderer {
             "CAMERA / GAME",
             "Right click or drag: move / attack   Arrows: pan   Wheel: zoom",
             "F: fit map   I: minimap   B: weapon ranges   F6: edge pan",
-            "Space: pause   N: single step while paused   F4: surrender",
+            "Space: pause   N: single step   F12: game speed 1x/1.5x/2x   F4: surrender",
             "COMMANDS",
             "C: hold   A: attack on sight   V: cease fire   E: chase",
             "G: guard   P: patrol   M: mine   H: heal   R: retreat",

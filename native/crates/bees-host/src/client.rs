@@ -127,6 +127,9 @@ pub struct NativeClient {
     submitted_selection: Vec<SquadLifetime>,
     hotseat: Option<NativeHotseat>,
     paused: bool,
+    /// Unity GameMenus.ChangeGameSpeed cycles 1x, 1.5x, 2x.
+    /// This is only fixed-tick wall pacing, never a physics dt change.
+    game_speed: u8,
     show_controls_help: bool,
     /// Original in-battle menu; reuses help's frozen simulation clock.
     battle_menu_open: bool,
@@ -255,7 +258,7 @@ impl NativeClient {
             music_locations: Vec::new(), bounds,
             selected_world: 0, selection_owner: None,
             submitted_selection: Vec::new(), hotseat: None,
-            paused: false, show_controls_help: false,
+            paused: false, game_speed: 0, show_controls_help: false,
             battle_menu_open: false, battle_menu_press: None,
             surrender_confirmation: None,
             codex_open: false,
@@ -417,6 +420,17 @@ impl NativeClient {
 
     pub fn pending_steps(&self) -> u32 { self.pending_steps }
 
+    /// Source GameMenus.ChangeGameSpeed: 1x, 1.5x, 2x.
+    /// A new speed does not alter the authored CombatWorld fixed step,
+    /// reward/simulation timers, recorded player inputs or the learner.
+    fn wall_step_interval(&self, authored: Duration) -> Duration {
+        match self.game_speed {
+            1 => authored.mul_f64(2.0 / 3.0),
+            2 => authored / 2,
+            _ => authored,
+        }
+    }
+
     /// Commit only ticks actually executed by the common simulation. Model
     /// boundaries, source command pulses and trace checkpoints can shorten
     /// a frame's planned catch-up without losing the remaining clock debt.
@@ -426,7 +440,8 @@ impl NativeClient {
             // Explicit N stepping must not accumulate realtime clock debt.
             self.next_step = Instant::now();
         } else {
-            self.next_step += fixed_dt.saturating_mul(executed);
+            self.next_step += self.wall_step_interval(fixed_dt)
+                .saturating_mul(executed);
         }
         self.fixed_steps_executed += u64::from(executed);
         self.multi_step_frames += u64::from(executed > 1);
@@ -801,6 +816,19 @@ impl NativeClient {
             }
         }
         self.bounds = bounds;
+        // Match the original 1x -> 1.5x -> 2x -> 1x button. F12 is
+        // reserved for native local speed control; it cannot issue a
+        // squad/player input and is inactive during modal overlays.
+        if !self.playback && self.window.is_active() && !self.show_controls_help &&
+            self.window.is_key_pressed(Key::F12, KeyRepeat::No) {
+            self.game_speed = (self.game_speed + 1) % 3;
+            self.next_step = now;
+            self.input_feedback = match self.game_speed {
+                1 => "Game speed 1.5x",
+                2 => "Game speed 2x",
+                _ => "Game speed 1x",
+            };
+        }
         if !self.show_controls_help &&
             self.window.is_key_pressed(Key::Space, KeyRepeat::No)
         {
@@ -1766,7 +1794,9 @@ impl NativeClient {
             "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} selected | {}{} | {} | Weapon contacts {} | F1 controls | F4 surrender | Esc menu",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
-            if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
+            if self.paused { "PAUSED" } else {
+                match self.game_speed { 1 => "RUNNING 1.5x", 2 => "RUNNING 2x", _ => "RUNNING 1x" }
+            }, selected, self.input_feedback,
             if self.renderer.show_weapon_ranges { format!("{} auto targets, {} contacts, {}/{} blocked, {} exact queries, {} prefiltered, {} missing; {} aim points, {} missing",
                 counts.automatic_targets, counts.range_contacts, counts.obstructed_ranges, counts.range_overlaps,
                 counts.range_queries, counts.range_candidates_culled, counts.missing_range_data,
@@ -1871,7 +1901,8 @@ impl NativeClient {
         // Cap wall-clock debt rather than entering an unbounded catch-up
         // spiral when rendering, inference or the OS stalls for a long time.
         const MAX_STEPS_PER_FRAME: u32 = 4;
-        let max_lag = fixed_dt.saturating_mul(MAX_STEPS_PER_FRAME - 1);
+        let paced_dt = self.wall_step_interval(fixed_dt);
+        let max_lag = paced_dt.saturating_mul(MAX_STEPS_PER_FRAME - 1);
         if !self.paused && !self.show_controls_help &&
             after_frame.saturating_duration_since(self.next_step) > max_lag {
             self.next_step = after_frame.checked_sub(max_lag).unwrap_or(after_frame);
@@ -1881,7 +1912,7 @@ impl NativeClient {
             else if single_step { 1 }
             else if !self.paused && after_frame >= self.next_step {
                 (1 + after_frame.duration_since(self.next_step).as_nanos()
-                    / fixed_dt.as_nanos().max(1))
+                    / paced_dt.as_nanos().max(1))
                     .min(u128::from(MAX_STEPS_PER_FRAME)) as u32
             } else { 0 };
         self.pending_steps = due;
