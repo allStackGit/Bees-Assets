@@ -3879,24 +3879,39 @@ impl NativeSoftwareRenderer {
             Some(None) => "Carrier: Unassigned".to_owned(),
             None => format!("Physical ship: {ship_id}"),
         };
-        let lines = [&banner, &life, &resources, &formation];
+        Self::draw_ship_inspection_panel(
+            &mut self.pixels, self.width, self.height,
+            &[&banner, &life, &resources, &formation, state],
+        );
+        true
+    }
+
+    /// Identical original ship-stat panel for local and authenticated LAN
+    /// views. Caller supplies only data already authorized for this viewer.
+    /// In particular, LAN must not infer an enemy FleetShip's private TSV.
+    #[cfg(feature = "client")]
+    pub(super) fn draw_ship_inspection_panel(
+        pixels: &mut [u32], width: usize, height: usize,
+        lines: &[&str; 5],
+    ) {
+        if width < 440 || height < 300 || pixels.len() != width * height {
+            return;
+        }
         let panel_width = (lines.iter().map(|line| text::width(line, 1))
-            .max().unwrap_or(0) + 26).max(text::width(state, 1) + 26)
-            .min(self.width.saturating_sub(28));
+            .max().unwrap_or(0) + 26).min(width.saturating_sub(28));
         let left = 14;
         let top = 65;
-        let bottom = (top + 5 * (text::HEIGHT + 7) + 18).min(self.height);
+        let bottom = (top + 5 * (text::HEIGHT + 7) + 18).min(height);
         for y in top..bottom {
-            self.pixels[y * self.width + left..y * self.width + left + panel_width]
+            pixels[y * width + left..y * width + left + panel_width]
                 .fill(if y < top + 3 { 0x5985aa } else { 0x101c2b });
         }
-        for (index, line) in lines.into_iter().chain(std::iter::once(&state)).enumerate() {
+        for (index, line) in lines.iter().enumerate() {
             let label = text::fit(line, panel_width.saturating_sub(20));
-            text::draw_at(&mut self.pixels, self.width,
+            text::draw_at(pixels, width,
                 left + 10, top + 11 + index * (text::HEIGHT + 7), label,
                 1, if index == 0 { [237, 245, 254] } else { [203, 223, 237] });
         }
-        true
     }
 
     /// F8 toggles measurements on the actual player window. Keep a small,
