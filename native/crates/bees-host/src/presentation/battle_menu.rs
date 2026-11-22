@@ -848,6 +848,9 @@ fn select_battle_inner(
             show_tactics = false;
             career_view = None;
         }
+        // Do not let a hidden ranking tab capture Left/Right input in
+        // fleet tactics, shops or ordinary battle selection.
+        if career_view != Some(false) { ranking_metric = None; }
         if career_view == Some(false) &&
             window.is_key_pressed(Key::K, KeyRepeat::No)
         {
@@ -1264,7 +1267,7 @@ fn select_battle_inner(
         if let Some(show_squads) = career_view {
             let career_rows = if show_squads { squad_rows }
                 else if let Some(metric) = ranking_metric {
-                    ranking_rows.map_or(fleet_rows, |sets| &sets[metric])
+                    ranking_rows.map_or(fleet_rows, |sets| &sets[metric][..])
                 } else { fleet_rows };
             // Each screen has a different set of persisted identities.
             // Clamp when switching between long ship lists and short
