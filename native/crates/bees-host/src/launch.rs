@@ -2562,7 +2562,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             }
             let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
             if args.next().is_some() { return Err(invalid(USAGE).into()); }
-            return run_menu(&catalog, &output);
+            return run_menu(&catalog, &output, false);
         }
         #[cfg(not(feature = "client"))]
         return Err(invalid("The battle menu requires building with --features client").into());
@@ -5965,7 +5965,7 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
         // unlocks and interrupted-World recovery. It returns a mission ID,
         // never starts another physics simulation in the parent window.
         let Some((mission_id, side)) =
-            run_campaign_game_menu(&games[index], &career_root, true)?
+            run_campaign_game_menu(&games[index], &career_root, true, false)?
         else { return Ok(()) };
         if !tokens.contains_key(&side.to_string()) {
             return Err(invalid("multiplayer host has no token for the campaign player side").into());
@@ -6809,7 +6809,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         } else if matches!(game_kind, "campaign" | "challenge") {
             run_menu(&games[index], &save_root.join(
                 if game_kind == "challenge" { "challenges" } else { "campaigns" }
-            ).join(game_id))
+            ).join(game_id), bee_queen_unlocked)
         } else {
             run_library_quick_battle(save_root, game_id, &games[index])
         };
@@ -6875,8 +6875,10 @@ fn show_original_challenge_completion(
 }
 
 #[cfg(feature = "client")]
-fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error>> {
-    run_campaign_game_menu(catalog_path, output_root, false)?;
+fn run_menu(
+    catalog_path: &Path, output_root: &Path, bee_queen_unlocked: bool,
+) -> Result<(), Box<dyn Error>> {
+    run_campaign_game_menu(catalog_path, output_root, false, bee_queen_unlocked)?;
     Ok(())
 }
 
@@ -6887,6 +6889,7 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
 #[cfg(feature = "client")]
 fn run_campaign_game_menu(
     catalog_path: &Path, output_root: &Path, hosted: bool,
+    bee_queen_unlocked: bool,
 ) -> Result<Option<(String, i32)>, Box<dyn Error>> {
     use bees_host::presentation::{
         BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
@@ -7325,7 +7328,19 @@ fn run_campaign_game_menu(
                 placements: tactics.placements.unwrap_or_default(),
             }
         }).collect::<Vec<_>>();
-        let codex_known = catalog.codex_known_types(&progress);
+        let mut codex_known = catalog.codex_known_types(&progress);
+        if bee_queen_unlocked {
+            // Unity UserProgressData.VisibleCodexBeeShipTypes is shared
+            // between careers. The last original Challenge victory
+            // reveals Queen in the standard campaign Codex too; retain
+            // that campaign's existing authored visibility contract.
+            if let Some(known) = &mut codex_known {
+                if !known.contains(&17) {
+                    known.push(17);
+                    known.sort_unstable();
+                }
+            }
+        }
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
             &fleet_rows, &squad_rows, Some(&fleet_rankings),
             Some(&squad_rankings), &shop_rows, available, &transfer_rows,
