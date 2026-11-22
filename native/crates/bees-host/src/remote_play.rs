@@ -2342,7 +2342,14 @@ fn current_state(
                 "honeybee_spotted": view.campaign_dialogue_side
                     .filter(|owner| *owner == side)
                     .map(|_| view.campaign_dialogue.is_some_and(|(_, cue)|
-                        matches!(cue, bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeSpotted))),
+                        matches!(cue,
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeSpotted |
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeDestroyed))),
+                "honeybee_destroyed": view.campaign_dialogue_side
+                    .filter(|owner| *owner == side)
+                    .map(|_| view.campaign_dialogue.is_some_and(|(_, cue)|
+                        matches!(cue,
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeDestroyed))),
             }))
         } else if view.campaign_objective == Some(
             bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoPushback,
