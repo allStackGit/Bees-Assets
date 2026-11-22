@@ -1105,11 +1105,27 @@ impl NativeSoftwareRenderer {
         self.custom_ship_art.len() + self.animated_ship_art.len()
     }
 
+    /// Render the exact source Carrier deck as a transparent post-pass
+    /// over the recolored carrier sprite. Both local play and authenticated
+    /// LAN use the same color matcher, static atlas and native rasterizer.
+    fn draw_carrier_deck(
+        &mut self, color: Option<[u8; 3]>, position: Vec2, radians: f32,
+    ) -> bool {
+        let Some(index) = color.and_then(carrier_deck_index) else {
+            return false;
+        };
+        let Some(atlas) = source_carrier_decks() else { return false; };
+        self.draw_sprite(
+            &atlas.sprites[index], position, radians,
+            self.camera.pixels_per_unit / atlas.pixels_per_unit, 1.0,
+        )
+    }
+
     #[cfg(feature = "client")]
     pub(super) fn remote_ship_art(
         &mut self, ship_type: u8, point: Vec2, rotation_degrees: f32,
         color_rgb: Option<[u8; 3]>, animation: Option<(u8, f32)>,
-    ) -> bool {
+    ) -> Option<bool> {
         // Authenticated host packets select a presentation clip only for
         // already visible ships. Both local and remote use the *same*
         // native original-art decoder and exact source squad recolor mask.
@@ -1129,7 +1145,7 @@ impl NativeSoftwareRenderer {
             .or_else(|| source_ship_art()
                 .and_then(|atlas| atlas.sprites.get(usize::from(ship_type)))
                 .and_then(Option::as_ref))
-        else { return false };
+        else { return None };
         let recolored = color_rgb.filter(|_| art.recolor_mask.is_some())
             .map(|rgb| {
                 if let Some((_, variant, frame)) = animated {
@@ -1159,10 +1175,12 @@ impl NativeSoftwareRenderer {
                 }
             });
         let sprite = recolored.as_deref().unwrap_or(&art.sprite);
+        let radians = rotation_degrees.to_radians();
         self.draw_sprite(
-            sprite, point, rotation_degrees.to_radians(),
+            sprite, point, radians,
             self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
-        )
+        ).then(|| ship_type == 5 &&
+            self.draw_carrier_deck(color_rgb, point, radians))
     }
 
     #[cfg(feature = "client")]
@@ -1836,6 +1854,12 @@ impl NativeSoftwareRenderer {
                 counts.ship_sprite_draws += 1;
                 counts.ship_animated_sprite_draws += usize::from(animated.is_some());
                 counts.custom_ship_color_draws += usize::from(tinted.is_some());
+                if ship.ship_type == 5 &&
+                    self.draw_carrier_deck(
+                        custom_rgb, pose.position, pose.rotation_degrees.to_radians(),
+                    ) {
+                    counts.carrier_deck_overlay_draws += 1;
+                }
             } else {
                 counts.ship_fallback_hulls += 1;
             }
