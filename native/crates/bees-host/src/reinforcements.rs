@@ -313,6 +313,88 @@ fn plan_offscreen_reinforcement(
     Ok(positions)
 }
 
+/// Unity Squad.TryFindNearestFormationCenter uses the authored Pathfinder
+/// clearance map at Scale*2 spacing. Keep the adjusted formation intact
+/// while searching, rather than moving individual hulls with an unrelated
+/// collision approximation. Both game and policy reinforcements use this
+/// same one-time scene staging operation.
+fn place_reinforcement_formation(
+    squad: &NativeAuthoredSquad,
+    ships: &HashMap<i64, &NativeAuthoredShip>,
+    positions: &mut HashMap<i64, Vec2>,
+    metadata: &NativePolicyOnlyMetadata,
+    bounds: bees_sim::collision::Aabb,
+) -> Result<(), &'static str> {
+    let mut members = Vec::with_capacity(squad.members.len());
+    for &id in &squad.members {
+        let ship = ships.get(&id)
+            .ok_or("Reinforcement formation lacks its source ship")?;
+        let offset = metadata.stored_formation_offset(id)
+            .ok_or("Reinforcement formation lacks its source offset")?;
+        let clearance = metadata.current_path_clearance(id)
+            .ok_or("Reinforcement formation lacks source path clearance")?;
+        let adjusted = authored_placement_offset(
+            ship.ship_type, squad.members.len(), offset,
+        );
+        if !adjusted.is_finite() || clearance < 0 {
+            return Err("Reinforcement formation has invalid authored clearance");
+        }
+        members.push((id, adjusted, clearance));
+    }
+    let Some(&(first_id, first_offset, _)) = members.first() else {
+        return Err("Reinforcement formation has no ships");
+    };
+    let requested_center = *positions.get(&first_id)
+        .ok_or("Reinforcement formation has no staged position")? - first_offset;
+    let frame = metadata.navigation.map_frame();
+    let clearance = metadata.navigation.clearance();
+    let fits = |center: Vec2| {
+        center.is_finite() && members.iter().all(|&(_, offset, required)| {
+            let slot = center + offset;
+            slot.is_finite() &&
+                slot.x >= bounds.min.x && slot.x <= bounds.max.x &&
+                slot.y >= bounds.min.y && slot.y <= bounds.max.y &&
+                clearance.can_occupy_cell(frame.world_to_level(slot), required)
+        })
+    };
+    let mut selected = fits(requested_center).then_some(requested_center);
+    if selected.is_none() {
+        // Source x-major/y-minor perimeter ordering, first valid radius
+        // and minimum squared displacement within that radius.
+        let extent = (bounds.max.x - bounds.min.x)
+            .max(bounds.max.y - bounds.min.y);
+        let max_radius = (extent / (bees_sim::navigation::NAVIGATION_CELL_SCALE * 2.0))
+            .ceil() as i32;
+        let step = bees_sim::navigation::NAVIGATION_CELL_SCALE * 2.0;
+        for ring in 1..=max_radius {
+            let mut best: Option<(Vec2, f32)> = None;
+            for x in -ring..=ring {
+                for y in -ring..=ring {
+                    if x.abs().max(y.abs()) != ring { continue; }
+                    let candidate = requested_center +
+                        Vec2::new(x as f32 * step, y as f32 * step);
+                    if !fits(candidate) { continue; }
+                    let distance = (candidate - requested_center).length_squared();
+                    if best.is_none_or(|(_, prior)| distance < prior) {
+                        best = Some((candidate, distance));
+                    }
+                }
+            }
+            if let Some((center, _)) = best {
+                selected = Some(center);
+                break;
+            }
+        }
+    }
+    let center = selected.ok_or(
+        "Reinforcement formation cannot fit in the authored Pathfinder map",
+    )?;
+    for (id, offset, _) in members {
+        positions.insert(id, center + offset);
+    }
+    Ok(())
+}
+
 fn reinforcement_carrier_parent(ship: &NativeAuthoredShip) -> Option<i64> {
     match ship.ship_type {
         8 => ship.drone_carrier_id,
@@ -752,6 +834,41 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             };
             planned_positions.extend(positions);
         }
+        // Source SetStartingPosition searches the same Pathfinder clearance
+        // raster used by ordinary game movement, not an obstacle radius
+        // approximation. Do this before taking any authored scene members.
+        if has_obstacles && !planned_positions.is_empty() {
+            let bodies = crate::campaign_staging::authored_obstacle_bodies(&self.entities)?;
+            self.metadata.navigation.refresh_static(
+                bodies.iter().filter(|body| body.layer == 19)
+                    .map(|body| (body.id, body)),
+            ).map_err(|_| "Reinforcement static navigation map is invalid")?;
+            self.metadata.navigation.refresh_dynamic(
+                self.metadata.activate_collision_asteroids,
+                bodies.iter().filter(|body|
+                    body.source_asteroid_prefab_number.is_some()
+                ).map(|body| (body.id, body)),
+            ).map_err(|_| "Reinforcement asteroid navigation map is invalid")?;
+            for (wave_idx, ids) in planned_squad_order.iter().enumerate() {
+                if spawn_centers[wave_idx].is_none() || offscreen_waves[wave_idx] {
+                    continue;
+                }
+                for squad_id in ids {
+                    let squad = source_squads[squad_id];
+                    // Legacy physical exports can lack clearance when no
+                    // entry order was authored. Preserve their original
+                    // validated starting position rather than inventing one.
+                    if squad.members.iter().all(|&id|
+                        self.metadata.current_path_clearance(id).is_some()
+                    ) {
+                        place_reinforcement_formation(
+                            squad, &source_ships, &mut planned_positions,
+                            &self.metadata, self.broadphase_bounds,
+                        )?;
+                    }
+                }
+            }
+        }
         // An explicit spawn on an obstacle-bearing map is valid when the
         // complete original two-pass squad formation fits at that exact
         // authored point. Preflight before extracting any deferred owner;
@@ -792,11 +909,27 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                     position.x + radius > bounds.max.x ||
                     position.y - radius < bounds.min.y ||
                     position.y + radius > bounds.max.y;
-                if !position.is_finite() || (outside && !enters_map) ||
-                    obstacles.iter().any(|obstacle|
-                        obstacle.navigation_closest_point(position).is_some_and(|point|
-                            (point - position).length_squared() < radius * radius))
-                {
+                let has_clearance = self.metadata.current_path_clearance(ship_id);
+                let pathfinder_valid = has_clearance.is_some_and(|required| {
+                    let local = self.metadata.navigation.map_frame()
+                        .world_to_level(position);
+                    position.x >= bounds.min.x && position.x <= bounds.max.x &&
+                    position.y >= bounds.min.y && position.y <= bounds.max.y &&
+                    self.metadata.navigation.clearance()
+                        .can_occupy_cell(local, required)
+                });
+                // New source-authored scenes use the exact grid clearance
+                // contract. Older imports without a source ship clearance
+                // retain the previous geometric safety preflight.
+                let valid = if has_clearance.is_some() {
+                    pathfinder_valid
+                } else {
+                    !(outside && !enters_map) &&
+                        !obstacles.iter().any(|obstacle|
+                            obstacle.navigation_closest_point(position).is_some_and(|point|
+                                (point - position).length_squared() < radius * radius))
+                };
+                if !position.is_finite() || !valid {
                     return Err("Reinforcement authored spawn intersects the physical map or obstacle");
                 }
             }
