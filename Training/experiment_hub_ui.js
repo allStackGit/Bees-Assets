@@ -4247,6 +4247,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {parameters=JSON.parse($('hub-config-json').value);}
         catch {return;}
         const chosen=designDefinition(parameters);
+        refreshEvaluationCheckpointNotice();
         const signature=JSON.stringify({project,parameters,
             machine:chosen?.machine?.id||null,
             catalog:chosen?.entry||null});
