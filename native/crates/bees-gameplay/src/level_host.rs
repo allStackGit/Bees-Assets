@@ -564,6 +564,7 @@ pub struct NativeRuntimeStatus {
     /// Current episode's ordinary asteroid pool, shared between game and RL.
     /// These are gauges/cumulative episode counts, NOT global lifetime rates.
     pub full_asteroids_active: usize,
+    pub collision_asteroid_timer_spawns: u64,
     pub full_asteroid_profiles_cached: usize,
     pub full_asteroid_profiles_created: u64,
     pub full_asteroid_profiles_reused: u64,
@@ -1421,6 +1422,7 @@ impl NativeLevelBatchDriver {
             pending_store_reconciliations:
                 connection.pending_reconciliation_count(),
             full_asteroids_active: 0,
+            collision_asteroid_timer_spawns: 0,
             full_asteroid_profiles_cached: 0,
             full_asteroid_profiles_created: 0,
             full_asteroid_profiles_reused: 0,
@@ -1504,6 +1506,8 @@ impl NativeLevelBatchDriver {
             status.vision.merge(&world.state.combat.vision_measurements());
             let asteroids = world.state.combat.full_asteroid_pool_measurements();
             status.full_asteroids_active += asteroids.active;
+            status.collision_asteroid_timer_spawns +=
+                world.state.collision_asteroid_timer_spawns();
             status.full_asteroid_profiles_cached += asteroids.inactive;
             status.full_asteroid_profiles_created += asteroids.created_profiles;
             status.full_asteroid_profiles_reused += asteroids.reused_profiles;

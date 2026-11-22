@@ -1047,6 +1047,7 @@ impl NativeCollisionAsteroidTimer {
     }
     fn checkpoint_valid(self, expected: Self) -> bool {
         self.spec == expected.spec &&
+        self.interval_seconds == expected.interval_seconds &&
         self.interval_seconds.is_finite() && self.interval_seconds >= self.spec.minimum_seconds as f32 &&
         self.interval_seconds < self.spec.maximum_seconds.max(self.spec.minimum_seconds + 1) as f32 &&
         self.interval_seconds.fract() == 0.0 &&
@@ -1291,6 +1292,13 @@ impl<M, A> NativeLevelState<M, A> {
     /// path-not-found completions. No histories or per-ship timers are stored.
     pub fn navigation_jobs_completed(&self) -> u64 {
         self.navigation_jobs_completed
+    }
+
+    /// Only callbacks actually completed in the shared physical World.
+    /// The ordinary source full-asteroid pool separately measures reuse,
+    /// profiles created, destination search draws, and active obstacles.
+    pub fn collision_asteroid_timer_spawns(&self) -> u64 {
+        self.collision_asteroid_timer.map_or(0, |timer| timer.spawned)
     }
 
     pub fn command_input_measurements(&self) -> NativeCommandInputMeasurements {
