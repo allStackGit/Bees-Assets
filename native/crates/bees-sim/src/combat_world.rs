@@ -862,6 +862,10 @@ struct CombatWorldMovementCheckpoint {
     point_orders_pending: HashMap<i64, GamePointOrder>,
     point_orders_latest: HashMap<i64, GamePointOrder>,
     ship_bounds_overrides: HashSet<i64>,
+    /// Source StaticObstacle.KillsShipsOnContact on physically live obstacles.
+    /// Historic checkpoints predate authored lethal statics and default empty.
+    #[serde(default)]
+    lethal_static_obstacle_ids: HashSet<i64>,
     collision_profiles: HashMap<i64, ShipCollisionProfile>,
     original_ship_health: HashMap<i64, i32>,
     fleet_ids: HashMap<i64, i64>,
@@ -1078,6 +1082,7 @@ pub struct CombatWorld {
     navigation_requests: NavigationRequests,
     game_ship_steering: HashMap<i64, GameShipSteering>,
     ship_bounds_overrides: HashSet<i64>,
+    lethal_static_obstacle_ids: HashSet<i64>,
     map_border_measurements: GameMapBorderMeasurements,
     /// The Level-owned policy controller stores actual ongoing action
     /// state for each bound ship; no secondary training-only movement world.
@@ -1328,6 +1333,7 @@ impl CombatWorld {
             navigation_requests: NavigationRequests::new(),
             game_ship_steering: HashMap::new(),
             ship_bounds_overrides: HashSet::new(),
+            lethal_static_obstacle_ids: HashSet::new(),
             map_border_measurements: GameMapBorderMeasurements::default(),
             policy_ship_runtime: BTreeMap::new(),
             policy_capability_owners: BTreeSet::new(),
@@ -1686,6 +1692,23 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Original StaticObstacle.KillsShipsOnContact is an immutable
+    /// source-authored collider property. Keep only the IDs that need
+    /// unconditional death handling; all other static obstacles still
+    /// destroy Barges on a real active charge contact.
+    pub fn configure_lethal_static_obstacle(
+        &mut self, obstacle_id: i64,
+    ) -> Result<(), CombatWorldError> {
+        let &index = self.obstacle_by_id.get(&obstacle_id)
+            .ok_or(CombatWorldError::InvalidObstacle)?;
+        if self.obstacles[index].kind != ObstacleKind::StaticObstacle ||
+            !self.physics.obstacles()[index].active {
+            return Err(CombatWorldError::InvalidObstacle);
+        }
+        self.lethal_static_obstacle_ids.insert(obstacle_id);
+        Ok(())
+    }
+
     pub fn tracked_order_measurements(&self) -> TrackedOrderMeasurements {
         self.tracked_order_measurements
     }
@@ -1779,6 +1802,7 @@ impl CombatWorld {
                 point_orders_pending: self.pending_game_point_orders.clone(),
                 point_orders_latest: self.latest_game_point_orders.clone(),
                 ship_bounds_overrides: self.ship_bounds_overrides.clone(),
+                lethal_static_obstacle_ids: self.lethal_static_obstacle_ids.clone(),
                 collision_profiles: self.ship_collision_profiles.clone(),
                 original_ship_health: self.authored_original_ship_health.clone(),
                 fleet_ids: self.fleet_id_by_ship.clone(),
@@ -2234,6 +2258,13 @@ impl CombatWorld {
                 !registered_ship(id) || !order.valid()
             ) ||
             movement.ship_bounds_overrides.iter().any(|&id| !registered_ship(id)) ||
+            // A checkpoint cannot enable or silently disable a source
+            // lethal wall. Compare its live physical identity to the
+            // original scene, accounting for destroyed Fire Tank barriers.
+            movement.lethal_static_obstacle_ids != self.lethal_static_obstacle_ids
+                .iter().copied()
+                .filter(|id| obstacle_by_id.contains_key(id))
+                .collect::<HashSet<_>>() ||
             movement.collision_profiles.iter().any(|(&id, profile)|
                 !registered_ship(id) || !profile.valid()
             ) ||
@@ -2490,6 +2521,7 @@ impl CombatWorld {
         self.pending_game_point_orders = movement.point_orders_pending;
         self.latest_game_point_orders = movement.point_orders_latest;
         self.ship_bounds_overrides = movement.ship_bounds_overrides;
+        self.lethal_static_obstacle_ids = movement.lethal_static_obstacle_ids;
         self.ship_collision_profiles = movement.collision_profiles;
         self.authored_original_ship_health = movement.original_ship_health;
         self.fleet_id_by_ship = movement.fleet_ids;
@@ -4877,17 +4909,20 @@ impl CombatWorld {
             let Some(&ship_index) = self.ship_by_id.get(&entry.ship_id)
                 else { continue };
             let ship = &self.ships[ship_index];
-            if ship.ship_type != 0 || ship.vitals.is_dead() ||
+            if ship.vitals.is_dead() ||
                 !self.physics.ships()[ship_index].active {
                 continue;
             }
-            let is_charging = self.game_barge_charges.get(&entry.ship_id)
+            let source_lethal = self.lethal_static_obstacle_ids.contains(&entry.obstacle_id);
+            if !source_lethal && ship.ship_type != 0 { continue; }
+            let is_charging = ship.ship_type == 0 &&
+                (self.game_barge_charges.get(&entry.ship_id)
                 .is_some_and(|charge| charge.phase == 2) ||
                 self.policy_ship_runtime.get(&entry.ship_id)
                     .and_then(|runtime| runtime.special)
                     .is_some_and(|special| matches!(special,
-                        PolicyShipSpecial::Barge(barge) if barge.phase == 2));
-            if !is_charging { continue; }
+                        PolicyShipSpecial::Barge(barge) if barge.phase == 2)));
+            if !source_lethal && !is_charging { continue; }
             let health = self.ships[ship_index].vitals.health();
             if let Some(delta) = self.ships[ship_index].vitals
                 .apply_damage(health, false)? {

@@ -119,6 +119,9 @@ pub enum NativeAuthoredEntity {
         /// Exact Unity primary BoxCollider2D, for a live transformed scene.
         /// None is valid when explicitly spawning an unmodified prefab.
         live_corners: Option<[Vec2; 4]>,
+        /// Source StaticObstacle.KillsShipsOnContact, used by gameplay
+        /// and policy scenes through one CombatWorld damage implementation.
+        kills_ships_on_contact: bool,
     },
     PolygonObstacle {
         entity_id: i64,
@@ -386,6 +389,7 @@ impl NativeSceneAssets {
                 }
                 NativeAuthoredEntity::BoxObstacle {
                     entity_id, prefab_name, pose, live_corners,
+                    kills_ships_on_contact,
                 } => {
                     if let Some(corners) = live_corners {
                         let pose = pose.ok_or(
@@ -399,6 +403,10 @@ impl NativeSceneAssets {
                         combat.spawn_box_obstacle(
                             self.box_catalog(), &prefab_name, entity_id, pose,
                         ).map_err(NativeSceneBuildError::Combat)?;
+                    }
+                    if kills_ships_on_contact {
+                        combat.configure_lethal_static_obstacle(entity_id)
+                            .map_err(NativeSceneBuildError::Combat)?;
                     }
                 }
                 NativeAuthoredEntity::FullCollisionAsteroid {

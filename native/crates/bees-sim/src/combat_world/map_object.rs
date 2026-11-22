@@ -113,6 +113,7 @@ impl CombatWorld {
         // destroyed its wall.
         self.static_navigation_revision = self.static_navigation_revision.wrapping_add(1);
         self.obstacle_by_id.remove(&linked_id);
+        self.lethal_static_obstacle_ids.remove(&linked_id);
         // A destroyed animated wall cannot keep all subsequent map
         // searches in per-frame static rebuild mode indefinitely.
         if self.moving_static_navigation_obstacles {

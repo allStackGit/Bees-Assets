@@ -1046,6 +1046,8 @@ struct UnityObstacle {
     angular_velocity_degrees: f32,
     collider_vertices: Vec<UnityVec2>,
     layer: u8,
+    #[serde(default)]
+    kills_ships_on_contact: bool,
 }
 
 /// A physically present MapObject with authentic Unity collider geometry.
@@ -1159,6 +1161,8 @@ pub struct NativePlacedStaticBox {
     /// local_corners instead for a rotated or edited child collider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_scale: Option<[f32; 2]>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub kills_ships_on_contact: bool,
 }
 
 impl NativePlacedStaticBox {
@@ -2237,7 +2241,7 @@ impl NativePhysicalScene {
         for entity in &self.entities {
             let body = match entity {
                 NativeAuthoredEntity::BoxObstacle {
-                    entity_id, prefab_name, pose, live_corners,
+                    entity_id, prefab_name, pose, live_corners, ..
                 } => {
                     let asset = assets.box_catalog().by_name(prefab_name)
                         .ok_or(invalid("Titania II box obstacle prefab is absent"))?;
@@ -3471,7 +3475,8 @@ impl NativePhysicalScene {
                 return Err(invalid("new obstacle requires a verified source box prefab"));
             };
             if asset.kind != kind ||
-                (kind == ObstacleKind::StaticObstacle && asset.authored_health <= 0) {
+                (kind == ObstacleKind::StaticObstacle && asset.authored_health <= 0) ||
+                (kind != ObstacleKind::StaticObstacle && placement.kills_ships_on_contact) {
                 return Err(invalid("native box placement must match the source static/border kind"));
             }
             // A source MapBorder can supply its exact four live corners or
@@ -3741,6 +3746,7 @@ impl NativePhysicalScene {
             self.entities.push(NativeAuthoredEntity::BoxObstacle {
                 entity_id: placement.entity_id,
                 prefab_name: placement.prefab_name.clone(),
+                kills_ships_on_contact: placement.kills_ships_on_contact,
                 pose: Some(Pose {
                     position: Vec2::new(placement.position[0], placement.position[1]),
                     rotation_degrees: placement.rotation_degrees,
@@ -5478,6 +5484,7 @@ impl NativePhysicalScene {
                         prefab_name: obstacle.prefab_name,
                         pose: Some(pose),
                         live_corners: Some(corners),
+                        kills_ships_on_contact: obstacle.kills_ships_on_contact,
                     }
                 },
                 "polygon" => {
