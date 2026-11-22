@@ -122,6 +122,7 @@ class RemoteBattleWindow:
         self.state = None
         self.drawn_scope = None
         self.shown_terminal_receipt = None
+        self.shown_campaign_receipt = None
         self.map_bounds = None
         self.camera = None
         self.zoom = 1.0
@@ -438,8 +439,11 @@ class RemoteBattleWindow:
             ["!disabled"] if can_retreat else ["disabled"]
         )
         terminal = self.console.battle_receipt_snapshot()
-        if terminal != self.shown_terminal_receipt:
+        campaign_receipt = self.console.campaign_receipt_snapshot()
+        if (terminal != self.shown_terminal_receipt or
+                campaign_receipt != self.shown_campaign_receipt):
             self.shown_terminal_receipt = terminal
+            self.shown_campaign_receipt = campaign_receipt
             self.draw()
         if self.console.alive:
             self.root.after(50, self.poll)
@@ -1126,6 +1130,40 @@ class RemoteBattleWindow:
                     fill=MINERAL, width=max(200, self.canvas.winfo_width() - 28),
                     font=("TkDefaultFont", 10, "bold"),
                 )
+
+        # Reliable final receipts supersede replaceable live snapshots for
+        # the finished match. Spectator receipts deliberately contain no
+        # private player score/career totals; never derive them from hulls.
+        statistics = final if final is not None and final["kind"] == "battle_result" else state
+        parts = []
+        if statistics.get("player_score") is not None:
+            parts.append(f"Score {statistics['player_score']}")
+        counts = statistics.get("player_match_counts") or {}
+        for key, title in (("ships_destroyed_by_player", "Kills"),
+                           ("ships_lost", "Lost"), ("ships_returned", "Returned")):
+            if counts.get(key) is not None:
+                parts.append(f"{title} {counts[key]}")
+        mined = statistics.get("player_minerals_mined")
+        if mined is None:
+            mined = counts.get("player_minerals_mined")
+        if mined is not None:
+            parts.append(f"Mined {mined}")
+        if parts:
+            self.canvas.create_text(
+                14, 63, text="  |  ".join(parts), anchor="nw", fill="#d3e5ff",
+                font=("TkDefaultFont", 10, "bold"),
+            )
+        saved = self.console.campaign_receipt_snapshot()
+        if saved is not None and not self.console.spectator:
+            summary = self.console.campaign_receipt_summary(saved)
+            delta = saved.get("campaign_score_delta")
+            if delta is not None:
+                summary += f"  |  Score delta {delta:+d}"
+            self.canvas.create_text(
+                14, 84, text=summary, anchor="nw", fill=MINERAL,
+                width=max(200, self.canvas.winfo_width()-28),
+                font=("TkDefaultFont", 10, "bold"),
+            )
         dialogue = self.visible_dialogue()
         if dialogue is not None:
             speaker, line_text = dialogue
