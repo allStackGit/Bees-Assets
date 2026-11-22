@@ -5658,6 +5658,12 @@ impl CombatWorld {
         let has_pending_game_points = !self.pending_game_point_orders.is_empty();
         let has_latest_game_points = !self.latest_game_point_orders.is_empty();
         let has_asteroid_path_refresh = !self.asteroid_navigation_refresh.is_empty();
+        // A policy-only arena has no gameplay steering and no live A*
+        // requests. These world-local ownership gates are stable while
+        // the active-ship pass runs: it can retire a request, but never
+        // create a new steering controller or enqueue a path.
+        let has_game_steering = !self.game_ship_steering.is_empty();
+        let has_navigation_paths = self.navigation_requests.has_active_paths();
         let (active_slots, bodies) = self.physics.active_ships_mut();
         for &index in active_slots {
             let ship = &mut bodies[index];
@@ -5676,17 +5682,21 @@ impl CombatWorld {
                 if has_asteroid_path_refresh {
                     self.asteroid_navigation_refresh.remove(&ship.id);
                 }
-                if self.navigation_requests.is_pathfinding(ship.id) {
+                if has_navigation_paths &&
+                    self.navigation_requests.is_pathfinding(ship.id) {
                     self.navigation_requests.invalidate(ship.id)?;
                 }
-                if let Some(steering) = self.game_ship_steering.get_mut(&ship.id) {
-                    if steering.has_game_order() {
-                        steering.await_path(&mut ship.motion);
+                if has_game_steering {
+                    if let Some(steering) = self.game_ship_steering.get_mut(&ship.id) {
+                        if steering.has_game_order() {
+                            steering.await_path(&mut ship.motion);
+                        }
                     }
                 }
             }
             let policy_step = ship.motion.fixed_step_rl(dt);
-            if matches!(policy_step, MotionUpdate::NotPolicyControlled) {
+            if has_game_steering &&
+                matches!(policy_step, MotionUpdate::NotPolicyControlled) {
                 if let Some(steering) = self.game_ship_steering.get_mut(&ship.id) {
                     steering.fixed_step(&mut ship.motion, dt);
                 }
