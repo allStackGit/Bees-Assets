@@ -392,6 +392,7 @@ impl NativeClient {
     pub fn enable_hotseat(&mut self, sides: [i32; 2], initial: i32) {
         if sides[0] != sides[1] && sides.contains(&initial) {
             self.hotseat = Some(NativeHotseat { sides, active: initial });
+            self.renderer.reset_squad_tab_view();
         }
     }
 
@@ -748,6 +749,7 @@ impl NativeClient {
                 // boundary. The next frame builds a fresh borrowed view.
                 self.renderer.selected_ship = None;
                 self.renderer.selection.clear();
+                self.renderer.reset_squad_tab_view();
                 self.renderer.selection_box = None;
                 self.selection_drag = None;
                 self.minimap_dragging = false;
