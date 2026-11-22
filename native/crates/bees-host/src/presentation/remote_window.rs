@@ -121,6 +121,7 @@ struct WireCounts {
     ship_remains_draws: u64,
     ship_remains_source_frame_draws: u64,
     ship_explosion_visual_draws: u64,
+    queen_explosion_layer_draws: u64,
     obstacle_hull_draws: u64,
     minimap_ship_markers: u64,
     minimap_objective_markers: u64,
@@ -385,11 +386,12 @@ impl RemoteArtwork {
             );
             stats.ship_deaths_received += u64::from(admitted);
         }
-        let (remains, flashes, source_frames) =
+        let (remains, flashes, source_frames, queen_layers) =
             self.raster.draw_ship_death_visuals(tick, dt);
         stats.ship_remains_draws += remains as u64;
         stats.ship_remains_source_frame_draws += source_frames as u64;
         stats.ship_explosion_visual_draws += flashes as u64;
+        stats.queen_explosion_layer_draws += queen_layers as u64;
         stats.combat_impact_visual_draws +=
             self.raster.draw_combat_impact_visuals(tick, dt) as u64;
         let (candidates, opaque, blended) = self.raster.remote_raster_counts();
@@ -3488,6 +3490,7 @@ pub fn connect_remote(
         "ship_remains_draws":peer.metrics.ship_remains_draws,
         "ship_remains_source_frame_draws":peer.metrics.ship_remains_source_frame_draws,
         "ship_explosion_visual_draws":peer.metrics.ship_explosion_visual_draws,
+        "queen_explosion_layer_draws":peer.metrics.queen_explosion_layer_draws,
         "projectile_sprite_draws":peer.metrics.projectile_sprite_draws,
         "asteroid_sprite_draws":peer.metrics.asteroid_sprite_draws,
         "asteroid_piece_sprite_draws":peer.metrics.asteroid_piece_sprite_draws,
