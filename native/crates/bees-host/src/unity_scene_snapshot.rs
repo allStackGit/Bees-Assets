@@ -3529,8 +3529,19 @@ impl NativePhysicalScene {
                     ship.side != objective.attacking_side &&
                     !ship.vitals.is_dead()
             ));
-            if !target_is_real_opponent || setup.extraction.is_some() ||
-                setup.groups.is_some() ||
+            // A named target must be physically present from tick zero.
+            // Otherwise an intentionally deferred future hull would be
+            // indistinguishable from a destroyed one before admission.
+            let deferred_target = setup.reinforcements.iter().any(|wave|
+                wave.squad_item_ids.iter().any(|squad_id|
+                    self.source_squads.iter().any(|squad|
+                        squad.item_id == *squad_id &&
+                        squad.members.contains(&objective.target_ship_id)
+                    )
+                )
+            );
+            if !target_is_real_opponent || deferred_target ||
+                setup.extraction.is_some() || setup.groups.is_some() ||
                 setup.survival.is_some() || setup.demolition.is_some() ||
                 setup.escort.is_some()
             {
