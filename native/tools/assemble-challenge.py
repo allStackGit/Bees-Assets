@@ -25,6 +25,26 @@ def assemble(root, gate, base_library, max_squad_ships):
             level.get("Id", -1) for level in levels) != list(range(LEVEL_COUNT)):
         raise ValueError("the ten original Unity Challenge definitions changed")
     original_source_by_id = {level["Id"]: level for level in levels}
+    identity_path = root / "challenge-player-identities.json"
+    identity_by_type = None
+    if identity_path.exists():
+        identity = load(identity_path, root)
+        if (not isinstance(identity, dict) or
+                set(identity) != {"schema_version", "side", "types"} or
+                identity["schema_version"] != 1 or identity["side"] != 2 or
+                not isinstance(identity["types"], dict)):
+            raise ValueError("invalid shared Challenge player identity provenance")
+        identity_by_type = {}
+        all_ids = set()
+        for kind_text, ids in identity["types"].items():
+            if (not isinstance(kind_text, str) or not kind_text.isdecimal()
+                    or not 0 <= int(kind_text) < 24 or
+                    not isinstance(ids, list) or not ids or
+                    any(type(value) is not int or value <= 0 for value in ids)
+                    or any(value in all_ids for value in ids)):
+                raise ValueError("invalid shared Challenge class/physical identity map")
+            all_ids.update(ids)
+            identity_by_type[int(kind_text)] = ids
     original = []
     battles = []
     persistent = {}
@@ -62,6 +82,17 @@ def assemble(root, gate, base_library, max_squad_ships):
         active = [ship for ship in scene["ships"] if ship["side"] == 2]
         if not active or not all(ship.get("user_controlled") for ship in active):
             raise ValueError(f"Challenge {index} has no player-owned physical fleet")
+        if identity_by_type is not None:
+            physical_by_type = {}
+            for ship in active:
+                physical_by_type.setdefault(ship["ship_type"], []).append(ship["entity_id"])
+            if any(physical_by_type.get(kind, []) != ids[:len(physical_by_type.get(kind, []))]
+                   for kind, ids in identity_by_type.items()) or any(
+                    kind not in identity_by_type or
+                    len(ship_ids) > len(identity_by_type[kind])
+                    for kind, ship_ids in physical_by_type.items()):
+                raise ValueError(
+                    f"Challenge {index} does not preserve the shared player FleetShip identities")
         for ship in active:
             if not ship.get("persistent_fleet"):
                 continue
