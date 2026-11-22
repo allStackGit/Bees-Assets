@@ -30,11 +30,13 @@ SHIP_IMAGES = (
 )
 
 # (ShipTypes ID, animation variant, sheet, authored Unity animation clip).
-# Barge: 0=wind-up, 1=active rush. WarpGate: 0=opening, 1=ready.
+# Barge: 0=wind-up, 1=active rush, 2=the temporary charge image.
+# WarpGate: 0=opening, 1=ready.
 # Other classes use variant 0 for the source's working animation.
 SHIP_ANIMATIONS = (
     (0, 0, "Parts/barge_charging.png", "Barge Charging.anim"),
     (0, 1, "Parts/barge_charge.png", "Barge Charge.anim"),
+    (0, 2, "Parts/barge_charge_image.png", "Barge Charge Image.anim"),
     (4, 0, "carpenter_anim.png", "Carpenter Bee Mining.anim"),
     (9, 0, "factory_anim.png", "Factory Mining.anim"),
     (20, 0, "warpgate_anim.png", "Warp Gate Opening.anim"),
