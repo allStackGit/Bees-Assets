@@ -54,7 +54,7 @@ function gpuCohort(machineId,gpus,context,excludeJobId=null) {
         !Array.isArray(context.reservations)||!Array.isArray(gpus))
         return null;
     const byId=new Map(context.jobs.map(j=>[j.id,j]));
-    return JSON.stringify(gpus.slice().sort().map(gpu=>{
+    return JSON.stringify(gpus.map(gpu=>{
         const peers=[];
         for(const lease of context.reservations) {
             if(lease.machine_id!==machineId||lease.job_id===excludeJobId||
@@ -138,7 +138,10 @@ class ThroughputHistory {
     }
     observe(job,machineId,progress,gpus=[],context=null) {
         const key=workloadKey(job);
-        const deviceKey=JSON.stringify(Array.isArray(gpus)?gpus.slice().sort():[]);
+        // Ordered device roles matter for optimizer/collector assignments
+        // on multi-GPU jobs. The same unordered physical set can have
+        // materially different end-to-end PPO throughput.
+        const deviceKey=JSON.stringify(Array.isArray(gpus)?gpus:[]);
         const cohort=gpuCohort(machineId,gpus,context,job?.id);
         const steps=progress?.steps_completed;
         const time=Date.parse(progress?.source_modified_at);
@@ -220,7 +223,7 @@ class ThroughputHistory {
         if(!key)return 0;
         const score=placement=>{
             const gpus=placement.suggested_gpus||[];
-            const devices=JSON.stringify(gpus.slice().sort());
+            const devices=JSON.stringify(gpus);
             const cohort=gpuCohort(placement.machine_id,gpus,context,job?.id);
             const identity=cohort===null
                 ?[key,placement.machine_id,devices]
