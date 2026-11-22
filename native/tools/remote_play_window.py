@@ -283,8 +283,9 @@ class RemoteBattleWindow:
         for entry in entries:
             live = entry.get("live")
             status = (f" | HP {live['health']}/{live['max_health']}"
-                      f" | TSV {live['tsv']}/{live['max_tsv']}"
                       if live is not None else "")
+            if live is not None and live.get("tsv") is not None:
+                status += f" | TSV {live['tsv']}/{live['max_tsv']}"
             rows.append(f"{entry['ship_type']:>2}  {entry['name']}{status}")
         messagebox.showinfo(
             "Fleet Codex",
