@@ -60,18 +60,18 @@ class RemoteBattleWindow:
         self.battle_area.pack(fill="both", expand=True)
         self.canvas = tk.Canvas(self.battle_area, bg=BACKGROUND, highlightthickness=0)
         self.canvas.pack(side="left", fill="both", expand=True)
-        self.sidebar = ttk.Frame(self.battle_area, padding=6, width=220)
+        self.sidebar = ttk.Frame(self.battle_area, padding=6, width=285)
         self.sidebar.pack(side="right", fill="y")
         self.sidebar.pack_propagate(False)
         ttk.Label(self.sidebar, text="Player squads").pack(anchor="w")
         self.squad_list = tk.Listbox(self.sidebar, selectmode=tk.EXTENDED,
-                                     exportselection=False, height=15, width=27)
+                                     exportselection=False, height=15, width=35)
         self.squad_list.pack(fill="both", expand=True)
         self.sidebar_owners = []
         self.sidebar_updating = False
         self.squad_list.bind("<<ListboxSelect>>", self.sidebar_select)
         self.squad_detail = tk.StringVar(value="Select a squad")
-        ttk.Label(self.sidebar, textvariable=self.squad_detail, wraplength=200,
+        ttk.Label(self.sidebar, textvariable=self.squad_detail, wraplength=262,
                   justify="left").pack(anchor="w", pady=(8, 0))
         self.shooting_priority_label = ttk.Label(
             self.sidebar, text="Shooting priority (1-40)")
@@ -89,33 +89,36 @@ class RemoteBattleWindow:
         self.apply_shooting_button.pack(anchor="w", pady=(4, 0))
         self.footer = ttk.Frame(self.frame, padding=6)
         self.footer.pack(fill="x")
+        # Controls have their own row: source status and keyboard hints can
+        # grow without pushing destructive campaign actions offscreen.
+        self.footer_controls = ttk.Frame(self.footer)
+        self.footer_controls.pack(fill="x")
         self.status = tk.StringVar(value="Connecting to native host...")
-        ttk.Label(self.footer, textvariable=self.status).pack(side="left")
         self.rejoin_button = ttk.Button(
-            self.footer, text="Rejoin recovered battle", command=self.rejoin,
+            self.footer_controls, text="Rejoin recovered battle", command=self.rejoin,
             state="disabled",
         )
         self.rejoin_button.pack(side="left", padx=10)
         self.surrender_button = ttk.Button(
-            self.footer, text="Concede battle", command=self.surrender,
+            self.footer_controls, text="Concede battle", command=self.surrender,
             state="disabled",
         )
         if not console.spectator:
             self.surrender_button.pack(side="left", padx=10)
         self.retreat_button = ttk.Button(
-            self.footer, text="Open retreat exit", command=self.activate_retreat,
+            self.footer_controls, text="Open retreat exit", command=self.activate_retreat,
             state="disabled",
         )
         if not console.spectator:
             self.retreat_button.pack(side="left", padx=10)
         self.codex_button = ttk.Button(
-            self.footer, text="Fleet Codex", command=self.show_codex,
+            self.footer_controls, text="Fleet Codex", command=self.show_codex,
             state="disabled",
         )
         if not console.spectator:
             self.codex_button.pack(side="left", padx=10)
         self.campaign_details_button = ttk.Button(
-            self.footer, text="Campaign results",
+            self.footer_controls, text="Campaign results",
             command=self.show_campaign_details, state="disabled",
         )
         if not console.spectator:
@@ -125,7 +128,10 @@ class RemoteBattleWindow:
             if console.spectator else
             "Left-click select, Ctrl/Shift+click toggle, right-click order"
         ))
-        ttk.Label(self.footer, textvariable=self.info).pack(side="right")
+        ttk.Label(self.footer, textvariable=self.status, wraplength=850,
+                  justify="left").pack(fill="x", anchor="w", pady=(4, 0))
+        ttk.Label(self.footer, textvariable=self.info, wraplength=850,
+                  justify="left").pack(fill="x", anchor="w")
 
         self.mode = None
         self.patrol_start = None
