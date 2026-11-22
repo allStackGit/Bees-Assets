@@ -123,8 +123,8 @@ class FrozenInferenceMicrobatcher:
         self._outstanding = 0
         self._counters = dict(submitted=0, dispatched=0, model_forwards=0,
                               groups=0, coalesced=0, rejected=0, fallbacks=0,
-                              max_queue_depth=0, admitted_groups=0,
-                              rejected_groups=0, qualification_seconds=0.0)
+                              max_queue_depth=0, admitted_profiles=0,
+                              rejected_profiles=0, qualification_seconds=0.0)
         self._worker = Thread(target=self._serve, name="hub-gpu-microbatch", daemon=True)
         self._worker.start()
 
@@ -322,8 +322,8 @@ class FrozenInferenceMicrobatcher:
                     output = self._individual(group)
                     self._counters["fallbacks"] += 1
                 self._counters["qualification_seconds"] += perf_counter()-started
-                self._counters["admitted_groups" if mode=="grouped" else
-                               "rejected_groups"] += 1
+                self._counters["admitted_profiles" if mode=="grouped" else
+                               "rejected_profiles"] += 1
                 self._admission[shape] = mode
                 if len(self._admission)>self.max_cohorts*8:
                     self._admission.popitem(last=False)
@@ -356,9 +356,11 @@ class FrozenInferenceMicrobatcher:
 
     def metrics(self):
         with self._condition:
-            return dict(self._counters, pending=self._outstanding,
-                        cached_model_cohorts=len(self._executors),
-                        calibrated_batch_shapes=len(self._admission))
+            values = dict(self._counters, pending=self._outstanding,
+                          cached_model_cohorts=len(self._executors),
+                          calibrated_batch_shapes=len(self._admission))
+            return {"gpu_microbatch_"+name:value
+                    for name,value in values.items()}
 
     def close(self, *, cancel_pending=False):
         cancelled = []
