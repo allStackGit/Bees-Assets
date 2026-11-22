@@ -2369,6 +2369,15 @@ fn current_state(
             "next_tick": view.next_reinforcement_tick,
             "last_arrival_tick": view.last_reinforcement_tick,
         })),
+        // Codex is original campaign progression, not a fog-visibility
+        // shortcut. Publish classes only to the authenticated source
+        // player. An opponent may not inherit this owner's career.
+        "campaign_codex_gate": view.campaign_codex.is_some(),
+        "campaign_codex_types": view.campaign_codex
+            .filter(|(player_side, _)| *player_side == side)
+            .map(|(_, allowed)| allowed.iter().enumerate()
+                .filter_map(|(kind, &known)| known.then_some(kind as u8))
+                .collect::<Vec<_>>()),
         "ships": ships, "squads": squads, "obstacles": obstacles,
         "projectiles": projectiles,
         "asteroid_pieces": asteroid_pieces,
