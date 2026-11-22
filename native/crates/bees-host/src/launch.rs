@@ -5042,14 +5042,66 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     } else { None };
     // A reconnect restores the same frozen fleet without asking the
     // human to recreate it or replacing the original archived scenario.
+    // Completed two-commander skirmishes can also become NEW hosted
+    // battles, but only when each source faction has a real authenticated
+    // LAN player. Never turn an AI/policy squad into a new remote owner.
+    let mut saved_host_fleet: Option<PathBuf> = None;
     let fleet = if custom_fleet && generated_recovery.is_none() {
         let single_remote_side = if tokens.len() == 1 {
             Some(tokens.keys().next()
                 .expect("validated nonempty side token map").parse::<i32>()?)
         } else { None };
-        fleet_builder::choose_multiplayer(single_remote_side, save_root)?
+        if tokens.len() == 2 && tokens.contains_key("1") && tokens.contains_key("2") {
+            let saved = recorded_library::list_fleet_builds(save_root)?
+                .into_iter().take(32).filter_map(|recording| {
+                    let recorded_library::RecordedSource::QuickBattle(source) =
+                        recording.source else { return None };
+                    // The replay library already bounded files, proved the
+                    // original terminal footer and excludes symlink sources.
+                    // Inspect only the source scene's player permissions.
+                    let scene: Value = serde_json::from_slice(&fs::read(
+                        source.with_file_name("replay-source-scene.json"),
+                    ).ok()?).ok()?;
+                    let squads = scene["squads"].as_array()?;
+                    let commands_side = |side| squads.iter().any(|squad|
+                        squad["side"] == side && squad["user_controlled"] == true &&
+                        squad["can_accept_input"] == true);
+                    if !commands_side(1) || !commands_side(2) {
+                        return None;
+                    }
+                    Some((recording.title, source))
+                }).collect::<Vec<_>>();
+            if saved.is_empty() {
+                fleet_builder::choose_multiplayer(None, save_root)?
+            } else {
+                use bees_host::presentation::{select_library, BattleMenuRow};
+                let mut rows = Vec::with_capacity(saved.len() + 1);
+                rows.push(BattleMenuRow {
+                    title: "Build new LAN fleet",
+                    status: "  [New source-authored physical match]",
+                    unlocked: true,
+                });
+                rows.extend(saved.iter().map(|(title, _)| BattleMenuRow {
+                    title, status: "  [Reuse player-controlled fleet]",
+                    unlocked: true,
+                }));
+                let mut selected = 0;
+                match select_library(&rows, &mut selected, false)? {
+                    None => None,
+                    Some(0) => fleet_builder::choose_multiplayer(None, save_root)?,
+                    Some(index) => {
+                        saved_host_fleet = Some(saved[index - 1].1.clone());
+                        None
+                    },
+                }
+            }
+        } else {
+            fleet_builder::choose_multiplayer(single_remote_side, save_root)?
+        }
     } else { None };
-    if custom_fleet && generated_recovery.is_none() && fleet.is_none() {
+    if custom_fleet && generated_recovery.is_none() &&
+        fleet.is_none() && saved_host_fleet.is_none()
+    {
         return Ok(());
     }
     // Keep one save writer for the entire child-host lifetime. The parent
@@ -5087,6 +5139,19 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
             let start = QuickBattleStart::capture(&source, true)?
                 .ok_or_else(|| invalid("generated multiplayer fleet has no native recovery"))?;
             save_native_quick_battle_start(&output, &start)?;
+            (source, output)
+        } else if let Some(source) = saved_host_fleet {
+            // A fresh LAN game references immutable archived source assets
+            // but has its own writer lease, World checkpoint and input
+            // trace. Neither a prior result nor a prior command is replayed.
+            let output = new_library_battle_output(save_root, &settings.game_id)?;
+            let start = QuickBattleStart::capture(&source, true)?
+                .ok_or_else(|| invalid("saved two-player fleet has no native hosted start"))?;
+            save_native_quick_battle_start(&output, &start)?;
+            println!("{}", json!({
+                "kind": "native_saved_fleet_host_ready",
+                "source": source, "run": output,
+            }));
             (source, output)
         } else if let Some(model) = trained_model {
             use bees_host::presentation::{BattleMenuRow, select_library};
