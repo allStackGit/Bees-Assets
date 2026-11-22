@@ -191,6 +191,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_ppo_gradient_foreach_batches',
             'training_ppo_compiled_active','training_ppo_graph_mode_requested',
             'training_ppo_compile_settled',
+            'training_ppo_compile_no_eligible_updates',
+            'training_ppo_fused_adam_active','training_ppo_fused_adam_selected',
+            'training_ppo_fused_adam_settled','training_ppo_fused_adam_steps',
+            'training_ppo_fused_adam_preflight_failed',
             'training_ppo_compiled_samples','training_ppo_eager_samples',
             'training_ppo_compile_fallbacks',
             // Exposed Python simulation packing is a cross-project CPU
