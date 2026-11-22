@@ -1070,7 +1070,8 @@ impl NativeLevelBatchDriver {
         // a command reservation and creates an impossible strategy.
         let has_gate = combat.ships().iter().any(|ship|
             ship.ship_type == WARP_GATE_TYPE && ship.side == acting.side &&
-            !ship.vitals.is_dead()
+            !ship.vitals.is_dead() &&
+            combat.game_warp_gate_position(ship.entity_id).is_some()
         );
         if acting.side != human_side || !has_gate ||
             acting.members.iter().all(|&id| combat.ship(id)
@@ -1078,7 +1079,14 @@ impl NativeLevelBatchDriver {
         {
             dynamic.push(LocalCommandKind::FullRetreat);
         }
-        if acting.side != bee_side ||
+        // HealRun::start selects *wounded* living members before
+        // reserving the real shared Beehive slots. Offering Heal for an
+        // entirely healthy squad would consume a HiveMind reservation and
+        // return immediately without an executable command.
+        let has_wounded_member = acting.members.iter().any(|&id| combat.ship(id)
+            .is_some_and(|ship| !ship.vitals.is_dead() &&
+                ship.vitals.health() < ship.vitals.max_health()));
+        if acting.side != bee_side || !has_wounded_member ||
             acting.members.iter().all(|&id| combat.ship(id)
                 .is_some_and(|ship| ship.ship_type == BEEHIVE_TYPE)) ||
             !combat.has_available_beehive_healing_slot(bee_side)
