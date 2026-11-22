@@ -513,20 +513,24 @@ class MeasuredGpuExecution:
         else:
             self.choices.move_to_end(signature)
         if choice == "fused":
-            self.fused_calls += 1
+            before = self.fusion.fused_calls
             result = self.fusion.run(batches)
-            args, rows, fused_shape = self.fusion._prepare(batches)
-            if not self.fusion._profiles.get(
-                    fused_shape, FusionDecision(False, "unsupported")).fused:
+            if self.fusion.fused_calls == before:
+                # A runtime fallback returned original model outputs.
+                # Do not re-validate every tensor shape on this hot path.
                 self.choices[signature] = "eager"
+                self.eager_calls += 1
+            else:
+                self.fused_calls += 1
             return result
         if choice == "streams":
-            self.stream_calls += 1
+            before = self.streams.parallel_calls
             result = self.streams.run(batches)
-            _, stream_shape = self.streams._prepare(batches)
-            if not self.streams.profiles.get(
-                    stream_shape, FusionDecision(False, "unsupported")).fused:
+            if self.streams.parallel_calls == before:
                 self.choices[signature] = "eager"
+                self.eager_calls += 1
+            else:
+                self.stream_calls += 1
             return result
         self.eager_calls += 1
         return self.fusion._eager([
