@@ -264,7 +264,7 @@ impl Mission {
     }
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Clone, Copy, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum AdvanceOn {
     #[default]
