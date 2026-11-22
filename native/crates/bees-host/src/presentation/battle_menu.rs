@@ -33,6 +33,29 @@ fn squad_name_key(key: Key, shift: bool) -> Option<char> {
     }
 }
 
+/// Accept all authored squad RGB colors, including the thirteen original
+/// Carrier deck variants, without constraining them to UI swatches.
+fn hex_rgb_key(key: Key) -> Option<char> {
+    match key {
+        Key::Key0 => Some('0'), Key::Key1 => Some('1'),
+        Key::Key2 => Some('2'), Key::Key3 => Some('3'),
+        Key::Key4 => Some('4'), Key::Key5 => Some('5'),
+        Key::Key6 => Some('6'), Key::Key7 => Some('7'),
+        Key::Key8 => Some('8'), Key::Key9 => Some('9'),
+        Key::A => Some('A'), Key::B => Some('B'), Key::C => Some('C'),
+        Key::D => Some('D'), Key::E => Some('E'), Key::F => Some('F'),
+        _ => None,
+    }
+}
+
+fn parse_squad_rgb(hex: &str) -> Option<[u8; 3]> {
+    if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let value = u32::from_str_radix(hex, 16).ok()?;
+    Some([(value >> 16) as u8, (value >> 8) as u8, value as u8])
+}
+
 fn cycle_squad_color(value: NativeSquadColorSetting) -> NativeSquadColorSetting {
     match value {
         NativeSquadColorSetting::Inherit => NativeSquadColorSetting::Clear,
@@ -251,6 +274,9 @@ fn select_battle_inner(
     let mut tactic_cease_fire = false;
     let mut tactic_match_speed = false;
     let mut tactic_color = NativeSquadColorSetting::Inherit;
+    // Editing happens entirely in the existing tactics view; only a
+    // committed Tactics action reaches the saved-squad ledger.
+    let mut hex_color_input: Option<String> = None;
     let mut tactic_formation = NativeSavedSquadFormation::authored();
     let mut show_names = false;
     let mut name_selected = 0_usize;
@@ -261,6 +287,51 @@ fn select_battle_inner(
     let mut fleet_selected = 0_usize;
     let mut fleet_first = 0_usize;
     while window.is_open() {
+        if let Some(hex) = hex_color_input.as_mut() {
+            // Full RGB input is modal: digits/letters must never activate
+            // battle, purchase, mission or tactical shortcuts underneath.
+            let mut apply = false;
+            let mut cancel = false;
+            for key in window.get_keys_pressed(KeyRepeat::Yes) {
+                match key {
+                    Key::Escape | Key::Tab => { cancel = true; break; }
+                    Key::Enter => { apply = hex.len() == 6; break; }
+                    Key::Backspace => { hex.pop(); }
+                    key => {
+                        if hex.len() < 6 {
+                            if let Some(ch) = hex_rgb_key(key) { hex.push(ch); }
+                        }
+                    }
+                }
+            }
+            if apply {
+                if let Some(rgb) = parse_squad_rgb(hex) {
+                    tactic_color = NativeSquadColorSetting::Custom(rgb);
+                    hex_color_input = None;
+                }
+            } else if cancel {
+                hex_color_input = None;
+            }
+            pixels.fill(0x080e19);
+            text::draw_centered(&mut pixels, WIDTH, 60, "Custom squad color", 2, TEXT);
+            text::draw_centered(&mut pixels, WIDTH, 125,
+                "Enter six hexadecimal RGB digits (RRGGBB)", 1, MUTED);
+            let current = hex_color_input.as_deref().unwrap_or("");
+            let label = format!("#{}{}", current, "_".repeat(6 - current.len()));
+            text::draw_centered(&mut pixels, WIDTH, 196, &label, 2, TEXT);
+            if let Some(rgb) = parse_squad_rgb(current) {
+                for y in 253..306 {
+                    pixels[y * WIDTH + 310..y * WIDTH + 490]
+                        .fill((u32::from(rgb[0]) << 16) |
+                              (u32::from(rgb[1]) << 8) | u32::from(rgb[2]));
+                }
+            }
+            text::draw_centered(&mut pixels, WIDTH, 365,
+                "Enter accept color   Backspace delete   Esc cancel", 1, MUTED);
+            mouse_down = window.get_mouse_down(MouseButton::Left);
+            window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
+            continue;
+        }
         // Escape returns to the parent campaign screen. A player browsing
         // ships, changing tactics or renaming a squad should not have to
         // abandon the entire battle launcher to reach mission selection.
@@ -556,6 +627,13 @@ fn select_battle_inner(
                     if window.is_key_pressed(Key::R, KeyRepeat::No) {
                         tactic_color = cycle_squad_color(tactic_color);
                     }
+                    if window.is_key_pressed(Key::H, KeyRepeat::No) {
+                        hex_color_input = Some(match tactic_color {
+                            NativeSquadColorSetting::Custom(rgb) =>
+                                format!("{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]),
+                            _ => String::new(),
+                        });
+                    }
                     if window.is_key_pressed(Key::F, KeyRepeat::No) {
                         tactic_formation = tactic_formation.cycle_kind();
                     }
@@ -611,7 +689,7 @@ fn select_battle_inner(
                 if show_transfer { "Move owned ships between saved squads (no TSV cost)" }
                 else if show_create { "Choose a player squad to copy its command settings" }
                 else if show_delete { "Created squads only; assigned ships return to fleet reserve" }
-                else if show_tactics { "Left/Right strategy, C chase, V fire, M speed, R color, Enter save" }
+                else if show_tactics { "Left/Right strategy, C chase, V fire, M speed, R palette, H custom RGB" }
                 else { "Buy a source-authored ship" }, 1, MUTED);
             if show_shop {
                 text::draw_centered(&mut pixels, WIDTH, 94,
@@ -677,7 +755,7 @@ fn select_battle_inner(
             }
             text::draw_centered(&mut pixels, WIDTH, 441,
                 if show_tactics {
-                    "Left/Right strategy   C chase   V fire   M speed   R color   F formation   W width   Enter save"
+                    "Arrows strategy | C chase V fire M speed | R swatch H RGB | F form W width | Enter save"
                 } else if show_delete {
                     "Up/Down select   Enter delete   D close   Esc back"
                 } else {
