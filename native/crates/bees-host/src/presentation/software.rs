@@ -3213,6 +3213,103 @@ impl NativeSoftwareRenderer {
             LINES, &[2, 6, 10, 17]);
     }
 
+    /// Original Fleet Codex discovery is a presentation permission, not a
+    /// second ship registry. Reveal only hulls physically observable from
+    /// this player's source fog mask. The caller invokes this only while
+    /// opening the Codex, not on every render or training tick.
+    #[cfg(feature = "client")]
+    pub fn codex_visible_ship_types(&self, view: &NativeRenderWorldView<'_>) -> Vec<u8> {
+        let mut seen = [false; bees_sim::ship_assets::SHIP_TYPE_COUNT];
+        for (ship, body) in view.combat.render_ships() {
+            if !ship.vitals.is_dead() &&
+                self.fog_visible_at(view, body.motion.position)
+            {
+                seen[usize::from(ship.ship_type)] = true;
+            }
+        }
+        seen.into_iter().enumerate()
+            .filter_map(|(kind, visible)| visible.then_some(kind as u8))
+            .collect()
+    }
+
+    /// Gameplay Codex: class names use the *same* frozen native ship asset
+    /// catalog as collision/rendering, while live health and capacity
+    /// are read from CombatWorld. Never label a sampled damaged hull's
+    /// stats as permanent class upgrades or estimate an unseen enemy.
+    #[cfg(feature = "client")]
+    pub fn draw_fleet_codex(
+        &mut self, view: &NativeRenderWorldView<'_>,
+        discovered: &[bool; bees_sim::ship_assets::SHIP_TYPE_COUNT],
+        selected: u8,
+    ) {
+        static SHIPS: OnceLock<bees_sim::ship_assets::ShipAssetCatalog> = OnceLock::new();
+        let catalog = SHIPS.get_or_init(|| bees_sim::ship_assets::ShipAssetCatalog::embedded()
+            .expect("native ship catalog is loaded by gameplay startup"));
+        if self.width < 600 || self.height < 390 { return; }
+        let panel_width = self.width.saturating_sub(36).min(860);
+        let panel_height = self.height.saturating_sub(36).min(620);
+        let left = (self.width - panel_width) / 2;
+        let top = (self.height - panel_height) / 2;
+        for y in top..top + panel_height {
+            self.pixels[y * self.width + left..y * self.width + left + panel_width]
+                .fill(if y < top + 3 { 0x5985aa } else { 0x101c2b });
+        }
+        text::draw_centered(&mut self.pixels, self.width, top + 18,
+            "UNITED FLEET CODEX", 2, [232, 240, 250]);
+        text::draw_centered(&mut self.pixels, self.width, top + 52,
+            "F2 / Esc close   Up / Down browse   Source ship classes encountered", 1,
+            [155, 178, 206]);
+
+        let mut entries = discovered.iter().enumerate().filter(|(kind, seen)|
+            **seen && *kind != usize::from(bees_sim::ship_assets::HUMAN_TARGET_TYPE)
+        ).map(|(kind, _)| kind as u8).collect::<Vec<_>>();
+        entries.sort_unstable();
+        if entries.is_empty() {
+            text::draw_centered(&mut self.pixels, self.width, top + 155,
+                "No source ship classes discovered yet", 1, [232, 240, 250]);
+            return;
+        }
+        // Two short columns hold the complete 23-class original roster at
+        // ordinary desktop sizes; smaller windows page around the selection.
+        let rows_per_col = 12_usize.min((panel_height.saturating_sub(174) /
+            (text::HEIGHT + 12)).max(1));
+        let page = rows_per_col * 2;
+        let focus = entries.iter().position(|&kind| kind == selected).unwrap_or(0);
+        let start = (focus / page) * page;
+        for (offset, &kind) in entries.iter().skip(start).take(page).enumerate() {
+            let col = offset / rows_per_col;
+            let row = offset % rows_per_col;
+            let x = left + 20 + col * (panel_width / 2);
+            let y = top + 87 + row * (text::HEIGHT + 12);
+            let name = catalog.by_type(kind).map(|item| item.name.as_str())
+                .unwrap_or("Unknown ship");
+            let line = format!("{}  {}", if kind == selected { ">" } else { " " }, name);
+            text::draw_at(&mut self.pixels, self.width, x, y,
+                &text::fit(&line, panel_width / 2 - 24), 1,
+                if kind == selected { [255, 211, 130] } else { [198, 218, 233] });
+        }
+        let name = catalog.by_type(selected).map(|item| item.name.as_str())
+            .unwrap_or("Unknown ship");
+        let footer = view.combat.ships().iter().find(|ship|
+            ship.ship_type == selected && !ship.vitals.is_dead() &&
+            view.combat.ship_body(ship.entity_id)
+                .is_some_and(|body| self.fog_visible_at(view, body.motion.position))
+        ).map(|ship| format!(
+            "Live {}: Health {}/{}  |  TSV {} / {}",
+            name, ship.vitals.health(), ship.vitals.max_health(),
+            ship.vitals.tsv(), ship.vitals.max_tsv(),
+        )).unwrap_or_else(|| format!(
+            "{}  |  No currently visible physical hull", name,
+        ));
+        text::draw_centered(&mut self.pixels, self.width,
+            top + panel_height - 62, &text::fit(&footer, panel_width - 28),
+            1, [255, 211, 130]);
+        text::draw_centered(&mut self.pixels, self.width,
+            top + panel_height - 32,
+            &format!("{} of {} discovered classes",
+                focus + 1, entries.len()), 1, [155, 178, 206]);
+    }
+
     /// F8 toggles measurements on the actual player window. Keep a small,
     /// fixed top-right readout separate from the authoritative combat world,
     /// its simulation RNG and recorded player actions. The HUD consumes only
