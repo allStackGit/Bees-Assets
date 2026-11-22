@@ -980,8 +980,8 @@ impl BattleCatalog {
             !progress.is_ship_unlocked(shop) ||
             progress.unspent_minerals()? < shop.price_tsv ||
             fleet_ship_id <= 0 || fleet_ship_id <= progress.highest_fleet_id() ||
-            saved_squad_id <= 0 ||
-            progress.is_retired_saved_squad(saved_squad_id)
+            saved_squad_id < 0 ||
+            (saved_squad_id > 0 && progress.is_retired_saved_squad(saved_squad_id))
         {
             return Err(invalid("purchase requires verified bank funds, new FleetShip ID and a valid SavedSquad"));
         }
@@ -1611,7 +1611,7 @@ impl BattleCatalog {
                 progress.purchases.iter().any(|(_, ship)|
                     ship.fleet_ship_id == purchase.ship.fleet_ship_id) ||
                 purchase.ship.fleet_ship_id <= 0 ||
-                purchase.ship.saved_squad_id <= 0 ||
+                purchase.ship.saved_squad_id < 0 ||
                 !purchased_ids.insert(purchase.ship.fleet_ship_id) ||
                 !self.buildable_ships.iter().any(|shop|
                     shop.player_side == purchase.player_side &&
