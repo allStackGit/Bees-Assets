@@ -195,6 +195,10 @@ pub struct NativeSoftwareRenderer {
     pixels: Vec<u32>,
     /// Allocated only for fog-enabled graphical Levels and reused by frame.
     fog_coverage: Vec<u8>,
+    /// Original FreePlay's ToggleFogOfWar. Never available in a campaign
+    /// or on a remote client whose World projection is visibility-limited.
+    /// This flag changes rendering and picking only; no physical rules.
+    fog_override_off: bool,
     /// UI lifecycle only: Unity FogOfWarVision remains after a ship death,
     /// shrinking its mask by 0.8 every 0.1 simulation seconds.
     fog_context: Option<(WorldId, u64, Option<i32>)>,
@@ -926,7 +930,8 @@ impl NativeSoftwareRenderer {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid viewport or bounds"));
         }
         Ok(Self { width, height, pixels: vec![0; width * height],
-            fog_coverage: Vec::new(), fog_context: None, fog_render_pass: 0,
+            fog_coverage: Vec::new(), fog_override_off: false,
+            fog_context: None, fog_render_pass: 0,
             codex_owner: None,
             codex_seen: [false; bees_sim::ship_assets::SHIP_TYPE_COUNT],
             codex_scan_tick: None,
@@ -1311,6 +1316,17 @@ impl NativeSoftwareRenderer {
 
     pub fn size(&self) -> (usize, usize) { (self.width, self.height) }
     pub fn pixels(&self) -> &[u32] { &self.pixels }
+
+    /// Source FreePlay toggles the existing local fog renderer, not an
+    /// independent visibility model. The caller authorizes the game mode.
+    pub fn toggle_freeplay_fog(&mut self) -> bool {
+        self.fog_override_off=!self.fog_override_off;
+        // No old fading sight discs may survive a display-mode change.
+        self.fog_live.clear();
+        self.fog_fades.clear();
+        self.fog_context=None;
+        !self.fog_override_off
+    }
 
     /// Remote clients draw the host's authenticated physical snapshots
     /// through the EXACT SAME sprite atlas, pivot, PPU and rasterizer as
@@ -1767,7 +1783,8 @@ impl NativeSoftwareRenderer {
     /// UI-only hit testing must not choose a ship or obstacle hidden by
     /// the source fog mask. The world continues simulating every entity.
     fn fog_visible_at(&self, view: &NativeRenderWorldView<'_>, point: Vec2) -> bool {
-        if !view.player_authority.player_fog_of_war_enabled() { return true; }
+        if self.fog_override_off ||
+            !view.player_authority.player_fog_of_war_enabled() {return true;}
         if !point.is_finite() { return false; }
         if view.combat.render_ships().any(|(ship, body)| {
             let Some(radius) = Self::fog_source_radius(view, ship.entity_id)
@@ -1844,7 +1861,8 @@ impl NativeSoftwareRenderer {
     fn apply_player_fog(&mut self, view: &NativeRenderWorldView<'_>,
         counts: &mut NativeRenderCounts,
     ) {
-        if !view.player_authority.player_fog_of_war_enabled() {
+        if self.fog_override_off ||
+            !view.player_authority.player_fog_of_war_enabled() {
             self.fog_live.clear();
             self.fog_fades.clear();
             self.fog_context = None;
@@ -2121,7 +2139,8 @@ impl NativeSoftwareRenderer {
             let object = if obstacle.kind == bees_sim::obstacle::ObstacleKind::MapObject {
                 view.combat.map_object(obstacle.entity_id)
             } else { None };
-            let visible = if view.player_authority.player_fog_of_war_enabled() {
+            let visible = if !self.fog_override_off &&
+                view.player_authority.player_fog_of_war_enabled() {
                 // A fog-enabled local commander shares the same physical
                 // faction visibility as authenticated remote commanders.
                 // Opposing squads' range triggers cannot reveal a hidden
@@ -3731,7 +3750,7 @@ impl NativeSoftwareRenderer {
             "T: point fire   Hold J: manual fire   X: stop fire",
             "Backspace: cancel target   F9: change local commander",
             "AUDIO / PERFORMANCE",
-            "F7: mute   F10/F11: effect level   Shift+F10/F11: music",
+            "F7: mute   Shift+F7: FreePlay fog   F10/F11: effect level",
             "F8: performance   Shift+letter: direct shooting 1-16",
         ];
         Self::draw_help_panel(&mut self.pixels, self.width, self.height,

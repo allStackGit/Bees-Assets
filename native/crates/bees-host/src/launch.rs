@@ -8052,6 +8052,12 @@ fn run_battle(
                 .map_or(sides[1], |context| context.user_side);
             client.enable_hotseat(sides, initial);
         }
+        // Unity GameMenus shows the Fog toggle only in FreePlay and
+        // FishTank, not campaign or Challenge. Never let a recorded
+        // battle disable the live source's authorized visibility.
+        client.set_freeplay_fog_allowed(
+            mission.is_none() && replay_inputs.is_none(),
+        );
         client.set_source_zoom_limits(client_zoom_limits);
         client.set_music_locations(
             source_levels.iter().map(|source| source.music_location).collect(),

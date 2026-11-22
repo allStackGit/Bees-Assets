@@ -157,6 +157,9 @@ pub struct NativeClient {
     /// The Unity game exposes mouse-edge scrolling as a user preference.
     /// F6 toggles it locally without adding a gameplay or persisted setting.
     edge_scroll_enabled: bool,
+    /// The original FreePlay/FishTank menu may disable display fog;
+    /// campaign and Challenge visibility cannot be overridden.
+    allow_freeplay_fog: bool,
     /// Source per-Level Map.MinZoom/MaxZoom. No gameplay-state copy.
     source_zoom_by_world: Vec<Option<(f32, f32)>>,
     next_step: Instant,
@@ -279,6 +282,7 @@ impl NativeClient {
             last_title_update: None,
             performance: NativeLivePerformance::new(now),
             edge_scroll_enabled: false,
+            allow_freeplay_fog: false,
             source_zoom_by_world: Vec::new(),
             next_step: now, pending_steps: 0, previous_frame: now, left_was_down: false,
             right_was_down: false, right_press: None, last_left_press: None, double_left_press: false,
@@ -484,6 +488,10 @@ impl NativeClient {
         self.game_speed = 0;
     }
     pub fn set_playback(&mut self) { self.playback = true; }
+
+    pub fn set_freeplay_fog_allowed(&mut self,allowed:bool) {
+        self.allow_freeplay_fog=allowed;
+    }
 
     pub fn result_action(&self) -> Option<NativeResultAction> {
         if self.dialogue_visible { return None; }
@@ -900,9 +908,21 @@ impl NativeClient {
         }
         self.audio.set_paused(self.paused || self.show_controls_help);
         if self.window.is_active() && self.window.is_key_pressed(Key::F7, KeyRepeat::No) {
-            self.input_feedback = if self.audio.toggle_muted() {
-                "Audio muted"
-            } else { "Audio enabled" };
+            let shifted=self.window.is_key_down(Key::LeftShift) ||
+                self.window.is_key_down(Key::RightShift);
+            if shifted {
+                if self.allow_freeplay_fog && !self.playback {
+                    self.input_feedback=if self.renderer.toggle_freeplay_fog() {
+                        "Original free-play fog enabled"
+                    } else { "Original free-play fog disabled" };
+                } else {
+                    self.input_feedback="Fog control is unavailable in this game mode";
+                }
+            } else {
+                self.input_feedback = if self.audio.toggle_muted() {
+                    "Audio muted"
+                } else { "Audio enabled" };
+            }
         }
         // Native player audio settings apply to all current and future
         // soundtrack/effect voices, including source WarpGate loops. Shift
