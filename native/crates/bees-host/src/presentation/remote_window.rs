@@ -2467,12 +2467,17 @@ pub fn connect_remote(
                 "Soundtrack paused".into()
             } else { "Soundtrack playing".into() };
         }
-        if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
+        // Backspace mirrors the local tactical client's cancellation
+        // without closing the battle. Escape still exits only when no
+        // targeting or shooting UI is active.
+        let cancel = window.is_key_pressed(Key::Backspace, KeyRepeat::No);
+        let escape = window.is_key_pressed(Key::Escape, KeyRepeat::No);
+        if cancel || escape {
             if shooting_menu {
                 shooting_menu=false;shooting_press=None;
             } else if mode.is_some() {
-                mode=None;patrol_start=None;drag_start=None;
-            } else {break;}
+                mode=None;patrol_start=None;drag_start=None;right_press=None;
+            } else if escape {break;}
         }
         // Reconnecting is an explicit new authenticated seat, never a
         // replay of commands or a restoration of unacknowledged gestures.
