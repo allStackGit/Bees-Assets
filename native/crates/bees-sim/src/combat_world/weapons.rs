@@ -634,6 +634,10 @@ impl CombatWorld {
         context: Option<&dyn NativeAutomaticWeaponContext>,
     ) -> Result<(), CombatWorldError> {
         self.pending_turret_shots.clear();
+        // No physical mount means no aiming, rotation, cooldown or shot
+        // generation is possible. Avoid even temporarily moving the
+        // full (mostly unarmed) policy weapon-owner BTreeMap.
+        if self.armed_weapon_ships.is_empty() { return Ok(()); }
         let mut weapons = std::mem::take(&mut self.ship_weapons);
         let result = self.advance_mounted_weapon_controls(&mut weapons, dt, command, random, context);
         // Restore physical ownership even when an authored input fails.
