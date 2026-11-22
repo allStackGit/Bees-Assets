@@ -5810,6 +5810,10 @@ impl CombatWorld {
             integrated_bodies: physics_counts.integrated_bodies,
             navigation_lookups_skipped,
             steering_lookups_skipped,
+            // Exact current empty holders, not a guessed CPU or GPU gain.
+            // Both weapon advancement and range refresh bypass these IDs.
+            unarmed_weapon_holders_skipped: (self.ship_weapons.len() -
+                self.armed_weapon_ships.len()) as u64,
             inactive_ship_slots_skipped: physics_counts.inactive_ship_slots_skipped,
             inactive_projectile_slots_skipped: physics_counts.inactive_projectile_slots_skipped,
             inactive_ship_grid_slots_skipped: physics_counts.inactive_ship_grid_slots_skipped,
