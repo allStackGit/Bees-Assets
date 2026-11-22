@@ -204,21 +204,6 @@ function placements(machines,reservations,input) {
 // activity (including Bees). Single-GPU jobs favor more physical free VRAM,
  // then lower measured GPU activity. Unknown measurements do not claim
 // that a device is idle or available.
-// Comparable completed workload observations can guide placement without
-// changing resource budgets or learning semantics.
-function measuredThroughputPreference(a,b,observations) {
-    if(!Array.isArray(observations))return 0;
-    const score=placement=>{
-        const samples=observations.filter(o=>o&&o.machine_id===placement.machine_id&&
-            Number.isFinite(o.useful_steps)&&o.useful_steps>=0&&
-            Number.isFinite(o.elapsed_seconds)&&o.elapsed_seconds>0);
-        if(!samples.length)return null;
-        const seconds=samples.reduce((sum,o)=>sum+o.elapsed_seconds,0);
-        return samples.reduce((sum,o)=>sum+o.useful_steps,0)/seconds;
-    };
-    const left=score(a),right=score(b);
-    return left===null||right===null?0:right-left;
-}
 function observedLoadPreference(a,b,resources) {
     const cpuOnly=resources.gpu_count===0;
     if(cpuOnly) {
@@ -250,8 +235,7 @@ function plan(machines,reservations,jobs) {
             (typeof job.machine_id!=='string'||!ID.test(job.machine_id)))
             throw Error('Invalid machine affinity for workload.');
         return {id:job.id,index,resources:request(job.resources),
-            machine_id:job.machine_id||null,
-            throughput_observations:job.throughput_observations||null};
+            machine_id:job.machine_id||null};
     });
     if(new Set(work.map(j=>j.id)).size!==work.length)
         throw Error('Workload IDs must be unique.');
@@ -283,7 +267,6 @@ function plan(machines,reservations,jobs) {
                 // Prefer a presently connected worker whenever both fit.
                 // Offline hosts remain visible as future-capacity fallbacks.
                 Number(b.online)-Number(a.online)||
-                measuredThroughputPreference(a,b,item.throughput_observations)||
                 observedLoadPreference(a,b,item.resources)||
                 a.available.cpus-b.available.cpus||
                 a.available.ram_mb-b.available.ram_mb||
@@ -364,4 +347,4 @@ function approvedEndpointSubset(approved,selected) {
 }
 
 module.exports={request,matchingLeaseBudget,remaining,placements,plan,startHeadroom,
-    observedLoadPreference,measuredThroughputPreference,ensureLocalCpuRamCapacity,fixedCpuParallelism,approvedEndpointSubset};
+    observedLoadPreference,ensureLocalCpuRamCapacity,fixedCpuParallelism,approvedEndpointSubset};
