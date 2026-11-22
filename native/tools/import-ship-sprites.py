@@ -78,6 +78,17 @@ MAP_FOG_IMAGES = (
     "titania_fow.png", "uranus_fog_bg-export.png",
 )
 
+# The original CutsceneManager.Portraits registry: two authentic
+# chat frames per speaker, in the stable order decoded by the native UI.
+# These are only loaded by graphical campaign dialogue, never by workers.
+DIALOGUE_PORTRAITS = (
+    "samuel_chat.png", "tom_chat.png", "commander_chat.png",
+    "oviya_chat.png", "marco_chat.png", "yoshiko_chat.png",
+    "joey_chat.png", "wesley_chat.png", "alejandra_chat.png",
+    "emilia_chat.png", "fritz_chat.png", "marge_chat.png",
+    "barge_pilot_chat.png", "ami_chat.png",
+)
+
 # Original ShipRemains and Beehive Shrinking sheets. The tuple is keyed
 # directly by ConfigData.ShipTypes; None denotes source classes without
 # authored wreck art. The 20-slice clips hold their final frame until the
@@ -361,6 +372,23 @@ def pack_ship_remains(palettes):
     return data, len(entries)
 
 
+def pack_dialogue_portraits():
+    # Pair both source SpriteMode.Multiple chat frames in a small, bounded
+    # file independent of the large ship animation and campaign text.
+    data = bytearray(struct.pack("<4sH", b"BDP1", len(DIALOGUE_PORTRAITS)))
+    for speaker, filename in enumerate(DIALOGUE_PORTRAITS):
+        _, frames = source_frames(
+            ROOT / "Resources/Sprites/Portraits" / filename, True,
+        )
+        if len(frames) != 2:
+            raise ValueError(f"Source portrait must have exactly two frames: {filename}")
+        data.append(speaker)
+        for frame in frames:
+            data.extend(struct.pack("<HH", frame.width, frame.height))
+            packed_pixels(data, frame)
+    return data
+
+
 def pack_queen_explosion():
     """Pack all Queen death layers in the existing lazy remains envelope.
 
@@ -415,6 +443,8 @@ def main():
                         default=ROOT / "native/assets/map-backgrounds.rgba")
     parser.add_argument("--map-fog-output", type=Path,
                         default=ROOT / "native/assets/map-fog.rgba")
+    parser.add_argument("--portrait-output", type=Path,
+                        default=ROOT / "native/assets/dialogue-portraits.rgba")
     parser.add_argument("--ship-output", type=Path,
                         default=ROOT / "native/assets/ship-sprites.rgba")
     parser.add_argument("--projectile-output", type=Path,
@@ -447,6 +477,7 @@ def main():
         MAP_FOG_IMAGES, ROOT / "Sprites/Backgrounds", b"BSS1",
         False, large_static=True, tint_rgb=56,
     )
+    portrait_art = pack_dialogue_portraits()
     animations, animation_count = pack_ship_animations(palettes)
     remains, remains_count = pack_ship_remains(palettes)
     decks = pack_carrier_decks()
@@ -465,6 +496,7 @@ def main():
     )
     backgrounds_path = write_atomic(args.map_background_output, backgrounds)
     fog_path = write_atomic(args.map_fog_output, fog)
+    portrait_path = write_atomic(args.portrait_output, portrait_art)
     ships_path = write_atomic(args.ship_output, ships)
     projectiles_path = write_atomic(args.projectile_output, projectiles)
     asteroids_path = write_atomic(args.asteroid_output, asteroids)
@@ -486,6 +518,8 @@ def main():
           f"{len(backgrounds)} bytes at {backgrounds_path}")
     print(f"Original fog map overlays: {fog_count} types, "
           f"{len(fog)} bytes at {fog_path}")
+    print(f"Original campaign portraits: {len(DIALOGUE_PORTRAITS)} speakers, "
+          f"{len(portrait_art)} bytes at {portrait_path}")
     print(f"Ship sprites: {ship_count} types, {len(ships)} bytes at {ships_path}")
     print(f"Projectile sprites: {projectile_count} types, "
           f"{len(projectiles)} bytes at {projectiles_path}")

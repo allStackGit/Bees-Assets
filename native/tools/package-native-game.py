@@ -932,6 +932,7 @@ def main() -> None:
             "--ship-output", str(assets / "ship-sprites.rgba"),
             "--map-background-output", str(assets / "map-backgrounds.rgba"),
             "--map-fog-output", str(assets / "map-fog.rgba"),
+            "--portrait-output", str(assets / "dialogue-portraits.rgba"),
             "--projectile-output", str(assets / "projectile-sprites.rgba"),
             "--asteroid-output", str(assets / "asteroid-sprites.rgba"),
             "--animation-output", str(assets / "ship-animations.rgba"),

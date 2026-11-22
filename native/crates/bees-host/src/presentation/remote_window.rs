@@ -2121,22 +2121,26 @@ fn draw_campaign_dialogue(pixels: &mut [u32], state: &Value, line_index: usize) 
     for scanline in pixels.chunks_exact_mut(WIDTH).skip(HEIGHT-160).take(96) {
         scanline[..FIELD].fill(0x1c3045);
     }
+    let portrait_drawn = super::software::draw_dialogue_portrait(
+        pixels, WIDTH, WIDTH, HEIGHT, speaker, 15, HEIGHT-149, 78, false,
+    );
+    let text_left = if portrait_drawn { 105 } else { 15 };
     let heading=format!("{}   Dialogue {}/{}",
         speaker,line_index+1,count);
-    text::draw_at(pixels,WIDTH,15,HEIGHT-152,
-        text::fit(&heading,FIELD-30),1,[251,217,146]);
+    text::draw_at(pixels,WIDTH,text_left,HEIGHT-152,
+        text::fit(&heading,FIELD-text_left-15),1,[251,217,146]);
     let mut rest=message;
     for index in 0..3 {
         if rest.is_empty(){break;}
-        let fit=text::fit(rest,FIELD-36);
+        let fit=text::fit(rest,FIELD-text_left-24);
         let piece=if fit.len()<rest.len(){
             fit.rsplit_once(' ').map_or(fit,|(head,_)|head)
         }else{fit};
         let piece=if piece.is_empty(){fit}else{piece};
-        text::draw_at(pixels,WIDTH,15,HEIGHT-127+index*19,piece,1,TEXT);
+        text::draw_at(pixels,WIDTH,text_left,HEIGHT-127+index*19,piece,1,TEXT);
         rest=rest[piece.len()..].trim_start();
     }
-    text::draw_at(pixels,WIDTH,15,HEIGHT-72,
+    text::draw_at(pixels,WIDTH,text_left,HEIGHT-72,
         "L next   K skip   Backspace previous",1,MUTED);
 }
 

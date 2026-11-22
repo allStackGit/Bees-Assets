@@ -922,6 +922,108 @@ fn source_map_backgrounds() -> Option<&'static SourceShipAtlas> {
     )).as_ref()
 }
 
+/// Every source CutsceneManager.Portraits entry includes a speaking and
+/// resting frame. The portable client loads both without Unity/PNG decoding.
+const SOURCE_CAMPAIGN_PORTRAITS: usize = 14;
+
+struct SourceDialoguePortraitAtlas {
+    frames: [Option<[NativeSprite; 2]>; SOURCE_CAMPAIGN_PORTRAITS],
+}
+
+impl SourceDialoguePortraitAtlas {
+    fn decode(bytes: &[u8]) -> io::Result<Self> {
+        let invalid = || io::Error::new(io::ErrorKind::InvalidData,
+            "invalid native source campaign portrait");
+        if bytes.get(..4) != Some(&b"BDP1"[..]) { return Err(invalid()); }
+        let mut at = 4usize;
+        let count = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+        if count != SOURCE_CAMPAIGN_PORTRAITS { return Err(invalid()); }
+        let mut frames = std::array::from_fn(|_| None);
+        let mut total_pixels = 0usize;
+        for _ in 0..count {
+            let id = usize::from(*bytes.get(at).ok_or_else(invalid)?);
+            at += 1;
+            if id >= SOURCE_CAMPAIGN_PORTRAITS || frames[id].is_some() {
+                return Err(invalid());
+            }
+            let mut read_frame = || -> io::Result<NativeSprite> {
+                let width = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+                let height = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+                if !(1..=1024).contains(&width) ||
+                    !(1..=1024).contains(&height) { return Err(invalid()); }
+                total_pixels = total_pixels.checked_add(width * height)
+                    .ok_or_else(invalid)?;
+                if total_pixels > 8_388_608 { return Err(invalid()); }
+                source_art_sprite(bytes, &mut at, width, height)
+            };
+            let first = read_frame()?;
+            let second = read_frame()?;
+            frames[id] = Some([first, second]);
+        }
+        if at != bytes.len() { return Err(invalid()); }
+        Ok(Self { frames })
+    }
+}
+
+fn source_dialogue_portraits() -> Option<&'static SourceDialoguePortraitAtlas> {
+    static ATLAS: OnceLock<Option<SourceDialoguePortraitAtlas>> = OnceLock::new();
+    ATLAS.get_or_init(|| load_source_art(
+        "dialogue-portraits.rgba", SourceDialoguePortraitAtlas::decode,
+    )).as_ref()
+}
+
+/// Draw the actual source speaker portrait in fixed UI coordinates. Source
+/// dialogue finishes on portrait A; B is retained as a frame for the
+/// authored character-by-character talking presentation. Unknown speakers
+/// have a neutral text-only UI, never another person's portrait.
+pub(super) fn draw_dialogue_portrait(
+    pixels: &mut [u32], pitch: usize, canvas_width: usize,
+    canvas_height: usize, speaker: &str, x: usize, y: usize,
+    box_size: usize, speaking_frame: bool,
+) -> bool {
+    let id = match speaker {
+        "Samuel" => 0, "Tom" => 1, "High Command" => 2,
+        "Oviya" => 3, "Marco" => 4, "Yoshiko" => 5,
+        "Joey" => 6, "Wesley" => 7, "Alejandra" => 8,
+        "Emilia" => 9, "Fritz" => 10, "Marge" => 11,
+        "Barge Pilot" => 12, "AMI" => 13,
+        _ => return false,
+    };
+    let Some(sprite) = source_dialogue_portraits()
+        .and_then(|atlas| atlas.frames[id].as_ref())
+        .map(|frames| &frames[usize::from(speaking_frame)]) else {
+        return false;
+    };
+    if box_size == 0 || x >= canvas_width || y >= canvas_height ||
+        pitch < canvas_width || pixels.len() < pitch * canvas_height {
+        return false;
+    }
+    let scale = (box_size as f32 / sprite.width as f32)
+        .min(box_size as f32 / sprite.height as f32);
+    let width = ((sprite.width as f32 * scale).round() as usize)
+        .max(1).min(box_size).min(canvas_width - x);
+    let height = ((sprite.height as f32 * scale).round() as usize)
+        .max(1).min(box_size).min(canvas_height - y);
+    for row in 0..height {
+        let source_y = row * sprite.height / height;
+        for col in 0..width {
+            let source_x = col * sprite.width / width;
+            let pos = (source_y * sprite.width + source_x) * 4;
+            let rgba = &sprite.pixels[pos..pos + 4];
+            let alpha = u32::from(rgba[3]);
+            if alpha == 0 { continue; }
+            let dest = &mut pixels[(y + row) * pitch + x + col];
+            *dest = if alpha == 255 {
+                u32::from(rgba[0]) << 16 |
+                u32::from(rgba[1]) << 8 | u32::from(rgba[2])
+            } else {
+                text::blend(*dest, [rgba[0], rgba[1], rgba[2]], alpha)
+            };
+        }
+    }
+    true
+}
+
 fn source_ship_art() -> Option<&'static SourceShipAtlas> {
     static ATLAS: OnceLock<Option<SourceShipAtlas>> = OnceLock::new();
     ATLAS.get_or_init(|| load_source_art(
@@ -4506,31 +4608,44 @@ impl NativeSoftwareRenderer {
     #[cfg(feature = "client")]
     pub(crate) fn draw_campaign_dialogue(&mut self, speaker: &str, message: &str) {
         let panel_width = self.width.min(680);
-        let max_text_width = panel_width.saturating_sub(32).max(1);
+        let portrait_box = if panel_width >= 360 && self.height >= 160 { 82 } else { 0 };
+        let text_left_offset = 14 + if portrait_box > 0 { portrait_box + 12 } else { 0 };
+        let text_width = panel_width.saturating_sub(text_left_offset + 14).max(1);
         let mut rest = message;
         let mut lines = Vec::new();
         while !rest.is_empty() {
-            let prefix = text::fit(rest, max_text_width);
+            let prefix = text::fit(rest, text_width);
             if prefix.is_empty() { break; }
             let length = if prefix.len() == rest.len() { prefix.len() }
                 else { prefix.rfind(' ').filter(|&index| index != 0).unwrap_or(prefix.len()) };
             lines.push(&rest[..length]);
             rest = rest[length..].trim_start();
         }
-        let panel_height = ((lines.len() + 2) * text::HEIGHT + 22).min(self.height);
+        let panel_height = ((lines.len() + 2) * text::HEIGHT + 22)
+            .max(portrait_box + 24).min(self.height);
         let top = self.height - panel_height;
         let left = (self.width - panel_width) / 2;
         for y in top..self.height {
             let color = if y == top { 0x75dbab } else { 0x111e2e };
             self.pixels[y * self.width + left..y * self.width + left + panel_width].fill(color);
         }
-        text::draw_centered(&mut self.pixels, self.width, top + 6, speaker, 1, [117, 219, 171]);
+        if portrait_box != 0 {
+            draw_dialogue_portrait(
+                &mut self.pixels, self.width, self.width, self.height,
+                speaker, left + 10, top + 12, portrait_box, false,
+            );
+        }
+        let text_left = left + text_left_offset;
+        text::draw_at(&mut self.pixels, self.width, text_left, top + 6,
+            speaker, 1, [117, 219, 171]);
         let mut y = top + 9 + text::HEIGHT;
         for line in lines {
-            text::draw_centered(&mut self.pixels, self.width, y, line, 1, [239, 247, 255]);
+            text::draw_at(&mut self.pixels, self.width, text_left, y,
+                line, 1, [239, 247, 255]);
             y += text::HEIGHT;
         }
-        text::draw_centered(&mut self.pixels, self.width, y + 4, "L continue  /  K dismiss", 1, [155, 178, 206]);
+        text::draw_at(&mut self.pixels, self.width, text_left, y + 4,
+            "L continue  /  K dismiss", 1, [155, 178, 206]);
     }
 
     fn render_obstacle_debris(
