@@ -571,7 +571,7 @@ struct PeerClient {
     /// At most one outstanding UI-only inspection on this authenticated
     /// socket. The full fleet never enters the projected world snapshot.
     inspection_pending: Option<(u64,u64,i64,u64)>,
-    inspection_result: Option<(u64,u64,i64,Option<Value>,Option<i64>,u64)>,
+    inspection_result: Option<(u64,u64,i64,Option<Value>,Option<i64>,u64,Option<bool>)>,
     pause_episode: Option<(u64,u64)>,
     authenticated: bool,
     connected: bool,
@@ -1097,7 +1097,7 @@ impl PeerClient {
                     }
                     let processed=message["processed"].as_bool()
                         .ok_or_else(||invalid("inspection receipt lacks authorization decision"))?;
-                    let stats=if processed {
+                    let stats=if processed && !message["stats"].is_null() {
                         let value=&message["stats"];
                         if !value.is_object() || [
                             "observed_turret_shots", "enemy_tsv_damage_done",
@@ -1114,13 +1114,21 @@ impl PeerClient {
                         Some(value.clone())
                     } else { None };
                     let minerals=message["minerals_mined_this_level"].as_i64();
+                    let in_combat=if processed {
+                        if !message["in_combat"].is_null() &&
+                            message["in_combat"].as_bool().is_none()
+                        {
+                            return Err(invalid("invalid authenticated combat activity").into());
+                        }
+                        message["in_combat"].as_bool()
+                    } else { None };
                     let sample_tick=if processed {
                         message["tick"].as_u64().ok_or_else(||
                             invalid("authenticated ship inspection lacks a simulation tick"))?
                     } else { 0 };
                     self.inspection_pending=None;
                     self.inspection_result=Some((
-                        world,revision,ship,stats,minerals,sample_tick,
+                        world,revision,ship,stats,minerals,sample_tick,in_combat,
                     ));
                     self.metrics.inspection_receipts+=1;
                 }
@@ -4660,8 +4668,7 @@ pub fn connect_remote(
                     .map(|dt|(1.0/dt).ceil().max(1.0) as u64).unwrap_or(50);
                 let fresh=peer.inspection_result.as_ref().is_some_and(|value|
                     (value.0,value.1,value.2)==(world,revision,id) &&
-                    (value.3.is_none() ||
-                        current_tick < value.5.saturating_add(refresh_after)));
+                    current_tick < value.5.saturating_add(refresh_after));
                 if !fresh && peer.inspection_pending.is_none() {
                     let request=peer.next_request;
                     let frame=json!({
@@ -4708,47 +4715,55 @@ pub fn connect_remote(
                 } else { "Orders: hostile or neutral" };
                 let mut lines=vec![title,health,tsv,identity,status.to_owned()];
                 if ship["owned"]==true {
-                    if let Some((world,revision,id,Some(stats),minerals,_))=
+                    if let Some((world,revision,id,stats,minerals,_,in_combat))=
                         peer.inspection_result.as_ref()
                     {
                         let current=peer.state.as_ref().is_some_and(|state|
                             state["world_id"].as_u64()==Some(*world) &&
                             state["episode_revision"].as_u64()==Some(*revision));
                         if current && ship["id"].as_i64()==Some(*id) {
-                            let kills=stats["source_kills"].as_u64()
-                                .map(|value|value.to_string())
-                                .unwrap_or_else(||"unavailable".to_owned());
-                            lines.push(format!(
-                                "This battle: {} shots | {kills} kills",
-                                stats["observed_turret_shots"].as_u64().unwrap_or(0),
-                            ));
-                            lines.push(format!(
-                                "Damage: {} dealt | {} received (TSV)",
-                                stats["enemy_tsv_damage_done"].as_u64().unwrap_or(0),
-                                stats["tsv_damage_received"].as_u64().unwrap_or(0),
-                            ));
-                            if matches!(ship["ship_type"].as_u64(),Some(4|9)) {
-                                if let Some(mined)=minerals {
-                                    lines.push(format!(
-                                        "Minerals mined this battle: {mined}",
-                                    ));
-                                }
+                            if let Some(in_combat)=in_combat {
+                                lines.push(format!("Combat activity: {}",
+                                    if *in_combat { "Engaged" } else { "Idle" }));
                             }
-                            if stats["special_actions_recorded"] == true {
-                                let special=match ship["ship_type"].as_u64() {
-                                    Some(0)=>Some(("Charges started","barge_charges_started")),
-                                    Some(10)=>Some(("Explosions","fire_barge_explosions")),
-                                    Some(17)=>Some(("Minions spawned","queen_minions_spawned")),
-                                    Some(18)=>Some(("Beacons deployed","scout_beacons_deployed")),
-                                    Some(19)=>Some(("Bombs dropped","striker_bombs_dropped")),
-                                    Some(22)=>Some(("Detonations","yellow_jacket_detonations")),
-                                    _=>None,
-                                };
-                                if let Some((label,key))=special {
-                                    if let Some(count)=stats[key].as_u64() {
-                                        lines.push(format!("{label} this battle: {count}"));
+                            if let Some(stats)=stats {
+                                let kills=stats["source_kills"].as_u64()
+                                    .map(|value|value.to_string())
+                                    .unwrap_or_else(||"unavailable".to_owned());
+                                lines.push(format!(
+                                    "This battle: {} shots | {kills} kills",
+                                    stats["observed_turret_shots"].as_u64().unwrap_or(0),
+                                ));
+                                lines.push(format!(
+                                    "Damage: {} dealt | {} received (TSV)",
+                                    stats["enemy_tsv_damage_done"].as_u64().unwrap_or(0),
+                                    stats["tsv_damage_received"].as_u64().unwrap_or(0),
+                                ));
+                                if matches!(ship["ship_type"].as_u64(),Some(4|9)) {
+                                    if let Some(mined)=minerals {
+                                        lines.push(format!(
+                                            "Minerals mined this battle: {mined}",
+                                        ));
                                     }
                                 }
+                                if stats["special_actions_recorded"] == true {
+                                    let special=match ship["ship_type"].as_u64() {
+                                        Some(0)=>Some(("Charges started","barge_charges_started")),
+                                        Some(10)=>Some(("Explosions","fire_barge_explosions")),
+                                        Some(17)=>Some(("Minions spawned","queen_minions_spawned")),
+                                        Some(18)=>Some(("Beacons deployed","scout_beacons_deployed")),
+                                        Some(19)=>Some(("Bombs dropped","striker_bombs_dropped")),
+                                        Some(22)=>Some(("Detonations","yellow_jacket_detonations")),
+                                        _=>None,
+                                    };
+                                    if let Some((label,key))=special {
+                                        if let Some(count)=stats[key].as_u64() {
+                                            lines.push(format!("{label} this battle: {count}"));
+                                        }
+                                    }
+                                }
+                            } else {
+                                lines.push("Permanent FleetShip career unavailable".to_owned());
                             }
                         }
                     }
