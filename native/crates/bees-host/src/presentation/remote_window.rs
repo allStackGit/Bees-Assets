@@ -2002,6 +2002,10 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                     "Defend the unidentified vessel near Pluto"
                 } else if objective["honeybee_destroyed"] == true {
                     "First Honeybee destroyed  |  Monitor incoming enemy signals"
+                } else if objective["gunship_briefed"] == true {
+                    "Lieutenant Tom is engaging the unidentified Honeybee"
+                } else if objective["gunship_arrived"] == true {
+                    "Gunship arrived  |  Listen to Lieutenant Tom's briefing"
                 } else if objective["honeybee_spotted"] == true {
                     "Unidentified vessel located  |  Stand by for Lieutenant Tom"
                 } else {
