@@ -168,6 +168,10 @@ enum ScriptedOrderConfig {
     MoveToRandom { #[serde(default)] range: f32 },
     Aggressive { enemy_squad_item_id: i64 },
     AggressiveNearest,
+    /// Live source targeting and defensive commands, with the same enemy
+    /// lifetime discovery used by existing nearest-squad AI tactics.
+    TargetNearestEnemy,
+    RetreatNearest,
     BombingNearest,
     ChargeNearest,
     CircleNearest,
@@ -193,6 +197,7 @@ enum ScriptedOrderConfig {
     Heal { beehive_ids: Vec<i64> },
     HealAvailable,
     FullRetreat { warp_gate_id: i64 },
+    FullRetreatNearest,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -835,6 +840,10 @@ fn make_setup(
                         },
                     ScriptedOrderConfig::AggressiveNearest =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::AggressiveNearest,
+                    ScriptedOrderConfig::TargetNearestEnemy =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::TargetNearestEnemy,
+                    ScriptedOrderConfig::RetreatNearest =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::RetreatNearest,
                     ScriptedOrderConfig::BombingNearest =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::BombingNearest,
                     ScriptedOrderConfig::ChargeNearest =>
@@ -920,6 +929,8 @@ fn make_setup(
                         bees_host::policy_only_metadata::NativeScriptedOrder::HealAvailable,
                     ScriptedOrderConfig::FullRetreat { warp_gate_id } =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::FullRetreat { warp_gate_id },
+                    ScriptedOrderConfig::FullRetreatNearest =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::FullRetreatNearest,
                 }).collect(),
             },
         ).collect(),
