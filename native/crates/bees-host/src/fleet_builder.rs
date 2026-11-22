@@ -33,7 +33,7 @@ enum Terrain {
 }
 
 #[derive(Clone, Copy)]
-enum Objective { Elimination, Survival, Extraction, Escort, Demolition }
+enum Objective { Elimination, Survival, Extraction, Escort, Demolition, TargetFlagship }
 
 /// Native Level waves are source-authored physical squads. This option
 /// changes only when squads enter the same live combat/roster pipeline,
@@ -284,6 +284,7 @@ impl Objective {
             Self::Extraction => "Escape to Extraction",
             Self::Escort => "Deliver Command Convoy",
             Self::Demolition => "Destroy Enemy Objective",
+            Self::TargetFlagship => "Hunt Enemy Flagship",
         }
     }
 }
@@ -870,6 +871,7 @@ fn choose_objective() -> Result<Option<Objective>, Box<dyn Error>> {
         ("Reach the enemy-side extraction zone", "  [Tactical escape]"),
         ("Escort your command ship to extraction", "  [Defend the convoy]"),
         ("Destroy a fortified MapObject", "  [90-second assault]"),
+        ("Destroy the enemy flagship", "  [Named physical commander target]"),
     ];
     let rows = choices.iter().map(|(title, status)| BattleMenuRow {
         title, status, unlocked: true,
@@ -880,6 +882,7 @@ fn choose_objective() -> Result<Option<Objective>, Box<dyn Error>> {
         2 => Objective::Extraction,
         3 => Objective::Escort,
         4 => Objective::Demolition,
+        5 => Objective::TargetFlagship,
         _ => Objective::Elimination,
     }))
 }
@@ -2135,6 +2138,16 @@ pub(super) fn archive(
                 "seconds": 90.0,
             });
         }
+    } else if matches!(selected.objective, Objective::TargetFlagship) {
+        let attacker = selected.objective_side.ok_or_else(||
+            invalid("flagship hunt requires an authentic attacking faction"))?;
+        // Both command ships are real, initially deployed source hulls.
+        // TargetShipObjective shares the exact combat death and reserved
+        // reinforcement lifecycle of all other game terminal modes.
+        run["levels"][0]["target_ship"] = json!({
+            "attacking_side": attacker,
+            "target_ship_id": if attacker == 1 { 12 } else { 11 },
+        });
     } else if matches!(selected.objective, Objective::Demolition) {
         let attacker = selected.objective_side.ok_or_else(||
             invalid("demolition requires a real attacking faction"))?;
@@ -2247,6 +2260,7 @@ pub(super) fn archive(
             Objective::Extraction => "extraction",
             Objective::Escort => "escort",
             Objective::Demolition => "demolition",
+            Objective::TargetFlagship => "flagship-hunt",
         },
         selected.objective_side.unwrap_or(0),
         selected.ore_count, u8::from(selected.fog_of_war),
@@ -2449,6 +2463,17 @@ pub(super) fn archive(
                     ]}),
                     json!({"kind": "bombard_map_object", "target_map_object_id": 91}),
                 ]
+            } else if mission_owner &&
+                matches!(selected.objective, Objective::TargetFlagship) &&
+                !bomber && !charger && scout.is_none()
+            {
+                // The original TargetEnemy command follows the physical
+                // commander squad's authenticated lifetime. Eliminating
+                // bystanders never completes this specific objective.
+                vec![json!({
+                    "kind": "target_enemy",
+                    "enemy_squad_item_id": squad_ids[1 - side][0],
+                })]
             } else if miner {
                 // A genuine source Carpenter Bee uses the existing
                 // authored mining order; on depletion it selects the next
