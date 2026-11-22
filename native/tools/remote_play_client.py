@@ -50,6 +50,7 @@ HELP = """Commands:
   objective            Show the authored mission and reinforcement status
   ready                Acknowledge the current hosted campaign briefing
   surrender confirm    Concede the battle (irreversible after host commits)
+  activate-retreat     Open your side's authored retreat exit
   rejoin               Reconnect to the SAME recovered native host session
   ships                List currently visible ships and their positions
   squads               List friendly and visible target squads
@@ -436,8 +437,8 @@ class RemoteConsole:
         # Only Begin carries selected squad lifetimes; the native host
         # authorizes the gesture and owns the live weapon state.
         is_held = action[0] == "held_fire"
-        is_surrender = action[0] == "surrender"
-        if not owners and not is_surrender and (
+        is_side_action = action[0] in ("surrender", "activate_retreat")
+        if not owners and not is_side_action and (
                 not is_held or "Begin" in action[1]["action"]):
             raise ValueError("select at least one live friendly squad first")
         packet = {
@@ -446,7 +447,7 @@ class RemoteConsole:
                 "kind": action[0], "input": {
                     "world_id": state["world_id"],
                     "episode_revision": state["episode_revision"],
-                    **({} if is_held or is_surrender else {"squads": owners}),
+                    **({} if is_held or is_side_action else {"squads": owners}),
                     **action[1],
                 },
             },
@@ -600,9 +601,22 @@ class RemoteConsole:
             objective = self.objective_summary(state)
             if objective is not None:
                 print(f"Objective: {objective}")
+            if state.get("can_activate_retreat") is True:
+                print("Retreat exit available: enter 'activate-retreat' to open it")
             receipt = self.campaign_receipt_snapshot()
             if receipt is not None:
                 print(self.campaign_receipt_summary(receipt))
+            return
+        if cmd == "activate-retreat":
+            if argv:
+                raise ValueError("activate-retreat takes no arguments")
+            if (state.get("can_activate_retreat") is not True or
+                    state.get("terminal_outcome") is not None or
+                    state.get("briefing_paused") is True or
+                    self.battle_receipt_snapshot() is not None):
+                raise ValueError("authoritative retreat activation is currently unavailable")
+            self.send(("activate_retreat", {"side": state["viewer_side"]}), state, [])
+            print("Retreat exit activation submitted to the native host")
             return
         if cmd == "surrender":
             if argv != ["confirm"]:
