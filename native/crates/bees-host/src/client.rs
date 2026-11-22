@@ -14,7 +14,8 @@ use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerHeldFire, N
     NativePlayerSquadFire, NativePlayerSquadCeaseFire,
     NativePlayerSquadSpecial, NativePlayerShipSpecialKind,
     NativePlayerSquadMatchSpeed, NativePlayerSquadShooting,
-    NativePlayerSquadLockOn, NativePlayerSquadChase};
+    NativePlayerSquadLockOn, NativePlayerSquadChase,
+    NativePlayerSquadSelection};
 use crate::player_trace::NativePlayerInput;
 use bees_sim::geometry::Vec2;
 
@@ -123,6 +124,7 @@ pub struct NativeClient {
     bounds: Aabb,
     selected_world: usize,
     selection_owner: Option<(WorldId, u64)>,
+    submitted_selection: Vec<SquadLifetime>,
     hotseat: Option<NativeHotseat>,
     paused: bool,
     show_controls_help: bool,
@@ -239,7 +241,8 @@ impl NativeClient {
         let now = Instant::now();
         Ok(Self { window, renderer, audio: NativeGameAudio::new(),
             music_locations: Vec::new(), bounds,
-            selected_world: 0, selection_owner: None, hotseat: None,
+            selected_world: 0, selection_owner: None,
+            submitted_selection: Vec::new(), hotseat: None,
             paused: false, show_controls_help: false,
             codex_open: false,
             codex_selected: 18,
@@ -534,6 +537,7 @@ impl NativeClient {
             // not inherit the previous view's discovered enemy classes.
             self.codex_open = false;
             self.show_controls_help = false;
+            self.submitted_selection.clear();
             self.dialogue_sequence = None;
             self.dialogue_pause_started = None;
             self.held_fire_target = None;
@@ -1633,6 +1637,21 @@ impl NativeClient {
                 .or_else(|| support_command.map(NativePlayerInput::Support))
                 .or_else(|| player_move.map(NativePlayerInput::Move));
             if let Some(action) = action { return Ok(NativeClientAction::Input { action, step: false }); }
+            let selected = self.renderer.selection.squads();
+            if selected != self.submitted_selection {
+                self.submitted_selection.clear();
+                self.submitted_selection.extend_from_slice(selected);
+                // Only genuine source-authorized selection changes are
+                // replayable; pointer movement and hovering remain UI-only.
+                return Ok(NativeClientAction::Input {
+                    action: NativePlayerInput::Select(NativePlayerSquadSelection {
+                        world_id: view.world_id,
+                        episode_revision: view.episode_revision,
+                        squads: self.submitted_selection.clone(),
+                    }),
+                    step: false,
+                });
+            }
         }
         let after_frame = Instant::now();
         // Render and fixed-tick simulation have independent cadences. Catch
