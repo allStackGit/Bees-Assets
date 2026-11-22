@@ -26,6 +26,8 @@ def read_json(file: Path) -> dict:
 def publish(
     run_path: Path, round_directory: Path, save_root: Path,
     game_id: str, learner_slot: int, source_sha256: str,
+    selected_manifest: Path | None = None,
+    selected_manifest_sha256: str | None = None,
 ) -> dict:
     run_path = run_path.resolve(strict=True)
     round_directory = round_directory.resolve(strict=True)
@@ -72,14 +74,37 @@ def publish(
     elif result.get("source_run_config_sha256") != source_sha256:
         raise ValueError("Hub playable scene differs from verified physical training source")
     checkpoint = round_directory / "learner/checkpoint.pt"
-    manifest = round_directory / "learner/manifest.json"
+    base_manifest = round_directory / "learner/manifest.json"
     checkpoint_sha = file_sha256(checkpoint)
-    manifest_sha = file_sha256(manifest)
+    base_manifest_sha = file_sha256(base_manifest)
     if (checkpoint_sha != result.get("next_checkpoint_sha256") or
-            manifest_sha != result.get("next_manifest_sha256") or
+            base_manifest_sha != result.get("next_manifest_sha256") or
             checkpoint_sha != metrics.get("next_checkpoint_sha256") or
-            manifest_sha != metrics.get("next_manifest_sha256")):
+            base_manifest_sha != metrics.get("next_manifest_sha256")):
         raise ValueError("Hub model or checkpoint differs from the completed learner receipt")
+    # The optional alternate is a Hub-verified historical collection
+    # manifest, not an independently selected model supplied by a player.
+    if selected_manifest is None:
+        if selected_manifest_sha256 is not None:
+            raise ValueError("selected manifest SHA supplied without a model")
+        manifest = base_manifest
+        manifest_sha = base_manifest_sha
+    else:
+        manifest = selected_manifest.resolve(strict=True)
+        if (selected_manifest_sha256 is None or
+                len(selected_manifest_sha256) != 64 or
+                any(char not in "0123456789abcdef" for char in selected_manifest_sha256) or
+                manifest != round_directory / "learner/collection-manifest.json"):
+            raise ValueError("native Hub release must select its own verified collection manifest")
+        manifest_sha = file_sha256(manifest)
+        if manifest_sha != selected_manifest_sha256:
+            raise ValueError("selected native collection manifest changed during publication")
+        release = read_json(round_directory / "continual-release.json")
+        selection = release.get("collection_selection") or {}
+        if (release.get("kind") != "native_continual_generation_complete" or
+                selection.get("effective_manifest_sha256") != manifest_sha or
+                release.get("checkpoint_sha256") != checkpoint_sha):
+            raise ValueError("selected playable model is not the released historical collection")
     check_learner(manifest, checkpoint, learner_slot)
 
     # The existing session publisher binds the same physical source Levels,
@@ -139,6 +164,8 @@ def main() -> None:
     parser.add_argument("game_id")
     parser.add_argument("learner_slot", type=int)
     parser.add_argument("source_run_sha256")
+    parser.add_argument("--selected-manifest", type=Path)
+    parser.add_argument("--selected-manifest-sha256")
     args = parser.parse_args()
     if not 0 <= args.learner_slot < (1 << 32):
         parser.error("learner slot must fit the native uint32 policy contract")
@@ -150,6 +177,7 @@ def main() -> None:
     result = publish(
         args.source_run, args.completed_round, args.player_save_root,
         args.game_id, args.learner_slot, args.source_run_sha256,
+        args.selected_manifest, args.selected_manifest_sha256,
     )
     print(json.dumps(result, sort_keys=True), flush=True)
 
