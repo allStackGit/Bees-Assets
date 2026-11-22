@@ -8855,6 +8855,9 @@ fn run_battle(
             "bee_side": source_sides[0][0],
             "human_side": source_sides[0][1],
         })),
+        // Real startup work, measured independently of simulation steps
+        // and captured in the durable run summary for Experiment Hub.
+        "native_stage_asset_setup": asset_load,
         "source_scene_template_cache": {
             "distinct_source_documents": unique_source_documents,
             "distinct_parsed_layouts": unique_source_templates,
