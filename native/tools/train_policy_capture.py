@@ -1686,6 +1686,15 @@ def main():
         update_wall_seconds = time.perf_counter() - update_started
         update_cpu_seconds = time.process_time() - update_cpu_started
     resource_metrics = resources.summary()
+    # Report actual accelerated optimizer dispatch, not physical GPU
+    # utilization or the mere availability of PyTorch's fast paths.
+    from bees_mlagents_ppo_compat import poca_learner_optimization_options
+    adam = getattr(trainer.optimizer, "optimizer", None)
+    live_groups = getattr(adam, "param_groups", ())
+    fused_adam_active = bool(
+        isinstance(adam, torch.optim.Adam) and live_groups and
+        all(group.get("fused") is True for group in live_groups))
+    cuda_graph_requested = bool(poca_learner_optimization_options().cuda_graphs)
     resource_metrics["update_process_cpu_core_equivalents"] = (
         update_cpu_seconds / update_wall_seconds if update_wall_seconds > 0 else None
     )
@@ -1720,6 +1729,8 @@ def main():
                 trainer.optimizer, "_bees_distributed_sync_submission_seconds", 0.0,
             ),
             "update_wall_seconds": update_wall_seconds,
+            "fused_adam_active": int(fused_adam_active),
+            "cuda_graph_requested": int(cuda_graph_requested),
             "update_resource_measurements": resource_metrics,
             **cuda_metrics,
         }
@@ -1922,6 +1933,11 @@ def main():
            if gpu_worker_metrics is not None else {}),
         "optimizer_torch_intraop_threads": torch.get_num_threads(),
         "optimizer_torch_interop_threads": torch.get_num_interop_threads(),
+        "optimizer_fused_adam_active": int(fused_adam_active),
+        "optimizer_fused_adam_rank_count": (
+            sum(row["fused_adam_active"] for row in gpu_worker_metrics)
+            if gpu_worker_metrics is not None else int(fused_adam_active)),
+        "optimizer_cuda_graph_requested": int(cuda_graph_requested),
         **cuda_metrics,
         "optimizer_update_resource_measurements": resource_metrics,
         "optimizer_input_steps": steps,
