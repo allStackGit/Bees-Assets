@@ -733,12 +733,13 @@ impl CampaignProgress<'_> {
                 } else {
                     format!(" {}", self.squad_label(squad))
                 }).unwrap_or_default();
-            let original_type = if purchase.is_none() {
-                scene.map_or(String::new(), |(_, _, kind)| format!(" Type {kind}"))
-            } else { String::new() };
+            let type_label = purchase.map(|(_, ship)| ship.ship_type)
+                .or_else(|| self.fleet.get(&id).and_then(|row| row.ship_type))
+                .or_else(|| scene.map(|(_, _, kind)| kind))
+                .map_or(String::new(), |kind| format!(" Type {kind}"));
             if let Some(ship) = self.fleet.get(&id) {
                 return Some(format!(
-                    "#{id}{name} S{}{original_type} W{}/{} M{} Hit{} Taken{} Kill{}{}{}",
+                    "#{id}{name} S{}{type_label} W{}/{} M{} Hit{} Taken{} Kill{}{}{}",
                     ship.side, ship.battles_won, ship.battles_fought,
                     ship.minerals_mined, ship.combat.enemy_tsv_damage_done,
                     ship.combat.tsv_damage_received, ship.combat.attributed_enemy_kills,
@@ -753,12 +754,12 @@ impl CampaignProgress<'_> {
             }
             if let Some(owner) = authored {
                 return Some(format!(
-                    "#{id}{name} S{}{original_type} Original - no completed battles{assignment}",
+                    "#{id}{name} S{}{type_label} Original - no completed battles{assignment}",
                     owner.side,
                 ));
             }
             scene.map(|(side, _, _)| format!(
-                "#{id}{name} S{side}{original_type} Original - no completed battles{assignment}",
+                "#{id}{name} S{side}{type_label} Original - no completed battles{assignment}",
             ))
         }).collect()
     }
@@ -1916,7 +1917,7 @@ impl BattleCatalog {
         ids.sort_unstable();
         let fleet = ids.into_iter().map(|id| {
             let record = &progress.fleet[&id];
-            json!({
+            let mut row = json!({
                 "fleet_ship_id": id,
                 "side": record.side,
                 "battles_fought": record.battles_fought,
@@ -1942,7 +1943,13 @@ impl BattleCatalog {
                     .then_some(record.combat.scout_beacons_deployed),
                 "queen_minions_spawned": record.special_history_complete
                     .then_some(record.combat.queen_minions_spawned),
-            })
+            });
+            // Older receipts have no observed class: absence means unknown,
+            // not a guessed source archetype or a concrete class zero.
+            if let Some(kind) = record.ship_type {
+                row["ship_type"] = json!(kind);
+            }
+            row
         }).collect::<Vec<_>>();
         // Current player fleet projection, including reserve hulls which have
         // never entered a completed battle. The combat ledger above retains
@@ -1980,7 +1987,8 @@ impl BattleCatalog {
                 "side": side,
                 "name": progress.fleet_ship_name(id),
                 "acquisition": acquisition,
-                "ship_type": purchased.map(|(_, ship)| ship.ship_type),
+                "ship_type": purchased.map(|(_, ship)| ship.ship_type)
+                    .or_else(|| history.and_then(|record| record.ship_type)),
                 // null means the original assignment is not in the durable
                 // ledger; zero means an explicitly recorded reserve ship.
                 "saved_squad_id": squad,
