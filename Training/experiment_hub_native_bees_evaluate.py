@@ -325,6 +325,29 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
                     "unit": "scalar",
                 },
             })
+    execution = receipt.get("policy_execution")
+    if device == "cuda:0":
+        # A requested accelerator is not measurement evidence. The final
+        # resident worker must report completed GPU work and prove that the
+        # actual learner slot, not only an opponent, ran on that device.
+        learner_execution = (execution.get("model_execution", {})
+                             .get(str(suite["learner_slot"]))
+                             if isinstance(execution, dict) else None)
+        if (not isinstance(learner_execution, dict) or
+                learner_execution.get("device") != "cuda:0" or
+                type(execution.get("gpu_forward_calls")) is not int or
+                execution["gpu_forward_calls"] < 1 or
+                type(execution.get("gpu_forward_rows")) is not int or
+                execution["gpu_forward_rows"] < 1 or
+                latency is None or
+                str(suite["learner_slot"]) not in latency["by_slot"]):
+            raise ValueError("Native GPU evaluation has no verified learner GPU forwards.")
+        metrics["gpu_forward_calls"] = {
+            "value": execution["gpu_forward_calls"], "unit": "count",
+        }
+        metrics["gpu_forward_rows"] = {
+            "value": execution["gpu_forward_rows"], "unit": "count",
+        }
     print(json.dumps({
         "kind": "native_bees_independent_evaluation_observation",
         "candidate_checkpoint_sha256": checkpoint_digest,
