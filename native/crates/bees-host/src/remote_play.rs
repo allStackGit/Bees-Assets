@@ -2314,6 +2314,8 @@ fn current_state(
                 "kind": "survival",
                 "titania_defense": view.campaign_objective == Some(
                     bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaBeenoculars),
+                "pluto_evacuation": view.campaign_objective == Some(
+                    bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoEvacuation),
                 "protected_ship_id": objective.protected_ship_id,
                 "defending_side": objective.defending_side,
                 "elapsed_seconds": objective.elapsed_seconds,
@@ -2424,11 +2426,24 @@ fn current_state(
                 "kind": "pluto_pushback",
                 "player_side": view.campaign_dialogue_side,
             }))
-        } else if view.campaign_objective == Some(
-            bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusOffensive,
+        } else if matches!(view.campaign_objective,
+            Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::NeptuneSeizeMeans |
+                 bees_gameplay::campaign_dialogue::CampaignObjectiveKind::NeptunePressingForward |
+                 bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusOffensive)
         ) {
+            // Reuse the established elimination objective on remote clients.
+            // Only the public authored mission identity varies. No private
+            // campaign dialogue, undiscovered enemy or fleet data is sent.
+            let mission = match view.campaign_objective {
+                Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::NeptuneSeizeMeans) =>
+                    "neptune_seize_means",
+                Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::NeptunePressingForward) =>
+                    "neptune_pressing_forward",
+                _ => "uranus_offensive",
+            };
             Some(json!({
                 "kind": "campaign_elimination",
+                "mission": mission,
                 "attacking_side": view.campaign_dialogue_side,
             }))
         } else if let Some(target) = view.target_ship {
