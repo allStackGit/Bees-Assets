@@ -248,7 +248,8 @@ function verifiedSuiteDefinition(value) {
             ?!SHA256.test(String(definition.runtime_sha256||''))||
              !SHA256.test(String(value.runtime_sha256||''))||
              definition.runtime_sha256===value.runtime_sha256
-            :(definition.runtime_sha256??null)!==(value.runtime_sha256??null)))
+            :(definition.runtime_sha256!=null&&
+              definition.runtime_sha256!==(value.runtime_sha256??null))))
         throw Error('Independent evaluation frozen suite or runtime identity differs.');
     return canonical;
 }
