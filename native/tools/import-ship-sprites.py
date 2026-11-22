@@ -347,7 +347,7 @@ def pack_queen_explosion():
         text = (ROOT / "Sprites/Ships/Animations" / clip).read_text(
             encoding="utf-8",
         )
-        match = re.search(r"^  m_SampleRate: (\\d+)(?:\\.0+)?$", text, re.MULTILINE)
+        match = re.search(r"^  m_SampleRate: (\d+)(?:\.0+)?$", text, re.MULTILINE)
         if match is None or int(match[1]) != 10 or len(frames) != 40:
             raise ValueError(f"Queen explosion must retain 40 frames at 10FPS: {clip}")
         data.extend(struct.pack("<BHHH", layer, ppu, 10, len(frames)))
