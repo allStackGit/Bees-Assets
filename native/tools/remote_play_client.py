@@ -361,6 +361,13 @@ class RemoteConsole:
                            f" to the destination (side {objective['escorting_side']})")
         elif kind == "extraction":
             description = f"Extract ships from side {objective['exiting_side']}"
+        elif kind == "target_ship":
+            attacking_side = objective["attacking_side"]
+            target = objective["target_ship_id"]
+            if state["viewer_side"] == attacking_side:
+                description = f"Destroy named enemy flagship #{target}"
+            else:
+                description = f"Protect named target ship #{target} from side {attacking_side}"
         else:
             return None
         remaining = objective.get("seconds_remaining")

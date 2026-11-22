@@ -823,6 +823,8 @@ class RemoteBattleWindow:
                         if objective.get("kind") == "survival" else
                         objective.get("escorted_ship_id")
                         if objective.get("kind") == "escort" else None)
+        target_ship_id = (objective.get("target_ship_id")
+                          if objective.get("kind") == "target_ship" else None)
         for ship in state["ships"]:
             x, y = self.to_screen(ship["x"], ship["y"])
             # Rotation comes from the authoritative native ship motion.
@@ -842,6 +844,13 @@ class RemoteBattleWindow:
             if ship["id"] == protected_id:
                 self.canvas.create_oval(x-19, y-19, x+19, y+19,
                                         outline=MINERAL, dash=(4, 3), width=2)
+            if ship["id"] == target_ship_id:
+                # Draw the same actual, already fog-visible physical hull
+                # selected by the Level's named-ship terminal. The target
+                # position never comes from the mission's public ID.
+                self.canvas.create_oval(x-20, y-20, x+20, y+20,
+                                        outline=ENEMY if not ship["friendly"]
+                                        else FRIENDLY, dash=(5, 3), width=2)
             health = max(0.0, min(1.0, ship["health"] / max(1, ship["max_health"])))
             if ship["id"] in selected_ship_ids and ship.get("destination"):
                 tx, ty = self.to_screen(*ship["destination"])
