@@ -1493,8 +1493,12 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     # route, not an arbitrary first-mission shop default, owns the gate.
     uranus_finales = [index for index, story in mission_stories.items()
                       if story == "uranus_new_threat"]
+    pluto_finales = [index for index, story in mission_stories.items()
+                     if story == "pluto_bluer_pastures"]
     if len(uranus_finales) > 1:
         raise ValueError("the original Uranus III finale may occur only once per campaign")
+    if len(pluto_finales) > 1:
+        raise ValueError("the original Pluto IV finale may occur only once per campaign")
     uranus_unlock_types = {0, 5, 10, 11, 20}
     neptune_factory_missions = [index for index, story in mission_stories.items()
                                 if story == "neptune_seize_means"]
@@ -1542,17 +1546,25 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             "kind": "campaign", "config": "campaign.json",
         }],
     }
-    # No game mode is invented by publication: every post-campaign entry
-    # references an independently authored native game with authentic
-    # scene, original FleetShip identities and (if learned) a fully pinned
-    # evaluation-selected opponent model. The exact original Uranus III
-    # finale owns the playable unlock receipt.
+    # Publish only independently authored playable scenes. Original Pluto IV
+    # unlocks the human Training Room; Uranus III unlocks the later modes.
+    # Both use the existing library gate and committed campaign progress.
     postcampaign_sources = []
-    if args.postcampaign_game and not uranus_finales:
-        raise ValueError(
-            "post-campaign games require the authored Uranus III finale"
-        )
-    for game_id, side, run_source in args.postcampaign_game:
+    unlockable_games = [
+        (game_id, side, source, uranus_finales, "Uranus III")
+        for game_id, side, source in args.postcampaign_game
+    ] + [
+        (game_id, side, source, pluto_finales, "Pluto IV")
+        for game_id, side, source in args.training_room_game
+    ]
+    for game_id, side, run_source, unlocks, finale_name in unlockable_games:
+        if not unlocks:
+            raise ValueError(
+                f"{game_id} requires the authored {finale_name} finale"
+            )
+        if finale_name == "Pluto IV" and side != args.player_side:
+            raise ValueError("Training Room requires the native campaign player side")
+        unlock_id = f"mission-{unlocks[0]:03d}"
         source_path = run_source.resolve(strict=True)
         game_scene, game_run, provenance = input_mission(
             source_path, side, require_career_fleet=False,
@@ -1583,18 +1595,19 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         outputs.extend(((scene_file, game_scene), (run_file, game_run)))
         library["games"].append({
             "id": game_id,
-            "title": ("Fish Tank: " if side == 0 else "") +
+            "title": ("Fish Tank: " if side == 0 else
+                      "Training Room: " if finale_name == "Pluto IV" else "") +
                 game_scene["level_name"],
             "kind": "battle", "config": run_file,
             "unlock_after": {
                 "campaign_id": slug[:40],
-                "mission_id": f"mission-{uranus_finales[0]:03d}",
+                "mission_id": unlock_id,
             },
         })
         postcampaign_sources.append({
             "game_id": game_id,
             "player_side": side,
-            "unlocked_by": f"mission-{uranus_finales[0]:03d}",
+            "unlocked_by": unlock_id,
             **provenance,
         })
     receipt = {
