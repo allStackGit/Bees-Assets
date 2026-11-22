@@ -192,6 +192,9 @@ pub struct NativeClient {
     dialogue_pause_started: Option<(u32, usize, Instant)>,
     dialogue_visible: bool,
     held_fire_target: Option<Vec2>,
+    /// User-pinned range display; the source combined gesture adds only a
+    /// transient overlay and cannot alter this independent preference.
+    range_overlay_pinned: bool,
     selection_drag: Option<(Vec2, Vec2)>,
     /// UI-only minimap drag. Never emits a gameplay/world input.
     minimap_dragging: bool,
@@ -305,6 +308,7 @@ impl NativeClient {
             dialogue_pause_started: None,
             dialogue_visible: false,
             held_fire_target: None,
+            range_overlay_pinned: false,
             selection_drag: None, minimap_dragging: false,
             hud_press: None, squad_tab_press: None, shooting_press: None,
             shooting_focus: 1, support_mode: None,
@@ -1104,8 +1108,12 @@ impl NativeClient {
             }
         }
         if self.controls.pressed(&self.window,"Show Ranges",KeyRepeat::No) {
-            self.renderer.show_weapon_ranges = !self.renderer.show_weapon_ranges;
+            self.range_overlay_pinned = !self.range_overlay_pinned;
         }
+        self.renderer.show_weapon_ranges = self.range_overlay_pinned ||
+            (self.window.is_active() && !self.show_controls_help &&
+             !self.playback && !briefing &&
+             self.controls.down(&self.window,"Show Ranges + Manual Fire"));
         if self.controls.pressed(&self.window,"Mini Map",KeyRepeat::No) {
             self.renderer.show_minimap = !self.renderer.show_minimap;
             if !self.renderer.show_minimap { self.minimap_dragging = false; }
@@ -1448,14 +1456,19 @@ impl NativeClient {
         let held_fire = if accepts_orders {
             let cursor = mouse.map(|(x, y)| self.renderer.camera.screen_to_world(x, y, width, height));
             if let Some(previous) = self.held_fire_target {
-                if !pointer_active || !self.controls.down(&self.window,"Manual Fire") || stop_fire {
+                if !pointer_active ||
+                    !(self.controls.down(&self.window,"Manual Fire") ||
+                      self.controls.down(&self.window,"Show Ranges + Manual Fire")) ||
+                    stop_fire {
                     self.held_fire_target = None;
                     Some(NativeHeldFireAction::End)
                 } else if let Some(target) = cursor.filter(|point| *point != previous) {
                     self.held_fire_target = Some(target);
                     Some(NativeHeldFireAction::Aim { target })
                 } else { None }
-            } else if pointer_active && self.controls.pressed(&self.window,"Manual Fire",KeyRepeat::No) &&
+            } else if pointer_active &&
+                (self.controls.pressed(&self.window,"Manual Fire",KeyRepeat::No) ||
+                 self.controls.pressed(&self.window,"Show Ranges + Manual Fire",KeyRepeat::No)) &&
                 !self.renderer.selection.squads().is_empty()
             {
                 cursor.map(|target| {

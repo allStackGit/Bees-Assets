@@ -34,6 +34,9 @@ const DEFAULTS: &[(&str, Key)] = &[
     ("Cease Fire", Key::V),
     ("Stop Fire", Key::X),
     ("Match Speed", Key::Y),
+    // Source combined tool: holding one key enables the existing range
+    // overlay and the same manual-fire gesture, never a new weapon command.
+    ("Show Ranges + Manual Fire", Key::W),
 ];
 // Unity UserSettingsData.DefaultHotKeys supplies the 16 source shooting
 // priorities directly. Their IDs are the FIRST 16 entries of the existing
@@ -129,6 +132,8 @@ impl NativeControls {
                 // default happens to occupy that key.
                 let has_tactical=stored.bindings.keys().any(|name|
                     name.starts_with("Tactic: "));
+                let has_combined=stored.bindings.contains_key(
+                    "Show Ranges + Manual Fire");
                 for (action, letter) in stored.bindings {
                     let index=DEFAULTS.iter().chain(SHIFTED.iter())
                         .chain(TACTICAL_SHIFTED.iter())
@@ -143,6 +148,17 @@ impl NativeControls {
                     else { return Err(io::Error::new(io::ErrorKind::InvalidData,
                         format!("invalid native hotkey for {action}: {letter}"))) };
                     keys[index]=key;
+                }
+                if !has_combined {
+                    // Existing customized layouts may have reassigned W.
+                    // Extend the old layout without losing any user key.
+                    let combined=DEFAULTS.len()-1;
+                    if keys[..combined].contains(&keys[combined]) {
+                        keys[combined]=LETTERS.iter().copied()
+                            .find(|key| !keys[..combined].contains(key))
+                            .ok_or_else(||io::Error::new(io::ErrorKind::InvalidData,
+                                "no free combined range/fire shortcut"))?;
+                    }
                 }
                 if !has_tactical {
                     // Legacy files have only the original non-shifted
