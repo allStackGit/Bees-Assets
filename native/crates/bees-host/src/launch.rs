@@ -160,6 +160,7 @@ enum ScriptedActivationConfig {
     OnCampaignCue { cue: bees_host::policy_only_metadata::NativeMissionCue },
     OnShipDestroyed { ship_id: i64 },
     OnMapObjectDestroyed { object_id: i64 },
+    OnMiningAsteroidDepleted { asteroid_id: i64 },
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -215,6 +216,8 @@ struct ReinforcementConfig {
     on_ship_destroyed: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     on_map_object_destroyed: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    on_mining_asteroid_depleted: Option<i64>,
     squad_item_ids: Vec<i64>,
     /// Explicit physical starting center (may be outside scene bounds).
     /// Omitted for older captured waves whose ships are already positioned.
@@ -792,17 +795,20 @@ fn make_setup(
             let activation = match (
                 wave.after_seconds, wave.on_campaign_cue,
                 wave.on_ship_destroyed, wave.on_map_object_destroyed,
+                wave.on_mining_asteroid_depleted,
             ) {
-                (Some(seconds), None, None, None) =>
+                (Some(seconds), None, None, None, None) =>
                     bees_host::NativeReinforcementActivation::AfterSeconds(seconds),
-                (None, Some(cue), None, None) =>
+                (None, Some(cue), None, None, None) =>
                     bees_host::NativeReinforcementActivation::OnCampaignCue(cue),
-                (None, None, Some(ship_id), None) =>
+                (None, None, Some(ship_id), None, None) =>
                     bees_host::NativeReinforcementActivation::OnShipDestroyed(ship_id),
-                (None, None, None, Some(object_id)) =>
+                (None, None, None, Some(object_id), None) =>
                     bees_host::NativeReinforcementActivation::OnMapObjectDestroyed(object_id),
+                (None, None, None, None, Some(asteroid_id)) =>
+                    bees_host::NativeReinforcementActivation::OnMiningAsteroidDepleted(asteroid_id),
                 _ => return Err(invalid(
-                    "reinforcement needs exactly one of after_seconds, on_campaign_cue, on_ship_destroyed or on_map_object_destroyed",
+                    "reinforcement needs exactly one of after_seconds, on_campaign_cue, on_ship_destroyed, on_map_object_destroyed or on_mining_asteroid_depleted",
                 )),
             };
             Ok(bees_host::NativeReinforcementPlan {
@@ -833,6 +839,8 @@ fn make_setup(
                         bees_host::policy_only_metadata::NativeScriptedActivation::OnShipDestroyed(ship_id),
                     ScriptedActivationConfig::OnMapObjectDestroyed { object_id } =>
                         bees_host::policy_only_metadata::NativeScriptedActivation::OnMapObjectDestroyed(object_id),
+                    ScriptedActivationConfig::OnMiningAsteroidDepleted { asteroid_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedActivation::OnMiningAsteroidDepleted(asteroid_id),
                 },
                 orders: queue.orders.iter().map(|order| match order.clone() {
                     ScriptedOrderConfig::MoveToPoint { destination } =>
