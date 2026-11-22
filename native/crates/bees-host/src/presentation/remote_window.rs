@@ -337,7 +337,7 @@ impl RemoteArtwork {
                 self.ships.insert(id);
                 stats.ship_sprite_draws += 1;
                 stats.carrier_deck_overlay_draws += u64::from(deck);
-                stats.barge_charge_effect_draws += u64::from(barge);
+                stats.barge_charge_effect_draws += barge as u64;
             }
         }
         self.raster.begin_death_scene(WorldId(episode.0), episode.1);
