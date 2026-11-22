@@ -2837,6 +2837,18 @@ fn archived_native_remote_receipts_from_root(
         {
             return Err(invalid("archived campaign receipt has no authorized player side").into());
         }
+        let scored_player_side = campaign.as_ref()
+            .and_then(|outcome| outcome["player_side"].as_i64())
+            .or_else(|| summary["battle_factions"]["human_side"].as_i64())
+            .and_then(|side| i32::try_from(side).ok())
+            .filter(|side| matches!(side, 1 | 2));
+        let player_match_counts = summary.get("player_match_counts").and_then(|row|
+            Some((
+                row.get("ships_lost")?.as_u64()?,
+                row.get("ships_returned")?.as_u64()?,
+                row.get("ships_destroyed_by_player")?.as_u64()?,
+            ))
+        );
         receipts.push(bees_host::remote_play::NativeArchivedBattleReceipt {
             session_id: id.to_owned(),
             authorized_sides: sides,
@@ -2845,6 +2857,9 @@ fn archived_native_remote_receipts_from_root(
             campaign_outcome: campaign,
             banked_minerals: summary["campaign_banked_minerals"].as_u64(),
             campaign_score_delta: summary["campaign_score_delta"].as_i64(),
+            scored_player_side,
+            player_score: summary["player_score"].as_i64(),
+            player_match_counts,
         });
     }
     Ok(receipts)
