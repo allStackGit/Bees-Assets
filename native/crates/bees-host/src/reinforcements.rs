@@ -723,6 +723,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         // ship or squad. The subsequent commit phase cannot fail on late
         // formation geometry or Carrier group membership.
         let mut planned_positions = HashMap::new();
+        let mut offscreen_waves = Vec::with_capacity(waves.len());
         let bounds = self.broadphase_bounds;
         let has_obstacles = self.metadata.player_formation_options().has_obstacles;
         for (wave_idx, ids) in planned_squad_order.iter().enumerate() {
@@ -739,6 +740,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                     !spawn.unity_equal(entry) &&
                     entry.x >= bounds.min.x && entry.x <= bounds.max.x &&
                     entry.y >= bounds.min.y && entry.y <= bounds.max.y);
+            offscreen_waves.push(offscreen);
             let positions = if offscreen {
                 plan_offscreen_reinforcement(
                     &squads, &source_ships, spawn, &self.metadata,
@@ -758,7 +760,10 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         if !planned_positions.is_empty() &&
             self.metadata.player_formation_options().has_obstacles
         {
-            let obstacles = crate::campaign_staging::authored_obstacle_bodies(&self.entities)?;
+            // Match the source Pathfinder's ObstaclesLayerMask. Decorative
+            // map borders and unrelated triggers do not block deployment.
+            let obstacles = crate::campaign_staging::authored_obstacle_bodies(&self.entities)?
+                .into_iter().filter(|body| body.layer == 19).collect::<Vec<_>>();
             for (&ship_id, &position) in &planned_positions {
                 let ship = source_ships[&ship_id];
                 let extents = self.metadata.ship_catalog.sprite_size(ship.ship_type)
@@ -775,6 +780,11 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 let radius = extents.x.max(extents.y) * 0.5 + 2.0;
                 let bounds = self.broadphase_bounds;
                 let (wave_idx, _) = expected_ships[&ship_id];
+                // Unity constructs an offscreen wave at the entry and then
+                // applies SetOffscreenStartingPosition, deliberately skipping
+                // Pathfinder placement at its outside starting center.
+                // Its authored starting positions may overlap outside terrain.
+                if offscreen_waves[wave_idx] { continue; }
                 let enters_map = waves[wave_idx].entry.is_some_and(|entry|
                     entry.x >= bounds.min.x && entry.x <= bounds.max.x &&
                     entry.y >= bounds.min.y && entry.y <= bounds.max.y);
