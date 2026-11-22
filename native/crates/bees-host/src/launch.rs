@@ -1994,16 +1994,52 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     if first == "status" {
-        let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        let catalog_path = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
         if args.next().is_none_or(|flag| flag != "--output-dir") {
             return Err(invalid(USAGE).into());
         }
         let output_root = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
-        let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(&fs::read(catalog)?)?;
+        let catalog_path = catalog_path.canonicalize()?;
+        let catalog: battle_catalog::BattleCatalog =
+            serde_json::from_slice(&fs::read(&catalog_path)?)?;
         catalog.validate()?;
         let progress = catalog.load_progress(&output_root)?;
-        println!("{}", catalog.status(&progress));
+        let root = catalog_path.parent()
+            .ok_or_else(|| invalid("missing campaign catalog directory"))?;
+        let (source_ships, source_squads, _, _) =
+            authored_menu_fleet(&catalog, root, &progress);
+        let mut status = catalog.status(&progress);
+        let known = status["fleet_roster"].as_array()
+            .expect("campaign roster projection must be an array")
+            .iter().filter_map(|row| row["fleet_ship_id"].as_i64())
+            .collect::<HashSet<_>>();
+        for (side, id, source_squad) in source_ships {
+            if known.contains(&id) { continue; }
+            status["fleet_roster"].as_array_mut()
+                .expect("campaign roster projection must be an array")
+                .push(json!({
+                    "fleet_ship_id": id,
+                    "side": side,
+                    "name": progress.fleet_ship_name(id),
+                    "acquisition": "authored",
+                    "ship_type": null,
+                    "saved_squad_id": source_squad,
+                    "in_reserve": false,
+                    "has_recorded_battle": false,
+                    "is_dead": false,
+                }));
+        }
+        status["fleet_roster"].as_array_mut()
+            .expect("campaign roster projection must be an array")
+            .sort_unstable_by_key(|row| row["fleet_ship_id"].as_i64());
+        status["available_source_squads"] = json!(source_squads.iter().map(|&(side, id)| json!({
+            "side": side,
+            "saved_squad_id": id,
+            "name": progress.squad_name(id),
+            "has_recorded_battle": progress.saved_squad_ids_for_side(side).contains(&id),
+        })).collect::<Vec<_>>());
+        println!("{status}");
         return Ok(());
     }
     if first == "squad-create" {
@@ -4292,7 +4328,6 @@ fn run_campaign_mission(
 /// configurations, so the picker must not advertise a route-only squad.
 /// Invalid legacy scenes still leave the ordinary battle menu accessible;
 /// they contribute no unverified fleet-edit destinations.
-#[cfg(feature = "client")]
 fn authored_menu_fleet(
     catalog: &battle_catalog::BattleCatalog, root: &Path,
     progress: &battle_catalog::CampaignProgress<'_>,
