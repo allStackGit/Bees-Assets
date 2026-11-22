@@ -4597,8 +4597,10 @@ fn parse_squad_formation_setting(value: &str) -> io::Result<NativeSavedSquadForm
     let width = parts.next();
     let rotation = parts.next();
     let mirror = parts.next();
-    if parts.next().is_some() {
-        return Err(invalid("formation syntax is kind[:width[:0|90|180|270[:mirror|normal]]]"));
+    let dx = parts.next();
+    let dy = parts.next();
+    if parts.next().is_some() || dx.is_some() != dy.is_some() {
+        return Err(invalid("formation syntax is kind[:width[:0|90|180|270[:mirror|normal[:dx:dy]]]]"));
     }
     let kind = match name {
         "source" => Kind::Authored,
@@ -4620,8 +4622,15 @@ fn parse_squad_formation_setting(value: &str) -> io::Result<NativeSavedSquadForm
         "normal" => false, "mirror" => true,
         _ => return Err(invalid("formation reflection must be mirror or normal")),
     };
+    let translation = match (dx, dy) {
+        (Some(dx), Some(dy)) => [
+            dx.parse::<i16>().map_err(|_| invalid("formation dx must be an integer"))?,
+            dy.parse::<i16>().map_err(|_| invalid("formation dy must be an integer"))?,
+        ],
+        _ => [0, 0],
+    };
     let formation = NativeSavedSquadFormation {
-        kind, max_width, clockwise_quarters, mirrored,
+        kind, max_width, clockwise_quarters, mirrored, translation,
     };
     if !formation.is_valid() {
         return Err(invalid("formation width must be 1..32"));

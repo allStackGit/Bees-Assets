@@ -98,9 +98,13 @@ fn navigate_rows(window: &Window, selected: &mut usize, first: &mut usize, count
         *selected = selected.saturating_sub(PAGE_SIZE);
     } else if window.is_key_pressed(Key::PageDown, KeyRepeat::Yes) {
         *selected = selected.saturating_add(PAGE_SIZE).min(count - 1);
-    } else if window.is_key_pressed(Key::Up, KeyRepeat::Yes) {
+    } else if !window.is_key_down(Key::LeftShift) &&
+        !window.is_key_down(Key::RightShift) &&
+        window.is_key_pressed(Key::Up, KeyRepeat::Yes) {
         *selected = selected.saturating_sub(1);
-    } else if window.is_key_pressed(Key::Down, KeyRepeat::Yes) {
+    } else if !window.is_key_down(Key::LeftShift) &&
+        !window.is_key_down(Key::RightShift) &&
+        window.is_key_pressed(Key::Down, KeyRepeat::Yes) {
         *selected = selected.saturating_add(1).min(count - 1);
     }
     if let Some((_, vertical)) = window.get_scroll_wheel() {
@@ -827,13 +831,35 @@ fn select_battle_inner(
                         tactic_color = row.color_setting;
                         tactic_formation = row.formation;
                     }
-                    if window.is_key_pressed(Key::Left, KeyRepeat::Yes) {
-                        tactic_strategy = if tactic_strategy == 1 { 40 }
-                            else { tactic_strategy - 1 };
-                    }
-                    if window.is_key_pressed(Key::Right, KeyRepeat::Yes) {
-                        tactic_strategy = if tactic_strategy == 40 { 1 }
-                            else { tactic_strategy + 1 };
+                    let shift = window.is_key_down(Key::LeftShift) ||
+                        window.is_key_down(Key::RightShift);
+                    if shift {
+                        // Original formation editing moves the full squad;
+                        // this changes no live battle or persistent account
+                        // until the existing Tactics transaction is saved.
+                        let step = 16;
+                        let dx = if window.is_key_pressed(Key::Left, KeyRepeat::Yes) {
+                            -step
+                        } else if window.is_key_pressed(Key::Right, KeyRepeat::Yes) {
+                            step
+                        } else { 0 };
+                        let dy = if window.is_key_pressed(Key::Up, KeyRepeat::Yes) {
+                            step
+                        } else if window.is_key_pressed(Key::Down, KeyRepeat::Yes) {
+                            -step
+                        } else { 0 };
+                        if dx != 0 || dy != 0 {
+                            tactic_formation = tactic_formation.move_deployment(dx, dy);
+                        }
+                    } else {
+                        if window.is_key_pressed(Key::Left, KeyRepeat::Yes) {
+                            tactic_strategy = if tactic_strategy == 1 { 40 }
+                                else { tactic_strategy - 1 };
+                        }
+                        if window.is_key_pressed(Key::Right, KeyRepeat::Yes) {
+                            tactic_strategy = if tactic_strategy == 40 { 1 }
+                                else { tactic_strategy + 1 };
+                        }
                     }
                     if window.is_key_pressed(Key::C, KeyRepeat::No) {
                         tactic_chase = !tactic_chase;
@@ -973,10 +999,11 @@ fn select_battle_inner(
                         NativeSquadColorSetting::Custom(rgb) =>
                             format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]),
                     };
-                    format!("Form {}:{} {}deg{} | {} | {} | Chase {} | Fire {} | Speed {} | RGB {}",
+                    format!("Form {}:{} {}deg{} @{},{} | {} | {} | Chase {} | Fire {} | Speed {} | RGB {}",
                         formation.label(), formation.max_width,
                         formation.clockwise_quarters * 90,
                         if formation.mirrored { " mirrored" } else { "" },
+                        formation.translation[0], formation.translation[1],
                         row.title, name, if chase { "on" } else { "off" },
                         if cease { "hold" } else { "auto" },
                         if match_speed { "matched" } else { "normal" }, color)
@@ -992,7 +1019,7 @@ fn select_battle_inner(
             }
             text::draw_centered(&mut pixels, WIDTH, 441,
                 if show_tactics {
-                    "Arrows strategy | C chase V fire M speed | R color H RGB | F form W width O rotate X mirror | Enter save"
+                    "Up/Down rows Left/Right strategy | Shift+arrows move | F form W width O rotate X mirror"
                 } else if show_delete {
                     "Up/Down select   Enter delete   D close   Esc back"
                 } else if show_shop {
@@ -1000,6 +1027,10 @@ fn select_battle_inner(
                 } else {
                     "Enter select   B build   T transfer   N new   D delete   P tactics"
                 }, 1, MUTED);
+            if show_tactics {
+                text::draw_centered(&mut pixels, WIDTH, 464,
+                    "C chase V fire M speed | R swatch H RGB | Enter commits placement", 1, MUTED);
+            }
             window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
             continue;
         }

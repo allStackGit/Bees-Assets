@@ -32,18 +32,23 @@ pub struct NativeSavedSquadFormation {
     /// Reverse the saved ship order across the source formation's X axis.
     #[serde(default)]
     pub mirrored: bool,
+    /// Persistent SquadMaker deployment displacement in authored world units.
+    /// Applied to the complete physical Carrier family at scene setup only.
+    #[serde(default)]
+    pub translation: [i16; 2],
 }
 
 impl NativeSavedSquadFormation {
     pub fn authored() -> Self {
         Self {
             kind: NativeSquadFormationKind::Authored, max_width: 5,
-            clockwise_quarters: 0, mirrored: false,
+            clockwise_quarters: 0, mirrored: false, translation: [0, 0],
         }
     }
 
     pub fn is_valid(self) -> bool {
         (1..=32).contains(&self.max_width) && self.clockwise_quarters < 4 &&
+            self.translation.iter().all(|&n| (-4096..=4096).contains(&i32::from(n))) &&
             (self.kind != NativeSquadFormationKind::Authored ||
                 (self.clockwise_quarters == 0 && !self.mirrored))
     }
@@ -58,8 +63,9 @@ impl NativeSavedSquadFormation {
             Pyramid => HollowPyramid,
             HollowPyramid => Authored,
         };
-        if kind == Authored { Self::authored() }
-        else { Self { kind, ..self } }
+        if kind == Authored {
+            Self { kind, clockwise_quarters: 0, mirrored: false, ..self }
+        } else { Self { kind, ..self } }
     }
 
     pub fn rotate_clockwise(self) -> Self {
@@ -70,6 +76,14 @@ impl NativeSavedSquadFormation {
     pub fn mirror(self) -> Self {
         if self.kind == NativeSquadFormationKind::Authored { return self; }
         Self { mirrored: !self.mirrored, ..self }
+    }
+
+    pub fn move_deployment(self, dx: i16, dy: i16) -> Self {
+        let next = |old: i16, delta: i16| old.saturating_add(delta).clamp(-4096, 4096);
+        Self {
+            translation: [next(self.translation[0], dx), next(self.translation[1], dy)],
+            ..self
+        }
     }
 
     pub fn label(self) -> &'static str {
@@ -214,15 +228,17 @@ impl NativePhysicalScene {
             if !formation.is_valid() || entry.side != side {
                 return Err(invalid("invalid native formation settings or player ownership"));
             }
-            if formation.kind == NativeSquadFormationKind::Authored { continue; }
+            // Original authored squad geometry can also be translated
+            // without choosing an automatic slot rearrangement.
+            let authored = formation.kind == NativeSquadFormationKind::Authored;
+            if authored && formation.translation == [0, 0] { continue; }
             let squad = self.source_squads.iter().find(|squad|
                 squad.saved_squad_id == Some(entry.saved_squad_id) &&
                 squad.side == side && squad.player_permissions.user_controlled &&
                 !squad.hivemind.as_ref()
                     .is_some_and(|source| source.hivemind_controlled)
             ).ok_or(invalid("formation requires one authorized saved player squad"))?;
-            if squad.members.len() <= 1 { continue; }
-            let slots = source_formation_slots(formation, squad.members.len())?;
+            if squad.members.len() <= 1 && formation.translation == [0, 0] { continue; }
             let mut originals = Vec::with_capacity(squad.members.len());
             for &id in &squad.members {
                 let position = self.entities.iter().find_map(|entity| match entity {
@@ -235,6 +251,16 @@ impl NativePhysicalScene {
                 }
                 originals.push(position);
             }
+            // For authored geometry, preserve the exact original formation
+            // offsets rather than reconstructing them from ship centers.
+            let slots = if authored {
+                originals.clone()
+            } else {
+                source_formation_slots(formation, squad.members.len())?
+            };
+            let translation = Vec2::new(
+                f32::from(formation.translation[0]), f32::from(formation.translation[1]),
+            );
             let divisor = squad.members.len() as f32;
             let original_center = originals.iter().copied()
                 .fold(Vec2::ZERO, |sum, item| sum + item) * divisor.recip();
@@ -244,7 +270,7 @@ impl NativePhysicalScene {
                 .zip(originals.into_iter()).zip(slots)
             {
                 let offset = slot - slot_center;
-                let destination = original_center + offset;
+                let destination = original_center + offset + translation;
                 let delta = destination - original;
                 let family = self.movable_authored_family(side, id)
                     .ok_or(invalid("formation cannot move an active or ambiguous Carrier family"))?;
@@ -258,7 +284,7 @@ impl NativePhysicalScene {
                         return Err(invalid("formation moves a physical ship through two owners"));
                     }
                 }
-                offsets.insert(id, offset);
+                if !authored { offsets.insert(id, offset); }
             }
             changed_squads += 1;
         }
