@@ -517,7 +517,7 @@ function courierMetrics(source) {
         // measured waits, byte volume and GPU service intervals. Keep
         // those unit distinctions in the existing neutral metrics wire.
         const brokerCount=/^(?:training_broker_|worker_[0-9]{1,2}_broker_)/.test(name)&&
-            /_(?:mode|gpu|device|owner|index|policies|cohorts|settled|eligible|adjustments|accepted|denials|samples|probes|requests|results|batches|states|attempts|rejections|missed|expected)$/.test(name);
+            /_(?:mode|gpu|device|owner|index|policies|cohorts|settled|eligible|adjustments|accepted|admissions|denials|samples|probes|requests|results|batches|states|attempts|rejections|dispatches|calls|missed|expected)$/.test(name);
         const unit=(COURIER_COUNT_FIELDS.has(name)||brokerCount||
             name.endsWith('_owner')||name.endsWith('_train_seq')||
             /^worker_[0-9]{1,2}_(?:probe|resume|live)_maps_(?:before|after)$/.test(name)||
