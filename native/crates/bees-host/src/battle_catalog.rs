@@ -1274,6 +1274,10 @@ impl BattleCatalog {
             score_history_complete: true,
             player_match_history_complete: true,
             loss_type_history_complete: true,
+            player_match_totals: NativePlayerMatchCounts {
+                player_minerals_mined: Some(0),
+                ..NativePlayerMatchCounts::default()
+            },
             ..CampaignProgress::default()
         };
         let Some(campaign) = &self.campaign_id else { return Ok(progress) };
@@ -1372,12 +1376,17 @@ impl BattleCatalog {
                     totals.ships_destroyed_by_player =
                         totals.ships_destroyed_by_player.checked_add(counts.ships_destroyed_by_player)
                         .ok_or_else(|| invalid("campaign player-kill counter overflow"))?;
-                    totals.player_minerals_mined =
-                        totals.player_minerals_mined.checked_add(counts.player_minerals_mined)
-                        .ok_or_else(|| invalid("campaign player mined-TSV counter overflow"))?;
+                    totals.player_minerals_mined = match (
+                        totals.player_minerals_mined, counts.player_minerals_mined,
+                    ) {
+                        (Some(total), Some(amount)) => Some(total.checked_add(amount)
+                            .ok_or_else(|| invalid("campaign player mined-TSV counter overflow"))?),
+                        _ => None, // A missing historical mining field is not zero.
+                    };
                 } else {
                     progress.player_match_history_complete = false;
                     progress.loss_type_history_complete = false;
+                    progress.player_match_totals.player_minerals_mined = None;
                 }
                 // Awarded hulls and SavedSquads are one atomic campaign
                 // outcome. They are reconstructed together from this
