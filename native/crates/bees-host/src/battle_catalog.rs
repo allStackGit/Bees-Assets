@@ -1686,6 +1686,8 @@ impl BattleCatalog {
         fields.remove("shop");
         fields.remove("fleet_classes");
         fields.remove("max_squad_ships");
+        // Presentation projection, not a new durable checkpoint identity.
+        fields.remove("fleet_roster");
         let mut mission_ids = progress.missions.keys().copied().collect::<Vec<_>>();
         mission_ids.sort_unstable();
         let missions = self.battles.iter().filter_map(|entry|
@@ -1838,6 +1840,47 @@ impl BattleCatalog {
                     .then_some(record.combat.queen_minions_spawned),
             })
         }).collect::<Vec<_>>();
+        // Current player fleet projection, including reserve hulls which have
+        // never entered a completed battle. The combat ledger above retains
+        // its historical meaning and remains unchanged for existing clients.
+        let mut roster_ids = progress.fleet.keys().copied()
+            .chain(progress.purchases.iter().map(|(_, ship)| ship.fleet_ship_id))
+            .chain(progress.authored_roster.keys().copied())
+            .collect::<Vec<_>>();
+        roster_ids.sort_unstable();
+        roster_ids.dedup();
+        let fleet_roster = roster_ids.into_iter().filter_map(|id| {
+            let history = progress.fleet.get(&id);
+            let purchased = progress.purchased_ship(id);
+            let authored = progress.authored_roster.get(&id);
+            let side = history.map(|record| record.side)
+                .or_else(|| purchased.map(|(side, _)| side))
+                .or_else(|| authored.map(|owner| owner.side))?;
+            let squad = purchased.map(|(_, ship)| ship.saved_squad_id)
+                .or_else(|| authored.map(|owner| owner.current_saved_squad_id));
+            let acquisition = if purchased.is_some() {
+                if progress.awarded_fleet_ids.contains(&id) {
+                    "victory_grant"
+                } else { "purchase" }
+            } else if authored.is_some() {
+                "authored"
+            } else {
+                "battle_history"
+            };
+            Some(json!({
+                "fleet_ship_id": id,
+                "side": side,
+                "name": progress.fleet_ship_name(id),
+                "acquisition": acquisition,
+                "ship_type": purchased.map(|(_, ship)| ship.ship_type),
+                // null means the original assignment is not in the durable
+                // ledger; zero means an explicitly recorded reserve ship.
+                "saved_squad_id": squad,
+                "in_reserve": squad.map(|id| id == 0),
+                "has_recorded_battle": history.is_some_and(|row| row.battles_fought > 0),
+                "is_dead": history.is_some_and(|row| row.is_dead),
+            }))
+        }).collect::<Vec<_>>();
         let mut squad_ids = progress.squads.keys().copied().collect::<Vec<_>>();
         squad_ids.sort_unstable();
         let squads = squad_ids.into_iter().map(|id| {
@@ -1859,6 +1902,7 @@ impl BattleCatalog {
             "campaign_id": self.campaign_id,
             "missions": missions,
             "fleet": fleet,
+            "fleet_roster": fleet_roster,
             "squads": squads,
             "battles_without_fleet_data": progress.battles_without_fleet_data,
             "battles_without_squad_data": progress.battles_without_squad_data,
