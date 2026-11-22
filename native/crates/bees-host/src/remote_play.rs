@@ -31,7 +31,11 @@ use crate::player_trace::NativePlayerInput;
 use crate::presentation::{NativeFogFade, NativeRenderWorldView};
 use crate::unity_scene_snapshot::NativeMusicLocation;
 
-const MAX_PEERS: usize = 4;
+// Four normal commanders retain their original capacity even when
+// view-only observers join. Spectators have a separate bounded allocation.
+const MAX_PLAYER_PEERS: usize = 4;
+const MAX_SPECTATOR_PEERS: usize = 2;
+const MAX_PEERS: usize = MAX_PLAYER_PEERS + MAX_SPECTATOR_PEERS;
 const MAX_ACCEPTS_PER_POLL: usize = 8;
 const MAX_ORDERS_PER_PEER_POLL: usize = 8;
 const MAX_LINE: usize = 64 * 1024;
@@ -284,6 +288,10 @@ pub struct RemotePlayMeasurements {
     #[serde(default)]
     pub spectator_snapshots_encoded: u64,
     pub rejected_connections: u64,
+    #[serde(default)]
+    pub rejected_spectator_seats: u64,
+    #[serde(default)]
+    pub rejected_player_seats: u64,
     pub orders_received: u64,
     pub orders_processed: u64,
     pub orders_rejected: u64,
@@ -540,7 +548,13 @@ impl NativeRemotePlay {
         println!("{}", json!({
             "kind": "native_remote_listening",
             "address": listener.local_addr()?.to_string(),
-            "max_peers": MAX_PEERS,
+            "max_peers": if spectator_tokens.is_empty() {
+                MAX_PLAYER_PEERS
+            } else { MAX_PEERS },
+            "max_player_peers": MAX_PLAYER_PEERS,
+            "max_spectator_peers": if spectator_tokens.is_empty() {
+                0
+            } else { MAX_SPECTATOR_PEERS },
             "mode": if side_tokens.len() > 1 { "independent_player_sides" }
                     else { "shared_player_authority" },
             "configured_sides": configured_sides,
@@ -783,7 +797,9 @@ impl NativeRemotePlay {
             // Command acknowledgements and side-filtered state are small
             // interactive frames. Nagle buffering here would defer replies
             // despite the client's already-low-latency socket settings.
-            if self.peers.len() >= MAX_PEERS ||
+            if self.peers.len() >= (if self.spectator_tokens.is_empty() {
+                    MAX_PLAYER_PEERS
+                } else { MAX_PEERS }) ||
                 socket.set_nonblocking(true).is_err() ||
                 socket.set_nodelay(true).is_err()
             {
@@ -806,6 +822,13 @@ impl NativeRemotePlay {
         }
 
         let mut newly_authenticated = false;
+        // Count only current authenticated seats; untrusted Hello
+        // messages cannot claim either class until their role-specific
+        // secret has been verified by the host.
+        let mut active_players = self.peers.iter().filter(|peer|
+            !peer.closed && peer.side.is_some() && !peer.spectator).count();
+        let mut active_spectators = self.peers.iter().filter(|peer|
+            !peer.closed && peer.side.is_some() && peer.spectator).count();
         for peer in &mut self.peers {
             if peer.closed { continue; }
             // An old session receives only its immutable terminal result.
@@ -875,6 +898,19 @@ impl NativeRemotePlay {
                             constant_time_matches(secret.as_bytes(), token.as_bytes())
                                 .then_some(side));
                         if let Some(side) = side {
+                            let at_capacity = if spectator {
+                                active_spectators >= MAX_SPECTATOR_PEERS
+                            } else { active_players >= MAX_PLAYER_PEERS };
+                            if at_capacity {
+                                self.measurements.rejected_connections += 1;
+                                if spectator {
+                                    self.measurements.rejected_spectator_seats += 1;
+                                } else {
+                                    self.measurements.rejected_player_seats += 1;
+                                }
+                                peer.closed = true;
+                                break;
+                            }
                             // In the results-only listener there is no
                             // active World to authenticate into. Only a
                             // previously committed session can join.
@@ -886,6 +922,9 @@ impl NativeRemotePlay {
                             }
                             peer.side = Some(side);
                             peer.spectator = spectator;
+                            if spectator {
+                                active_spectators += 1;
+                            } else { active_players += 1; }
                             self.measurements.authenticated_peers += 1;
                             if spectator {
                                 self.measurements.authenticated_spectators += 1;
