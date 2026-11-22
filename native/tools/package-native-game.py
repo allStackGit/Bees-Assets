@@ -425,49 +425,53 @@ def package_game_library(
     return has_policy
 
 
-def package_extra_challenge_library(
-    destination: Path, challenge_library: Path,
-    unlock_after: str | None,
+def package_extra_career_library(
+    destination: Path, library: Path, kind: str, unlock_after: str | None = None,
 ) -> None:
-    """Add the original Challenge as a real career beside existing games.
+    """Include a complete authored native career in the unified release.
 
-    Reuse package_game_library for its whole original run/scene/Stage
-    dependency graph. Only the top-level menu is merged; all Challenge
-    assets retain their independent relative source paths and career ID.
+    Both original Campaign and Challenge are ordinary BattleCatalog careers
+    played by the same physical Bees game. Reuse the existing portable JSON,
+    source scene, Stage, policy and original-asset dependency exporter rather
+    than building a second pipeline for one mode.
     """
-    nested = destination / "challenge"
+    if kind not in ("campaign", "challenge"):
+        raise ValueError("extra native game must be a persistent career")
+    nested = destination / kind
     nested.mkdir()
-    if package_game_library(nested, challenge_library):
-        raise ValueError("original Challenge must use the shared native physical game, not an external model worker")
+    if package_game_library(nested, library):
+        raise ValueError("native career must not introduce an external policy worker")
     source_menu = nested / "native-library.json"
     extra = json.loads(source_menu.read_text(encoding="utf-8"))
     entries = extra.get("games")
     if (extra.get("library_schema") != 1 or
             not isinstance(entries, list) or len(entries) != 1 or
-            entries[0].get("kind") != "challenge"):
-        raise ValueError("extra Challenge library must have exactly one original Challenge career")
+            not isinstance(entries[0], dict) or entries[0].get("kind") != kind):
+        raise ValueError(f"extra {kind} library must contain one authored {kind} career")
     menu_path = destination / "native-library.json"
     menu = json.loads(menu_path.read_text(encoding="utf-8"))
     entry = entries[0].copy()
     if any(game["id"] == entry["id"] for game in menu["games"]):
-        raise ValueError("native game library already contains this Challenge ID")
-    entry["config"] = "challenge/" + entry["config"]
+        raise ValueError(f"native library already contains the {kind} career ID")
+    entry["config"] = kind + "/" + entry["config"]
     if unlock_after is not None:
-        if ":" not in unlock_after:
+        if kind != "challenge" or ":" not in unlock_after:
             raise ValueError("Challenge unlock requires CAMPAIGN:MISSION")
         campaign_id, mission_id = unlock_after.split(":", 1)
         if not campaign_id or not mission_id:
             raise ValueError("Challenge unlock requires CAMPAIGN:MISSION")
-        entry["unlock_after"] = {"campaign_id": campaign_id,
-                                  "mission_id": mission_id}
-    # Also enforce source-authored gates when no CLI override was given.
-    # A portable release may not contain an unresolvable game-mode unlock.
+        entry["unlock_after"] = {
+            "campaign_id": campaign_id, "mission_id": mission_id,
+        }
+    # Source-authored unlock gates must resolve too. Import Campaign first
+    # so a Challenge may depend on its original mission instead of using
+    # a placeholder, a fake progression flag, or a hardcoded filename.
     gate = entry.get("unlock_after")
     if gate is not None:
-        if (not isinstance(gate, dict) or
+        if (kind != "challenge" or not isinstance(gate, dict) or
                 set(gate) != {"campaign_id", "mission_id"} or
                 not all(isinstance(value, str) and value for value in gate.values())):
-            raise ValueError("invalid original Challenge unlock reference")
+            raise ValueError("invalid native career unlock reference")
         parents = [game for game in menu["games"] if
                    game["kind"] == "campaign" and game["id"] == gate["campaign_id"]]
         if len(parents) != 1:
@@ -480,8 +484,7 @@ def package_extra_challenge_library(
     menu["games"].append(entry)
     menu_path.write_text(json.dumps(menu, indent=2, ensure_ascii=False) + "\n",
                          encoding="utf-8")
-    # The single launcher reads only the merged menu. Do not leave a
-    # second, unreferenced library entry in the release inventory.
+    # The single launcher reads one merged menu and owns both career roots.
     source_menu.unlink()
 
 
@@ -828,6 +831,8 @@ def main() -> None:
     parser.add_argument("--library", type=Path,
                         default=ROOT / "native/examples/native-library.json",
                         help="native game library to package (built-in or Unity-free authored campaign)")
+    parser.add_argument("--campaign-library", type=Path,
+                        help="additional original authored Campaign library to ship beside the normal games")
     parser.add_argument("--challenge-library", type=Path,
                         help="additional original ten-stage Challenge library to ship beside the normal games")
     parser.add_argument("--challenge-unlock-after",
@@ -850,6 +855,7 @@ def main() -> None:
                 args.include_policies or args.include_training or
                 args.rollout_binary is not None or args.manifest_binary is not None or
                 args.policy_device is not None or args.python_command is not None or
+                args.campaign_library is not None or
                 args.challenge_library is not None or args.challenge_unlock_after is not None):
             parser.error("--verify accepts only the completed distribution directory")
         print(json.dumps(verify_native_package(args.verify)), flush=True)
@@ -909,9 +915,14 @@ def main() -> None:
             examples, args.library, include_policies=args.include_policies,
             python_command=python_command, policy_device=args.policy_device,
         )
+        if args.campaign_library is not None:
+            package_extra_career_library(
+                examples, args.campaign_library, "campaign",
+            )
         if args.challenge_library is not None:
-            package_extra_challenge_library(
-                examples, args.challenge_library, args.challenge_unlock_after,
+            package_extra_career_library(
+                examples, args.challenge_library, "challenge",
+                args.challenge_unlock_after,
             )
         if policy_used:
             package_policy_runtime(staging)
