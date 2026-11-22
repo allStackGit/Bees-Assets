@@ -102,6 +102,12 @@ class RemoteBattleWindow:
         )
         if not console.spectator:
             self.surrender_button.pack(side="left", padx=10)
+        self.retreat_button = ttk.Button(
+            self.footer, text="Open retreat exit", command=self.activate_retreat,
+            state="disabled",
+        )
+        if not console.spectator:
+            self.retreat_button.pack(side="left", padx=10)
         self.info = tk.StringVar(value=(
             "Read-only faction view — wheel zoom, middle-drag pan"
             if console.spectator else
@@ -195,6 +201,23 @@ class RemoteBattleWindow:
     def notice(self, message):
         self.last_feedback = message
         self.status.set(message)
+
+    def activate_retreat(self):
+        state = self.state
+        if (self.console.spectator or not self.console.alive or
+                state is None or state.get("can_activate_retreat") is not True or
+                state.get("briefing_paused") is True or
+                state.get("terminal_outcome") is not None or self.held_drag or
+                self.console.battle_receipt_snapshot() is not None):
+            self.notice("Retreat exit cannot be opened in this battle state")
+            return
+        try:
+            self.console.send(
+                ("activate_retreat", {"side": state["viewer_side"]}), state, []
+            )
+            self.notice("Retreat exit activation submitted to native host")
+        except (OSError, ValueError) as error:
+            self.notice(f"Retreat activation unavailable: {error}")
 
     def surrender(self):
         if (self.console.spectator or not self.console.alive or
@@ -391,6 +414,16 @@ class RemoteBattleWindow:
         )
         self.surrender_button.state(
             ["!disabled"] if can_surrender else ["disabled"]
+        )
+        can_retreat = (
+            not self.console.spectator and self.console.alive and
+            state is not None and state.get("can_activate_retreat") is True and
+            state.get("briefing_paused") is not True and
+            state.get("terminal_outcome") is None and
+            self.console.battle_receipt_snapshot() is None and not self.held_drag
+        )
+        self.retreat_button.state(
+            ["!disabled"] if can_retreat else ["disabled"]
         )
         terminal = self.console.battle_receipt_snapshot()
         if terminal != self.shown_terminal_receipt:
