@@ -18,7 +18,7 @@ def load(path, root):
         raise ValueError(f"untrusted or missing native Challenge source: {path}")
     return json.loads(path.read_text(encoding="utf-8"))
 
-def assemble(root, gate, base_library):
+def assemble(root, gate, base_library, max_squad_ships):
     original_source = json.loads(SOURCE_LEVELS.read_text(encoding="utf-8"))
     levels = original_source.get("Levels")
     if not isinstance(levels, list) or len(levels) != LEVEL_COUNT or sorted(
@@ -105,6 +105,9 @@ def assemble(root, gate, base_library):
     catalog = {
         "campaign_id": "original-human-challenge",
         "battles": battles,
+        # From Unity Configuration.MaxSquadSize. The fleet editor must
+        # reject over-capacity squads before publishing a durable edit.
+        **({"max_squad_ships": max_squad_ships} if max_squad_ships else {}),
     }
     # The library resolves every unlock prerequisite against a campaign
     # actually present in that same library. Do not create a Challenge that
@@ -150,7 +153,11 @@ def main():
                         help="actual completed main-campaign mission that unlocks Challenge")
     parser.add_argument("--base-library", type=Path,
                         help="existing native library in this output directory (required with --unlock-after)")
+    parser.add_argument("--max-squad-size", type=int,
+                        help="actual Unity Configuration.MaxSquadSize (enables safe native career fleet editing)")
     args = parser.parse_args()
+    if args.max_squad_size is not None and not 1 <= args.max_squad_size <= 1024:
+        parser.error("--max-squad-size must be the positive source Configuration.MaxSquadSize, at most 1024")
     gate = None
     if args.unlock_after is not None:
         split = args.unlock_after.split(":", 1)
@@ -166,7 +173,7 @@ def main():
         parser.error("Challenge career folder does not exist")
     try:
         catalog, library, original, fleet = assemble(
-            root, gate, args.base_library,
+            root, gate, args.base_library, args.max_squad_size,
         )
         for name, document in (
             ("challenge.catalog.json", catalog),
@@ -203,6 +210,7 @@ def main():
         "kind": "native_original_challenge_career_authored",
         "stages": len(original),
         "player_fleet_classes": len(fleet),
+        "max_squad_ships": args.max_squad_size,
         "catalog": str(root / "challenge.catalog.json"),
         "library": str(root / "library.json"),
     }, sort_keys=True))
