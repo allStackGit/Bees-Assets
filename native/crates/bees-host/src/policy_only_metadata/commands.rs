@@ -7,24 +7,32 @@ use bees_gameplay::{commands::{NativeEnemySquad, NativeCircleCommandSnapshot,
     squad_geometry::live_squad_bounds_from_catalog};
 
 impl NativePolicyOnlyMetadata {
-    /// Exact source Weapon.IsShipValidTarget for imported ordinary turrets:
-    /// source collider membership, lazy target-bounds latch and obstacle
-    /// linecast are all owned by CombatWorld. Unsupported native special
-    /// weapons have no equivalent source validity query yet; fail closed.
+    /// Source Ship.IsShipWithinRange across its real Weapons. Bomb uses
+    /// Bomb.IsShipValidTarget (any living target), Barge Charge uses the
+    /// original RangeCollider and base Weapon line-of-fire predicate,
+    /// and ordinary turrets use their existing cached range/bounds logic.
+    /// Do not treat a valid special as an ordinary turret lacking metadata.
     pub(super) fn source_ship_valid_target(
         &self, world: &mut CombatWorld, attacker: i64, target: i64,
     ) -> Result<bool, GameCommandError> {
         let source = self.authored_ships.get(&attacker)
             .ok_or(GameCommandError::MissingCombatSnapshot)?;
-        if world.special_weapon_spec(attacker).is_some() {
-            return Err(GameCommandError::MissingCombatSnapshot);
+        let special = world.special_weapon_spec(attacker);
+        if special.is_some() &&
+            world.is_special_weapon_ship_target_valid(attacker, target)? {
+            return Ok(true);
         }
         for slot in 0..5 {
+            if special.is_some_and(|source| source.slot == slot) {
+                continue;
+            }
             if world.weapon_range(attacker, slot)?.is_some() {
                 if world.is_weapon_ship_target_valid(attacker, slot, target)? {
                     return Ok(true);
                 }
             } else if source.observed_weapons[slot].is_some() {
+                // An unported second weapon cannot silently masquerade
+                // as a complete source target-validity decision.
                 return Err(GameCommandError::MissingCombatSnapshot);
             }
         }
