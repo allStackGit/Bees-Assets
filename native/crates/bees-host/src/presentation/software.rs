@@ -205,6 +205,9 @@ pub struct NativeSoftwareRenderer {
     /// Selection is scoped to a WorldId AND episode revision by the client.
     pub selected_ship: Option<i64>,
     pub selection: NativeSquadSelection,
+    /// Presentation-only viewport; the canonical squad registry never
+    /// gets a second mutable ownership or numbering table.
+    squad_tab_offset: usize,
     // Reused only for large selections; small squads need no hash allocation.
     selected_squad_lookup: HashSet<bees_hivemind::session::SquadLifetime>,
     /// Reused UI dedup for actual player Aggressive/BombingRun targets.
@@ -903,6 +906,7 @@ impl NativeSoftwareRenderer {
             pending_fog_fades: Vec::new(),
             camera: NativeCamera::fit(bounds, width, height), selected_ship: None,
             selection: NativeSquadSelection::default(),
+            squad_tab_offset: 0,
             selected_squad_lookup: HashSet::new(),
             command_target_ship_ids: HashSet::new(),
             custom_ship_art: HashMap::new(), animated_ship_art: HashMap::new(),
@@ -1476,6 +1480,50 @@ impl NativeSoftwareRenderer {
             !self.selection.squads().is_empty()).then_some(action)
     }
 
+    /// The original 1..0 shortcuts remain physical keyboard bindings,
+    /// but additional genuine numbered squads also need clickable tabs.
+    fn squad_tab_capacity(&self) -> usize {
+        (0..64).take_while(|&row| tactical_hud::squad_tab_rect(
+            self.width, self.height, row, text::HEIGHT, 0,
+        ).is_some()).count()
+    }
+
+    fn squad_tab_count(&self, view: &NativeRenderWorldView<'_>) -> usize {
+        view.roster.source_order().iter().filter(|&&owner|
+            view.is_local_player_squad(owner) &&
+            view.roster.get(owner).is_some_and(|squad|
+                squad.source_hotkey_number.is_some() &&
+                squad.members.first().is_some_and(|&id|
+                    view.combat.ship(id).is_some()))
+        ).count()
+    }
+
+    pub fn reset_squad_tab_view(&mut self) {
+        self.squad_tab_offset = 0;
+    }
+
+    /// Returns true only when the mouse wheel was consumed by a genuine,
+    /// overflowing squad strip. World cameras retain their existing zoom
+    /// behavior elsewhere and on small squad rosters.
+    pub fn scroll_squad_tabs(
+        &mut self, view: &NativeRenderWorldView<'_>, x: f32, y: f32, vertical: f32,
+    ) -> bool {
+        if !vertical.is_finite() || vertical == 0.0 ||
+            x < 9.0 || x > 240.0 || y < 10.0 || y >= self.height as f32 / 2.0 {
+            return false;
+        }
+        let visible = self.squad_tab_capacity();
+        let maximum = self.squad_tab_count(view).saturating_sub(visible);
+        if maximum == 0 { return false; }
+        self.squad_tab_offset = if vertical > 0.0 {
+            self.squad_tab_offset.saturating_sub(vertical.ceil() as usize)
+        } else {
+            self.squad_tab_offset.saturating_add((-vertical).ceil() as usize)
+                .min(maximum)
+        };
+        true
+    }
+
     /// Pick a live, user-controllable source squad by the exact tab drawn in
     /// this same render frame, not from a guessed row/squad index.
     pub fn squad_tab_at(&self, view: &NativeRenderWorldView<'_>,
@@ -1483,14 +1531,19 @@ impl NativeSoftwareRenderer {
     ) -> Option<bees_hivemind::session::SquadLifetime> {
         if self.show_shooting_menu { return None; }
         let mut row = 0usize;
+        let mut skipped = 0usize;
         for &owner in view.roster.source_order() {
             let Some(squad) = view.roster.get(owner) else { continue };
             let Some(number) = squad.source_hotkey_number else { continue };
-            if number > 10 || !view.is_local_player_squad(owner) {
+            if !view.is_local_player_squad(owner) {
                 continue;
             }
             let Some(&ship_id) = squad.members.first() else { continue };
             let Some(ship) = view.combat.ship(ship_id) else { continue };
+            if skipped < self.squad_tab_offset {
+                skipped += 1;
+                continue;
+            }
             let key = if number == 10 { 0 } else { number };
             let label = format!("{key}: type {} / {} ships",
                 ship.ship_type, squad.members.len());
@@ -1499,7 +1552,7 @@ impl NativeSoftwareRenderer {
                 text::width(&label, 1))?;
             if rect.contains(x, y) { return Some(owner); }
             row += 1;
-            if row == 10 { break; }
+            if row == self.squad_tab_capacity() { break; }
         }
         None
     }
@@ -2867,15 +2920,23 @@ impl NativeSoftwareRenderer {
     /// Only user-controlled ships are listed; enemy roster data stays private.
     fn draw_squad_shortcuts(&mut self, view: &NativeRenderWorldView<'_>) -> usize {
         if self.width < 560 || self.height < 360 { return 0; }
+        let visible = self.squad_tab_capacity();
+        let maximum = self.squad_tab_count(view).saturating_sub(visible);
+        self.squad_tab_offset = self.squad_tab_offset.min(maximum);
         let mut row = 0usize;
+        let mut skipped = 0usize;
         for &owner in view.roster.source_order() {
             let Some(squad) = view.roster.get(owner) else { continue };
             let Some(number) = squad.source_hotkey_number else { continue };
-            if number > 10 || !view.is_local_player_squad(owner) {
+            if !view.is_local_player_squad(owner) {
                 continue;
             }
             let Some(&ship_id) = squad.members.first() else { continue };
             let Some(ship) = view.combat.ship(ship_id) else { continue };
+            if skipped < self.squad_tab_offset {
+                skipped += 1;
+                continue;
+            }
             let selected = if self.selection.squads().len() > 8 {
                 self.selected_squad_lookup.contains(&owner)
             } else {
@@ -2897,7 +2958,7 @@ impl NativeSoftwareRenderer {
                 &label, 1, if selected { [255, 241, 194] }
                     else { [182, 211, 239] });
             row += 1;
-            if row == 10 { break; }
+            if row == self.squad_tab_capacity() { break; }
         }
         row
     }
