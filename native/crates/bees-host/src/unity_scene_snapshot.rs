@@ -2042,6 +2042,15 @@ impl NativePhysicalScene {
         {
             return Err(invalid("Titania II needs a live player fleet and authored Stage home"));
         }
+        // An imported Level may already contain the source-staged fleet.
+        // StartingPositions is the authoritative Stage signal and also
+        // prevents a career reload from repositioning the same hulls twice.
+        let center = bees_gameplay::campaign_dialogue::TITANIA_II_CENTER;
+        if self.starting_positions.expect("preflighted Stage home")[(side - 1) as usize]
+            .unity_equal(center)
+        {
+            return Ok(0);
+        }
         let mut obstacles = Vec::<bees_sim::physics::ObstacleBody>::new();
         for entity in &self.entities {
             let body = match entity {
@@ -2103,8 +2112,21 @@ impl NativePhysicalScene {
         let user_squads = self.source_squads.iter()
             .filter(|squad| squad.side == side && !squad.members.is_empty())
             .map(|squad| squad.members.clone()).collect::<Vec<_>>();
-        let center = bees_gameplay::campaign_dialogue::TITANIA_II_CENTER;
         let mut occupied = Vec::<(Vec2, f32)>::new();
+        // Opposing deployed fleets are already physical obstacles to
+        // central staging. Do not place a purchased human squad directly
+        // over an enemy launch formation or an authored neutral hull.
+        for entity in &self.entities {
+            let NativeAuthoredEntity::Ship(ship) = entity else { continue };
+            if ship.side == side || ship.vitals.is_dead() { continue; }
+            let position = ship.motion.position;
+            let radius = ship.game_movement.half_width
+                .max(ship.game_movement.half_height) + 8.0;
+            if !position.is_finite() || !radius.is_finite() || radius <= 0.0 {
+                return Err(invalid("Titania II opposing fleet has invalid staging geometry"));
+            }
+            occupied.push((position, radius));
+        }
         // Resolve every squad against the unmodified physical scene.
         // A later blocked fleet must not leave earlier hulls relocated
         // when this one-time source Stage operation fails.
