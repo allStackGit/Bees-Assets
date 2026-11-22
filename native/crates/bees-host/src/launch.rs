@@ -237,6 +237,10 @@ struct ExtractionConfig {
     activation_from_center: bool,
     #[serde(default)]
     retreat_on_exit: bool,
+    /// Explicit source retreat button activation. Absence preserves
+    /// earlier authored native skirmishes and durable configuration IDs.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    requires_player_activation: bool,
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -768,6 +772,7 @@ fn make_setup(
             activation_radius: zone.activation_radius, layer: zone.layer,
             activation_from_center: zone.activation_from_center,
             retreat_on_exit: zone.retreat_on_exit,
+            requires_player_activation: zone.requires_player_activation,
         }),
         survival: level.survival.map(|objective| bees_sim::episode_terminal::SurvivalObjective {
             defending_side: objective.defending_side,
@@ -7202,6 +7207,7 @@ fn run_battle(
                 activation_radius: zone.activation_radius, layer: zone.layer,
                 activation_from_center: zone.activation_from_center,
                 retreat_on_exit: zone.retreat_on_exit,
+                requires_player_activation: zone.requires_player_activation,
             }
         ).or_else(|| authored.and_then(|m| m.extraction));
         let effective_survival = level.survival.map(|o|
