@@ -4284,6 +4284,13 @@ impl NativePhysicalScene {
             NativeAuthoredEntity::Ship(ship) => Some(ship.entity_id),
             _ => None,
         }).collect::<std::collections::HashSet<_>>();
+        let known_map_objects = authored.entities.iter().filter_map(|entity|
+            match entity {
+                NativeAuthoredEntity::MapObject { object, body }
+                    if object.health > 0 && body.active => Some(object.entity_id),
+                _ => None,
+            }
+        ).collect::<std::collections::HashSet<_>>();
         // Fire Tank scripting must bind to a real live source CanisterBomb,
         // not just an arbitrary hidden MapObject ID in a script. Gameplay
         // discovery and collider health remain in the shared CombatWorld.
@@ -4299,7 +4306,7 @@ impl NativePhysicalScene {
         } else { std::collections::HashSet::new() };
         authored.metadata.stage_scripted_queues(
             &authored.squads, setup.scripted_queues, &deferred_squads,
-            &entry_squads, &known_ships, &vacant_squads,
+            &entry_squads, &known_ships, &known_map_objects, &vacant_squads,
             setup.demolition.map(|objective|
                 (objective.attacking_side, objective.target_map_object_id)),
             &authored_fire_tanks, dt, authored.campaign_dialogue,
