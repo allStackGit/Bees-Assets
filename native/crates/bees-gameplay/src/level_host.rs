@@ -552,6 +552,8 @@ pub struct NativeRuntimeStatus {
     /// deterministic physics and clients without async navigation.
     pub navigation_workers: crate::level_rules::NativeNavigationWorkerMeasurements,
     pub navigation_rasters: bees_sim::navigation_runtime::NavigationRasterMeasurements,
+    /// Actual A* exploration work from synchronous and threaded searches.
+    pub navigation_search_work: bees_sim::navigation_search::NavigationSearchWork,
     pub navigation_jobs_waiting: usize,
     pub navigation_queue_slots: usize,
     pub queued_notifications: usize,
@@ -1409,6 +1411,7 @@ impl NativeLevelBatchDriver {
             navigation_jobs_completed: 0,
             navigation_workers: crate::level_rules::NativeNavigationWorkerMeasurements::default(),
             navigation_rasters: bees_sim::navigation_runtime::NavigationRasterMeasurements::default(),
+            navigation_search_work: bees_sim::navigation_search::NavigationSearchWork::default(),
             navigation_jobs_waiting: 0,
             navigation_queue_slots: 0,
             queued_notifications: 0,
@@ -1447,8 +1450,11 @@ impl NativeLevelBatchDriver {
                 ),
             );
             status.navigation_jobs_completed += world.state.navigation_jobs_completed();
-            status.navigation_workers.merge(
-                world.state.metadata.navigation_worker_measurements(),
+            let worker_measurements = world.state.metadata.navigation_worker_measurements();
+            status.navigation_workers.merge(worker_measurements);
+            status.navigation_search_work.merge(worker_measurements.search_work);
+            status.navigation_search_work.merge(
+                world.state.metadata.navigation().search_measurements(),
             );
             status.navigation_rasters.merge(
                 world.state.metadata.navigation().raster_measurements(),

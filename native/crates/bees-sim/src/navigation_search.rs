@@ -25,7 +25,7 @@ const NO_PARENT: usize = usize::MAX;
 
 /// Actual work performed by one search, including static egress when used.
 /// Counts cover the same A* solver used by game clients and headless worlds.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NavigationSearchWork {
     pub searches: u64,
     pub direct_routes: u64,

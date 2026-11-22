@@ -91,6 +91,7 @@ pub struct NavigationRuntime {
     /// populated this clearance. None after external manual map edits.
     world_static_revision: Option<u64>,
     raster_measurements: NavigationRasterMeasurements,
+    search_measurements: NavigationSearchWork,
 }
 
 impl NavigationRuntime {
@@ -107,7 +108,8 @@ impl NavigationRuntime {
         let clearance = NavigationClearance::new(grid, &vec![false; n])?;
         Ok(Self { map_frame: frame, clearance, search,
             static_obstacles_present: None, world_static_revision: None,
-            raster_measurements: NavigationRasterMeasurements::default() })
+            raster_measurements: NavigationRasterMeasurements::default(),
+            search_measurements: NavigationSearchWork::default() })
     }
 
     pub fn map_frame(&self) -> NavigationMapFrame { self.map_frame }
@@ -134,6 +136,14 @@ impl NavigationRuntime {
     /// add per-cell instrumentation when no search is requested.
     pub fn last_search_work(&self) -> NavigationSearchWork {
         self.search.last_work()
+    }
+
+    pub fn search_measurements(&self) -> NavigationSearchWork {
+        self.search_measurements
+    }
+
+    pub fn restore_search_measurements(&mut self, work: NavigationSearchWork) {
+        self.search_measurements = work;
     }
 
     /// The source Level restores its original cumulative navigation work,
@@ -229,9 +239,11 @@ impl NavigationRuntime {
         let frame = self.map_frame;
         let start_local = frame.world_to_level(job.start);
         let end_local = frame.world_to_level(job.destination);
-        let mut path = self.search.find_level_path(
+        let searched = self.search.find_level_path(
             &self.clearance, start_local, end_local, job.ship_clearance,
-        )?;
+        );
+        self.search_measurements.merge(self.search.last_work());
+        let mut path = searched?;
         if let Some(ref mut path) = path {
             for point in &mut path.points {
                 *point = frame.level_to_world(*point);

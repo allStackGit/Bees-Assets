@@ -444,6 +444,8 @@ pub struct NativePolicySourceLedgerCheckpoint {
     chase_measurements: NativePlayerChaseMeasurements,
     navigation_worker_counts: NativeNavigationWorkerMeasurements,
     navigation_raster_measurements: bees_sim::navigation_runtime::NavigationRasterMeasurements,
+    #[serde(default)]
+    navigation_search_measurements: bees_sim::navigation_search::NavigationSearchWork,
     reinforcement_idle_ticks_skipped: u64,
     reinforcement_wakeup_scans: u64,
     remaining_reinforcements: Vec<crate::reinforcements::ReinforcementWaveIdentity>,
@@ -482,6 +484,7 @@ pub struct NativePolicySourceLedgerPrepared {
     chase_measurements: NativePlayerChaseMeasurements,
     navigation_worker_counts: NativeNavigationWorkerMeasurements,
     navigation_raster_measurements: bees_sim::navigation_runtime::NavigationRasterMeasurements,
+    navigation_search_measurements: bees_sim::navigation_search::NavigationSearchWork,
     reinforcement_idle_ticks_skipped: u64,
     reinforcement_wakeup_scans: u64,
     reinforcement_drop_count: usize,
@@ -540,6 +543,7 @@ impl NativePolicyOnlyMetadata {
             chase_measurements: self.chase_measurements,
             navigation_worker_counts: self.navigation_worker_counts,
             navigation_raster_measurements: self.navigation.raster_measurements(),
+            navigation_search_measurements: self.navigation.search_measurements(),
             reinforcement_idle_ticks_skipped: self.reinforcement_idle_ticks_skipped,
             reinforcement_wakeup_scans: self.reinforcement_wakeup_scans,
             remaining_reinforcements: self.reinforcements.iter()
@@ -717,6 +721,7 @@ impl NativePolicyOnlyMetadata {
             chase_measurements: saved.chase_measurements,
             navigation_worker_counts: saved.navigation_worker_counts,
             navigation_raster_measurements: saved.navigation_raster_measurements,
+            navigation_search_measurements: saved.navigation_search_measurements,
             reinforcement_idle_ticks_skipped: saved.reinforcement_idle_ticks_skipped,
             reinforcement_wakeup_scans: saved.reinforcement_wakeup_scans,
             reinforcement_drop_count,
@@ -753,6 +758,9 @@ impl NativePolicyOnlyMetadata {
         self.navigation_worker_counts.busy_workers = 0;
         self.navigation.restore_measurements_and_invalidate(
             staged.navigation_raster_measurements,
+        );
+        self.navigation.restore_search_measurements(
+            staged.navigation_search_measurements,
         );
         self.reinforcement_idle_ticks_skipped = staged.reinforcement_idle_ticks_skipped;
         self.reinforcement_wakeup_scans = staged.reinforcement_wakeup_scans;
@@ -1884,6 +1892,11 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         counts.clearance_refreshes += u64::from(step.clearance_refreshed);
         counts.waiting_for_static_rebuild_frames +=
             u64::from(step.waiting_for_static_rebuild);
+        counts.search_work.merge(step.search_work);
+        counts.search_worker_nanos = counts.search_worker_nanos
+            .saturating_add(step.search_elapsed.as_nanos());
+        counts.longest_search_nanos = counts.longest_search_nanos
+            .max(step.longest_search.as_nanos());
         counts.busy_workers = step.busy_workers;
         // Match the synchronous Level counter: every completed path job
         // counts, including lifecycle-safe requeues and discarded results.

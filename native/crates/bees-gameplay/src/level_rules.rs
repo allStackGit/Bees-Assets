@@ -380,6 +380,12 @@ pub struct NativeNavigationWorkerMeasurements {
     pub discarded: u64,
     pub clearance_refreshes: u64,
     pub waiting_for_static_rebuild_frames: u64,
+    #[serde(default)]
+    pub search_work: bees_sim::navigation_search::NavigationSearchWork,
+    #[serde(default)]
+    pub search_worker_nanos: u128,
+    #[serde(default)]
+    pub longest_search_nanos: u128,
     /// Current concurrent background searches across live Levels.
     pub busy_workers: usize,
 }
@@ -392,6 +398,9 @@ impl NativeNavigationWorkerMeasurements {
         self.discarded += other.discarded;
         self.clearance_refreshes += other.clearance_refreshes;
         self.waiting_for_static_rebuild_frames += other.waiting_for_static_rebuild_frames;
+        self.search_work.merge(other.search_work);
+        self.search_worker_nanos = self.search_worker_nanos.saturating_add(other.search_worker_nanos);
+        self.longest_search_nanos = self.longest_search_nanos.max(other.longest_search_nanos);
         self.busy_workers += other.busy_workers;
     }
 }
