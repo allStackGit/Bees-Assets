@@ -239,6 +239,18 @@ impl CombatWorld {
             }
             std::mem::swap(&mut contacts.body, &mut contacts.next_body);
         }
+        // Unity invokes each ship's OnTriggerEnter2D as physical bodies
+        // are processed. The native special-weapon registry is a HashMap
+        // whose randomized iteration order must not decide which of two
+        // simultaneous contact bombers detonates first. Resolve callbacks
+        // in the original CombatWorld ship registration order, including
+        // the target order within one bomber. This only sorts *new* entry
+        // contacts; ordinary empty frames allocate and sort nothing.
+        if self.special_body_entries.len() > 1 {
+            let slots = &self.ship_by_id;
+            self.special_body_entries.sort_unstable_by_key(|&(bomber, target)|
+                (slots[&bomber], slots[&target]));
+        }
         self.special_weapon_measurements.grid_rebuilds += counts.weapon_range_grid_rebuilds;
         self.special_weapon_measurements.candidates += counts.weapon_range_candidates;
         self.special_weapon_measurements.trigger_hull_tests += counts.weapon_range_exact_tests;
