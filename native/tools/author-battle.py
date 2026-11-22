@@ -735,7 +735,10 @@ def author(args) -> tuple[dict, dict, dict]:
     # identities, including when the player commands side 2.
     # Each side is bounded to 1024 ships and at most 1024 weapons/squads.
     side_span = 2048
-    ship_base = max(SHIP_ID_START, max_reserved + 1)
+    # An authored multi-Level career can reserve one identical identity lane
+    # across different source maps. Ordinary custom battles are unchanged.
+    ship_base = max(getattr(args, "ship_identity_base", SHIP_ID_START),
+                    max_reserved + 1)
     squad_base = max(SQUAD_ID_START, ship_base + 2 * side_span)
     weapon_base = max(WEAPON_ID_START, squad_base + 2 * side_span)
     new_ships = []
