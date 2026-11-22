@@ -201,6 +201,10 @@ pub struct NativeSoftwareRenderer {
     /// Cache exact source-mask recolors by (ship class, SavedSquad RGB).
     /// Shared physical templates and PPO workers never allocate here.
     custom_ship_art: HashMap<(u8, [u8; 3]), Arc<NativeSprite>>,
+    /// Source Carrier deck HSV selection is constant for each squad RGB.
+    /// Cache the bounded match instead of recomputing 13 HSV distances
+    /// for every Carrier in every rendered frame of a large battle.
+    carrier_deck_match_cache: HashMap<[u8; 3], Option<usize>>,
     /// Recolor variants of source clips, owned only by the visible UI.
     animated_ship_art: HashMap<(u8, u8, usize, [u8; 3]), Arc<NativeSprite>>,
     /// Frames and recolor of actual 20-frame source ShipRemains, never
@@ -861,6 +865,7 @@ impl NativeSoftwareRenderer {
             selected_squad_lookup: HashSet::new(),
             command_target_ship_ids: HashSet::new(),
             custom_ship_art: HashMap::new(), animated_ship_art: HashMap::new(),
+            carrier_deck_match_cache: HashMap::new(),
             colored_ship_remains: HashMap::new(),
             sprite_raster_candidate_pixels: 0,
             sprite_raster_opaque_pixels: 0,
@@ -1111,9 +1116,18 @@ impl NativeSoftwareRenderer {
     fn draw_carrier_deck(
         &mut self, color: Option<[u8; 3]>, position: Vec2, radians: f32,
     ) -> bool {
-        let Some(index) = color.and_then(carrier_deck_index) else {
-            return false;
+        let Some(color) = color else { return false; };
+        let index = if let Some(cached) = self.carrier_deck_match_cache.get(&color) {
+            *cached
+        } else {
+            let match_index = carrier_deck_index(color);
+            if self.carrier_deck_match_cache.len() >= 256 {
+                self.carrier_deck_match_cache.clear();
+            }
+            self.carrier_deck_match_cache.insert(color, match_index);
+            match_index
         };
+        let Some(index) = index else { return false; };
         let Some(atlas) = source_carrier_decks() else { return false; };
         self.draw_sprite(
             &atlas.sprites[index], position, radians,
