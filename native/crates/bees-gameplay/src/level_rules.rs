@@ -210,6 +210,8 @@ pub struct NativeReinforcementGauges {
     pub timed_waves: usize,
     pub waiting_for_campaign_cue: usize,
     pub waiting_for_ship_death: usize,
+    /// Authored physical objective deaths (not ship elimination).
+    pub waiting_for_map_object_destruction: usize,
     /// Fixed ticks where cached source wakeups avoided inspecting any wave.
     pub idle_ticks_skipped: u64,
     /// Fixed ticks where a scheduled time or real source event merited a scan.
@@ -224,6 +226,7 @@ impl NativeReinforcementGauges {
         self.timed_waves += other.timed_waves;
         self.waiting_for_campaign_cue += other.waiting_for_campaign_cue;
         self.waiting_for_ship_death += other.waiting_for_ship_death;
+        self.waiting_for_map_object_destruction += other.waiting_for_map_object_destruction;
         self.idle_ticks_skipped += other.idle_ticks_skipped;
         self.wakeup_scans += other.wakeup_scans;
     }
@@ -260,6 +263,8 @@ pub struct NativeScriptedQueueMeasurements {
     /// Exclusive queue categories sampled from real roster and World time.
     pub waiting_for_campaign_cue: usize,
     pub waiting_for_ship_death: usize,
+    #[serde(default)]
+    pub waiting_for_map_object_destruction: usize,
     pub waiting_for_deployment: usize,
     pub waiting_for_start_time: usize,
     pub waiting_for_arrival: usize,
@@ -316,6 +321,7 @@ impl NativeScriptedQueueMeasurements {
         self.pending_orders += other.pending_orders;
         self.waiting_for_campaign_cue += other.waiting_for_campaign_cue;
         self.waiting_for_ship_death += other.waiting_for_ship_death;
+        self.waiting_for_map_object_destruction += other.waiting_for_map_object_destruction;
         self.waiting_for_deployment += other.waiting_for_deployment;
         self.waiting_for_start_time += other.waiting_for_start_time;
         self.waiting_for_arrival += other.waiting_for_arrival;
