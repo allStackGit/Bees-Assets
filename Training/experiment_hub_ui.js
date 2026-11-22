@@ -6215,9 +6215,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const actions=cell(tr,'');
             if(['tinybrains','courier'].includes(j.project_id))
-                actions.append(button('Duplicate job',()=>{
-                    try {duplicateJobIntoTrain(j,groupWorkers);}
-                    catch(error){feedback('hub-job-message',error.message);}
+                actions.append(button('Duplicate job',async()=>{
+                    try {await duplicateJobIntoTrain(j,groupWorkers);}
+                    catch(error){
+                        // This control lives on Monitor, but its form and
+                        // message are on Train. Never hide a duplication error.
+                        selectTab('train');
+                        feedback('hub-job-message',String(error.message||error));
+                    }
                 }));
             actions.append(button('Rename run',async()=>{
                 const entered=prompt('Run name (optional; blank restores the configuration name):',
@@ -8562,13 +8567,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 }).join(' ')
             :'No eligible unreserved TinyBrains collector listener. Check the rollout project, enrolled workers, endpoints and existing group reservations.';
     }
-    function duplicateJobIntoTrain(job,workers) {
-        const saved=state.configurations.find(c=>c.id===job.configuration_id&&
+    async function duplicateJobIntoTrain(job,workers) {
+        let saved=state.configurations.find(c=>c.id===job.configuration_id&&
             c.revision===job.configuration_revision&&c.project_id===job.project_id);
-        if(!saved)
-            throw Error('The original configuration revision is no longer available. Restore its frozen configuration in Design before duplicating.');
-        if(job.continuation_of_job_id||job.after_job_id||job.candidate_selection)
-            throw Error('This job belongs to a checkpoint or dependency sequence. Select a valid new predecessor explicitly instead of duplicating its lineage.');
+        let recovered=false;
+        if(!saved) {
+            // Jobs freeze their inputs independently of subsequent Design
+            // revisions. Recreate a normal saved configuration from those
+            // exact inputs rather than silently using a newer revision.
+            if(!job.frozen_parameters||typeof job.frozen_parameters!=='object')
+                throw Error('This job has no frozen configuration to duplicate.');
+            const parameters=structuredClone(job.frozen_parameters);
+            // Distributed endpoint/CPU placement belongs to the reservation,
+            // not an operator-editable Design configuration.
+            delete parameters.rollout_endpoints;
+            delete parameters.remote_lineage_plan;
+            delete parameters.shared_policy_cpus;
+            const created=await action('hub/configurations',{
+                project_id:job.project_id,
+                name:((job.configuration_name||'Training job')+' copy').slice(0,100),
+                parameters,
+                ...(job.evaluation_monitor?{evaluation_monitor:job.evaluation_monitor}:{}),
+                ...(job.evaluation_stop?{evaluation_stop:job.evaluation_stop}:{})
+            });
+            recovered=true;
+            await reload();
+            saved=state.configurations.find(c=>c.id===created.id&&
+                c.revision===created.revision&&c.project_id===job.project_id);
+            if(!saved)throw Error('Duplicated configuration was saved but could not be reloaded.');
+        }
         const resourceCopy=member=>{
             const budget=structuredClone(member.resources);
             const lease=state.reservations.find(l=>l.id===member.lease_id);
@@ -8576,7 +8603,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 budget.gpus=lease.resources.gpus.slice();
             return budget;
         };
-        const learner=job.assigned_machine_id;
+        const learner=job.assigned_machine_id||job.continuation_machine_id;
         let budgets=null,matching=false,distributed=null;
         if(job.distributed_rollout_managed||job.distributed_courier_managed) {
             distributed=job.project_id==='tinybrains'?'tinybrains':'courier';
@@ -8609,7 +8636,10 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         $('hub-job-configuration').value=saved.id;
-        $('hub-job-predecessor').value='';
+        const predecessor=job.continuation_of_job_id||job.after_job_id;
+        const canReusePredecessor=predecessor&&
+            [...$('hub-job-predecessor').options].some(o=>o.value===predecessor);
+        $('hub-job-predecessor').value=canReusePredecessor?predecessor:'';
         $('hub-job-run-name').value='';
         $('hub-job-resources').value=JSON.stringify(resourceCopy(job),null,2);
         const availableMachine=[...$('hub-job-machine').options].some(o=>o.value===learner);
@@ -8633,7 +8663,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         selectTab('train');
-        feedback('hub-job-message','Job copied into the Train form. Review the original configuration, checkpoint import, machine and budgets, then queue a new independent run. No job was started.');
+        feedback('hub-job-message',
+            (recovered?'Created a saved copy of the job\'s original frozen configuration. ':'')+
+            'Job copied into the Train form. Review configuration, machine and budgets before queueing. '+
+            (predecessor&&!canReusePredecessor
+                ?'The original predecessor is not currently eligible; reselect a verified predecessor before queueing a continuation. '
+                :canReusePredecessor
+                    ?'The original predecessor is selected; verify its checkpoint before queueing. ':'')+
+            'No job was started.');
         $('hub-job-resources').scrollIntoView({block:'center'});
     }
     $('hub-job-configuration').addEventListener('change',()=>{
