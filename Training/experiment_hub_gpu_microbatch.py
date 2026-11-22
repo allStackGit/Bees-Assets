@@ -48,6 +48,31 @@ def _split_results(value, sizes):
     raise TypeError("Coalesced forward outputs must be tensors")
 
 
+def _unpad_output(value, actual, padded):
+    """Restore the observation axis without copying owned GPU output."""
+    if isinstance(value, torch.Tensor):
+        if value.ndim < 1 or value.shape[0] != padded:
+            raise ValueError("Padded model did not preserve the observation batch axis")
+        return value[:actual]
+    if isinstance(value, tuple):
+        parts = [_unpad_output(part, actual, padded) for part in value]
+        return type(value)(*parts) if hasattr(value, "_fields") else tuple(parts)
+    if isinstance(value, list):
+        return [_unpad_output(part, actual, padded) for part in value]
+    if isinstance(value, dict):
+        return {key:_unpad_output(part, actual, padded)
+                for key,part in value.items()}
+    raise TypeError("Padded model outputs must contain tensors")
+
+
+def _stable_batch_rows(rows, limit):
+    """Conservative GPU graph shapes without large empty minibatches."""
+    quantum = (1 << (rows-1).bit_length()) if rows < 8 else (
+        8 if rows < 64 else 32 if rows < 256 else 64)
+    target = ((rows+quantum-1)//quantum)*quantum
+    return target if target <= limit and target <= rows*1.5 else rows
+
+
 class BatchFuture(Future):
     """A completion that transfers producer stream ownership to its consumer."""
 
@@ -325,20 +350,43 @@ class FrozenInferenceMicrobatcher:
                 self._executors.popitem(last=False)
         else:
             self._executors.move_to_end(keys)
-        def grouped():
-            inputs = []
+        def grouped(bucket=False):
+            inputs, original_rows, target_rows = [], [], []
             for key in keys:
                 members = owners[key]
-                inputs.append(tuple(
+                packed = tuple(
                     torch.cat([item.inputs[i] for item in members], dim=0)
                     if len(members)>1 else members[0].inputs[i]
-                    for i in range(len(members[0].inputs))))
+                    for i in range(len(members[0].inputs)))
+                rows = sum(item.rows for item in members)
+                target = _stable_batch_rows(rows, self.max_batch_rows) if bucket else rows
+                inputs.append(packed)
+                original_rows.append(rows)
+                target_rows.append(target)
+            if bucket:
+                padded_rows = sum(target_rows)
+                padded_bytes = sum(
+                    target*sum(t[0].numel()*t.element_size() for t in row)
+                    for row,target in zip(inputs,target_rows))
+                if (padded_rows > self.max_batch_rows or
+                        padded_bytes > self.max_batch_bytes):
+                    raise ValueError("Shape-stable padding exceeds GPU batch lease")
+                for idx,(row,actual,target) in enumerate(
+                        zip(inputs,original_rows,target_rows)):
+                    if target==actual:
+                        continue
+                    inputs[idx] = tuple(torch.cat([
+                        t, t.new_zeros((target-actual,*t.shape[1:]))
+                    ], dim=0) for t in row)
             values = executor.run(inputs)
             resolved = {}
-            for key, value in zip(keys, values):
+            for idx,(key,value) in enumerate(zip(keys,values)):
                 members = owners[key]
+                actual, target = original_rows[idx],target_rows[idx]
+                if target!=actual:
+                    value = _unpad_output(value, actual, target)
                 pieces = _split_results(value, [item.rows for item in members])
-                for item, piece in zip(members, pieces):
+                for item,piece in zip(members,pieces):
                     resolved[id(item)] = piece
             return [resolved[id(item)] for item in group]
 
