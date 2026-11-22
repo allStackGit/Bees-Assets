@@ -492,13 +492,14 @@ class MeasuredGpuExecution:
             # Only GPU jobs need the extra first-shape calibration. CPU and
             # mixed-device cohorts stay on the original serial model calls.
             if self.fusion.device is not None and self.fusion.device.type == "cuda":
-                args, rows, fused_shape = self.fusion._prepare(batches)
-                if self.fusion.compatible and fused_shape is not None:
-                    self.fusion.qualifications += 1
-                    decision = self.fusion._qualify(args, rows)
-                    self.fusion._profiles[fused_shape] = decision
-                    if decision.fused:
-                        choice, best_seconds = "fused", decision.fused_seconds
+                if self.fusion.compatible:
+                    args, rows, fused_shape = self.fusion._prepare(batches)
+                    if fused_shape is not None:
+                        self.fusion.qualifications += 1
+                        decision = self.fusion._qualify(args, rows)
+                        self.fusion._profiles[fused_shape] = decision
+                        if decision.fused:
+                            choice, best_seconds = "fused", decision.fused_seconds
                 if self.streams.enabled:
                     stream_args, stream_shape = self.streams._prepare(batches)
                     self.streams.qualifications += 1
