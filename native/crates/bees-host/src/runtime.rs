@@ -650,12 +650,12 @@ where
     ) -> Result<usize, HostPlayerInputError>
     where M: NativeLevelPlayerContext
     {
-        let world = (0..self.simulation.world_count()).filter_map(|index|
-            self.simulation.world_mut(index)
-                .filter(|world| world.id == input.world_id)
-        ).next().ok_or(HostPlayerInputError::Gameplay(
+        let index = (0..self.simulation.world_count()).find(|&index|
+            self.simulation.world(index).is_some_and(|world| world.id == input.world_id)
+        ).ok_or(HostPlayerInputError::Gameplay(
             NativePlayerInputError::StaleWorld
         ))?;
+        let world = self.simulation.world_mut(index).expect("located world");
         if world.episode_revision() != input.episode_revision {
             return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld));
         }
