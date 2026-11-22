@@ -2837,6 +2837,8 @@ pub fn connect_remote(
     let mut show_controls_help=false;
     let mut surrender_confirmation: Option<(String,u64,u64)> = None;
     let mut show_codex=false;
+    let mut show_campaign_rewards=false;
+    let mut campaign_rewards_scroll=0_usize;
     let mut codex_seen=[false;bees_sim::ship_assets::SHIP_TYPE_COUNT];
     let mut codex_selected=18_u8;
     // One authenticated host/world/episode owns each discovery set.
@@ -2860,6 +2862,7 @@ pub fn connect_remote(
         previous_frame=now;
         if surrender_confirmation.is_none() && window.is_key_pressed(Key::F1, KeyRepeat::No) && !held_fire_active {
             show_codex=false;
+            show_campaign_rewards=false;
             show_controls_help=!show_controls_help;
             if show_controls_help {
                 // A modal may not continue an old target gesture or turn
@@ -2874,6 +2877,7 @@ pub fn connect_remote(
         }
         if surrender_confirmation.is_none() && window.is_key_pressed(Key::F2, KeyRepeat::No) && !held_fire_active {
             show_codex=!show_codex;
+            show_campaign_rewards=false;
             show_controls_help=show_codex;
             if show_codex {
                 shooting_menu=false;shooting_press=None;
@@ -2883,6 +2887,39 @@ pub fn connect_remote(
             }
             last_left=window.get_mouse_down(MouseButton::Left);
             last_right=window.get_mouse_down(MouseButton::Right);
+        }
+        if surrender_confirmation.is_none() &&
+            window.is_key_pressed(Key::F9,KeyRepeat::No) && !held_fire_active
+        {
+            if show_campaign_rewards {
+                show_campaign_rewards=false;
+                show_controls_help=false;
+            } else if peer.campaign_reward_details.is_empty() || peer.spectator {
+                peer.notice="No committed campaign career receipt for this player".into();
+            } else {
+                show_campaign_rewards=true;
+                show_codex=false;
+                show_controls_help=true;
+                campaign_rewards_scroll=0;
+                mode=None;patrol_start=None;drag_start=None;right_press=None;
+                shooting_menu=false;shooting_press=None;
+                hud_press=None;squad_tab_press=None;minimap_dragging=false;
+                last_selection_press=None;double_left_press=false;
+            }
+            last_left=window.get_mouse_down(MouseButton::Left);
+            last_right=window.get_mouse_down(MouseButton::Right);
+        }
+        if show_campaign_rewards {
+            let last=peer.campaign_reward_details.len().saturating_sub(18);
+            if window.is_key_pressed(Key::Up,KeyRepeat::No) {
+                campaign_rewards_scroll=campaign_rewards_scroll.saturating_sub(1);
+            } else if window.is_key_pressed(Key::Down,KeyRepeat::No) {
+                campaign_rewards_scroll=(campaign_rewards_scroll+1).min(last);
+            } else if window.is_key_pressed(Key::PageUp,KeyRepeat::No) {
+                campaign_rewards_scroll=campaign_rewards_scroll.saturating_sub(18);
+            } else if window.is_key_pressed(Key::PageDown,KeyRepeat::No) {
+                campaign_rewards_scroll=(campaign_rewards_scroll+18).min(last);
+            }
         }
         if show_codex {
             let known=codex_seen.iter().enumerate().filter_map(|(kind, seen)|
@@ -2946,6 +2983,7 @@ pub fn connect_remote(
         } else if escape && show_controls_help {
             show_controls_help=false;
             show_codex=false;
+            show_campaign_rewards=false;
             last_left=window.get_mouse_down(MouseButton::Left);
             last_right=window.get_mouse_down(MouseButton::Right);
         } else if !show_controls_help && (cancel || escape) {
@@ -4000,6 +4038,22 @@ pub fn connect_remote(
         }
         if surrender_confirmation.is_some() {
             NativeSoftwareRenderer::draw_surrender_panel(&mut pixels,WIDTH,HEIGHT);
+        } else if show_campaign_rewards && !peer.campaign_reward_details.is_empty() {
+            let total=peer.campaign_reward_details.len();
+            let start=campaign_rewards_scroll.min(total.saturating_sub(18));
+            let end=(start+18).min(total);
+            let counter=format!("Committed lines {}–{} of {}",start+1,end,total);
+            let mut rows=vec![
+                "SAVED CAMPAIGN RESULT / FLEET AWARDS",
+                "F9 / Esc close  |  Up/Down/PgUp/PgDn scroll",
+                counter.as_str(),
+                "",
+            ];
+            rows.extend(peer.campaign_reward_details[start..end]
+                .iter().map(String::as_str));
+            NativeSoftwareRenderer::draw_help_panel(
+                &mut pixels,WIDTH,HEIGHT,&rows,&[1,2],
+            );
         } else if show_codex {
             let catalog=source_ship_catalog();
             let known=codex_seen.iter().enumerate()
@@ -4040,6 +4094,7 @@ pub fn connect_remote(
             const LINES: &[&str] = &[
                 "BEES NATIVE / MULTIPLAYER CONTROLS",
                 "F1 or Esc: close help   F2: United Fleet Codex",
+                "F9: inspect the authenticated committed campaign rewards",
                 "SELECTION",
                 "Left click: ship   Drag: box select   Double click: ship type",
                 "Ctrl+click: add/remove   Ctrl+A: all   1-0: numbered squads",
