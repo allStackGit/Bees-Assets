@@ -969,17 +969,17 @@ impl CampaignProgress<'_> {
                 .cmp(&(u128::from(b.0) * u128::from(a.1)))
         };
         std::array::from_fn(|metric| {
-            let missing = self.battles_without_fleet_data > 0 ||
-                (metric <= 3 && candidates.iter().any(|ship| ship.record.is_some_and(
-                    |record| !record.combat_history_complete ||
+            // Source ranks each faction separately. A missing earlier
+            // combat receipt for Bees cannot invalidate an otherwise
+            // complete Humans leaderboard (or vice versa).
+            let incomplete = [1, 2].map(|side| {
+                self.battles_without_fleet_data > 0 ||
+                (metric <= 3 && candidates.iter().any(|ship|
+                    ship.side == side && ship.record.is_some_and(|record|
+                        !record.combat_history_complete ||
                         (metric == 3 && record.combat.source_kills.is_none())
-                )));
-            if missing {
-                return vec![
-                    "Historical FleetShip records are incomplete".to_owned(),
-                    "Ranking requires complete comparable battle receipts".to_owned(),
-                ];
-            }
+                    )))
+            });
             let mut ranked = candidates.clone();
             ranked.sort_unstable_by(|a, b|
                 a.side.cmp(&b.side)
@@ -991,7 +991,19 @@ impl CampaignProgress<'_> {
             let mut previous_score = (0_u64, 1_u64);
             let mut rank = 0;
             let mut members_in_side = 0;
+            let mut incomplete_announced = [false; 2];
             for candidate in ranked {
+                let index = (candidate.side - 1) as usize;
+                if incomplete[index] {
+                    if !incomplete_announced[index] {
+                        rows.push(format!(
+                            "Side {}: incomplete historical FleetShip records",
+                            candidate.side,
+                        ));
+                        incomplete_announced[index] = true;
+                    }
+                    continue;
+                }
                 let value = score(&candidate, metric);
                 if candidate.side != previous_side {
                     rank = 1;
