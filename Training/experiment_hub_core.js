@@ -17,6 +17,7 @@ const {ProgressHistory}=require('./experiment_hub_history');
 const {EvaluationHistory}=require('./experiment_hub_evaluation_history');
 const {validateCatalog,supportsDesign}=require('./experiment_hub_design_fields');
 const {ObservationArchive}=require('./experiment_hub_observations');
+const {ThroughputHistory}=require('./experiment_hub_throughput');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -1678,7 +1679,7 @@ function canPrepareSimulation(machine,job) {
             machine.execution_capabilities?.cgroup_controllers?.includes(c));
 }
 function allocationChoice(machines,reservations,job,preferredMachineId=null,
-    following=[],futureMachinesFor=()=>machines,snapshot=null) {
+    following=[],futureMachinesFor=()=>machines,snapshot=null,throughput=null) {
     const eligibleOptions=(selected,hosts,preferred=null)=>{
         const eligible=hosts.filter(machine=>
             machine.software_update_blocked!==true&&
@@ -1745,6 +1746,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         .sort((a,b)=>
             Number(Boolean(a.observed_headroom_block))-
                 Number(Boolean(b.observed_headroom_block))||
+            (throughput?throughput.compare(job,a,b):0)||
             observedLoadPreference(a,b,job.resources)||
             a.available.cpus-b.available.cpus||
             a.available.ram_mb-b.available.ram_mb||
@@ -1782,6 +1784,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         Number(Boolean(a.observed_headroom_block))-
             Number(Boolean(b.observed_headroom_block))||
         loss.get(a.machine_id)-loss.get(b.machine_id)||
+        (throughput?throughput.compare(job,a,b):0)||
         observedLoadPreference(a,b,job.resources));
     return options[0];
 }
@@ -1914,6 +1917,7 @@ class ExperimentHub {
         this.progressHistory = new ProgressHistory(path.join(root,'hub-chart-v1.json'));
         this.evaluationHistory = new EvaluationHistory(root);
         this.observations = new ObservationArchive(root);
+        this.throughputHistory = new ThroughputHistory();
         this.bottleneckEvidence = new BottleneckEvidence();
         this.executionOrderCursor = new Map();
         // Coordinated learner Starts are one-use durable approvals bound
@@ -2836,7 +2840,7 @@ class ExperimentHub {
                     const eligible=eligibleHosts(job).filter(m=>
                         m.id!==source.id&&!overcommitted.has(m.id));
                     const chosen=allocationChoice(eligible,snapshot.reservations,job,
-                        null,[],undefined,snapshot);
+                        null,[],undefined,snapshot,this.throughputHistory);
                     if(!chosen||chosen.observed_headroom_block)continue;
                     const moved=this.moveJobClaim({job_id:job.id,expected_lease_id:job.lease_id,
                         machine_id:chosen.machine_id,confirm_move:true});
@@ -2898,7 +2902,7 @@ class ExperimentHub {
                 // hosts for later CPU or exclusive GPU jobs.
                 const following=pendingClaims.slice(index+1).filter(claimable);
                 const chosen=allocationChoice(eligibleHosts(job),snapshot.reservations,
-                    job,null,following,eligibleHosts,snapshot);
+                    job,null,following,eligibleHosts,snapshot,this.throughputHistory);
                 if(!chosen)continue;
                 const result=this.allocateJobs({
                     all_projects:true,job_ids:[job.id],
@@ -3240,7 +3244,7 @@ class ExperimentHub {
             }
             const chosen=allocationChoice(machines,next.reservations,job,
                 value.machine_id||null,jobs.slice(index+1),()=>machines,
-                {machines,jobs:next.jobs});
+                {machines,jobs:next.jobs},this.throughputHistory);
             if(!chosen) {
                 results.push({job_id:job.id,machine_id:null,lease_id:null,
                     status:'insufficient_capacity',
@@ -5980,6 +5984,11 @@ class ExperimentHub {
                 // This archive is observational and cannot gate training.
                 const archived=chartProgress?
                     this.observations.record(job,chartProgress,observed,received):false;
+                if(archived&&liveOwner) {
+                    const lease=this.state.reservations.find(r=>r.id===job.lease_id);
+                    if(lease&&lease.machine_id===machine.id)
+                        this.throughputHistory.observe(job,lease.machine_id,chartProgress);
+                }
                 // When a source update is unchanged or absent, keep the
                 // authenticated host observation with no invented trainer
                 // step count or source timestamp. An archive failure stays
@@ -8036,7 +8045,7 @@ class ExperimentHub {
                 ['active','offered','acknowledged'].includes(r.status)).length;
             const chosen=claimCount<100
                 ?allocationChoice(machines,reservations,job,null,
-                    ordered.slice(index+1),()=>machines,{machines: snapshot.machines,jobs:draftJobs}):null;
+                    ordered.slice(index+1),()=>machines,{machines: snapshot.machines,jobs:draftJobs},this.throughputHistory):null;
             if(chosen) {
                 reservations.push({
                     machine_id:chosen.machine_id,status:'offered',
