@@ -801,6 +801,15 @@ fn source_ship_art() -> Option<&'static SourceShipAtlas> {
     )).as_ref()
 }
 
+fn source_ship_effects() -> Option<&'static SourceShipAtlas> {
+    // BSS1 contains immutable source prefab sprites, independent of
+    // game state and lazy until a visible healing event needs them.
+    static ATLAS: OnceLock<Option<SourceShipAtlas>> = OnceLock::new();
+    ATLAS.get_or_init(|| load_source_art(
+        "ship-effects.rgba", SourceShipAtlas::decode,
+    )).as_ref()
+}
+
 fn source_queen_parts() -> Option<&'static SourceShipAtlas> {
     // BSS1 is the same immutable source sprite envelope without color
     // masks. This is loaded only if the player actually sees a Queen.
@@ -1097,7 +1106,17 @@ impl NativeSoftwareRenderer {
                 px > self.width as f32 + 8.0 || py > self.height as f32 + 8.0 {
                 continue;
             }
-            self.cross(point, 5.0, 0x75dbab);
+            let original = source_ship_effects()
+                .and_then(|atlas| atlas.sprites[0].as_ref());
+            let painted = original.is_some_and(|art|
+                self.draw_sprite(&art.sprite, point, 0.0,
+                    self.camera.pixels_per_unit / art.pixels_per_unit, 1.0)
+            );
+            if !painted {
+                // Minimal packages lacking optional visual assets retain
+                // readable healing feedback without synthetic game effects.
+                self.cross(point, 5.0, 0x75dbab);
+            }
             drawn += 1;
         }
         drawn

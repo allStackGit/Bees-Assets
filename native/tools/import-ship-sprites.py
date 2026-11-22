@@ -49,6 +49,10 @@ SHIP_ANIMATIONS = (
 # are reconstructed in the common native local/LAN presentation path.
 QUEEN_PART_IMAGES = ("queen_crown.png", "queen_eye.png")
 
+# Immutable prefab sprites shared by local and authenticated LAN effects.
+# The original Beehive Healing Cross uses a 50x50 sprite at 8 pixels/unit.
+SHIP_EFFECT_IMAGES = ("healing.png",)
+
 # The Queen Explosion prefab has four independently sorted SpriteRenderers
 # with original 40-frame, 10 FPS clips and one Kill event at 4s.
 QUEEN_EXPLOSION = (
@@ -397,6 +401,8 @@ def main():
                         default=ROOT / "native/assets/carrier-decks.rgba")
     parser.add_argument("--queen-output", type=Path,
                         default=ROOT / "native/assets/queen-parts.rgba")
+    parser.add_argument("--effects-output", type=Path,
+                        default=ROOT / "native/assets/ship-effects.rgba")
     parser.add_argument("--queen-explosion-output", type=Path,
                         default=ROOT / "native/assets/queen-explosion.rgba")
     args = parser.parse_args()
@@ -412,6 +418,9 @@ def main():
         QUEEN_PART_IMAGES, ROOT / "Sprites/Ships/Parts", b"BSS1", False,
     )
     queen_explosion = pack_queen_explosion()
+    effects, effect_count = pack(
+        SHIP_EFFECT_IMAGES, ROOT / "Sprites/Ships/Parts", b"BSS1", False,
+    )
     projectiles, projectile_count = pack(
         PROJECTILE_IMAGES, ROOT / "Sprites/Projectiles", b"BPS1", True,
     )
@@ -425,9 +434,11 @@ def main():
     remains_path = write_atomic(args.remains_output, remains)
     decks_path = write_atomic(args.deck_output, decks)
     queen_path = write_atomic(args.queen_output, queen_parts)
+    effects_path = write_atomic(args.effects_output, effects)
     queen_explosion_path = write_atomic(args.queen_explosion_output, queen_explosion)
     print(f"Queen explosion: 4 original animated layers, {len(queen_explosion)} bytes at {queen_explosion_path}")
     print(f"Queen prefab parts: {queen_part_count} sprites, {len(queen_parts)} bytes at {queen_path}")
+    print(f"Source visual effects: {effect_count} sprites, {len(effects)} bytes at {effects_path}")
     print(f"Carrier deck overlays: 13 variants, {len(decks)} bytes at {decks_path}")
     print(f"Ship remains: {remains_count} classes, "
           f"{len(remains)} bytes at {remains_path}")

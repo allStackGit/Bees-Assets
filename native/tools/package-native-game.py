@@ -829,6 +829,7 @@ def main() -> None:
             "--remains-output", str(assets / "ship-remains.rgba"),
             "--deck-output", str(assets / "carrier-decks.rgba"),
             "--queen-output", str(assets / "queen-parts.rgba"),
+            "--effects-output", str(assets / "ship-effects.rgba"),
             "--queen-explosion-output", str(assets / "queen-explosion.rgba"),
         ], cwd=ROOT, check=True)
         for source, relative in audio:
