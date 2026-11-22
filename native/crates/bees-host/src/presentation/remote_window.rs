@@ -2168,6 +2168,19 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 text::draw_at(pixels,WIDTH,16,23,
                     text::fit(label,FIELD-32),1,[255,211,130]);
             }
+            if objective.get("kind").and_then(Value::as_str) ==
+                Some("withdrawal_pending")
+            {
+                let owner = objective.get("exiting_side")
+                    .and_then(Value::as_i64) == Some(i64::from(side));
+                let label = if owner {
+                    "Mine, defend, then press F3 to open the retreat corridor"
+                } else {
+                    "Prevent the enemy fleet from opening its retreat corridor"
+                };
+                text::draw_at(pixels, WIDTH, 16, 23,
+                    text::fit(label, FIELD-32), 1, [255, 211, 130]);
+            }
             if objective.get("kind").and_then(Value::as_str) == Some("extraction") {
                 let escaping = objective.get("exiting_side")
                     .and_then(Value::as_i64) == Some(i64::from(side));
