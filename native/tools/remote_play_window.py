@@ -162,6 +162,10 @@ class RemoteBattleWindow:
         self.minimap_dragging = False
         self.selected = []
         self.last_ship_click = None
+        # Presentation-only combat cues; the server owns every hit, death,
+        # warped ship, and explosion, and has already filtered them by fog.
+        self.visible_effects = []
+        self.last_effect_redraw_at = 0.0
         self.weapon_overlay_on = tk.BooleanVar(value=False)
         self.last_feedback = ""
         self.dialogue_identity = None
@@ -353,6 +357,7 @@ class RemoteBattleWindow:
         self.selected = []
         self.last_ship_click = None
         self.minimap_dragging = False
+        self.visible_effects = []
         self.weapon_overlay_on.set(False)
         self.patrol_start = None
         self.held_drag = False
@@ -479,12 +484,32 @@ class RemoteBattleWindow:
                     self.selected = []
                     self.last_ship_click = None
                     self.minimap_dragging = False
+                    self.visible_effects = []
                     self.weapon_overlay_on.set(False)
                     self.patrol_start = None
                     self.held_drag = False
                     self.mode = None
                 self.state = state
                 self.drawn_scope = key
+                now = time.monotonic()
+                self.visible_effects = [
+                    (started, duration, event)
+                    for started, duration, event in self.visible_effects
+                    if now - started < duration
+                ]
+                for event in state.get("audio_events", []):
+                    effect = event.get("effect")
+                    if (effect in ("impact", "huge_explosion", "warp",
+                                   "striker_bomb", "obstacle_debris") or
+                            event.get("ship_death") is not None):
+                        duration = (0.9 if event.get("ship_death") is not None
+                                    else 0.7 if effect == "huge_explosion"
+                                    else 0.45)
+                        self.visible_effects.append((now, duration, event))
+                # The authoritative host already bounds audio events.
+                # Further bound presentation history during sustained fire.
+                if len(self.visible_effects) > 96:
+                    del self.visible_effects[:-96]
                 dialogue = state.get("campaign_dialogue")
                 identity = ((key[0], key[1], dialogue["sequence"])
                             if dialogue is not None else None)
@@ -537,6 +562,16 @@ class RemoteBattleWindow:
         self.campaign_details_button.state(
             ["!disabled"] if has_campaign_results else ["disabled"]
         )
+        now = time.monotonic()
+        if self.visible_effects:
+            self.visible_effects = [
+                (started, duration, event)
+                for started, duration, event in self.visible_effects
+                if now - started < duration
+            ]
+            if self.visible_effects and now - self.last_effect_redraw_at >= 0.1:
+                self.last_effect_redraw_at = now
+                self.draw()
         terminal = self.console.battle_receipt_snapshot()
         campaign_receipt = self.console.campaign_receipt_snapshot()
         if (terminal != self.shown_terminal_receipt or
@@ -1075,6 +1110,45 @@ class RemoteBattleWindow:
         target = self.minimap_world_at(event.x, event.y)
         if target is not None:
             self.center_camera_on(*target)
+
+    def draw_combat_cues(self):
+        now = time.monotonic()
+        for started, duration, event in self.visible_effects:
+            progress = (now-started)/duration
+            if not 0 <= progress < 1:
+                continue
+            death = event.get("ship_death")
+            effect = event.get("effect")
+            x, y = self.to_screen(event["x"], event["y"])
+            if not -120 <= x <= self.view_width+120 or not -120 <= y <= self.view_height+120:
+                continue
+            if death is not None:
+                # Physical death hull extent is supplied by CombatWorld;
+                # the expanding circle is a visual cue, not an AoE model.
+                world_radius = max(0.0, death.get("radius", 0.0))
+                radius = min(90.0, max(8.0,
+                    world_radius * self.transform()[0] * (0.5+progress)))
+                color = "#ffcc78"
+            elif effect == "huge_explosion":
+                radius = 9 + 36 * progress
+                color = "#f0a365"
+            elif effect == "warp":
+                radius = 6 + 25 * progress
+                color = FRIENDLY
+            elif effect == "obstacle_debris":
+                radius = 7 + 20 * progress
+                color = MINERAL
+            elif effect == "striker_bomb":
+                radius = 6 + 10 * progress
+                color = ENEMY
+            else:
+                radius = 4 + 11 * progress
+                color = "#ffe4a2"
+            self.canvas.create_oval(
+                x-radius, y-radius, x+radius, y+radius,
+                outline=color, dash=(3, 3) if progress > 0.6 else (),
+                width=2 if progress < 0.5 else 1,
+            )
 
     def draw_minimap(self, state, selected_ship_ids):
         geometry = self.minimap_geometry()
@@ -1623,6 +1697,7 @@ class RemoteBattleWindow:
             x, y = self.to_screen(*self.patrol_start)
             self.canvas.create_oval(x-8, y-8, x+8, y+8,
                                     outline=FRIENDLY, dash=(4, 2), width=2)
+        self.draw_combat_cues()
         self.draw_minimap(state, selected_ship_ids)
         info = f"Tick {state['tick']}  Side {state['viewer_side']}  Friendly squads {len(selected)}"
         final = self.console.battle_receipt_snapshot()
