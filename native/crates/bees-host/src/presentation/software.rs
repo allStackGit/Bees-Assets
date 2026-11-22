@@ -282,6 +282,10 @@ pub struct NativeSoftwareRenderer {
     /// Source-event admission counters accumulated during unrendered
     /// simulation ticks and transferred to the next visible frame.
     pending_visual_event_counts: NativeRenderCounts,
+    /// A graphical frame can redraw the same fixed tick many times and
+    /// the live per-tick observer may already have consumed it. Never
+    /// rescan an authoritative combat event buffer twice.
+    last_visual_event_batch: Option<(WorldId, u64, u64)>,
     death_effects: Vec<ShipDeathVisual>,
     impact_effects: Vec<CombatImpactVisual>,
     healing_crosses: Vec<HealingCrossVisual>,
@@ -992,6 +996,7 @@ impl NativeSoftwareRenderer {
             debris_frame: None, obstacle_debris: Vec::new(),
             death_owner: None,
             pending_visual_event_counts: NativeRenderCounts::default(),
+            last_visual_event_batch: None,
             death_effects: Vec::new(),
             impact_effects: Vec::new(), healing_crosses: Vec::new(),
             projectile_art_owner: None, projectile_art_ticks: HashMap::new() })
@@ -1008,6 +1013,10 @@ impl NativeSoftwareRenderer {
         player_authority: &dyn NativePlayerAuthority,
         counts: &mut NativeRenderCounts,
     ) {
+        if self.last_visual_event_batch == Some((world, revision, tick)) {
+            return;
+        }
+        self.last_visual_event_batch = Some((world, revision, tick));
         self.begin_death_scene(world, revision);
         for event in combat.events() {
             if let bees_sim::combat_world::CombatEvent::CommandHealingCross {
