@@ -136,6 +136,11 @@ struct LevelConfig {
     /// the actual capacity from the original level or challenge.
     #[serde(default)]
     supply_capacity: Option<SourceSupplyCapacity>,
+    /// Authoritative source Stage timer for collision asteroids. Missing
+    /// means the Level has no timer, not that the game draws fake asteroids.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    collision_asteroid_timer:
+        Option<bees_gameplay::level_rules::NativeCollisionAsteroidTimerSpec>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -775,6 +780,7 @@ fn make_setup(
         broadphase_cell_size: config.broadphase_cell_size,
         decision_period: period,
         initial_full_asteroids: 0,
+        collision_asteroid_timer: level.collision_asteroid_timer,
         groups,
         ship_catalog: assets.shared_ship_catalog(),
         model_slots: level.model_slots.clone(),

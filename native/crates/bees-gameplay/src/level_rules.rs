@@ -26,7 +26,7 @@ use bees_sim::navigation::NavigationError;
 use bees_sim::physics::CollisionMatrix;
 use bees_sim::policy::Decision;
 use bees_sim::rl_shaping::DamageRewardMetadata;
-use bees_sim::simulation::{GameRules, World, WorldCheckpoint, WorldOwnersRestoreError};
+use bees_sim::simulation::{GameRules, World, WorldCheckpoint, WorldOwnersRestoreError, RandomStream};
 use bees_sim::telemetry::StepCounts;
 
 use crate::campaign_dialogue::{CampaignDialogueCheckpoint, CampaignDialogueRestoreError};
@@ -1002,6 +1002,59 @@ impl From<NativeLevelEventError> for NativeLevelVisionError {
 /// source command/event/reward state, decision clocks, input gestures
 /// and campaign dialogue. World RNG, authored metadata and model state
 /// remain external to this Level's owned recovery bundle.
+/// Source Stage.AsteroidMinimumSpawnRate / MaxSpawnRate after applying the
+/// original LevelOptions.AsteroidOption modifier. The interval is sampled
+/// once from the owning World RNG, just like Unity ScaledTimer.Reuse(...,
+/// true), then repeats at the same rate until the Level ends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeCollisionAsteroidTimerSpec {
+    pub minimum_seconds: u32,
+    pub maximum_seconds: u32,
+}
+
+impl NativeCollisionAsteroidTimerSpec {
+    pub fn valid(self) -> bool {
+        self.minimum_seconds >= 1 && self.minimum_seconds <= 3600 &&
+        self.maximum_seconds >= self.minimum_seconds &&
+        self.maximum_seconds <= 3600
+    }
+}
+
+/// One scalar Level timer, never another asteroid/physics registry.
+/// Full asteroid lifetime, collider, pool and visual effects remain in the
+/// canonical CombatWorld shared by game and neural training.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeCollisionAsteroidTimer {
+    spec: NativeCollisionAsteroidTimerSpec,
+    interval_seconds: f32,
+    elapsed_seconds: f32,
+    pub spawned: u64,
+}
+
+impl NativeCollisionAsteroidTimer {
+    fn new(spec: NativeCollisionAsteroidTimerSpec, random: &mut RandomStream)
+        -> Option<Self>
+    {
+        if !spec.valid() { return None; }
+        let width = spec.maximum_seconds - spec.minimum_seconds;
+        let delay = spec.minimum_seconds + random.next_below(u64::from(width.max(1))) as u32;
+        Some(Self {
+            spec, interval_seconds: delay as f32,
+            elapsed_seconds: 0.0, spawned: 0,
+        })
+    }
+    fn checkpoint_valid(self, expected: Self) -> bool {
+        self.spec == expected.spec &&
+        self.interval_seconds.is_finite() && self.interval_seconds >= self.spec.minimum_seconds as f32 &&
+        self.interval_seconds < self.spec.maximum_seconds.max(self.spec.minimum_seconds + 1) as f32 &&
+        self.interval_seconds.fract() == 0.0 &&
+        self.elapsed_seconds.is_finite() && self.elapsed_seconds >= 0.0 &&
+        self.elapsed_seconds < self.interval_seconds
+    }
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeLevelRecoveryOwnersCheckpoint {
@@ -1013,6 +1066,8 @@ pub struct NativeLevelRecoveryOwnersCheckpoint {
     held_fire_ships: HashMap<u64, Vec<i64>>,
     command_input_measurements: NativeCommandInputMeasurements,
     navigation_jobs_completed: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    collision_asteroid_timer: Option<NativeCollisionAsteroidTimer>,
 }
 
 #[derive(Debug)]
@@ -1022,6 +1077,7 @@ pub enum NativeLevelRecoveryError {
     CampaignDialogue(CampaignDialogueRestoreError),
     Events(NativeLevelEventRecoveryError),
     HeldFire,
+    CollisionAsteroidTimer,
     Combat(CombatWorldError),
 }
 
@@ -1060,6 +1116,7 @@ pub struct NativeLevelRecoveryPrepared {
     held_fire_ships: HashMap<u64, Vec<i64>>,
     command_input_measurements: NativeCommandInputMeasurements,
     navigation_jobs_completed: u64,
+    collision_asteroid_timer: Option<NativeCollisionAsteroidTimer>,
 }
 
 impl NativeLevelRecoveryPrepared {
@@ -1102,6 +1159,7 @@ pub struct NativeLevelState<M, A> {
     survivor_offsets: Vec<SquadMemberOffset>,
     command_input_measurements: NativeCommandInputMeasurements,
     navigation_jobs_completed: u64,
+    collision_asteroid_timer: Option<NativeCollisionAsteroidTimer>,
     /// Reused sparse per-ship mining credit transaction. Events may contain
     /// multiple extractions for the same ship during one combat phase.
     mining_credit_totals: HashMap<i64, i32>,
@@ -1122,6 +1180,7 @@ impl<M, A> NativeLevelState<M, A> {
             held_fire_ships: self.held_fire_ships.clone(),
             command_input_measurements: self.command_input_measurements,
             navigation_jobs_completed: self.navigation_jobs_completed,
+            collision_asteroid_timer: self.collision_asteroid_timer,
         }
     }
 
@@ -1135,6 +1194,14 @@ impl<M, A> NativeLevelState<M, A> {
     ) -> Result<NativeLevelRecoveryPrepared, NativeLevelRecoveryError> {
         if checkpoint.schema_version != 4 {
             return Err(NativeLevelRecoveryError::InvalidVersion);
+        }
+        if !match (checkpoint.collision_asteroid_timer, self.collision_asteroid_timer) {
+            (None, None) => true,
+            (Some(saved), Some(expected)) => saved.checkpoint_valid(expected) &&
+                (saved.spawned == 0 || completed_ticks > 0),
+            _ => false,
+        } {
+            return Err(NativeLevelRecoveryError::CollisionAsteroidTimer);
         }
         let dialogue = match (
             self.campaign_dialogue.as_ref(), checkpoint.campaign_dialogue,
@@ -1174,6 +1241,7 @@ impl<M, A> NativeLevelState<M, A> {
             held_fire_ships: checkpoint.held_fire_ships,
             command_input_measurements: checkpoint.command_input_measurements,
             navigation_jobs_completed: checkpoint.navigation_jobs_completed,
+            collision_asteroid_timer: checkpoint.collision_asteroid_timer,
         })
     }
 
@@ -1185,7 +1253,7 @@ impl<M, A> NativeLevelState<M, A> {
         let NativeLevelRecoveryPrepared {
             combat: staged_combat, events: staged_events, decisions, dialogue,
             held_fire_ships, command_input_measurements,
-            navigation_jobs_completed,
+            navigation_jobs_completed, collision_asteroid_timer,
         } = staged;
         self.combat.commit_recovery_owners(staged_combat);
         self.events.commit_recovery_owners(staged_events);
@@ -1194,6 +1262,7 @@ impl<M, A> NativeLevelState<M, A> {
         self.campaign_dialogue = dialogue;
         self.command_input_measurements = command_input_measurements;
         self.navigation_jobs_completed = navigation_jobs_completed;
+        self.collision_asteroid_timer = collision_asteroid_timer;
         // These are reused per-tick projections, never durable gameplay
         // owners. Rebuild them from the recovered authoritative world on
         // the next step rather than retaining stale pre-restore entries.
@@ -1262,9 +1331,25 @@ impl<M, A> NativeLevelState<M, A> {
             survivor_offsets: Vec::new(),
             command_input_measurements: NativeCommandInputMeasurements::default(),
             navigation_jobs_completed: 0,
+            collision_asteroid_timer: None,
             mining_credit_totals: HashMap::new(),
             mining_credit_order: Vec::new(),
         }
+    }
+
+    /// Install an authored source Stage timer once, before its World starts.
+    /// Sampling consumes the same per-world RNG stream as asteroid creation,
+    /// weapons and neural policy gameplay, with no renderer-owned randomness.
+    pub fn configure_collision_asteroid_timer(
+        &mut self, spec: NativeCollisionAsteroidTimerSpec,
+        random: &mut RandomStream,
+    ) -> Result<(), &'static str> {
+        if self.collision_asteroid_timer.is_some() {
+            return Err("source asteroid timer has already been installed");
+        }
+        self.collision_asteroid_timer = Some(NativeCollisionAsteroidTimer::new(spec, random)
+            .ok_or("invalid source Stage collision asteroid spawn interval")?);
+        Ok(())
     }
 
     pub fn configure_campaign_dialogue(
@@ -1474,6 +1559,20 @@ where
                 .and_then(|owner| events.commands().current_server_outcome(owner)),
             &LevelAutomaticWeapons { metadata: &state.metadata, roster: events.roster(), commands: events.commands() },
         )?;
+        // Unity's Level timer spawns pooled CollisionAsteroids in the real
+        // physical World at a fixed interval sampled when the Stage opens.
+        // This callback is independent of all policy/human actions, but
+        // uses exactly CombatWorld's established source asteroid pool.
+        // Run it after the physics contacts for this tick and before vision
+        // so every side sees the new obstacle at the next shared boundary.
+        if let Some(timer) = state.collision_asteroid_timer.as_mut() {
+            timer.elapsed_seconds += dt_seconds;
+            while timer.elapsed_seconds >= timer.interval_seconds {
+                state.combat.spawn_next_full_collision_asteroid(&mut world.random)?;
+                timer.elapsed_seconds -= timer.interval_seconds;
+                timer.spawned = timer.spawned.saturating_add(1);
+            }
+        }
         // CombatWorld returns its counts before Level-owned vision,
         // reinforcement orders and timed command callbacks run. Those
         // phases also use the same shared spatial grid; retain a baseline

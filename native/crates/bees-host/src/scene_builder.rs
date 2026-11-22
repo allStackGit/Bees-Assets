@@ -223,6 +223,8 @@ pub struct NativeAuthoredLevel<M, A> {
     pub squads: Vec<NativeAuthoredSquad>,
     /// Exact scenario count, not a population estimate.
     pub initial_full_asteroids: usize,
+    pub collision_asteroid_timer:
+        Option<bees_gameplay::level_rules::NativeCollisionAsteroidTimerSpec>,
     /// Map-local asteroid spawn bounds; imported Unity Levels must supply
     /// their own. The immutable prefab palette remains shared by the Stage.
     pub spawn_map_geometry: Option<(Aabb, Vec2)>,
@@ -253,6 +255,7 @@ pub enum NativeSceneBuildError {
     GroupConfiguration(NativeLevelEventError),
     InitialMining(NativeLevelEventError),
     CampaignDialogue(NativeLevelEventError),
+    CollisionAsteroidTimer(&'static str),
 }
 
 #[derive(Debug)]
@@ -481,6 +484,10 @@ impl NativeSceneAssets {
             state.configure_campaign_dialogue(dialogue).map_err(NativeSceneBuildError::CampaignDialogue)?;
         }
         let mut world = World::new(authored.world_id, authored.seed, state);
+        if let Some(timer) = authored.collision_asteroid_timer {
+            world.state.configure_collision_asteroid_timer(timer, &mut world.random)
+                .map_err(NativeSceneBuildError::CollisionAsteroidTimer)?;
+        }
         for _ in 0..authored.initial_full_asteroids {
             world.state.combat.spawn_next_full_collision_asteroid(
                 &mut world.random,

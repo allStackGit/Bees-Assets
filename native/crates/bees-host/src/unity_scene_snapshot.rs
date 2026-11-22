@@ -1398,6 +1398,8 @@ pub struct NativeExportedPolicyLevelSetup<A> {
     pub broadphase_cell_size: f32,
     pub decision_period: NonZeroU32,
     pub initial_full_asteroids: usize,
+    pub collision_asteroid_timer:
+        Option<bees_gameplay::level_rules::NativeCollisionAsteroidTimerSpec>,
     pub groups: Option<NativeAuthoredGroups>,
     pub ship_catalog: Arc<ShipAssetCatalog>,
     /// Existing model slots selected by the learner/opponent scheduler,
@@ -4571,6 +4573,7 @@ impl NativePhysicalScene {
             entities: self.entities,
             squads,
             initial_full_asteroids: setup.initial_full_asteroids,
+            collision_asteroid_timer: setup.collision_asteroid_timer,
             spawn_map_geometry: Some((
                 self.bounds,
                 Vec2::new(
