@@ -351,9 +351,15 @@ class FrozenGpuStreams:
             raise ValueError("Every stream model needs one batch")
         args = [FrozenGpuFusion._args(batch) for batch in batches]
         if any(not values or any(not isinstance(x, torch.Tensor)
-                                  or x.device != self.device for x in values)
+                                  for x in values)
                for values in args):
-            raise ValueError("Frozen stream inputs must be device tensors")
+            raise ValueError("Frozen stream inputs must be tensors")
+        # A heterogeneous CPU/device cohort retains its original per-model
+        # forwards. Only an admitted same-device GPU cohort may dispatch
+        # those inputs to the shared parallel streams.
+        if self.enabled and any(x.device != self.device for values in args
+                                for x in values):
+            raise ValueError("Frozen concurrent streams require one GPU device")
         signature = tuple(tuple((tuple(x.shape), x.dtype) for x in values)
                           for values in args)
         return args, signature
