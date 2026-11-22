@@ -20,6 +20,9 @@ pub enum CampaignDialogueSpec {
         player_side: i32, scout_id: i64, honeybee_id: i64,
         gunship_id: i64,
     },
+    /// Original Pluto II: the first real Scout must be selected before
+    /// the campaign permits the rest of the fleet and the Bee encounter.
+    PlutoReinforcements { player_side: i32, scout_id: i64 },
     TitaniaMinesweeper { player_side: i32 },
     TitaniaBeenoculars {
         player_side: i32,
@@ -55,6 +58,7 @@ impl CampaignDialogueSpec {
     pub fn player_side(self) -> i32 {
         match self {
             Self::PlutoAnomaly { player_side, .. } |
+            Self::PlutoReinforcements { player_side, .. } |
             Self::TitaniaMinesweeper { player_side } |
             Self::TitaniaBeenoculars { player_side, .. } |
             Self::PlutoPushback { player_side, .. } |
@@ -104,6 +108,11 @@ pub enum CampaignCue {
     PlutoAnomalyHoneybeeDestroyed,
     PlutoAnomalyVictory,
     PlutoAnomalyDefeat,
+    PlutoReinforcementsBriefing,
+    PlutoReinforcementsScoutSelected,
+    PlutoReinforcementsCombatReady,
+    PlutoReinforcementsVictory,
+    PlutoReinforcementsDefeat,
     MinesweeperBriefing,
     FireTankSpotted { object_id: i64 },
     FireTankDestroyed { object_id: i64 },
@@ -148,6 +157,8 @@ impl CampaignCue {
         matches!(self, Self::PlutoAnomalyBriefing |
             Self::PlutoAnomalyHoneybeeSpotted |
             Self::PlutoAnomalyGunshipArrived |
+            Self::PlutoReinforcementsBriefing |
+            Self::PlutoReinforcementsScoutSelected |
             Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. } |
             Self::PlutoPushbackBriefing { .. } |
             Self::NeptunePressingForwardBriefing | Self::NeptuneSeizeBriefing |
@@ -170,6 +181,12 @@ enum DialogueMode {
         #[serde(default)]
         gunship_briefed: bool,
         honeybee_destroyed: bool,
+    },
+    PlutoReinforcements {
+        scout_id: i64,
+        scout_selected: bool,
+        selection_reported: bool,
+        combat_released: bool,
     },
     Minesweeper { tracked_tank: Option<i64> },
     Beenoculars { under_heavy_fire: bool, next_milestone: usize },
@@ -225,6 +242,7 @@ pub struct CampaignDialogue {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CampaignObjectiveKind {
     PlutoAnomaly,
+    PlutoReinforcements,
     PlutoPushback,
     NeptuneProduction,
     UranusOffensive,
@@ -236,6 +254,8 @@ impl CampaignDialogue {
         match self.mode {
             DialogueMode::PlutoAnomaly { .. } =>
                 Some(CampaignObjectiveKind::PlutoAnomaly),
+            DialogueMode::PlutoReinforcements { .. } =>
+                Some(CampaignObjectiveKind::PlutoReinforcements),
             DialogueMode::PlutoPushback { .. } =>
                 Some(CampaignObjectiveKind::PlutoPushback),
             DialogueMode::NeptuneProduction { .. } =>
@@ -260,6 +280,13 @@ impl CampaignDialogue {
                     honeybee_destroyed: false,
                 },
                 CampaignCue::PlutoAnomalyBriefing,
+            ),
+            CampaignDialogueSpec::PlutoReinforcements { scout_id, .. } => (
+                DialogueMode::PlutoReinforcements {
+                    scout_id, scout_selected: false,
+                    selection_reported: false, combat_released: false,
+                },
+                CampaignCue::PlutoReinforcementsBriefing,
             ),
             CampaignDialogueSpec::TitaniaMinesweeper { .. } => (
                 DialogueMode::Minesweeper { tracked_tank: None },
@@ -348,6 +375,8 @@ impl CampaignDialogue {
             }, DialogueMode::PlutoAnomaly {
                 scout_id: c, honeybee_id: d, gunship_id: f, ..
             }) => a == c && b == d && e == f,
+            (DialogueMode::PlutoReinforcements { scout_id: a, .. },
+                DialogueMode::PlutoReinforcements { scout_id: b, .. }) => a == b,
             (DialogueMode::Minesweeper { .. }, DialogueMode::Minesweeper { .. }) =>
                 true,
             (DialogueMode::Beenoculars { under_heavy_fire: saved, .. },
@@ -438,6 +467,30 @@ impl CampaignDialogue {
                     u32::from(*gunship_arrived) +
                     u32::from(*gunship_briefed) +
                     u32::from(*honeybee_destroyed),
+            (DialogueMode::PlutoReinforcements {
+                scout_id, selection_reported: false,
+                combat_released: false, ..
+            }, CampaignCue::PlutoReinforcementsBriefing) =>
+                *scout_id > 0 && sequence == 0,
+            (DialogueMode::PlutoReinforcements {
+                scout_id, scout_selected: true,
+                selection_reported: true, combat_released: false,
+            }, CampaignCue::PlutoReinforcementsScoutSelected) =>
+                *scout_id > 0 && sequence == 1,
+            (DialogueMode::PlutoReinforcements {
+                scout_id, scout_selected: true,
+                selection_reported: true, combat_released: true,
+            }, CampaignCue::PlutoReinforcementsCombatReady) =>
+                *scout_id > 0 && sequence == 2,
+            (DialogueMode::PlutoReinforcements {
+                scout_id, scout_selected, selection_reported, combat_released,
+            }, CampaignCue::PlutoReinforcementsVictory |
+                CampaignCue::PlutoReinforcementsDefeat) =>
+                *scout_id > 0 &&
+                (!*selection_reported || *scout_selected) &&
+                (!*combat_released || *selection_reported) &&
+                sequence == 1 + u32::from(*selection_reported) +
+                    u32::from(*combat_released),
             (DialogueMode::Minesweeper { tracked_tank: None },
                 CampaignCue::MinesweeperBriefing) => sequence == 0,
             (DialogueMode::Minesweeper { tracked_tank: None },
@@ -580,6 +633,28 @@ impl CampaignDialogue {
     /// The three source FleetShip hulls are still owned by CombatWorld.
     /// The first source Pluto encounter remains active until the actual
     /// Scout ProximityCollider overlaps its specific Honeybee.
+    /// Capture the actual authorized selected SquadLifetime's live
+    /// member identities, not a UI guessed click or a random timer.
+    /// The next physical fixed tick publishes the source tutorial cue.
+    pub fn observe_player_selection(&mut self, members: &[i64]) {
+        if let DialogueMode::PlutoReinforcements {
+            scout_id, scout_selected, ..
+        } = &mut self.mode {
+            if members.contains(scout_id) {
+                *scout_selected = true;
+            }
+        }
+    }
+
+    pub fn pluto_reinforcements_progress(&self) -> Option<(bool, bool)> {
+        match self.mode {
+            DialogueMode::PlutoReinforcements {
+                scout_selected, combat_released, ..
+            } => Some((scout_selected, combat_released)),
+            _ => None,
+        }
+    }
+
     pub fn pluto_anomaly_spotted(&self) -> Option<bool> {
         match self.mode {
             DialogueMode::PlutoAnomaly { spotted, .. } => Some(spotted),
@@ -628,6 +703,10 @@ impl CampaignDialogue {
         match (&self.mode, winner_side == self.player_side) {
             (DialogueMode::PlutoAnomaly { .. }, true) => CampaignCue::PlutoAnomalyVictory,
             (DialogueMode::PlutoAnomaly { .. }, false) => CampaignCue::PlutoAnomalyDefeat,
+            (DialogueMode::PlutoReinforcements { .. }, true) =>
+                CampaignCue::PlutoReinforcementsVictory,
+            (DialogueMode::PlutoReinforcements { .. }, false) =>
+                CampaignCue::PlutoReinforcementsDefeat,
             (DialogueMode::Minesweeper { .. }, true) => CampaignCue::MinesweeperVictory,
             (DialogueMode::Minesweeper { .. }, false) => CampaignCue::MinesweeperDefeat,
             (DialogueMode::Beenoculars { .. }, true) => CampaignCue::BeenocularsVictory,
@@ -810,6 +889,21 @@ impl CampaignDialogue {
         &mut self, world: &CombatWorld, source_bumblebee_spotted: bool,
         source_pluto_honeybee_spotted: bool,
     ) -> Option<CampaignCue> {
+        if let DialogueMode::PlutoReinforcements {
+            scout_selected, selection_reported, combat_released, ..
+        } = &mut self.mode {
+            if *scout_selected && !*selection_reported {
+                *selection_reported = true;
+                return Some(CampaignCue::PlutoReinforcementsScoutSelected);
+            }
+            if *selection_reported && !*combat_released {
+                // Local and authenticated LAN dialogue pauses hold the
+                // simulation until the real control tutorial is read.
+                *combat_released = true;
+                return Some(CampaignCue::PlutoReinforcementsCombatReady);
+            }
+            return None;
+        }
         if let DialogueMode::PlutoAnomaly {
             honeybee_id, gunship_id, spotted, report_completed,
             gunship_arrived, gunship_briefed, honeybee_destroyed, ..
