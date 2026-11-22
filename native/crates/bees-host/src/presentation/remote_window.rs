@@ -571,7 +571,7 @@ struct PeerClient {
     /// At most one outstanding UI-only inspection on this authenticated
     /// socket. The full fleet never enters the projected world snapshot.
     inspection_pending: Option<(u64,u64,i64,u64)>,
-    inspection_result: Option<(u64,u64,i64,Option<Value>,Option<i64>)>,
+    inspection_result: Option<(u64,u64,i64,Option<Value>,Option<i64>,u64)>,
     pause_episode: Option<(u64,u64)>,
     authenticated: bool,
     connected: bool,
@@ -1110,8 +1110,14 @@ impl PeerClient {
                         Some(value.clone())
                     } else { None };
                     let minerals=message["minerals_mined_this_level"].as_i64();
+                    let sample_tick=if processed {
+                        message["tick"].as_u64().ok_or_else(||
+                            invalid("authenticated ship inspection lacks a simulation tick"))?
+                    } else { 0 };
                     self.inspection_pending=None;
-                    self.inspection_result=Some((world,revision,ship,stats,minerals));
+                    self.inspection_result=Some((
+                        world,revision,ship,stats,minerals,sample_tick,
+                    ));
                     self.metrics.inspection_receipts+=1;
                 }
                 Some("input_result") => {
@@ -4642,9 +4648,17 @@ pub fn connect_remote(
                     state["episode_revision"].as_u64()?,id))
             });
             if let Some((world,revision,id))=target {
-                let already=peer.inspection_result.as_ref()
-                    .is_some_and(|value| (value.0,value.1,value.2)==(world,revision,id));
-                if !already && peer.inspection_pending.is_none() {
+                let current_tick=peer.state.as_ref()
+                    .and_then(|state|state["tick"].as_u64()).unwrap_or(0);
+                let refresh_after=peer.state.as_ref()
+                    .and_then(|state|state["fixed_step_seconds"].as_f64())
+                    .filter(|dt|dt.is_finite() && *dt>0.0)
+                    .map(|dt|(1.0/dt).ceil().max(1.0) as u64).unwrap_or(50);
+                let fresh=peer.inspection_result.as_ref().is_some_and(|value|
+                    (value.0,value.1,value.2)==(world,revision,id) &&
+                    (value.3.is_none() ||
+                        current_tick < value.5.saturating_add(refresh_after)));
+                if !fresh && peer.inspection_pending.is_none() {
                     let request=peer.next_request;
                     let frame=json!({
                         "kind":"inspect_ship","world_id":world,
@@ -4690,7 +4704,7 @@ pub fn connect_remote(
                 } else { "Orders: hostile or neutral" };
                 let mut lines=vec![title,health,tsv,identity,status.to_owned()];
                 if ship["owned"]==true {
-                    if let Some((world,revision,id,Some(stats),minerals))=
+                    if let Some((world,revision,id,Some(stats),minerals,_))=
                         peer.inspection_result.as_ref()
                     {
                         let current=peer.state.as_ref().is_some_and(|state|
