@@ -63,6 +63,13 @@ struct ShipPathOwner {
     deferred: Option<NavigationRequest>,
 }
 
+// A claimed but now-invalid running job is deliberately not an active
+// pathfinding owner: it cannot suppress the policy ship's movement.
+fn has_current_path(owner: &ShipPathOwner) -> bool {
+    owner.waiting.is_some() || owner.deferred.is_some() ||
+        owner.running.is_some_and(|job| job.request_id == owner.request_id)
+}
+
 /// All authoritative ship/path identity and source FIFO state at a fixed
 /// gameplay boundary. OS worker threads and search results are NOT saved:
 /// interrupted jobs must be reclaimed using each ship's restored position.
@@ -91,6 +98,10 @@ pub struct NavigationRequests {
     /// authoritative ship request owner changes state. Stale queue IDs from
     /// dead ships do not make each path-worker pump linear in past spawns.
     claimable_waiting: usize,
+    /// Live owners currently holding a valid path request. Unlike the FIFO
+    /// length, this excludes invalidated in-flight worker jobs. Updated at
+    /// request/lifecycle boundaries, not by scanning every ship each tick.
+    active_path_owners: usize,
 }
 
 impl NavigationRequests {
@@ -208,6 +219,8 @@ impl NavigationRequests {
         self.ships = owners;
         self.waiting_ship_ids = queue;
         self.claimable_waiting = waiting;
+        self.active_path_owners = self.ships.values()
+            .filter(|owner| has_current_path(owner)).count();
         Ok(())
     }
 
@@ -230,6 +243,7 @@ impl NavigationRequests {
     /// Already-running jobs remain free to finish, but their results vanish.
     pub fn retire_ship(&mut self, ship_id: i64) {
         if let Some(owner) = self.ships.remove(&ship_id) {
+            self.active_path_owners -= usize::from(has_current_path(&owner));
             if owner.waiting.is_some() && owner.running.is_none() {
                 self.claimable_waiting -= 1;
             }
@@ -247,6 +261,7 @@ impl NavigationRequests {
             .ok_or(NavigationRequestError::IdExhausted)?;
         self.next_lifecycle_id = lifecycle;
         let previous = &self.ships[&ship_id];
+        self.active_path_owners -= usize::from(has_current_path(previous));
         if previous.waiting.is_some() && previous.running.is_none() {
             self.claimable_waiting -= 1;
         }
@@ -270,21 +285,26 @@ impl NavigationRequests {
         }
         let new_id = self.reserve_request_id()?;
         let owner = self.ships.get_mut(&ship_id).expect("checked");
+        let was_current = has_current_path(owner);
         owner.request_id = new_id;
         if owner.waiting.take().is_some() && owner.running.is_none() {
             self.claimable_waiting -= 1;
         }
         // Never clear owner.running here: CPU work still owns its slot.
         owner.deferred = None;
+        self.active_path_owners -= usize::from(
+            was_current && !has_current_path(owner)
+        );
         self.compact_obsolete_queue();
         Ok(())
     }
 
+    pub fn has_active_paths(&self) -> bool {
+        self.active_path_owners != 0
+    }
+
     pub fn is_pathfinding(&self, ship_id: i64) -> bool {
-        self.ships.get(&ship_id).is_some_and(|owner|
-            owner.waiting.is_some() || owner.deferred.is_some() ||
-            owner.running.is_some_and(|job|
-                job.request_id == owner.request_id))
+        self.ships.get(&ship_id).is_some_and(has_current_path)
     }
 
     pub fn lifecycle_id(&self, ship_id: i64) -> Option<u64> {
@@ -318,6 +338,7 @@ impl NavigationRequests {
         let lifecycle_id = owner.lifecycle_id;
         let running = owner.running.is_some();
         let queued = owner.waiting.is_some();
+        let was_current = has_current_path(owner);
         let request_id = self.reserve_request_id()?;
         let request = NavigationRequest {
             ship_id, lifecycle_id, request_id,
@@ -327,12 +348,14 @@ impl NavigationRequests {
         owner.request_id = request_id;
         if running {
             owner.deferred = Some(request);
+            self.active_path_owners += usize::from(!was_current);
             return Ok(NavigationRequestDisposition::DeferredUntilRunningCompletes);
         }
         if owner.waiting.is_none() {
             self.claimable_waiting += 1;
         }
         owner.waiting = Some(request);
+        self.active_path_owners += usize::from(!was_current);
         if !owner.queued {
             owner.queued = true;
             self.waiting_ship_ids.push_back((ship_id, lifecycle_id));
@@ -392,6 +415,7 @@ impl NavigationRequests {
         if owner.lifecycle_id != job.lifecycle_id || owner.running != Some(job) {
             return Ok(NavigationCompletion::Discarded);
         }
+        let was_current = has_current_path(owner);
         owner.running = None;
         if let Some(mut deferred) = owner.deferred.take() {
             deferred.start = current_position;
@@ -408,6 +432,7 @@ impl NavigationRequests {
                 lifecycle_id: job.lifecycle_id,
             });
         }
+        self.active_path_owners -= usize::from(was_current);
         if owner.request_id != job.request_id {
             return Ok(NavigationCompletion::Discarded);
         }
@@ -424,11 +449,15 @@ impl NavigationRequests {
             owner.running != Some(job) {
             return;
         }
+        let was_current = has_current_path(owner);
         owner.running = None;
         if owner.waiting.take().is_some() {
             self.claimable_waiting -= 1;
         }
         owner.deferred = None;
+        self.active_path_owners -= usize::from(
+            was_current && !has_current_path(owner)
+        );
         self.compact_obsolete_queue();
     }
 
