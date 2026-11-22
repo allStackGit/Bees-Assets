@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate a trusted TinyBrains checkpoint against Nano and publish a Hub receipt."""
+"""Evaluate trusted TinyBrains checkpoints against immutable benchmark opponents."""
 
 import argparse
 import hashlib
@@ -20,7 +20,9 @@ MAP = re.compile(r"[a-zA-Z0-9_-]{1,80}")
 def read_suite(file):
     suite = json.loads(read_bounded(file, 8192))
     required = {"suite_id", "maps", "seeds", "max_turns"}
-    optional = {"runtime_sha256", "opponent", "opponent_model_sha256", "opponent_manifest_sha256"}
+    optional = {"runtime_sha256", "opponent", "opponent_model_sha256",
+                "opponent_manifest_sha256", "opponent_dir",
+                "opponent_checkpoint_sha256", "opponent_source_job"}
     if not isinstance(suite, dict) or not required <= suite.keys() or set(suite) - required - optional:
         raise ValueError("Expected suite_id, maps, seeds, max_turns, and optional pinned opponent/runtime.")
     maps, seeds, turns = suite["maps"], suite["seeds"], suite["max_turns"]
@@ -36,8 +38,20 @@ def read_suite(file):
         or len(set(seeds)) != len(seeds)
         or len(maps) * len(seeds) * 2 > 256
         or type(turns) is not int or not 1 <= turns <= 1000
-        or opponent not in ("nano", "micro")
-        or (opponent == "micro" and not all(key in suite for key in pins))
+        or opponent not in ("nano", "micro", "mini")
+        or (opponent in ("micro", "mini") and not all(key in suite for key in pins))
+        or (opponent == "mini" and (
+            not all(key in suite for key in (
+                "opponent_dir", "opponent_checkpoint_sha256", "opponent_source_job"))
+            or not isinstance(suite["opponent_dir"], str)
+            or suite["opponent_dir"] != str(
+                Path(file).parent / "opponents" / suite["suite_id"])
+            or not UUID.fullmatch(str(suite["opponent_source_job"]))
+            or not SHA256.fullmatch(str(suite["opponent_checkpoint_sha256"]))
+            or not re.fullmatch(r"tinybrains_mini_batch128_v[1-9][0-9]*",
+                                suite["suite_id"])))
+        or (opponent != "mini" and any(key in suite for key in (
+            "opponent_dir", "opponent_checkpoint_sha256", "opponent_source_job")))
         or (any(key in suite for key in pins) and not all(key in suite for key in pins))
         or any(key in suite and (not isinstance(suite[key], str)
             or not SHA256.fullmatch(suite[key]))
@@ -79,7 +93,14 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
     candidate = work / "candidate"
     export(pinned, candidate)
     opponent = suite.get("opponent", "nano")
-    fixed = STARTER / f"models/{opponent}-bc"
+    if opponent == "mini":
+        fixed = Path(suite["opponent_dir"])
+        if (fixed.resolve(strict=True) != fixed or not fixed.is_dir()
+                or any((fixed / name).is_symlink()
+                       for name in ("model.onnx", "manifest.json"))):
+            raise ValueError("Frozen Mini opponent directory is redirected or missing.")
+    else:
+        fixed = STARTER / f"models/{opponent}-bc"
     verify_opponent(suite, fixed)
     replay_root = work / "replays"
     match_file = work / "match.json"
