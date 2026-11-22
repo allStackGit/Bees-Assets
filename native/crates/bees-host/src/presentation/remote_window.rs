@@ -1164,6 +1164,17 @@ fn position(value: &Value) -> Option<Vec2> {
     (x.is_finite() && y.is_finite()).then_some(Vec2::new(x, y))
 }
 
+/// Optional source camera half-height limits from the host's validated
+/// Level export. An older wire frame may omit them; it cannot authorize a
+/// different zoom contract than the local native game.
+fn camera_zoom_limits(state: &Value) -> Option<(f32, f32)> {
+    let pair = state["camera_zoom"].as_array().filter(|values| values.len() == 2)?;
+    let min = pair[0].as_f64()? as f32;
+    let max = pair[1].as_f64()? as f32;
+    (min.is_finite() && max.is_finite() && min > 0.0 && max >= min)
+        .then_some((min, max))
+}
+
 fn bounds(state: &Value) -> Option<Aabb> {
     let points = state["map_bounds"].as_array()?;
     if points.len() != 2 { return None; }
@@ -3268,7 +3279,10 @@ pub fn connect_remote(
                          state["episode_revision"].as_u64().unwrap_or(0));
             if let Some(map)=bounds(state) {
                 if camera.is_none()||episode !=current_episode {
-                    camera=Some(NativeCamera::fit(map,FIELD,HEIGHT));
+                    let mut fitted=NativeCamera::fit(map,FIELD,HEIGHT);
+                    fitted.constrain_source_zoom(camera_zoom_limits(state),HEIGHT);
+                    fitted.constrain_to_map(map,FIELD,HEIGHT);
+                    camera=Some(fitted);
                     current_episode=episode;
                     squad_list_offset=0;
                     selected.clear();
@@ -3438,6 +3452,7 @@ pub fn connect_remote(
         }
         if !show_controls_help && surrender_confirmation.is_none() {
         if let Some(mut cam)=camera {
+            let authored_zoom=peer.state.as_ref().and_then(camera_zoom_limits);
             let keys=window.get_keys_pressed(KeyRepeat::No);
             let shift=window.is_key_down(Key::LeftShift)||
                 window.is_key_down(Key::RightShift);
@@ -3514,6 +3529,8 @@ pub fn connect_remote(
                 if key==Key::F {
                     if let Some(map)=peer.state.as_ref().and_then(bounds) {
                         cam=NativeCamera::fit(map,FIELD,HEIGHT);
+                        cam.constrain_source_zoom(authored_zoom,HEIGHT);
+                        cam.constrain_to_map(map,FIELD,HEIGHT);
                     }
                     continue;
                 }
@@ -3613,9 +3630,9 @@ pub fn connect_remote(
                         if let Some(point)=minimap.and_then(|map|map.world_at(x,y)) {
                             cam.center=point;
                             cam.zoom_at(factor,FIELD as f32/2.0,
-                                HEIGHT as f32/2.0,FIELD,HEIGHT,None);
+                                HEIGHT as f32/2.0,FIELD,HEIGHT,authored_zoom);
                         } else if x>=0.0&&x<FIELD as f32&&y>=0.0&&y<HEIGHT as f32 {
-                            cam.zoom_at(factor,x,y,FIELD,HEIGHT,None);
+                            cam.zoom_at(factor,x,y,FIELD,HEIGHT,authored_zoom);
                         }
                     }
                 }
@@ -3623,9 +3640,9 @@ pub fn connect_remote(
                 }
             }
             if window.is_key_down(Key::Equal){cam.zoom_at(1.035,FIELD as f32/2.0,
-                HEIGHT as f32/2.0,FIELD,HEIGHT,None);}
+                HEIGHT as f32/2.0,FIELD,HEIGHT,authored_zoom);}
             if window.is_key_down(Key::Minus){cam.zoom_at(1.0/1.035,
-                FIELD as f32/2.0,HEIGHT as f32/2.0,FIELD,HEIGHT,None);}
+                FIELD as f32/2.0,HEIGHT as f32/2.0,FIELD,HEIGHT,authored_zoom);}
             if let Some(map)=peer.state.as_ref().and_then(bounds) {
                 cam.constrain_to_map(map,FIELD,HEIGHT);
             }

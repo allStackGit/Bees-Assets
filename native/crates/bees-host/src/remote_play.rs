@@ -486,6 +486,8 @@ pub struct NativeRemotePlay {
     // second gameplay visibility or historical enemy positions are stored.
     fog_by_side: HashMap<i32, RemoteFogSight>,
     music_location: Option<NativeMusicLocation>,
+    /// Authored Map.MinZoom/MaxZoom; presentation metadata, not player authority.
+    camera_zoom: Option<(f32, f32)>,
     held_fire: HashMap<u64, HeldFireLease>,
     pending_releases: Vec<RemoteOrder>,
     /// Per-connection source briefing acknowledgment, never gameplay.
@@ -586,7 +588,7 @@ impl NativeRemotePlay {
             archived_receipts: HashMap::new(), peers: Vec::new(),
             next_peer: 1, last_state: None, force_initial_state: false,
             pending_audio: HashMap::new(), fog_by_side: HashMap::new(),
-            music_location: None,
+            music_location: None, camera_zoom: None,
             held_fire: HashMap::new(), pending_releases: Vec::new(),
             briefing_ready: HashMap::new(),
             measurements: RemotePlayMeasurements::default(),
@@ -763,6 +765,13 @@ impl NativeRemotePlay {
     /// The authored Level selects music, never a network client's request.
     pub fn set_music_location(&mut self, location: Option<NativeMusicLocation>) {
         self.music_location = location;
+    }
+
+    /// Set once from the validated authored Level, including after process
+    /// recovery; peer reconnects receive it in normal replaceable snapshots.
+    pub fn set_camera_zoom_limits(&mut self, limits: Option<(f32, f32)>) {
+        self.camera_zoom = limits.filter(|(min, max)|
+            min.is_finite() && max.is_finite() && *min > 0.0 && *max >= *min);
     }
 
     pub fn configured_sides(&self) -> impl Iterator<Item = i32> + '_ {
@@ -1437,6 +1446,7 @@ impl NativeRemotePlay {
         // their existing reliable, bounded channel.
         let pending_audio = std::mem::take(&mut self.pending_audio);
         let music_location = self.music_location;
+        let camera_zoom = self.camera_zoom;
         // The source's introductory and mid-mission briefings prevent
         // either side issuing physical orders. Local windows pace their
         // source dialogue; dedicated servers require authenticated ACKs
@@ -1484,7 +1494,7 @@ impl NativeRemotePlay {
                 let started = Instant::now();
                 let cues = pending_audio.get(&side).map(Vec::as_slice).unwrap_or(&[]);
                 let mut state = current_state(
-                    view, bounds, side, music_location, cues,
+                    view, bounds, side, music_location, camera_zoom, cues,
                     vision.get(&side).expect("authenticated side has sight"),
                     briefing_paused,
                     !spectator && requires_briefing_ack &&
@@ -2203,8 +2213,8 @@ fn source_codex_entry(
 
 fn current_state(
     view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32,
-    music_location: Option<NativeMusicLocation>, audio_events: &[Value],
-    sources: &RemoteFogSources, briefing_paused: bool,
+    music_location: Option<NativeMusicLocation>, camera_zoom: Option<(f32, f32)>,
+    audio_events: &[Value], sources: &RemoteFogSources, briefing_paused: bool,
     requires_briefing_ack: bool, overlay_squads: Option<&HashSet<SquadLifetime>>,
     spectator: bool, measurements: &mut RemotePlayMeasurements,
 ) -> Value {
@@ -2571,7 +2581,8 @@ fn current_state(
         "world_id": view.world_id.0,
         "episode_revision": view.episode_revision,
         "tick": view.tick, "fixed_step_seconds": view.fixed_step_seconds,
-        "music_location": music_location, "audio_events": audio_events,
+        "music_location": music_location, "camera_zoom": camera_zoom,
+        "audio_events": audio_events,
         "viewer_side": viewer,
         // Only the authenticated side's live scoreboard, projected with
         // the same per-side privacy boundary as visible ships/commands.
