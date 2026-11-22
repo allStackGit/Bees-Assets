@@ -1352,7 +1352,8 @@ impl NativeRemotePlay {
                                 "world_id": claimed_world,
                                 "episode_revision": claimed_revision,
                                 "ship_id": ship_id, "processed": false, "tick": null,
-                                "stats": null, "minerals_mined_this_level": null,
+                                "stats": null, "in_combat": null,
+                                "minerals_mined_this_level": null,
                             }));
                             self.measurements.ship_inspection_replies += 1;
                         }
@@ -1786,15 +1787,19 @@ impl NativeRemotePlay {
                     view.player_authority.player_ship_battle_statistics(ship_id)
                 ).flatten();
                 let minerals = stats.and_then(|item| item.minerals_mined_this_level);
+                let in_combat = permitted.then(||
+                    view.combat.ship_in_combat(ship_id)
+                ).flatten();
                 let _ = peer.enqueue(&json!({
                     "kind": "ship_inspection_result",
                     "request_id": request_id,
                     "world_id": requested_world,
                     "episode_revision": requested_revision,
                     "ship_id": ship_id,
-                    "processed": stats.is_some(),
+                    "processed": permitted,
                     "tick": view.tick,
                     "stats": stats,
+                    "in_combat": in_combat,
                     "minerals_mined_this_level": minerals,
                 }));
                 measurements.ship_inspection_replies += 1;
