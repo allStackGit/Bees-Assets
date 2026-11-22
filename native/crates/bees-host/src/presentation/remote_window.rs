@@ -52,6 +52,7 @@ struct RemoteRightPress {
 }
 
 const RIGHT_DRAG_INTERVAL: Duration=Duration::from_millis(250);
+const MAX_PENDING_ORDER_TIMINGS: usize = 4096;
 
 #[derive(Default)]
 struct WireCounts {
@@ -65,6 +66,11 @@ struct WireCounts {
     briefing_rejections: u64,
     orders_accepted: u64,
     orders_rejected: u64,
+    /// Client wall time from submission through authoritative host receipt,
+    /// not an estimate from snapshot cadence or local frame rendering.
+    order_ack_latency_samples: u64,
+    order_ack_latency_sum_seconds: f64,
+    order_ack_latency_max_seconds: f64,
     campaign_receipts: u64,
     battle_result_receipts: u64,
     interrupted_battle_notices: u64,
@@ -469,6 +475,9 @@ struct PeerClient {
     queued_bytes: usize,
     next_request: u64,
     last_response_request: u64,
+    /// Only pending INPUT order IDs are timed. A FIFO permits amortized
+    /// constant-time reconciliation with host's ordered response sequence.
+    pending_order_times: VecDeque<(u64, Instant)>,
     /// Confirmed by the same authenticated input-result request stream.
     /// Never restored when the TCP connection or host identity changes.
     briefing_pending: Option<(u64,u64,u32,u64)>,
@@ -525,7 +534,7 @@ impl PeerClient {
         Ok(Self {
             socket, incoming: Vec::new(), queued: VecDeque::new(),
             written: 0, queued_bytes: 0, next_request: 1,
-            last_response_request: 0,
+            last_response_request: 0, pending_order_times: VecDeque::new(),
             briefing_pending: None, briefing_approved: None,
             briefing_rejected: None,
             authenticated: false, connected: true, input_suppressed: false, side,
@@ -749,6 +758,24 @@ impl PeerClient {
                         return Err(invalid("out-of-order native host command acknowledgment").into());
                     }
                     self.last_response_request=request;
+                    // Never retain input timings indefinitely if a network
+                    // response was skipped or an old pending entry expired.
+                    while self.pending_order_times.front()
+                        .is_some_and(|(id,_)| *id < request)
+                    {
+                        self.pending_order_times.pop_front();
+                    }
+                    if self.pending_order_times.front()
+                        .is_some_and(|(id,_)| *id == request)
+                    {
+                        if let Some((_,submitted))=self.pending_order_times.pop_front() {
+                            let elapsed=submitted.elapsed().as_secs_f64();
+                            self.metrics.order_ack_latency_samples+=1;
+                            self.metrics.order_ack_latency_sum_seconds+=elapsed;
+                            self.metrics.order_ack_latency_max_seconds=
+                                self.metrics.order_ack_latency_max_seconds.max(elapsed);
+                        }
+                    }
                     self.metrics.acknowledgments+=1;
                     if processed {self.metrics.orders_accepted+=1;}
                     else {self.metrics.orders_rejected+=1;}
@@ -794,7 +821,13 @@ impl PeerClient {
         {
             return Err(invalid("orders unavailable during briefing or after battle").into());
         }
+        let request=self.next_request;
+        let submitted=Instant::now();
         self.enqueue_request(json!({"kind":"input","action":action}),notice)?;
+        if self.pending_order_times.len()==MAX_PENDING_ORDER_TIMINGS {
+            self.pending_order_times.pop_front();
+        }
+        self.pending_order_times.push_back((request,submitted));
         self.metrics.orders_sent+=1;
         Ok(())
     }
