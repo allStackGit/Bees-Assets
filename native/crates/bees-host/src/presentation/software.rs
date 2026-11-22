@@ -3013,6 +3013,13 @@ impl NativeSoftwareRenderer {
                     let lost = shield.map_or(15, |target|
                         (target.vitals.max_health() - target.vitals.health())
                             .max(0) / 200);
+                    let _ = shield.map(|target|
+                        tactical_hud::draw_pluto_shield_bar(
+                            &mut self.pixels, self.width, self.width,
+                            self.height, target.vitals.health(),
+                            target.vitals.max_health(),
+                        )
+                    );
                     format!(
                         "Evacuated {saved}/60  |  Lost {lost}/15  |  Defend {:02}:{:02}",
                         seconds / 60, seconds % 60,

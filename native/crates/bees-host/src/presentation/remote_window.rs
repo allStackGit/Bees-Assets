@@ -2722,6 +2722,17 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                                     seconds / 60, seconds % 60)
                             }
                         } else if evacuation && defending {
+                            let shield = state["ships"].as_array().into_iter().flatten()
+                                .find(|ship| ship["id"].as_i64() == Some(protected))
+                                .and_then(|ship| Some((
+                                    i32::try_from(ship["health"].as_i64()?).ok()?,
+                                    i32::try_from(ship["max_health"].as_i64()?).ok()?,
+                                )));
+                            if let Some((health, maximum)) = shield {
+                                super::tactical_hud::draw_pluto_shield_bar(
+                                    pixels, WIDTH, FIELD, HEIGHT, health, maximum,
+                                );
+                            }
                             let elapsed = objective.get("elapsed_seconds")
                                 .and_then(Value::as_f64)
                                 .filter(|value| value.is_finite() && *value >= 0.0)

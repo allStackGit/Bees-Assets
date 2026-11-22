@@ -100,6 +100,38 @@ impl HudRect {
     }
 }
 
+/// Source Pluto4BluerPastures updates PlutoShieldHealthBar in 200-HP
+/// civilian-loss increments, each worth one fifteenth of its 150-pixel
+/// meter. The actual protected ship is read in the owning local/remote
+/// World, so this UI never reconstructs a separate mission health value.
+/// The HUD coordinates are shared by local and LAN presentation.
+pub(super) fn draw_pluto_shield_bar(
+    pixels: &mut [u32], stride: usize, field_width: usize,
+    field_height: usize, health: i32, max_health: i32,
+) -> bool {
+    const WIDTH: usize = 150;
+    const HEIGHT: usize = 9;
+    const TOP: usize = 51;
+    if field_width < 230 || field_height < TOP + HEIGHT + 6 ||
+        stride < field_width || max_health <= 0 ||
+        pixels.len() < stride.saturating_mul(field_height) {
+        return false;
+    }
+    let lost = (max_health.saturating_sub(health).max(0) / 200).min(15);
+    let fill = WIDTH * (15 - lost) as usize / 15;
+    let left = (field_width - WIDTH) / 2;
+    for y in TOP..TOP + HEIGHT {
+        let row = &mut pixels[y * stride + left..y * stride + left + WIDTH];
+        row.fill(0x1a2639);
+        if y > TOP && y + 1 < TOP + HEIGHT {
+            row[..fill].fill(if lost >= 10 { 0xd87b71 } else if lost >= 5 {
+                0xe9c579
+            } else { 0x79d7b0 });
+        }
+    }
+    true
+}
+
 /// Source Neptune II and Uranus II have a campaign-level Retreat
 /// button distinct from the squad's WarpGate "RETREAT" command. Keep one
 /// shared hit/paint rectangle for local and authenticated LAN clients;
