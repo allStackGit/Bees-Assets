@@ -3642,7 +3642,7 @@ impl NativeSoftwareRenderer {
               "H or F1: open controls and shortcuts",
               "C or F2: inspect the Fleet Codex",
               "S: surrender this battle (confirmation required)",
-              "Q: leave battle and return to the game library",
+              "Q: exit battle (return to library when launched there)",
               if was_paused { "Battle was already paused" }
               else { "Battle paused while menu is open" }]
         } else {
@@ -3651,7 +3651,7 @@ impl NativeSoftwareRenderer {
               "H or F1: open controls and shortcuts",
               "C or F2: inspect the Fleet Codex",
               "S: surrender is unavailable for this World",
-              "Q: leave battle and return to the game library",
+              "Q: exit battle (return to library when launched there)",
               if was_paused { "Battle was already paused" }
               else { "Battle paused while menu is open" }]
         };
@@ -3679,11 +3679,16 @@ impl NativeSoftwareRenderer {
         let top = (height - panel_height) / 2;
         if x < (left + 16) as f32 ||
             x >= (left + panel_width - 16) as f32 { return None; }
-        let row = ((y as isize - (top + 12) as isize)
-            / row_height as isize) as usize;
-        (y >= (top + 12) as f32 && (1..=5).contains(&row) &&
-            y < (top + 12 + (row + 1) * row_height) as f32)
-            .then_some(row - 1)
+        // Reject out-of-panel coordinates before converting floats to
+        // indices. This also prevents malformed OS pointer positions from
+        // producing overflowing row arithmetic in debug/native builds.
+        if y < (top + 12 + row_height) as f32 ||
+            y >= (top + 12 + 6 * row_height) as f32 {
+            return None;
+        }
+        let row = ((y - (top + 12) as f32) /
+            row_height as f32) as usize;
+        (1..=5).contains(&row).then_some(row - 1)
     }
 
     pub fn draw_controls_help(&mut self) {
