@@ -159,6 +159,7 @@ class RemoteBattleWindow:
         self.drag_origin = None
         self.drag_box = None
         self.mouse_middle = None
+        self.minimap_dragging = False
         self.selected = []
         self.last_ship_click = None
         self.weapon_overlay_on = tk.BooleanVar(value=False)
@@ -351,6 +352,7 @@ class RemoteBattleWindow:
         self.dialogue_line = 0
         self.selected = []
         self.last_ship_click = None
+        self.minimap_dragging = False
         self.weapon_overlay_on.set(False)
         self.patrol_start = None
         self.held_drag = False
@@ -476,6 +478,7 @@ class RemoteBattleWindow:
                 ):
                     self.selected = []
                     self.last_ship_click = None
+                    self.minimap_dragging = False
                     self.weapon_overlay_on.set(False)
                     self.patrol_start = None
                     self.held_drag = False
@@ -1001,8 +1004,101 @@ class RemoteBattleWindow:
         except (OSError, ValueError) as error:
             self.notice(f"Held-fire release: {error}")
 
+    def minimap_geometry(self):
+        """Map the host's actual world bounds into a compact overview."""
+        if self.map_bounds is None:
+            return None
+        width = self.canvas.winfo_width()
+        height = self.canvas.winfo_height()
+        if width < 320 or height < 260:
+            return None
+        (x0, y0), (x1, y1) = self.map_bounds
+        if x1 <= x0 or y1 <= y0:
+            return None
+        scale = min(210 / (x1-x0), 150 / (y1-y0))
+        size_x, size_y = (x1-x0)*scale, (y1-y0)*scale
+        left = 12
+        top = height - size_y - 12
+        return (left, top, left+size_x, top+size_y, scale)
+
+    def minimap_world_at(self, x, y):
+        geometry = self.minimap_geometry()
+        if geometry is None:
+            return None
+        left, top, right, bottom, scale = geometry
+        if not left <= x <= right or not top <= y <= bottom:
+            return None
+        (x0, _), (_, y1) = self.map_bounds
+        return (x0 + (x-left)/scale, y1 - (y-top)/scale)
+
+    def center_camera_on(self, world_x, world_y):
+        x, y = self.to_screen(world_x, world_y)
+        width, height = self.canvas.winfo_width(), self.canvas.winfo_height()
+        self.offset = (self.offset[0] + width*0.5 - x,
+                       self.offset[1] + height*0.5 - y)
+        self.draw()
+
+    def minimap_pan(self, event):
+        target = self.minimap_world_at(event.x, event.y)
+        if target is not None:
+            self.center_camera_on(*target)
+
+    def draw_minimap(self, state, selected_ship_ids):
+        geometry = self.minimap_geometry()
+        if geometry is None:
+            return
+        left, top, right, bottom, scale = geometry
+        self.canvas.create_rectangle(left, top, right, bottom,
+                                     fill=BACKGROUND, outline=OUTLINE, width=2)
+        (x0, _), (_, y1) = self.map_bounds
+
+        def point(x, y):
+            return left+(x-x0)*scale, top+(y1-y)*scale
+
+        # The host has already fog-culled its ships and mining objects.
+        # Deduplicate subpixel markers to keep crowded battles cheap.
+        cells = set()
+        for obj in state.get("obstacles", []):
+            if not obj.get("mining"):
+                continue
+            px, py = point(obj["x"], obj["y"])
+            cell = (int(px), int(py), 0)
+            if cell in cells or not left <= px <= right or not top <= py <= bottom:
+                continue
+            cells.add(cell)
+            self.canvas.create_rectangle(px-1, py-1, px+1, py+1,
+                                         fill=MINERAL, outline="")
+        for ship in state["ships"]:
+            px, py = point(ship["x"], ship["y"])
+            if not left <= px <= right or not top <= py <= bottom:
+                continue
+            cell = (int(px), int(py), 1 if ship["friendly"] else 2)
+            if cell not in cells:
+                cells.add(cell)
+                self.canvas.create_oval(px-1.5, py-1.5, px+1.5, py+1.5,
+                    fill=FRIENDLY if ship["friendly"] else ENEMY, outline="")
+            if ship["id"] in selected_ship_ids:
+                self.canvas.create_oval(px-3, py-3, px+3, py+3,
+                                        outline="#ffffff")
+        # Show actual camera coverage. Clamping keeps outlines inside
+        # the minimap even while the player pans beyond world edges.
+        wa, wb = self.to_world(0, 0), self.to_world(
+            self.canvas.winfo_width(), self.canvas.winfo_height()
+        )
+        ax, ay = point(min(wa[0], wb[0]), max(wa[1], wb[1]))
+        bx, by = point(max(wa[0], wb[0]), min(wa[1], wb[1]))
+        ax, bx = max(left, ax), min(right, bx)
+        ay, by = max(top, ay), min(bottom, by)
+        if ax < bx and ay < by:
+            self.canvas.create_rectangle(ax, ay, bx, by,
+                                         outline="#d3e5ff", dash=(3, 2))
+
     def left_down(self, event):
         self.canvas.focus_set()
+        if self.minimap_world_at(event.x, event.y) is not None:
+            self.minimap_dragging = True
+            self.minimap_pan(event)
+            return
         if self.console.spectator:
             return
         self.drag_origin = (event.x, event.y)
@@ -1022,6 +1118,9 @@ class RemoteBattleWindow:
                 self.notice(f"Held fire unavailable: {error}")
 
     def left_drag(self, event):
+        if self.minimap_dragging:
+            self.minimap_pan(event)
+            return
         if self.held_drag:
             moment = time.monotonic()
             # Keep Aim events below the host's bounded per-peer poll budget.
@@ -1044,12 +1143,16 @@ class RemoteBattleWindow:
         self.draw()
 
     def release_held_on_root(self, _event):
+        self.minimap_dragging = False
         if self.held_drag:
             self.finish_held_fire()
             self.mode = None
             self.drag_origin = None
 
     def left_up(self, event):
+        if self.minimap_dragging:
+            self.minimap_dragging = False
+            return
         if self.console.spectator:
             return
         if self.drag_origin is None:
@@ -1131,6 +1234,17 @@ class RemoteBattleWindow:
                 self.select(None, False)
 
     def context_click(self, event):
+        destination = self.minimap_world_at(event.x, event.y)
+        if destination is not None:
+            # Match the local native minimap: right click issues a real
+            # Move command to the world point, never a separate minimap order.
+            if not self.console.spectator and self.selected_owners():
+                self.send("move", {"destination": {
+                    "x": destination[0], "y": destination[1],
+                }})
+            else:
+                self.center_camera_on(*destination)
+            return
         if self.console.spectator:
             return
         if not self.selected_owners():
@@ -1454,6 +1568,7 @@ class RemoteBattleWindow:
             x, y = self.to_screen(*self.patrol_start)
             self.canvas.create_oval(x-8, y-8, x+8, y+8,
                                     outline=FRIENDLY, dash=(4, 2), width=2)
+        self.draw_minimap(state, selected_ship_ids)
         info = f"Tick {state['tick']}  Side {state['viewer_side']}  Friendly squads {len(selected)}"
         final = self.console.battle_receipt_snapshot()
         outcome = state.get("terminal_outcome")
