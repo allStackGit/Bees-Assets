@@ -461,6 +461,8 @@ struct MissionProgress {
     evacuated_personnel: Option<u32>,
     latest_score_delta: Option<i64>,
     latest_player_match_counts: Option<NativePlayerMatchCounts>,
+    latest_ships_received: u32,
+    latest_minerals_received: Option<u64>,
 }
 
 impl CampaignProgress<'_> {
@@ -494,6 +496,11 @@ impl CampaignProgress<'_> {
 
     pub fn latest_mission_match_counts(&self, id: &str) -> Option<NativePlayerMatchCounts> {
         self.missions.get(id).and_then(|mission| mission.latest_player_match_counts)
+    }
+
+    pub fn latest_mission_rewards(&self, id: &str) -> Option<(u32, Option<u64>)> {
+        self.missions.get(id).filter(|mission| mission.attempted)
+            .map(|mission| (mission.latest_ships_received, mission.latest_minerals_received))
     }
 
     /// Current native menu presentation of the same durable career record
@@ -1345,6 +1352,11 @@ impl BattleCatalog {
                 state.evacuated_personnel = outcome.evacuated_personnel;
                 state.latest_score_delta = campaign_score_delta;
                 state.latest_player_match_counts = player_match_counts;
+                state.latest_ships_received = u32::try_from(outcome.awarded_ships.len())
+                    .map_err(|_| invalid("campaign source FleetShip reward count overflow"))?;
+                state.latest_minerals_received = if mission.bank_player_minerals {
+                    campaign_banked_minerals
+                } else { Some(0) };
                 state.completed |= matches!(mission.advance_on, AdvanceOn::Finished) || state.latest_victory;
                 if let Some(delta) = campaign_score_delta {
                     progress.campaign_score = progress.campaign_score
@@ -1984,6 +1996,10 @@ impl BattleCatalog {
                 "latest_score_delta": progress.latest_mission_score_delta(&mission.id),
                 "latest_player_match_counts": progress.missions.get(&mission.id)
                     .and_then(|state| state.latest_player_match_counts),
+                "latest_ships_received": progress.latest_mission_rewards(&mission.id)
+                    .map(|(ships, _)| ships),
+                "latest_minerals_received": progress.latest_mission_rewards(&mission.id)
+                    .and_then(|(_, minerals)| minerals),
                 "victory_squads": mission.victory_squads.iter().map(|grant| json!({
                     "saved_squad_id": grant.saved_squad_id,
                     "template_saved_squad_id": grant.template_saved_squad_id,
