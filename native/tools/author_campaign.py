@@ -80,6 +80,39 @@ def source_types_in_order(actual, required) -> bool:
                for kind in actual)
 
 
+def titania_beenoculars_lane_matches_source(wave: dict, bounds: dict) -> bool:
+    """Original GetTitania2OffMapEntry: side/bottom edges only, 80 units
+    outside and 28 inside the level, with 24-unit tangent margins.
+    Obstacle scanning changes the tangent, never these physical edges.
+    """
+    if not isinstance(bounds, dict):
+        return False
+    minimum, maximum = bounds.get("min"), bounds.get("max")
+    spawn, entry = wave.get("spawn"), wave.get("entry")
+    if any(not isinstance(point, list) or len(point) != 2 or
+           any(type(v) not in (int, float) or
+               not -float("inf") < v < float("inf") for v in point)
+           for point in (minimum, maximum, spawn, entry)):
+        return False
+
+    def close(left, right):
+        return abs(left - right) <= 0.001
+
+    left = (close(spawn[0], minimum[0] - 80) and
+            close(entry[0], minimum[0] + 28) and
+            close(spawn[1], entry[1]) and
+            minimum[1] + 24 <= entry[1] <= maximum[1] - 24)
+    right = (close(spawn[0], maximum[0] + 80) and
+             close(entry[0], maximum[0] - 28) and
+             close(spawn[1], entry[1]) and
+             minimum[1] + 24 <= entry[1] <= maximum[1] - 24)
+    bottom = (close(spawn[1], minimum[1] - 80) and
+              close(entry[1], minimum[1] + 28) and
+              close(spawn[0], entry[0]) and
+              minimum[0] + 24 <= entry[0] <= maximum[0] - 24)
+    return left or right or bottom
+
+
 def titania_beenoculars_waves_match_source(scene: dict, level: dict) -> bool:
     """The original Titania II timed Bee counterattack, including the
     additional 15–405 second enhancement callbacks. All emitted hulls
@@ -130,7 +163,8 @@ def titania_beenoculars_waves_match_source(scene: dict, level: dict) -> bool:
                         not -float("inf") < x < float("inf")
                         for x in coords)):
                 return False
-        if same_point(wave["spawn"], wave["entry"]):
+        if not titania_beenoculars_lane_matches_source(
+                wave, scene.get("bounds")):
             return False
         group = wave.get("squad_item_ids")
         if not isinstance(group, list) or any(

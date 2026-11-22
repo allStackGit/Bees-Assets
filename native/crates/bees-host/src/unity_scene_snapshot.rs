@@ -233,12 +233,42 @@ fn titania_minesweeper_matches_source(
     fire_tanks > 0
 }
 
+/// Off-map Titania II squad placement may scan around obstacles for a
+/// clear tangent. The source approach still uses exactly the three
+/// physical edges (left, right, bottom) and its fixed outside/inside
+/// offsets. No top-of-map arrival can masquerade as original gameplay.
+fn titania_beenoculars_lane_matches_source(
+    wave: &crate::reinforcements::NativeReinforcementPlan,
+    bounds: Aabb,
+) -> bool {
+    let (Some(spawn), Some(entry)) = (wave.spawn, wave.entry) else {
+        return false;
+    };
+    if !spawn.is_finite() || !entry.is_finite() {
+        return false;
+    }
+    let close = |a: f32, b: f32| (a - b).abs() <= 0.001;
+    (close(spawn.x, bounds.min.x - 80.0) &&
+     close(entry.x, bounds.min.x + 28.0) &&
+     close(spawn.y, entry.y) &&
+     (bounds.min.y + 24.0..=bounds.max.y - 24.0).contains(&entry.y)) ||
+    (close(spawn.x, bounds.max.x + 80.0) &&
+     close(entry.x, bounds.max.x - 28.0) &&
+     close(spawn.y, entry.y) &&
+     (bounds.min.y + 24.0..=bounds.max.y - 24.0).contains(&entry.y)) ||
+    (close(spawn.y, bounds.min.y - 80.0) &&
+     close(entry.y, bounds.min.y + 28.0) &&
+     close(spawn.x, entry.x) &&
+     (bounds.min.x + 24.0..=bounds.max.x - 24.0).contains(&entry.x))
+}
+
 /// Titania II stages 15 original timed Bee counterattack callbacks after
 /// the opening deployment. Each independently routed arrival keeps its
 /// real SavedSquad and original ship class. Validate only on import; the
 /// fixed-step simulation consumes the ordinary reinforcement queue.
 fn titania_beenoculars_waves_match_source(
     waves: &[crate::reinforcements::NativeReinforcementPlan],
+    bounds: Aabb,
     bee_side: i32,
     squads: &[NativeSourceSquad],
     entities: &[NativeAuthoredEntity],
@@ -270,7 +300,7 @@ fn titania_beenoculars_waves_match_source(
             !EXPECTED.iter().any(|(expected, _)| *expected == due) ||
             wave.spawn.is_none_or(|at| !at.is_finite()) ||
             wave.entry.is_none_or(|at| !at.is_finite()) ||
-            wave.spawn == wave.entry ||
+            !titania_beenoculars_lane_matches_source(wave, bounds) ||
             wave.squad_item_ids.iter().any(|id| !claimed.insert(*id))
         {
             return false;
@@ -3413,7 +3443,7 @@ impl NativePhysicalScene {
                             ship.ship_type == bees_sim::ship_assets::HUMAN_TARGET_TYPE &&
                             !ship.vitals.is_dead()))) ||
                 !titania_beenoculars_waves_match_source(
-                    &setup.reinforcements, bee_side,
+                    &setup.reinforcements, self.bounds, bee_side,
                     &self.source_squads, &self.entities,
                 ) ||
                 setup.groups.is_some() || setup.demolition.is_some() ||
