@@ -1850,6 +1850,10 @@ def main() -> None:
                         type=postcampaign_game, default=[],
                         metavar="ID:PLAYER_SIDE:RUN",
                         help="package a real native playable mode or verified challenge; side 0 is a no-player HiveMind Fish Tank scene, locked until Uranus III finishes")
+    parser.add_argument("--training-room-game", action="append",
+                        type=postcampaign_game, default=[],
+                        metavar="ID:PLAYER_SIDE:RUN",
+                        help="package an authentic human Training Room battle, unlocked after the authored Pluto IV finale")
     parser.add_argument("--mission-variant", action="append", type=mission_variant,
                         default=[], metavar="MISSION:PREVIOUS:RUN",
                         help="use another native battle if the required previous mission's latest result was victory")
@@ -1872,12 +1876,13 @@ def main() -> None:
             len({mission for mission, _ in args.mission_story}) != len(args.mission_story)):
         parser.error("--mission-story needs distinct existing mission indices")
     story_by_index = dict(args.mission_story)
-    game_ids = [game_id for game_id, _, _ in args.postcampaign_game]
+    game_ids = [game_id for game_id, _, _ in
+                [*args.postcampaign_game, *args.training_room_game]]
     if len(set(game_ids)) != len(game_ids) or any(
         game_id == re.sub(r"[^a-z0-9]+", "-", args.title.strip().lower()).strip("-")[:40]
         for game_id in game_ids
     ):
-        parser.error("--postcampaign-game needs distinct IDs separate from the campaign")
+        parser.error("post-campaign and Training Room modes need distinct IDs separate from the campaign")
     if (len(set(args.mission_scientists_met)) != len(args.mission_scientists_met) or
             any(story_by_index.get(index) != "uranus_on_the_defensive"
                 for index in args.mission_scientists_met)):
