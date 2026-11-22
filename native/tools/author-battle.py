@@ -804,6 +804,8 @@ def author(args) -> tuple[dict, dict, dict]:
 
     scene["level_name"] = name
     scene["stage_name"] = name
+    if args.map_background is not None:
+        scene["map_background"] = args.map_background
     scene["activate_hivemind"] = False
     scene["activate_collision_asteroids"] = False
     scene["activate_fog_of_war"] = args.fog
@@ -2351,8 +2353,6 @@ def main() -> None:
         parser.error("--target-ship-type needs --objective target_ship and a source class 0..23")
     try:
         scene, run, library = author(args)
-        if args.map_background is not None:
-            scene["map_background"] = args.map_background
         policy = None
         if args.trainable:
             # Share the fleet converter's exact deferred-roster contract,

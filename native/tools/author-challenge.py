@@ -41,6 +41,8 @@ def original_level(document, number):
         raise ValueError("unsupported original enemy reinforcement/reuse setting")
     if level.get("AsteroidOption") not in (0, 1, 2, 3):
         raise ValueError("unrecognized original Challenge collision-asteroid option")
+    if type(level.get("MapIndex")) is not int or not 0 <= level["MapIndex"] <= 3:
+        raise ValueError("original Challenge map requires Pluto, Neptune, Titania or Uranus")
     if level.get("Mining") != 0 or not isinstance(level.get("EnemySquads"), list):
         raise ValueError("unsupported Challenge resource/squad contract")
     if level.get("Obstacles") not in ("", "No") or (
@@ -182,10 +184,12 @@ def main():
         count = Counter(KINDS[ship["ShipType"]]
                         for squad in level["EnemySquads"] for ship in squad["Ships"])
         bees = ",".join(f"{kind}:{amount}" for kind, amount in sorted(count.items()))
+        original_planet = ("pluto", "neptune", "titania", "uranus")[level["MapIndex"]]
         options = [
             str(args.output_dir), "--bees", bees, "--humans", args.human_fleet,
             "--control", "humans", "--host-side", "2",
             "--title", f"Challenge {args.level + 1}: {level['Name']}",
+            "--map-background", original_planet,
             "--source-scene", str(args.source_scene),
             "--source-run", str(args.source_run), "--seed", str(args.seed),
             "--minutes", str(args.minutes), "--spacing",
@@ -198,6 +202,12 @@ def main():
         battle_args = author.battle_parser().parse_args(options)
         battle_args.ship_identity_base = 1_000_000
         scene, run, library = author.author(battle_args)
+        # This original Challenge stage selects its planet from MapIndex.
+        # Map and soundtrack are separate native source properties, but
+        # the original Stage chooses both from the same MapData here.
+        if scene.get("map_background") != original_planet:
+            raise ValueError("Challenge battle author dropped its source planetary map")
+        scene["music_location"] = original_planet
         if (scene.get("mining_asteroids") or scene.get("map_objects") or
                 scene.get("layout", {}).get("add_static_boxes") or
                 scene.get("layout", {}).get("add_static_polygons")):
