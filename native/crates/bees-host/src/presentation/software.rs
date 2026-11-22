@@ -2464,7 +2464,20 @@ impl NativeSoftwareRenderer {
                 "First Honeybee destroyed  |  Monitor incoming enemy signals"
             } else if view.campaign_dialogue.is_some_and(|(_, cue)|
                 matches!(cue,
-                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeSpotted
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipBriefingComplete
+                ))
+            {
+                "Lieutenant Tom is engaging the unidentified Honeybee"
+            } else if view.campaign_dialogue.is_some_and(|(_, cue)|
+                matches!(cue,
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipArrived
+                ))
+            {
+                "Gunship arrived  |  Listen to Lieutenant Tom's briefing"
+            } else if view.campaign_dialogue.is_some_and(|(_, cue)|
+                matches!(cue,
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeSpotted |
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyScoutReportComplete
                 ))
             {
                 "Unidentified vessel located  |  Stand by for Lieutenant Tom"
