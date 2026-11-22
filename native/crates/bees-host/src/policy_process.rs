@@ -65,6 +65,19 @@ impl From<io::Error> for PolicyProcessError {
     fn from(value: io::Error) -> Self { Self::Io(value) }
 }
 
+/// Measured time spent installing a new resident policy artifact. Reload
+/// never runs in the physics hot loop; successful commits advance the
+/// generation while rejected updates keep the previous weights in place.
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+pub struct PolicyReloadMeasurements {
+    pub attempts: u64,
+    pub committed: u64,
+    pub rejected: u64,
+    pub failed: u64,
+    pub total_wall_seconds: f64,
+    pub last_wall_seconds: f64,
+}
+
 /// The child is allowed to read/write binary data only on stdin/stdout.
 /// Send diagnostics to stderr. This backend holds both pipe handles for
 /// its whole lifetime; no spawning or loading weights in a simulation tick.
@@ -84,6 +97,7 @@ pub struct ResidentPolicyProcess {
     row_headers: Vec<u8>,
     behavior_statistics: Vec<f32>,
     collect_behavior: bool,
+    reload_measurements: PolicyReloadMeasurements,
 }
 
 impl ResidentPolicyProcess {
@@ -109,6 +123,7 @@ impl ResidentPolicyProcess {
             row_headers: Vec::new(),
             behavior_statistics: Vec::new(),
             collect_behavior: true,
+            reload_measurements: PolicyReloadMeasurements::default(),
         };
         backend.read_handshake()?;
         Ok(backend)
@@ -264,7 +279,31 @@ impl ResidentPolicyProcess {
     /// &mut self guarantees this transaction cannot interleave with a
     /// batch forward. Rejected model updates preserve the old generation;
     /// malformed/partial wire exchanges permanently invalidate the stream.
+    pub fn reload_measurements(&self) -> PolicyReloadMeasurements {
+        self.reload_measurements
+    }
+
     pub fn reload_manifest(&mut self, manifest: &Path)
+        -> Result<u64, PolicyProcessError>
+    {
+        let started = Instant::now();
+        let result = self.reload_manifest_inner(manifest);
+        let metrics = &mut self.reload_measurements;
+        metrics.attempts = metrics.attempts.saturating_add(1);
+        match &result {
+            Ok(_) => metrics.committed = metrics.committed.saturating_add(1),
+            Err(PolicyProcessError::ReloadRejected |
+                PolicyProcessError::InvalidReloadPath |
+                PolicyProcessError::InvalidBatch) =>
+                metrics.rejected = metrics.rejected.saturating_add(1),
+            Err(_) => metrics.failed = metrics.failed.saturating_add(1),
+        }
+        metrics.last_wall_seconds = started.elapsed().as_secs_f64();
+        metrics.total_wall_seconds += metrics.last_wall_seconds;
+        result
+    }
+
+    fn reload_manifest_inner(&mut self, manifest: &Path)
         -> Result<u64, PolicyProcessError>
     {
         if self.unavailable {
