@@ -107,8 +107,18 @@ function localOptions(hub) {
     if(!MACHINE.test(machine))
         throw Error('Invalid enrolled evaluator machine identity.');
     const host=hub.snapshot().machines.find(entry=>entry.id===machine);
-    if(!host||!host.installed_projects?.includes('tinybrains'))
-        throw Error('The local enrolled machine does not advertise TinyBrains.');
+    if(!host)
+        throw Error('The enrolled local agent identity is not registered in the Hub.');
+    if(host.status!=='connected')
+        throw Error('Waiting for a fresh authenticated local agent heartbeat; evaluator readiness will refresh automatically.');
+    if(!host.installed_projects?.includes('tinybrains')) {
+        const projects=Array.isArray(host.installed_projects)
+            ?host.installed_projects.join(', '):'';
+        throw Error(host.local_executor_enabled!==true
+            ?'The connected local agent is observation-only. Check its private agent.env execution setting and approved adapter.'
+            :'The local agent advertises '+(projects||'no project adapters')+
+                ', not TinyBrains. Check its approved EXPERIMENT_HUB_LOCAL_ADAPTERS file.');
+    }
 
     const ai=path.join(home,'ai');
     const project=path.join(ai,'projects/tinybrains/Ants-MAPOCA');

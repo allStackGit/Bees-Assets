@@ -427,6 +427,10 @@
     if(evaluatorMini)evaluatorMini.addEventListener('click',()=>manageEvaluator('setup-mini'));
     if(courierSetup)courierSetup.addEventListener('click',()=>manageEvaluator('setup',undefined,'courier'));
     refresh.addEventListener('click',update);
+    // The coordinator may accept its first agent capability heartbeat after
+    // this panel renders (or after the 3s/9s restart checks). Reconcile the
+    // observed readiness without requiring a manual browser refresh.
+    setInterval(()=>{if(!busy&&document.visibilityState!=='hidden')update();},15000);
     coordinator.addEventListener('click',()=>restart('coordinator'));
     agent.addEventListener('click',()=>restart('agent'));
     update();
