@@ -28,7 +28,9 @@ const FLEET_SIZES: [usize; 8] = [1, 2, 4, 8, 16, 32, 64, 128];
 pub(super) const GAME_ID: &str = "fleet-skirmish";
 
 #[derive(Clone, Copy)]
-enum Terrain { Open, Original, Cover, DenseCover }
+enum Terrain {
+    Open, Original, Cover, DenseCover, AsteroidField, AsteroidStorm,
+}
 
 #[derive(Clone, Copy)]
 enum Objective { Elimination, Survival, Extraction, Escort, Demolition }
@@ -929,6 +931,8 @@ fn choose_terrain() -> Result<Option<Terrain>, Box<dyn Error>> {
         ("Classic duel", "  [Original minor cover]"),
         ("Flanking cover", "  [Two physical obstacles]"),
         ("Dense cover", "  [Four physical obstacles]"),
+        ("Moving asteroid field", "  [12 real source CollisionAsteroids]"),
+        ("Asteroid storm", "  [48 real source CollisionAsteroids and fragments]"),
     ];
     let rows = choices.iter().map(|(title, status)| BattleMenuRow {
         title, status, unlocked: true,
@@ -939,7 +943,9 @@ fn choose_terrain() -> Result<Option<Terrain>, Box<dyn Error>> {
             0 => Terrain::Open,
             1 => Terrain::Original,
             2 => Terrain::Cover,
-            _ => Terrain::DenseCover,
+            3 => Terrain::DenseCover,
+            4 => Terrain::AsteroidField,
+            _ => Terrain::AsteroidStorm,
         }
     ))
 }
@@ -1922,6 +1928,18 @@ pub(super) fn archive(
     }
     let level_name = scene["level_name"].as_str()
         .unwrap_or("Fleet Skirmish").to_owned();
+    // The same Stage-owned full-asteroid pool is used in game play,
+    // scripted AI, headless benchmarks and model training. Its Create-time
+    // prefab/speed RNG and later physical fragmentation remain canonical.
+    // Only a scenario's initial count changes; no alternate obstacle or
+    // spawn loop is introduced for the fleet builder.
+    let full_asteroids = match selected.terrain {
+        Terrain::AsteroidField => 12,
+        Terrain::AsteroidStorm => 48,
+        _ => 0,
+    };
+    scene["activate_collision_asteroids"] = json!(full_asteroids > 0);
+    scene["initial_random_full_asteroids"] = json!(full_asteroids);
     scene["level_name"] = json!(format!(
         "{level_name}  |  Support: {} {}, {} {}  |  Specialist hulls: {} Bees, {} Humans",
         support_count[0],
@@ -1940,7 +1958,8 @@ pub(super) fn archive(
         cloned.remove_static_ids.push(30);
     }
     let cover = match selected.terrain {
-        Terrain::Open | Terrain::Original => &[][..],
+        Terrain::Open | Terrain::Original |
+        Terrain::AsteroidField | Terrain::AsteroidStorm => &[][..],
         // Keep all cover in the map's central no-spawn lane. Native
         // 64- and 128-ship fleets occupy x<=-39 and x>=39; prefab
         // half-width is 25 and never overlaps a fresh ship by design.
@@ -2240,6 +2259,8 @@ pub(super) fn archive(
         Terrain::Original => "original",
         Terrain::Cover => "cover",
         Terrain::DenseCover => "dense-cover",
+        Terrain::AsteroidField => "asteroid-field",
+        Terrain::AsteroidStorm => "asteroid-storm",
     };
     let run_id = run["run_id"].as_str()
         .ok_or_else(|| invalid("native fleet has no saved run identity"))?;
