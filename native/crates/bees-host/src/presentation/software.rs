@@ -1485,12 +1485,12 @@ impl NativeSoftwareRenderer {
     /// local gameplay. Only pixels are produced; no shadow physics,
     /// collisions, policy state, or second ship asset definitions exist.
     #[cfg(feature = "client")]
-    pub(super) fn begin_remote_art(&mut self, camera: NativeCamera) {
+    pub(super) fn begin_remote_art(&mut self, camera: NativeCamera) -> (usize, usize) {
         self.camera = camera;
         self.sprite_raster_candidate_pixels = 0;
         self.sprite_raster_opaque_pixels = 0;
         self.sprite_raster_blended_pixels = 0;
-        self.pixels.fill(0x080f1a);
+        self.draw_map_background()
     }
 
     #[cfg(feature = "client")]

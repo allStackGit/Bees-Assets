@@ -31,7 +31,7 @@ use sha2::{Digest, Sha256};
 
 use crate::player_trace::NativePlayerInput;
 use crate::presentation::{NativeFogFade, NativeRenderWorldView};
-use crate::unity_scene_snapshot::NativeMusicLocation;
+use crate::unity_scene_snapshot::{NativeMusicLocation, NativeMapBackdrop};
 
 // Four normal commanders retain their original capacity even when
 // view-only observers join. Spectators have a separate bounded allocation.
@@ -529,6 +529,9 @@ pub struct NativeRemotePlay {
     // second gameplay visibility or historical enemy positions are stored.
     fog_by_side: HashMap<i32, RemoteFogSight>,
     music_location: Option<NativeMusicLocation>,
+    /// Public source map identity shared by every authenticated spectator
+    /// and player; never coupled to independently changing soundtrack.
+    map_background: Option<NativeMapBackdrop>,
     /// Authored Map.MinZoom/MaxZoom; presentation metadata, not player authority.
     camera_zoom: Option<(f32, f32)>,
     /// Source Stage.UseMouseScrolling default, never a remote command.
@@ -646,7 +649,7 @@ impl NativeRemotePlay {
             next_peer: 1, last_state: None, force_initial_state: false,
             pending_audio: HashMap::new(), last_audio_tick: None,
             fog_by_side: HashMap::new(),
-            music_location: None, camera_zoom: None,
+            music_location: None, map_background: None, camera_zoom: None,
             camera_edge_scrolling: None,
             held_fire: HashMap::new(), pending_releases: Vec::new(),
             briefing_ready: HashMap::new(),
@@ -857,6 +860,10 @@ impl NativeRemotePlay {
     }
 
     /// The authored Level selects music, never a network client's request.
+    pub fn set_map_background(&mut self, background: Option<NativeMapBackdrop>) {
+        self.map_background = background;
+    }
+
     pub fn set_music_location(&mut self, location: Option<NativeMusicLocation>) {
         self.music_location = location;
     }
@@ -1727,6 +1734,7 @@ impl NativeRemotePlay {
         // their existing reliable, bounded channel.
         let pending_audio = std::mem::take(&mut self.pending_audio);
         let music_location = self.music_location;
+        let map_background = self.map_background;
         let camera_zoom = self.camera_zoom;
         let camera_edge_scrolling = self.camera_edge_scrolling;
         let commander_paused = !self.pause_peers.is_empty();
@@ -1808,7 +1816,7 @@ impl NativeRemotePlay {
                 let started = Instant::now();
                 let cues = pending_audio.get(&side).map(Vec::as_slice).unwrap_or(&[]);
                 let mut state = current_state(
-                    view, bounds, side, music_location, camera_zoom,
+                    view, bounds, side, music_location, map_background, camera_zoom,
                     camera_edge_scrolling, cues,
                     vision.get(&side).expect("authenticated side has sight"),
                     briefing_paused,
@@ -2577,7 +2585,9 @@ fn source_codex_entry(
 
 fn current_state(
     view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32,
-    music_location: Option<NativeMusicLocation>, camera_zoom: Option<(f32, f32)>,
+    music_location: Option<NativeMusicLocation>,
+    map_background: Option<NativeMapBackdrop>,
+    camera_zoom: Option<(f32, f32)>,
     camera_edge_scrolling: Option<bool>, audio_events: &[Value], sources: &RemoteFogSources, briefing_paused: bool,
     requires_briefing_ack: bool, overlay_squads: Option<&HashSet<SquadLifetime>>,
     spectator: bool, measurements: &mut RemotePlayMeasurements,
@@ -2954,7 +2964,8 @@ fn current_state(
         "world_id": view.world_id.0,
         "episode_revision": view.episode_revision,
         "tick": view.tick, "fixed_step_seconds": view.fixed_step_seconds,
-        "music_location": music_location, "camera_zoom": camera_zoom,
+        "music_location": music_location, "map_background": map_background,
+        "camera_zoom": camera_zoom,
         "camera_edge_scrolling": camera_edge_scrolling, "audio_events": audio_events,
         "viewer_side": viewer,
         // Only the authenticated side's live scoreboard, projected with

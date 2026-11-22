@@ -25,7 +25,7 @@ use super::minimap::MiniMapLayout;
 use super::tactical_hud::{HudAction, HudRect, ACTIONS, shooting_hit, shooting_rect};
 use bees_hivemind::protocol::SHOOTING_STRATEGIES;
 use crate::game_audio::NativeGameAudio;
-use crate::unity_scene_snapshot::NativeMusicLocation;
+use crate::unity_scene_snapshot::{NativeMusicLocation, NativeMapBackdrop};
 
 fn source_ship_catalog() -> &'static bees_sim::ship_assets::ShipAssetCatalog {
     static SHIPS: OnceLock<bees_sim::ship_assets::ShipAssetCatalog> = OnceLock::new();
@@ -109,6 +109,7 @@ struct WireCounts {
     snapshot_pairs_interpolated: u64,
     interpolated_draw_frames: u64,
     ship_sprite_draws: u64,
+    map_background_pixels_drawn: u64,
     carrier_deck_overlay_draws: u64,
     barge_charge_effect_draws: u64,
     queen_part_sprite_draws: u64,
@@ -229,7 +230,12 @@ impl RemoteArtwork {
             self.shot_first_seen.clear();
             return;
         }
-        self.raster.begin_remote_art(camera);
+        let background: Option<NativeMapBackdrop> =
+            serde_json::from_value(state["map_background"].clone())
+                .ok().flatten();
+        self.raster.set_map_background(background);
+        let (background_pixels, _) = self.raster.begin_remote_art(camera);
+        stats.map_background_pixels_drawn += background_pixels as u64;
         let episode = (
             state["world_id"].as_u64().unwrap_or(0),
             state["episode_revision"].as_u64().unwrap_or(0),
