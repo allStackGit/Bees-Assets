@@ -3751,7 +3751,10 @@ pub fn connect_remote(
         if let Some(result) = peer.battle_result_receipt.as_deref() {
             text::draw_at(&mut pixels, WIDTH, 10, HEIGHT-61,
                 text::fit(result, FIELD-20), 1, [255, 211, 130]);
-            for (index, line) in peer.battle_loss_breakdown.iter().rev().take(4).enumerate() {
+            // Up to 24 source ship classes form at most five rows of five.
+            // Preserve the complete terminal casualty report above the
+            // reliable battle and campaign receipts.
+            for (index, line) in peer.battle_loss_breakdown.iter().rev().take(5).enumerate() {
                 text::draw_at(&mut pixels, WIDTH, 10, HEIGHT-79-index*18,
                     text::fit(line, FIELD-20), 1, [255, 211, 130]);
             }
