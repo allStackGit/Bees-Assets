@@ -3681,6 +3681,7 @@ fn original_fleet_source_squad(
         let Some(parent) = scene.entities.iter().find_map(|entity| match entity {
             NativeAuthoredEntity::Ship(ship) if ship.side == side &&
                 ship.fleet_ship_id == Some(fleet_ship_id) &&
+                !ship.vitals.is_dead() &&
                 scene.fleet.get(ship.entity_id)
                     .is_some_and(|value| value.has_persistent_fleet_value) =>
                         Some(ship.entity_id),
@@ -4404,8 +4405,9 @@ fn authored_menu_fleet(
                                 let Some(&ship) = source_ships.get(&entity_id)
                                     else { continue };
                                 let Some(fleet_id) = ship.fleet_ship_id else { continue };
-                                if fleet_id <= 0 || !scene.fleet.get(entity_id)
-                                    .is_some_and(|row| row.has_persistent_fleet_value)
+                                if fleet_id <= 0 || ship.vitals.is_dead() ||
+                                    !scene.fleet.get(entity_id)
+                                        .is_some_and(|row| row.has_persistent_fleet_value)
                                 { continue; }
                                 if seen_source.insert((side, fleet_id)) {
                                     source_owned.push((side, fleet_id, saved_id, ship.ship_type));
