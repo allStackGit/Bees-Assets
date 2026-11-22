@@ -1210,6 +1210,21 @@ function createTinyBrainsPersistentDockerAdapter({
             throw Error('TinyBrains job has no valid checkpoint-boundary status.');
         return latest;
     }
+    // Compilation produces reusable ROCm/Triton kernels. The existing
+    // trusted, machine-owned TinyBrains cache mount is persistent while
+    // HOME=/tmp is intentionally ephemeral inside each training container.
+    // Keep compiled artifacts here so identical later experiments do not
+    // repeatedly pay for the same kernel compilation. No new writable mount
+    // or Hub-controlled filesystem path is introduced.
+    if(!nativeWindows)for(const name of ['torchinductor','triton']) {
+        const folder=path.join(cache,name);
+        fs.mkdirSync(folder,{recursive:true,mode:0o700});
+        const stat=fs.lstatSync(folder);
+        if(!stat.isDirectory()||stat.isSymbolicLink()||
+            fs.realpathSync(folder)!==folder||
+            stat.uid!==process.getuid()||(stat.mode&0o077)!==0)
+            throw Error('TinyBrains GPU compiler cache must be a private local directory.');
+    }
     const docker=nativeWindows?null:{
         image,workdir:PROJECT_IN,uid:process.getuid(),gid:process.getgid(),
         remote_host_network:Boolean(remote),
@@ -1223,6 +1238,8 @@ function createTinyBrainsPersistentDockerAdapter({
         ],
         env:{
             HOME:'/tmp',PYTHONDONTWRITEBYTECODE:'1',
+            TORCHINDUCTOR_CACHE_DIR:CACHE_IN+'/torchinductor',
+            TRITON_CACHE_DIR:CACHE_IN+'/triton',
             // On Halifax's R9700, MIOpen's default solver selection made
             // dilated-convolution backward passes 7-10x slower in isolation.
             // FAST improved all three observed dilations without model changes.
