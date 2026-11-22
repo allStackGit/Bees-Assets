@@ -783,7 +783,8 @@ impl NativeRemotePlay {
                 // complete unprocessed lines in the bounded TCP read buffer
                 // for the next fixed-tick poll, preserving request order.
                 if peer.side.is_some() && (peer_orders >= MAX_ORDERS_PER_PEER_POLL ||
-                    orders.len() >= MAX_ORDERS_PER_POLL) {
+                    orders.len() >= MAX_ORDERS_PER_POLL ||
+                    peer.input_replies.len() >= MAX_PENDING_INPUT_REPLIES) {
                     if peer.incoming[start..].contains(&b'\n') {
                         self.measurements.input_budget_deferred_polls += 1;
                     }
@@ -931,9 +932,11 @@ impl NativeRemotePlay {
                             break;
                         }
                         peer.last_request_id = request_id;
+                        // The outer admission gate retains the complete
+                        // frame in the bounded buffer while checkpointed
+                        // receipts are pending. This cannot overflow here.
                         if !peer.begin_input(request_id) {
-                            peer.closed = true;
-                            break;
+                            unreachable!("input receipt capacity was checked before admission");
                         }
                         let side = peer.side.expect("checked authenticated peer");
                         // Point fire and held fire use the same peer-scoped
