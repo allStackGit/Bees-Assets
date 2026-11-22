@@ -695,18 +695,31 @@ async function main(argv=process.argv.slice(2)) {
     const lock=path.join(stateDir,'updater.lock');
     let fd;
     try{fd=fs.openSync(lock,'wx',0o600);}
-    catch{
-        // Crash residue is recoverable, but never break a live updater lock.
+    catch(openError) {
+        if(openError.code!=='EEXIST')throw openError;
+        // Only a definitively dead owner permits lock recovery. An updater
+        // crash must not suspend all future software reconciliation for eight
+        // hours, but an active updater must never be interrupted by a lease.
         try {
+            if(fs.lstatSync(lock).isSymbolicLink())
+                throw Error('Updater lock is redirected.');
             const info=JSON.parse(fs.readFileSync(lock,'utf8'));
             const age=Date.now()-info.started_at;
-            let alive=true;
-            try{process.kill(info.pid,0);}catch(e){alive=e.code!=='ESRCH';}
-            if(alive||!Number.isFinite(age)||age<8*3600000)
-                throw Error('Updater lock still belongs to a possibly live process.');
+            if(!Number.isSafeInteger(info.pid)||info.pid<=0||
+                !Number.isSafeInteger(info.started_at)||age<0)
+                throw Error('Updater lock has an invalid owner identity.');
+            let dead=false;
+            try { process.kill(info.pid,0); }
+            catch(error) {
+                if(error.code==='ESRCH')dead=true;
+                else throw Error('Cannot establish whether the updater owner is running.');
+            }
+            if(!dead)
+                throw Error('Updater process '+info.pid+' is still running.');
             fs.unlinkSync(lock);
             fd=fs.openSync(lock,'wx',0o600);
-        }catch(error){
+            console.log('[worker-updater] Recovered abandoned lock from dead process '+info.pid+'.');
+        }catch(error) {
             console.error('[worker-updater] Lock not recoverable: '+error.message);
             return;
         }
