@@ -732,8 +732,42 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                          if isinstance(ship, dict) and
                          ship.get("side") == 3 - args.player_side and
                          ship.get("ship_type") == 14]
+            source_ships = {
+                ship.get("entity_id"): ship for ship in scene.get("ships", [])
+                if isinstance(ship, dict) and type(ship.get("entity_id")) is int
+            }
+            source_squads = {
+                squad.get("item_id"): squad for squad in scene.get("squads", [])
+                if isinstance(squad, dict) and type(squad.get("item_id")) is int
+            }
+            waves = level.get("reinforcements") or []
+            gunship_waves = [
+                wave for wave in waves if isinstance(wave, dict)
+                and wave.get("on_campaign_cue") == "pluto_scout_report_complete"
+                and source_wave_types(
+                    wave, source_squads, source_ships, args.player_side
+                ) == [13]
+            ]
+            scout_owners = [
+                squad for squad in source_squads.values()
+                if squad.get("side") == args.player_side and
+                scouts and scouts[0].get("entity_id") in squad_members(squad)
+            ]
+            scout_departures = [
+                queue for queue in level.get("scripted_queues", [])
+                if isinstance(queue, dict) and
+                any(queue.get("squad_item_id") == squad.get("item_id")
+                    for squad in scout_owners) and
+                queue.get("activation") == {
+                    "kind": "on_campaign_cue",
+                    "cue": "pluto_honeybee_spotted",
+                } and any(isinstance(order, dict) and
+                    order.get("kind") == "move_to_point"
+                    for order in queue.get("orders", []))
+            ]
             if (scene.get("native_game_schema") != 1 or
                     scene.get("human_side") != args.player_side or
+                    len(gunship_waves) != 1 or len(scout_departures) != 1 or
                     len(scouts) != 1 or len(honeybees) != 1 or
                     any(type(ship.get("entity_id")) is not int or
                         ship["entity_id"] <= 0 for ship in [*scouts, *honeybees]) or
@@ -747,8 +781,9 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     any(level.get(name) is not None for name in
                         ("survival", "demolition", "escort", "extraction", "groups"))):
                 raise ValueError(
-                    "Pluto Anomaly requires one real player Scout and one "
-                    "source Honeybee, with original physical player control"
+                    "Pluto Anomaly requires one source Scout/Honeybee, an "
+                    "authored Scout withdrawal on pluto_honeybee_spotted, "
+                    "and one physical Gunship wave on pluto_scout_report_complete"
                 )
             level["campaign_dialogue"] = {
                 "pluto_anomaly": {
