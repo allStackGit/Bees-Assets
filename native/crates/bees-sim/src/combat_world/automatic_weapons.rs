@@ -149,15 +149,28 @@ impl CombatWorld {
         contacts: &WeaponRangeContacts, range: NativeWeaponRange,
     ) -> Result<bool, CombatWorldError> {
         let side = self.ship(ship_id).ok_or(CombatWorldError::UnknownShip)?.side;
-        for reserve in [true, false] {
-            for index in 0..mount.automatic_state().queue.len() {
-                let target = mount.automatic_state().queue[index];
-                if self.automatic_target_valid(ship_id, contacts, range, target)? &&
-                    (!reserve || self.target_damage_status(side, target)?.can_select_target()) {
-                    set_target(mount, target);
-                    return Ok(true);
-                }
+        // Source selects the first damage-reservable valid target, then
+        // falls back to the first valid target if *none* can be reserved.
+        // Save that fallback in the same pass. A second full traversal
+        // repeats every collider/range validation, which is particularly
+        // expensive for unarmed or outnumbered automatic fleets.
+        let mut first_valid = None;
+        for index in 0..mount.automatic_state().queue.len() {
+            let target = mount.automatic_state().queue[index];
+            if !self.automatic_target_valid(ship_id, contacts, range, target)? {
+                continue;
             }
+            if first_valid.is_none() {
+                first_valid = Some(target);
+            }
+            if self.target_damage_status(side, target)?.can_select_target() {
+                set_target(mount, target);
+                return Ok(true);
+            }
+        }
+        if let Some(target) = first_valid {
+            set_target(mount, target);
+            return Ok(true);
         }
         Ok(false)
     }
@@ -232,7 +245,10 @@ impl CombatWorld {
                 for target in &candidates {
                     let point = self.ship_body(target.ship_id).expect("registered range target")
                         .primary_closest_point_readonly(range.origin);
-                    distances.insert(target.ship_id, (point - range.origin).length_squared().sqrt());
+                    // Sorting nearest/farthest is monotonic in nonnegative
+                    // squared distance. Do not spend a square root per
+                    // candidate per turret rebuild for the same ordering.
+                    distances.insert(target.ship_id, (point - range.origin).length_squared());
                     self.automatic_weapon_measurements.distance_queries += 1;
                 }
             }
