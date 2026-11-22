@@ -1589,6 +1589,18 @@ where
                     ) {
                         dialogue.set_cue(cue);
                         state.events.queue_campaign_dialogue(completed_tick, cue)?;
+                        // A source-authored wave can release another
+                        // deployment on its exact arrival announcement.
+                        // The first admission pass preceded this cue, so
+                        // deliver that dependent wave now, on the SAME
+                        // physical tick. Reuse the ordinary deferred-wave
+                        // scheduler, roster and policy admission paths;
+                        // never create another spawn or event processor.
+                        // One bounded follow-up preserves one original
+                        // narrative announcement per arrival interval.
+                        state.metadata.deploy_reinforcements(
+                            &mut state.combat, &mut state.events, completed_tick,
+                        )?;
                     }
                 }
             }
