@@ -420,6 +420,7 @@ pub struct CampaignProgress<'a> {
 #[derive(Default)]
 struct FleetProgress {
     side: i32,
+    ship_type: Option<u8>,
     battles_fought: u64,
     battles_won: u64,
     minerals_mined: u64,
@@ -1396,6 +1397,15 @@ impl BattleCatalog {
                                 special_history_complete: true,
                                 ..FleetProgress::default() }
                         });
+                        if let Some(kind) = ship.ship_type {
+                            if fleet.ship_type.is_some_and(|recorded| recorded != kind) {
+                                return Err(invalid(format!(
+                                    "FleetShip {} changed its physical class between campaign battles",
+                                    ship.fleet_ship_id,
+                                )));
+                            }
+                            fleet.ship_type = Some(kind);
+                        }
                         if let Some(stats) = ship.combat {
                             let add = |left: u64, right: u64| left.checked_add(right)
                                 .ok_or_else(|| invalid("campaign combat counter overflow"));
@@ -1594,8 +1604,10 @@ impl BattleCatalog {
                     special_history_complete: true,
                     ..FleetProgress::default()
                 });
-            if fleet.side != purchase.player_side {
-                return Err(invalid("purchased FleetShip changed its authoritative side"));
+            if fleet.side != purchase.player_side ||
+                fleet.ship_type.is_some_and(|kind| kind != purchase.ship.ship_type)
+            {
+                return Err(invalid("purchased FleetShip changed its authoritative side or class"));
             }
             progress.purchases.push((purchase.player_side, purchase.ship));
         }
