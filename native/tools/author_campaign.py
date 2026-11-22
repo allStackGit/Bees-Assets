@@ -834,7 +834,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                         if isinstance(squad, dict)) or
                     level.get("campaign_dialogue") is not None or
                     any(level.get(name) is not None for name in
-                        ("survival", "demolition", "escort", "extraction", "groups"))):
+                        ("survival", "demolition", "escort", "extraction", "groups", "target_ship"))):
                 raise ValueError(
                     "Pluto Anomaly requires one source Scout/Honeybee, an "
                     "authored Scout withdrawal on pluto_honeybee_spotted, "
@@ -849,6 +849,12 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     "honeybee_id": honeybees[0]["entity_id"],
                     "gunship_id": gunship_id,
                 }
+            }
+            # The original first Honeybee is the objective, not the
+            # incoming Bee fleet. Its death ends this same physical game.
+            level["target_ship"] = {
+                "attacking_side": args.player_side,
+                "target_ship_id": honeybees[0]["entity_id"],
             }
         elif story == "pluto_pushback":
             # Pluto III's authentic five-squad opponent wave has already
