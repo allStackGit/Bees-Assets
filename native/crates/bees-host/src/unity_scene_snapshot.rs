@@ -3782,6 +3782,20 @@ impl NativePhysicalScene {
             setup.target_ship = setup.target_ship.or(mission.target_ship);
             setup.campaign_dialogue = setup.campaign_dialogue.or(mission.campaign_dialogue);
         }
+        // Neptune II and Uranus II create the physical Zone only after
+        // SetRetreatForNeptune2/SetRetreatForUranus2 is chosen. Enforce the
+        // original source rule for BOTH native-scene and Unity-import
+        // missions at the one canonical Level-construction boundary.
+        // Historical custom withdrawal skirmishes without either authored
+        // campaign retain their old immediate exit.
+        if matches!(setup.campaign_dialogue,
+            Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::NeptuneProduction { .. } |
+                 bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusDefensive { .. })
+        ) {
+            if let Some(zone) = &mut setup.extraction {
+                if zone.retreat_on_exit { zone.requires_player_activation = true; }
+            }
+        }
         for &ship_id in &self.active_policy_ship_ids {
             if !self.source_policy_bindings.contains_key(&ship_id) {
                 return Err(NativePolicyOnlyLevelError::InvalidControllerBinding(
