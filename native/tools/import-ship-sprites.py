@@ -62,6 +62,11 @@ QUEEN_EXPLOSION = (
     ("queen_death_rings.png", "Queen Explosion Rings.anim"),
 )
 
+# Source Map.SpriteRenderer backgrounds, in native map type order.
+MAP_BACKGROUND_IMAGES = (
+    "pluto 1k resize.png", "neptune.png", "titania_rough.png", "uranus.png",
+)
+
 # Original ShipRemains and Beehive Shrinking sheets. The tuple is keyed
 # directly by ConfigData.ShipTypes; None denotes source classes without
 # authored wreck art. The 20-slice clips hold their final frame until the
@@ -387,6 +392,8 @@ def write_atomic(output: Path, data: bytearray):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--map-background-output", type=Path,
+                        default=ROOT / "native/assets/map-backgrounds.rgba")
     parser.add_argument("--ship-output", type=Path,
                         default=ROOT / "native/assets/ship-sprites.rgba")
     parser.add_argument("--projectile-output", type=Path,
@@ -411,6 +418,9 @@ def main():
         SHIP_IMAGES, ROOT / "Sprites/Ships", b"BSS2", False,
         palettes,
     )
+    backgrounds, background_count = pack(
+        MAP_BACKGROUND_IMAGES, ROOT / "Sprites/Backgrounds", b"BSS1", False,
+    )
     animations, animation_count = pack_ship_animations(palettes)
     remains, remains_count = pack_ship_remains(palettes)
     decks = pack_carrier_decks()
@@ -427,6 +437,7 @@ def main():
     asteroids, asteroid_count = pack(
         ASTEROID_IMAGES, ROOT / "Sprites/Asteroids", b"BAS1", False,
     )
+    backgrounds_path = write_atomic(args.map_background_output, backgrounds)
     ships_path = write_atomic(args.ship_output, ships)
     projectiles_path = write_atomic(args.projectile_output, projectiles)
     asteroids_path = write_atomic(args.asteroid_output, asteroids)
@@ -444,6 +455,8 @@ def main():
           f"{len(remains)} bytes at {remains_path}")
     print(f"Ship animations: {animation_count} clips, "
           f"{len(animations)} bytes at {animations_path}")
+    print(f"Planetary backdrops: {background_count} types, "
+          f"{len(backgrounds)} bytes at {backgrounds_path}")
     print(f"Ship sprites: {ship_count} types, {len(ships)} bytes at {ships_path}")
     print(f"Projectile sprites: {projectile_count} types, "
           f"{len(projectiles)} bytes at {projectiles_path}")

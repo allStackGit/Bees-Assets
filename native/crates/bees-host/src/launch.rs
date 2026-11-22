@@ -8729,6 +8729,9 @@ fn run_battle(
         client.set_music_locations(
             source_levels.iter().map(|source| source.music_location).collect(),
         );
+        client.set_map_backgrounds(
+            source_levels.iter().map(|source| source.map_background).collect(),
+        );
         // Stage/user settings are common to these simultaneously captured
         // Levels, while an operator can override edge panning with F6.
         client.set_source_edge_scrolling(

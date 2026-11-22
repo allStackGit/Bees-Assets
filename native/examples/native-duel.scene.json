@@ -2,6 +2,7 @@
   "native_game_schema": 1,
   "level_name": "Native Duel",
   "music_location": "pluto",
+  "map_background": "pluto",
   "stage_name": "Native Duel",
   "bounds": {
     "min": [

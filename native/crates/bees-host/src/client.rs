@@ -10,7 +10,7 @@ use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use crate::presentation::{squad_name_key, HudAction, NativeCamera, NativeControls,
     NativeRenderWorldView, NativeSoftwareRenderer, NativeSupportMode};
 use crate::game_audio::{NativeGameAudio, NativeAudioMeasurements};
-use crate::unity_scene_snapshot::NativeMusicLocation;
+use crate::unity_scene_snapshot::{NativeMusicLocation, NativeMapBackdrop};
 use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerHeldFire, NativePlayerSquadMoves,
     NativePlayerSquadFire, NativePlayerSquadCeaseFire,
     NativePlayerSquadSpecial, NativePlayerShipSpecialKind,
@@ -124,6 +124,7 @@ pub struct NativeClient {
     renderer: NativeSoftwareRenderer,
     audio: NativeGameAudio,
     music_locations: Vec<Option<NativeMusicLocation>>,
+    map_backgrounds: Vec<Option<NativeMapBackdrop>>,
     bounds: Aabb,
     selected_world: usize,
     selection_owner: Option<(WorldId, u64)>,
@@ -289,7 +290,7 @@ impl NativeClient {
         window.set_target_fps(60);
         let now = Instant::now();
         Ok(Self { window, renderer, audio: NativeGameAudio::new(),
-            music_locations: Vec::new(), bounds,
+            music_locations: Vec::new(), map_backgrounds: Vec::new(), bounds,
             selected_world: 0, selection_owner: None,
             submitted_selection: Vec::new(), hotseat: None,
             paused: false, game_speed: 0, show_controls_help: false,
@@ -433,6 +434,14 @@ impl NativeClient {
     pub fn set_music_locations(&mut self, locations: Vec<Option<NativeMusicLocation>>) {
         self.music_locations = locations;
         self.audio.select_location(self.music_locations.first().copied().flatten());
+    }
+
+    /// Choose the actual map prefab, never infer its art from music.
+    pub fn set_map_backgrounds(&mut self, backgrounds: Vec<Option<NativeMapBackdrop>>) {
+        self.map_backgrounds = backgrounds;
+        self.renderer.set_map_background(
+            self.map_backgrounds.get(self.selected_world).copied().flatten(),
+        );
     }
 
     pub fn audio_measurements(&self) -> NativeAudioMeasurements {
@@ -1162,6 +1171,9 @@ impl NativeClient {
         if !self.show_controls_help && self.window.is_key_pressed(Key::Tab, KeyRepeat::No) &&
             world_count > 1 && self.held_fire_target.is_none() {
             self.selected_world = (self.selected_world + 1) % world_count;
+            self.renderer.set_map_background(
+                self.map_backgrounds.get(self.selected_world).copied().flatten(),
+            );
             self.audio.select_location(
                 self.music_locations.get(self.selected_world).copied().flatten(),
             );

@@ -11,6 +11,7 @@ use bees_gameplay::player_inputs::NativePlayerAuthority;
 use bees_sim::geometry::Vec2;
 use bees_sim::physics::ShipShape;
 use bees_sim::simulation::{RandomStream, WorldId};
+use crate::unity_scene_snapshot::NativeMapBackdrop;
 use super::{NativeFogFade, NativeRenderWorldView, NativeSquadSelection,
     battle_outcome_label, battle_outcome_reason, text};
 use super::minimap::MiniMapLayout;
@@ -94,6 +95,9 @@ impl NativeCamera {
 #[derive(Clone, Copy, Debug, Default, serde::Serialize)]
 pub struct NativeRenderCounts {
     pub ships: usize,
+    /// Actual backdrop pixels emitted by the native client, not an estimate.
+    pub map_background_pixels: usize,
+    pub map_background_art_loaded: usize,
     /// Source PNG sprites rendered instead of the fallback hull outline.
     pub ship_sprite_draws: usize,
     /// Real source Carrier deck overlays matched to a custom squad color.
@@ -196,6 +200,8 @@ pub struct NativeSoftwareRenderer {
     width: usize,
     height: usize,
     pixels: Vec<u32>,
+    /// Cosmetic source Map.SpriteRenderer; never included in game physics.
+    map_background: Option<NativeMapBackdrop>,
     /// Allocated only for fog-enabled graphical Levels and reused by frame.
     fog_coverage: Vec<u8>,
     /// Original FreePlay's ToggleFogOfWar. Never available in a campaign
@@ -804,6 +810,13 @@ fn load_source_art<T>(filename: &str, decoder: fn(&[u8]) -> io::Result<T>) -> Op
     }
 }
 
+fn source_map_backgrounds() -> Option<&'static SourceShipAtlas> {
+    static ATLAS: OnceLock<Option<SourceShipAtlas>> = OnceLock::new();
+    ATLAS.get_or_init(|| load_source_art(
+        "map-backgrounds.rgba", SourceShipAtlas::decode,
+    )).as_ref()
+}
+
 fn source_ship_art() -> Option<&'static SourceShipAtlas> {
     static ATLAS: OnceLock<Option<SourceShipAtlas>> = OnceLock::new();
     ATLAS.get_or_init(|| load_source_art(
@@ -936,6 +949,7 @@ impl NativeSoftwareRenderer {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid viewport or bounds"));
         }
         Ok(Self { width, height, pixels: vec![0; width * height],
+            map_background: None,
             fog_coverage: Vec::new(), fog_override_off: false,
             fog_context: None, fog_render_pass: 0,
             codex_owner: None,
@@ -2221,6 +2235,73 @@ impl NativeSoftwareRenderer {
             .find_map(|mode| self.pick_support_action(view, mode, point, None))
     }
 
+    pub fn set_map_background(&mut self, background: Option<NativeMapBackdrop>) {
+        self.map_background = background;
+    }
+
+    /// Unity Map.SpriteRenderer stretches its imported PNG over its actual
+    /// centered 512- or 1024-unit prefab square, independent of Level bounds.
+    /// Clamp the scan to on-screen texels and draw only in the native client.
+    fn draw_map_background(&mut self) -> (usize, usize) {
+        self.pixels.fill(0x080e19);
+        let Some(background) = self.map_background else { return (0, 0) };
+        let Some(atlas) = source_map_backgrounds() else { return (0, 0) };
+        let (index, half) = match background {
+            NativeMapBackdrop::Pluto => (0, 256.0_f32),
+            NativeMapBackdrop::Neptune => (1, 512.0),
+            NativeMapBackdrop::Titania => (2, 256.0),
+            NativeMapBackdrop::Uranus => (3, 512.0),
+        };
+        let Some(art) = atlas.sprites.get(index).and_then(Option::as_ref)
+            else { return (0, atlas.loaded) };
+        let sprite = &art.sprite;
+        let camera = self.camera;
+        let ppu = camera.pixels_per_unit;
+        if !ppu.is_finite() || ppu <= 0.0 { return (0, atlas.loaded) }
+        let left = ((-half - camera.center.x) * ppu +
+            self.width as f32 * 0.5).floor().max(0.0) as usize;
+        let right = ((half - camera.center.x) * ppu +
+            self.width as f32 * 0.5).ceil().min(self.width as f32) as usize;
+        let top = ((camera.center.y - half) * ppu +
+            self.height as f32 * 0.5).floor().max(0.0) as usize;
+        let bottom = ((camera.center.y + half) * ppu +
+            self.height as f32 * 0.5).ceil().min(self.height as f32) as usize;
+        if left >= right || top >= bottom { return (0, atlas.loaded) }
+        let inverse = ppu.recip();
+        let u_factor = sprite.width as f32 / (half * 2.0);
+        let v_factor = sprite.height as f32 / (half * 2.0);
+        let u_start = (camera.center.x +
+            (left as f32 + 0.5 - self.width as f32 * 0.5) * inverse +
+            half) * u_factor;
+        let du = inverse * u_factor;
+        let mut samples = 0usize;
+        for y in top..bottom {
+            let v = (half - camera.center.y +
+                (y as f32 + 0.5 - self.height as f32 * 0.5) * inverse)
+                * v_factor;
+            if v < 0.0 || v >= sprite.height as f32 { continue; }
+            let source_row = v as usize * sprite.width;
+            let dest_row = y * self.width;
+            for x in left..right {
+                let u = u_start + (x - left) as f32 * du;
+                if u < 0.0 || u >= sprite.width as f32 { continue; }
+                let at = (source_row + u as usize) * 4;
+                let rgba = &sprite.pixels[at..at + 4];
+                let opacity = u32::from(rgba[3]);
+                if opacity == 0 { continue; }
+                let dest = &mut self.pixels[dest_row + x];
+                *dest = if opacity == 255 {
+                    u32::from(rgba[0]) << 16 |
+                    u32::from(rgba[1]) << 8 | u32::from(rgba[2])
+                } else {
+                    text::blend(*dest, [rgba[0], rgba[1], rgba[2]], opacity)
+                };
+                samples += 1;
+            }
+        }
+        (samples, atlas.loaded)
+    }
+
     pub fn render(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) -> NativeRenderCounts {
         self.selection.synchronize(view);
         // Selected squad count can approach ship count in large battles.
@@ -2243,7 +2324,7 @@ impl NativeSoftwareRenderer {
                 self.width as f32, 0.0, self.width, self.height,
             ) + pad,
         };
-        self.pixels.fill(0x080e19);
+        let (background_pixels, background_types) = self.draw_map_background();
         self.sprite_raster_candidate_pixels = 0;
         self.sprite_raster_opaque_pixels = 0;
         self.sprite_raster_blended_pixels = 0;
@@ -2251,6 +2332,8 @@ impl NativeSoftwareRenderer {
             self.pending_visual_event_counts = NativeRenderCounts::default();
         }
         let mut counts = std::mem::take(&mut self.pending_visual_event_counts);
+        counts.map_background_pixels = background_pixels;
+        counts.map_background_art_loaded = background_types;
         self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
             half_extents: (bounds.max - bounds.min) * 0.5 },
             Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x33455e);

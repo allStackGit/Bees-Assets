@@ -582,6 +582,7 @@ struct UnitySnapshot {
     level_name: String,
     stage_name: String,
     music_location: Option<NativeMusicLocation>,
+    map_background: Option<NativeMapBackdrop>,
     fixed_dt_seconds: f32,
     time_scale: Option<f32>,
     shots_harmless: bool,
@@ -1320,6 +1321,13 @@ pub enum NativeMusicLocation {
     Pluto, Neptune, Uranus, Titania,
 }
 
+/// Authored Unity Map.SpriteRenderer identity, independent of soundtrack.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NativeMapBackdrop {
+    Pluto, Neptune, Titania, Uranus,
+}
+
 /// Validated source ship that can be installed later into a persistent
 /// FleetShip but is not a physical body, squad member or training agent.
 #[derive(Clone)]
@@ -1373,6 +1381,7 @@ pub struct NativePhysicalScene {
     /// Source Stage identity for validating the loaded prefab palette.
     pub stage_name: String,
     pub music_location: Option<NativeMusicLocation>,
+    pub map_background: Option<NativeMapBackdrop>,
     pub bounds: Aabb,
     /// Exact Stage-owned home coordinates indexed by source Side-1.
     pub starting_positions: Option<[Vec2; 2]>,
@@ -5915,6 +5924,7 @@ impl NativePhysicalScene {
             level_name: raw.level_name,
             stage_name: raw.stage_name,
             music_location: raw.music_location,
+            map_background: raw.map_background,
             bounds: Aabb { min, max },
             starting_positions,
             fixed_dt_seconds: raw.fixed_dt_seconds,
