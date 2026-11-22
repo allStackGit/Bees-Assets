@@ -174,10 +174,18 @@ pub struct NativeDeleteSquadMenuRow {
     pub saved_squad_id: i64,
 }
 
+/// Same editor and validation key surface for original SavedSquad and
+/// FleetShip identities; no separate menu or simulated squad state.
+#[derive(Clone, Copy)]
+pub enum NativeNameTarget {
+    SavedSquad(i64),
+    FleetShip(i64),
+}
+
 pub struct NativeNameMenuRow {
     pub title: String,
     pub side: i32,
-    pub saved_squad_id: i64,
+    pub target: NativeNameTarget,
     pub name: String,
 }
 
@@ -198,6 +206,7 @@ pub enum NativeBattleMenuAction {
     CreateSquad { side: i32, template_saved_squad_id: i64 },
     DeleteSquad { side: i32, saved_squad_id: i64 },
     NameSquad { side: i32, saved_squad_id: i64, name: String },
+    NameFleetShip { side: i32, fleet_ship_id: i64, name: String },
     Tactics { side: i32, saved_squad_id: i64,
         shooting_strategy_id: u8, should_chase: bool, cease_fire: bool,
         match_speed: bool, color_setting: NativeSquadColorSetting,
@@ -377,7 +386,7 @@ fn select_battle_inner(
             // The opening R must not itself insert a literal 'r'.
             pixels.fill(0x080e19);
             text::draw_centered(&mut pixels, WIDTH, 40,
-                "Name saved squads", 2, TEXT);
+                "Name saved squads and FleetShips", 2, TEXT);
             window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
             continue;
         }
@@ -400,8 +409,15 @@ fn select_battle_inner(
                             if !name.is_empty() && name.len() <= 32 &&
                                 name != row.name
                             {
-                                return Ok(Some(NativeBattleMenuAction::NameSquad {
-                                    side: row.side, saved_squad_id: row.saved_squad_id, name,
+                                return Ok(Some(match row.target {
+                                    NativeNameTarget::SavedSquad(saved_squad_id) =>
+                                        NativeBattleMenuAction::NameSquad {
+                                            side: row.side, saved_squad_id, name,
+                                        },
+                                    NativeNameTarget::FleetShip(fleet_ship_id) =>
+                                        NativeBattleMenuAction::NameFleetShip {
+                                            side: row.side, fleet_ship_id, name,
+                                        },
                                 }));
                             }
                         }
@@ -437,7 +453,7 @@ fn select_battle_inner(
                 }
                 pixels.fill(0x080e19);
                 text::draw_centered(&mut pixels, WIDTH, 24,
-                    "Name saved squads", 2, TEXT);
+                    "Name saved squads and FleetShips", 2, TEXT);
                 text::draw_centered(&mut pixels, WIDTH, 73,
                     "Type a name (32 chars max). Enter save, Tab return to missions",
                     1, MUTED);
@@ -447,7 +463,7 @@ fn select_battle_inner(
                     } else { name_input.as_str() }), 1, TEXT);
                 if name_rows.is_empty() {
                     text::draw_centered(&mut pixels, WIDTH, 220,
-                        "No editable SavedSquads", 1, MUTED);
+                        "No player SavedSquads or FleetShips available to name", 1, MUTED);
                 }
                 for index in name_first..(name_first + PAGE_SIZE).min(name_rows.len()) {
                     let y = LIST_TOP + (index - name_first) * ROW_HEIGHT;
@@ -463,7 +479,7 @@ fn select_battle_inner(
                         &text::fit(&label, 560), 1, TEXT);
                 }
                 text::draw_centered(&mut pixels, WIDTH, 441,
-                    "Up/Down squad   Letters, numbers, space, - and _   Backspace erase   Tab close",
+                    "Arrows/scroll choose | Letters/numbers/space/-/_ | Backspace erase | Tab back",
                     1, MUTED);
                 window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
                 continue;
