@@ -179,6 +179,60 @@ fn authored_type_sequence_matches(
     }
 }
 
+/// Titania II stages 15 original timed Bee counterattack callbacks after
+/// the opening deployment. Each independently routed arrival keeps its
+/// real SavedSquad and original ship class. Validate only on import; the
+/// fixed-step simulation consumes the ordinary reinforcement queue.
+fn titania_beenoculars_waves_match_source(
+    waves: &[crate::reinforcements::NativeReinforcementPlan],
+    bee_side: i32,
+    squads: &[NativeSourceSquad],
+    entities: &[NativeAuthoredEntity],
+) -> bool {
+    use crate::reinforcements::NativeReinforcementActivation::AfterSeconds;
+    const EXPECTED: [(i32, &[u8]); 15] = [
+        (15, &[15]), (20, &[21]), (25, &[14]), (30, &[16]),
+        (60, &[15, 21]), (75, &[15, 21]),
+        (120, &[14, 22]), (135, &[14, 22]),
+        (210, &[16, 15]), (225, &[16, 15]),
+        (300, &[21, 22]), (315, &[21, 22]),
+        (375, &[16, 15, 14, 22]),
+        (390, &[16, 15]), (405, &[14, 22]),
+    ];
+    let by_squad: HashMap<_, _> = squads.iter().map(|squad|
+        (squad.item_id, squad)
+    ).collect();
+    let by_ship: HashMap<_, _> = entities.iter().filter_map(|entity| match entity {
+        NativeAuthoredEntity::Ship(ship) => Some((ship.entity_id, ship)),
+        _ => None,
+    }).collect();
+    let mut by_time = std::collections::BTreeMap::<i32, Vec<u8>>::new();
+    let mut claimed = HashSet::new();
+    for wave in waves {
+        let AfterSeconds(seconds) = wave.activation else { return false };
+        if !seconds.is_finite() { return false; }
+        let due = seconds.round() as i32;
+        if (seconds - due as f32).abs() > 0.0001 ||
+            !EXPECTED.iter().any(|(expected, _)| *expected == due) ||
+            wave.spawn.is_none_or(|at| !at.is_finite()) ||
+            wave.entry.is_none_or(|at| !at.is_finite()) ||
+            wave.spawn == wave.entry ||
+            wave.squad_item_ids.iter().any(|id| !claimed.insert(*id))
+        {
+            return false;
+        }
+        let Some(types) = authored_reinforcement_types(
+            wave, bee_side, &by_squad, &by_ship,
+        ) else { return false };
+        for kind in types {
+            let Some(kind) = kind else { return false };
+            by_time.entry(due).or_default().push(kind);
+        }
+    }
+    by_time.len() == EXPECTED.len() && EXPECTED.iter().all(|(due, types)|
+        by_time.get(due).is_some_and(|actual| actual == types))
+}
+
 /// Neptune II's original 120/240/360/480-second waves and growing
 /// 60-second reinforcements. Every arrival uses the SAME physical source
 /// squads and AI home entry point as ordinary playable combat.
@@ -3263,8 +3317,27 @@ impl NativePhysicalScene {
                     target.attacking_side == player_side &&
                     target.target_ship_id == honeybee_id) =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
-            Some(CampaignDialogueSpec::TitaniaBeenoculars { player_side, .. })
-                if !setup.survival.is_some_and(|objective| objective.defending_side == player_side) =>
+            Some(CampaignDialogueSpec::TitaniaBeenoculars {
+                player_side, under_heavy_fire,
+            }) if player_side != human_side ||
+                self.activate_hivemind != Some(true) ||
+                !setup.survival.is_some_and(|objective|
+                    objective.defending_side == player_side &&
+                    (objective.seconds - if under_heavy_fire { 480.0 } else { 330.0 })
+                        .abs() <= 0.001 &&
+                    self.entities.iter().any(|entity| matches!(entity,
+                        NativeAuthoredEntity::Ship(ship)
+                            if ship.entity_id == objective.protected_ship_id &&
+                            ship.side == player_side &&
+                            ship.ship_type == bees_sim::ship_assets::HUMAN_TARGET_TYPE &&
+                            !ship.vitals.is_dead()))) ||
+                !titania_beenoculars_waves_match_source(
+                    &setup.reinforcements, bee_side,
+                    &self.source_squads, &self.entities,
+                ) ||
+                setup.groups.is_some() || setup.demolition.is_some() ||
+                setup.escort.is_some() || setup.extraction.is_some() ||
+                setup.target_ship.is_some() =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::TitaniaMinesweeper { player_side })
                 if player_side != human_side ||
