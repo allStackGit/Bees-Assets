@@ -723,6 +723,9 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         "pluto_reinforcements": [(7, "finished"), (12, "finished"),
                                  (15, "finished")],
         "pluto_pushback": [(21, "finished")],
+        # A.M.I.'s evacuation grants the prototype human Carrier and
+        # unlocks its Codex entry whether or not Titania survives.
+        "titania_beenoculars": [(5, "finished")],
         "pluto_bluer_pastures": [(16, "finished"), (22, "finished")],
         "neptune_seize_means": [(4, "finished"), (9, "victory")],
         "uranus_on_the_offensive": [(3, "finished")],
@@ -786,6 +789,19 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                         "use --shop-types 7,12 and --shop-unlock TYPE:MISSION"
                     )
                 shop_unlocks[kind] = [mission_index]
+    for mission_index, story in mission_stories.items():
+        if story == "titania_beenoculars":
+            # The source awards and unlocks the prototype Carrier as one
+            # SavedSquad on finished. A player must never purchase it
+            # before that mission's actual terminal receipt.
+            if (5 not in args.shop_types or
+                    (5 in shop_unlocks and shop_unlocks[5] != [mission_index])):
+                raise ValueError(
+                    "Titania Beenoculars unlocks the Carrier only after "
+                    "its battle: use --shop-types 5 and "
+                    "--shop-unlock 5:MISSION"
+                )
+            shop_unlocks[5] = [mission_index]
     variants = {
         "victory": {mission: (previous, run_path)
                     for mission, previous, run_path in args.mission_variant},
