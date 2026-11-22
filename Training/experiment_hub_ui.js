@@ -159,7 +159,8 @@ function hubEvaluationMetricSummary(runs,metricKey,identity) {
             '. One point cannot show a learning trend; further checkpoint evaluations are needed.';
     }
     return descriptor+conditions+' '+coverage+
-        (samples.length===0?' No recorded results for this metric yet.':'');
+        (samples.length===0?' No recorded results for this metric yet.':
+            ' Dashed guides connect recorded checkpoints only; intermediate model performance was not evaluated.');
 }
 function hubComparisonPoints(run) {
     const training=run.points.length?run.points:
@@ -3126,9 +3127,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const axisLabel=comparisonAxisLabel(xKey);
         const genericKey=key.startsWith('metric:')?key.slice(7):null;
         const displayIdentity=genericKey?hubEvaluationMetricPresentation(runs,genericKey):null;
-        // Independent evaluations are discrete checkpoint observations,
-        // not a continuous trainer measurement. Never draw an interpolated
-        // strength curve through checkpoints that were never evaluated.
+        // Independent evaluations are checkpoint observations, not trainer
+        // telemetry. Dashed guides may connect observed points, but must
+        // never manufacture samples or suggest games ran between them.
         const discreteEvaluation=Boolean(genericKey)&&runs.some(run=>
             (run.evaluation_points||[]).some(row=>{
                 const prefix=hubEvaluationMetricPrefix(row);
@@ -3159,7 +3160,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         svg.setAttribute('aria-label',metric.label+
             ' by '+axisLabel.toLowerCase()+' for selected runs'+
-            (discreteEvaluation?'; measured checkpoints only, gaps are not interpolated':''));
+            (discreteEvaluation
+                ?'; dashed guides connect only measured checkpoints; gaps are not evaluations':''));
         const usable=p=>hubComparisonAxisValue(p,xKey)!==null&&
             Number.isFinite(hubMetricValue(p,key))&&
             (!discreteEvaluation||Boolean(p.evaluation_identity));
@@ -3345,13 +3347,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 flush();
             }
             if(discreteEvaluation) {
-                // One SVG path per run avoids thousands of individual DOM
-                // circles when many archived checkpoints are selected.
-                const dots=run.valid.filter(usable).map(point=>{
+                // Make successive measured checkpoints legible at a glance.
+                // Dashed paths are a visual ordering guide, never additional
+                // evaluation samples or an inferred score between checkpoints.
+                let segment=[],previousX=null;
+                const drawGuide=()=>{
+                    if(segment.length>1)
+                        node('path',{d:segment.map((point,i)=>
+                            (i?'L':'M')+
+                            x(hubComparisonAxisValue(point,xKey)).toFixed(1)+' '+
+                            y(hubMetricValue(point,key)).toFixed(1)).join(' '),
+                            fill:'none',stroke:run.color,
+                            'stroke-width':2,'stroke-dasharray':'6 5',
+                            class:'plot-evaluation-guide'});
+                    segment=[];
+                };
+                const recorded=run.valid.filter(usable);
+                for(const point of recorded) {
+                    const currentX=hubComparisonAxisValue(point,xKey);
+                    if(point.break_before||
+                        previousX!==null&&currentX<=previousX)drawGuide();
+                    segment.push(point);
+                    previousX=currentX;
+                }
+                drawGuide();
+                // One batched SVG path per run keeps discrete checkpoints
+                // visible even on saturated 100% and all-zero plots.
+                const dots=recorded.map(point=>{
                     const cx=x(hubComparisonAxisValue(point,xKey));
                     const cy=y(hubMetricValue(point,key));
-                    return 'M'+(cx-3.5).toFixed(1)+' '+cy.toFixed(1)+
-                        ' a3.5 3.5 0 1 0 7 0 a3.5 3.5 0 1 0 -7 0';
+                    return 'M'+(cx-5).toFixed(1)+' '+cy.toFixed(1)+
+                        ' a5 5 0 1 0 10 0 a5 5 0 1 0 -10 0';
                 }).join(' ');
                 if(dots)node('path',{d:dots,fill:run.color,
                     class:'plot-evaluation-points'});
