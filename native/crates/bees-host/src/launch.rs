@@ -6933,6 +6933,7 @@ fn run_campaign_game_menu(
             tactics: editable_tactics, reservable, ..
         } = authored_menu_fleet(&catalog, root, &progress);
         let fleet_rows = progress.fleet_rows_with_source(&source_owned);
+        let fleet_rankings = progress.fleet_ranking_rows_with_source(&source_owned);
         let squad_rows = progress.squad_rows_with_source(&authored_squads);
         // The same set of persistent player SavedSquads must exist in
         // every replayable physical mission configuration, not only the
@@ -7226,7 +7227,8 @@ fn run_campaign_game_menu(
         }).collect::<Vec<_>>();
         let codex_known = catalog.codex_known_types(&progress);
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
-            &fleet_rows, &squad_rows, &shop_rows, available, &transfer_rows,
+            &fleet_rows, &squad_rows, Some(&fleet_rankings),
+            &shop_rows, available, &transfer_rows,
             &create_rows, &tactics_rows, &delete_rows, &name_rows,
             codex_known.as_deref(),
             {
