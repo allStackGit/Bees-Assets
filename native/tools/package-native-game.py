@@ -458,17 +458,25 @@ def package_extra_challenge_library(
         campaign_id, mission_id = unlock_after.split(":", 1)
         if not campaign_id or not mission_id:
             raise ValueError("Challenge unlock requires CAMPAIGN:MISSION")
-        parents = [game for game in menu["games"] if
-                   game["kind"] == "campaign" and game["id"] == campaign_id]
-        if len(parents) != 1:
-            raise ValueError("Challenge unlock must refer to a real packaged campaign")
-        catalog_path = destination / parents[0]["config"]
-        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-        if not any(battle.get("mission", {}).get("id") == mission_id
-                   for battle in catalog.get("battles", [])):
-            raise ValueError("Challenge unlock milestone does not exist in the campaign")
         entry["unlock_after"] = {"campaign_id": campaign_id,
                                   "mission_id": mission_id}
+    # Also enforce source-authored gates when no CLI override was given.
+    # A portable release may not contain an unresolvable game-mode unlock.
+    gate = entry.get("unlock_after")
+    if gate is not None:
+        if (not isinstance(gate, dict) or
+                set(gate) != {"campaign_id", "mission_id"} or
+                not all(isinstance(value, str) and value for value in gate.values())):
+            raise ValueError("invalid original Challenge unlock reference")
+        parents = [game for game in menu["games"] if
+                   game["kind"] == "campaign" and game["id"] == gate["campaign_id"]]
+        if len(parents) != 1:
+            raise ValueError("Challenge unlock must refer to a packaged campaign")
+        catalog_path = destination / parents[0]["config"]
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        if not any((battle.get("mission") or {}).get("id") == gate["mission_id"]
+                   for battle in catalog.get("battles", [])):
+            raise ValueError("Challenge unlock milestone does not exist in the campaign")
     menu["games"].append(entry)
     menu_path.write_text(json.dumps(menu, indent=2, ensure_ascii=False) + "\n",
                          encoding="utf-8")
