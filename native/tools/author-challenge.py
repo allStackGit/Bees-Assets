@@ -177,6 +177,8 @@ def main():
     parser.add_argument("--archetype-scene", type=Path, action="append", default=[],
                         help="extra full non-policy source ship archetypes")
     parser.add_argument("--original-levels", type=Path, default=LEVELS)
+    parser.add_argument("--player-identity-map", type=Path,
+                        help="shared physical class/ordinal identities for a multi-stage Challenge career")
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--minutes", type=int, default=15)
     parser.add_argument("--stage-asteroid-minimum-rate", type=int,
@@ -208,6 +210,22 @@ def main():
             options.extend(["--archetype-scene", str(path)])
         battle_args = author.battle_parser().parse_args(options)
         battle_args.ship_identity_base = 1_000_000
+        if args.player_identity_map is not None:
+            identity = json.loads(args.player_identity_map.read_text(encoding="utf-8"))
+            if (not isinstance(identity, dict) or
+                    set(identity) != {"schema_version", "side", "types"} or
+                    identity["schema_version"] != 1 or identity["side"] != 2 or
+                    not isinstance(identity["types"], dict)):
+                raise ValueError("invalid shared Challenge player FleetShip identity map")
+            by_type = {}
+            for kind_text, ids in identity["types"].items():
+                if not isinstance(kind_text, str) or not kind_text.isdecimal():
+                    raise ValueError("invalid player FleetShip class identity")
+                kind = int(kind_text)
+                if kind >= 24 or kind in by_type or not isinstance(ids, list):
+                    raise ValueError("invalid player FleetShip identity mapping")
+                by_type[kind] = ids
+            battle_args.authored_ship_ids = {2: by_type}
         # Native Challenge reuses the canonical source ship constructor.
         # Feed its original per-type, per-hull physical positions at the
         # authoring boundary rather than allocating a temporary generic
