@@ -80,6 +80,70 @@ const ROW_HEIGHT: usize = 42;
 const PAGE_SIZE: usize = 7;
 const TEXT: [u8; 3] = [232, 240, 250];
 const MUTED: [u8; 3] = [155, 178, 206];
+ 
+/// Codex is read-only authored player information. The numeric fields are
+/// imported from Unity's version-5 ship-stats record, independently of
+/// physical ship attributes, fleet admission or learning decisions. They are
+/// displayed only here; CombatWorld remains the gameplay authority.
+#[derive(serde::Deserialize)]
+struct NativeCodexShip {
+    ship_type: u8,
+    name: String,
+    health: u64,
+    tsv: u64,
+    sight: u64,
+    speed: f32,
+    range: String,
+    power: String,
+    rate_of_fire: String,
+    description: String,
+}
+
+#[derive(serde::Deserialize)]
+struct NativeCodex {
+    schema_version: u32,
+    source_ship_stats_version: u32,
+    ships: Vec<NativeCodexShip>,
+}
+
+fn native_codex() -> &'static NativeCodex {
+    static SOURCE: OnceLock<NativeCodex> = OnceLock::new();
+    SOURCE.get_or_init(|| {
+        let codex: NativeCodex = serde_json::from_str(include_str!(
+            "../../../../assets/ship-codex.json"
+        )).expect("packaged source ship Codex");
+        assert_eq!(codex.schema_version, 1);
+        assert_eq!(codex.source_ship_stats_version, 5);
+        assert_eq!(codex.ships.len(), 23);
+        assert!(codex.ships.iter().enumerate().all(|(index, ship)|
+            usize::from(ship.ship_type) == index));
+        codex
+    })
+}
+
+/// Wrap only when the selection changes. Rendering at 30fps must not
+/// re-layout the source's multi-paragraph descriptions every frame.
+fn codex_lines(description: &str, max_width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    for paragraph in description.lines() {
+        if paragraph.trim().is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+        let mut line = String::new();
+        for word in paragraph.split_whitespace() {
+            if !line.is_empty() &&
+                text::width(&format!("{line} {word}"), 1) > max_width {
+                lines.push(std::mem::take(&mut line));
+            }
+            if !line.is_empty() { line.push(' '); }
+            line.push_str(word);
+        }
+        if !line.is_empty() { lines.push(line); }
+    }
+    lines
+}
+
 
 /// One list-navigation contract for mission selection, shop, squad management,
 /// and career history. Keep the selected row visible even for very large
@@ -367,6 +431,9 @@ fn select_battle_inner(
     let mut show_codex = false;
     let mut codex_selected = 0_usize;
     let mut codex_first = 0_usize;
+    let mut codex_rendered_type: Option<u8> = None;
+    let mut codex_description_lines = Vec::<String>::new();
+    let mut codex_description_scroll = 0_usize;
     let mut show_shop = false;
     let mut show_transfer = false;
     let mut show_create = false;
@@ -472,6 +539,8 @@ fn select_battle_inner(
             window.is_key_pressed(Key::F2, KeyRepeat::No)
         {
             show_codex = !show_codex;
+            codex_rendered_type = None;
+            codex_description_scroll = 0;
             show_shop = false;
             show_transfer = false;
             show_create = false;
@@ -484,40 +553,88 @@ fn select_battle_inner(
         if show_codex {
             let types = codex_types.unwrap_or(&[]);
             navigate_rows(&window, &mut codex_selected, &mut codex_first, types.len());
+            let codex = native_codex();
+            let current = types.get(codex_selected)
+                .and_then(|&kind| codex.ships.get(usize::from(kind)));
+            if let Some(ship) = current {
+                if codex_rendered_type != Some(ship.ship_type) {
+                    codex_description_lines = codex_lines(&ship.description, 518);
+                    codex_description_scroll = 0;
+                    codex_rendered_type = Some(ship.ship_type);
+                }
+            }
+            let visible_description_lines = 13_usize;
+            let max_scroll = codex_description_lines.len()
+                .saturating_sub(visible_description_lines);
+            if window.is_key_pressed(Key::Left, KeyRepeat::Yes) {
+                codex_description_scroll = codex_description_scroll.saturating_sub(6);
+            } else if window.is_key_pressed(Key::Right, KeyRepeat::Yes) {
+                codex_description_scroll = codex_description_scroll.saturating_add(6)
+                    .min(max_scroll);
+            }
             pixels.fill(0x080e19);
-            text::draw_centered(&mut pixels, WIDTH, 24,
-                "United Fleet Codex", 2, TEXT);
-            text::draw_centered(&mut pixels, WIDTH, 78,
-                "Ship classes earned through original campaign progression", 1, MUTED);
-            static SHIPS: OnceLock<bees_sim::ship_assets::ShipAssetCatalog> = OnceLock::new();
-            let catalog = SHIPS.get_or_init(|| bees_sim::ship_assets::ShipAssetCatalog::embedded()
-                .expect("native source ship catalog loaded by gameplay"));
+            text::draw_centered(&mut pixels, WIDTH, 18, "Fleet Codex", 2, TEXT);
+            text::draw_at(&mut pixels, WIDTH, 25, 65,
+                "Source campaign ship classes", 1, MUTED);
+            for y in 92..445 {
+                pixels[y * WIDTH + 230] = 0x35536c;
+            }
             if types.is_empty() {
-                text::draw_centered(&mut pixels, WIDTH, 215,
+                text::draw_at(&mut pixels, WIDTH, 270, 215,
                     "No Codex ship classes unlocked", 1, MUTED);
             }
-            for (row, &kind) in types.iter().skip(codex_first).take(PAGE_SIZE).enumerate() {
-                let top = LIST_TOP + row * ROW_HEIGHT;
+            for (row, &kind) in types.iter().skip(codex_first)
+                .take(PAGE_SIZE).enumerate()
+            {
+                let top = 97 + row * ROW_HEIGHT;
                 for y in top..top + ROW_HEIGHT - 4 {
-                    pixels[y * WIDTH + 100..y * WIDTH + 700].fill(
+                    pixels[y * WIDTH + 16..y * WIDTH + 218].fill(
                         if codex_selected == codex_first + row {
                             0x294a66
                         } else { 0x142235 }
                     );
                 }
-                let name = catalog.by_type(kind).map(|ship| ship.name.as_str())
-                    .unwrap_or("Unknown ship");
-                let label = format!("Type {kind:02}  {name}");
-                text::draw_centered(&mut pixels, WIDTH, top + 8, &label, 1, TEXT);
+                let ship = codex.ships.get(usize::from(kind));
+                let name = ship.map(|ship| ship.name.as_str()).unwrap_or("Unknown");
+                text::draw_at(&mut pixels, WIDTH, 26, top + 10,
+                    text::fit(name, 180), 1, TEXT);
             }
-            if types.len() > PAGE_SIZE {
-                text::draw_centered(&mut pixels, WIDTH, 417,
-                    &format!("{}-{} of {} classes",
-                        codex_first + 1,
-                        (codex_first + PAGE_SIZE).min(types.len()), types.len()), 1, MUTED);
+            if let Some(ship) = current {
+                text::draw_at(&mut pixels, WIDTH, 253, 88,
+                    text::fit(&ship.name, 520), 2, TEXT);
+                let metadata = [
+                    format!("Health: {}    TSV: {}", ship.health, ship.tsv),
+                    format!("Vision: {}    Speed: {}", ship.sight, ship.speed),
+                    format!("Range: {}", ship.range),
+                    format!("Power: {}", ship.power),
+                    format!("Rate of fire: {}", ship.rate_of_fire),
+                ];
+                for (index, line) in metadata.iter().enumerate() {
+                    text::draw_at(&mut pixels, WIDTH, 256, 130 + index * 19,
+                        text::fit(line, 514), 1, TEXT);
+                }
+                for (row, line) in codex_description_lines.iter()
+                    .skip(codex_description_scroll)
+                    .take(visible_description_lines).enumerate()
+                {
+                    text::draw_at(&mut pixels, WIDTH, 256, 234 + row * 15,
+                        text::fit(line, 520), 1, MUTED);
+                }
+                if max_scroll > 0 {
+                    text::draw_at(&mut pixels, WIDTH, 256, 438,
+                        &format!("Description lines {}-{} of {}",
+                            codex_description_scroll + 1,
+                            (codex_description_scroll + visible_description_lines)
+                                .min(codex_description_lines.len()),
+                            codex_description_lines.len()), 1, MUTED);
+                }
             }
-            text::draw_centered(&mut pixels, WIDTH, 441,
-                "Up/Down / Wheel browse   F2 / Esc back", 1, MUTED);
+            text::draw_at(&mut pixels, WIDTH, 21, 440,
+                &format!("{} / {}", codex_selected.saturating_add(1).min(types.len()),
+                    types.len()), 1, MUTED);
+            text::draw_centered(&mut pixels, WIDTH, 469,
+                "Up/Down choose ship   Left/Right scroll text   F2/Esc back",
+                1, MUTED);
             mouse_down = window.get_mouse_down(MouseButton::Left);
             window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
             continue;
