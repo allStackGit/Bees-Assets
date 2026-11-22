@@ -2335,6 +2335,11 @@ fn current_state(
             "x": body.motion.position.x, "y": body.motion.position.y,
             "rotation": body.motion.rotation_degrees,
             "collider": wire_primary_hull(body.shape()),
+            // Source CheckClickCollision also includes the Beehive
+            // HealCollider. Keep it read-only and separately typed:
+            // this is a click target, NEVER an enlarged combat hull.
+            "input_healing_zone": body.input_healing_zone_shape()
+                .map(wire_primary_hull),
             "collider_bounds": body.primary_bounds().map(|bounds|[
                 [bounds.min.x,bounds.min.y],[bounds.max.x,bounds.max.y],
             ]),
