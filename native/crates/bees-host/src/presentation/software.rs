@@ -4606,11 +4606,17 @@ impl NativeSoftwareRenderer {
     }
 
     #[cfg(feature = "client")]
-    pub(crate) fn draw_campaign_dialogue(&mut self, speaker: &str, message: &str) {
+    pub(crate) fn draw_campaign_dialogue(
+        &mut self, speaker: &str, message: &str, elapsed_seconds: f32,
+    ) {
         let panel_width = self.width.min(680);
         let portrait_box = if panel_width >= 360 && self.height >= 160 { 82 } else { 0 };
         let text_left_offset = 14 + if portrait_box > 0 { portrait_box + 12 } else { 0 };
         let text_width = panel_width.saturating_sub(text_left_offset + 14).max(1);
+        let (visible_message, speaking_frame) =
+            super::campaign_dialogue::revealed_dialogue_text(message, elapsed_seconds);
+        // Measure the COMPLETE authored message once per draw, so the
+        // panel and portrait never jump while the text is being typed.
         let mut rest = message;
         let mut lines = Vec::new();
         while !rest.is_empty() {
@@ -4632,16 +4638,26 @@ impl NativeSoftwareRenderer {
         if portrait_box != 0 {
             draw_dialogue_portrait(
                 &mut self.pixels, self.width, self.width, self.height,
-                speaker, left + 10, top + 12, portrait_box, false,
+                speaker, left + 10, top + 12, portrait_box, speaking_frame,
             );
         }
         let text_left = left + text_left_offset;
         text::draw_at(&mut self.pixels, self.width, text_left, top + 6,
             speaker, 1, [117, 219, 171]);
         let mut y = top + 9 + text::HEIGHT;
+        let mut remaining = visible_message.chars().count();
         for line in lines {
-            text::draw_at(&mut self.pixels, self.width, text_left, y,
-                line, 1, [239, 247, 255]);
+            let count = line.chars().count();
+            let drawn = if remaining >= count { line } else {
+                let end = line.char_indices().nth(remaining)
+                    .map_or(line.len(), |(offset, _)| offset);
+                &line[..end]
+            };
+            if !drawn.is_empty() {
+                text::draw_at(&mut self.pixels, self.width, text_left, y,
+                    drawn, 1, [239, 247, 255]);
+            }
+            remaining = remaining.saturating_sub(count + 1);
             y += text::HEIGHT;
         }
         text::draw_at(&mut self.pixels, self.width, text_left, y + 4,

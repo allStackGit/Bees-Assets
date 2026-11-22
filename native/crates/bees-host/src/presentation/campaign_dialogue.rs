@@ -497,6 +497,21 @@ pub(crate) fn line_count(cue: CampaignCue) -> usize {
     displayed_lines(cue).count()
 }
 
+/// DialogueManager.TypeLine reveals one visible character per 0.02
+/// presentation seconds and alternates the source chat portrait every
+/// six visible characters. This is UI-only; campaign cue progress,
+/// simulation, and remote player decisions use their existing clocks.
+pub(crate) fn revealed_dialogue_text(
+    message: &str, elapsed_seconds: f32,
+) -> (&str, bool) {
+    let count = (elapsed_seconds.max(0.0) * 50.0)
+        .floor().max(0.0) as usize;
+    let byte_end = message.char_indices().nth(count)
+        .map_or(message.len(), |(offset, _)| offset);
+    let talking = byte_end < message.len() && (count / 6) % 2 == 1;
+    (&message[..byte_end], talking)
+}
+
 pub(crate) fn visible_line(cue: CampaignCue, index: usize) ->
     Option<(&'static str, &'static str)>
 {

@@ -193,6 +193,7 @@ pub struct NativeClient {
     dialogue_sequence: Option<u32>,
     dialogue_line: usize,
     dialogue_pause_started: Option<(u32, usize, Instant)>,
+    dialogue_reveal: Option<(u32, usize, Instant)>,
     dialogue_visible: bool,
     held_fire_target: Option<Vec2>,
     /// User-pinned range display; the source combined gesture adds only a
@@ -322,7 +323,7 @@ impl NativeClient {
             playback: false,
             dialogue_sequence: None,
             dialogue_line: 0,
-            dialogue_pause_started: None,
+            dialogue_pause_started: None, dialogue_reveal: None,
             dialogue_visible: false,
             held_fire_target: None,
             range_overlay_pinned: false,
@@ -1008,6 +1009,17 @@ impl NativeClient {
             crate::presentation::campaign_dialogue::visible_line(cue,self.dialogue_line)
                 .map(|(speaker, line)| (cue, speaker, line))
         });
+        if let (Some((sequence, _)), Some(_)) = (
+            view.campaign_dialogue.filter(|_| dialogue_for_viewer), dialogue,
+        ) {
+            if self.dialogue_reveal.as_ref().is_none_or(|(prior, index, _)|
+                *prior != sequence || *index != self.dialogue_line)
+            {
+                self.dialogue_reveal = Some((sequence, self.dialogue_line, now));
+            }
+        } else {
+            self.dialogue_reveal = None;
+        }
         self.dialogue_visible = dialogue.is_some();
         // Hiding the owner's story from the opposite hot-seat must not
         // advance the authoritative mission before the owner has read it.
@@ -2030,7 +2042,10 @@ impl NativeClient {
             self.renderer.draw_live_performance(&label);
         }
         if let Some((_, speaker, line)) = dialogue {
-            self.renderer.draw_campaign_dialogue(speaker, line);
+            let elapsed = self.dialogue_reveal
+                .map_or(0.0, |(_, _, began)|
+                    now.saturating_duration_since(began).as_secs_f32());
+            self.renderer.draw_campaign_dialogue(speaker, line, elapsed);
         }
         // Help is a noninteractive presentation overlay. All underlying
         // authenticated player commands remain disabled until it closes.

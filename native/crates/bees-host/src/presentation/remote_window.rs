@@ -2112,24 +2112,30 @@ fn focus_squad(state: &Value, squad_id: i64) -> Option<Vec2> {
 
 /// The remote window presents the host's authored dialogue, never a second
 /// mission progression state. Peers choose which line to read locally.
-fn draw_campaign_dialogue(pixels: &mut [u32], state: &Value, line_index: usize) {
+fn draw_campaign_dialogue(
+    pixels: &mut [u32], state: &Value, line_index: usize,
+    elapsed_seconds: f32,
+) {
     let Ok(cue)=serde_json::from_value::<CampaignCue>(
         state["campaign_dialogue"]["cue"].clone(),
     ) else {return;};
     let count=super::campaign_dialogue::line_count(cue);
     let Some((speaker,message))=super::campaign_dialogue::visible_line(cue,line_index) else{return;};
+    let (visible, speaking_frame) =
+        super::campaign_dialogue::revealed_dialogue_text(message, elapsed_seconds);
     for scanline in pixels.chunks_exact_mut(WIDTH).skip(HEIGHT-160).take(96) {
         scanline[..FIELD].fill(0x1c3045);
     }
     let portrait_drawn = super::software::draw_dialogue_portrait(
-        pixels, WIDTH, WIDTH, HEIGHT, speaker, 15, HEIGHT-149, 78, false,
+        pixels, WIDTH, WIDTH, HEIGHT, speaker, 15, HEIGHT-149, 78,
+        speaking_frame,
     );
     let text_left = if portrait_drawn { 105 } else { 15 };
     let heading=format!("{}   Dialogue {}/{}",
         speaker,line_index+1,count);
     text::draw_at(pixels,WIDTH,text_left,HEIGHT-152,
         text::fit(&heading,FIELD-text_left-15),1,[251,217,146]);
-    let mut rest=message;
+    let mut rest=visible;
     for index in 0..3 {
         if rest.is_empty(){break;}
         let fit=text::fit(rest,FIELD-text_left-24);
@@ -2149,6 +2155,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     patrol_start: Option<Vec2>, metrics: &WireCounts, dialogue_line: usize,
     held_fire_active: bool, shooting_menu: bool, shooting_focus: u8,
     visual: &RemoteVisual, fraction: f32,
+    dialogue_elapsed_seconds: f32,
     artwork: &RemoteArtwork, show_art: bool, show_weapon_ranges: bool,
     show_minimap: bool,
     combat_hud_draws: &mut [u64; 7], obstacle_hull_draws: &mut u64,
@@ -2824,7 +2831,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         text::draw_at(pixels,WIDTH,30,30,"Waiting for authoritative battle state",2,TEXT);
     }
     if let Some(state)=state {
-        draw_campaign_dialogue(pixels,state,dialogue_line);
+        draw_campaign_dialogue(pixels,state,dialogue_line,dialogue_elapsed_seconds);
         if state["briefing_paused"]==true {
             let is_owner=state["briefing_requires_ack"]==true;
             let line_count=state["campaign_dialogue"]["line_count"]
@@ -3181,6 +3188,8 @@ pub fn connect_remote(
     let mut dialogue_key:Option<(u64,u64,u64)>=None;
     let mut dialogue_line=0usize;
     let mut dialogue_pause_started:Option<((u64,u64,u64),usize,Instant)>=None;
+    let mut dialogue_reveal_scope:Option<((u64,u64,u64),usize)>=None;
+    let mut dialogue_reveal_started=Instant::now();
     let mut held_fire_active=false;
     let mut held_fire_target:Option<Vec2>=None;
     let mut show_art=true;
@@ -3649,6 +3658,7 @@ pub fn connect_remote(
             current_episode=(0,0);
             squad_list_offset=0;
             dialogue_key=None;dialogue_line=0;dialogue_pause_started=None;
+            dialogue_reveal_scope=None;
             last_audio_snapshot=None;
             held_fire_active=false;held_fire_target=None;
             peer.held_fire_begin_request=None;
@@ -3725,6 +3735,14 @@ pub fn connect_remote(
                 if first_presentation&&dialogue_line<count {
                     audio.campaign_dialogue_presented();
                 }
+            }
+            if let Some(key) = dialogue_key.filter(|_| dialogue_line < count) {
+                if dialogue_reveal_scope != Some((key, dialogue_line)) {
+                    dialogue_reveal_scope = Some((key, dialogue_line));
+                    dialogue_reveal_started = now;
+                }
+            } else {
+                dialogue_reveal_scope = None;
             }
             let episode=(state["world_id"].as_u64().unwrap_or(0),
                          state["episode_revision"].as_u64().unwrap_or(0));
@@ -4630,7 +4648,9 @@ pub fn connect_remote(
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,squad_list_offset,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
             held_fire_active,shooting_menu,shooting_focus,
-            &peer.visual,visual_fraction,&artwork,show_art,range_overlay_active,
+            &peer.visual,visual_fraction,
+            now.saturating_duration_since(dialogue_reveal_started).as_secs_f32(),
+            &artwork,show_art,range_overlay_active,
             show_minimap,
             &mut combat_hud_draws, &mut hulls, &mut map_object_health_bars,
             &mut map_ships, &mut map_terrain, &mut map_objectives,
