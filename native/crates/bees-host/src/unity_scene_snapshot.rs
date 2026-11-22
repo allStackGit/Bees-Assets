@@ -2054,7 +2054,10 @@ impl NativePhysicalScene {
                 ).map_err(|_| invalid("Titania II asteroid collider is invalid"))?.1,
                 NativeAuthoredEntity::Ship(_) => continue,
             };
-            if body.active { obstacles.push(body); }
+            // Source ConfigData.ObstaclesLayerMask is exactly 1 << 19.
+            // A ship, trigger, or nonblocking border on another layer
+            // must not disqualify the original squad-placement lane.
+            if body.active && body.layer == 19 { obstacles.push(body); }
         }
 
         let ship_index = self.entities.iter().enumerate().filter_map(|(index, entity)|
