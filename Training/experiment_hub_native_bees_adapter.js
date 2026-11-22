@@ -797,6 +797,35 @@ function rolloutPhysicsMeasurements(rollout) {
             value: rollout.parallel_physics_direct_rounds / rollout.parallel_physics_rounds,
             unit: 'ratio',
         };
+    const collision = rollout?.physics_collision_work;
+    if (collision != null) {
+        const counters = [
+            'broadphase_candidates', 'narrowphase_tests',
+            'ship_grid_rebuilds', 'obstacle_grid_rebuilds',
+            'ship_grid_cells_indexed', 'obstacle_grid_cells_indexed',
+            'obstacle_contact_queries_merged',
+        ];
+        if (typeof collision !== 'object' || Array.isArray(collision))
+            throw Error('Invalid physical collision measurements in native Bees rollout.');
+        for (const field of counters) {
+            const value = collision[field];
+            if (!Number.isSafeInteger(value) || value < 0)
+                throw Error('Invalid native collision counter: ' + field);
+            result['rollout_physics_' + field] = {value, unit:'count'};
+        }
+        if (Number.isSafeInteger(rollout.successful_world_steps) &&
+            rollout.successful_world_steps > 0)
+        {
+            result.rollout_physics_broadphase_candidates_per_step = {
+                value: collision.broadphase_candidates / rollout.successful_world_steps,
+                unit: 'count/step',
+            };
+            result.rollout_physics_merged_queries_per_step = {
+                value: collision.obstacle_contact_queries_merged / rollout.successful_world_steps,
+                unit: 'count/step',
+            };
+        }
+    }
     return result;
 }
 
