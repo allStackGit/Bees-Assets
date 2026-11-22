@@ -99,6 +99,7 @@ struct WireCounts {
     ship_sprite_draws: u64,
     carrier_deck_overlay_draws: u64,
     barge_charge_effect_draws: u64,
+    queen_part_sprite_draws: u64,
     projectile_sprite_draws: u64,
     asteroid_sprite_draws: u64,
     asteroid_piece_sprite_draws: u64,
@@ -330,7 +331,7 @@ impl RemoteArtwork {
                     u8::try_from(values[0].as_u64()?).ok()?,
                     values[1].as_f64()? as f32,
                 )));
-            if let Some((deck, barge)) = self.raster.remote_ship_art(
+            if let Some((deck, barge, queen)) = self.raster.remote_ship_art(
                 kind, point, visual.heading(ship, fraction), color_rgb,
                 animation, barge_charge,
             ) {
@@ -338,6 +339,7 @@ impl RemoteArtwork {
                 stats.ship_sprite_draws += 1;
                 stats.carrier_deck_overlay_draws += u64::from(deck);
                 stats.barge_charge_effect_draws += barge as u64;
+                stats.queen_part_sprite_draws += queen as u64;
             }
         }
         self.raster.begin_death_scene(WorldId(episode.0), episode.1);
@@ -3478,6 +3480,7 @@ pub fn connect_remote(
         "ship_sprite_draws":peer.metrics.ship_sprite_draws,
         "carrier_deck_overlay_draws":peer.metrics.carrier_deck_overlay_draws,
         "barge_charge_effect_draws":peer.metrics.barge_charge_effect_draws,
+        "queen_part_sprite_draws":peer.metrics.queen_part_sprite_draws,
         "ship_deaths_received":peer.metrics.ship_deaths_received,
         "combat_impacts_received":peer.metrics.combat_impacts_received,
         "combat_impact_visual_draws":peer.metrics.combat_impact_visual_draws,
