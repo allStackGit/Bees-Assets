@@ -30,6 +30,10 @@ HUB_JOB_ID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z")
 HUB_MACHINE_ID = re.compile(r"[a-z][a-z0-9_-]{0,47}\Z")
 
 
+# Shared by local collectors, archive imports, and learner collection barriers.
+# Capture artifacts are streamed separately and have independent limits.
+MAX_BUNDLE_RECEIPT_BYTES = 2 * 1024 * 1024
+
 def read_plan(path):
     return _validate_collector_plan(json.loads(path.read_text(encoding="utf-8")))
 
@@ -470,7 +474,12 @@ def expected_gpu_allocation(job):
 
 
 def verify_bundle(path, job, orders):
-    raw = path.read_bytes()
+    # A partially delivered local receipt can be arbitrarily large. Bound
+    # allocation before JSON parsing or accepting an optimizer work item.
+    with path.open("rb") as stream:
+        raw = stream.read(MAX_BUNDLE_RECEIPT_BYTES + 1)
+    if not raw or len(raw) > MAX_BUNDLE_RECEIPT_BYTES:
+        raise ValueError(f"distributed collector receipt is empty or oversized: {path}")
     receipt = json.loads(raw)
     partition = receipt.get("partition")
     # A Hub-authorized one/two-GPU lease must produce its exact count of
