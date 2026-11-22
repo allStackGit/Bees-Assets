@@ -260,6 +260,8 @@ class RemoteBattleWindow:
         self.root.bind("<KeyPress-l>", self.advance_dialogue)
         self.root.bind("<KeyPress-k>", self.skip_dialogue)
         self.root.bind("<KeyPress>", self.squad_shortcut, add="+")
+        self.root.bind("<KeyPress>", self.camera_shortcut, add="+")
+        self.root.bind("<F2>", lambda _event: self.show_codex())
         self.root.bind("<F8>", self.toggle_performance)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.after(50, self.poll)
@@ -1087,6 +1089,25 @@ class RemoteBattleWindow:
             self.notice("Held fire released")
         except (OSError, ValueError) as error:
             self.notice(f"Held-fire release: {error}")
+
+    def camera_shortcut(self, event):
+        # Match native desktop camera controls without stealing editing
+        # shortcuts from the sidebar's comboboxes and input widgets.
+        if event.widget is not self.canvas:
+            return
+        if event.keysym.lower() == "f":
+            self.fit()
+            return "break"
+        movement = {
+            "Left": (65, 0), "Right": (-65, 0),
+            "Up": (0, 65), "Down": (0, -65),
+        }.get(event.keysym)
+        if movement is None:
+            return
+        self.offset = (self.offset[0] + movement[0],
+                       self.offset[1] + movement[1])
+        self.draw()
+        return "break"
 
     def minimap_geometry(self):
         """Map the host's actual world bounds into a compact overview."""
