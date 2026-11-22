@@ -337,6 +337,7 @@ impl NativePolicyOnlyMetadata {
         known_ships: &HashSet<i64>,
         vacant_squads: &HashMap<i64, i32>,
         demolition_target: Option<(i32, i64)>,
+        authored_fire_tanks: &HashSet<i64>,
         dt_seconds: f32,
         campaign: Option<CampaignDialogueSpec>,
     ) -> Result<(), &'static str> {
@@ -353,11 +354,7 @@ impl NativePolicyOnlyMetadata {
                 plan.orders.is_empty() || plan.orders.len() > 256 ||
                 plan.orders.iter().any(|order| !order.valid() ||
                     matches!(order, NativeScriptedOrder::Scouting { human_side, .. }
-                        if *human_side != self.player.human_side) ||
-                    matches!(order, NativeScriptedOrder::BombardMapObject {
-                        target_map_object_id
-                    } if Some(*target_map_object_id) !=
-                        demolition_target.map(|(_, id)| id)))
+                        if *human_side != self.player.human_side))
             {
                 return Err("invalid scripted command plan");
             }
@@ -373,10 +370,29 @@ impl NativePolicyOnlyMetadata {
             {
                 return Err("scripted command source lacks formation or command settings");
             }
-            if plan.orders.iter().any(|order|
-                matches!(order, NativeScriptedOrder::BombardMapObject { .. })
-            ) && demolition_target.is_none_or(|(side, _)| squad.side != side) {
-                return Err("only the authored attacking side can bombard the demolition target");
+            // Source Titania I can order focused fire on a discovered
+            // CanisterBomb. Unlike a demolition target, a hidden Fire
+            // Tank must not be known to AI before the exact game's real
+            // FireTankSpotted(object_id) cue. Preserve the existing live
+            // collider targeting and point-fire command; authorize only
+            // an originally authored, destructible FireTank on the
+            // mission player side, gated by the same named discovery.
+            for order in &plan.orders {
+                let NativeScriptedOrder::BombardMapObject { target_map_object_id } =
+                    order else { continue };
+                let demolition = demolition_target ==
+                    Some((squad.side, *target_map_object_id));
+                let discovered_tank = matches!(campaign,
+                    Some(CampaignDialogueSpec::TitaniaMinesweeper { player_side })
+                        if player_side == squad.side) &&
+                    authored_fire_tanks.contains(target_map_object_id) &&
+                    matches!(plan.activation,
+                        NativeScriptedActivation::OnCampaignCue(
+                            NativeMissionCue::FireTankSpottedObject { object_id }
+                        ) if object_id == *target_map_object_id);
+                if !demolition && !discovered_tank {
+                    return Err("source MapObject bombardment requires an attacking demolition side or an exact discovered Fire Tank cue");
+                }
             }
             for order in &plan.orders {
                 if let Some((target_id, enemy)) = order.target_squad() {
