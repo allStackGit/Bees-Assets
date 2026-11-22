@@ -35,7 +35,12 @@ use crate::unity_scene_snapshot::NativeMusicLocation;
 // view-only observers join. Spectators have a separate bounded allocation.
 const MAX_PLAYER_PEERS: usize = 4;
 const MAX_SPECTATOR_PEERS: usize = 2;
-const MAX_PEERS: usize = MAX_PLAYER_PEERS + MAX_SPECTATOR_PEERS;
+// Unauthenticated TCP sockets cannot consume seats reserved for
+// authenticated commanders/observers. Keep a separate short-lived
+// handshake budget and the existing ten-second authentication deadline.
+const MAX_UNAUTHENTICATED_PEERS: usize = 2;
+const MAX_PEERS: usize =
+    MAX_PLAYER_PEERS + MAX_SPECTATOR_PEERS + MAX_UNAUTHENTICATED_PEERS;
 const MAX_ACCEPTS_PER_POLL: usize = 8;
 const MAX_ORDERS_PER_PEER_POLL: usize = 8;
 const MAX_LINE: usize = 64 * 1024;
@@ -297,6 +302,8 @@ pub struct RemotePlayMeasurements {
     pub rejected_spectator_seats: u64,
     #[serde(default)]
     pub rejected_player_seats: u64,
+    #[serde(default)]
+    pub rejected_handshake_slots: u64,
     pub orders_received: u64,
     pub orders_processed: u64,
     pub orders_rejected: u64,
@@ -554,12 +561,13 @@ impl NativeRemotePlay {
             "kind": "native_remote_listening",
             "address": listener.local_addr()?.to_string(),
             "max_peers": if spectator_tokens.is_empty() {
-                MAX_PLAYER_PEERS
+                MAX_PLAYER_PEERS + MAX_UNAUTHENTICATED_PEERS
             } else { MAX_PEERS },
             "max_player_peers": MAX_PLAYER_PEERS,
             "max_spectator_peers": if spectator_tokens.is_empty() {
                 0
             } else { MAX_SPECTATOR_PEERS },
+            "max_pending_authentications": MAX_UNAUTHENTICATED_PEERS,
             "mode": if side_tokens.len() > 1 { "independent_player_sides" }
                     else { "shared_player_authority" },
             "configured_sides": configured_sides,
@@ -802,13 +810,20 @@ impl NativeRemotePlay {
             // Command acknowledgements and side-filtered state are small
             // interactive frames. Nagle buffering here would defer replies
             // despite the client's already-low-latency socket settings.
-            if self.peers.len() >= (if self.spectator_tokens.is_empty() {
-                    MAX_PLAYER_PEERS
-                } else { MAX_PEERS }) ||
+            let pending = self.peers.iter().filter(|peer|
+                !peer.closed && peer.side.is_none()).count();
+            let maximum = if self.spectator_tokens.is_empty() {
+                MAX_PLAYER_PEERS + MAX_UNAUTHENTICATED_PEERS
+            } else { MAX_PEERS };
+            if self.peers.len() >= maximum ||
+                pending >= MAX_UNAUTHENTICATED_PEERS ||
                 socket.set_nonblocking(true).is_err() ||
                 socket.set_nodelay(true).is_err()
             {
                 self.measurements.rejected_connections += 1;
+                if pending >= MAX_UNAUTHENTICATED_PEERS {
+                    self.measurements.rejected_handshake_slots += 1;
+                }
                 continue;
             }
             let id = self.next_peer;
