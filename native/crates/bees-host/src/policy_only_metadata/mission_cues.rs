@@ -27,7 +27,11 @@ pub enum NativeMissionCue {
     UranusBumblebeeHit,
     UranusBumblebeeDestroyed,
     FireTankSpotted,
+    /// A particular real discovered Fire Tank, not any member of a field.
+    /// Scripts may begin point-fire only after this exact contact.
+    FireTankSpottedObject { object_id: i64 },
     FireTankDestroyed,
+    FireTankDestroyedObject { object_id: i64 },
     UranusBargeLost,
     UranusBargeCharged,
     UranusReinforcements,
@@ -45,6 +49,10 @@ impl NativeMissionCue {
                 CampaignCue::NeptuneProductionWave { number, .. }) => expected == number,
             (Self::UranusDefensiveWave { number: expected },
                 CampaignCue::UranusDefensiveWave { number, .. }) => expected == number,
+            (Self::FireTankSpottedObject { object_id: expected },
+                CampaignCue::FireTankSpotted { object_id }) => expected == object_id,
+            (Self::FireTankDestroyedObject { object_id: expected },
+                CampaignCue::FireTankDestroyed { object_id }) => expected == object_id,
             pair => matches!(pair,
             (Self::PlutoHoneybeeSpotted, CampaignCue::PlutoAnomalyHoneybeeSpotted) |
             (Self::PlutoScoutReportComplete, CampaignCue::PlutoAnomalyScoutReportComplete) |
@@ -87,7 +95,10 @@ impl NativeMissionCue {
                 matches!(self, Self::UranusBumblebeeSpotted |
                     Self::UranusBumblebeeHit | Self::UranusBumblebeeDestroyed),
             Some(CampaignDialogueSpec::TitaniaMinesweeper { .. }) =>
-                matches!(self, Self::FireTankSpotted | Self::FireTankDestroyed),
+                matches!(self, Self::FireTankSpotted | Self::FireTankDestroyed) ||
+                matches!(self,
+                    Self::FireTankSpottedObject { object_id } |
+                    Self::FireTankDestroyedObject { object_id } if object_id > 0),
             Some(CampaignDialogueSpec::TitaniaBeenoculars { .. }) =>
                 matches!(self, Self::UploadTen | Self::UploadTwentyFour |
                     Self::UploadFifty | Self::UploadSeventyFive | Self::UploadNinety),
