@@ -96,6 +96,71 @@ function hubEvaluationMetricPrefix(row) {
         '_'+String(row.suite_sha256||'').slice(0,12)+
         '_'+String(row.runtime_sha256||'unverified').slice(0,8);
 }
+// Metric keys intentionally carry compact fingerprints for safe matching, not
+// for display. Resolve the full frozen suite from the original receipt.
+function hubEvaluationMetricPresentation(runs,metricKey) {
+    for(const run of runs)for(const receipt of run.evaluation_points||[]) {
+        const prefix=hubEvaluationMetricPrefix(receipt);
+        if(metricKey!==prefix&&!metricKey.startsWith(prefix+'_'))continue;
+        const measure=metricKey===prefix?'success_rate':metricKey.slice(prefix.length+1);
+        const names={
+            success_rate:receipt.suite_id?.startsWith('tinybrains_')?'Win rate':'Success rate',
+            win_count:'Wins',loss_count:'Losses',draw_count:'Draws',
+            score_rate:'Draw-adjusted score rate',
+            survival_rate:'Survival rate',
+        };
+        const metricName=names[measure]||measure.replaceAll('_',' ');
+        const named=/^tinybrains_(nano|micro)_tiny_v([0-9]+)$/.exec(receipt.suite_id||'');
+        const suiteName=named
+            ?'TinyBrains vs '+(named[1]==='nano'?'Nano':'Micro')+' (v'+named[2]+')'
+            :String(receipt.suite_id||'Unknown suite').replaceAll('_',' ');
+        let definition=null;
+        try {
+            if(typeof receipt.suite_definition_canonical==='string')
+                definition=JSON.parse(receipt.suite_definition_canonical);
+        }catch { /* The immutable suite ID and hashes remain authoritative. */ }
+        return {title:suiteName+' — '+metricName,metricName,
+            suiteId:receipt.suite_id,suiteSha:receipt.suite_sha256,
+            runtimeSha:receipt.runtime_sha256||null,definition};
+    }
+    return null;
+}
+function hubEvaluationMetricSummary(runs,metricKey,identity) {
+    const recorded=runs.map(run=>({
+        run,points:hubComparisonPoints(run).filter(point=>
+            point.evaluation_identity&&
+            Number.isFinite(point.metrics?.[metricKey]?.value)),
+    }));
+    const samples=recorded.flatMap(({run,points})=>
+        points.map(point=>({run,point})));
+    const represented=recorded.filter(entry=>entry.points.length).length;
+    const descriptor='Suite '+identity.suiteId+
+        ' · definition '+String(identity.suiteSha||'').slice(0,12)+
+        ' · runtime '+(identity.runtimeSha?.slice(0,12)||'unverified')+'.';
+    const definition=identity.definition;
+    const conditions=definition&&Array.isArray(definition.maps)&&
+        Array.isArray(definition.seeds)
+        ?' '+definition.maps.join(', ')+' · '+definition.seeds.length+
+            ' fixed seeds'+(Number.isSafeInteger(definition.max_turns)
+                ?' · max '+definition.max_turns+' turns':'')+'.'
+        :'';
+    const coverage=samples.length+' recorded evaluation '+
+        (samples.length===1?'point':'points')+' across '+represented+
+        ' of '+runs.length+' selected '+(runs.length===1?'run':'runs')+'.';
+    if(samples.length===1) {
+        const {run,point}=samples[0],metric=point.metrics[metricKey];
+        const observed=metric.unit==='ratio'
+            ?(metric.value*100).toFixed(2)+'%'
+            :Number(metric.value).toLocaleString(undefined,{maximumFractionDigits:2});
+        return descriptor+conditions+' '+coverage+' Run '+run.slot+
+            ', update '+point.steps_completed+': '+observed+
+            (Number.isSafeInteger(point.evaluation_identity.trials)
+                ?' from '+point.evaluation_identity.trials+' games':'')+
+            '. One point cannot show a learning trend; further checkpoint evaluations are needed.';
+    }
+    return descriptor+conditions+' '+coverage+
+        (samples.length===0?' No recorded results for this metric yet.':'');
+}
 function hubComparisonPoints(run) {
     const training=run.points.length?run.points:
         [run.job.live_execution?.progress||run.job.final_progress].filter(Boolean);
@@ -2178,7 +2243,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const measurement=details?(metric.key===prefix
                 ?'success rate':metric.key.slice(prefix.length+1).replace(/_/g,' ')):null;
             return {key:'metric:'+metric.key,
-                label:details?'Evaluation '+details.suite_id+' · '+measurement+
+                label:details?(hubEvaluationMetricPresentation(runs,metric.key)?.title||
+                    'Evaluation '+details.suite_id+' · '+measurement)+
                     ' (suite '+details.suite_sha256.slice(0,12)+
                     ' · runtime '+(details.runtime_sha256?.slice(0,12)||'unverified')+')':
                     metric.key+' ('+metric.units.join('/')+')',
@@ -2912,7 +2978,7 @@ document.addEventListener('DOMContentLoaded', () => {
             section.dataset.metric=key;
             section.dataset.project=project;
             const title=document.createElement('h3');
-            title.textContent=key.slice(7);
+            title.textContent=key.slice(7); // Replaced with suite-aware title below.
             const header=document.createElement('div');
             header.className='hub-plot-header';
             const toggles=document.createElement('div');
@@ -3009,6 +3075,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const chart=section._hubChart;
             chart.runs=runs;chart.xKey=xKey;
             const metricKey=chart.key.slice(7);
+            const identity=hubEvaluationMetricPresentation(runs,metricKey);
+            section.querySelector('.hub-plot-header h3').textContent=
+                identity?.title||metricKey.replaceAll('_',' ');
+            section.querySelector('.hub-plot-description').textContent=
+                hubMetricDescription(metricKey)+
+                (identity?' '+hubEvaluationMetricSummary(runs,metricKey,identity):'');
             const signature=JSON.stringify({
                 project,xKey,metricKey,
                 runs:runs.map(run=>({
@@ -3114,6 +3186,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         unit==='scalar'||unit==='count'?'':' '+unit);
             legendItem.append(checkbox,swatch,document.createTextNode(
                 run.slot+' · '+hubJobLabel(run.job)+
+                (discreteEvaluation?' · '+samples.length+' evaluations':'')+
                 (showAverage&&mean!==null?' · mean '+formatted(mean):'')+
                 (showRolling?' · rolling up to '+rollingSamples+' samples':'')));
             checkbox.addEventListener('change',()=>{
@@ -3138,15 +3211,21 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const bounds={left:85,right:width-24,top:20,bottom:270};
-        let xmin=Infinity,xmax=-Infinity,minY=0,maxY=0.001;
+        let xmin=Infinity,xmax=-Infinity,minY=0,maxY=0;
         for(const point of values) {
             xmin=Math.min(xmin,point.x);xmax=Math.max(xmax,point.x);
             minY=Math.min(minY,point.y);maxY=Math.max(maxY,point.y);
         }
-        const ymin=metric.rate?0:minY*1.05;
-        const ymax=metric.rate?1:maxY*1.05;
-        const x=v=>bounds.left+(v-xmin)/Math.max(1,xmax-xmin)*
-            (bounds.right-bounds.left);
+        const countMetric=units.length===1&&units[0]==='count';
+        const ymin=metric.rate?0:countMetric?0:minY*1.05;
+        // An all-zero count is still an integer count, not 0.001 of a game.
+        const ymax=metric.rate?1:countMetric
+            ?Math.max(4,Math.ceil(maxY*1.05/4)*4)
+            :maxY>0?maxY*1.05:1;
+        const oneCoordinate=xmin===xmax;
+        const x=v=>oneCoordinate?(bounds.left+bounds.right)/2:
+            bounds.left+(v-xmin)/Math.max(1,xmax-xmin)*
+                (bounds.right-bounds.left);
         const y=v=>bounds.bottom-(v-ymin)/Math.max(1e-9,ymax-ymin)*
             (bounds.bottom-bounds.top);
         for(let i=0;i<=4;i++) {
@@ -3157,7 +3236,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 metric.rate?(value*100).toFixed(0)+'%':
                     Number(value.toPrecision(3)).toLocaleString());
         }
-        for(let i=0;i<=4;i++) {
+        if(oneCoordinate) {
+            node('text',{x:x(xmin),y:295,'text-anchor':'middle'},
+                Math.round(xmin).toLocaleString());
+            if(discreteEvaluation)
+                node('text',{x:width/2,y:55,'text-anchor':'middle'},
+                    'One evaluated checkpoint update — no trend yet');
+        }else for(let i=0;i<=4;i++) {
             const value=xmin+(xmax-xmin)*i/4,xp=x(value);
             node('text',{x:xp,y:295,'text-anchor':'middle'},
                 Math.round(value).toLocaleString());
@@ -3410,7 +3495,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     line('No recorded metric samples for this run');
                     return item;
                 }
-                line(genericKey+': '+formattedValue(closest.value));
+                line((hubEvaluationMetricPresentation(runs,genericKey)?.metricName||
+                    genericKey)+': '+formattedValue(closest.value));
                 line(axisLabel+': '+format(closest.axis));
                 const timestamp=closest.point.source_modified_at;
                 line('Published: '+(timestamp&&!Number.isNaN(Date.parse(timestamp))
