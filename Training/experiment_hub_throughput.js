@@ -8,6 +8,7 @@ const crypto=require('node:crypto');
 const MAX_KEYS=256;
 const MAX_WINDOWS=12;
 const MIN_WINDOWS=2;
+const MAX_SAMPLE_AGE_MS=7*24*60*60*1000;
 
 function workloadKey(job) {
     if(!job||typeof job.project_id!=='string'||!job.resources)return null;
@@ -39,7 +40,9 @@ class ThroughputHistory {
                     !Array.isArray(entry[1]))continue;
                 const samples=entry[1].filter(w=>w&&
                     Number.isSafeInteger(w.steps)&&w.steps>0&&
-                    Number.isFinite(w.seconds)&&w.seconds>=1&&w.seconds<=3600)
+                    Number.isFinite(w.seconds)&&w.seconds>=1&&w.seconds<=3600&&
+                    Number.isFinite(w.recorded_at)&&w.recorded_at<=Date.now()&&
+                    Date.now()-w.recorded_at<=MAX_SAMPLE_AGE_MS)
                     .slice(-MAX_WINDOWS);
                 if(samples.length)this.windows.set(entry[0],samples);
             }
@@ -84,7 +87,7 @@ class ThroughputHistory {
         if(!Number.isFinite(rate)||rate<=0)return;
         const id=JSON.stringify([key,machineId,deviceKey]);
         let windows=this.windows.get(id)||[];
-        windows.push({steps:steps-prior.steps,seconds});
+        windows.push({steps:steps-prior.steps,seconds,recorded_at:Date.now()});
         if(windows.length>MAX_WINDOWS)windows.shift();
         this.windows.delete(id);
         this.windows.set(id,windows);
@@ -96,8 +99,10 @@ class ThroughputHistory {
         if(!key)return 0;
         const score=placement=>{
             const devices=JSON.stringify((placement.suggested_gpus||[]).slice().sort());
-            const windows=this.windows.get(JSON.stringify([key,placement.machine_id,devices]));
-            if(!windows||windows.length<MIN_WINDOWS)return null;
+            const windows=(this.windows.get(JSON.stringify([key,placement.machine_id,devices]))||[])
+                .filter(w=>Date.now()-w.recorded_at<=MAX_SAMPLE_AGE_MS&&
+                    w.recorded_at<=Date.now());
+            if(windows.length<MIN_WINDOWS)return null;
             const total=windows.reduce((v,w)=>v+w.steps,0);
             const seconds=windows.reduce((v,w)=>v+w.seconds,0);
             return total/seconds;
