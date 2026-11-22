@@ -119,6 +119,8 @@ impl NativeMissionCue {
 pub(crate) enum NativeMissionEvent {
     CampaignCue(NativeMissionCue),
     ShipDestroyed(i64),
+    /// An effective physical hit or collision against this source ship.
+    ShipDamaged(i64),
     /// The original map-boundary extraction and WarpGate callbacks are
     /// different source events, each preserving actual FleetShip cargo.
     ShipExtracted(i64),
@@ -140,6 +142,7 @@ impl NativeMissionEvent {
         match self {
             Self::CampaignCue(cue) => cue.valid_for(campaign),
             Self::ShipDestroyed(id) |
+            Self::ShipDamaged(id) |
             Self::ShipExtracted(id) |
             Self::ShipWarped(id) => id > 0 && known_ship(id),
             Self::MapObjectDestroyed(id) => id > 0 && known_map_object(id),
@@ -162,6 +165,13 @@ impl NativeMissionEvent {
                     } if *victim_id == id
                 )
             ),
+            Self::ShipDamaged(id) => world.events().iter().any(|event| match event {
+                bees_sim::combat_world::CombatEvent::Hit(hit) =>
+                    hit.target_id == id && hit.delta.applied_damage > 0,
+                bees_sim::combat_world::CombatEvent::UnattributedDamage { target_id, delta } =>
+                    *target_id == id && delta.applied_damage > 0,
+                _ => false,
+            }),
             Self::ShipExtracted(id) => world.events().iter().any(|event|
                 matches!(event,
                     bees_sim::combat_world::CombatEvent::ShipExtracted { ship_id, .. }
