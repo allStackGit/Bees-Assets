@@ -143,6 +143,15 @@ impl CombatWorld {
         !body.motion.cannot_change_movement_orders
     }
 
+    /// A read-only UI projection of the source WaitingForNewCharge flag.
+    /// Also covers the fixed-step input queued before the first wind-up
+    /// and a completed command awaiting its ordinary finalization.
+    pub fn player_game_barge_charge_queued(&self, ship_id: i64) -> bool {
+        self.pending_player_barge_charges.contains(&ship_id) ||
+            self.game_barge_charges.get(&ship_id)
+                .is_some_and(|charge| charge.waiting_for_new_charge)
+    }
+
     pub fn queue_player_barge_charge(
         &mut self, ship_id: i64,
     ) -> Result<bool, CombatWorldError> {

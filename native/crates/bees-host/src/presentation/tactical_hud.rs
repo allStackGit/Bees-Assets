@@ -44,7 +44,7 @@ impl HudAction {
             Self::StopFire => "Stop manually targeting (X)",
             Self::Beacon => "Deploy a ready Scout Beacon (K)",
             Self::Detonate => "Detonate selected Fire Barges (D)",
-            Self::Charge => "Charge forward with ready Barges (Q)",
+            Self::Charge => "Charge forward or queue the next Barge charge (Q)",
             Self::SelectAll => "Select all authorized squads on your current side (Ctrl+A)",
             Self::MatchSpeed => "Match the slowest authored speed of each squad (Y)",
             Self::FreeSpeed => "Restore every selected ship's authored speed (U)",

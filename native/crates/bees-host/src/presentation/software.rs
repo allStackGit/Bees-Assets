@@ -3269,11 +3269,12 @@ impl NativeSoftwareRenderer {
         let mut barges_ready = 0usize;
         let mut charge_barges = 0usize;
         let mut charges_ready = 0usize;
+        let mut charges_queued = 0usize;
         for &owner in self.selection.squads() {
             if !view.is_local_player_squad(owner) { continue; }
             let can_issue = view.player_authority.player_permissions(owner)
                 .is_some_and(|permission|
-                    permission.can_accept_input && !permission.locked_on);
+                    permission.can_accept_input);
             let Some(squad) = view.roster.get(owner) else { continue };
             for &ship_id in &squad.members {
                 let Some(ship) = view.combat.ship(ship_id) else { continue };
@@ -3308,6 +3309,8 @@ impl NativeSoftwareRenderer {
                             charge_barges += 1;
                             charges_ready += usize::from(
                                 view.combat.player_game_barge_charge_ready(ship_id));
+                            charges_queued += usize::from(
+                                view.combat.player_game_barge_charge_queued(ship_id));
                         }
                     }
                     _ => {}
@@ -3344,7 +3347,9 @@ impl NativeSoftwareRenderer {
             row += 1;
         }
         if charge_barges > 0 {
-            let label = format!("Q: Barge charge ready {charges_ready}/{charge_barges}");
+            let label = format!(
+                "Q: Charge {charges_ready}/{charge_barges} available, {charges_queued} queued"
+            );
             text::draw_at(&mut self.pixels, self.width, x, y + row * line_height,
                 &label, 1, if charges_ready > 0 { [244, 211, 142] }
                 else { [136, 151, 172] });
