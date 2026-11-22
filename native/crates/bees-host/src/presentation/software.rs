@@ -3972,6 +3972,10 @@ impl NativeSoftwareRenderer {
         // Hide private career information about enemy ships even when their
         // physical hull is currently visible through fog.
         if view.player_authority.player_viewer_side() == Some(ship.side) {
+            if let Some(in_combat) = view.combat.ship_in_combat(ship_id) {
+                lines.push(format!("Combat activity: {}",
+                    if in_combat { "Engaged" } else { "Idle" }));
+            }
             if let Some(stats) = view.player_authority.player_ship_battle_statistics(ship_id) {
                 let kills = stats.source_kills.map(|value| value.to_string())
                     .unwrap_or_else(|| "unavailable".to_owned());
