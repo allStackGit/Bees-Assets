@@ -237,7 +237,11 @@ function createAdminServer(hub,{html,ui,dataRoot,releases=null,runtime=null}={})
             }
             if(req.method==='GET'&&route==='/api/hub/software/releases')
                 return json(res,200,{
-                    components:releases?.latest||{},
+                    components:Object.fromEntries(Object.entries(releases?.latest||{})
+                        .map(([name,entry])=>[name,{
+                            ...entry,
+                            activation_ready:entry.source_commit===releases.bootVersions[name],
+                        }])),
                     errors:releases?.failures||{},
                     machine_update_policies:hub.state.machine_update_policies||{},
                 });
@@ -364,9 +368,17 @@ async function main(argv=process.argv.slice(2)) {
             if(!override&&hub.automation.enabled&&!hub.state.automation_restart)return;
             hub.softwareMaintenance=true;
             const result=await releases.applyLocalWhenIdle(hub,override);
-            if(!result.changed.length)return;
-            console.log('[hub-updates] Local fast-forwarded software: '+
-                result.changed.join(', '));
+            // If fast-forward succeeded but a service restart failed, a later
+            // cycle must retry activation. No additional checkout change will
+            // be reported after that first successful fast-forward.
+            const pendingGeneration=Object.entries(releases.latest).some(
+                ([name,entry])=>entry.source_commit!==releases.bootVersions[name]&&
+                    releases.localVersions[name]===entry.source_commit);
+            if(!result.changed.length&&!pendingGeneration)return;
+            if(result.changed.length)
+                console.log('[hub-updates] Local fast-forwarded software: '+
+                    result.changed.join(', '));
+            else console.log('[hub-updates] Retrying activation of locally installed software.');
             if(result.changed.includes('worker')) {
                 try {recordHubActivation(root,releases.localVersions.worker);}
                 catch(error) {
