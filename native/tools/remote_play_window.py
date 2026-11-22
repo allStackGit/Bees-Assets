@@ -661,6 +661,57 @@ class RemoteBattleWindow:
                 inside = not inside
         return 0.0 if inside else nearest
 
+    @classmethod
+    def collider_overlaps_selection(cls, shape, points, rect):
+        """True where a real rendered hull intersects the selection box.
+
+        The local native client uses physics collider overlap, not ship
+        centre containment. This screen-space query uses the identical
+        host-projected hull; it never steps or modifies game physics.
+        """
+        x0, y0, x1, y1 = rect
+        left, top, right, bottom = cls.collider_screen_bounds(shape, points)
+        if right < x0 or left > x1 or bottom < y0 or top > y1:
+            return False
+        if shape in ("bounds", "point"):
+            return True
+        if shape == "oval":
+            # Rotated source circles remain circles. The generalized
+            # ellipse form also works for rectangular display scaling.
+            cx, cy = (left+right)*0.5, (top+bottom)*0.5
+            rx, ry = (right-left)*0.5, (bottom-top)*0.5
+            if rx <= 0 or ry <= 0:
+                return False
+            px = min(max(cx, x0), x1)
+            py = min(max(cy, y0), y1)
+            return ((px-cx)/rx)**2 + ((py-cy)/ry)**2 <= 1
+        vertices = list(zip(points[::2], points[1::2]))
+        if not vertices:
+            return False
+        if any(x0 <= x <= x1 and y0 <= y <= y1 for x, y in vertices):
+            return True
+        # A rectangle may lie entirely inside a large concave polygon.
+        if any(cls.obstacle_distance("polygon", points, x, y) == 0
+               for x, y in ((x0,y0), (x1,y0), (x1,y1), (x0,y1))):
+            return True
+
+        def crosses(a, b, c, d):
+            def orient(p, q, r):
+                return (q[0]-p[0])*(r[1]-p[1]) - (q[1]-p[1])*(r[0]-p[0])
+            o1, o2 = orient(a,b,c), orient(a,b,d)
+            o3, o4 = orient(c,d,a), orient(c,d,b)
+            return o1*o2 <= 0 and o3*o4 <= 0 and (
+                max(a[0],b[0]) >= min(c[0],d[0]) and
+                max(c[0],d[0]) >= min(a[0],b[0]) and
+                max(a[1],b[1]) >= min(c[1],d[1]) and
+                max(c[1],d[1]) >= min(a[1],b[1])
+            )
+        corners = ((x0,y0), (x1,y0), (x1,y1), (x0,y1))
+        return any(crosses(a, b, corners[j], corners[(j+1) % 4])
+                   for i, a in enumerate(vertices)
+                   for b in (vertices[(i+1) % len(vertices)],)
+                   for j in range(4))
+
     def hit(self, x, y):
         if self.state is None:
             return None, None
@@ -1004,8 +1055,8 @@ class RemoteBattleWindow:
             for ship in self.state["ships"]:
                 if not ship["owned"]:
                     continue
-                sx, sy = self.to_screen(ship["x"], ship["y"])
-                if x0 <= sx <= x1 and y0 <= sy <= y1:
+                shape, points = self.collider_screen_shape(ship)
+                if self.collider_overlaps_selection(shape, points, (x0, y0, x1, y1)):
                     squad = self.squad_for_ship(ship["id"], owned=True)
                     if squad and squad["controllable"] and squad["owner"] not in owners:
                         owners.append(squad["owner"])
