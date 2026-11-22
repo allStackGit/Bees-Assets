@@ -258,6 +258,12 @@ pub struct RemotePlayMeasurements {
     pub orders_received: u64,
     pub orders_processed: u64,
     pub orders_rejected: u64,
+    /// Poll intervals that deferred at least one complete authenticated
+    /// request to preserve throughput fairness instead of dropping its TCP seat.
+    #[serde(default)]
+    pub input_budget_deferred_polls: u64,
+    #[serde(default)]
+    pub input_buffer_peak_bytes: usize,
     /// Input receipts covered by a single authoritative host checkpoint,
     /// not merely synced to an independently replayable player trace.
     #[serde(default)]
@@ -762,6 +768,8 @@ impl NativeRemotePlay {
                     Ok(n) => {
                         budget -= n;
                         peer.incoming.extend_from_slice(&chunk[..n]);
+                        self.measurements.input_buffer_peak_bytes = self.measurements
+                            .input_buffer_peak_bytes.max(peer.incoming.len());
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
                     Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
@@ -776,6 +784,9 @@ impl NativeRemotePlay {
                 // for the next fixed-tick poll, preserving request order.
                 if peer.side.is_some() && (peer_orders >= MAX_ORDERS_PER_PEER_POLL ||
                     orders.len() >= MAX_ORDERS_PER_POLL) {
+                    if peer.incoming[start..].contains(&b'\n') {
+                        self.measurements.input_budget_deferred_polls += 1;
+                    }
                     break;
                 }
                 let Some(end) = peer.incoming[start..].iter()
