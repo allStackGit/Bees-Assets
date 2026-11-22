@@ -164,6 +164,9 @@ pub struct NativeRenderWorldView<'a> {
     /// The original CampaignDialogue player's side, not a mutable local
     /// viewer. Dedicated multiplayer hosts can have no local viewer.
     pub campaign_dialogue_side: Option<i32>,
+    /// Current source GameState.PlayerScore, read from the same checkpointed
+    /// physical death ledger as the terminal campaign result.
+    pub campaign_score: Option<(i32, i64)>,
     pub campaign_objective: Option<bees_gameplay::campaign_dialogue::CampaignObjectiveKind>,
     /// Source Uranus III rescue identity; never a second ship lifecycle.
     pub rescue_barges: Option<[i64; 3]>,
