@@ -194,6 +194,10 @@ pub struct NativePolicyOnlyMetadata {
     /// the campaign start. Checkpoint recovery rebuilds it from the frozen
     /// setup; no second mutable gameplay or learning owner is added.
     campaign_codex: Option<(i32, [bool; bees_sim::ship_assets::SHIP_TYPE_COUNT])>,
+    /// Original Pluto II tutorial temporarily locks squad inputs, not
+    /// squad ownership or physical movement. These source lifetimes are
+    /// rebuilt from the authored scene and never replace the player ledger.
+    pluto_tutorial_locked: Vec<SquadLifetime>,
     pub ship_catalog: Arc<ShipAssetCatalog>,
     authored_ships: HashMap<i64, AuthoredShipPerception>,
     /// Exact sight ranges for ALL original allied ships, including
@@ -479,6 +483,25 @@ pub struct NativePolicySourceLedgerPrepared {
 }
 
 impl NativePolicyOnlyMetadata {
+    /// Original Pluto II gives the first Scout input authority while
+    /// withholding the three other source squads. Physical combat,
+    /// HiveMind ownership and FleetShip identities remain unchanged.
+    pub fn configure_pluto_tutorial_controls(
+        &mut self, scout: SquadLifetime, others: Vec<SquadLifetime>,
+    ) {
+        self.pluto_tutorial_locked = others;
+        for owner in &self.pluto_tutorial_locked {
+            if *owner != scout {
+                if let Some(permission) = self.player.squads.get_mut(owner) {
+                    permission.can_accept_input = false;
+                }
+            }
+        }
+        if let Some(permission) = self.player.squads.get_mut(&scout) {
+            permission.can_accept_input = true;
+        }
+    }
+
     pub fn set_campaign_codex(
         &mut self,
         source: Option<(i32, [bool; bees_sim::ship_assets::SHIP_TYPE_COUNT])>,
@@ -913,7 +936,7 @@ impl NativePolicyOnlyMetadata {
             bounds, navigation, navigation_scheduler: None,
             navigation_worker_counts: NativeNavigationWorkerMeasurements::default(),
             activate_collision_asteroids, fleet,
-            campaign_codex: None, ship_catalog,
+            campaign_codex: None, pluto_tutorial_locked: Vec::new(), ship_catalog,
             authored_ships, effective_vision,
             source_static_discovery_values,
             explorers: Vec::new(),
@@ -1265,6 +1288,18 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 
     fn retire_mined_credit_on_death(&mut self, ship_id: i64) {
         self.fleet.retire_mined_credit(ship_id);
+    }
+
+    fn observe_campaign_cue(
+        &mut self, cue: bees_gameplay::campaign_dialogue::CampaignCue,
+    ) {
+        if cue == bees_gameplay::campaign_dialogue::CampaignCue::PlutoReinforcementsScoutSelected {
+            for owner in &self.pluto_tutorial_locked {
+                if let Some(permission) = self.player.squads.get_mut(owner) {
+                    permission.can_accept_input = true;
+                }
+            }
+        }
     }
 
     fn observe_fleet_combat_tick(&mut self, world: &CombatWorld) {
