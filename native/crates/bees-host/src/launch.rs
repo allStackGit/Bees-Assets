@@ -4359,15 +4359,26 @@ fn run_campaign_mission(
 /// configurations, so the picker must not advertise a route-only squad.
 /// Invalid legacy scenes still leave the ordinary battle menu accessible;
 /// they contribute no unverified fleet-edit destinations.
+struct AuthoredMenuFleet {
+    editable: Vec<(i32, i64, i64, u8)>,
+    owned: Vec<(i32, i64, i64, u8)>,
+    destinations: Vec<(i32, i64)>,
+    templates: Vec<(i32, i64)>,
+    tactics: Vec<(i32, i64)>,
+    reservable: HashSet<(i32, u8)>,
+    failed_scenes: usize,
+}
+
 fn authored_menu_fleet(
     catalog: &battle_catalog::BattleCatalog, root: &Path,
     progress: &battle_catalog::CampaignProgress<'_>,
-) -> (Vec<(i32, i64, i64, u8)>, Vec<(i32, i64, i64, u8)>, Vec<(i32, i64)>, Vec<(i32, i64)>, Vec<(i32, i64)>, usize) {
+) -> AuthoredMenuFleet {
     let mut listed = Vec::new();
     let mut source_owned = Vec::new();
     let mut failed_scenes = 0_usize;
     let mut seen_fleet = HashSet::new();
     let mut seen_source = HashMap::<(i32, i64), u8>::new();
+    let mut common_reserve = HashMap::<i32, HashSet<u8>>::new();
     let mut common_destinations = HashMap::<i32, HashSet<i64>>::new();
     let mut common_templates = HashMap::<i32, HashSet<i64>>::new();
     let mut common_tactics = HashMap::<i32, HashSet<i64>>::new();
@@ -4383,6 +4394,7 @@ fn authored_menu_fleet(
         let created = progress.created_squads_for_side(side);
         for config in entry.configurations() {
             let mut destinations = HashSet::new();
+            let mut reserve = HashSet::new();
             let mut templates = HashSet::new();
             let mut tactics = HashSet::new();
             // Keep this read-only probe on the same source scene and
@@ -4390,6 +4402,15 @@ fn authored_menu_fleet(
             if let Ok(path) = resolve(root, config).canonicalize() {
                 if let Ok(mut scene) = load_native_fleet_edit_scene(&path) {
                     if scene.install_created_squads(side, &created).is_ok() {
+                        for shop in catalog.buildable_ships.iter().filter(|shop|
+                            shop.player_side == side && shop.purchasable
+                        ) {
+                            if scene.campaign_reserve_class_tsv(side, shop.ship_type) ==
+                                Some(shop.price_tsv)
+                            {
+                                reserve.insert(shop.ship_type);
+                            }
+                        }
                         // Build one lookup for the selected physical source
                         // scene, not a full entity scan per fleet member.
                         let source_ships = if active && config == selected {
@@ -4448,6 +4469,12 @@ fn authored_menu_fleet(
                     } else { failed_scenes += 1; }
                 } else { failed_scenes += 1; }
             } else { failed_scenes += 1; }
+            // A class belongs in reserve stock only when *every*
+            // playable route contains the same genuine source hull/TSV.
+            // A damaged source scene contributes no verified classes.
+            common_reserve.entry(side)
+                .and_modify(|types| types.retain(|kind| reserve.contains(kind)))
+                .or_insert(reserve);
             // Intersection, not union: edits are durable across completed
             // missions and both possible on-victory physical layouts.
             common_destinations.entry(side)
@@ -4475,7 +4502,13 @@ fn authored_menu_fleet(
         .flat_map(|(side, ids)| ids.into_iter().map(move |id| (side, id)))
         .collect::<Vec<_>>();
     tactics.sort_unstable();
-    (listed, source_owned, destinations, templates, tactics, failed_scenes)
+    AuthoredMenuFleet {
+        editable: listed, owned: source_owned, destinations, templates, tactics,
+        reservable: common_reserve.into_iter()
+            .flat_map(|(side, types)| types.into_iter().map(move |kind| (side, kind)))
+            .collect(),
+        failed_scenes,
+    }
 }
 
 #[cfg(feature = "client")]
