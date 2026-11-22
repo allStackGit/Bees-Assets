@@ -12,7 +12,7 @@ const {ExperimentHub}=require('./experiment_hub_core');
 const {JobExporter}=require('./experiment_hub_job_export');
 const localServices=require('./experiment_hub_local_services');
 const {route:hubRoute}=require('./experiment_hub_admin');
-const {ReleaseStore,FRONTEND_PATHS,workerChangedPaths}=
+const {ReleaseStore,workerChangedPaths,workerActivationImpact}=
     require('./experiment_hub_releases');
 const {createAgentServer,AGENT_HOST,AGENT_PORT,activeTailnetAddress}=
     require('./experiment_hub_agent_listener');
@@ -22,37 +22,6 @@ const PORT=7148;
 const BODY_LIMIT=65536;
 const SHA=/^[a-f0-9]{40}$/;
 const VERSION_FILE='hub-software-activation.json';
-
-// Files imported exclusively by the coordinator or the local worker agent.
-// Shared modules conservatively require both processes to reload at a safe
-// lifecycle boundary; browser assets never require a service restart.
-const COORDINATOR_ONLY=new Set([
-    'experiment_hub_standalone.js','experiment_hub_core.js',
-    'experiment_hub_admin.js','experiment_hub_releases.js',
-    'experiment_hub_local_services.js','experiment_hub_job_export.js',
-    'experiment_hub_history.js','experiment_hub_evaluation_history.js',
-    'experiment_hub_observations.js','experiment_hub_evaluation.js',
-    'experiment_hub_design_fields.js',
-]);
-const AGENT_ONLY=new Set([
-    'experiment_hub_agent.js','experiment_hub_host.js',
-    'experiment_hub_execution.js','experiment_hub_artifact_agent.js',
-    'experiment_hub_evaluator_health.js',
-    'experiment_hub_remote_evaluator_control.js',
-    'experiment_hub_gpu_inventory.js',
-    'experiment_hub_worker_updater.js',
-]);
-function workerActivationImpact(changes) {
-    const impact={coordinator:false,agent:false};
-    for(const file of changes) {
-        if(FRONTEND_PATHS.has(file)||/\.(?:md|meta)$/.test(file)||
-            /(?:_test|_tests)\.(?:js|py)$/.test(file))continue;
-        const name=path.basename(file);
-        if(!AGENT_ONLY.has(name))impact.coordinator=true;
-        if(!COORDINATOR_ONLY.has(name))impact.agent=true;
-    }
-    return impact;
-}
 
 // Snapshot the running source at process start, rather than showing a newer
 // checkout while the old coordinator generation is still serving requests.
@@ -308,7 +277,8 @@ function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null}={}
             if(req.method==='GET'&&route==='/experiment-hub-services.js')
                 return sendFile(res,assets.servicesUi,'text/javascript; charset=utf-8');
             if(req.method==='GET'&&route==='/api/hub/software/version') {
-                const candidate=releases?.latest?.worker?.source_commit;
+                const candidate=releases?.workerSourceCommit||
+                    releases?.latest?.worker?.source_commit;
                 return json(res,200,{
                     ...runtime,
                     frontend_revision:frontend.current.revision,
@@ -463,7 +433,8 @@ async function main(argv=process.argv.slice(2)) {
                         String(error.message||error));
                 }
             }
-            const candidate=releases.latest.worker?.source_commit;
+            const candidate=releases.workerSourceCommit||
+                releases.latest.worker?.source_commit;
             const publishedImpact=workerActivationImpact(candidate&&
                 candidate!==runtime.source_commit
                 ?await workerChangedPaths(releases.sources.worker.path,
