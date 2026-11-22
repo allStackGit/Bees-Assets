@@ -7027,7 +7027,8 @@ fn run_battle(
             if mission.record_fleet_stats {
                 source.fleet.enable_career_tracking();
             }
-        } else if (play || view || remote_step_interval.is_some()) &&
+        } else if (play || view ||
+            env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some()) &&
             source.source_squads.iter().any(|squad|
                 squad.side == source.human_side &&
                 squad.player_permissions.user_controlled
