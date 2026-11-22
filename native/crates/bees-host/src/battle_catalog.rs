@@ -1372,6 +1372,9 @@ impl BattleCatalog {
                     totals.ships_destroyed_by_player =
                         totals.ships_destroyed_by_player.checked_add(counts.ships_destroyed_by_player)
                         .ok_or_else(|| invalid("campaign player-kill counter overflow"))?;
+                    totals.player_minerals_mined =
+                        totals.player_minerals_mined.checked_add(counts.player_minerals_mined)
+                        .ok_or_else(|| invalid("campaign player mined-TSV counter overflow"))?;
                 } else {
                     progress.player_match_history_complete = false;
                     progress.loss_type_history_complete = false;
