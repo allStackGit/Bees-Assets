@@ -1352,6 +1352,38 @@ function createTinyBrainsPersistentDockerAdapter({
                 ...evaluationSuites,approval.nano,approval.micro,
             ])];
         }
+        const miniName='tinybrains_mini_batch128_v1';
+        const miniFile=path.join(root,miniName+'.json');
+        if(fs.existsSync(miniFile)) {
+            const stat=fs.lstatSync(miniFile);
+            const suite=JSON.parse(fs.readFileSync(miniFile,'utf8'));
+            const opponentDir=path.join(root,'opponents',miniName);
+            if(!stat.isFile()||stat.isSymbolicLink()||
+                stat.uid!==process.getuid()||stat.mode&0o077||
+                stat.size<1||stat.size>8192||
+                suite.suite_id!==miniName||suite.opponent!=='mini'||
+                suite.opponent_dir!==opponentDir||
+                !UUID.test(String(suite.opponent_source_job||''))||
+                !SHA.test(String(suite.opponent_checkpoint_sha256||''))||
+                !SHA.test(String(suite.opponent_model_sha256||''))||
+                !SHA.test(String(suite.opponent_manifest_sha256||'')))
+                throw Error('Frozen Mini evaluator approval is missing or unsafe.');
+            for(const [name,expected] of [
+                ['model.onnx',suite.opponent_model_sha256],
+                ['manifest.json',suite.opponent_manifest_sha256],
+            ]) {
+                const file=path.join(opponentDir,name);
+                const item=fs.lstatSync(file);
+                if(!item.isFile()||item.isSymbolicLink()||
+                    item.uid!==process.getuid()||item.mode&0o077||
+                    crypto.createHash('sha256')
+                        .update(fs.readFileSync(file)).digest('hex')!==expected)
+                    throw Error('Frozen Mini opponent differs from approved fingerprints.');
+            }
+            approvedEvaluationSuites=[...new Set([
+                ...approvedEvaluationSuites,miniName,
+            ])];
+        }
     }
     return {
         executable,cwd:nativeWindows?project:PROJECT_IN,
