@@ -197,6 +197,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_collect_wait_seconds',
             'training_shared_exposed_fraction',
             'training_shared_overlap_fraction',
+            'training_shared_critical_wait_share',
             'training_shared_policy_lag_updates',
             'training_async_next_collecting',
             'training_ppo_gradient_foreach_batches',
@@ -1332,7 +1333,7 @@ class BottleneckEvidence {
             const postwireShare=exposeStage(postwire);
             if(stageMeasured)
                 add('training_shared_critical_wait_share',
-                    criticalCollection/wall);
+                    Math.min(1,criticalCollection/wall));
             // A collector's GPU stream is a candidate only when that SAME
             // collector last delivered both bytes and decoded experience,
             // and its distinct wire-arrival gap extends the PPO round.
