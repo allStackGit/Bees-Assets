@@ -748,6 +748,30 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     wave, source_squads, source_ships, args.player_side
                 ) == [13]
             ]
+            gunship_squad_id = (gunship_waves[0]["squad_item_ids"][0]
+                               if len(gunship_waves) == 1 else None)
+            gunship_squad = source_squads.get(gunship_squad_id)
+            gunship_members = (squad_members(gunship_squad)
+                               if gunship_squad is not None else [])
+            gunship_id = gunship_members[0] if len(gunship_members) == 1 else None
+            honeybee_owners = [
+                squad for squad in source_squads.values()
+                if squad.get("side") == 3 - args.player_side and
+                honeybees and honeybees[0].get("entity_id") in squad_members(squad)
+            ]
+            gunship_attack = [
+                queue for queue in level.get("scripted_queues", [])
+                if isinstance(queue, dict) and
+                queue.get("squad_item_id") == gunship_squad_id and
+                queue.get("activation") == {
+                    "kind": "on_campaign_cue",
+                    "cue": "pluto_gunship_briefing_complete",
+                } and any(isinstance(order, dict) and
+                    order.get("kind") == "aggressive" and
+                    any(order.get("enemy_squad_item_id") == honeybee.get("item_id")
+                        for honeybee in honeybee_owners)
+                    for order in queue.get("orders", []))
+            ]
             scout_owners = [
                 squad for squad in source_squads.values()
                 if squad.get("side") == args.player_side and
@@ -768,6 +792,9 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             if (scene.get("native_game_schema") != 1 or
                     scene.get("human_side") != args.player_side or
                     len(gunship_waves) != 1 or len(scout_departures) != 1 or
+                    len(gunship_attack) != 1 or gunship_id is None or
+                    gunship_id in (scouts[0].get("entity_id") if scouts else None,
+                                   honeybees[0].get("entity_id") if honeybees else None) or
                     len(scouts) != 1 or len(honeybees) != 1 or
                     any(type(ship.get("entity_id")) is not int or
                         ship["entity_id"] <= 0 for ship in [*scouts, *honeybees]) or
@@ -783,13 +810,15 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 raise ValueError(
                     "Pluto Anomaly requires one source Scout/Honeybee, an "
                     "authored Scout withdrawal on pluto_honeybee_spotted, "
-                    "and one physical Gunship wave on pluto_scout_report_complete"
+                    "one real Gunship wave after the Scout report, and "
+                    "one source Gunship attack on pluto_gunship_briefing_complete"
                 )
             level["campaign_dialogue"] = {
                 "pluto_anomaly": {
                     "player_side": args.player_side,
                     "scout_id": scouts[0]["entity_id"],
                     "honeybee_id": honeybees[0]["entity_id"],
+                    "gunship_id": gunship_id,
                 }
             }
         elif story == "pluto_pushback":
