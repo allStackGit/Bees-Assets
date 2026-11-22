@@ -1033,9 +1033,27 @@ impl NativeSoftwareRenderer {
                 }
                 continue;
             }
-            // Source Beehive.ClearData/Kill retires its healing sprites even
-            // when it escapes through EndKill rather than combat death.
+            // Unity FogOfWarVision begins fading at the actual physical
+            // death tick, not at the next possibly delayed draw. A dead
+            // player sight source must not grant stale full-radius visibility
+            // during multiple catch-up ticks. Only an already displayed
+            // source in this exact viewer/world is eligible; a hidden enemy
+            // death cannot reveal anything to the local commander.
             if let bees_sim::combat_world::CombatEvent::ShipDied { victim_id, .. } = event {
+                if self.fog_context.is_some_and(|(id, revision_id, _)|
+                    id == world && revision_id == revision)
+                {
+                    if let Some(source) = self.fog_live.remove(victim_id) {
+                        let position = combat.ship_body(*victim_id)
+                            .map(|body| body.motion.position)
+                            .unwrap_or(source.position);
+                        self.fog_fades.push(NativeFogFade {
+                            position, radius: source.radius, born_tick: tick,
+                        });
+                    }
+                }
+                // Source Beehive.ClearData/Kill immediately retires its
+                // attached healing sprites even for a nonlethal EndKill.
                 if combat.ship(*victim_id).is_some_and(|ship|
                     ship.ship_type == bees_sim::combat_world::BEEHIVE_TYPE) {
                     self.retire_beehive_healing_crosses(*victim_id);
