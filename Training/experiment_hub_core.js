@@ -5,7 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {request: resourceRequest,matchingLeaseBudget,placements: resourcePlacements,
-    placementAlternatives, startHeadroom,observedLoadPreference,approvedEndpointSubset} =
+    placementAlternatives, startHeadroom,observedLoadPreference,
+    gpuReservationPreference,approvedEndpointSubset} =
     require('./experiment_hub_resources');
 const {validateProgress,selectChartMetrics,BottleneckEvidence}=require('./experiment_hub_progress');
 const {tinyBrainsProfiles,tinyBrainsImports,supportsTinyBrainsProfile,
@@ -1681,7 +1682,7 @@ function canPrepareSimulation(machine,job) {
 }
 function allocationChoice(machines,reservations,job,preferredMachineId=null,
     following=[],futureMachinesFor=()=>machines,snapshot=null,throughput=null) {
-    const eligibleOptions=(selected,hosts,preferred=null)=>{
+    const eligibleOptions=(selected,hosts,preferred=null,claims=reservations)=>{
         const eligible=hosts.filter(machine=>
             machine.software_update_blocked!==true&&
             (canPrepareSimulation(machine,selected)||
@@ -1692,7 +1693,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
             (!snapshot||distributedRolloutHost(snapshot,selected,machine))&&
             (!preferred||preferred===machine.id)&&
             (!selected.continuation_machine_id||selected.continuation_machine_id===machine.id));
-        const fits=placementAlternatives(eligible,reservations,selected.resources)
+        const fits=placementAlternatives(eligible,claims,selected.resources)
             .filter(p=>p.capacity_fits);
         const r=selected.resources;
         const cpuOnly=r.gpu_count===0&&!(r.gpus||[]).length;
@@ -1750,6 +1751,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
             (throughput?throughput.compare(job,a,b,snapshot&&{
                 jobs:snapshot.jobs,reservations,
             }):0)||
+            gpuReservationPreference(a,b,job.resources)||
             observedLoadPreference(a,b,job.resources)||
             a.available.cpus-b.available.cpus||
             a.available.ram_mb-b.available.ram_mb||
@@ -1757,34 +1759,30 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
             (a.suggested_gpus||[]).join(',').localeCompare(
                 (b.suggested_gpus||[]).join(',')));
     if(options.length<2||!following.length)return options[0]||null;
-    // Preserve FIFO jobs while avoiding a placement that would block a
-    // later job with exactly one capable host. This is advisory lookahead:
-    // no lease, execution permission or native ownership is conferred.
-    const soleOptions=following.filter(next=>!next.lease_id)
+    // Compare all physically feasible GPU choices, not only machines.
+    // A later unpinned exclusive job may fit either of two GPUs today but
+    // neither after spreading smaller cooperative leases across both.
+    // Bound queue lookahead to eight pending jobs and retain the user's
+    // FIFO decision order; the next queue pass handles the remainder.
+    const future=following.filter(next=>!next.lease_id).slice(0,8)
         .map(next=>{
-            const places=eligibleOptions(next,futureMachinesFor(next));
-            return places.length===1
-                ?{job:next,machine_id:places[0].machine_id}:null;
+            const hosts=futureMachinesFor(next);
+            const before=eligibleOptions(next,hosts);
+            return before.length?{job:next,hosts}:null;
         }).filter(Boolean);
-    if(!soleOptions.length)return options[0];
+    if(!future.length)return options[0];
     const remainingOptionLoss=option=>{
         const shadow=reservations.concat([{
             machine_id:option.machine_id,status:'offered',
-            resources:{...job.resources,
-                gpus:option.suggested_gpus},
+            resources:{...job.resources,gpus:option.suggested_gpus},
         }]);
-        let lost=0;
-        const machine=machines.find(m=>m.id===option.machine_id);
-        for(const later of soleOptions) {
-            if(later.machine_id!==option.machine_id)continue;
-            if(!placementAlternatives([machine],shadow,later.job.resources)
-                .some(p=>p.capacity_fits))lost++;
+        let blocked=0;
+        for(const next of future) {
+            if(!eligibleOptions(next.job,next.hosts,null,shadow).length)
+                blocked++;
         }
-        return lost;
+        return blocked;
     };
-    // Two alternatives can be on the SAME host but different physical
-    // GPUs. A per-machine loss map silently erased their different effects
-    // on later jobs needing a specific pinned GPU.
     const loss=new Map(options.map(option=>[
         option,remainingOptionLoss(option),
     ]));
@@ -1795,6 +1793,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         (throughput?throughput.compare(job,a,b,snapshot&&{
             jobs:snapshot.jobs,reservations,
         }):0)||
+        gpuReservationPreference(a,b,job.resources)||
         observedLoadPreference(a,b,job.resources));
     return options[0];
 }
