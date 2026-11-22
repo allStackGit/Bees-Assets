@@ -77,6 +77,7 @@ class _Request:
     model_id: str
     inputs: tuple
     rows: int
+    input_bytes: int
     future: BatchFuture
     ready: object
 
@@ -98,6 +99,7 @@ class FrozenInferenceMicrobatcher:
 
     def __init__(self, models: dict[str, nn.Module], versions: dict[str, object],
                  *, max_pending=256, max_requests=32, max_batch_rows=4096,
+                 max_batch_mb=64, max_pending_mb=256,
                  wait_ms=0.25, max_cohorts=8, max_workspace_mb=512,
                  allow_graphs=True):
         if (not isinstance(models, dict) or not models or
@@ -105,6 +107,7 @@ class FrozenInferenceMicrobatcher:
                 not 1 <= max_pending <= 65536 or
                 not 1 <= max_requests <= max_pending or
                 not 1 <= max_batch_rows <= 1048576 or
+                not 1 <= max_batch_mb <= max_pending_mb <= 16384 or
                 not 0 <= wait_ms <= 50 or
                 not 1 <= max_cohorts <= 256 or
                 not 16 <= max_workspace_mb <= 16384):
@@ -123,6 +126,8 @@ class FrozenInferenceMicrobatcher:
         self.device = next(iter(locations))
         self.max_pending, self.max_requests = max_pending, max_requests
         self.max_batch_rows, self.wait_seconds = max_batch_rows, wait_ms/1000
+        self.max_batch_bytes = int(max_batch_mb*1048576)
+        self.max_pending_bytes = int(max_pending_mb*1048576)
         self.max_cohorts, self.allow_graphs = max_cohorts, allow_graphs
         # Cap each retained model cohort's graph/state residency. Every
         # cohort may retain eight independent shape profiles; reserve a
@@ -135,6 +140,7 @@ class FrozenInferenceMicrobatcher:
         self._condition = Condition()
         self._closed = False
         self._outstanding = 0
+        self._outstanding_bytes = 0
         self._first_producer = None
         self._multi_producer = False
         self._counters = dict(submitted=0, dispatched=0, model_forwards=0,
@@ -169,7 +175,10 @@ class FrozenInferenceMicrobatcher:
             rows = args[0].shape[0]
             if not 1 <= rows <= self.max_batch_rows or any(x.shape[0] != rows for x in args):
                 raise ValueError("Input rows exceed the fixed GPU batch envelope")
-            checked.append((model_id,args,rows))
+            byte_count = sum(t.numel()*t.element_size() for t in args)
+            if byte_count > self.max_batch_bytes:
+                raise ValueError("One inference request exceeds the GPU batch byte envelope")
+            checked.append((model_id,args,rows,byte_count))
         if self.device.type == "cuda":
             ready = torch.cuda.Event()
             ready.record(torch.cuda.current_stream(self.device))
@@ -177,7 +186,9 @@ class FrozenInferenceMicrobatcher:
         with self._condition:
             if self._closed:
                 raise RuntimeError("Frozen inference batcher was closed")
-            if self._outstanding+len(checked)>self.max_pending:
+            if (self._outstanding+len(checked)>self.max_pending or
+                    self._outstanding_bytes+sum(row[3] for row in checked) >
+                    self.max_pending_bytes):
                 self._counters["rejected"] += len(checked)
                 raise RuntimeError("Frozen inference queue reached its capacity")
             producer = get_ident()
@@ -185,9 +196,11 @@ class FrozenInferenceMicrobatcher:
                 self._first_producer = producer
             elif producer != self._first_producer:
                 self._multi_producer = True
-            self._pending.extend(_Request(model_id,args,rows,future,ready)
-                                 for (model_id,args,rows),future in zip(checked,futures))
+            self._pending.extend(_Request(model_id,args,rows,byte_count,future,ready)
+                                 for (model_id,args,rows,byte_count),future
+                                 in zip(checked,futures))
             self._outstanding += len(checked)
+            self._outstanding_bytes += sum(row[3] for row in checked)
             self._counters["submitted"] += len(checked)
             self._counters["max_queue_depth"] = max(
                 self._counters["max_queue_depth"], self._outstanding)
@@ -212,6 +225,7 @@ class FrozenInferenceMicrobatcher:
                 stranded = list(self._pending)+self._active_group
                 self._pending.clear()
                 self._outstanding = 0
+                self._outstanding_bytes = 0
                 self._condition.notify_all()
             for item in stranded:
                 if not item.future.done():
@@ -230,12 +244,13 @@ class FrozenInferenceMicrobatcher:
                 # threads unlock the short coalescing window automatically.
                 delay = self.wait_seconds if self._multi_producer else 0.0
                 deadline = perf_counter()+delay
-                group, layouts, rows = [], {}, 0
+                group, layouts, rows, batch_bytes = [], {}, 0, 0
                 while len(group) < self.max_requests:
                     if self._pending:
                         item = self._pending[0]
                         shape = tuple((x.shape[1:], x.dtype) for x in item.inputs)
                         if (rows+item.rows > self.max_batch_rows or
+                                batch_bytes+item.input_bytes>self.max_batch_bytes or
                                 item.model_id in layouts and
                                 layouts[item.model_id] != shape):
                             break
@@ -244,7 +259,8 @@ class FrozenInferenceMicrobatcher:
                         layouts[item.model_id] = shape
                         group.append(item)
                         rows += item.rows
-                        if rows >= self.max_batch_rows:
+                        batch_bytes += item.input_bytes
+                        if rows >= self.max_batch_rows or batch_bytes >= self.max_batch_bytes:
                             break
                     else:
                         remaining = deadline-perf_counter()
@@ -260,6 +276,7 @@ class FrozenInferenceMicrobatcher:
             finally:
                 with self._condition:
                     self._outstanding -= len(group)
+                    self._outstanding_bytes -= sum(item.input_bytes for item in group)
                     self._active_group = []
                     self._counters["dispatched"] += len(group)
                     self._counters["groups"] += 1
@@ -399,6 +416,7 @@ class FrozenInferenceMicrobatcher:
         with self._condition:
             values = dict(self._counters, pending=self._outstanding,
                           cached_model_cohorts=len(self._executors),
+                          pending_input_bytes=self._outstanding_bytes,
                           calibrated_batch_shapes=len(self._admission),
                           multiple_producers=int(self._multi_producer))
             return {"gpu_microbatch_"+name:value
@@ -412,6 +430,7 @@ class FrozenInferenceMicrobatcher:
                 cancelled = list(self._pending)
                 self._pending.clear()
                 self._outstanding -= len(cancelled)
+                self._outstanding_bytes -= sum(item.input_bytes for item in cancelled)
             self._condition.notify_all()
         for item in cancelled:
             # Future callbacks may query metrics or close the queue, so
