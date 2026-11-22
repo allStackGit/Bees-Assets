@@ -60,6 +60,8 @@ HELP = """Commands:
   select ID [ID...]    Select one or more friendly squad IDs
   select all           Select all controllable root squads (not child drones)
   select clear         Clear selection and requested weapon overlays
+  number 0..9          Select original numbered squad (0 means squad 10)
+  cycle next|previous  Cycle living source squads in authored roster order
   move X Y             Move selected squads to world point
   fire X Y             Manual point fire; fire stop clears target
   held begin X Y       Begin sustained fire with selected squad weapons
@@ -429,6 +431,41 @@ class RemoteConsole:
             parts.append(f"minerals mined {mined}")
         return ", ".join(parts) if parts else None
 
+    @staticmethod
+    def source_number_owner(state, key):
+        """Resolve a 1..0 source squad without renumbering casualties."""
+        if key not in range(10):
+            return None
+        original = next((
+            row.get("original_squad_count") for row in state["squads"]
+            if row["controllable"] and row.get("source_number") is not None
+            and row.get("original_squad_count")
+        ), None)
+        if not original:
+            return None
+        wanted = ((10 if key == 0 else key)-1) % original + 1
+        return next((
+            row["owner"] for row in state["squads"] if row["controllable"]
+            and row.get("source_number") == wanted
+        ), None)
+
+    @staticmethod
+    def cycle_source_owner(state, current, forward):
+        """Match the playable native source registration order and eligibility."""
+        eligible = [
+            row["owner"] for row in state["squads"]
+            if row["controllable"] and (
+                row.get("source_number") is not None or
+                (row.get("original_squad_count") is None and
+                 row.get("source_root") is True))
+        ]
+        if not eligible:
+            return None
+        index = eligible.index(current) if current in eligible else None
+        if index is None:
+            return eligible[0 if forward else -1]
+        return eligible[(index + (1 if forward else -1)) % len(eligible)]
+
     def selected_owners(self, state):
         squads = {row["owner"]["squad_id"]: row["owner"]
                   for row in state["squads"] if row["controllable"]
@@ -710,6 +747,25 @@ class RemoteConsole:
                       f" ({object['x']:8.1f}, {object['y']:8.1f})"
                       f" {'mining' if object['mining'] else ''}"
                       f" HP {object['health']}")
+            return
+        if cmd in ("number", "cycle"):
+            if cmd == "number" and len(argv) == 1 and argv[0] in "0123456789":
+                owner = self.source_number_owner(state, int(argv[0]))
+            elif cmd == "cycle" and argv in (["next"], ["previous"]):
+                current = self.selected_owners(state)
+                owner = self.cycle_source_owner(
+                    state, current[0] if current else None, argv == ["next"])
+            else:
+                raise ValueError("use number 0..9 or cycle next|previous")
+            if owner is None:
+                print("No live original squad matches this shortcut")
+                return
+            with self.lock:
+                self.selected = [owner["squad_id"]]
+                self.selected_scope = (state["world_id"], state["episode_revision"])
+            if self.weapon_overlay_enabled:
+                self.request_weapon_overlay(state, [owner])
+            print(f"Selected: {self.selected}")
             return
         if cmd == "select":
             if argv == ["all"]:
