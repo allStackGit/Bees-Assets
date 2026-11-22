@@ -867,6 +867,32 @@ def author(args) -> tuple[dict, dict, dict]:
                     max_reserved + 1)
     squad_base = max(SQUAD_ID_START, ship_base + 2 * side_span)
     weapon_base = max(WEAPON_ID_START, squad_base + 2 * side_span)
+    # Multi-Level careers can supply stable physical IDs per class/ordinal.
+    # Use them at creation so carrier/weapon/roster links refer to the SAME
+    # identity from the outset, never an unsafe post-hoc scene rewrite.
+    # Ordinary standalone games preserve their existing allocation.
+    authored_ids = getattr(args, "authored_ship_ids", {})
+    if not isinstance(authored_ids, dict) or any(side not in (1, 2)
+            for side in authored_ids):
+        raise ValueError("authored ship identities require side 1/2 mappings")
+    for side, by_type_ids in authored_ids.items():
+        if not isinstance(by_type_ids, dict):
+            raise ValueError("authored ship identities must be grouped by class")
+        lane_start = ship_base + (side - 1) * side_span
+        lane_end = lane_start + side_span
+        all_ids = []
+        for kind, ids in by_type_ids.items():
+            if type(kind) is not int or not 0 <= kind < 24 or not isinstance(ids, list):
+                raise ValueError("invalid authored ship class identity list")
+            if any(type(ship_id) is not int or
+                   not lane_start <= ship_id < lane_end for ship_id in ids):
+                raise ValueError("authored ship identity lies outside its source side lane")
+            all_ids.extend(ids)
+        if len(set(all_ids)) != len(all_ids):
+            raise ValueError("duplicate authored physical ship identity")
+        if any(len(by_type_ids.get(kind, [])) < count
+               for kind, count in requested[side]):
+            raise ValueError("authored physical IDs do not cover the requested fleet")
     new_ships = []
     new_squads = []
     by_side: dict[int, list[dict]] = {1: [], 2: []}
@@ -885,13 +911,16 @@ def author(args) -> tuple[dict, dict, dict]:
         # can change independently without renumbering the career fleet,
         # and each parent exists before its children's shared rank alias.
         for kind, count in sorted(units, key=lambda unit: unit[0] in (8, 19)):
-            for _ in range(count):
+            for ordinal in range(count):
                 ship = copy.deepcopy(blueprints[(side, kind)])
-                ship["entity_id"] = ship_id
+                ship["entity_id"] = (
+                    authored_ids[side][kind][ordinal]
+                    if side in authored_ids else ship_id
+                )
                 ship["position"] = positions[pos_index]
                 ship["user_controlled"] = side in controlled
                 if ship.get("persistent_fleet"):
-                    ship["fleet_ship_id"] = ship_id
+                    ship["fleet_ship_id"] = ship["entity_id"]
                 else:
                     ship.pop("fleet_ship_id", None)
                 if ship.get("special_weapon") is not None:
