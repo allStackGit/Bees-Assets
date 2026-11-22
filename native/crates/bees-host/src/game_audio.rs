@@ -184,6 +184,8 @@ pub struct NativeAudioMeasurements {
     pub music_tracks_missing: u64,
     pub missed_visualized_ticks: u64,
     pub muted: bool,
+    pub music_level: f32,
+    pub effects_level: f32,
 }
 
 pub struct NativeGameAudio {
@@ -204,6 +206,8 @@ pub struct NativeGameAudio {
     warp_gate_loops: HashMap<i64, Sink>,
     paused: bool,
     muted: bool,
+    music_level: f32,
+    effects_level: f32,
     measurements: NativeAudioMeasurements,
     // Drop the output stream only AFTER music and effect sinks.
     _stream: Option<OutputStream>,
@@ -243,6 +247,7 @@ impl NativeGameAudio {
             warp_gate_openings: HashMap::new(),
             warp_gate_loops: HashMap::new(),
             paused: false, muted: false,
+            music_level: 1.0, effects_level: 1.0,
             measurements, _stream: stream,
         }
     }
@@ -250,22 +255,46 @@ impl NativeGameAudio {
     pub fn measurements(&self) -> NativeAudioMeasurements {
         NativeAudioMeasurements {
             muted: self.muted,
+            music_level: self.music_level,
+            effects_level: self.effects_level,
             ..self.measurements
         }
     }
 
+    fn music_volume(&self) -> f32 {
+        if self.muted { 0.0 } else { MUSIC_VOLUME * self.music_level }
+    }
+
+    fn effect_volume(&self) -> f32 {
+        if self.muted { 0.0 } else { EFFECT_VOLUME * self.effects_level }
+    }
+
+    fn apply_levels(&self) {
+        for sink in &self.music { sink.set_volume(self.music_volume()); }
+        for sink in &self.voices { sink.set_volume(self.effect_volume()); }
+        for sink in self.warp_gate_openings.values()
+            .chain(self.warp_gate_loops.values()) {
+            sink.set_volume(self.effect_volume());
+        }
+    }
+
+    /// Source soundtrack and sound effects are distinct mixing channels.
+    /// Levels affect existing sinks and every subsequently started clip.
+    /// Muting never destroys the user's chosen channel levels.
+    pub fn adjust_levels(&mut self, music: bool, delta: f32) -> f32 {
+        let level = if music { &mut self.music_level } else { &mut self.effects_level };
+        if delta.is_finite() {
+            *level = ((*level * 10.0).round() / 10.0 + delta)
+                .clamp(0.0, 1.0);
+        }
+        let updated = *level;
+        self.apply_levels();
+        updated
+    }
+
     pub fn toggle_muted(&mut self) -> bool {
         self.muted = !self.muted;
-        let music_volume = if self.muted { 0.0 } else { MUSIC_VOLUME };
-        let effect_volume = if self.muted { 0.0 } else { EFFECT_VOLUME };
-        for sink in &self.music { sink.set_volume(music_volume); }
-        for sink in &self.voices { sink.set_volume(effect_volume); }
-        for sink in self.warp_gate_openings.values() {
-            sink.set_volume(effect_volume);
-        }
-        for sink in self.warp_gate_loops.values() {
-            sink.set_volume(effect_volume);
-        }
+        self.apply_levels();
         self.muted
     }
 
@@ -295,7 +324,7 @@ impl NativeGameAudio {
         };
         let duration = source.total_duration().unwrap_or(Duration::ZERO);
         if let Ok(sink) = Sink::try_new(handle) {
-            sink.set_volume(if self.muted { 0.0 } else { MUSIC_VOLUME });
+            sink.set_volume(self.music_volume());
             sink.append(source);
             if self.paused { sink.pause(); }
             self.music.push(sink);
@@ -315,7 +344,7 @@ impl NativeGameAudio {
             return;
         };
         if let Ok(sink) = Sink::try_new(handle) {
-            sink.set_volume(if self.muted { 0.0 } else { MUSIC_VOLUME });
+            sink.set_volume(self.music_volume());
             // Loops are synchronized to the authentic intro's duration.
             sink.append(source.delay(delay));
             if self.paused { sink.pause(); }
@@ -345,7 +374,7 @@ impl NativeGameAudio {
             if let Ok(file) = File::open(&path) {
                 if let Ok(source) = Decoder::new(BufReader::new(file)) {
                     if let Ok(sink) = Sink::try_new(handle) {
-                        sink.set_volume(if self.muted { 0.0 } else { MUSIC_VOLUME });
+                        sink.set_volume(self.music_volume());
                         sink.append(source.take_duration(intro));
                         if self.paused { sink.pause(); }
                         self.music.push(sink);
@@ -356,7 +385,7 @@ impl NativeGameAudio {
             if let Ok(file) = File::open(&path) {
                 if let Ok(source) = Decoder::new(BufReader::new(file)) {
                     if let Ok(sink) = Sink::try_new(handle) {
-                        sink.set_volume(if self.muted { 0.0 } else { MUSIC_VOLUME });
+                        sink.set_volume(self.music_volume());
                         // Repeat only the source-authored segment, never
                         // Titania's nonrepeating introduction.
                         sink.append(source.skip_duration(intro)
@@ -474,7 +503,7 @@ impl NativeGameAudio {
             self.measurements.sound_effects_dropped += 1;
             return;
         };
-        sink.set_volume(EFFECT_VOLUME);
+        sink.set_volume(self.effect_volume());
         sink.append(source);
         self.voices.push(sink);
         self.measurements.sound_effects_started += 1;
@@ -488,7 +517,7 @@ impl NativeGameAudio {
         let data = self.effects.get(&effect)?;
         let source = Decoder::new(Cursor::new(Arc::clone(data))).ok()?;
         let sink = Sink::try_new(handle).ok()?;
-        sink.set_volume(if self.muted { 0.0 } else { EFFECT_VOLUME });
+        sink.set_volume(self.effect_volume());
         if effect == Effect::WarpGateLoop {
             // A reconnecting spectator joins the gate's existing loop
             // phase, not a fresh loop at the beginning of the recording.
