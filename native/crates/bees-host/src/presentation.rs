@@ -38,6 +38,7 @@ pub use battle_menu::{
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
 pub use selection::{NativeSquadSelection, NativeSupportMode};
 pub use tactical_hud::HudAction;
+pub(crate) use tactical_hud::retreat_button_rect;
 
 /// Exact original four-stage FireTank sprite selection. Remote players may
 /// see the visible smoke/damage stage without receiving undiscovered HP.
