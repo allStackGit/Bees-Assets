@@ -1210,6 +1210,9 @@ pub struct NativeExportedPolicyLevelSetup<A> {
     pub demolition: Option<bees_sim::episode_terminal::DemolitionObjective>,
     pub escort: Option<bees_sim::episode_terminal::EscortObjective>,
     pub campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
+    /// Immutable source campaign Codex class knowledge from the frozen
+    /// career receipt; never a policy/training reward or client guess.
+    pub campaign_codex: Option<(i32, [bool; bees_sim::ship_assets::SHIP_TYPE_COUNT])>,
     pub reinforcements: Vec<crate::reinforcements::NativeReinforcementPlan>,
     pub scripted_queues: Vec<crate::policy_only_metadata::NativeScriptedQueuePlan>,
     // Team-owned exploration starts fresh for the newly constructed
@@ -3544,6 +3547,7 @@ impl NativePhysicalScene {
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
         metadata.install_queen_templates(queen_templates)
             .map_err(NativePolicyOnlyLevelError::Metadata)?;
+        metadata.set_campaign_codex(setup.campaign_codex);
         metadata.targeting_context = self.targeting_context;
         metadata.activate_mining = self.activate_mining;
         metadata.activate_fog_of_war = self.activate_fog_of_war;
