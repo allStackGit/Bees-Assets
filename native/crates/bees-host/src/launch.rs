@@ -1492,6 +1492,7 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput)
                 NativePlayerInput::Shooting(_) => "Squad cannot change shooting priority",
                 NativePlayerInput::LockOn(_) => "Squad cannot change Lock On",
                 NativePlayerInput::Chase(_) => "Squad cannot change Chase",
+                NativePlayerInput::Select(_) => "Selection has no controllable squads",
             }}),
         Err(error) => return Err(format!("native player input: {error:?}")),
     };
@@ -1508,8 +1509,13 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput)
         Outcome::Chase(counts) => counts.accepted_squads > 0,
         Outcome::HeldFire(message) =>
             message != "No selected weapons accepted held fire",
+        Outcome::Select(count) => count > 0,
     };
     let feedback = match (action, outcome) {
+        (NativePlayerInput::Select(_), Outcome::Select(count)) => {
+            if count == 0 { "Squad selection cleared" }
+            else { "Squad selection registered" }
+        }
         (NativePlayerInput::Move(_), Outcome::Move(counts)) => {
             if counts.accepted_squads == 0 { "Selected squads cannot accept that destination" }
             else if counts.rejected_squads == 0 && counts.unreachable_squads == 0 { "Moves accepted" }
