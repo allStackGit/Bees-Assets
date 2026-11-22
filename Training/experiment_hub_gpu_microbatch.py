@@ -18,6 +18,7 @@ from collections import OrderedDict, deque
 from concurrent.futures import Future
 from contextlib import nullcontext
 from dataclasses import dataclass
+from statistics import median
 from threading import Condition, Thread, current_thread, get_ident
 from time import perf_counter
 
@@ -353,8 +354,8 @@ class FrozenInferenceMicrobatcher:
                     # Packing, splitting and GPU completion belong in
                     # the actual service-cost comparison. A fast model
                     # forward alone is not enough to admit coalescing.
-                    mode = ("grouped" if min(grouped_times) <
-                            min(solo_times)*0.95 else "individual")
+                    mode = ("grouped" if median(grouped_times) <
+                            median(solo_times)*0.95 else "individual")
                     output = candidate if mode=="grouped" else reference
                 except (ValueError, TypeError, RuntimeError,
                         torch.OutOfMemoryError) as error:
