@@ -875,6 +875,28 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         story = mission_stories.get(index)
         if story is None:
             return
+        # Original CampaignMissionCatalog.MapIndex 0..3, not the
+        # independently selected MapData.Location soundtrack. Even old
+        # Unity captures must render the selected story's actual map.
+        source_map = {
+            "pluto_anomaly": "pluto",
+            "pluto_reinforcements": "pluto",
+            "pluto_pushback": "pluto",
+            "pluto_bluer_pastures": "pluto",
+            "neptune_seize_means": "neptune",
+            "neptune_of_production": "neptune",
+            "neptune_pressing_forward": "neptune",
+            "titania_minesweeper": "titania",
+            "titania_beenoculars": "titania",
+            "uranus_on_the_offensive": "uranus",
+            "uranus_on_the_defensive": "uranus",
+            "uranus_new_threat": "uranus",
+        }[story]
+        if scene.get("map_background") not in (None, source_map):
+            raise ValueError(
+                f"mission {index} map disagrees with original CampaignMissionCatalog"
+            )
+        scene["map_background"] = source_map
         level = run["levels"][0]
         if story == "pluto_anomaly":
             # Source Pluto I begins with the real first player Scout

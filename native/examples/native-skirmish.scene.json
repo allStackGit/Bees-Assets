@@ -2,6 +2,7 @@
   "native_game_schema": 1,
   "level_name": "Native Fleet Skirmish",
   "music_location": "neptune",
+  "map_background": "neptune",
   "stage_name": "Native Fleet Skirmish",
   "bounds": {
     "min": [

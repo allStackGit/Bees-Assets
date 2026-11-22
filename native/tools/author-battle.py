@@ -2158,6 +2158,9 @@ def battle_parser() -> argparse.ArgumentParser:
                         default="aggressive",
                         help="autonomous armed squads' native command strategy (default: aggressive); specialists retain their own actions")
     parser.add_argument("--title", default="Custom Native Battle")
+    parser.add_argument("--map-background",
+                        choices=("pluto", "neptune", "titania", "uranus"),
+                        help="authored original Map.SpriteRenderer for the native game window, independent of soundtrack, physics and training")
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--minutes", type=int, default=4)
     parser.add_argument("--objective", choices=(
@@ -2334,6 +2337,8 @@ def main() -> None:
         parser.error("--target-ship-type needs --objective target_ship and a source class 0..23")
     try:
         scene, run, library = author(args)
+        if args.map_background is not None:
+            scene["map_background"] = args.map_background
         policy = None
         if args.trainable:
             # Share the fleet converter's exact deferred-roster contract,
