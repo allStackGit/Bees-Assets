@@ -474,6 +474,7 @@ impl CombatWorld {
             weapons.last_hull_rotation = rotation;
         }
         weapons.turrets[slot] = Some(MountedTurret::new(spec));
+        self.armed_weapon_ships.insert(ship_id);
         Ok(())
     }
 
@@ -555,6 +556,7 @@ impl CombatWorld {
                 self.physics.ships()[index].motion.rotation_degrees;
         }
         runtime.turrets[slot] = Some(MountedTurret::new(spec));
+        self.armed_weapon_ships.insert(ship_id);
         Ok(())
     }
 
@@ -750,14 +752,12 @@ impl CombatWorld {
         context: Option<&dyn NativeAutomaticWeaponContext>,
     ) -> Result<(), CombatWorldError> {
         let mut next_scheduled_id = self.next_entity_id;
-        for (&ship_id, runtime) in weapons {
-            // Policy controllers legitimately register a weapon holder
-            // before any turret is authored. With no mount there is no
-            // targeting, reload, projectile, or hull-turn work to advance.
-            // First installation resets the pose reference above.
-            if runtime.turrets.iter().all(Option::is_none) {
-                continue;
-            }
+        // The exact live mounted index is maintained at registration and
+        // death; it is not a second weapon state. Keep source ship-ID order
+        // while avoiding all empty policy weapon holders on every tick.
+        for &ship_id in &self.armed_weapon_ships {
+            let runtime = weapons.get_mut(&ship_id)
+                .expect("armed weapon index has an installed owner");
             let policy_controlled = self.policy_ship_runtime.contains_key(&ship_id);
             let Some(&index) = self.ship_by_id.get(&ship_id) else { continue };
             let ship = self.ships[index];
