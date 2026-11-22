@@ -91,6 +91,11 @@ pub struct NativeFleetInventory {
     campaign_player_side: Option<i32>,
     #[serde(default)]
     campaign_score: i64,
+    /// A pre-scoring checkpoint has already played unknown ticks. It
+    /// remains resumable but cannot produce a complete score or ship
+    /// counter from those missing earlier events.
+    #[serde(default)]
+    score_history_incomplete: bool,
     #[serde(default)]
     player_match_counts: NativePlayerMatchCounts,
 }
@@ -132,11 +137,23 @@ impl NativeFleetInventory {
         if checkpoint.schema_version != 1 {
             return Err(Error::InvalidVersion);
         }
-        let restored = checkpoint.source;
+        let mut restored = checkpoint.source;
+        let legacy_score_owner = self.campaign_player_side.is_some() &&
+            restored.campaign_player_side.is_none() &&
+            restored.campaign_score == 0 &&
+            restored.player_match_counts == NativePlayerMatchCounts::default();
         if self.career_tracking != restored.career_tracking ||
-            self.campaign_player_side != restored.campaign_player_side
+            (self.campaign_player_side != restored.campaign_player_side &&
+                !legacy_score_owner)
         {
             return Err(Error::ChangedFleetOwnership);
+        }
+        if legacy_score_owner {
+            // Keep the original physical World and its mineral/career
+            // records. Earlier score events were never recorded by the
+            // old binary and cannot be reconstructed on recovery.
+            restored.campaign_player_side = self.campaign_player_side;
+            restored.score_history_incomplete = true;
         }
         for (&ship, old) in &self.entries {
             let saved = restored.entries.get(&ship).ok_or(Error::MissingSourceShip)?;
@@ -189,6 +206,7 @@ impl NativeFleetInventory {
             entries, killed: HashSet::new(), combat: HashMap::new(),
             career_tracking: false,
             campaign_player_side: None, campaign_score: 0,
+            score_history_incomplete: false,
             player_match_counts: NativePlayerMatchCounts::default(),
         })
     }
@@ -217,15 +235,18 @@ impl NativeFleetInventory {
     }
 
     pub fn campaign_player_score(&self) -> Option<i64> {
-        self.campaign_player_side.map(|_| self.campaign_score)
+        self.campaign_player_side.filter(|_| !self.score_history_incomplete)
+            .map(|_| self.campaign_score)
     }
 
     pub fn campaign_score_snapshot(&self) -> Option<(i32, i64)> {
-        self.campaign_player_side.map(|side| (side, self.campaign_score))
+        self.campaign_player_side.filter(|_| !self.score_history_incomplete)
+            .map(|side| (side, self.campaign_score))
     }
 
     pub fn player_match_counts(&self) -> Option<NativePlayerMatchCounts> {
-        self.campaign_player_side.map(|_| self.player_match_counts)
+        self.campaign_player_side.filter(|_| !self.score_history_incomplete)
+            .map(|_| self.player_match_counts)
     }
 
     pub fn combat_stats(&self, ship_id: i64) -> Option<NativeFleetCombatStats> {
