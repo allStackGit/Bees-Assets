@@ -360,6 +360,9 @@ impl RemoteArtwork {
         }
         self.raster.begin_death_scene(WorldId(episode.0), episode.1);
         for cue in state["audio_events"].as_array().into_iter().flatten() {
+            if let Some(id) = cue["healing_cross_retired"]["beehive_id"].as_i64() {
+                self.raster.retire_beehive_healing_crosses(id);
+            }
             if let (Some(beehive_id), Some(source_ship_id), Some(x), Some(y), Some(born_tick)) = (
                 cue["healing_cross"]["beehive_id"].as_i64(),
                 cue["healing_cross"]["source_ship_id"].as_i64(),
@@ -3028,8 +3031,8 @@ pub fn connect_remote(
             last_left=window.get_mouse_down(MouseButton::Left);
             last_right=window.get_mouse_down(MouseButton::Right);
         }
-        if surrender_confirmation.is_none() &&
-            window.is_key_pressed(Key::F9,KeyRepeat::No) && !held_fire_active
+        if surrender_confirmation.is_none() && !menu_action_consumed &&
+            !show_battle_menu && window.is_key_pressed(Key::F9,KeyRepeat::No) && !held_fire_active
         {
             if show_campaign_rewards {
                 show_campaign_rewards=false;
@@ -4331,7 +4334,7 @@ pub fn connect_remote(
                 "H or F1: open multiplayer controls",
                 "C or F2: inspect the Fleet Codex",
                 "S: request surrender (commander only; confirmation required)",
-                "Q: disconnect and return to the game library",
+                "Q: disconnect from the host and close this window",
                 "The host battle continues for all players",
             ];
             NativeSoftwareRenderer::draw_help_panel(

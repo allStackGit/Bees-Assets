@@ -1996,6 +1996,17 @@ fn collect_remote_audio(
                 view.combat.ship_body(*victim_id)
                     .map(|body| body.motion.position),
             ),
+            // Retiring a Beehive with EndKill must also remove its old
+            // healing-cross visuals. Unlike combat death this has no
+            // ordinary ship-explosion cue, but the physical retirement is
+            // still authoritative and side-filtered.
+            CombatEvent::ShipDied { victim_id, end_kill: true, .. }
+                if view.combat.ship(*victim_id).is_some_and(|ship|
+                    ship.ship_type == bees_sim::combat_world::BEEHIVE_TYPE) => (
+                        "healing_cross_retired",
+                        view.combat.ship_body(*victim_id)
+                            .map(|body| body.motion.position),
+                    ),
             // Source Heal.HealShips emits a cosmetic pulse once per live
             // Beehive in that command. Project only the actual host position.
             CombatEvent::CommandHealingCross { beehive_id, .. } => (
@@ -2100,7 +2111,8 @@ fn collect_remote_audio(
                 pending.iter().position(|cue| cue["effect"] == "impact")
                     .or_else(|| pending.iter().position(|cue|
                         cue["effect"] == "projectile"))
-            } else if effect != "impact" && effect != "healing_cross" {
+            } else if effect != "impact" && effect != "healing_cross" &&
+                effect != "healing_cross_retired" {
                 pending.iter().position(|cue| cue["effect"] == "impact")
             } else { None }
         } else { None };
@@ -2116,6 +2128,11 @@ fn collect_remote_audio(
                     // Presentation metadata from the same physical weapon
                     // installation, never an independent client guess.
                     cue["weapon_sound_type"] = json!(sound);
+                }
+            }
+            if effect == "healing_cross_retired" {
+                if let CombatEvent::ShipDied { victim_id, .. } = event {
+                    cue["healing_cross_retired"] = json!({"beehive_id": victim_id});
                 }
             }
             if let CombatEvent::CommandHealingCross { beehive_id, source_ship_id } = event {
