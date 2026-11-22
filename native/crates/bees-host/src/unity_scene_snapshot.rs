@@ -930,6 +930,10 @@ struct UnitySpecialWeapon {
     slot: usize,
     power: i32,
     mount_offset: UnityVec2,
+    /// Source Weapon.HasClearLineOfFire uses PieceTransform, not
+    /// Weapon.GetPosition. Existing recordings may omit this.
+    #[serde(default)]
+    linecast_offset: Option<UnityVec2>,
     charge_range: Option<UnitySpecialTrigger>,
     proximity: Option<UnitySpecialTrigger>,
 }
@@ -5415,6 +5419,7 @@ impl NativePhysicalScene {
                     }
                     Some(bees_sim::combat_world::NativeSpecialWeaponSpec {
                         weapon_id: source.weapon_id, slot: source.slot, power: source.power, mount_offset: source.mount_offset.into_vec(),
+                        linecast_offset: source.linecast_offset.map(UnityVec2::into_vec),
                         charge_range, proximity,
                     })
                 },
