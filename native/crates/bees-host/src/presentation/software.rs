@@ -2458,6 +2458,12 @@ impl NativeSoftwareRenderer {
                 "Defend the unidentified vessel near Pluto"
             } else if view.campaign_dialogue.is_some_and(|(_, cue)|
                 matches!(cue,
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeDestroyed
+                ))
+            {
+                "First Honeybee destroyed  |  Monitor incoming enemy signals"
+            } else if view.campaign_dialogue.is_some_and(|(_, cue)|
+                matches!(cue,
                     bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeSpotted
                 ))
             {
