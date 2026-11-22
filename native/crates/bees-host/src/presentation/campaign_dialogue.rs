@@ -672,6 +672,7 @@ impl NativeCampaignPreparation {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeCampaignIntermission {
+    ChallengeCompleted,
     PlutoToNeptune,
     NeptuneToTitania,
     TitaniaToUranus { ami_survived: bool },
@@ -778,6 +779,7 @@ const TITANIA_TO_URANUS_END: &[(&str, &str)] = &[
 impl NativeCampaignIntermission {
     pub fn title(self) -> &'static str {
         match self {
+            Self::ChallengeCompleted => "Challenge Mode Completed!",
             Self::PlutoToNeptune => "Pluto to Neptune",
             Self::NeptuneToTitania => "Neptune to Titania",
             Self::TitaniaToUranus { .. } => "Titania to Uranus",
@@ -787,6 +789,10 @@ impl NativeCampaignIntermission {
 
     pub(crate) fn lines(self) -> impl Iterator<Item = (&'static str, &'static str)> {
         let (first, middle, last) = match self {
+            Self::ChallengeCompleted => (
+                &[("Challenge", "Congratulations! You've finished the Challenge Mode!")][..],
+                &[][..], &[][..],
+            ),
             Self::PlutoToNeptune => (PLUTO_TO_NEPTUNE, &[][..], &[][..]),
             Self::NeptuneToTitania => (NEPTUNE_TO_TITANIA, &[][..], &[][..]),
             Self::Preparation(preparation) => (preparation.lines(), &[][..], &[][..]),
