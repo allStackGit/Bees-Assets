@@ -179,6 +179,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             retain(name,reported[name]);
         for(const name of ['training_end_to_end_steps_per_second',
             'training_useful_steps_per_second',
+            'training_shared_async_collector_overlap',
+            'training_shared_async_next_started',
+            'training_shared_policy_lag_updates',
+            'training_async_next_collecting',
             'training_ppo_gradient_foreach_batches',
             'training_ppo_compiled_active','training_ppo_compile_settled',
             'training_ppo_compiled_samples','training_ppo_eager_samples',
