@@ -5775,6 +5775,7 @@ impl CombatWorld {
             obstacle_grid_rebuilds: physics_counts.obstacle_grid_rebuilds,
             ship_grid_cells_indexed: physics_counts.ship_grid_cells_indexed,
             obstacle_grid_cells_indexed: physics_counts.obstacle_grid_cells_indexed,
+            obstacle_contact_queries_merged: physics_counts.obstacle_contact_queries_merged,
             narrowphase_tests: physics_counts.narrowphase_tests,
             trigger_enters: physics_counts.trigger_enters +
                 physics_counts.obstacle_trigger_enters +
