@@ -554,10 +554,19 @@ impl NativeClient {
     /// Collect the authoritative transient sound cues during every
     /// completed simulation tick, including catch-up ticks not rendered.
     /// Never steps physics or queries objects outside the visual viewport.
-    pub fn observe_audio_tick(
+    pub fn observe_playable_tick(
         &mut self, world_id: WorldId, episode_revision: u64, tick: u64,
         combat: &bees_sim::combat_world::CombatWorld,
+        roster: &bees_gameplay::squads::NativeSquadRoster,
+        player_authority: &dyn bees_gameplay::player_inputs::NativePlayerAuthority,
     ) {
+        // Capture visual effects before the next step replaces the
+        // authoritative event slice, even if the window skips this frame.
+        let mut visual_counts = crate::presentation::NativeRenderCounts::default();
+        self.renderer.observe_combat_events(
+            world_id, episode_revision, tick, combat, roster,
+            player_authority, &mut visual_counts,
+        );
         let (width, height) = self.renderer.size();
         let camera = self.renderer.camera;
         let half = Vec2::new(width as f32, height as f32) *

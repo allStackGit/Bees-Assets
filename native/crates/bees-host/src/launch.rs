@@ -10113,9 +10113,10 @@ fn run_battle(
                     let selected_world = client.selected_world();
                     host.run_window_observing(count, delivery, |simulation| {
                         if let Some(world) = simulation.world(selected_world) {
-                            client.observe_audio_tick(
+                            client.observe_playable_tick(
                                 world.id, world.episode_revision(), world.tick(),
-                                &world.state.combat,
+                                &world.state.combat, world.state.events.roster(),
+                                &world.state.metadata,
                             );
                         }
                     })

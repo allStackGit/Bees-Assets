@@ -5,6 +5,9 @@ use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 use std::sync::{Arc, OnceLock};
 use bees_sim::collision::{Aabb, Pose};
+use bees_sim::combat_world::CombatWorld;
+use bees_gameplay::squads::NativeSquadRoster;
+use bees_gameplay::player_inputs::NativePlayerAuthority;
 use bees_sim::geometry::Vec2;
 use bees_sim::physics::ShipShape;
 use bees_sim::simulation::{RandomStream, WorldId};
@@ -961,6 +964,102 @@ impl NativeSoftwareRenderer {
             death_owner: None, death_effects: Vec::new(),
             impact_effects: Vec::new(), healing_crosses: Vec::new(),
             projectile_art_owner: None, projectile_art_ticks: HashMap::new() })
+    }
+
+    /// Capture authored visual cues on each completed physical tick. A
+    /// graphical catch-up window may simulate several ticks without drawing;
+    /// transient ship deaths, hits and healing callbacks must still survive
+    /// until the next render. This only records already committed events and
+    /// never changes gameplay or consumes the simulation's random stream.
+    pub(crate) fn observe_combat_events(
+        &mut self, world: WorldId, revision: u64, tick: u64,
+        combat: &CombatWorld, roster: &NativeSquadRoster,
+        player_authority: &dyn NativePlayerAuthority,
+        counts: &mut NativeRenderCounts,
+    ) {
+        self.begin_death_scene(world, revision);
+        for event in combat.events() {
+            if let bees_sim::combat_world::CombatEvent::CommandHealingCross {
+                beehive_id, source_ship_id,
+            } = event {
+                if let Some(body) = combat.ship_body(*beehive_id) {
+                    let (admitted, dropped) = self.record_healing_cross(
+                        tick, *beehive_id, *source_ship_id, body.motion.position,
+                    );
+                    counts.healing_crosses_observed += usize::from(admitted);
+                    counts.healing_crosses_dropped += usize::from(dropped);
+                }
+                continue;
+            }
+            if let bees_sim::combat_world::CombatEvent::Hit(hit) = event {
+                if hit.delta.applied_damage > 0 {
+                    if let Some(body) = combat.ship_body(hit.target_id) {
+                        let (admitted, dropped) = self.record_combat_impact(
+                            tick, hit.projectile_id, hit.target_id,
+                            body.motion.position, hit.delta.killed,
+                        );
+                        counts.combat_impacts_observed += usize::from(admitted);
+                        counts.combat_impact_visuals_dropped += usize::from(dropped);
+                    }
+                }
+                continue;
+            }
+            // Asteroids, static walls and destructible MapObjects share the
+            // canonical obstacle collider. Its identity lookup is O(1), not
+            // a scan over every obstacle per impact in a large battle.
+            let obstacle_impact = match event {
+                bees_sim::combat_world::CombatEvent::StaticObstacleImpact {
+                    projectile_id, obstacle_id,
+                } | bees_sim::combat_world::CombatEvent::AsteroidDamaged {
+                    projectile_id, obstacle_id, ..
+                } | bees_sim::combat_world::CombatEvent::MapObjectDamaged {
+                    projectile_id, object_id: obstacle_id, ..
+                } => Some((*projectile_id, *obstacle_id)),
+                _ => None,
+            };
+            if let Some((projectile_id, obstacle_id)) = obstacle_impact {
+                if let Some(body) = combat.obstacle_body(obstacle_id) {
+                    let (admitted, dropped) = self.record_combat_impact(
+                        tick, projectile_id, obstacle_id,
+                        body.pose.position, false,
+                    );
+                    counts.combat_impacts_observed += usize::from(admitted);
+                    counts.combat_impact_visuals_dropped += usize::from(dropped);
+                }
+                continue;
+            }
+            // Source Beehive.ClearData/Kill retires its healing sprites even
+            // when it escapes through EndKill rather than combat death.
+            if let bees_sim::combat_world::CombatEvent::ShipDied { victim_id, .. } = event {
+                if combat.ship(*victim_id).is_some_and(|ship|
+                    ship.ship_type == bees_sim::combat_world::BEEHIVE_TYPE) {
+                    self.retire_beehive_healing_crosses(*victim_id);
+                }
+            }
+            // EndKill (WarpGate return or physical extraction) removes the
+            // ship without Source Ship.DropExplosionAnimation or ShipRemains.
+            // Only lethal combat deaths produce the five-second visual.
+            let bees_sim::combat_world::CombatEvent::ShipDied {
+                victim_id, end_kill: false, ..
+            } = event else { continue };
+            let (Some(ship), Some(body)) = (
+                combat.ship(*victim_id), combat.ship_body(*victim_id),
+            ) else { continue };
+            let radius = body.primary_bounds().map(|bounds|
+                (bounds.max.x - bounds.min.x)
+                    .max(bounds.max.y - bounds.min.y) * 0.5
+            ).unwrap_or(3.0);
+            let custom_color = roster.owning_squad(*victim_id)
+                .and_then(|owner|
+                    player_authority.player_squad_color_rgb(owner));
+            let (observed, dropped) = self.record_ship_death(
+                *victim_id, tick, ship.ship_type, ship.side,
+                body.motion.position, body.motion.rotation_degrees,
+                radius, custom_color,
+            );
+            counts.ship_deaths_observed += usize::from(observed);
+            counts.ship_death_visuals_dropped += usize::from(dropped);
+        }
     }
 
     /// A source-scoped gameplay death is rendered from its exact physical
@@ -2472,89 +2571,10 @@ impl NativeSoftwareRenderer {
                 }
             }
         }
-        self.begin_death_scene(view.world_id, view.episode_revision);
-        for event in view.combat.events() {
-            if let bees_sim::combat_world::CombatEvent::CommandHealingCross {
-                beehive_id, source_ship_id,
-            } = event {
-                if let Some(body) = view.combat.ship_body(*beehive_id) {
-                    let (admitted, dropped) = self.record_healing_cross(
-                        view.tick, *beehive_id, *source_ship_id, body.motion.position,
-                    );
-                    counts.healing_crosses_observed += usize::from(admitted);
-                    counts.healing_crosses_dropped += usize::from(dropped);
-                }
-                continue;
-            }
-            if let bees_sim::combat_world::CombatEvent::Hit(hit) = event {
-                if hit.delta.applied_damage > 0 {
-                    if let Some(body) = view.combat.ship_body(hit.target_id) {
-                        let (admitted, dropped) = self.record_combat_impact(
-                            view.tick, hit.projectile_id, hit.target_id,
-                            body.motion.position, hit.delta.killed,
-                        );
-                        counts.combat_impacts_observed += usize::from(admitted);
-                        counts.combat_impact_visuals_dropped += usize::from(dropped);
-                    }
-                }
-                continue;
-            }
-            // Asteroids, static walls and destructible MapObjects share the
-            // canonical obstacle collider. Its identity lookup is O(1), not
-            // a scan over every obstacle per impact in a large battle.
-            let obstacle_impact = match event {
-                bees_sim::combat_world::CombatEvent::StaticObstacleImpact {
-                    projectile_id, obstacle_id,
-                } | bees_sim::combat_world::CombatEvent::AsteroidDamaged {
-                    projectile_id, obstacle_id, ..
-                } | bees_sim::combat_world::CombatEvent::MapObjectDamaged {
-                    projectile_id, object_id: obstacle_id, ..
-                } => Some((*projectile_id, *obstacle_id)),
-                _ => None,
-            };
-            if let Some((projectile_id, obstacle_id)) = obstacle_impact {
-                if let Some(body) = view.combat.obstacle_body(obstacle_id) {
-                    let (admitted, dropped) = self.record_combat_impact(
-                        view.tick, projectile_id, obstacle_id,
-                        body.pose.position, false,
-                    );
-                    counts.combat_impacts_observed += usize::from(admitted);
-                    counts.combat_impact_visuals_dropped += usize::from(dropped);
-                }
-                continue;
-            }
-            // Source Beehive.ClearData/Kill retires its healing sprites even
-            // when it escapes through EndKill rather than combat death.
-            if let bees_sim::combat_world::CombatEvent::ShipDied { victim_id, .. } = event {
-                if view.combat.ship(*victim_id).is_some_and(|ship|
-                    ship.ship_type == bees_sim::combat_world::BEEHIVE_TYPE) {
-                    self.retire_beehive_healing_crosses(*victim_id);
-                }
-            }
-            // EndKill (WarpGate return or physical extraction) removes the
-            // ship without Source Ship.DropExplosionAnimation or ShipRemains.
-            // Only lethal combat deaths produce the five-second visual.
-            let bees_sim::combat_world::CombatEvent::ShipDied {
-                victim_id, end_kill: false, ..
-            } = event else { continue };
-            let (Some(ship), Some(body)) = (
-                view.combat.ship(*victim_id), view.combat.ship_body(*victim_id),
-            ) else { continue };
-            let radius = body.primary_bounds().map(|bounds|
-                (bounds.max.x - bounds.min.x)
-                    .max(bounds.max.y - bounds.min.y) * 0.5
-            ).unwrap_or(3.0);
-            let custom_color = view.roster.owning_squad(*victim_id)
-                .and_then(|owner|
-                    view.player_authority.player_squad_color_rgb(owner));
-            let (observed, dropped) = self.record_ship_death(
-                *victim_id, view.tick, ship.ship_type, ship.side,
-                body.motion.position, body.motion.rotation_degrees,
-                radius, custom_color,
-            );
-            counts.ship_deaths_observed += usize::from(observed);
-            counts.ship_death_visuals_dropped += usize::from(dropped);
-        }
+        self.observe_combat_events(
+            view.world_id, view.episode_revision, view.tick,
+            view.combat, view.roster, view.player_authority, &mut counts,
+        );
         let projectile_art = source_projectile_art();
         counts.projectile_art_types_loaded = projectile_art.map_or(0, |atlas| atlas.loaded);
         let artwork_world = (view.world_id, view.episode_revision);
