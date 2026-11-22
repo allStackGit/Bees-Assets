@@ -73,6 +73,10 @@ pub struct NativePlayerMatchCounts {
     pub ships_lost_by_type: [u64; SHIP_TYPE_COUNT],
     pub ships_returned: u64,
     pub ships_destroyed_by_player: u64,
+    /// Original GameState.PlayerMineralsMined, including mineral cargo
+    /// subsequently lost when a player-controlled miner dies.
+    #[serde(default)]
+    pub player_minerals_mined: u64,
 }
 
 /// The owning native Level constructs this from its *real* FleetShip
@@ -364,6 +368,32 @@ impl NativeFleetInventory {
             return;
         }
         for event in world.events() {
+            if let CombatEvent::CapabilityMined {
+                ship_id, side: mining_side, amount_mined, ..
+            } = event {
+                // Mining command awards are divided among their actual
+                // mining hulls by the shared source Level, preserving the
+                // entire command yield. Only user-controlled mining squads
+                // count toward the player HUD's mined total.
+                if *amount_mined > 0 && world.ship_body(*ship_id)
+                    .is_some_and(|body| body.motion.user_controlled)
+                {
+                    let amount = u64::try_from(*amount_mined)
+                        .expect("positive physical mining yield fits u64");
+                    if self.campaign_player_side == Some(*mining_side) {
+                        self.player_match_counts.player_minerals_mined =
+                            self.player_match_counts.player_minerals_mined
+                                .saturating_add(amount);
+                    }
+                    if self.score_opponent && self.campaign_player_side
+                        .is_some_and(|side| 3 - side == *mining_side)
+                    {
+                        self.opponent_match_counts.player_minerals_mined =
+                            self.opponent_match_counts.player_minerals_mined
+                                .saturating_add(amount);
+                    }
+                }
+            }
             // This one sparse branch implements GameState.PlayerScore.
             // Do not spend career-stat HashMap lookups in missions which
             // only request campaign score and not individual histories.
