@@ -48,20 +48,23 @@ const AGENT_ONLY=new Set([
     'experiment_hub_tinybrains_persistent_adapter.js',
 ]);
 function workerActivationImpact(changes) {
-    const impact={coordinator:false,agent:false};
+    const impact={coordinator:false,agent:false,worker:false};
     for(const file of changes) {
         if(FRONTEND_PATHS.has(file)||/\.(?:md|meta)$/.test(file)||
             /(?:_test|_tests)\.(?:js|py)$/.test(file))continue;
-        // Python entrypoints are executed by native jobs and independent
-        // evaluators, not imported by the long-lived Node coordinator.
-        // Still ship them in worker releases for other enrolled machines.
+        // Python entrypoints are read by spawned native jobs and evaluators,
+        // not imported by the long-lived coordinator or Node agent. Ship the
+        // new bytes to remote workers without restarting either process.
         if(file.startsWith('Training/')&&file.endsWith('.py')) {
-            impact.agent=true;
+            impact.worker=true;
             continue;
         }
         const name=path.basename(file);
         if(!AGENT_ONLY.has(name))impact.coordinator=true;
-        if(!COORDINATOR_ONLY.has(name))impact.agent=true;
+        if(!COORDINATOR_ONLY.has(name)) {
+            impact.agent=true;
+            impact.worker=true;
+        }
     }
     return impact;
 }
@@ -229,7 +232,7 @@ class ReleaseStore {
             const baseline=prior?.source_commit||localVersion;
             if(baseline!==sha) {
                 const changes=await workerChangedPaths(repo,baseline,sha);
-                if(!workerActivationImpact(changes).agent) {
+                if(!workerActivationImpact(changes).worker) {
                     if(prior)return;
                     // On the first publisher cycle, still provide a valid
                     // baseline worker release for newly enrolled machines.
@@ -308,7 +311,11 @@ class ReleaseStore {
                     const paths=await workerChangedPaths(this.sources.worker.path,
                         worker.source_commit,this.bootVersions.worker);
                     this.workerReleaseActivationReady=
-                        !workerActivationImpact(paths).agent;
+                        !workerActivationImpact(paths).agent&&
+                        // Never offer a staged worker-only source to remote
+                        // agents before the local checkout has advanced.
+                        (this.localVersions.worker===this.workerSourceCommit||
+                            worker.source_commit===this.bootVersions.worker);
                 }catch(error) {
                     this.workerReleaseActivationReady=false;
                     this.failures.worker='Worker activation check: '+
