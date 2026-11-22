@@ -562,10 +562,9 @@ impl NativeClient {
     ) {
         // Capture visual effects before the next step replaces the
         // authoritative event slice, even if the window skips this frame.
-        let mut visual_counts = crate::presentation::NativeRenderCounts::default();
-        self.renderer.observe_combat_events(
+        self.renderer.capture_unrendered_combat_events(
             world_id, episode_revision, tick, combat, roster,
-            player_authority, &mut visual_counts,
+            player_authority,
         );
         let (width, height) = self.renderer.size();
         let camera = self.renderer.camera;

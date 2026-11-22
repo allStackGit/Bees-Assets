@@ -263,6 +263,9 @@ pub struct NativeSoftwareRenderer {
     /// Optional source-identified death presentation, bounded independently
     /// of the underlying CombatWorld's entity and training lifetimes.
     death_owner: Option<(WorldId, u64)>,
+    /// Source-event admission counters accumulated during unrendered
+    /// simulation ticks and transferred to the next visible frame.
+    pending_visual_event_counts: NativeRenderCounts,
     death_effects: Vec<ShipDeathVisual>,
     impact_effects: Vec<CombatImpactVisual>,
     healing_crosses: Vec<HealingCrossVisual>,
@@ -961,7 +964,9 @@ impl NativeSoftwareRenderer {
             attack_on_sight_selection_all: false,
             hovered_tactical_action: None,
             debris_frame: None, obstacle_debris: Vec::new(),
-            death_owner: None, death_effects: Vec::new(),
+            death_owner: None,
+            pending_visual_event_counts: NativeRenderCounts::default(),
+            death_effects: Vec::new(),
             impact_effects: Vec::new(), healing_crosses: Vec::new(),
             projectile_art_owner: None, projectile_art_ticks: HashMap::new() })
     }
@@ -1060,6 +1065,22 @@ impl NativeSoftwareRenderer {
             counts.ship_deaths_observed += usize::from(observed);
             counts.ship_death_visuals_dropped += usize::from(dropped);
         }
+    }
+
+    /// Preserve both the transient visual effects and their actual measured
+    /// admissions when the client simulates without drawing this tick.
+    pub(crate) fn capture_unrendered_combat_events(
+        &mut self, world: WorldId, revision: u64, tick: u64,
+        combat: &CombatWorld, roster: &NativeSquadRoster,
+        player_authority: &dyn NativePlayerAuthority,
+    ) {
+        if self.death_owner != Some((world, revision)) {
+            self.pending_visual_event_counts = NativeRenderCounts::default();
+        }
+        let mut counts = std::mem::take(&mut self.pending_visual_event_counts);
+        self.observe_combat_events(world, revision, tick, combat, roster,
+            player_authority, &mut counts);
+        self.pending_visual_event_counts = counts;
     }
 
     /// A source-scoped gameplay death is rendered from its exact physical
@@ -2208,7 +2229,10 @@ impl NativeSoftwareRenderer {
         self.sprite_raster_candidate_pixels = 0;
         self.sprite_raster_opaque_pixels = 0;
         self.sprite_raster_blended_pixels = 0;
-        let mut counts = NativeRenderCounts::default();
+        if self.death_owner != Some((view.world_id, view.episode_revision)) {
+            self.pending_visual_event_counts = NativeRenderCounts::default();
+        }
+        let mut counts = std::mem::take(&mut self.pending_visual_event_counts);
         self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
             half_extents: (bounds.max - bounds.min) * 0.5 },
             Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x33455e);
