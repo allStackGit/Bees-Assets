@@ -217,6 +217,37 @@ def pack(images, directory, magic, animated, palettes=None):
     return data, len(entries)
 
 
+def pack_carrier_decks():
+    """Exact original thirteen carrier-deck overlays, from a 7x2 PNG.
+
+    Source Carrier.SetColor stretches each 96x112 deck to the living carrier
+    sprite bounds. Do that once, during asset conversion, rather than adding
+    a second resampling pass to every rendered native combat frame.
+    """
+    ppu, carrier_frames = source_frames(
+        ROOT / "Sprites/Ships/carrier.png", False,
+    )
+    if len(carrier_frames) != 1:
+        raise ValueError("native carrier base must contain one source sprite")
+    base_size = carrier_frames[0].size
+    sheet_path = ROOT / "Sprites/Ships/Parts/carrier_alts_deck.png"
+    with Image.open(sheet_path) as image:
+        sheet = image.convert("RGBA")
+    if sheet.size != (672, 224):
+        raise ValueError(f"carrier deck sheet must be 672x224: {sheet_path}")
+    data = bytearray(struct.pack(
+        "<4sHHHH", b"BCD1", 13, ppu, base_size[0], base_size[1],
+    ))
+    for index in range(13):
+        x = (index % 7) * 96
+        y = (index // 7) * 112
+        frame = sheet.crop((x, y, x + 96, y + 112))
+        if frame.size != base_size:
+            frame = frame.resize(base_size, Image.Resampling.BILINEAR)
+        packed_pixels(data, frame)
+    return data
+
+
 def pack_ship_animations(palettes):
     """Portable BSA1 animation sheets with genuine source recolor masks."""
     data = bytearray(struct.pack("<4sH", b"BSA1", len(SHIP_ANIMATIONS)))
@@ -298,6 +329,8 @@ def main():
                         default=ROOT / "native/assets/ship-animations.rgba")
     parser.add_argument("--remains-output", type=Path,
                         default=ROOT / "native/assets/ship-remains.rgba")
+    parser.add_argument("--deck-output", type=Path,
+                        default=ROOT / "native/assets/carrier-decks.rgba")
     args = parser.parse_args()
     palettes = source_ship_color_palettes()
     ships, ship_count = pack(
@@ -306,6 +339,7 @@ def main():
     )
     animations, animation_count = pack_ship_animations(palettes)
     remains, remains_count = pack_ship_remains(palettes)
+    decks = pack_carrier_decks()
     projectiles, projectile_count = pack(
         PROJECTILE_IMAGES, ROOT / "Sprites/Projectiles", b"BPS1", True,
     )
@@ -317,6 +351,8 @@ def main():
     asteroids_path = write_atomic(args.asteroid_output, asteroids)
     animations_path = write_atomic(args.animation_output, animations)
     remains_path = write_atomic(args.remains_output, remains)
+    decks_path = write_atomic(args.deck_output, decks)
+    print(f"Carrier deck overlays: 13 variants, {len(decks)} bytes at {decks_path}")
     print(f"Ship remains: {remains_count} classes, "
           f"{len(remains)} bytes at {remains_path}")
     print(f"Ship animations: {animation_count} clips, "
