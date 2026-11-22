@@ -251,6 +251,9 @@ pub struct NativeArchivedBattleReceipt {
     /// Observed original campaign-score delta from the committed World.
     /// Older runs omit it; never estimate score from survivor counts.
     pub campaign_score_delta: Option<i64>,
+    pub scored_player_side: Option<i32>,
+    pub player_score: Option<i64>,
+    pub player_match_counts: Option<(u64, u64, u64)>,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -856,6 +859,11 @@ impl NativeRemotePlay {
                                 }
                                 let mut result = receipt.battle_result.clone();
                                 result["viewer_side"] = json!(side);
+                                Self::attach_authorized_match_score(
+                                    &mut result, side,
+                                    receipt.scored_player_side.zip(receipt.player_score),
+                                    receipt.player_match_counts,
+                                );
                                 let _ = peer.enqueue(&result);
                                 self.measurements.archived_terminal_receipts_sent += 1;
                                 peer.archived_terminal = true;
@@ -1308,6 +1316,23 @@ impl NativeRemotePlay {
         }))
     }
 
+    fn attach_authorized_match_score(
+        receipt: &mut Value, viewer_side: i32,
+        score: Option<(i32, i64)>, counts: Option<(u64, u64, u64)>,
+    ) {
+        let Some((owner, value)) = score.filter(|(side, _)| *side == viewer_side)
+            else { return };
+        debug_assert_eq!(owner, viewer_side);
+        receipt["player_score"] = json!(value);
+        if let Some((lost, returned, kills)) = counts {
+            receipt["player_match_counts"] = json!({
+                "ships_lost": lost,
+                "ships_returned": returned,
+                "ships_destroyed_by_player": kills,
+            });
+        }
+    }
+
     /// Deliver the Level's existing terminal result independently of lossy
     /// world snapshots. This is called only AFTER successful finalization
     /// and the durable summary commit, alongside the campaign receipt.
@@ -1319,6 +1344,11 @@ impl NativeRemotePlay {
             !peer.closed && peer.side.is_some()
         ) {
             receipt["viewer_side"] = json!(peer.side);
+            Self::attach_authorized_match_score(
+                &mut receipt,
+                peer.side.expect("authenticated terminal recipient"),
+                view.campaign_score, view.player_match_counts,
+            );
             let _ = peer.enqueue(&receipt);
             if !peer.closed {
                 self.measurements.battle_result_receipts += 1;
