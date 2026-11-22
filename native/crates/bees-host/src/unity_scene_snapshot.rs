@@ -1233,6 +1233,32 @@ struct NativeFleetTemplate {
     formation: NativeSourceFormation,
 }
 
+/// An authored native mission's gameplay contracts, not another Level
+/// implementation. Every objective is armed in the canonical terminal,
+/// every squad order uses the canonical command director, and all arrivals
+/// pass through the existing reinforcement scheduler. Legacy Unity source
+/// snapshots do not carry this section and remain externally configured.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeSceneMission {
+    #[serde(default)]
+    extraction: Option<bees_sim::combat_world::ExtractionZone>,
+    #[serde(default)]
+    survival: Option<bees_sim::episode_terminal::SurvivalObjective>,
+    #[serde(default)]
+    demolition: Option<bees_sim::episode_terminal::DemolitionObjective>,
+    #[serde(default)]
+    escort: Option<bees_sim::episode_terminal::EscortObjective>,
+    #[serde(default)]
+    target_ship: Option<bees_sim::episode_terminal::TargetShipObjective>,
+    #[serde(default)]
+    campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
+    #[serde(default)]
+    reinforcements: Vec<crate::reinforcements::NativeReinforcementPlan>,
+    #[serde(default)]
+    scripted_queues: Vec<crate::policy_only_metadata::NativeScriptedQueuePlan>,
+}
+
 /// A source-authored INITIAL physical scene, ready to compose with actual
 /// squad identities, full RL metadata, episode configuration and model slots.
 /// Records are owned, but shared immutable prefab geometry stays in the
@@ -1282,6 +1308,9 @@ pub struct NativePhysicalScene {
     pub has_obstacles: bool,
     pub command_settings: bees_gameplay::commands::HiveMindCommandSettings,
     pub entities: Vec<NativeAuthoredEntity>,
+    // Present only when a native-game scene explicitly owns its mission
+    // behavior. Legacy snapshots have no implicit/guessed mission scripts.
+    native_mission: Option<NativeSceneMission>,
     // Native authored reserve classes: complete physical source prototypes,
     // deliberately excluded from the gameplay and training World.
     fleet_templates: Vec<NativeFleetTemplate>,
@@ -3542,10 +3571,47 @@ impl NativePhysicalScene {
     /// producers must use a full gameplay adapter, not silently stop moving.
     pub fn into_exported_policy_only_level<A>(
         mut self,
-        setup: NativeExportedPolicyLevelSetup<A>,
+        mut setup: NativeExportedPolicyLevelSetup<A>,
     ) -> Result<NativeAuthoredLevel<NativePolicyOnlyMetadata, A>,
         NativePolicyOnlyLevelError>
     {
+        // Native scene files can own the complete campaign/wave/script
+        // contract instead of needing a Unity-export launch wrapper.
+        // An external setup remains valid for legacy scenes, but a
+        // duplicated definition cannot silently replace source gameplay.
+        if let Some(mission) = self.native_mission.take() {
+            if (mission.extraction.is_some() && setup.extraction.is_some()) ||
+                (mission.survival.is_some() && setup.survival.is_some()) ||
+                (mission.demolition.is_some() && setup.demolition.is_some()) ||
+                (mission.escort.is_some() && setup.escort.is_some()) ||
+                (mission.target_ship.is_some() && setup.target_ship.is_some()) ||
+                (mission.campaign_dialogue.is_some() && setup.campaign_dialogue.is_some())
+            {
+                return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue);
+            }
+            if !mission.reinforcements.is_empty() {
+                if !setup.reinforcements.is_empty() {
+                    return Err(NativePolicyOnlyLevelError::InvalidReinforcements(
+                        "native scene and launch setup both define reinforcement waves",
+                    ));
+                }
+                setup.reinforcements = mission.reinforcements;
+            }
+            if !mission.scripted_queues.is_empty() {
+                if !setup.scripted_queues.is_empty() {
+                    return Err(NativePolicyOnlyLevelError::InvalidScriptedCommands(
+                        "native scene and launch setup both define scripted commands",
+                    ));
+                }
+                setup.scripted_queues = mission.scripted_queues;
+            }
+            setup.extraction = setup.extraction.or(mission.extraction);
+            setup.survival = setup.survival.or(mission.survival);
+            setup.demolition = setup.demolition.or(mission.demolition);
+            setup.escort = setup.escort.or(mission.escort);
+            setup.target_ship = setup.target_ship.or(mission.target_ship);
+            setup.campaign_dialogue = setup.campaign_dialogue.or(mission.campaign_dialogue);
+        }
         for &ship_id in &self.active_policy_ship_ids {
             if !self.source_policy_bindings.contains_key(&ship_id) {
                 return Err(NativePolicyOnlyLevelError::InvalidControllerBinding(
@@ -5446,6 +5512,7 @@ impl NativePhysicalScene {
         let fleet = NativeFleetInventory::from_source(fleet_values)
             .map_err(NativeSnapshotError::Fleet)?;
         Ok(Self {
+            native_mission: None,
             bee_side: raw.bee_side,
             human_side: raw.human_side,
             source_frame_count: raw.source_frame_count,
