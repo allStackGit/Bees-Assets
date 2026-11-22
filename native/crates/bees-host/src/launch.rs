@@ -3667,7 +3667,7 @@ fn original_fleet_source_squad(
     progress: &battle_catalog::CampaignProgress<'_>,
     root: &Path, side: i32, fleet_ship_id: i64,
     require_reassignment: bool,
-) -> Result<Option<i64>, Box<dyn Error>> {
+) -> Result<Option<(i64, u8)>, Box<dyn Error>> {
     let has_upcoming = catalog.battles.iter().filter_map(|battle|
         battle.mission.as_ref()).any(|mission|
         mission.player_side == side && !progress.completed(&mission.id));
@@ -3709,7 +3709,7 @@ fn original_fleet_source_squad(
             ));
         }
     }
-    Ok(source_identity.map(|(squad, _)| squad))
+    Ok(source_identity)
 }
 
 fn run_reassign_authored_ship(
@@ -3738,14 +3738,16 @@ fn run_reassign_authored_ship(
     }
     let root = catalog_path.parent().ok_or_else(||
         invalid("missing campaign catalog directory"))?;
-    if progress.authored_current_squad(fleet_ship_id).is_none() {
-        // First ownership claim must match an actual playable source scene.
-        if original_fleet_source_squad(
+    let source_ship_type = if progress.authored_current_squad(fleet_ship_id).is_none() {
+        // The first claim must pin its real source class and squad.
+        let (owned_squad, kind) = original_fleet_source_squad(
             &catalog, &progress, root, side, fleet_ship_id, true,
-        )? != Some(from_squad) {
+        )?.ok_or_else(|| invalid("original FleetShip is absent from the active authored scene"))?;
+        if owned_squad != from_squad {
             return Err(invalid("original FleetShip source squad differs from active authored mission").into());
         }
-    }
+        Some(kind)
+    } else { None };
     let mut projected = progress.authored_roster_for_side(side);
     if let Some(row) = projected.iter_mut().find(|row| row.0 == fleet_ship_id) {
         row.2 = to_squad;
@@ -3762,6 +3764,7 @@ fn run_reassign_authored_ship(
     )?;
     catalog.reassign_authored_ship(
         &progress, output_root, side, fleet_ship_id, from_squad, to_squad,
+        source_ship_type,
     )?;
     println!("{}", json!({
         "kind": "native_campaign_original_ship_reassigned",
@@ -3795,14 +3798,14 @@ fn run_name_fleet_ship(
     if !progress.nameable_fleet_ships().contains(&(side, fleet_ship_id)) {
         let root = catalog_path.parent()
             .ok_or_else(|| invalid("missing campaign catalog directory"))?;
-        let source_squad = original_fleet_source_squad(
+        let (source_squad, ship_type) = original_fleet_source_squad(
             &catalog, &progress, root, side, fleet_ship_id, false,
         )?.ok_or_else(|| invalid("FleetShip is not owned by an authored player squad"))?;
         // Do not mint an independent identity for a ship outside the
         // original playable scene. The same career ledger owns assignments
         // and names across menu, CLI and campaign restarts.
         catalog.register_authored_ship(
-            &progress, output_root, side, fleet_ship_id, source_squad,
+            &progress, output_root, side, fleet_ship_id, source_squad, ship_type,
         )?;
         let registered = catalog.load_progress(output_root)?;
         catalog.name_fleet_ship(&registered, output_root, side, fleet_ship_id, name)?;
@@ -4049,7 +4052,7 @@ fn run_retire_saved_squad(
     }
     for id in &authored_to_reserve {
         catalog.reassign_authored_ship(
-            &progress, output_root, side, *id, saved_squad_id, 0,
+            &progress, output_root, side, *id, saved_squad_id, 0, None,
         )?;
     }
     // Reconstruct the committed receipts under the same exclusive lease.
