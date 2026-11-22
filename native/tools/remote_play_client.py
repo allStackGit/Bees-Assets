@@ -131,6 +131,7 @@ class RemoteConsole:
         self.last_campaign_receipt = None
         self.last_battle_receipt = None
         self.briefing_acknowledgments = {}
+        self.seen_ship_classes = {}
 
     def receive(self):
         try:
@@ -154,6 +155,7 @@ class RemoteConsole:
                                 self.held_scope = None
                                 self.held_begin_request = None
                                 self.weapon_overlay_enabled = False
+                                self.seen_ship_classes.clear()
                                 # A first world snapshot may arrive after
                                 # the reliably queued campaign commit. Never
                                 # discard that receipt on initial admission.
@@ -177,6 +179,16 @@ class RemoteConsole:
                                     self.last_battle_receipt = None
                                 self.briefing_acknowledgments.clear()
                                 self.selected_scope = episode
+                            # Skirmish Codex knowledge is local presentation:
+                            # retain only classes already revealed by host
+                            # fog filtering in THIS World episode.
+                            if message.get("campaign_codex_gate") is not True:
+                                for entry in message.get("visible_ship_classes") or []:
+                                    kind = entry.get("ship_type")
+                                    name = entry.get("name")
+                                    if (type(kind) is int and 0 <= kind < 24 and
+                                            isinstance(name, str) and name):
+                                        self.seen_ship_classes[kind] = name
                             self.latest = message
                         dialogue = message.get("campaign_dialogue")
                         cue = ((message.get("world_id"), message.get("episode_revision"),
@@ -467,6 +479,17 @@ class RemoteConsole:
             return eligible[0 if forward else -1]
         return eligible[(index + (1 if forward else -1)) % len(eligible)]
 
+    def codex_entries(self, state):
+        if self.spectator or state is None:
+            return None
+        if state.get("campaign_codex_gate") is True:
+            return state.get("campaign_codex_entries")
+        if state.get("visible_ship_classes") is None:
+            return None
+        with self.lock:
+            return [{"ship_type": kind, "name": name} for kind, name
+                    in sorted(self.seen_ship_classes.items())]
+
     def selected_owners(self, state):
         squads = {row["owner"]["squad_id"]: row["owner"]
                   for row in state["squads"] if row["controllable"]
@@ -703,14 +726,13 @@ class RemoteConsole:
         if cmd == "codex":
             if argv:
                 raise ValueError("codex takes no arguments")
-            if state.get("campaign_codex_gate") is not True:
-                print("Campaign Codex unavailable to this player side")
-                return
-            entries = state.get("campaign_codex_entries")
+            entries = self.codex_entries(state)
             if entries is None:
-                print("This native host does not expose named Codex entries")
+                print("Fleet Codex unavailable to this player side or native host")
                 return
-            print(f"Campaign Codex — {len(entries)} unlocked ship classes")
+            label = ("unlocked" if state.get("campaign_codex_gate") is True
+                     else "encountered")
+            print(f"Fleet Codex — {len(entries)} {label} ship classes")
             for entry in entries:
                 print(f"  {entry['ship_type']:>2}  {entry['name']}")
             return
