@@ -547,8 +547,18 @@ async function setupMini(hub,sourceJobId) {
         installEvaluatorUnits(defs[MINI_ID],o.home,{repairPartial:true});
         await systemctl(['daemon-reload']);
         await systemctl(['start',unit.timer]);
+        // Adding a new trusted opponent changes the evaluator method hash.
+        // Reapprove existing Nano/Micro suites at their same seeds without
+        // rewriting their historic definitions or interrupting training.
+        const pending=[];
+        for(const id of ['nano','micro']) {
+            try {await refreshSuite(hub,id);}
+            catch(error){pending.push(id+': '+String(error.message||error).slice(0,100));}
+        }
         return {message:'Frozen Batch-128 Mini opponent approved from job '+
             source.id+' (update '+source.updates+'); 100 balanced-seat games per checkpoint. '+
+            (pending.length?'Refresh remaining baseline suites when idle: '+
+                pending.join('; ')+'. ':'Nano/Micro runtime approvals refreshed. ')+
             'Restart the local agent to advertise the new suite.'};
     }finally {
         if(prepared)fs.rmSync(prepared,{recursive:true,force:true});
