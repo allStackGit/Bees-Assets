@@ -30,7 +30,7 @@ pub(super) const GAME_ID: &str = "fleet-skirmish";
 
 #[derive(Clone, Copy)]
 enum Terrain {
-    Open, Original, Cover, DenseCover, AsteroidField, AsteroidStorm,
+    Open, Original, Cover, DenseCover, RandomCover, AsteroidField, AsteroidStorm,
 }
 
 #[derive(Clone, Copy)]
@@ -448,7 +448,7 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
     };
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
-    let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
+    let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
@@ -560,7 +560,7 @@ pub(super) fn choose_multiplayer(
     } else { None };
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
-    let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
+    let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
@@ -609,7 +609,7 @@ pub(super) fn choose_multiplayer(
 pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
-    let Some((arena_size, lethal_borders)) = choose_arena_size()? else { return Ok(None); };
+    let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
@@ -969,7 +969,7 @@ fn choose_objective_side() -> Result<Option<i32>, Box<dyn Error>> {
 /// The source 320x200 map remains the default for existing games and
 /// benchmarks. Larger arenas use the exact source MapBorder dimensions,
 /// not cosmetic sprite scaling or different training-only collision rules.
-fn choose_arena_size() -> Result<Option<(Option<u32>, bool)>, Box<dyn Error>> {
+fn choose_arena_size(terrain: Terrain) -> Result<Option<(Option<u32>, bool)>, Box<dyn Error>> {
     let choices = [
         ("Classic map", "  [Original 320 x 200]"),
         ("Medium arena", "  [512 x 512]"),
@@ -978,10 +978,13 @@ fn choose_arena_size() -> Result<Option<(Option<u32>, bool)>, Box<dyn Error>> {
         ("Hazard arena", "  [512 x 512, lethal border contacts]"),
         ("Large hazard arena", "  [1024 x 1024, lethal border contacts]"),
     ];
-    let rows = choices.iter().map(|(title, status)| BattleMenuRow {
-        title, status, unlocked: true,
+    let rows = choices.iter().enumerate().map(|(index,(title,status))| BattleMenuRow {
+        title, status,
+        // Original random obstacle dimensions can only fit maps with
+        // at least 150 units of clear half-map margin.
+        unlocked: index != 0 || !matches!(terrain,Terrain::RandomCover),
     }).collect::<Vec<_>>();
-    let mut selected = 0;
+    let mut selected = usize::from(matches!(terrain,Terrain::RandomCover));
     Ok(select_library(&rows, &mut selected, false)?.map(|index| {
         match index {
             0 => (None, false),
@@ -1000,6 +1003,7 @@ fn choose_terrain() -> Result<Option<Terrain>, Box<dyn Error>> {
         ("Classic duel", "  [Original minor cover]"),
         ("Flanking cover", "  [Two physical obstacles]"),
         ("Dense cover", "  [Four physical obstacles]"),
+        ("Random original cover", "  [1-10 physical source-sized box obstacles]"),
         ("Moving asteroid field", "  [12 real source CollisionAsteroids]"),
         ("Asteroid storm", "  [48 real source CollisionAsteroids and fragments]"),
     ];
@@ -1013,7 +1017,8 @@ fn choose_terrain() -> Result<Option<Terrain>, Box<dyn Error>> {
             1 => Terrain::Original,
             2 => Terrain::Cover,
             3 => Terrain::DenseCover,
-            4 => Terrain::AsteroidField,
+            4 => Terrain::RandomCover,
+            5 => Terrain::AsteroidField,
             _ => Terrain::AsteroidStorm,
         }
     ))
@@ -1176,6 +1181,65 @@ fn place_free_carrier_child(
         invalid("no unobstructed source-sized space for the Carrier's free deck"))?;
     occupied.push((position[0], position[1], half_x, half_y));
     Ok(position)
+}
+
+/// Source Level.GenerateRandomObstacles: choose 1..10 source StaticObstacle
+/// rectangles with 20..169 x 20..69 units (random orientation), within
+/// the original 150-unit inset. This is source *authoring*, not a second
+/// gameplay RNG: once authored, the immutable scene contains every exact
+/// collider, so local clients, dedicated hosts, replay and native PPO
+/// execute identical physical geometry on Linux and Windows.
+fn original_random_cover(size: u32)
+    -> Result<Vec<NativePlacedStaticBox>, Box<dyn Error>>
+{
+    if size < 512 || size > 4000 {
+        return Err(invalid(
+            "original random cover requires a native arena at least 512 units wide",
+        ).into());
+    }
+    let mut entropy=[0_u8; 8];
+    getrandom::getrandom(&mut entropy).map_err(|_|
+        invalid("random obstacle authoring requires OS entropy"))?;
+    let mut rng=u64::from_le_bytes(entropy);
+    if rng==0 {rng=0x9e37_79b9_7f4a_7c15;}
+    // Only offline setup draws from this stream. The actual World's RNG,
+    // projectile damage, reinforcement schedule and learner are unaffected.
+    let mut draw=|exclusive:u64| -> u64 {
+        rng^=rng<<13;
+        rng^=rng>>7;
+        rng^=rng<<17;
+        rng%exclusive
+    };
+    let count=1+draw(10);
+    let mut result=Vec::with_capacity(count as usize);
+    for index in 0..count {
+        let wide=draw(2)==0;
+        let (width,height)=if wide {
+            (20+draw(150),20+draw(50))
+        } else {(20+draw(50),20+draw(150))};
+        // Unity subtracts half of the obstacle's Y scale from the original
+        // MaxY-150 spawn distance before choosing its random coordinate.
+        let margin=size as f32*0.5-150.0;
+        let x_span=margin;
+        let y_span=(margin-height as f32*0.5).max(0.0);
+        let fx=draw(1_000_000) as f32/1_000_000.0*2.0-1.0;
+        let fy=draw(1_000_000) as f32/1_000_000.0*2.0-1.0;
+        let hw=width as f32*0.5;
+        let hh=height as f32*0.5;
+        result.push(NativePlacedStaticBox {
+            entity_id:20_201+index as i64,
+            prefab_name:"Box".to_owned(),
+            position:[fx*x_span,fy*y_span],
+            rotation_degrees:0.0,
+            // Use the full original StaticObstacle scale, not the fixed
+            // 25x source Box prefab. The same native collider installer
+            // reads these local corners for every execution mode.
+            local_corners:Some([
+                [-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh],
+            ]),
+        });
+    }
+    Ok(result)
 }
 
 fn cover_box(id: i64, position: [f32; 2]) -> NativePlacedStaticBox {
@@ -2042,7 +2106,8 @@ pub(super) fn archive(
     }
     let cover = match selected.terrain {
         Terrain::Open | Terrain::Original |
-        Terrain::AsteroidField | Terrain::AsteroidStorm => &[][..],
+        Terrain::AsteroidField | Terrain::AsteroidStorm |
+        Terrain::RandomCover => &[][..],
         // Keep all cover in the map's central no-spawn lane. Native
         // 64- and 128-ship fleets occupy x<=-39 and x>=39; prefab
         // half-width is 25 and never overlaps a fresh ship by design.
@@ -2062,6 +2127,14 @@ pub(super) fn archive(
     cloned.add_static_boxes.extend(cover.iter().enumerate().map(|(index, &position)|
         cover_box(20_001 + index as i64, position)
     ));
+    if matches!(selected.terrain,Terrain::RandomCover) {
+        // The archived, source-sized rectangles become ordinary static
+        // Collider2D geometry; no per-tick obstacle generation or separate
+        // RL/graphics implementation is introduced.
+        let size=selected.arena_size.ok_or_else(||
+            invalid("random original obstacles require a sufficiently large map"))?;
+        cloned.add_static_boxes.extend(original_random_cover(size)?);
+    }
     if let Some(size) = selected.arena_size {
         apply_native_arena(&mut scene, &mut run, &mut cloned, size)?;
         // Move the original physical fleet and free Carrier complements
@@ -2382,6 +2455,7 @@ pub(super) fn archive(
         Terrain::Original => "original",
         Terrain::Cover => "cover",
         Terrain::DenseCover => "dense-cover",
+        Terrain::RandomCover => "random-cover",
         Terrain::AsteroidField => "asteroid-field",
         Terrain::AsteroidStorm => "asteroid-storm",
     };
