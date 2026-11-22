@@ -3372,6 +3372,7 @@ impl NativePhysicalScene {
                         zone.center.unity_equal(Vec2::new(-32.0, 55.0)) &&
                         zone.half_extents.unity_equal(Vec2::new(20.0, 20.0)) &&
                         (zone.activation_radius - 50.0).abs() <= 0.001 &&
+                        zone.activation_from_center &&
                         zone.layer == 20) ||
                     !self.entities.iter().any(|entity| matches!(entity,
                         NativeAuthoredEntity::MapObject { object, .. }

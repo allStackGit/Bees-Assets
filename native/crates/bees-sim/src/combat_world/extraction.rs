@@ -9,6 +9,11 @@ pub struct ExtractionZone {
     pub half_extents: Vec2,
     pub activation_radius: f32,
     pub layer: u8,
+    /// Which authored trigger activates the exit. Titania I checks
+    /// player distance from the planetary center (not the zone edge).
+    /// Ordinary extraction uses distance to its physical rectangle.
+    #[serde(default)]
+    pub activation_from_center: bool,
     /// Source Uranus II: the final surviving ship may withdraw voluntarily.
     /// Withdrawal preserves extracted FleetShips but awards the mission to
     /// the opponent; ordinary extraction remains a player victory.
@@ -166,11 +171,15 @@ impl CombatWorld {
             let activated = self.ships.iter().zip(self.physics.ships()).any(|(ship, body)| {
                 if !body.active || ship.side != zone.player_side { return false; }
                 let point = body.motion.position;
-                let nearest = Vec2::new(
-                    point.x.clamp(bounds.min.x, bounds.max.x),
-                    point.y.clamp(bounds.min.y, bounds.max.y),
-                );
-                (point - nearest).length_squared() < radius_squared
+                if zone.activation_from_center {
+                    (point - zone.center).length_squared() < radius_squared
+                } else {
+                    let nearest = Vec2::new(
+                        point.x.clamp(bounds.min.x, bounds.max.x),
+                        point.y.clamp(bounds.min.y, bounds.max.y),
+                    );
+                    (point - nearest).length_squared() < radius_squared
+                }
             });
             if activated {
                 self.extraction.as_mut().expect("configured zone").active = true;

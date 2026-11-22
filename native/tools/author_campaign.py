@@ -1129,6 +1129,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     not same_point(zone.get("center"), [-32, 55]) or
                     not same_point(zone.get("half_extents"), [20, 20]) or
                     zone.get("activation_radius") != 50 or
+                    zone.get("activation_from_center") is not True or
                     zone.get("layer") != 20 or
                     not tanks or len(set(links)) != len(links) or
                     any(type(link) is not int or link not in obstacles

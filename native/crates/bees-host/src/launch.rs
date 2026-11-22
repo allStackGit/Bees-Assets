@@ -223,6 +223,8 @@ struct ExtractionConfig {
     activation_radius: f32,
     layer: u8,
     #[serde(default)]
+    activation_from_center: bool,
+    #[serde(default)]
     retreat_on_exit: bool,
 }
 
@@ -753,6 +755,7 @@ fn make_setup(
         extraction: level.extraction.as_ref().map(|zone| bees_sim::combat_world::ExtractionZone {
             player_side: zone.player_side, center: vec2(zone.center), half_extents: vec2(zone.half_extents),
             activation_radius: zone.activation_radius, layer: zone.layer,
+            activation_from_center: zone.activation_from_center,
             retreat_on_exit: zone.retreat_on_exit,
         }),
         survival: level.survival.map(|objective| bees_sim::episode_terminal::SurvivalObjective {
