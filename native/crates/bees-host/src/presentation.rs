@@ -185,6 +185,7 @@ pub struct NativeRenderWorldView<'a> {
     pub rescue_barges: Option<[i64; 3]>,
     pub survival: Option<bees_sim::episode_terminal::SurvivalStatus>,
     pub demolition: Option<bees_sim::episode_terminal::DemolitionStatus>,
+    pub target_ship: Option<bees_sim::episode_terminal::TargetShipObjective>,
     pub escort: Option<bees_sim::episode_terminal::EscortStatus>,
     /// Status only: these are read from the Level's source wave queue.
     /// The renderer never schedules, mutates, or owns reinforcements.
