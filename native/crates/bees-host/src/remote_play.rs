@@ -697,6 +697,10 @@ impl NativeRemotePlay {
     pub fn install_archived_receipts(
         &mut self, receipts: Vec<NativeArchivedBattleReceipt>,
     ) -> io::Result<()> {
+        // Validate the entire archive admission batch before publishing
+        // any receipt. A damaged later session must not leave an incomplete
+        // subset available to authenticated peers or skew recovery counters.
+        let mut admitted = HashMap::with_capacity(receipts.len());
         for receipt in receipts {
             if (receipt.authorized_sides.is_empty() !=
                     receipt.legacy_credentials_sha256.is_some()) ||
@@ -711,14 +715,16 @@ impl NativeRemotePlay {
                         !receipt.authorized_sides.contains(
                             &(outcome["player_side"].as_i64().unwrap_or(0) as i32)))) ||
                 receipt.session_id == self.host_session_id ||
-                self.archived_receipts.contains_key(&receipt.session_id)
+                self.archived_receipts.contains_key(&receipt.session_id) ||
+                admitted.contains_key(&receipt.session_id)
             {
                 return Err(io::Error::new(io::ErrorKind::InvalidData,
                     "duplicate or active native terminal session identity"));
             }
-            self.archived_receipts.insert(receipt.session_id.clone(), receipt);
-            self.measurements.archived_receipts_loaded += 1;
+            admitted.insert(receipt.session_id.clone(), receipt);
         }
+        self.measurements.archived_receipts_loaded += admitted.len() as u64;
+        self.archived_receipts.extend(admitted);
         Ok(())
     }
 
