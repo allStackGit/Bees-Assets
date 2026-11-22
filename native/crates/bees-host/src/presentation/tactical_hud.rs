@@ -100,6 +100,18 @@ impl HudRect {
     }
 }
 
+/// Source Neptune II and Uranus II have a campaign-level Retreat
+/// button distinct from the squad's WarpGate "RETREAT" command. Keep one
+/// shared hit/paint rectangle for local and authenticated LAN clients;
+/// never interpret a click as a command in a spectator or inactive World.
+pub fn retreat_button_rect(width: usize, height: usize) -> Option<HudRect> {
+    if width < 760 || height < 420 { return None; }
+    let right = width.saturating_sub(20);
+    let left = right.saturating_sub(210);
+    let top = 54;
+    Some(HudRect { left, top, right, bottom: top + 27 })
+}
+
 /// Keep the strip out of the lower-left minimap and lower-right special
 /// readiness panels. Hide rather than crowd the battlefield on small windows.
 /// Five columns / five rows scale to any sufficiently wide viewport.
