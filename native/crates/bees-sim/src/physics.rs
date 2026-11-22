@@ -1017,6 +1017,8 @@ pub struct PhysicsStepCounts {
     /// Occupied cells indexed across actual population rebuilds.
     pub ship_grid_cells_indexed: u64,
     pub obstacle_grid_cells_indexed: u64,
+    /// Body-plus-proximity sources sharing one broadphase query this tick.
+    pub obstacle_contact_queries_merged: u64,
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
     pub obstacle_trigger_enters: u64,
@@ -2536,6 +2538,8 @@ impl KinematicPhysics {
                     (None, None) => continue,
                 };
                 self.grid.candidates(query, &mut self.candidates);
+                self.counts.obstacle_contact_queries_merged +=
+                    u64::from(hull_bounds.is_some() && proximity.is_some());
                 self.counts.broadphase_candidates += self.candidates.len() as u64;
                 for &index in &self.candidates {
                     let other = &self.obstacles[index];
