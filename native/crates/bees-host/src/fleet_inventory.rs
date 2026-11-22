@@ -206,6 +206,10 @@ impl NativeFleetInventory {
         self.campaign_player_side.map(|_| self.campaign_score)
     }
 
+    pub fn campaign_score_snapshot(&self) -> Option<(i32, i64)> {
+        self.campaign_player_side.map(|side| (side, self.campaign_score))
+    }
+
     pub fn combat_stats(&self, ship_id: i64) -> Option<NativeFleetCombatStats> {
         if !self.career_tracking { return None; }
         self.entries.get(&ship_id)
