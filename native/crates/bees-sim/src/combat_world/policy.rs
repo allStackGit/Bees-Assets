@@ -267,6 +267,10 @@ impl CombatWorld {
     /// Avoid traversing the whole policy roster twice every physics tick,
     /// including large battles where these capabilities are uncommon.
     pub(super) fn advance_policy_capability_cooldowns(&mut self, dt: f32) {
+        // Most battle and training scenes have no mining or healing.
+        // Their policy agents still move, fire and decide every tick;
+        // avoid visiting each such controller just to find two Nones.
+        if self.policy_capability_owner_count == 0 { return; }
         for runtime in self.policy_ship_runtime.values_mut() {
             if let Some(mining) = runtime.mining.as_mut() {
                 mining.cooldown_remaining =
