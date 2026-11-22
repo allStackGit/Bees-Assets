@@ -132,6 +132,7 @@ pub enum CampaignCue {
     NeptuneSeizeVictory,
     NeptuneSeizeDefeat,
     NeptuneProductionBriefing,
+    NeptuneProductionRetreatOpened,
     NeptuneProductionWave { number: u32, line: u8 },
     NeptuneProductionEnding { last_ship_retreated: bool, player_victory: bool },
     PlutoEvacuationBriefing,
@@ -146,6 +147,7 @@ pub enum CampaignCue {
     UranusNewThreatReinforcements,
     UranusNewThreatEnding { barges_survived: bool, has_cruiser: bool },
     UranusDefensiveBriefing,
+    UranusDefensiveRetreatOpened,
     /// Source six physical reinforcement announcements, in arrival order.
     UranusDefensiveWave { number: u8, line: u8 },
     UranusDefensiveEnding { last_ship_retreated: bool, player_victory: bool },
@@ -197,7 +199,10 @@ enum DialogueMode {
     PlutoPushback { speaker_mask: u8 },
     NeptunePressingForward { has_factory: bool },
     NeptuneSeizeMeans,
-    NeptuneProduction { waves_reported: u32 },
+    NeptuneProduction {
+        waves_reported: u32,
+        #[serde(default)] retreat_reported: bool,
+    },
     PlutoEvacuation {
         protected_ship_id: i64,
         #[serde(default)] splitter_seen: bool,
@@ -213,6 +218,7 @@ enum DialogueMode {
     UranusDefensive {
         has_cruiser: bool, met_scientists: bool,
         waves_reported: u8,
+        #[serde(default)] retreat_reported: bool,
     },
     UranusOffensive {
         bumblebee_id: i64, has_factory: bool,
@@ -329,7 +335,9 @@ impl CampaignDialogue {
                 CampaignCue::NeptuneSeizeBriefing,
             ),
             CampaignDialogueSpec::NeptuneProduction { .. } => (
-                DialogueMode::NeptuneProduction { waves_reported: 0 },
+                DialogueMode::NeptuneProduction {
+                    waves_reported: 0, retreat_reported: false,
+                },
                 CampaignCue::NeptuneProductionBriefing,
             ),
             CampaignDialogueSpec::PlutoEvacuation { protected_ship_id, .. } => (
@@ -353,6 +361,7 @@ impl CampaignDialogue {
             } => (
                 DialogueMode::UranusDefensive {
                     has_cruiser, met_scientists, waves_reported: 0,
+                    retreat_reported: false,
                 },
                 CampaignCue::UranusDefensiveBriefing,
             ),
@@ -554,19 +563,24 @@ impl CampaignDialogue {
             (DialogueMode::PlutoPushback { speaker_mask },
                 CampaignCue::PlutoPushbackVictory | CampaignCue::PlutoPushbackDefeat) =>
                 sequence == 1 && *speaker_mask <= 0b1111,
-            (DialogueMode::NeptuneProduction { waves_reported: 0 },
-                CampaignCue::NeptuneProductionBriefing) => sequence == 0,
-            (DialogueMode::NeptuneProduction { waves_reported },
+            (DialogueMode::NeptuneProduction {
+                waves_reported: 0, retreat_reported: false,
+            }, CampaignCue::NeptuneProductionBriefing) => sequence == 0,
+            (DialogueMode::NeptuneProduction {
+                waves_reported, retreat_reported: true,
+            }, CampaignCue::NeptuneProductionRetreatOpened) =>
+                sequence == *waves_reported + 1,
+            (DialogueMode::NeptuneProduction { waves_reported, retreat_reported },
                 CampaignCue::NeptuneProductionWave { number, line }) =>
                 number > 0 && number == *waves_reported &&
-                sequence == number && match number {
+                sequence == number + u32::from(*retreat_reported) && match number {
                     1 => line == 8,
                     3 => line == 9,
                     _ => (10..=14).contains(&line),
                 },
-            (DialogueMode::NeptuneProduction { waves_reported },
+            (DialogueMode::NeptuneProduction { waves_reported, retreat_reported },
                 CampaignCue::NeptuneProductionEnding { .. }) =>
-                sequence == *waves_reported + 1,
+                sequence == *waves_reported + u32::from(*retreat_reported) + 1,
             (DialogueMode::NeptuneSeizeMeans, CampaignCue::NeptuneSeizeBriefing) =>
                 sequence == 0,
             (DialogueMode::NeptuneSeizeMeans,
@@ -627,17 +641,23 @@ impl CampaignDialogue {
                     1 + u32::from(*discovered) + u32::from(*hit_reported) +
                         u32::from(*destroyed_reported),
             (DialogueMode::UranusDefensive {
-                waves_reported: 0, ..
+                waves_reported: 0, retreat_reported: false, ..
             }, CampaignCue::UranusDefensiveBriefing) => sequence == 0,
             (DialogueMode::UranusDefensive {
-                has_cruiser, met_scientists, waves_reported,
+                waves_reported, retreat_reported: true, ..
+            }, CampaignCue::UranusDefensiveRetreatOpened) =>
+                sequence == u32::from(*waves_reported) + 1,
+            (DialogueMode::UranusDefensive {
+                has_cruiser, met_scientists, waves_reported, retreat_reported,
             }, CampaignCue::UranusDefensiveWave { number, line }) =>
                 number > 0 && number <= 6 && number == *waves_reported &&
-                sequence == u32::from(number) &&
+                sequence == u32::from(number) + u32::from(*retreat_reported) &&
                 Self::uranus_defensive_line_valid(number, line, *has_cruiser, *met_scientists),
-            (DialogueMode::UranusDefensive { waves_reported, .. },
+            (DialogueMode::UranusDefensive { waves_reported, retreat_reported, .. },
                 CampaignCue::UranusDefensiveEnding { .. }) =>
-                *waves_reported <= 6 && sequence == u32::from(*waves_reported) + 1,
+                *waves_reported <= 6 &&
+                sequence == u32::from(*waves_reported) +
+                    u32::from(*retreat_reported) + 1,
             (DialogueMode::UranusNewThreat {
                 loss_reported: false, charge_observed: false,
                 charge_reported: false, reinforcement_reported: false, ..
@@ -840,7 +860,7 @@ impl CampaignDialogue {
     /// Caller consumes the shared World RNG only for the source waves
     /// which actually choose dialogue. Fixed waves need no random draw.
     pub(crate) fn reinforcement_choice_count(&self, elapsed_seconds: f64) -> Option<u64> {
-        if let DialogueMode::NeptuneProduction { waves_reported } = self.mode {
+        if let DialogueMode::NeptuneProduction { waves_reported, .. } = self.mode {
             let due = if waves_reported < 4 {
                 f64::from(waves_reported + 1) * 120.0
             } else {
@@ -855,7 +875,7 @@ impl CampaignDialogue {
             return Some(5);
         }
         let DialogueMode::UranusDefensive {
-            has_cruiser, met_scientists, waves_reported,
+            has_cruiser, met_scientists, waves_reported, ..
         } = self.mode else { return None };
         let next = usize::from(waves_reported);
         let due = [120.0, 240.0, 360.0, 480.0, 540.0, 600.0];
@@ -873,7 +893,7 @@ impl CampaignDialogue {
     pub(crate) fn reinforcement_arrived(
         &mut self, elapsed_seconds: f64, random_choice: Option<u64>,
     ) -> Option<CampaignCue> {
-        if let DialogueMode::NeptuneProduction { waves_reported } = &mut self.mode {
+        if let DialogueMode::NeptuneProduction { waves_reported, .. } = &mut self.mode {
             let due = if *waves_reported < 4 {
                 f64::from(*waves_reported + 1) * 120.0
             } else {
@@ -896,7 +916,7 @@ impl CampaignDialogue {
             return Some(CampaignCue::NeptuneProductionWave { number, line });
         }
         if let DialogueMode::UranusDefensive {
-            has_cruiser, met_scientists, waves_reported,
+            has_cruiser, met_scientists, waves_reported, ..
         } = &mut self.mode {
             const DUE: [f64; 6] = [120.0, 240.0, 360.0, 480.0, 540.0, 600.0];
             let next = usize::from(*waves_reported);
@@ -938,6 +958,26 @@ impl CampaignDialogue {
         &mut self, world: &CombatWorld, source_bumblebee_spotted: bool,
         source_pluto_honeybee_spotted: bool,
     ) -> Option<CampaignCue> {
+        // Source campaign retreat dialogue belongs to the same physical
+        // player button used to create the actual withdrawal collider.
+        // Neither the uncreated exit's coordinates nor a game timer may
+        // deliver these lines, and the one-shot receipt survives recovery.
+        if let DialogueMode::NeptuneProduction { retreat_reported, .. } =
+            &mut self.mode
+        {
+            if !*retreat_reported && world.player_retreat_activated(self.player_side) {
+                *retreat_reported = true;
+                return Some(CampaignCue::NeptuneProductionRetreatOpened);
+            }
+        }
+        if let DialogueMode::UranusDefensive { retreat_reported, .. } =
+            &mut self.mode
+        {
+            if !*retreat_reported && world.player_retreat_activated(self.player_side) {
+                *retreat_reported = true;
+                return Some(CampaignCue::UranusDefensiveRetreatOpened);
+            }
+        }
         if let DialogueMode::PlutoReinforcements {
             scout_selected, selection_reported, combat_released, ..
         } = &mut self.mode {
