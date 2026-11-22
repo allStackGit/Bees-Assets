@@ -338,6 +338,35 @@ def placements(bounds: dict, anchor: list[float], side: int,
     return [[round(x, 4), round(y, 4)] for x, y in candidates[:count]]
 
 
+def static_box(value: str) -> dict:
+    """One authentic StaticObstacle prefab with a physical source transform.
+
+    Units are world coordinates and multipliers of the imported prefab's
+    collider dimensions. Final ship contacts and physics are always checked
+    by the native scene installer, not a Python collision approximation.
+    """
+    parts = value.split(":")
+    if len(parts) not in (5, 6) or not parts[0].strip():
+        raise argparse.ArgumentTypeError(
+            "static box requires PREFAB:X:Y:SCALE_X:SCALE_Y[:DEGREES]"
+        )
+    try:
+        x, y, sx, sy = map(float, parts[1:5])
+        rotation = float(parts[5]) if len(parts) == 6 else 0.0
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("static box coordinates and scale must be numbers") from error
+    if (not all(map(math.isfinite, (x, y, sx, sy, rotation))) or
+            not 1e-4 <= abs(sx) <= 4096 or
+            not 1e-4 <= abs(sy) <= 4096):
+        raise argparse.ArgumentTypeError("static box coordinates must be finite and scale nonzero")
+    return {
+        "prefab_name": parts[0].strip(),
+        "position": [x, y],
+        "rotation_degrees": rotation,
+        "local_scale": [sx, sy],
+    }
+
+
 def resize_empty_arena(scene: dict, map_size: float) -> None:
     """Native equivalent of the Unity RL MapSize/MapBorder transformation.
 
@@ -1137,6 +1166,36 @@ def author(args) -> tuple[dict, dict, dict]:
         scene["fleet_template_squads"] = reserve_squads
     else:
         scene.pop("fleet_template_squads", None)
+    if args.static_boxes:
+        assets = Path(__file__).resolve().parents[1] / "assets"
+        prefab_rows = load_json(assets / "box-obstacle-colliders.json")["obstacles"]
+        source_boxes = {asset["name"] for asset in prefab_rows
+                        if asset["obstacle_type"] == 0}
+        for box in args.static_boxes:
+            if box["prefab_name"] not in source_boxes:
+                raise ValueError(
+                    f"unknown source StaticObstacle prefab {box['prefab_name']!r}"
+                )
+        # Source-authored entities, reserved Carrier families and previously
+        # imported obstacles own their IDs. Assign custom obstacles only
+        # after ALL ship allocations; the game and optional MA-POCA learner
+        # receive identical physical objects and discovery health.
+        allocated_ids = [
+            *[ship["entity_id"] for ship in new_ships],
+            *[ship["entity_id"] for ship in reserve_templates],
+            *[resource["entity_id"] for key in ("mining_asteroids", "map_objects")
+              for resource in scene.get(key, [])],
+            *[obj["entity_id"] for key in (
+                "add_static_boxes", "add_static_polygons", "add_map_borders"
+            ) for obj in scene.get("layout", {}).get(key, [])],
+        ]
+        next_static_id = max(allocated_ids, default=0) + 1
+        if next_static_id + len(args.static_boxes) >= (1 << 63):
+            raise ValueError("no source-compatible entity IDs remain for static obstacles")
+        layout = scene.setdefault("layout", {})
+        added = layout.setdefault("add_static_boxes", [])
+        for index, box in enumerate(args.static_boxes):
+            added.append({**box, "entity_id": next_static_id + index})
     if args.arena_size is not None:
         # Border IDs must be allocated AFTER all real battle ships and
         # reinforcements. The common native layout installer requires each
@@ -2038,6 +2097,10 @@ def battle_parser() -> argparse.ArgumentParser:
                         help="omit source mining resources, static boxes and map objects")
     parser.add_argument("--arena-size", type=float,
                         help="with --empty-map: square physical arena in 4-unit steps (64..4000), including source-sized trigger borders")
+    parser.add_argument("--static-box", action="append", type=static_box,
+                        dest="static_boxes", default=[],
+                        metavar="PREFAB:X:Y:SCALE_X:SCALE_Y[:DEGREES]",
+                        help="place an authentic scaled source StaticObstacle; repeatable, also available for trainable battles")
     parser.add_argument("--lethal-borders", action="store_true",
                         help="with --arena-size: make physical border contact immediately damage/kill ships in both gameplay and training")
     parser.add_argument("--trainable", action="store_true",
