@@ -123,6 +123,8 @@ pub struct NativeRenderCounts {
     pub ship_remains_draws: usize,
     /// Original imported source ship-remains frames, excluding fallback art.
     pub ship_remains_source_frame_draws: usize,
+    /// Source QueenExplosionAnimation has four real 4s sprite layers.
+    pub queen_explosion_layer_draws: usize,
     pub ship_remains_art_classes_loaded: usize,
     pub ship_remains_color_cache_variants: usize,
     /// Oldest effects evicted to keep large battles bounded.
@@ -790,6 +792,15 @@ fn source_ship_animation_art() -> Option<&'static SourceShipAnimationAtlas> {
 static SOURCE_SHIP_REMAINS_ATLAS: OnceLock<Option<SourceShipRemainsAtlas>> =
     OnceLock::new();
 
+fn source_queen_explosion() -> Option<&'static SourceShipRemainsAtlas> {
+    // The original Queen's 4x40-frame death clips are large and rare.
+    // Never load or decode them during normal combat or headless training.
+    static ATLAS: OnceLock<Option<SourceShipRemainsAtlas>> = OnceLock::new();
+    ATLAS.get_or_init(|| load_source_art(
+        "queen-explosion.rgba", SourceShipRemainsAtlas::decode,
+    )).as_ref()
+}
+
 fn source_ship_remains_art() -> Option<&'static SourceShipRemainsAtlas> {
     SOURCE_SHIP_REMAINS_ATLAS.get_or_init(|| load_source_art(
         "ship-remains.rgba", SourceShipRemainsAtlas::decode,
@@ -996,24 +1007,52 @@ impl NativeSoftwareRenderer {
     /// corpse collider or new actor is added to physics or training.
     pub(super) fn draw_ship_death_visuals(
         &mut self, tick: u64, fixed_dt: f32,
-    ) -> (usize, usize, usize) {
+    ) -> (usize, usize, usize, usize) {
         if !fixed_dt.is_finite() || fixed_dt <= 0.0 {
-            return (0, 0, 0);
+            return (0, 0, 0, 0);
         }
         self.death_effects.retain(|fx|
             tick >= fx.born_tick &&
-            (tick - fx.born_tick) as f32 * fixed_dt < 5.0);
+            (tick - fx.born_tick) as f32 * fixed_dt <
+                if fx.ship_type == 17 { 9.0 } else { 5.0 });
         let mut remains_drawn = 0;
         let mut flashes_drawn = 0;
         let mut source_frames_drawn = 0;
+        let mut queen_layers_drawn = 0;
         let authored_remains = if self.death_effects.is_empty() {
             None
         } else {
             source_ship_remains_art()
         };
+        let queen_explosion = self.death_effects.iter()
+            .any(|fx| fx.ship_type == 17).then(source_queen_explosion)
+            .flatten();
         for index in 0..self.death_effects.len() {
             let fx = self.death_effects[index];
             let seconds = (tick - fx.born_tick) as f32 * fixed_dt;
+            if fx.ship_type == 17 && seconds < 4.0 {
+                if let Some(queen) = queen_explosion {
+                    // Queen Explosion Body.anim fires Kill at 4s. Until
+                    // that moment its four original sorted SpriteRenderers
+                    // replace (not overlay) the ordinary ship corpse.
+                    for clip in queen.clips.iter().take(4).flatten() {
+                        let index = ((seconds * clip.frames_per_second).floor()
+                            as usize).min(clip.frames.len() - 1);
+                        let frame = &clip.frames[index];
+                        queen_layers_drawn += usize::from(self.draw_sprite(
+                            &frame.sprite, fx.position,
+                            fx.rotation_degrees.to_radians(),
+                            self.camera.pixels_per_unit / frame.pixels_per_unit, 1.0,
+                        ));
+                    }
+                    continue;
+                }
+            }
+            // QueenExplosionAnimation.Kill calls Remains.Place at 4s.
+            // Its independent five-second source corpse clock starts then.
+            let corpse_seconds = if fx.ship_type == 17 {
+                (seconds - 4.0).max(0.0)
+            } else { seconds };
             // Beacon, Fire Barge and HumanTarget have no source remains.
             // The Fire Barge's real physical explosion continues independently.
             let has_corpse = !matches!(fx.ship_type, 1 | 10 | 23);
@@ -1022,7 +1061,7 @@ impl NativeSoftwareRenderer {
                     .and_then(|atlas| atlas.clips.get(usize::from(fx.ship_type)))
                     .and_then(Option::as_ref);
                 let original = clip.map(|clip| {
-                    let frame = ((seconds * clip.frames_per_second).floor() as usize)
+                    let frame = ((corpse_seconds * clip.frames_per_second).floor() as usize)
                         .min(clip.frames.len() - 1);
                     (frame, &clip.frames[frame])
                 });
@@ -1070,7 +1109,7 @@ impl NativeSoftwareRenderer {
                         // Source sprite animation is opaque until its
                         // real 5s removal; only fallback stills fade.
                         if original.is_some() { 1.0 }
-                        else { 0.6 * (1.0 - seconds / 5.0).clamp(0.0, 1.0) })
+                        else { 0.6 * (1.0 - corpse_seconds / 5.0).clamp(0.0, 1.0) })
                 });
                 if sprite_drawn && original.is_some() {
                     source_frames_drawn += 1;
@@ -1092,7 +1131,7 @@ impl NativeSoftwareRenderer {
                 flashes_drawn += 1;
             }
         }
-        (remains_drawn, flashes_drawn, source_frames_drawn)
+        (remains_drawn, flashes_drawn, source_frames_drawn, queen_layers_drawn)
     }
 
     pub fn size(&self) -> (usize, usize) { (self.width, self.height) }
@@ -2277,11 +2316,12 @@ impl NativeSoftwareRenderer {
         // view; retained battles with millions of shots cannot accumulate
         // stale animation state over time.
         self.projectile_art_ticks.retain(|_, &mut (_, seen)| seen == view.tick);
-        let (remains, explosions, source_frames) =
+        let (remains, explosions, source_frames, queen_layers) =
             self.draw_ship_death_visuals(view.tick, view.fixed_step_seconds);
         counts.ship_remains_draws = remains;
         counts.ship_explosion_visual_draws = explosions;
         counts.ship_remains_source_frame_draws = source_frames;
+        counts.queen_explosion_layer_draws = queen_layers;
         counts.ship_remains_art_classes_loaded =
             loaded_ship_remains_art_classes();
         counts.ship_remains_color_cache_variants = self.colored_ship_remains.len();
