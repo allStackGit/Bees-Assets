@@ -2000,6 +2000,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                     == Some(i64::from(side));
                 let label = if !owner {
                     "Defend the unidentified vessel near Pluto"
+                } else if objective["honeybee_destroyed"] == true {
+                    "First Honeybee destroyed  |  Monitor incoming enemy signals"
                 } else if objective["honeybee_spotted"] == true {
                     "Unidentified vessel located  |  Stand by for Lieutenant Tom"
                 } else {
