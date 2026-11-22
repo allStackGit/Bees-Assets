@@ -389,6 +389,15 @@ where
             .map_err(HostPolicyReloadError::Checkpoint)?;
         Ok(generation)
     }
+
+    /// Source measurements from the resident process, including rejected
+    /// artifact updates and actual wall time. Sampling this value performs
+    /// no model I/O and does not touch any training or simulation batch.
+    pub fn policy_reload_measurements(
+        &self,
+    ) -> crate::policy_process::PolicyReloadMeasurements {
+        self.model.reload_measurements()
+    }
 }
 
 impl<M, A, B, S> NativeHostRuntime<M, A, B, S>
