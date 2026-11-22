@@ -95,8 +95,17 @@ def challenge_library_install(output, library_path, gate):
     library = json.loads(original_bytes)
     if library.get("library_schema") != 1 or not isinstance(library.get("games"), list):
         raise ValueError("existing native game library requires schema 1 and games")
-    if any(game.get("id") == "original-human-challenge" for game in library["games"]):
-        raise ValueError("Challenge is already installed in this game library")
+    installed = [game for game in library["games"]
+                 if game.get("id") == "original-human-challenge"]
+    if len(installed) > 1:
+        raise ValueError("duplicate installed original Challenge game identity")
+    if installed and (
+            installed[0].get("kind") != "challenge" or
+            installed[0].get("config") !=
+                f"{output.name}/challenge.catalog.json" or
+            installed[0].get("unlock_after") !=
+                {"campaign_id": gate[0], "mission_id": gate[1]}):
+        raise ValueError("another installed original Challenge owns this game identity")
     matches = [game for game in library["games"]
                if game.get("id") == gate[0] and game.get("kind") == "campaign"]
     if len(matches) != 1:
@@ -115,7 +124,35 @@ def challenge_library_install(output, library_path, gate):
             battle.get("mission", {}).get("id") == gate[1]
             for battle in catalog.get("battles", [])):
         raise ValueError("Challenge unlock milestone is absent from its source campaign")
-    return library, original_bytes
+    return library, original_bytes, bool(installed)
+
+
+def validate_existing_challenge(output, max_squad_size):
+    """Recover an assembled original career after publication was interrupted.
+
+    The source importer and common assembler, not directory existence or
+    an editable marker, prove all ten source scenes and FleetShip identities
+    before the game can be exposed by the installed library.
+    """
+    source = TOOLS / "assemble-challenge.py"
+    spec = importlib.util.spec_from_file_location("bees_challenge_career_assembler", source)
+    if spec is None or spec.loader is None:
+        raise ValueError("missing original Challenge career assembler")
+    assembler = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(assembler)
+    catalog, library, _, _ = assembler.assemble(
+        output.resolve(), None, None, max_squad_size,
+    )
+    for name, expected in (
+        ("challenge.catalog.json", catalog),
+        ("library.json", library),
+    ):
+        path = output / name
+        if path.is_symlink() or not path.is_file() or (
+                json.loads(path.read_text(encoding="utf-8")) != expected):
+            raise ValueError(
+                f"published Challenge contains a changed or incomplete {name}")
+    return catalog
 
 
 def publish_challenge_library(library_path, library, original_bytes, gate, challenge_dir):
@@ -179,8 +216,8 @@ def main():
     args = parser.parse_args()
     output = args.output_dir.expanduser().absolute()
     parent = output.parent.resolve()
-    if output.exists() or output.is_symlink() or not parent.is_dir():
-        parser.error("output must be a new directory under an existing parent")
+    if output.is_symlink() or not parent.is_dir():
+        parser.error("Challenge destination must not be a symlink and needs an existing parent")
     if (args.install_into_library is None) != (args.unlock_after is None):
         parser.error("--install-into-library and --unlock-after must be supplied together")
     gate = None
@@ -198,10 +235,32 @@ def main():
                         if args.install_into_library is not None else None)
         original_library = None
         original_library_bytes = None
+        already_installed = False
         if install_path is not None:
-            original_library, original_library_bytes = challenge_library_install(
-                output, install_path, gate,
+            original_library, original_library_bytes, already_installed = (
+                challenge_library_install(output, install_path, gate)
             )
+        if output.exists():
+            if install_path is None or not output.is_dir():
+                raise ValueError("Challenge destination already exists")
+            validate_existing_challenge(output, args.max_squad_size)
+            if not already_installed:
+                publish_challenge_library(
+                    install_path, original_library, original_library_bytes,
+                    gate, output,
+                )
+            print(json.dumps({
+                "kind": "native_original_challenge_ready",
+                "levels": 10,
+                "recovered_existing": True,
+                "library": str(output / "library.json"),
+                "catalog": str(output / "challenge.catalog.json"),
+                "installed_library": str(install_path),
+                "unlocked_after": args.unlock_after,
+            }, sort_keys=True))
+            return
+        if already_installed:
+            raise ValueError("existing installed Challenge has lost its published career")
         source = json.loads(SOURCE.read_text(encoding="utf-8"))
         levels = source["Levels"]
         if len(levels) != 10 or sorted(level["Id"] for level in levels) != list(range(10)):
