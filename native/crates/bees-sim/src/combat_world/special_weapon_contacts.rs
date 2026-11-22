@@ -37,6 +37,14 @@ pub struct SpecialWeaponMeasurements {
     pub trigger_exits: u64,
     pub body_hull_tests: u64,
     pub body_entries: u64,
+    /// Strategy-only special-weapon eligibility queries. These run at
+    /// HiveMind request boundaries, never in each fixed physics step.
+    #[serde(default)]
+    pub matchup_validity_queries: u64,
+    #[serde(default)]
+    pub matchup_bomb_candidates: u64,
+    #[serde(default)]
+    pub matchup_charge_contact_candidates: u64,
 }
 
 impl SpecialWeaponContacts {
@@ -104,8 +112,9 @@ impl CombatWorld {
     /// or its wind-up, and a failed physical contact must not fabricate
     /// weapon eligibility. Uses the same world and trigger cache as attacks.
     pub fn is_special_weapon_ship_target_valid(
-        &self, ship_id: i64, target_id: i64,
+        &mut self, ship_id: i64, target_id: i64,
     ) -> Result<bool, CombatWorldError> {
+        self.special_weapon_measurements.matchup_validity_queries += 1;
         let special = self.special_weapons.get(&ship_id)
             .ok_or(CombatWorldError::MissingAutomaticTargetingInputs)?;
         let shooter = self.ship(ship_id).ok_or(CombatWorldError::UnknownShip)?;
@@ -117,13 +126,17 @@ impl CombatWorld {
             // Source Bomb.IsShipValidTarget only checks a living Ship. Its
             // owner/target side and delivery range are not part of this
             // method, even though physical detonation enforces enemy side.
-            10 | 19 | 22 => Ok(true),
+            10 | 19 | 22 => {
+                self.special_weapon_measurements.matchup_bomb_candidates += 1;
+                Ok(true)
+            },
             0 => {
                 let charge = special.spec.charge_range
                     .ok_or(CombatWorldError::InvalidBombTarget)?;
                 if !charge.enabled || !special.charge.contains(target_id) {
                     return Ok(false);
                 }
+                self.special_weapon_measurements.matchup_charge_contact_candidates += 1;
                 let level = self.level_geometry
                     .ok_or(CombatWorldError::MissingLevelGeometry)?;
                 if !level.has_obstacles { return Ok(true); }
