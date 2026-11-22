@@ -5692,8 +5692,10 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 .filter(|mission| progress.completed(&mission.id)).count();
             if item.kind == "challenge" {
                 let (score, score_complete) = progress.campaign_score_summary();
+                let results = progress.career_match_results();
                 Ok::<String, Box<dyn Error>>(format!(
-                    "  [Challenge {complete}/{total} | Score {score:+}{}]",
+                    "  [Challenge {complete}/{total} | H{}/B{} | Score {score:+}{}]",
+                    results.side_two_wins, results.side_one_wins,
                     if score_complete { "" } else { " partial" },
                 ))
             } else {

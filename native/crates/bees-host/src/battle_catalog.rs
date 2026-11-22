@@ -449,6 +449,15 @@ struct AuthoredRosterOwner {
 }
 
 #[derive(Default)]
+/// Immutable match outcomes projected from committed career battle receipts.
+/// Side IDs remain physical side IDs, not an inferred user/AI identity.
+#[derive(Clone, Copy, Default)]
+pub struct CareerMatchResults {
+    pub played: u64,
+    pub side_one_wins: u64,
+    pub side_two_wins: u64,
+}
+
 pub struct CampaignProgress<'a> {
     missions: HashMap<&'a str, MissionProgress>,
     fleet: HashMap<i64, FleetProgress>,
@@ -461,6 +470,7 @@ pub struct CampaignProgress<'a> {
     /// committed terminal battle receipts, including defeated missions.
     campaign_score: i64,
     score_history_complete: bool,
+    match_results: CareerMatchResults,
     player_match_totals: NativePlayerMatchCounts,
     player_match_history_complete: bool,
     loss_type_history_complete: bool,
@@ -539,6 +549,13 @@ impl CampaignProgress<'_> {
 
     pub fn grants_claimed(&self, id: &str) -> bool {
         self.missions.get(id).is_some_and(|mission| mission.grants_claimed)
+    }
+
+    /// Original FreePlay/Challenge scoreboards count every settled match,
+    /// not only the latest mission result. Reconstruct side outcomes from
+    /// the same receipt traversal used for the career score and FleetShips.
+    pub fn career_match_results(&self) -> CareerMatchResults {
+        self.match_results
     }
 
     pub fn campaign_score_summary(&self) -> (i64, bool) {
@@ -1437,6 +1454,18 @@ impl BattleCatalog {
                     outcome.evacuated_personnel.is_some_and(|count| count > 60) {
                     return Err(invalid("campaign evacuation needs an authentic bounded personnel count"));
                 }
+                progress.match_results.played = progress.match_results.played
+                    .checked_add(1)
+                    .ok_or_else(|| invalid("career match count overflow"))?;
+                let wins = match outcome.winner_side {
+                    1 => Some(&mut progress.match_results.side_one_wins),
+                    2 => Some(&mut progress.match_results.side_two_wins),
+                    _ => None, // A settled draw is a real played battle.
+                };
+                if let Some(total) = wins {
+                    *total = total.checked_add(1)
+                        .ok_or_else(|| invalid("career faction win count overflow"))?;
+                }
                 let state = progress.missions.entry(&mission.id).or_default();
                 state.attempted = true;
                 state.latest_victory = outcome.mission_victory();
@@ -2295,6 +2324,11 @@ impl BattleCatalog {
             "battles_without_squad_data": progress.battles_without_squad_data,
             "banked_minerals": progress.banked_minerals,
             "campaign_score": progress.campaign_score,
+            "career_match_results": {
+                "played": progress.match_results.played,
+                "side_one_wins": progress.match_results.side_one_wins,
+                "side_two_wins": progress.match_results.side_two_wins,
+            },
             "campaign_score_history_complete": progress.score_history_complete,
             "player_match_totals": progress.player_match_totals,
             "player_match_history_complete": progress.player_match_history_complete,
