@@ -1872,6 +1872,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     held_fire_active: bool, shooting_menu: bool, shooting_focus: u8,
     visual: &RemoteVisual, fraction: f32,
     artwork: &RemoteArtwork, show_art: bool, show_weapon_ranges: bool,
+    show_minimap: bool,
     combat_hud_draws: &mut [u64; 7], obstacle_hull_draws: &mut u64,
     map_object_health_bars: &mut u64,
     minimap_ship_markers: &mut u64, minimap_terrain_markers: &mut u64,
@@ -2170,9 +2171,9 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 }
             }
         }
-        let (ships, terrain, objectives) = draw_remote_minimap(
-            pixels, state, camera, &highlighted, visual, fraction,
-        );
+        let (ships, terrain, objectives) = if show_minimap {
+            draw_remote_minimap(pixels, state, camera, &highlighted, visual, fraction)
+        } else { (0, 0, 0) };
         *minimap_ship_markers += ships;
         *minimap_terrain_markers += terrain;
         *minimap_objective_markers += objectives;
@@ -2874,6 +2875,8 @@ pub fn connect_remote(
     let mut last_right=false;
     let mut right_press:Option<RemoteRightPress>=None;
     let mut minimap_dragging=false;
+    // Pure local presentation preference, never sent to the host.
+    let mut show_minimap=true;
     let mut drag_start:Option<(i32,i32)>=None;
     let mut last_middle:Option<(f32,f32)>=None;
     let mut dialogue_key:Option<(u64,u64,u64)>=None;
@@ -2991,6 +2994,16 @@ pub fn connect_remote(
             } else {
                 "Fast geometric display enabled".into()
             };
+        }
+        if !show_controls_help && !show_codex && !show_campaign_rewards &&
+            window.is_key_pressed(Key::I, KeyRepeat::No) &&
+            !window.is_key_down(Key::LeftShift) &&
+            !window.is_key_down(Key::RightShift)
+        {
+            show_minimap=!show_minimap;
+            if !show_minimap {minimap_dragging=false;}
+            peer.notice=if show_minimap { "Minimap visible".into() }
+                else { "Minimap hidden".into() };
         }
         if !show_controls_help && window.is_key_pressed(Key::B, KeyRepeat::No) {
             show_weapon_ranges=!show_weapon_ranges;
@@ -3455,6 +3468,9 @@ pub fn connect_remote(
                     }
                     continue;
                 }
+                // The unmodified I key is a display toggle, not a squad
+                // command; Shift+I remains the Circle tactical shortcut.
+                if key==Key::I && !shift { continue; }
                 let numbered=match key {
                     Key::Key1=>Some(1),Key::Key2=>Some(2),Key::Key3=>Some(3),
                     Key::Key4=>Some(4),Key::Key5=>Some(5),Key::Key6=>Some(6),
@@ -3563,8 +3579,8 @@ pub fn connect_remote(
             if window.is_key_down(Key::Left){cam.center.x-=pan;}
             if window.is_key_down(Key::Right){cam.center.x+=pan;}
             let mouse=window.get_mouse_pos(MouseMode::Discard);
-            let minimap = peer.state.as_ref().and_then(bounds)
-                .and_then(|map| MiniMapLayout::top_right(FIELD, HEIGHT, map));
+            let minimap = show_minimap.then(|| peer.state.as_ref().and_then(bounds)
+                .and_then(|map| MiniMapLayout::top_right(FIELD, HEIGHT, map))).flatten();
             // Shift+wheel pans horizontally and Ctrl+wheel vertically,
             // matching the local native camera. Unmodified wheel zooms
             // at the pointer or centers on the real host-derived minimap.
@@ -4077,6 +4093,7 @@ pub fn connect_remote(
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
             held_fire_active,shooting_menu,shooting_focus,
             &peer.visual,visual_fraction,&artwork,show_art,show_weapon_ranges,
+            show_minimap,
             &mut combat_hud_draws, &mut hulls, &mut map_object_health_bars,
             &mut map_ships, &mut map_terrain, &mut map_objectives,
             &mut fog_masked);
@@ -4206,7 +4223,7 @@ pub fn connect_remote(
                 "Tab / PgUp / PgDn: cycle original squads",
                 "CAMERA / DISPLAY",
                 "Right click or drag: move / attack   Arrows: pan   Wheel: zoom",
-                "F: fit map   B: weapon ranges   F6: source art / fast view",
+                "F: fit map   B: ranges   I: minimap   F6: source art",
                 "Shift+wheel: horizontal pan   Ctrl+wheel: vertical pan",
                 "COMMANDS",
                 "C: hold   A: attack on sight   V: cease fire   E: chase",
