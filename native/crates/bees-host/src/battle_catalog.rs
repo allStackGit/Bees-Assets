@@ -10,7 +10,7 @@ use bees_host::unity_scene_snapshot::{NativePurchasedShip, NativeCreatedSquad, N
 use serde_json::{json, Value};
 
 use super::{invalid, CampaignOutcome, CampaignFleetShipOutcome};
-use bees_host::fleet_inventory::NativeFleetCombatStats;
+use bees_host::fleet_inventory::{NativeFleetCombatStats, NativePlayerMatchCounts};
 
 /// Exclusive campaign owner for the native menu, headless missions and
 /// all fleet edits. A stable OS lock survives as a pathname, but ownership
@@ -407,6 +407,8 @@ pub struct CampaignProgress<'a> {
     /// committed terminal battle receipts, including defeated missions.
     campaign_score: i64,
     score_history_complete: bool,
+    player_match_totals: NativePlayerMatchCounts,
+    player_match_history_complete: bool,
     spent_minerals: u64,
     purchases: Vec<(i32, NativePurchasedShip)>,
     /// Awarded FleetShips share the ordinary deployment/transfer path
@@ -457,6 +459,7 @@ struct MissionProgress {
     grants_claimed: bool,
     evacuated_personnel: Option<u32>,
     latest_score_delta: Option<i64>,
+    latest_player_match_counts: Option<NativePlayerMatchCounts>,
 }
 
 impl CampaignProgress<'_> {
@@ -482,6 +485,10 @@ impl CampaignProgress<'_> {
 
     pub fn latest_mission_score_delta(&self, id: &str) -> Option<i64> {
         self.missions.get(id).and_then(|mission| mission.latest_score_delta)
+    }
+
+    pub fn player_match_summary(&self) -> (NativePlayerMatchCounts, bool) {
+        (self.player_match_totals, self.player_match_history_complete)
     }
 
     /// Current native menu presentation of the same durable career record
@@ -1260,6 +1267,7 @@ impl BattleCatalog {
         let mut progress = CampaignProgress {
             bank_history_complete: true,
             score_history_complete: true,
+            player_match_history_complete: true,
             ..CampaignProgress::default()
         };
         let Some(campaign) = &self.campaign_id else { return Ok(progress) };
@@ -1284,6 +1292,8 @@ impl BattleCatalog {
                 /// Older campaign receipts had no event-based score.
                 #[serde(default)]
                 campaign_score_delta: Option<i64>,
+                #[serde(default)]
+                player_match_counts: Option<NativePlayerMatchCounts>,
             }
 
             let bytes = match fs::read(directory.join("rollout-summary.json")) {
@@ -1297,7 +1307,7 @@ impl BattleCatalog {
                 kind, failed_window, cleanup_errors, user_closed,
                 campaign_outcome: Some(outcome), campaign_fleet,
                 campaign_squads, campaign_banked_minerals,
-                campaign_score_delta,
+                campaign_score_delta, player_match_counts,
             }) = serde_json::from_slice(&bytes) else { return Ok(()) };
             if outcome.campaign_id != *campaign { return Ok(()); }
             // Source progress can only come from the immutable successful
@@ -1324,6 +1334,7 @@ impl BattleCatalog {
                 state.latest_victory = outcome.mission_victory();
                 state.evacuated_personnel = outcome.evacuated_personnel;
                 state.latest_score_delta = campaign_score_delta;
+                state.latest_player_match_counts = player_match_counts;
                 state.completed |= matches!(mission.advance_on, AdvanceOn::Finished) || state.latest_victory;
                 if let Some(delta) = campaign_score_delta {
                     progress.campaign_score = progress.campaign_score
@@ -1333,6 +1344,18 @@ impl BattleCatalog {
                     // Do not misrepresent an older unscored career as
                     // exactly zero. All other progression remains valid.
                     progress.score_history_complete = false;
+                }
+                if let Some(counts) = player_match_counts {
+                    let totals = &mut progress.player_match_totals;
+                    totals.ships_lost = totals.ships_lost.checked_add(counts.ships_lost)
+                        .ok_or_else(|| invalid("campaign lost-ship counter overflow"))?;
+                    totals.ships_returned = totals.ships_returned.checked_add(counts.ships_returned)
+                        .ok_or_else(|| invalid("campaign safe-return counter overflow"))?;
+                    totals.ships_destroyed_by_player =
+                        totals.ships_destroyed_by_player.checked_add(counts.ships_destroyed_by_player)
+                        .ok_or_else(|| invalid("campaign player-kill counter overflow"))?;
+                } else {
+                    progress.player_match_history_complete = false;
                 }
                 // Awarded hulls and SavedSquads are one atomic campaign
                 // outcome. They are reconstructed together from this
@@ -1928,6 +1951,8 @@ impl BattleCatalog {
                 "latest_victory": progress.latest_victory(&mission.id),
                 "victory_grants_claimed": progress.grants_claimed(&mission.id),
                 "latest_score_delta": progress.latest_mission_score_delta(&mission.id),
+                "latest_player_match_counts": progress.missions.get(&mission.id)
+                    .and_then(|state| state.latest_player_match_counts),
                 "victory_squads": mission.victory_squads.iter().map(|grant| json!({
                     "saved_squad_id": grant.saved_squad_id,
                     "template_saved_squad_id": grant.template_saved_squad_id,
@@ -2101,6 +2126,8 @@ impl BattleCatalog {
             "banked_minerals": progress.banked_minerals,
             "campaign_score": progress.campaign_score,
             "campaign_score_history_complete": progress.score_history_complete,
+            "player_match_totals": progress.player_match_totals,
+            "player_match_history_complete": progress.player_match_history_complete,
             "spent_minerals": progress.spent_minerals,
             "available_minerals": progress.unspent_minerals().expect("validated account balance"),
             "bank_history_complete": progress.bank_history_complete,
