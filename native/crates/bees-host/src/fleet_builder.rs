@@ -12,7 +12,8 @@ use std::path::{Path, PathBuf};
 
 use bees_host::presentation::{select_library, BattleMenuRow};
 use bees_host::unity_scene_snapshot::{
-    NativeLevelLayout, NativePlacedStaticBox, NativeSquadClone, NativeSquadMerge,
+    NativeLevelLayout, NativePlacedStaticBox, NativePlacedStaticPolygon,
+    NativeSquadClone, NativeSquadMerge,
     NativeSquadShortcut,
 };
 use bees_sim::asteroid_assets::CollisionAsteroidCatalog;
@@ -33,7 +34,8 @@ pub(super) const GAME_ID: &str = "fleet-skirmish";
 
 #[derive(Clone, Copy)]
 enum Terrain {
-    Open, Original, Cover, DenseCover, RandomCover, AsteroidField, AsteroidStorm,
+    Open, Original, Cover, DenseCover, RandomCover, PolygonCover,
+    AsteroidField, AsteroidStorm,
 }
 
 #[derive(Clone, Copy)]
@@ -465,7 +467,7 @@ pub(super) fn choose_for_preferred_side(
         return Ok(None);
     };
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
-    let Some(terrain) = choose_terrain()? else { return Ok(None); };
+    let Some(terrain) = choose_terrain(fleet_sizes)? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
@@ -578,7 +580,7 @@ pub(super) fn choose_multiplayer(
         })
     } else { None };
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
-    let Some(terrain) = choose_terrain()? else { return Ok(None); };
+    let Some(terrain) = choose_terrain(fleet_sizes)? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
@@ -628,7 +630,7 @@ pub(super) fn choose_multiplayer(
 /// exactly the same collision, command and ship code used in windowed play.
 pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
-    let Some(terrain) = choose_terrain()? else { return Ok(None); };
+    let Some(terrain) = choose_terrain(fleet_sizes)? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
@@ -1006,9 +1008,12 @@ fn choose_arena_size(terrain: Terrain) -> Result<Option<(Option<u32>, bool)>, Bo
         title, status,
         // Original random obstacle dimensions can only fit maps with
         // at least 150 units of clear half-map margin.
-        unlocked: index != 0 || !matches!(terrain,Terrain::RandomCover),
+        unlocked: index != 0 ||
+            !matches!(terrain,Terrain::RandomCover|Terrain::PolygonCover),
     }).collect::<Vec<_>>();
-    let mut selected = usize::from(matches!(terrain,Terrain::RandomCover));
+    let mut selected = usize::from(matches!(
+        terrain,Terrain::RandomCover|Terrain::PolygonCover,
+    ));
     Ok(select_library(&rows, &mut selected, false)?.map(|index| {
         match index {
             0 => (None, false),
@@ -1047,19 +1052,25 @@ fn choose_collision_asteroid_timer()
         .map(|index|choices[index].0))
 }
 
-fn choose_terrain() -> Result<Option<Terrain>, Box<dyn Error>> {
+fn choose_terrain(fleet_sizes:[usize;2])
+    -> Result<Option<Terrain>, Box<dyn Error>> {
     let choices = [
         ("Open field", "  [No static obstacles]"),
         ("Classic duel", "  [Original minor cover]"),
         ("Flanking cover", "  [Two physical obstacles]"),
         ("Dense cover", "  [Four physical obstacles]"),
         ("Random original cover", "  [1-10 physical source-sized box obstacles]"),
+        ("Polygon obstacle field", "  [Two original 208-vertex polygon colliders]"),
         ("Moving asteroid field", "  [12 real source CollisionAsteroids]"),
         ("Asteroid storm", "  [48 real source CollisionAsteroids and fragments]"),
     ];
-    let rows = choices.iter().map(|(title, status)| BattleMenuRow {
-        title, status, unlocked: true,
-    }).collect::<Vec<_>>();
+    let rows = choices.iter().enumerate().map(|(index,(title,status))|
+        BattleMenuRow {
+            title,status,
+            // A 100x150 source hull is too large for compact maps and
+            // can intersect wide 64/128-ship spawn grids before physics.
+            unlocked:index!=5 || fleet_sizes.into_iter().all(|size|size<=16),
+        }).collect::<Vec<_>>();
     let mut choice = 0;
     Ok(select_library(&rows, &mut choice, false)?.map(|index|
         match index {
@@ -1068,7 +1079,8 @@ fn choose_terrain() -> Result<Option<Terrain>, Box<dyn Error>> {
             2 => Terrain::Cover,
             3 => Terrain::DenseCover,
             4 => Terrain::RandomCover,
-            5 => Terrain::AsteroidField,
+            5 => Terrain::PolygonCover,
+            6 => Terrain::AsteroidField,
             _ => Terrain::AsteroidStorm,
         }
     ))
@@ -2241,7 +2253,7 @@ pub(super) fn archive(
     let cover = match selected.terrain {
         Terrain::Open | Terrain::Original |
         Terrain::AsteroidField | Terrain::AsteroidStorm |
-        Terrain::RandomCover => &[][..],
+        Terrain::RandomCover | Terrain::PolygonCover => &[][..],
         // Keep all cover in the map's central no-spawn lane. Native
         // 64- and 128-ship fleets occupy x<=-39 and x>=39; prefab
         // half-width is 25 and never overlaps a fresh ship by design.
@@ -2261,6 +2273,29 @@ pub(super) fn archive(
     cloned.add_static_boxes.extend(cover.iter().enumerate().map(|(index, &position)|
         cover_box(20_001 + index as i64, position)
     ));
+    if matches!(selected.terrain,Terrain::PolygonCover) {
+        if selected.arena_size.is_none_or(|size|size<512) ||
+            selected.fleet_sizes.into_iter().any(|size|size>16)
+        {
+            return Err(invalid(
+                "native polygon terrain needs a 512+ arena and at most 16 ships per side",
+            ).into());
+        }
+        // The original 208-vertex source PolygonCollider2D is already
+        // imported and validated by NativeLevelLayout. Both separated
+        // copies retain exactly its physical outline and navigation
+        // behavior in windowed, headless and PPO battles.
+        cloned.add_static_polygons.extend([
+            NativePlacedStaticPolygon {
+                entity_id:20_301, position:[0.0,-100.0],
+                rotation_degrees:0.0,local_vertices:None,
+            },
+            NativePlacedStaticPolygon {
+                entity_id:20_302, position:[0.0,100.0],
+                rotation_degrees:0.0,local_vertices:None,
+            },
+        ]);
+    }
     if matches!(selected.terrain,Terrain::RandomCover) {
         // The archived, source-sized rectangles become ordinary static
         // Collider2D geometry; no per-tick obstacle generation or separate
@@ -2598,6 +2633,7 @@ pub(super) fn archive(
         Terrain::Cover => "cover",
         Terrain::DenseCover => "dense-cover",
         Terrain::RandomCover => "random-cover",
+        Terrain::PolygonCover => "polygon-cover",
         Terrain::AsteroidField => "asteroid-field",
         Terrain::AsteroidStorm => "asteroid-storm",
     };
