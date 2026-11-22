@@ -94,6 +94,27 @@ class ThroughputHistory {
         if(this.windows.size>MAX_KEYS)this.windows.delete(this.windows.keys().next().value);
         if(++this.dirty>=8)this.persist();
     }
+    summary() {
+        const now=Date.now(),rows=[];
+        for(const [identity,windows] of this.windows) {
+            let parts;
+            try{parts=JSON.parse(identity);}catch{continue;}
+            if(!Array.isArray(parts)||parts.length!==3)continue;
+            const valid=windows.filter(w=>w.recorded_at<=now&&
+                now-w.recorded_at<=MAX_SAMPLE_AGE_MS);
+            if(valid.length<MIN_WINDOWS)continue;
+            const seconds=valid.reduce((sum,w)=>sum+w.seconds,0);
+            const steps=valid.reduce((sum,w)=>sum+w.steps,0);
+            let project;
+            try{project=JSON.parse(parts[0])[0];}catch{continue;}
+            rows.push({project_id:project,machine_id:parts[1],
+                gpu_ids:JSON.parse(parts[2]),
+                configuration_hash:crypto.createHash('sha256').update(parts[0]).digest('hex').slice(0,16),
+                useful_steps_per_second:steps/seconds,samples:valid.length,
+                last_observed_at:new Date(Math.max(...valid.map(w=>w.recorded_at))).toISOString()});
+        }
+        return rows;
+    }
     compare(job,a,b) {
         const key=workloadKey(job);
         if(!key)return 0;
