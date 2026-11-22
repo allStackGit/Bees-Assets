@@ -2400,8 +2400,7 @@ fn current_state(
         "briefing_paused": briefing_paused,
         "can_surrender": view.can_surrender(side),
         "can_activate_retreat":
-            view.combat.retreat_activation_available(side) &&
-            view.player_authority.player_viewer_side() == Some(side),
+            view.combat.retreat_activation_available(side),
         // Only authenticated side-owned vision and its authored fading
         // masks are sent. The remote window reuses the native pixel stencil
         // instead of revealing old sprites outside the current host sight.
@@ -2491,6 +2490,16 @@ fn current_state(
                 "mine_and_withdraw": matches!(view.campaign_objective,
                     Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusDefensive |
                          bees_gameplay::campaign_dialogue::CampaignObjectiveKind::NeptuneProduction)),
+            }))
+        } else if let Some(exiting_side) =
+            view.combat.pending_player_retreat_side()
+        {
+            // The source retreat button is visible before the player
+            // creates its physical Zone. Opponents know the mission,
+            // never the not-yet-present trigger's private geometry.
+            Some(json!({
+                "kind": "withdrawal_pending",
+                "exiting_side": exiting_side,
             }))
         } else if let Some(barges) = view.rescue_barges {
             // Original rescue squad identities are private to the
