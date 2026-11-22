@@ -1209,6 +1209,7 @@ pub struct NativeExportedPolicyLevelSetup<A> {
     pub survival: Option<bees_sim::episode_terminal::SurvivalObjective>,
     pub demolition: Option<bees_sim::episode_terminal::DemolitionObjective>,
     pub escort: Option<bees_sim::episode_terminal::EscortObjective>,
+    pub target_ship: Option<bees_sim::episode_terminal::TargetShipObjective>,
     pub campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
     /// Immutable source campaign Codex class knowledge from the frozen
     /// career receipt; never a policy/training reward or client guess.
@@ -3162,7 +3163,10 @@ impl NativePhysicalScene {
                 // a fabricated reward or independently simulated mission.
                 setup.groups.is_some() || setup.survival.is_some() ||
                 setup.demolition.is_some() || setup.escort.is_some() ||
-                setup.extraction.is_some() =>
+                setup.extraction.is_some() ||
+                !setup.target_ship.is_some_and(|target|
+                    target.attacking_side == player_side &&
+                    target.target_ship_id == honeybee_id) =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::TitaniaBeenoculars { player_side, .. })
                 if !setup.survival.is_some_and(|objective| objective.defending_side == player_side) =>
@@ -3420,6 +3424,24 @@ impl NativePhysicalScene {
                 return Err(NativePolicyOnlyLevelError::InvalidDemolitionObjective);
             }
             episode.arm_demolition(objective, self.fixed_dt_seconds)
+                .map_err(NativeSnapshotError::Episode)
+                .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        }
+        if let Some(objective) = setup.target_ship {
+            let target_is_real_opponent = self.entities.iter().any(|entity| matches!(
+                entity, NativeAuthoredEntity::Ship(ship)
+                    if ship.entity_id == objective.target_ship_id &&
+                    ship.side != objective.attacking_side &&
+                    !ship.vitals.is_dead()
+            ));
+            if !target_is_real_opponent || setup.extraction.is_some() ||
+                setup.groups.is_some() ||
+                setup.survival.is_some() || setup.demolition.is_some() ||
+                setup.escort.is_some()
+            {
+                return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue);
+            }
+            episode.arm_target_ship(objective)
                 .map_err(NativeSnapshotError::Episode)
                 .map_err(NativePolicyOnlyLevelError::Snapshot)?;
         }
