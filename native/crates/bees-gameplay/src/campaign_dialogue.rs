@@ -244,34 +244,37 @@ pub enum CampaignObjectiveKind {
     PlutoAnomaly,
     PlutoReinforcements,
     PlutoPushback,
+    PlutoEvacuation,
+    NeptuneSeizeMeans,
     NeptuneProduction,
+    NeptunePressingForward,
     TitaniaMinesweeper,
     TitaniaBeenoculars,
     UranusOffensive,
     UranusDefensive,
+    UranusNewThreat,
 }
 
 impl CampaignDialogue {
     pub fn objective_kind(&self) -> Option<CampaignObjectiveKind> {
-        match self.mode {
-            DialogueMode::PlutoAnomaly { .. } =>
-                Some(CampaignObjectiveKind::PlutoAnomaly),
-            DialogueMode::PlutoReinforcements { .. } =>
-                Some(CampaignObjectiveKind::PlutoReinforcements),
-            DialogueMode::PlutoPushback { .. } =>
-                Some(CampaignObjectiveKind::PlutoPushback),
-            DialogueMode::NeptuneProduction { .. } =>
-                Some(CampaignObjectiveKind::NeptuneProduction),
-            DialogueMode::Minesweeper { .. } =>
-                Some(CampaignObjectiveKind::TitaniaMinesweeper),
-            DialogueMode::Beenoculars { .. } =>
-                Some(CampaignObjectiveKind::TitaniaBeenoculars),
-            DialogueMode::UranusOffensive { .. } =>
-                Some(CampaignObjectiveKind::UranusOffensive),
-            DialogueMode::UranusDefensive { .. } =>
-                Some(CampaignObjectiveKind::UranusDefensive),
-            _ => None,
-        }
+        // Every authored campaign mode has a public mission identity.
+        // The single dialogue state machine remains the owner of that
+        // identity; client/host presentation must not infer it from the
+        // scene, the current cue, or a duplicate mission registry.
+        Some(match self.mode {
+            DialogueMode::PlutoAnomaly { .. } => CampaignObjectiveKind::PlutoAnomaly,
+            DialogueMode::PlutoReinforcements { .. } => CampaignObjectiveKind::PlutoReinforcements,
+            DialogueMode::PlutoPushback { .. } => CampaignObjectiveKind::PlutoPushback,
+            DialogueMode::PlutoEvacuation { .. } => CampaignObjectiveKind::PlutoEvacuation,
+            DialogueMode::NeptuneSeizeMeans => CampaignObjectiveKind::NeptuneSeizeMeans,
+            DialogueMode::NeptuneProduction { .. } => CampaignObjectiveKind::NeptuneProduction,
+            DialogueMode::NeptunePressingForward { .. } => CampaignObjectiveKind::NeptunePressingForward,
+            DialogueMode::Minesweeper { .. } => CampaignObjectiveKind::TitaniaMinesweeper,
+            DialogueMode::Beenoculars { .. } => CampaignObjectiveKind::TitaniaBeenoculars,
+            DialogueMode::UranusOffensive { .. } => CampaignObjectiveKind::UranusOffensive,
+            DialogueMode::UranusDefensive { .. } => CampaignObjectiveKind::UranusDefensive,
+            DialogueMode::UranusNewThreat { .. } => CampaignObjectiveKind::UranusNewThreat,
+        })
     }
 
     pub fn new(spec: CampaignDialogueSpec) -> Self {
