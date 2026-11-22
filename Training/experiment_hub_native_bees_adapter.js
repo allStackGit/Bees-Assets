@@ -204,6 +204,19 @@ function synchronizedOptimizerEvidence(metrics) {
             metrics.optimizer_fused_adam_active !== flags[0])
             throw Error('Native Bees fused Adam activation differs from its GPU-rank receipts.');
     }
+    const graphNames = ['graph_captures','graph_replays','graph_skips',
+        'graph_memory_skips','graph_full_replays','graph_adam_replays'];
+    if (metrics.optimizer_graph_execution) {
+        const source=metrics.optimizer_graph_execution;
+        if (graphNames.some(key =>
+            !Number.isSafeInteger(source[key]) || source[key]<0 ||
+            !workers[0].graph_execution ||
+            workers[0].graph_execution[key]!==source[key]) ||
+            workers.some(worker => !worker.graph_execution ||
+                graphNames.some(key => !Number.isSafeInteger(worker.graph_execution[key]) ||
+                                       worker.graph_execution[key]<0)))
+            throw Error('Native Bees GPU graph replay receipts are incomplete or inconsistent.');
+    }
     return {totalThreads,totalInteropThreads,perNode};
 }
 
@@ -339,6 +352,16 @@ function learnerMeasurements(metrics) {
         add(name, 'count');
     add('reward_journal_payload_bytes', 'bytes');
     add('optimizer_steps_per_update_second', 'rate');
+    const graphNames = ['graph_captures','graph_replays','graph_skips',
+        'graph_memory_skips','graph_full_replays','graph_adam_replays'];
+    if (metrics.optimizer_graph_execution) {
+        for (const name of graphNames) {
+            const value=metrics.optimizer_graph_execution[name];
+            if (!Number.isSafeInteger(value)||value<0)
+                throw Error('Native Bees optimizer graph execution evidence is invalid.');
+            report['optimizer_'+name]={value,unit:'count'};
+        }
+    }
     // The authoritative learner records sequential wall-clock phases.
     // Capture parsing and trajectory ingestion are SUBDIVISIONS of
     // trajectory processing, not additional time to add to the total.
@@ -415,6 +438,14 @@ function learnerMeasurements(metrics) {
                     ...(worker.cuda_graph_requested === undefined ? [] :
                         [['cuda_graph_requested',worker.cuda_graph_requested,'count']]),
                 ]) report['optimizer_gpu_'+index+'_'+name]={value,unit};
+                if(worker.graph_execution) {
+                    for(const name of graphNames) {
+                        const value=worker.graph_execution[name];
+                        if(!Number.isSafeInteger(value)||value<0)
+                            throw Error('Native Bees GPU rank has invalid graph replay evidence.');
+                        report['optimizer_gpu_'+index+'_'+name]={value,unit:'count'};
+                    }
+                }
                 optimizerResourceMeasurements(report,'optimizer_gpu_'+index+'_',
                     worker.update_resource_measurements);
             });
