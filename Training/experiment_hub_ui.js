@@ -4087,6 +4087,42 @@ document.addEventListener('DOMContentLoaded', () => {
         if(key&&[...tinyBrainsImport.options].some(option=>option.value===key))
             tinyBrainsImport.value=key;
     }
+    function refreshEvaluationCheckpointNotice() {
+        const note=$('hub-evaluation-checkpoint-note');
+        note.hidden=project==='bees';
+        if(note.hidden)return;
+        let parameters={};
+        try {parameters=JSON.parse($('hub-config-json').value);}catch {}
+        const cadence=Number($('hub-evaluation-frequency').value);
+        const monitoring=$('hub-evaluation-mode').value==='monitor';
+        let saving=null,unit=project==='tinybrains'?'PPO updates':'rounds';
+        if(project==='courier') {
+            saving=parameters.checkpoint_rounds;
+        }else if(project==='tinybrains') {
+            const field=designDefinition(parameters)?.entry.fields?.find(entry=>
+                entry.key==='training.checkpoint_every');
+            saving=parameters.design_overrides?.['training.checkpoint_every']??
+                field?.default;
+        }
+        if(!Number.isSafeInteger(saving)||saving<1) {
+            note.textContent='Checkpoint saving interval is not available from the selected '+
+                'approved trainer. An evaluation schedule cannot create model checkpoints.';
+            return;
+        }
+        const gap=monitoring&&Number.isSafeInteger(cadence)&&cadence>0;
+        note.textContent='Training saves a checkpoint every '+saving+' '+unit+
+            ' (change '+(project==='tinybrains'
+                ?'Design → Training hyperparameters':'Design → Run settings')+
+            ' for future runs).'+
+            (gap?' Independent evaluation requests at least '+cadence+' '+unit+
+                ' between completed checkpoint evaluations.':'')+
+            (gap&&cadence<saving
+                ?' WARNING: evaluation frequency is shorter than checkpoint saving; '+
+                    'the evaluator cannot observe unsaved model versions.':'')+
+            ' Polling, evaluation duration and receipt archival can further reduce the observed frequency.'+
+            ' Running jobs retain their frozen checkpoint interval.';
+    }
+    $('hub-evaluation-frequency').addEventListener('input',refreshEvaluationCheckpointNotice);
     function readDesignControls() {
         const controls=[...$('hub-design-editor').querySelectorAll('[data-design-key]')];
         const runControls=[...$('hub-design-run').querySelectorAll('[data-design-run]')];
@@ -4176,6 +4212,7 @@ document.addEventListener('DOMContentLoaded', () => {
             delete parameters.training_schema_sha256;
         }
         $('hub-config-json').value=JSON.stringify(parameters,null,2);
+        refreshEvaluationCheckpointNotice();
         return parameters;
     }
     let renderedDesignSignature=null;
@@ -4326,7 +4363,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(project==='tinybrains') {
             const note=document.createElement('p');
             note.className='muted hub-design-note';
-            note.textContent='Persistent colony PPO uses training.colony_batch_size (default 16) for optimizer minibatches. The legacy training.batch_size is ignored by this runtime and is not editable.';
+            note.textContent='Persistent colony PPO uses training.colony_batch_size (default 16) for optimizer minibatches. The legacy training.batch_size is ignored. Training checkpoint interval controls when immutable model versions are available to independent evaluation; changes apply to future jobs.';
             $('hub-design-training').append(note);
         }
     }
@@ -4613,6 +4650,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function refreshEvaluationEditor() {
         const monitor=$('hub-evaluation-mode').value==='monitor';
+        refreshEvaluationCheckpointNotice();
         $('hub-evaluation-measurements-panel').hidden=!monitor;
         const optionalStop=$('hub-evaluation-optional-stop');
         const hasStop=!monitor||optionalStop.checked;
