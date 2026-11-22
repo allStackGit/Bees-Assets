@@ -1238,8 +1238,8 @@ class BottleneckEvidence {
             // delays the current learner update. Preserve the synchronous
             // interpretation for old or non-overlapped trainers.
             const lag=metrics.training_shared_policy_lag_updates;
-            const overlap=seconds('training_shared_async_collection_overlap_seconds');
-            const joinWait=seconds('training_shared_async_collection_wait_seconds');
+            const overlap=seconds('training_shared_overlap_seconds');
+            const joinWait=seconds('training_shared_collect_wait_seconds');
             const pipelineActive=lag?.unit==='count'&&lag.value>0||overlap>0;
             const criticalCollection=pipelineActive?joinWait:collection;
             const gpuForwardOwner=metrics.training_shared_last_wire_worker?.value;
