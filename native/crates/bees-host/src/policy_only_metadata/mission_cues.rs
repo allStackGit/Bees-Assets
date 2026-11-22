@@ -119,6 +119,10 @@ impl NativeMissionCue {
 pub(crate) enum NativeMissionEvent {
     CampaignCue(NativeMissionCue),
     ShipDestroyed(i64),
+    /// The original map-boundary extraction and WarpGate callbacks are
+    /// different source events, each preserving actual FleetShip cargo.
+    ShipExtracted(i64),
+    ShipWarped(i64),
     /// Only the canonical physical MapObject death event can release this.
     /// Stable Level entity IDs never alias a ship or a replacement collider.
     MapObjectDestroyed(i64),
@@ -135,7 +139,9 @@ impl NativeMissionEvent {
     ) -> bool {
         match self {
             Self::CampaignCue(cue) => cue.valid_for(campaign),
-            Self::ShipDestroyed(id) => id > 0 && known_ship(id),
+            Self::ShipDestroyed(id) |
+            Self::ShipExtracted(id) |
+            Self::ShipWarped(id) => id > 0 && known_ship(id),
             Self::MapObjectDestroyed(id) => id > 0 && known_map_object(id),
             Self::MiningAsteroidDepleted(id) =>
                 id > 0 && known_mining_asteroid(id),
@@ -154,6 +160,18 @@ impl NativeMissionEvent {
                     bees_sim::combat_world::CombatEvent::ShipDied {
                         victim_id, end_kill: false, ..
                     } if *victim_id == id
+                )
+            ),
+            Self::ShipExtracted(id) => world.events().iter().any(|event|
+                matches!(event,
+                    bees_sim::combat_world::CombatEvent::ShipExtracted { ship_id, .. }
+                        if *ship_id == id
+                )
+            ),
+            Self::ShipWarped(id) => world.events().iter().any(|event|
+                matches!(event,
+                    bees_sim::combat_world::CombatEvent::ShipWarped { ship_id, .. }
+                        if *ship_id == id
                 )
             ),
             Self::MapObjectDestroyed(id) => world.events().iter().any(|event|
