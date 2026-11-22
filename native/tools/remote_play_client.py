@@ -62,6 +62,7 @@ HELP = """Commands:
   select ID [ID...]    Select one or more friendly squad IDs
   select all           Select all controllable root squads (not child drones)
   select clear         Clear selection and requested weapon overlays
+  select type N        Select controllable squads containing ship class N
   number 0..9          Select original numbered squad (0 means squad 10)
   cycle next|previous  Cycle living source squads in authored roster order
   move X Y             Move selected squads to world point
@@ -959,6 +960,19 @@ class RemoteConsole:
                 # them to avoid doubling parent and drone orders.
                 owners = [row["owner"] for row in state["squads"]
                           if row["controllable"] and row.get("source_root") is True]
+            elif len(argv) == 2 and argv[0] == "type":
+                ship_type = int(argv[1])
+                if not 0 <= ship_type < 24:
+                    raise ValueError("source ship class must be 0..23")
+                # Source double-click selects every eligible squad with
+                # at least one living ship of the clicked class.
+                live_ids = {ship["id"] for ship in state["ships"]
+                            if ship["owned"] and ship["ship_type"] == ship_type}
+                owners = [row["owner"] for row in state["squads"]
+                          if row["controllable"] and any(
+                              member in live_ids for member in row["members"])]
+                if not owners:
+                    raise ValueError("no live controllable squad of that ship class")
             elif argv == ["clear"]:
                 owners = []
             elif argv:
