@@ -167,6 +167,8 @@ pub struct NativeRenderWorldView<'a> {
     /// Current source GameState.PlayerScore, read from the same checkpointed
     /// physical death ledger as the terminal campaign result.
     pub campaign_score: Option<(i32, i64)>,
+    /// Original progression rights, borrowed from the live source Level.
+    pub campaign_codex: Option<(i32, &'a [bool; bees_sim::ship_assets::SHIP_TYPE_COUNT])>,
     /// Source GameState summary (ships lost, safely returned, credited
     /// kills); owned by the same checkpoint as live physical combat.
     pub player_match_counts: Option<(u64, u64, u64)>,
