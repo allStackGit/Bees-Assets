@@ -465,15 +465,18 @@ fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }
 
-pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Error>> {
-    choose_for_preferred_side(save_root,None)
+pub(super) fn choose(
+    save_root: &Path, bee_queen_unlocked: bool,
+) -> Result<Option<FleetChoice>, Box<dyn Error>> {
+    choose_for_preferred_side(save_root, None, bee_queen_unlocked)
 }
 
 /// Original FreePlay SwitchSides leaves the active Level and opens Squad
 /// Maker with the other faction selected. The player's existing physical
 /// world is never re-owned while it is running.
 pub(super) fn choose_for_preferred_side(
-    save_root:&Path,preferred_side:Option<i32>,
+    save_root: &Path, preferred_side: Option<i32>,
+    bee_queen_unlocked: bool,
 ) -> Result<Option<FleetChoice>,Box<dyn Error>> {
     if preferred_side.is_some_and(|side|!matches!(side,1|2)) {
         return Err(invalid("preferred Fleet Builder side must be Bee or Human").into());
@@ -505,7 +508,9 @@ pub(super) fn choose_for_preferred_side(
     let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
-    let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
+    let Some(mix) = choose_mix(
+        fleet_sizes, ore_count > 0, arena_size, bee_queen_unlocked,
+    )? else { return Ok(None); };
     let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
@@ -630,7 +635,7 @@ pub(super) fn choose_multiplayer(
     let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
-    let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size, true)? else { return Ok(None); };
     let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
@@ -682,7 +687,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
-    let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size, true)? else { return Ok(None); };
     let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
@@ -873,8 +878,10 @@ fn choose_sizes() -> Result<Option<[usize; 2]>, Box<dyn Error>> {
     Ok(Some(fleet_sizes))
 }
 
-fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool, arena_size: Option<u32>)
-    -> Result<Option<[FleetMix; 2]>, Box<dyn Error>>
+fn choose_mix(
+    fleet_sizes: [usize; 2], mining_field: bool, arena_size: Option<u32>,
+    bee_queen_unlocked: bool,
+) -> Result<Option<[FleetMix; 2]>, Box<dyn Error>>
 {
     let mut choices = [FleetMix::Fighters; 2];
     for side in 0..2 {
@@ -928,9 +935,9 @@ fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool, arena_size: Option<u3
                 "{} fighters, 1 WarpGate  |  Source FullRetreat evacuation",
                 total - 1,
             )));
-            if arena_size.is_some_and(|size| size >= 1024) {
+            if bee_queen_unlocked && arena_size.is_some_and(|size| size >= 1024) {
                 options.push((FleetMix::Queen, format!(
-                    "{} fighters, 1 Bee Queen  |  Source Yellow Jacket waves",
+                    "{} fighters, 1 Bee Queen  |  Challenge completion reward",
                     total - 1,
                 )));
             }
