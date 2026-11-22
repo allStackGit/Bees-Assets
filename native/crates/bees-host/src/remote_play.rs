@@ -47,7 +47,11 @@ const MAX_PENDING_AUDIO_EVENTS: usize = 32;
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum WireInput {
-    Hello { token: String, #[serde(default)] resume_session_id: Option<String> },
+    Hello {
+        token: String,
+        #[serde(default)] resume_session_id: Option<String>,
+        #[serde(default)] spectator: bool,
+    },
     Input { request_id: u64, action: NativePlayerInput },
     /// Replaceable presentation interest, not a physical World input.
     WeaponOverlay { request_id: u64, world_id: u64,
@@ -101,6 +105,10 @@ struct Peer {
     id: u64,
     socket: TcpStream,
     side: Option<i32>,
+    // Spectators authenticate with independent view-only secrets for
+    // their authorized faction. A side's commander token is never a
+    // substitute and cannot elevate a spectator into command authority.
+    spectator: bool,
     last_request_id: u64,
     weapon_overlay: Option<(u64, u64, Vec<SquadLifetime>)>,
     incoming: Vec<u8>,
@@ -434,6 +442,7 @@ pub struct NativeRemotePlay {
     /// Only dedicated LAN hosting needs remote viewer acknowledgment.
     dedicated_briefing_gate: bool,
     side_tokens: HashMap<i32, String>,
+    spectator_tokens: HashMap<i32, String>,
     archived_receipts: HashMap<String, NativeArchivedBattleReceipt>,
     peers: Vec<Peer>,
     next_peer: u64,
@@ -485,6 +494,31 @@ impl NativeRemotePlay {
             return Err(io::Error::new(io::ErrorKind::InvalidInput,
                 "remote player sides must be 1 or 2 with unique 24-256 character tokens"));
         }
+        // Viewers still receive only their own faction's existing
+        // fog-filtered projection. They MUST have independent credentials,
+        // not a commander token with an opt-in client-side "read only" flag.
+        let spectator_tokens: HashMap<i32, String> = match
+            std::env::var("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS")
+        {
+            Ok(raw) => serde_json::from_str(&raw).map_err(|error|
+                io::Error::new(io::ErrorKind::InvalidInput,
+                    format!("invalid BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS: {error}")))?,
+            Err(std::env::VarError::NotPresent) => HashMap::new(),
+            Err(error) => return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                format!("invalid native spectator token environment: {error}"))),
+        };
+        if spectator_tokens.len() > 2 ||
+            spectator_tokens.iter().any(|(&side, token)|
+                !(1..=2).contains(&side) || !side_tokens.contains_key(&side) ||
+                !(24..=256).contains(&token.len()) ||
+                token.chars().any(|ch| ch.is_control())) ||
+            spectator_tokens.values().collect::<HashSet<_>>().len() != spectator_tokens.len() ||
+            spectator_tokens.values().any(|secret|
+                side_tokens.values().any(|player| player == secret))
+        {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                "spectator credentials require unique 24-256 character view-only tokens for existing commander sides"));
+        }
         let mut session_nonce = [0u8; 16];
         getrandom::getrandom(&mut session_nonce)
             .map_err(|error| io::Error::new(io::ErrorKind::Other,
@@ -502,11 +536,17 @@ impl NativeRemotePlay {
             "mode": if side_tokens.len() > 1 { "independent_player_sides" }
                     else { "shared_player_authority" },
             "configured_sides": configured_sides,
+            "spectator_sides": {
+                let mut sides = spectator_tokens.keys().copied().collect::<Vec<_>>();
+                sides.sort_unstable();
+                sides
+            },
         }));
         Ok(Some(Self {
             listener, host_session_id, recovered_session: false,
             archive_only: false, dedicated_briefing_gate: dedicated,
-            side_tokens, archived_receipts: HashMap::new(), peers: Vec::new(),
+            side_tokens, spectator_tokens,
+            archived_receipts: HashMap::new(), peers: Vec::new(),
             next_peer: 1, last_state: None, force_initial_state: false,
             pending_audio: HashMap::new(), fog_by_side: HashMap::new(),
             music_location: None,
@@ -746,7 +786,8 @@ impl NativeRemotePlay {
             self.next_peer += 1;
             self.measurements.connections_accepted += 1;
             self.peers.push(Peer {
-                id, socket, side: None, last_request_id: 0, incoming: Vec::new(),
+                id, socket, side: None, spectator: false,
+                last_request_id: 0, incoming: Vec::new(),
                 weapon_overlay: None,
                 outgoing: Vec::new(), written: 0, writing_state: false,
                 reliable: VecDeque::new(), reliable_bytes: 0,
@@ -817,9 +858,12 @@ impl NativeRemotePlay {
                     serde_json::from_slice(&peer.incoming[start..end]);
                 start = end + 1;
                 match message {
-                    Ok(WireInput::Hello { token, resume_session_id })
+                    Ok(WireInput::Hello { token, resume_session_id, spectator })
                         if peer.side.is_none() => {
-                        let side = self.side_tokens.iter().find_map(|(&side, secret)|
+                        let credentials = if spectator {
+                            &self.spectator_tokens
+                        } else { &self.side_tokens };
+                        let side = credentials.iter().find_map(|(&side, secret)|
                             constant_time_matches(secret.as_bytes(), token.as_bytes())
                                 .then_some(side));
                         if let Some(side) = side {
@@ -833,6 +877,7 @@ impl NativeRemotePlay {
                                 break;
                             }
                             peer.side = Some(side);
+                            peer.spectator = spectator;
                             self.measurements.authenticated_peers += 1;
                             if let Some(original) = resume_session_id.as_deref()
                                 .filter(|id| *id != self.host_session_id)
@@ -852,7 +897,9 @@ impl NativeRemotePlay {
                                 };
                                 let _ = peer.enqueue(&json!({
                                     "kind": "welcome", "protocol": 1,
-                                    "mode": "authenticated_player_side", "side": side,
+                                    "mode": if spectator { "authenticated_spectator" }
+                                        else { "authenticated_player_side" },
+                                    "spectator": spectator, "side": side,
                                     "host_session_id": original,
                                     "recovered_host": true,
                                 }));
@@ -896,7 +943,9 @@ impl NativeRemotePlay {
                             }
                             let _ = peer.enqueue(&json!({
                                 "kind": "welcome", "protocol": 1,
-                                "mode": "authenticated_player_side", "side": side,
+                                "mode": if spectator { "authenticated_spectator" }
+                                    else { "authenticated_player_side" },
+                                "spectator": spectator, "side": side,
                                 "host_session_id": self.host_session_id,
                                 "recovered_host": self.recovered_session,
                             }));
