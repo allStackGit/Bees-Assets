@@ -382,6 +382,8 @@ struct CampaignAuthoredAssignment {
     fleet_ship_id: i64,
     from_saved_squad_id: i64,
     to_saved_squad_id: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ship_type: Option<u8>,
 }
 
 #[derive(Clone, Copy)]
@@ -389,6 +391,7 @@ struct AuthoredRosterOwner {
     side: i32,
     initial_saved_squad_id: i64,
     current_saved_squad_id: i64,
+    ship_type: Option<u8>,
 }
 
 #[derive(Default)]
@@ -544,6 +547,7 @@ impl CampaignProgress<'_> {
                 "initial_saved_squad_id": owner.initial_saved_squad_id,
                 "saved_squad_id": owner.current_saved_squad_id,
                 "in_reserve": owner.current_saved_squad_id == 0,
+                "ship_type": owner.ship_type,
             })
         }).collect()
     }
@@ -595,6 +599,8 @@ impl CampaignProgress<'_> {
         self.fleet.get(&fleet_ship_id).and_then(|row| row.ship_type)
             .or_else(|| self.purchased_ship(fleet_ship_id)
                 .map(|(_, ship)| ship.ship_type))
+            .or_else(|| self.authored_roster.get(&fleet_ship_id)
+                .and_then(|owner| owner.ship_type))
     }
 
     pub fn fleet_ship_name(&self, fleet_ship_id: i64) -> Option<&str> {
@@ -1054,6 +1060,7 @@ impl BattleCatalog {
     pub fn register_authored_ship(
         &self, progress: &CampaignProgress<'_>, output: &Path,
         side: i32, fleet_ship_id: i64, source_squad_id: i64,
+        ship_type: u8,
     ) -> io::Result<()> {
         let campaign_id = self.campaign_id.as_deref()
             .ok_or_else(|| invalid("original FleetShip registration requires a campaign"))?;
@@ -1071,6 +1078,7 @@ impl BattleCatalog {
                 campaign_id: campaign_id.to_owned(), player_side: side,
                 fleet_ship_id, from_saved_squad_id: source_squad_id,
                 to_saved_squad_id: source_squad_id,
+                ship_type: Some(ship_type),
             })
     }
 
@@ -1184,6 +1192,7 @@ impl BattleCatalog {
     pub fn reassign_authored_ship(
         &self, progress: &CampaignProgress<'_>, output: &Path,
         side: i32, fleet_ship_id: i64, from_squad: i64, to_squad: i64,
+        source_ship_type: Option<u8>,
     ) -> io::Result<()> {
         let campaign_id = self.campaign_id.as_deref()
             .ok_or_else(|| invalid("authored roster changes require a campaign"))?;
@@ -1191,6 +1200,9 @@ impl BattleCatalog {
             from_squad < 0 || to_squad < 0 || from_squad == to_squad ||
             (to_squad > 0 && progress.is_retired_saved_squad(to_squad)) ||
             progress.purchased_ship(fleet_ship_id).is_some() ||
+            source_ship_type.is_some_and(|kind|
+                progress.known_fleet_ship_type(fleet_ship_id)
+                    .is_some_and(|recorded| recorded != kind)) ||
             progress.authored_roster.get(&fleet_ship_id)
                 .is_some_and(|owner| owner.side != side) ||
             progress.authored_current_squad(fleet_ship_id)
@@ -1209,6 +1221,7 @@ impl BattleCatalog {
                 player_side: side, fleet_ship_id,
                 from_saved_squad_id: from_squad,
                 to_saved_squad_id: to_squad,
+                ship_type: source_ship_type,
             },
         )
     }
@@ -1689,9 +1702,15 @@ impl BattleCatalog {
                     side: edit.player_side,
                     initial_saved_squad_id: edit.from_saved_squad_id,
                     current_saved_squad_id: edit.from_saved_squad_id,
+                    ship_type: edit.ship_type,
                 });
             if owner.side != edit.player_side ||
                 owner.current_saved_squad_id != edit.from_saved_squad_id ||
+                edit.ship_type.is_some_and(|kind|
+                    owner.ship_type.is_some_and(|recorded| recorded != kind) ||
+                    progress.fleet.get(&edit.fleet_ship_id)
+                        .and_then(|row| row.ship_type)
+                        .is_some_and(|recorded| recorded != kind)) ||
                 (edit.to_saved_squad_id != 0 &&
                     progress.squads.get(&edit.to_saved_squad_id)
                         .is_some_and(|squad| squad.side != edit.player_side))
@@ -1699,6 +1718,7 @@ impl BattleCatalog {
                 return Err(invalid("stale original FleetShip squad assignment"));
             }
             owner.current_saved_squad_id = edit.to_saved_squad_id;
+            if owner.ship_type.is_none() { owner.ship_type = edit.ship_type; }
             if edit.from_saved_squad_id != edit.to_saved_squad_id {
                 progress.authored_transfer_count = progress.authored_transfer_count.checked_add(1)
                     .ok_or_else(|| invalid("authored squad edit counter overflow"))?;
@@ -2000,7 +2020,8 @@ impl BattleCatalog {
                 "name": progress.fleet_ship_name(id),
                 "acquisition": acquisition,
                 "ship_type": purchased.map(|(_, ship)| ship.ship_type)
-                    .or_else(|| history.and_then(|record| record.ship_type)),
+                    .or_else(|| history.and_then(|record| record.ship_type))
+                    .or_else(|| authored.and_then(|owner| owner.ship_type)),
                 // null means the original assignment is not in the durable
                 // ledger; zero means an explicitly recorded reserve ship.
                 "saved_squad_id": squad,
