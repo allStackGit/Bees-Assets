@@ -1682,7 +1682,8 @@ function canPrepareSimulation(machine,job) {
 }
 function allocationChoice(machines,reservations,job,preferredMachineId=null,
     following=[],futureMachinesFor=()=>machines,snapshot=null,throughput=null) {
-    const eligibleOptions=(selected,hosts,preferred=null,claims=reservations)=>{
+    const eligibleOptions=(selected,hosts,preferred=null,claims=reservations,
+        expandGpuChoices=true)=>{
         const eligible=hosts.filter(machine=>
             machine.software_update_blocked!==true&&
             (canPrepareSimulation(machine,selected)||
@@ -1693,8 +1694,8 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
             (!snapshot||distributedRolloutHost(snapshot,selected,machine))&&
             (!preferred||preferred===machine.id)&&
             (!selected.continuation_machine_id||selected.continuation_machine_id===machine.id));
-        const fits=placementAlternatives(eligible,claims,selected.resources)
-            .filter(p=>p.capacity_fits);
+        const fits=(expandGpuChoices?placementAlternatives:resourcePlacements)(
+            eligible,claims,selected.resources).filter(p=>p.capacity_fits);
         const r=selected.resources;
         const cpuOnly=r.gpu_count===0&&!(r.gpus||[]).length;
         const exclusiveGpu=r.gpu_count===1&&r.gpu_mode==='exclusive';
@@ -1767,7 +1768,9 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
     const future=following.filter(next=>!next.lease_id).slice(0,8)
         .map(next=>{
             const hosts=futureMachinesFor(next);
-            const before=eligibleOptions(next,hosts);
+            // Feasibility needs one planner pass per machine, not all 64
+            // ranked device alternatives used for the current choice.
+            const before=eligibleOptions(next,hosts,null,reservations,false);
             return before.length?{job:next,hosts}:null;
         }).filter(Boolean);
     if(!future.length)return options[0];
@@ -1778,7 +1781,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         }]);
         let blocked=0;
         for(const next of future) {
-            if(!eligibleOptions(next.job,next.hosts,null,shadow).length)
+            if(!eligibleOptions(next.job,next.hosts,null,shadow,false).length)
                 blocked++;
         }
         return blocked;
