@@ -467,6 +467,12 @@ impl CombatWorld {
         if weapons.turrets[slot].is_some() {
             return Err(CombatWorldError::DuplicatePolicyTurret { ship_id, slot });
         }
+        // Without any mounted weapons there is no per-tick turret
+        // controller. Capture the actual current hull orientation at the
+        // first install, not an obsolete spawn-time rotation.
+        if weapons.turrets.iter().all(Option::is_none) {
+            weapons.last_hull_rotation = rotation;
+        }
         weapons.turrets[slot] = Some(MountedTurret::new(spec));
         Ok(())
     }
@@ -542,6 +548,12 @@ impl CombatWorld {
             .ok_or(CombatWorldError::UnknownShip)?.control.bind_turret_aim(
             slot, Vec2::new(-radians.sin(), radians.cos()),
         );
+        // Controller setup can happen after ordinary gameplay movement.
+        // The initial turret turn must use the live physical hull pose.
+        if runtime.turrets.iter().all(Option::is_none) {
+            runtime.last_hull_rotation =
+                self.physics.ships()[index].motion.rotation_degrees;
+        }
         runtime.turrets[slot] = Some(MountedTurret::new(spec));
         Ok(())
     }
@@ -739,6 +751,13 @@ impl CombatWorld {
     ) -> Result<(), CombatWorldError> {
         let mut next_scheduled_id = self.next_entity_id;
         for (&ship_id, runtime) in weapons {
+            // Policy controllers legitimately register a weapon holder
+            // before any turret is authored. With no mount there is no
+            // targeting, reload, projectile, or hull-turn work to advance.
+            // First installation resets the pose reference above.
+            if runtime.turrets.iter().all(Option::is_none) {
+                continue;
+            }
             let policy_controlled = self.policy_ship_runtime.contains_key(&ship_id);
             let Some(&index) = self.ship_by_id.get(&ship_id) else { continue };
             let ship = self.ships[index];
@@ -748,10 +767,6 @@ impl CombatWorld {
             }
             let pose = body.motion.position;
             let initial_heading = body.motion.rotation_degrees;
-            if runtime.turrets.iter().all(Option::is_none) {
-                runtime.last_hull_rotation = initial_heading;
-                continue;
-            }
             let moving = body.motion.is_moving;
             let body_user_controlled = body.motion.user_controlled;
             let mut heading = initial_heading;
