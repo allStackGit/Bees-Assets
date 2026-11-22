@@ -10804,6 +10804,13 @@ fn run_battle(
                 (None, None, None, Some(_)) => NativeResultControls::PlayAgain,
                 (None, None, None, None) => NativeResultControls::Close,
             };
+            if mission.is_some() {
+                let new_ships=final_summary["campaign_outcome"]["awarded_ships"]
+                    .as_array().map_or(0,Vec::len);
+                client.set_campaign_ending_awards(
+                    new_ships,campaign_banked_minerals.unwrap_or(0),
+                );
+            }
             client.show_result(controls);
             loop {
                 let index = client.selected_world();

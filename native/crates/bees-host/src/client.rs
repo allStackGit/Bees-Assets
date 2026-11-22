@@ -171,6 +171,9 @@ pub struct NativeClient {
     /// same completed physical match accounting as the remote receipts.
     match_summary_visible: bool,
     match_summary: Option<(WorldId,u64,i32,Vec<String>)>,
+    /// Already committed outcome rewards. These aren't inferred from
+    /// in-game mining cargo or client-side asset counts.
+    campaign_ending_awards: Option<(usize,u64)>,
     playback: bool,
     dialogue_sequence: Option<u32>,
     dialogue_line: usize,
@@ -278,6 +281,7 @@ impl NativeClient {
             input_feedback: "",
             result_controls: None,
             match_summary_visible: false, match_summary: None,
+            campaign_ending_awards: None,
             playback: false,
             dialogue_sequence: None,
             dialogue_line: 0,
@@ -455,6 +459,15 @@ impl NativeClient {
     }
 
     pub fn viewport_size(&self) -> (usize, usize) { self.renderer.size() }
+
+    /// Import finalized original ending awards after the career transaction
+    /// is durable, never before the completed Level's fleet/outcome commit.
+    pub fn set_campaign_ending_awards(
+        &mut self, new_ships: usize, minerals_received: u64,
+    ) {
+        self.campaign_ending_awards = Some((new_ships,minerals_received));
+        self.match_summary = None;
+    }
 
     pub fn report_move(&mut self, feedback: &'static str) { self.input_feedback = feedback; }
 
@@ -1790,6 +1803,10 @@ impl NativeClient {
                     }
                     if let Some(mined)=view.minerals_mined_for_side(owner) {
                         summary.push(format!("Minerals physically mined: {mined}"));
+                    }
+                    if let Some((ships,minerals))=self.campaign_ending_awards {
+                        summary.push(format!("New FleetShips received: {ships}"));
+                        summary.push(format!("Minerals received: {minerals}"));
                     }
                     summary.push(" ".into());
                     summary.push("F5: hide/show this summary".into());
