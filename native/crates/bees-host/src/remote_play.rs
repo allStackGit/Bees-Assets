@@ -1998,7 +1998,7 @@ fn collect_remote_audio(
             ),
             // Source Heal.HealShips emits a cosmetic pulse once per live
             // Beehive in that command. Project only the actual host position.
-            CombatEvent::CommandHealingCross { beehive_id } => (
+            CombatEvent::CommandHealingCross { beehive_id, .. } => (
                 "healing_cross",
                 view.combat.ship_body(*beehive_id).map(|body| body.motion.position),
             ),
@@ -2075,7 +2075,7 @@ fn collect_remote_audio(
             CombatEvent::Hit(hit) => Some(hit.target_id),
             CombatEvent::BombDetonated { target_id, .. } => Some(*target_id),
             CombatEvent::ShipDied { victim_id, .. } => Some(*victim_id),
-            CombatEvent::CommandHealingCross { beehive_id } => Some(*beehive_id),
+            CombatEvent::CommandHealingCross { beehive_id, .. } => Some(*beehive_id),
             CombatEvent::StrikerBombDropped { ship_id, .. } |
             CombatEvent::ShipWarped { ship_id, .. } |
             CombatEvent::GameWeaponFired { ship_id, .. } |
@@ -2118,8 +2118,10 @@ fn collect_remote_audio(
                     cue["weapon_sound_type"] = json!(sound);
                 }
             }
-            if let CombatEvent::CommandHealingCross { beehive_id } = event {
-                cue["healing_cross"] = json!({"beehive_id": beehive_id});
+            if let CombatEvent::CommandHealingCross { beehive_id, source_ship_id } = event {
+                cue["healing_cross"] = json!({
+                    "beehive_id": beehive_id, "source_ship_id": source_ship_id,
+                });
             }
             if let Some((projectile_id, target_id, fatal)) = impact {
                 cue["combat_impact"] = json!({

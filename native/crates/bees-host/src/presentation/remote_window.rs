@@ -358,14 +358,15 @@ impl RemoteArtwork {
         }
         self.raster.begin_death_scene(WorldId(episode.0), episode.1);
         for cue in state["audio_events"].as_array().into_iter().flatten() {
-            if let (Some(beehive_id), Some(x), Some(y), Some(born_tick)) = (
+            if let (Some(beehive_id), Some(source_ship_id), Some(x), Some(y), Some(born_tick)) = (
                 cue["healing_cross"]["beehive_id"].as_i64(),
+                cue["healing_cross"]["source_ship_id"].as_i64(),
                 cue["x"].as_f64().map(|value| value as f32),
                 cue["y"].as_f64().map(|value| value as f32),
                 cue["tick"].as_u64(),
             ) {
                 let (admitted, dropped) = self.raster.record_healing_cross(
-                    born_tick, beehive_id, Vec2::new(x, y),
+                    born_tick, beehive_id, source_ship_id, Vec2::new(x, y),
                 );
                 stats.healing_crosses_received += u64::from(admitted);
                 stats.healing_crosses_dropped += u64::from(dropped);
@@ -405,6 +406,9 @@ impl RemoteArtwork {
                     u8::try_from(rgb[1].as_u64()?).ok()?,
                     u8::try_from(rgb[2].as_u64()?).ok()?,
                 ]));
+            if kind == bees_sim::combat_world::BEEHIVE_TYPE {
+                self.raster.retire_beehive_healing_crosses(id);
+            }
             let (admitted, _) = self.raster.record_ship_death(
                 id, born_tick, kind, side, Vec2::new(x, y),
                 rotation, radius, color,

@@ -338,7 +338,7 @@ impl HealRun {
             for &id in &self.healing {
                 let hive = self.assigned[&id];
                 if self.released_scratch.insert(hive) {
-                    world.emit_command_healing_cross(hive);
+                    world.emit_command_healing_cross(hive, id);
                 }
             }
             self.cleanup_scratch.clear();

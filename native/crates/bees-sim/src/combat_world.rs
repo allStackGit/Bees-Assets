@@ -344,7 +344,7 @@ pub enum CombatEvent {
     /// Source Heal.HealShips spawns one cosmetic cross per active Beehive
     /// on each one-second command timer, even when health is already full.
     /// No damage, RNG, or independent simulation state is attached.
-    CommandHealingCross { beehive_id: i64 },
+    CommandHealingCross { beehive_id: i64, source_ship_id: i64 },
     /// A real Factory/CarpenterBee mined this amount from a physical
     /// MiningAsteroid. The owning Level commits the delta to its persistent
     /// FleetShip before reconciling economic rewards or observations.

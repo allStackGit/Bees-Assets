@@ -300,6 +300,7 @@ struct CombatImpactVisual {
 #[derive(Clone, Copy)]
 struct HealingCrossVisual {
     beehive_id: i64,
+    source_ship_id: i64,
     born_tick: u64,
     origin: Vec2,
 }
@@ -1037,10 +1038,11 @@ impl NativeSoftwareRenderer {
     /// position at that callback. Repeated graphical frames cannot rearm
     /// the same effect, and previous world/episode pulses are cleared.
     pub(super) fn record_healing_cross(
-        &mut self, born_tick: u64, beehive_id: i64, origin: Vec2,
+        &mut self, born_tick: u64, beehive_id: i64, source_ship_id: i64, origin: Vec2,
     ) -> (bool, bool) {
         if !origin.is_finite() || self.healing_crosses.iter().any(|effect|
-            effect.born_tick == born_tick && effect.beehive_id == beehive_id) {
+            effect.born_tick == born_tick && effect.beehive_id == beehive_id &&
+            effect.source_ship_id == source_ship_id) {
             return (false, false);
         }
         let dropped = if self.healing_crosses.len() == 512 {
@@ -1048,9 +1050,15 @@ impl NativeSoftwareRenderer {
             true
         } else { false };
         self.healing_crosses.push(HealingCrossVisual {
-            beehive_id, born_tick, origin,
+            beehive_id, source_ship_id, born_tick, origin,
         });
         (true, dropped)
+    }
+
+    /// The source Beehive.Kill immediately recycles every cross attached
+    /// to that hive. Do not leave these effects behind until their timer.
+    pub(super) fn retire_beehive_healing_crosses(&mut self, beehive_id: i64) {
+        self.healing_crosses.retain(|fx| fx.beehive_id != beehive_id);
     }
 
     /// The original HealingCross drifts 0.5 world units every 0.1 seconds
@@ -1067,7 +1075,8 @@ impl NativeSoftwareRenderer {
             let effect = self.healing_crosses[index];
             let elapsed = (tick - effect.born_tick) as f32 * fixed_dt;
             let seed = (effect.beehive_id as u64)
-                .wrapping_mul(0x9e3779b97f4a7c15) ^ effect.born_tick;
+                .wrapping_mul(0x9e3779b97f4a7c15) ^ effect.born_tick ^
+                (effect.source_ship_id as u64).rotate_left(23);
             let hash = |value: u64| {
                 let mut x = value.wrapping_add(0x9e3779b97f4a7c15);
                 x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
@@ -2373,10 +2382,12 @@ impl NativeSoftwareRenderer {
         }
         self.begin_death_scene(view.world_id, view.episode_revision);
         for event in view.combat.events() {
-            if let bees_sim::combat_world::CombatEvent::CommandHealingCross { beehive_id } = event {
+            if let bees_sim::combat_world::CombatEvent::CommandHealingCross {
+                beehive_id, source_ship_id,
+            } = event {
                 if let Some(body) = view.combat.ship_body(*beehive_id) {
                     let (admitted, dropped) = self.record_healing_cross(
-                        view.tick, *beehive_id, body.motion.position,
+                        view.tick, *beehive_id, *source_ship_id, body.motion.position,
                     );
                     counts.healing_crosses_observed += usize::from(admitted);
                     counts.healing_crosses_dropped += usize::from(dropped);
@@ -2419,6 +2430,14 @@ impl NativeSoftwareRenderer {
                     counts.combat_impact_visuals_dropped += usize::from(dropped);
                 }
                 continue;
+            }
+            // Source Beehive.ClearData/Kill retires its healing sprites even
+            // when it escapes through EndKill rather than combat death.
+            if let bees_sim::combat_world::CombatEvent::ShipDied { victim_id, .. } = event {
+                if view.combat.ship(*victim_id).is_some_and(|ship|
+                    ship.ship_type == bees_sim::combat_world::BEEHIVE_TYPE) {
+                    self.retire_beehive_healing_crosses(*victim_id);
+                }
             }
             // EndKill (WarpGate return or physical extraction) removes the
             // ship without Source Ship.DropExplosionAnimation or ShipRemains.
