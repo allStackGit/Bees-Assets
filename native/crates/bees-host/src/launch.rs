@@ -1698,7 +1698,13 @@ fn remote_side_owns_input(host: &RolloutHost, action: &NativePlayerInput, side: 
             Some(owners) => owners, None => return false,
         },
     };
-    if owners.is_empty() { return false; }
+    if owners.is_empty() {
+        // Clearing a selection carries no squad authority. The shared
+        // Level explicitly accepts Select([]) as a real player UI event;
+        // a remote commander must be allowed the same input without
+        // making empty Move/Support/Special orders authoritative.
+        return matches!(action, NativePlayerInput::Select(_));
+    }
     owners.iter().all(|&owner| {
         world.state.events.roster().get(owner).is_some_and(|squad|
             squad.side == side &&
