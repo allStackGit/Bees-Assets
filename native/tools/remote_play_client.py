@@ -408,6 +408,27 @@ class RemoteConsole:
         return (f"Campaign saved: {outcome['mission_id']} ({saved}); "
                 f"{ships} ships and {squads} squads awarded{income}")
 
+    @staticmethod
+    def match_score_summary(state, final=None):
+        """Use the immutable committed receipt whenever it is available."""
+        evidence = (final if final is not None and
+                    final.get("kind") == "battle_result" else state)
+        parts = []
+        if evidence.get("player_score") is not None:
+            parts.append(f"score {evidence['player_score']}")
+        counts = evidence.get("player_match_counts") or {}
+        for field, label in (("ships_destroyed_by_player", "kills"),
+                             ("ships_lost", "ships lost"),
+                             ("ships_returned", "ships returned")):
+            if counts.get(field) is not None:
+                parts.append(f"{label} {counts[field]}")
+        mined = evidence.get("player_minerals_mined")
+        if mined is None:
+            mined = counts.get("player_minerals_mined")
+        if mined is not None:
+            parts.append(f"minerals mined {mined}")
+        return ", ".join(parts) if parts else None
+
     def selected_owners(self, state):
         squads = {row["owner"]["squad_id"]: row["owner"]
                   for row in state["squads"] if row["controllable"]
@@ -603,11 +624,17 @@ class RemoteConsole:
             objective = self.objective_summary(state)
             if objective is not None:
                 print(f"Objective: {objective}")
+            score = self.match_score_summary(state, final)
+            if score is not None:
+                print(f"Match: {score}")
             if state.get("can_activate_retreat") is True:
                 print("Retreat exit available: enter 'activate-retreat' to open it")
             receipt = self.campaign_receipt_snapshot()
             if receipt is not None:
                 print(self.campaign_receipt_summary(receipt))
+                delta = receipt.get("campaign_score_delta")
+                if delta is not None:
+                    print(f"Committed campaign score delta: {delta:+d}")
             return
         if cmd == "activate-retreat":
             if argv:
