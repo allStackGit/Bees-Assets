@@ -1488,20 +1488,15 @@ impl NativeRemotePlay {
                     !spectator && requires_briefing_ack &&
                         view.campaign_dialogue_side==Some(side),
                     if spectator { None } else { overlay_by_side.get(&side) },
-                    measurements,
+                    spectator, measurements,
                 );
                 if spectator {
                     measurements.spectator_snapshots_encoded += 1;
-                    // Strip side-private fields before serialization.
-                    // Only the existing side-filtered public battlefield,
-                    // mission objectives and source fog remain observable.
-                    for field in ["player_score", "player_match_counts",
-                        "player_minerals_mined", "campaign_dialogue"]
-                    {
-                        state[field] = Value::Null;
-                    }
-                    state["can_surrender"] = json!(false);
-                    state["can_activate_retreat"] = json!(false);
+                    // Objective-specific tactical story fields are still
+                    // private to their campaign's commander, even when
+                    // the entire authenticated friendly fleet is visible.
+                    // Other private fields, commands and weapon status are
+                    // never constructed for spectators in current_state.
                     // Some campaign objective fields are intentionally
                     // available only to the controlling commander, even
                     // when a same-side observer is entitled to see the
@@ -1518,11 +1513,6 @@ impl NativeRemotePlay {
                             "gunship_briefed", "honeybee_destroyed",
                         ] {
                             objective.remove(private);
-                        }
-                    }
-                    if let Some(squads) = state["squads"].as_array_mut() {
-                        for squad in squads {
-                            squad["controllable"] = json!(false);
                         }
                     }
                 }
@@ -2190,7 +2180,7 @@ fn current_state(
     music_location: Option<NativeMusicLocation>, audio_events: &[Value],
     sources: &RemoteFogSources, briefing_paused: bool,
     requires_briefing_ack: bool, overlay_squads: Option<&HashSet<SquadLifetime>>,
-    measurements: &mut RemotePlayMeasurements,
+    spectator: bool, measurements: &mut RemotePlayMeasurements,
 ) -> Value {
     let viewer = Some(side);
     let fog = view.player_authority.player_fog_of_war_enabled();
@@ -2209,7 +2199,8 @@ fn current_state(
     let ships: Vec<_> = view.combat.render_ships().filter_map(|(ship, body)| {
         if visible_ids.as_ref().is_some_and(|ids| !ids.contains(&ship.entity_id)) { return None; }
         let owner = view.roster.owning_squad(ship.entity_id);
-        let owned = owner.is_some_and(|owner| owns_player_side(view, owner, side));
+        let owned = !spectator && owner.is_some_and(|owner|
+            owns_player_side(view, owner, side));
         let overlay = owned && owner.is_some_and(|owner|
             overlay_squads.is_some_and(|squads| squads.contains(&owner)));
         let discovered = viewer.is_some_and(|side|
@@ -2432,7 +2423,7 @@ fn current_state(
     // source squads. Retired lifetimes are skipped by the same live roster.
     let squads: Vec<_> = view.roster.source_order().iter().copied().filter_map(|owner| {
         let squad = view.roster.get(owner)?;
-        let owned = owns_player_side(view, owner, side);
+        let owned = !spectator && owns_player_side(view, owner, side);
         let members: Vec<_> = squad.members.iter().copied()
             .filter(|id| owned || visible_ids.as_ref().map_or(true, |ids| ids.contains(id))).collect();
         if members.is_empty() { return None; }
@@ -2489,7 +2480,12 @@ fn current_state(
                 .map(|strategy| strategy.id) } else { None },
         }))
     }).collect();
-    let player_match = view.player_match_for_side(side);
+    // The commander receipt, squad command plan, turret internals, and
+    // persistent career knowledge are never placed in observer JSON.
+    // Public nearby allied hulls still use the SAME source-side fog.
+    let player_match = if spectator { None } else {
+        view.player_match_for_side(side)
+    };
     json!({
         "kind": "world_state", "protocol": 1,
         "world_id": view.world_id.0,
@@ -2508,16 +2504,18 @@ fn current_state(
                 "ships_destroyed_by_player": kills,
                 "ships_lost_by_type": view.loss_types_for_side(side),
             })),
-        "player_minerals_mined": view.minerals_mined_for_side(side),
+        "player_minerals_mined": if spectator { None } else {
+            view.minerals_mined_for_side(side)
+        },
         // Source-owned story pacing, including genuine encounters
         // that occur after the first physics tick.
         "briefing_requires_ack": requires_briefing_ack,
         // Both sides use the one authoritative Level clock. The opposing
         // side sees only this pause flag, never the owner's private story.
         "briefing_paused": briefing_paused,
-        "can_surrender": view.can_surrender(side),
+        "can_surrender": !spectator && view.can_surrender(side),
         "can_activate_retreat":
-            view.combat.retreat_activation_available(side),
+            !spectator && view.combat.retreat_activation_available(side),
         // Only authenticated side-owned vision and its authored fading
         // masks are sent. The remote window reuses the native pixel stencil
         // instead of revealing old sprites outside the current host sight.
@@ -2542,7 +2540,8 @@ fn current_state(
         // Present the SAME authored Level cue as local play. Story text is
         // restricted to its campaign player's view, never broadcast to an
         // independently authenticated opposing side.
-        "campaign_dialogue": if view.campaign_dialogue_side == Some(side) {
+        "campaign_dialogue": if !spectator &&
+            view.campaign_dialogue_side == Some(side) {
             // Dedicated multiplayer hosts have no local viewer. Protect
             // the source-authored story with its own immutable campaign
             // owner, never with a temporary local/remote input override.
@@ -2744,9 +2743,9 @@ fn current_state(
         // Codex is original campaign progression, not a fog-visibility
         // shortcut. Publish classes only to the authenticated source
         // player. An opponent may not inherit this owner's career.
-        "campaign_codex_gate": view.campaign_codex.is_some(),
+        "campaign_codex_gate": !spectator && view.campaign_codex.is_some(),
         "campaign_codex_types": view.campaign_codex
-            .filter(|(player_side, _)| *player_side == side)
+            .filter(|(player_side, _)| !spectator && *player_side == side)
             .map(|(_, allowed)| allowed.iter().enumerate()
                 .filter_map(|(kind, &known)| known.then_some(kind as u8))
                 .collect::<Vec<_>>()),
