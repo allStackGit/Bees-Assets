@@ -1874,32 +1874,40 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             let center=screen(camera,point);
             let selected_ship=ship["owned"]==true &&
                 highlighted.contains(&ship["id"].as_i64().unwrap_or(-1));
-            if !selected_ship && (center.0 < -24 || center.0 > FIELD as i32 + 24 ||
-                center.1 < -24 || center.1 > HEIGHT as i32 + 24) {
-                // The host still supplied the authoritative entity; only
-                // drawing work outside the actual viewport is skipped.
-                continue;
-            }
+            let visible = ship["collider_bounds"].as_array()
+                .filter(|bounds| bounds.len()==2)
+                .and_then(|bounds|Some((
+                    point_from_wire(&bounds[0])?,
+                    point_from_wire(&bounds[1])?,
+                )))
+                .map_or_else(|| {
+                    center.0>=-24 && center.0<=FIELD as i32+24 &&
+                    center.1>=-24 && center.1<=HEIGHT as i32+24
+                }, |(min,max)| {
+                    let a=screen(camera,Vec2::new(min.x,max.y));
+                    let b=screen(camera,Vec2::new(max.x,min.y));
+                    // Preserve large or irregular ship hulls whose centre
+                    // is offscreen but combat geometry still intersects
+                    // the camera. Margin covers visual interpolation.
+                    b.0>=-24 && a.0<=FIELD as i32+24 &&
+                    b.1>=-24 && a.1<=HEIGHT as i32+24
+                });
+            if !selected_ship && !visible { continue; }
             // Side allegiance and command rights are separate. The host
             // includes AI-controlled friendly ships but never permits a
             // remote peer to select their unowned squad.
             let friendly=ship["friendly"]==true;
             let color=if friendly {GREEN} else {RED};
-            let angle=visual.heading(ship, fraction).to_radians();
-            let (sin,cos)=angle.sin_cos();
+            let heading=visual.heading(ship, fraction);
             let painted = artwork.ships.contains(&ship["id"].as_i64().unwrap_or(-1));
-            // When genuine source artwork is installed, do not redraw the
-            // approximation on top. Missing sprites retain recognizable
-            // geometric fallback. Selected ship HUD is unchanged.
-            if !painted {
-                let tip=(center.0+(cos*12.0) as i32,center.1-(sin*12.0) as i32);
-                let left=(center.0+((-cos*7.0-sin*7.0) as i32),
-                          center.1-((-sin*7.0+cos*7.0) as i32));
-                let right=(center.0+((-cos*7.0+sin*7.0) as i32),
-                           center.1-((-sin*7.0-cos*7.0) as i32));
-                line(pixels,tip,left,color);
-                line(pixels,left,right,color);
-                line(pixels,right,tip,color);
+            // Authentic source artwork takes precedence. If packaged art
+            // is missing, the native fallback now draws the same real
+            // physics hull as hit-testing rather than a generic triangle.
+            // Only malformed/legacy shapeless records retain a tiny marker.
+            if !painted && draw_remote_primary_hull_colored(
+                pixels,ship,camera,point,heading,color,
+            ).is_none() {
+                circle(pixels,center,5,color);
             }
             let health=ship["health"].as_f64().unwrap_or(0.0);
             let maximum=ship["max_health"].as_f64().unwrap_or(1.0).max(1.0);
