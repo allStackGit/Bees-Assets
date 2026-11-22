@@ -1252,10 +1252,16 @@ document.addEventListener('DOMContentLoaded', () => {
             /^[a-z][a-z0-9_-]{0,47}$/.test(key)&&Array.isArray(ids)&&
             ids.length<=16&&ids.every(id=>typeof id==='string'&&
                 /^[0-9a-f-]{36}$/.test(id))));
+    const comparisonMetricOverrides=new Map(
+        Object.entries(savedView.compareMetrics||{}).filter(([key,metrics])=>
+            /^[a-z][a-z0-9_-]{0,47}$/.test(key)&&Array.isArray(metrics)&&
+            metrics.length<=512&&metrics.every(metric=>
+                typeof metric==='string'&&/^metric:[a-z0-9_]{1,100}$/.test(metric))));
     function saveView() {
         try {
             sessionStorage.setItem(viewKey,JSON.stringify({
                 project,tab,compareRuns:Object.fromEntries(savedCompareRuns),
+                compareMetrics:Object.fromEntries(comparisonMetricOverrides),
             }));
         }catch {} // Private browsing can disable session storage.
     }
@@ -1743,7 +1749,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const secondsMetricsDetails=document.createElement('details');
     secondsMetricsDetails.id='hub-compare-recorded-seconds';
     collectorStageProfiles.insertAdjacentElement('afterend',secondsMetricsDetails);
-    const comparisonMetricOverrides=new Map();
     const comparisonChartAverages=new Map();
     const comparisonChartRolling=new Map();
     const comparisonChartRollingSizes=new Map();
@@ -7463,6 +7468,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     $('hub-compare-metric').addEventListener('change',()=>{
         comparisonMetricOverrides.set(project,selectedComparisonMetrics());
+        saveView();
         renderComparison();
     });
     $('hub-compare-x-axis').addEventListener('change',renderComparison);
