@@ -42,33 +42,46 @@ fn geometry(slots: &[Placement]) -> (Vec2, f32, f32) {
 
 fn place_at_center(radius: f32, occupied: &[(Vec2, f32)],
                    obstacles: &[ObstacleBody], min: Vec2, max: Vec2) -> Option<Vec2> {
-    // Titania2Beenoculars.FindTitania2HumanSquadPlacement: ring-first,
-    // x-major/y-minor, preserving Unity's first clear candidate tie-break.
+    let clear = |candidate: Vec2| {
+        let separation = radius + 22.0;
+        candidate.x - radius >= min.x && candidate.x + radius <= max.x &&
+        candidate.y - radius >= min.y && candidate.y + radius <= max.y &&
+        (candidate - TITANIA_II_CENTER).length_squared() >= separation * separation &&
+        !occupied.iter().any(|&(center, previous_radius)|
+            (candidate - center).length_squared() <
+                (radius + previous_radius) * (radius + previous_radius)) &&
+        !obstacles.iter().any(|body|
+            body.navigation_closest_point(candidate).is_some_and(|point|
+                (candidate - point).length_squared() < radius * radius))
+    };
+    // Titania2Beenoculars.FindTitania2HumanSquadPlacement: first search
+    // the original 24-unit rings in x-major/y-minor source order.
     for ring in 1i32..=12 {
         for x in -ring..=ring {
             for y in -ring..=ring {
                 if x.abs().max(y.abs()) != ring { continue; }
-                let candidate = TITANIA_II_CENTER + Vec2::new(x as f32 * 24.0, y as f32 * 24.0);
-                if candidate.x - radius < min.x || candidate.x + radius > max.x ||
-                    candidate.y - radius < min.y || candidate.y + radius > max.y {
-                    continue;
-                }
-                let distance = (candidate - TITANIA_II_CENTER).length_squared().sqrt();
-                if distance < 22.0 + radius { continue; }
-                if occupied.iter().any(|&(center, prior_radius)|
-                    (candidate - center).length_squared().sqrt() < radius + prior_radius
-                ) || obstacles.iter().any(|body|
-                    body.navigation_closest_point(candidate).is_some_and(|point|
-                        (candidate - point).length_squared() < radius * radius)
-                ) {
-                    continue;
-                }
-                return Some(candidate);
+                let candidate = TITANIA_II_CENTER +
+                    Vec2::new(x as f32 * 24.0, y as f32 * 24.0);
+                if clear(candidate) { return Some(candidate); }
             }
         }
     }
-    // Never stage a physical fleet outside the map or inside an authored
-    // collider when no candidate fits; the caller keeps its original scene.
+    // The original Stage then tries the lower central deployment lane,
+    // followed by progressively larger 8-unit rings around that lane.
+    // Crowded but playable Titania scenes must not fail construction merely
+    // because the first ring search was occupied.
+    let lower = TITANIA_II_CENTER + Vec2::new(0.0, -(22.0 + radius));
+    if clear(lower) { return Some(lower); }
+    for ring in 1i32..=32 {
+        for x in -ring..=ring {
+            for y in -ring..=ring {
+                if x.abs().max(y.abs()) != ring { continue; }
+                let candidate = lower + Vec2::new(x as f32 * 8.0, y as f32 * 8.0);
+                if clear(candidate) { return Some(candidate); }
+            }
+        }
+    }
+    // A scene that has no physically clear destination remains unchanged.
     None
 }
 
@@ -156,7 +169,11 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         // nor creates a campaign-specific movement or collision engine.
         let has_obstacles = self.metadata.player_formation_options().has_obstacles;
         let obstacles = if has_obstacles {
-            authored_obstacle_bodies(&self.entities)?
+            // Unity's placement query uses ConfigData.ObstaclesLayerMask
+            // (layer 19), not all active colliders. Do not let a decorative
+            // MapBorder or a separate trigger reject a valid fleet position.
+            authored_obstacle_bodies(&self.entities)?.into_iter()
+                .filter(|body| body.layer == 19).collect()
         } else { Vec::new() };
 
         let mut index_by_id = HashMap::new();
