@@ -208,16 +208,24 @@ class ReleaseStore {
         await git(['fetch','--quiet','--no-tags','origin',source.branch],repo);
         const sha=await git(['rev-parse','FETCH_HEAD'],repo);
         if(!SHA.test(sha))throw Error('Invalid Git commit from '+name);
+        let releaseCommit=sha;
         if(name==='worker') {
-            // Browser and coordinator assets come from the newest trusted
-            // source, but remote worker packages advance only when code
-            // actually executed by an agent changes.
+            // Browser and coordinator source can advance independently.
+            // Publish an agent bundle only when executable agent code changes.
             this.frontendSourceCommit=sha;
             this.workerSourceCommit=sha;
             const prior=this.latest.worker;
-            if(prior&&prior.source_commit!==sha) {
-                const changes=await workerChangedPaths(repo,prior.source_commit,sha);
-                if(!workerActivationImpact(changes).agent)return;
+            const baseline=prior?.source_commit||localVersion;
+            if(baseline!==sha) {
+                const changes=await workerChangedPaths(repo,baseline,sha);
+                if(!workerActivationImpact(changes).agent) {
+                    if(prior)return;
+                    // On the first publisher cycle, still provide a valid
+                    // baseline worker release for newly enrolled machines.
+                    // Its source must be the known running checkout, never
+                    // the coordinator-only or browser-only newer commit.
+                    releaseCommit=baseline;
+                }
             }
         }
         // A Git commit and its vendored dependencies together identify a
@@ -226,7 +234,7 @@ class ReleaseStore {
             ?crypto.createHash('sha1').update(JSON.stringify({
                 source:sha,upstream:TINYBRAINS_UPSTREAM,cli:TINYBRAINS_CLI,
                 format:TINYBRAINS_PACKAGE_FORMAT,
-            })).digest('hex'):sha;
+            })).digest('hex'):releaseCommit;
         const previous=this.latest[name];
         if(previous?.version===version)return;
         const filename=path.join(this.root,name+'-'+version+'.tar');
@@ -256,7 +264,7 @@ class ReleaseStore {
                         'Ants-MAPOCA/tools',
                         'Ants-MAPOCA/games.toml',
                     ]:[];
-                await git(['archive','--format=tar','--output='+temp,sha,
+                await git(['archive','--format=tar','--output='+temp,releaseCommit,
                     ...archivePaths],repo,240000);
                 if(name==='tinybrains') {
                     const registry=await git(['show',sha+':Ants-MAPOCA/games.toml'],repo);
@@ -269,7 +277,7 @@ class ReleaseStore {
             }finally {try{fs.unlinkSync(temp);}catch{}}
         }
         const info=await fileHash(filename);
-        const record={component:name,version,source_commit:sha,
+        const record={component:name,version,source_commit:releaseCommit,
             sha256:info.sha256,bytes:info.bytes};
         this.files.set(name+':'+info.sha256,filename);
         this.latest[name]=record;
