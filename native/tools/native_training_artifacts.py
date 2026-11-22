@@ -22,6 +22,7 @@ PHYSICS_COLLISION_COUNTERS = (
     "ship_grid_cells_indexed", "obstacle_grid_cells_indexed",
     "obstacle_contact_queries_merged",
 )
+PHYSICS_COLLISION_OPTIONAL_COUNTERS = ("stationary_obstacle_hulls_reused",)
 
 
 def verified_physics_collision_work(work):
@@ -32,7 +33,13 @@ def verified_physics_collision_work(work):
         for key in PHYSICS_COLLISION_COUNTERS
     )):
         raise ValueError("native collector has invalid measured collision work")
-    return {key: work[key] for key in PHYSICS_COLLISION_COUNTERS}
+    measured = {key: work[key] for key in PHYSICS_COLLISION_COUNTERS}
+    for key in PHYSICS_COLLISION_OPTIONAL_COUNTERS:
+        if key in work:
+            if type(work[key]) is not int or work[key] < 0:
+                raise ValueError("native collector has invalid optional collision work")
+            measured[key] = work[key]
+    return measured
 
 
 def combined_physics_collision_work(shards):
@@ -42,10 +49,14 @@ def combined_physics_collision_work(shards):
                 for row in shards]
     if any(row is None for row in measured):
         return None
-    return {
+    totals = {
         key: sum(row[key] for row in measured)
         for key in PHYSICS_COLLISION_COUNTERS
     }
+    for key in PHYSICS_COLLISION_OPTIONAL_COUNTERS:
+        if all(key in row for row in measured):
+            totals[key] = sum(row[key] for row in measured)
+    return totals
 
 
 def file_sha256(path: Path) -> str:
