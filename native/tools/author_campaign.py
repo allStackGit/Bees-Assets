@@ -790,7 +790,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     # writing only the output JSON flag would incorrectly reject valid
     # defeat-skip paths later in the same campaign catalog.
     for index, story in mission_stories.items():
-        if story in ("pluto_pushback", "pluto_bluer_pastures", "neptune_of_production",
+        if story in ("pluto_reinforcements", "pluto_pushback", "pluto_bluer_pastures",
+                     "neptune_of_production", "neptune_pressing_forward",
                      "uranus_on_the_defensive", "uranus_new_threat",
                      "titania_minesweeper", "titania_beenoculars"):
             if mission_advances.get(index, "finished") != "finished":
@@ -798,6 +799,13 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     f"mission {index} story always advances on finished, not victory"
                 )
             mission_advances[index] = "finished"
+        if story in ("pluto_reinforcements", "pluto_pushback",
+                     "pluto_bluer_pastures", "titania_beenoculars"):
+            if mission_grants.get(index, "finished") != "finished":
+                raise ValueError(
+                    f"mission {index} original ending awards ships on finished"
+                )
+            mission_grants[index] = "finished"
     mission_outcomes = {}
     for index, prior, result in args.mission_unlock_any:
         mission_outcomes.setdefault(index, []).append((prior, result))
@@ -822,8 +830,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             ]
     shop_unlocks = dict(args.shop_unlock)
     # Pluto II unlocks both Frigate and Dreadnought in the original
-    # CurrentShips/UnlockedCampaignShips account. Do not let a source
-    # campaign accidentally sell these classes before that victory.
+    # CurrentShips/UnlockedCampaignShips account. Both terminal outcomes
+    # invoke Pluto2Ending; neither permits an early shop purchase.
     for mission_index, story in mission_stories.items():
         if story == "pluto_reinforcements":
             for kind in (7, 12):
@@ -1887,14 +1895,14 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         for prerequisite in prerequisites:
             ancestors.update(required_ancestors[prerequisite])
         required_ancestors[index] = ancestors
-        # Completing a 'finished' mission can mean defeat. Its victory
-        # rewards therefore cannot be assumed available to a later mission
-        # simply because that mission was unlocked. In contrast, any
-        # ancestor whose unlock rule is 'victory' is guaranteed won.
+        # An ancestor's SavedSquad exists on every downstream path when
+        # its progress gate requires victory OR its grant gate explicitly
+        # rewards either completed outcome, as in Pluto II and Titania II.
         guaranteed_squads = {
             saved_id for saved_id, grant_mission in granted_squad_origin.items()
             if grant_mission in ancestors and
-            mission_advances.get(grant_mission, "victory") == "victory"
+            (mission_advances.get(grant_mission, "victory") == "victory" or
+             mission_grants.get(grant_mission) == "finished")
         }
         authored_squads = {squad["saved_squad_id"] for squad in scene["squads"]
                            if squad["side"] == args.player_side and
@@ -1992,20 +2000,19 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     "source-owned SavedSquad"
                 )
         if mission_stories.get(index) == "pluto_reinforcements":
-            # Original Pluto2Ending adds one Scout, three Frigates and
-            # three Dreadnoughts into three *new* SavedSquads, and unlocks
-            # both new purchasable ship classes only on this victory.
+            # Both branches of the original Pluto II terminal dialogue
+            # invoke Pluto2Ending and award these same source SavedSquads.
             totals = {}
             for _, kind, count, _ in grants:
                 totals[kind] = totals.get(kind, 0) + count
             if (totals != {18: 1, 12: 3, 7: 3} or
                     len(grants) != 3 or len(squad_grants) != 3 or
-                    mission.get("advance_on") == "finished" or
-                    mission.get("grants_on_finished") is True):
+                    mission.get("advance_on") != "finished" or
+                    mission.get("grant_on") != "finished"):
                 raise ValueError(
                     "Pluto Reinforcements awards Scout 1, Frigate 3, "
                     "Dreadnought 3 into three newly created SavedSquads "
-                    "on victory only"
+                    "on either completed outcome"
                 )
             new_ids = {new_id for _, new_id, _ in squad_grants}
             if new_ids != {saved_id for _, _, _, saved_id in grants}:
