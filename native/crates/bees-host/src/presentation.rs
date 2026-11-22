@@ -23,6 +23,8 @@ mod text;
 pub(crate) mod campaign_dialogue;
 pub use campaign_dialogue::{NativeCampaignIntermission, NativeCampaignPreparation};
 #[cfg(feature = "client")]
+mod codex;
+#[cfg(feature = "client")]
 mod battle_menu;
 #[cfg(feature = "client")]
 mod remote_window;

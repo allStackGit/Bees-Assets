@@ -1,9 +1,8 @@
 //! Scenario selection using the same window and bitmap font as play.
 
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
-use std::sync::OnceLock;
 
-use super::text;
+use super::{text, codex::{native_codex, codex_lines}};
 use crate::unity_scene_snapshot::{NativeSquadColorSetting, NativeSavedSquadFormation};
 
 /// The on-screen palette is a convenience; the CLI accepts any RGB.
@@ -81,70 +80,6 @@ const PAGE_SIZE: usize = 7;
 const TEXT: [u8; 3] = [232, 240, 250];
 const MUTED: [u8; 3] = [155, 178, 206];
  
-/// Codex is read-only authored player information. The numeric fields are
-/// imported from Unity's version-5 ship-stats record, independently of
-/// physical ship attributes, fleet admission or learning decisions. They are
-/// displayed only here; CombatWorld remains the gameplay authority.
-#[derive(serde::Deserialize)]
-struct NativeCodexShip {
-    ship_type: u8,
-    name: String,
-    health: u64,
-    tsv: u64,
-    sight: u64,
-    speed: f32,
-    range: String,
-    power: String,
-    rate_of_fire: String,
-    description: String,
-}
-
-#[derive(serde::Deserialize)]
-struct NativeCodex {
-    schema_version: u32,
-    source_ship_stats_version: u32,
-    ships: Vec<NativeCodexShip>,
-}
-
-fn native_codex() -> &'static NativeCodex {
-    static SOURCE: OnceLock<NativeCodex> = OnceLock::new();
-    SOURCE.get_or_init(|| {
-        let codex: NativeCodex = serde_json::from_str(include_str!(
-            "../../../../assets/ship-codex.json"
-        )).expect("packaged source ship Codex");
-        assert_eq!(codex.schema_version, 1);
-        assert_eq!(codex.source_ship_stats_version, 5);
-        assert_eq!(codex.ships.len(), 23);
-        assert!(codex.ships.iter().enumerate().all(|(index, ship)|
-            usize::from(ship.ship_type) == index));
-        codex
-    })
-}
-
-/// Wrap only when the selection changes. Rendering at 30fps must not
-/// re-layout the source's multi-paragraph descriptions every frame.
-fn codex_lines(description: &str, max_width: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    for paragraph in description.lines() {
-        if paragraph.trim().is_empty() {
-            lines.push(String::new());
-            continue;
-        }
-        let mut line = String::new();
-        for word in paragraph.split_whitespace() {
-            if !line.is_empty() &&
-                text::width(&format!("{line} {word}"), 1) > max_width {
-                lines.push(std::mem::take(&mut line));
-            }
-            if !line.is_empty() { line.push(' '); }
-            line.push_str(word);
-        }
-        if !line.is_empty() { lines.push(line); }
-    }
-    lines
-}
-
-
 /// One list-navigation contract for mission selection, shop, squad management,
 /// and career history. Keep the selected row visible even for very large
 /// authored campaigns, without allocating a second UI model.

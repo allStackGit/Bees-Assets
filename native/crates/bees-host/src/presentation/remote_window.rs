@@ -20,6 +20,7 @@ use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use serde_json::{json, Value};
 
 use super::{NativeCamera, NativeSoftwareRenderer, text};
+use super::codex::{native_codex, codex_lines};
 use super::minimap::MiniMapLayout;
 use super::tactical_hud::{HudAction, HudRect, ACTIONS, shooting_hit, shooting_rect};
 use bees_hivemind::protocol::SHOOTING_STRATEGIES;
@@ -3003,6 +3004,9 @@ pub fn connect_remote(
     let mut campaign_rewards_scroll=0_usize;
     let mut codex_seen=[false;bees_sim::ship_assets::SHIP_TYPE_COUNT];
     let mut codex_selected=18_u8;
+    let mut codex_rendered_type:Option<u8>=None;
+    let mut codex_description_lines=Vec::<String>::new();
+    let mut codex_description_scroll=0_usize;
     // One authenticated host/world/episode owns each discovery set.
     let mut codex_owner:Option<(String,u64,u64)>=None;
     let mut codex_last_tick:Option<u64>=None;
@@ -3132,11 +3136,27 @@ pub fn connect_remote(
                 (*seen && kind != usize::from(bees_sim::ship_assets::HUMAN_TARGET_TYPE))
                     .then_some(kind as u8)).collect::<Vec<_>>();
             if !known.is_empty() {
+                if !known.contains(&codex_selected) {
+                    codex_selected = known[0];
+                }
                 let focus=known.iter().position(|&kind|kind==codex_selected).unwrap_or(0);
                 if window.is_key_pressed(Key::Up,KeyRepeat::No) {
                     codex_selected=known[(focus+known.len()-1)%known.len()];
                 } else if window.is_key_pressed(Key::Down,KeyRepeat::No) {
                     codex_selected=known[(focus+1)%known.len()];
+                }
+                if codex_rendered_type!=Some(codex_selected) {
+                    codex_description_lines=native_codex().ships
+                        .get(usize::from(codex_selected)).map(|ship|
+                            codex_lines(&ship.description,820)).unwrap_or_default();
+                    codex_description_scroll=0;
+                    codex_rendered_type=Some(codex_selected);
+                }
+                let limit=codex_description_lines.len().saturating_sub(13);
+                if window.is_key_pressed(Key::Left,KeyRepeat::Yes) {
+                    codex_description_scroll=codex_description_scroll.saturating_sub(6);
+                } else if window.is_key_pressed(Key::Right,KeyRepeat::Yes) {
+                    codex_description_scroll=(codex_description_scroll+6).min(limit);
                 }
             }
         }
@@ -4500,40 +4520,51 @@ pub fn connect_remote(
                 &mut pixels,WIDTH,HEIGHT,ROWS,&[0,6],
             );
         } else if show_codex {
-            let catalog=source_ship_catalog();
             let known=codex_seen.iter().enumerate()
                 .filter_map(|(kind,seen)| (*seen &&
                     kind!=usize::from(bees_sim::ship_assets::HUMAN_TARGET_TYPE))
                     .then_some(kind as u8)).collect::<Vec<_>>();
             let focus=known.iter().position(|&kind|kind==codex_selected).unwrap_or(0);
-            let start=(focus/13)*13;
             let mut lines=vec![
                 "UNITED FLEET CODEX".to_owned(),
-                "F2 / Esc close   Up / Down browse".to_owned(),
-                "Only source ship classes visible to this commander".to_owned(),
+                "F2/Esc back   Up/Down browse classes   Left/Right scroll description".to_owned(),
+                format!("Source-identified classes: {}   Current: {} / {}",
+                    known.len(),(focus+1).min(known.len()),known.len()),
                 " ".to_owned(),
             ];
-            for &kind in known.iter().skip(start).take(13) {
-                let name=catalog.by_type(kind).map(|asset|asset.name.as_str())
-                    .unwrap_or("Unknown ship");
-                lines.push(format!("{} {}",if kind==codex_selected {">"} else {" "},name));
+            if let Some(ship)=known.get(focus)
+                .and_then(|&kind|native_codex().ships.get(usize::from(kind)))
+            {
+                lines.push(format!("{} (type {})",ship.name,ship.ship_type));
+                lines.push(format!("Health: {}    TSV: {}    Vision: {}    Speed: {}",
+                    ship.health,ship.tsv,ship.sight,ship.speed));
+                lines.push(format!("Range: {}    Power: {}    Rate of fire: {}",
+                    ship.range,ship.power,ship.rate_of_fire));
+                let sample=peer.state.as_ref().and_then(|state|
+                    state["ships"].as_array()).and_then(|ships|ships.iter().find(|visible|
+                        visible["ship_type"].as_u64()==Some(u64::from(ship.ship_type))
+                    )).map(|visible|
+                        format!("Current visible hull: {} / {} HP",
+                            visible["health"].as_i64().unwrap_or(0),
+                            visible["max_health"].as_i64().unwrap_or(0))
+                    ).unwrap_or_else(||
+                        "No currently visible physical hull of this type".into());
+                lines.push(sample);
+                lines.push(" ".to_owned());
+                lines.extend(codex_description_lines.iter()
+                    .skip(codex_description_scroll).take(13).cloned());
+                if codex_description_lines.len()>13 {
+                    lines.push(format!("Description: {}-{} of {} lines",
+                        codex_description_scroll+1,
+                        (codex_description_scroll+13).min(codex_description_lines.len()),
+                        codex_description_lines.len()));
+                }
+            } else {
+                lines.push("No enemy or friendly ship classes discovered".into());
             }
-            if known.is_empty() {
-                lines.push("No enemy or friendly ship classes discovered".to_owned());
-            }
-            let sample=peer.state.as_ref().and_then(|state|
-                state["ships"].as_array()).and_then(|ships|ships.iter().find(|ship|
-                    ship["ship_type"].as_u64()==Some(u64::from(codex_selected))
-                )).map(|ship| {
-                format!("Live hull: {} / {} HP",
-                    ship["health"].as_i64().unwrap_or(0),
-                    ship["max_health"].as_i64().unwrap_or(0))
-            }).unwrap_or_else(||"No currently visible physical hull".to_owned());
-            lines.push(" ".to_owned());
-            lines.push(sample);
             let refs=lines.iter().map(String::as_str).collect::<Vec<_>>();
             NativeSoftwareRenderer::draw_help_panel(
-                &mut pixels,WIDTH,HEIGHT,&refs,&[1,3],
+                &mut pixels,WIDTH,HEIGHT,&refs,&[1,2,4],
             );
         } else if show_controls_help {
             const LINES: &[&str] = &[
