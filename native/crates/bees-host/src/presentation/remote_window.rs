@@ -1101,10 +1101,14 @@ impl PeerClient {
                         let value=&message["stats"];
                         if !value.is_object() || [
                             "observed_turret_shots", "enemy_tsv_damage_done",
-                            "tsv_damage_received",
+                            "tsv_damage_received", "striker_bombs_dropped",
+                            "fire_barge_explosions", "yellow_jacket_detonations",
+                            "barge_charges_started", "scout_beacons_deployed",
+                            "queen_minions_spawned",
                         ].iter().any(|name|value[*name].as_u64().is_none()) ||
-                            !value["source_kills"].is_null() &&
-                                value["source_kills"].as_u64().is_none() {
+                            value["special_actions_recorded"].as_bool().is_none() ||
+                            (!value["source_kills"].is_null() &&
+                                value["source_kills"].as_u64().is_none()) {
                             return Err(invalid("invalid authenticated FleetShip statistics").into());
                         }
                         Some(value.clone())
@@ -4728,6 +4732,22 @@ pub fn connect_remote(
                                     lines.push(format!(
                                         "Minerals mined this battle: {mined}",
                                     ));
+                                }
+                            }
+                            if stats["special_actions_recorded"] == true {
+                                let special=match ship["ship_type"].as_u64() {
+                                    Some(0)=>Some(("Charges started","barge_charges_started")),
+                                    Some(10)=>Some(("Explosions","fire_barge_explosions")),
+                                    Some(17)=>Some(("Minions spawned","queen_minions_spawned")),
+                                    Some(18)=>Some(("Beacons deployed","scout_beacons_deployed")),
+                                    Some(19)=>Some(("Bombs dropped","striker_bombs_dropped")),
+                                    Some(22)=>Some(("Detonations","yellow_jacket_detonations")),
+                                    _=>None,
+                                };
+                                if let Some((label,key))=special {
+                                    if let Some(count)=stats[key].as_u64() {
+                                        lines.push(format!("{label} this battle: {count}"));
+                                    }
                                 }
                             }
                         }
