@@ -1995,6 +1995,18 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 text::draw_at(pixels,WIDTH,16,23,
                     text::fit(&text_label,FIELD-32),1,[255,211,130]);
             }
+            if objective.get("kind").and_then(Value::as_str) == Some("pluto_reinforcements") {
+                let owner = objective["player_side"].as_i64() == Some(i64::from(side));
+                let label = if !owner {
+                    "Defend the approaching Bee fleet"
+                } else if objective["combat_released"] == true {
+                    "Find and destroy the enemy ships!"
+                } else if objective["scout_selected"] == true {
+                    "Learn your squad controls before the enemy arrives"
+                } else { "Use the Scout" };
+                text::draw_at(pixels,WIDTH,16,23,
+                    text::fit(label,FIELD-32),1,[255,211,130]);
+            }
             if objective.get("kind").and_then(Value::as_str) == Some("pluto_anomaly") {
                 let owner = objective.get("player_side").and_then(Value::as_i64)
                     == Some(i64::from(side));
