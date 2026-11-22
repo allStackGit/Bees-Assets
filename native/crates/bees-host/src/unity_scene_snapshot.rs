@@ -3218,6 +3218,56 @@ impl NativePhysicalScene {
         Ok(removed.len())
     }
 
+    /// Reconcile a native scene's mission after permanent FleetShip losses.
+    /// Level construction already ignores empty source squads, but an
+    /// author-specified ShipDestroyed gate cannot fire if its named hull
+    /// was permanently removed before this mission. Retaining that gate
+    /// would strand a real reinforcement or scripted order indefinitely.
+    /// Preserve empty *timed* source story waves: their exact arrival cue
+    /// still occurs even when an earlier campaign retired every hull.
+    pub fn reconcile_native_mission_after_casualties(&mut self) -> (usize, usize) {
+        use crate::reinforcements::NativeReinforcementActivation;
+        use crate::policy_only_metadata::NativeScriptedActivation;
+        let Some(mission) = self.native_mission.as_mut() else { return (0, 0); };
+        let live_ships: HashSet<i64> = self.entities.iter().filter_map(|entity|
+            match entity {
+                NativeAuthoredEntity::Ship(ship) if !ship.vitals.is_dead() =>
+                    Some(ship.entity_id),
+                _ => None,
+            }
+        ).collect();
+        let active_squads: HashSet<i64> = self.source_squads.iter()
+            .filter(|squad| !squad.members.is_empty())
+            .map(|squad| squad.item_id).collect();
+        let timed_story = matches!(mission.campaign_dialogue,
+            Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusDefensive { .. } |
+                 bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusNewThreat { .. } |
+                 bees_gameplay::campaign_dialogue::CampaignDialogueSpec::NeptuneProduction { .. } |
+                 bees_gameplay::campaign_dialogue::CampaignDialogueSpec::TitaniaMinesweeper { .. })
+        );
+        let prior_waves = mission.reinforcements.len();
+        for wave in &mut mission.reinforcements {
+            wave.squad_item_ids.retain(|id| active_squads.contains(id));
+        }
+        mission.reinforcements.retain(|wave|
+            (!wave.squad_item_ids.is_empty() ||
+                (timed_story && matches!(wave.activation,
+                    NativeReinforcementActivation::AfterSeconds(_)))) &&
+            !matches!(wave.activation,
+                NativeReinforcementActivation::OnShipDestroyed(id)
+                    if !live_ships.contains(&id))
+        );
+        let prior_commands = mission.scripted_queues.len();
+        mission.scripted_queues.retain(|queue|
+            active_squads.contains(&queue.squad_item_id) &&
+            !matches!(queue.activation,
+                NativeScriptedActivation::OnShipDestroyed(id)
+                    if !live_ships.contains(&id))
+        );
+        (prior_waves - mission.reinforcements.len(),
+            prior_commands - mission.scripted_queues.len())
+    }
+
     /// Apply an explicitly native game layout before any world is created.
     /// Retain the original source asset types, ship identities, formation
     /// offsets and Stage home positions. Each translated squad moves as one
