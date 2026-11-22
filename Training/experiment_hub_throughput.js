@@ -105,10 +105,11 @@ class ThroughputHistory {
             if(valid.length<MIN_WINDOWS)continue;
             const seconds=valid.reduce((sum,w)=>sum+w.seconds,0);
             const steps=valid.reduce((sum,w)=>sum+w.steps,0);
-            let project;
-            try{project=JSON.parse(parts[0])[0];}catch{continue;}
+            let project,gpus;
+            try{project=JSON.parse(parts[0])[0];gpus=JSON.parse(parts[2]);}catch{continue;}
+            if(typeof project!=='string'||!Array.isArray(gpus))continue;
             rows.push({project_id:project,machine_id:parts[1],
-                gpu_ids:JSON.parse(parts[2]),
+                gpu_ids:gpus,
                 configuration_hash:crypto.createHash('sha256').update(parts[0]).digest('hex').slice(0,16),
                 useful_steps_per_second:steps/seconds,samples:valid.length,
                 last_observed_at:new Date(Math.max(...valid.map(w=>w.recorded_at))).toISOString()});
