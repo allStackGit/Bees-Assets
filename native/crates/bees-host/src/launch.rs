@@ -5840,6 +5840,15 @@ fn run_battle(
             "supply either native_stage or both legacy collision_matrix and stage_palette, not both",
         ).into()),
     }.map_err(|error| contextual("stage assets", error))?;
+    let asset_load = assets.load_measurements();
+    // Record actual Stage setup cost separately from fixed-step throughput.
+    // Cached immutable catalogs improve subsequent Level startups but do
+    // not imply a change to measured simulation or learning steps/second.
+    eprintln!(
+        "Native Stage assets: {} us, {} embedded parses, {} cached reuses",
+        asset_load.elapsed_wall_micros, asset_load.embedded_catalog_parses,
+        asset_load.embedded_catalog_reuses,
+    );
     let mut declared = HashSet::new();
     let model_source = match (&config.python, &config.policy_worker, &config.model_manifest) {
         (Some(python), Some(worker), Some(manifest)) => {
