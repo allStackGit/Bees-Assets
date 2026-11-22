@@ -2873,7 +2873,7 @@ impl NativeSoftwareRenderer {
             "F7: mute   F10/F11: effect level   Shift+F10/F11: music",
             "F8: measured rendering and simulation throughput",
         ];
-        draw_help_panel(&mut self.pixels, self.width, self.height,
+        Self::draw_help_panel(&mut self.pixels, self.width, self.height,
             LINES, &[2, 6, 10, 17]);
     }
 
