@@ -274,6 +274,7 @@ pub enum NativeScriptedActivation {
     /// A canonical CombatEvent::ShipDied from this world's authored
     /// squad roster. The trigger is a real event, not an absent-ship poll.
     OnShipDestroyed(i64),
+    OnShipDamaged(i64),
     OnShipExtracted(i64),
     OnShipWarped(i64),
     OnMapObjectDestroyed(i64),
@@ -425,6 +426,7 @@ impl NativePolicyOnlyMetadata {
                     NativeScriptedActivation::OnArrival |
                     NativeScriptedActivation::OnCampaignCue(_) |
                     NativeScriptedActivation::OnShipDestroyed(_) |
+                    NativeScriptedActivation::OnShipDamaged(_) |
                     NativeScriptedActivation::OnShipExtracted(_) |
                     NativeScriptedActivation::OnShipWarped(_) |
                     NativeScriptedActivation::OnMapObjectDestroyed(_) |
@@ -452,6 +454,15 @@ impl NativePolicyOnlyMetadata {
                     if !event.valid_for(campaign,
                         |id| known_ships.contains(&id), |_| false, |_| false) {
                         return Err("scripted ship-death trigger needs an authored source ship");
+                    }
+                    Some(event)
+                }
+                NativeScriptedActivation::OnShipDamaged(ship_id) => {
+                    let event = NativeMissionEvent::ShipDamaged(ship_id);
+                    if !event.valid_for(campaign,
+                        |id| known_ships.contains(&id), |_| false, |_| false)
+                    {
+                        return Err("scripted damage trigger needs an authored source ship");
                     }
                     Some(event)
                 }
@@ -495,6 +506,7 @@ impl NativePolicyOnlyMetadata {
                 NativeScriptedActivation::OnArrival |
                 NativeScriptedActivation::OnCampaignCue(_) |
                 NativeScriptedActivation::OnShipDestroyed(_) |
+                NativeScriptedActivation::OnShipDamaged(_) |
                 NativeScriptedActivation::OnShipExtracted(_) |
                 NativeScriptedActivation::OnShipWarped(_) |
                 NativeScriptedActivation::OnMapObjectDestroyed(_) |
@@ -651,6 +663,8 @@ impl NativePolicyOnlyMetadata {
                         counts.waiting_for_campaign_cue += 1,
                     Some(NativeMissionEvent::ShipDestroyed(_)) =>
                         counts.waiting_for_ship_death += 1,
+                    Some(NativeMissionEvent::ShipDamaged(_)) =>
+                        counts.waiting_for_ship_damage += 1,
                     Some(NativeMissionEvent::ShipExtracted(_) |
                         NativeMissionEvent::ShipWarped(_)) =>
                         counts.waiting_for_ship_exit += 1,
