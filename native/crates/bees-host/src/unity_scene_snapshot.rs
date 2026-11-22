@@ -3225,7 +3225,10 @@ impl NativePhysicalScene {
     /// would strand a real reinforcement or scripted order indefinitely.
     /// Preserve empty *timed* source story waves: their exact arrival cue
     /// still occurs even when an earlier campaign retired every hull.
-    pub fn reconcile_native_mission_after_casualties(&mut self) -> (usize, usize) {
+    pub fn reconcile_native_mission_after_casualties(
+        &mut self,
+        dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
+    ) -> (usize, usize) {
         use crate::reinforcements::NativeReinforcementActivation;
         use crate::policy_only_metadata::NativeScriptedActivation;
         let Some(mission) = self.native_mission.as_mut() else { return (0, 0); };
@@ -3239,7 +3242,7 @@ impl NativePhysicalScene {
         let active_squads: HashSet<i64> = self.source_squads.iter()
             .filter(|squad| !squad.members.is_empty())
             .map(|squad| squad.item_id).collect();
-        let timed_story = matches!(mission.campaign_dialogue,
+        let timed_story = matches!(dialogue.or(mission.campaign_dialogue),
             Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusDefensive { .. } |
                  bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusNewThreat { .. } |
                  bees_gameplay::campaign_dialogue::CampaignDialogueSpec::NeptuneProduction { .. } |
