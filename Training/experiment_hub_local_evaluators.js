@@ -1,9 +1,10 @@
 'use strict';
 
 // Local administrator control for the approved Halifax TinyBrains evaluators.
-// The browser can choose only fixed Nano/Micro actions. It cannot provide
-// unit names, executables, host mounts, Docker arguments or suite definitions.
+// The browser can approve only trusted Nano/Micro or a finished Batch-128
+// frozen Mini source. It cannot supply paths, executables or suite definitions.
 const fs=require('node:fs');
+const crypto=require('node:crypto');
 const os=require('node:os');
 const path=require('node:path');
 const {execFile}=require('node:child_process');
@@ -19,10 +20,18 @@ const SUITES=Object.freeze({
 // Single-suite timers serve independent cadences; the paired timer serves
 // same-checkpoint Nano+Micro monitoring/stop policies.
 const BATCH_ID='nano-micro';
+const MINI_ID='mini';
+const MINI_SUITE='tinybrains_mini_batch128_v1';
 const SCHEDULED_IDS=[...Object.keys(SUITES),BATCH_ID];
+const UUID=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
+const SHA256=/^[a-f0-9]{64}$/;
 function suiteNames(options) {
     const marker=path.join(options.suites,'hub-approved-latest.json');
-    if(!fs.existsSync(marker))return SUITES;
+    if(!fs.existsSync(marker))return {
+        ...SUITES,
+        ...(fs.existsSync(path.join(options.suites,MINI_SUITE+'.json'))
+            ?{mini:MINI_SUITE}:{}),
+    };
     const stat=fs.lstatSync(marker);
     if(!stat.isFile()||stat.isSymbolicLink()||
         fs.realpathSync(marker)!==marker||
@@ -35,7 +44,14 @@ function suiteNames(options) {
             typeof approved[id]!=='string'||
             !new RegExp('^tinybrains_'+id+'_tiny_v(?:[3-9]|[1-9][0-9]{1,2})$').test(approved[id])))
         throw Error('Invalid approved TinyBrains suite version map.');
-    return {nano:approved.nano,micro:approved.micro};
+    return {
+        nano:approved.nano,micro:approved.micro,
+        ...(fs.existsSync(path.join(options.suites,MINI_SUITE+'.json'))
+            ?{mini:MINI_SUITE}:{}),
+    };
+}
+function scheduledIds(options) {
+    return [...SCHEDULED_IDS,...(suiteNames(options).mini?[MINI_ID]:[])];
 }
 const SAFE_PATH=/^\/[A-Za-z0-9._/@:+-]+$/;
 const MACHINE=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -220,7 +236,7 @@ function launcherText(o) {
 function definitions(options,overrides={}) {
     const files={...validateInstall(options),...overrides};
     const schedules=[...Object.entries(files).map(([id,file])=>[id,[file]]),
-        [BATCH_ID,Object.values(files)]];
+        [BATCH_ID,[files.nano,files.micro]]];
     return Object.fromEntries(schedules.map(([id,suites])=>[
         id,evaluatorDefinition({
             project:'tinybrains',machine:options.machine,
@@ -275,7 +291,7 @@ async function status(hub) {
         return {available:false,reason:String(error.message||error),entries:[]};
     }
     const entries=[];
-    for(const id of SCHEDULED_IDS) {
+    for(const id of scheduledIds(options)) {
         const names=unitFiles(options,id);
         const serviceExists=fs.existsSync(names.serviceFile);
         const timerExists=fs.existsSync(names.timerFile);
@@ -310,7 +326,8 @@ async function status(hub) {
         entries.push({id,suite_id:id===BATCH_ID?null:suiteNames(options)[id],installed,managed,
             active,running,last_result:lastResult,last_error:lastError,reason});
     }
-    return {available:true,machine:options.machine,entries};
+    return {available:true,machine:options.machine,entries,
+        mini_candidates:miniCandidates(hub,options).map(({id,updates})=>({id,updates}))};
 }
 async function setup(hub) {
     const o=localOptions(hub);
@@ -336,9 +353,9 @@ async function setup(hub) {
         else installEvaluatorUnits(definition,o.home,{repairPartial:true});
     }
     await systemctl(['daemon-reload']);
-    for(const id of SCHEDULED_IDS)
+    for(const id of scheduledIds(o))
         await systemctl(['start',unitFiles(o,id).timer]);
-    return {message:'Approved Nano and Micro evaluation timers installed and started.'};
+    return {message:'Approved TinyBrains evaluation timers installed and started.'};
 }
 async function refreshSuite(hub,id) {
     const o=localOptions(hub);
@@ -435,14 +452,121 @@ async function refreshSuite(hub,id) {
     }
     return {message:name+' approved and scheduled. Restart the local agent from this panel to advertise the new suite.'};
 }
+function miniCandidates(hub,o) {
+    const candidates=[];
+    for(const job of hub.snapshot().jobs||[]) {
+        if(job.project_id!=='tinybrains'||job.status!=='finished'||
+            !UUID.test(job.id)||!SHA256.test(job.final_checkpoint_sha256||''))
+            continue;
+        const dir=path.join(o.artifacts,job.id);
+        try {
+            const overrides=JSON.parse(fs.readFileSync(
+                path.join(dir,'hub-design-overrides.json'),'utf8'));
+            if(overrides['training.colony_batch_size']!==128)continue;
+            const status=JSON.parse(fs.readFileSync(path.join(dir,'status.json'),'utf8'));
+            const checkpoint=path.join(dir,'self-play/latest.pt');
+            const stat=fs.lstatSync(checkpoint);
+            if(!stat.isFile()||stat.isSymbolicLink()||
+                !Number.isSafeInteger(status.ppo_updates)||status.ppo_updates<1)
+                continue;
+            candidates.push({id:job.id,updates:status.ppo_updates,
+                checkpoint,sha256:job.final_checkpoint_sha256,
+                modified:stat.mtimeMs});
+        }catch { /* A missing/partial job is not a frozen source. */ }
+    }
+    candidates.sort((a,b)=>b.updates-a.updates||b.modified-a.modified);
+    return candidates;
+}
+
+async function setupMini(hub,sourceJobId) {
+    const o=localOptions(hub);
+    prepareInstall(o);
+    const candidates=miniCandidates(hub,o);
+    const source=sourceJobId===undefined?candidates[0]:
+        candidates.find(item=>item.id===sourceJobId);
+    if(!source)
+        throw Error('No finished Batch-128 TinyBrains run with a pinned checkpoint was found.');
+    const destination=path.join(o.suites,MINI_SUITE+'.json');
+    if(fs.existsSync(destination))
+        return {message:'Frozen Mini evaluation already approved; existing suite remains immutable.'};
+    // The trusted launcher is installed only by local setup; it never gets
+    // an arbitrary checkout, path, container or command from the browser.
+    await setup(hub);
+    const stage=fs.mkdtempSync(path.join(o.scratch,'mini-freeze-'));
+    const output=path.join(stage,'out');
+    fs.mkdirSync(output,{mode:0o700});
+    const opponents=privateDirectory(path.join(o.suites,'opponents'),true);
+    const frozenPath=path.join(opponents,MINI_SUITE);
+    let prepared=null;
+    try {
+        const {stdout}=await run(presentFile(o.launcher),[
+            '-B',path.join(o.hubRoot,'Training/experiment_hub_tinybrains_freeze.py'),
+            '--checkpoint',source.checkpoint,'--output',output,
+            '--expected-sha256',source.sha256,'--engine-path',o.engine,
+        ],{timeout:360000,maxBuffer:1024*1024});
+        const info=JSON.parse(stdout.trim().split(/\r?\n/).at(-1));
+        if(info.checkpoint_sha256!==source.sha256||
+            [info.model_sha256,info.manifest_sha256,info.runtime_sha256]
+                .some(value=>!SHA256.test(value))||
+            !Number.isSafeInteger(info.model_size_metric_bytes)||
+            info.model_size_metric_bytes<1||info.model_size_metric_bytes>1048576)
+            throw Error('Frozen Mini export lacks trusted checkpoint/model/runtime fingerprints.');
+        const exported=path.join(output,'export');
+        const files=[['model.onnx',info.model_sha256],
+            ['manifest.json',info.manifest_sha256]];
+        for(const [name,hash] of files) {
+            const file=presentFile(path.join(exported,name));
+            const actual=crypto.createHash('sha256')
+                .update(fs.readFileSync(file)).digest('hex');
+            if(actual!==hash)throw Error('Frozen Mini export changed after verification.');
+        }
+        if(fs.existsSync(frozenPath)||fs.existsSync(destination))
+            throw Error('Frozen Mini version already exists; it cannot be overwritten.');
+        prepared=fs.mkdtempSync(path.join(opponents,'.mini-stage-'));
+        for(const [name] of files) {
+            const file=path.join(prepared,name);
+            fs.copyFileSync(path.join(exported,name),file,fs.constants.COPYFILE_EXCL);
+            fs.chmodSync(file,0o600);
+        }
+        fs.renameSync(prepared,frozenPath);
+        prepared=null;
+        const suite={
+            suite_id:MINI_SUITE,maps:['basic-tiny-2p'],
+            seeds:Array.from({length:50},(_,i)=>813001+i),max_turns:300,
+            opponent:'mini',opponent_dir:frozenPath,
+            opponent_source_job:source.id,
+            opponent_checkpoint_sha256:source.sha256,
+            opponent_model_sha256:info.model_sha256,
+            opponent_manifest_sha256:info.manifest_sha256,
+            runtime_sha256:info.runtime_sha256,
+        };
+        fs.writeFileSync(destination,JSON.stringify(suite,null,2)+'\n',
+            {flag:'wx',mode:0o600});
+        const defs=definitions(o);
+        const unit=unitFiles(o,MINI_ID);
+        installEvaluatorUnits(defs[MINI_ID],o.home,{repairPartial:true});
+        await systemctl(['daemon-reload']);
+        await systemctl(['start',unit.timer]);
+        return {message:'Frozen Batch-128 Mini opponent approved from job '+
+            source.id+' (update '+source.updates+'); 100 balanced-seat games per checkpoint. '+
+            'Restart the local agent to advertise the new suite.'};
+    }finally {
+        if(prepared)fs.rmSync(prepared,{recursive:true,force:true});
+        fs.rmSync(stage,{recursive:true,force:true});
+    }
+}
 async function action(hub,value) {
     if(!value||value.confirm_action!==true)
         throw Error('Explicit evaluator action confirmation is required.');
     if(value.action==='setup'&&value.id===undefined)
         return setup(hub);
-    if(!SCHEDULED_IDS.includes(value.id)||
+    if(value.action==='setup-mini'&&value.id===undefined&&
+        (value.source_job_id===undefined||UUID.test(value.source_job_id)))
+        return setupMini(hub,value.source_job_id);
+    const options=localOptions(hub);
+    if(!scheduledIds(options).includes(value.id)||
         !['start','restart','stop','run','refresh'].includes(value.action)||
-        (value.id===BATCH_ID&&value.action==='refresh'))
+        (![...Object.keys(SUITES)].includes(value.id)&&value.action==='refresh'))
         throw Error('Unknown approved local evaluator action.');
     if(value.action==='refresh')return refreshSuite(hub,value.id);
     const o=localOptions(hub);
