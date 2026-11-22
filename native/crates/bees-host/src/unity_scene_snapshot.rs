@@ -230,7 +230,7 @@ fn titania_beenoculars_waves_match_source(
         }
     }
     by_time.len() == EXPECTED.len() && EXPECTED.iter().all(|(due, types)|
-        by_time.get(due).is_some_and(|actual| actual == types))
+        by_time.get(due).is_some_and(|actual| actual.as_slice() == *types))
 }
 
 /// Neptune II's original 120/240/360/480-second waves and growing
