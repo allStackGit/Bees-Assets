@@ -68,7 +68,7 @@ def import_enemy(scene, run, level):
         squad = next((s for s in old if s["item_id"] == queue["squad_item_id"]), None)
         if squad:
             for member in squad["members"]:
-                ai_by_type.setdefault(ship_type[member], queue["orders"])
+                ai_by_type.setdefault(ship_type[member], queue)
     queues = [q for q in initial_queues if q["squad_item_id"] not in old_ids]
     if not old or not other:
         raise ValueError("Challenge needs both authored physical factions")
@@ -108,8 +108,10 @@ def import_enemy(scene, run, level):
                 ship["base_speed"] for ship in bees if ship["entity_id"] in members)
         groups.append(group)
         if classes[0] in ai_by_type:
+            template = ai_by_type[classes[0]]
             queues.append({"squad_item_id": group["item_id"],
-                           "orders": copy.deepcopy(ai_by_type[classes[0]])})
+                           "repeat": template.get("repeat", False),
+                           "orders": copy.deepcopy(template["orders"])})
     if any(by_type.values()):
         raise ValueError("generated Challenge fleet contains unassigned enemies")
     scene["squads"] = groups + other
@@ -208,6 +210,9 @@ def main():
         run["levels"][0]["supply_capacity"] = {
             "player_side": 2, "max_tsv": level["SupplyCapacity"]}
         run["levels"][0]["scene"] = "challenge.scene.json"
+        # A failed/interrupted stage must resume the same physical fleet;
+        # source Challenge progression is committed only on a terminal run.
+        run["host_recovery_checkpoint"] = "native-host-checkpoint.json"
         library["games"][0]["config"] = "challenge.run.json"
         source_identity = {
             "schema_version": 1, "source_level_id": level["Id"],
