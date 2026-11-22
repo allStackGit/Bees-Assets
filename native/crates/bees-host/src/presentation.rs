@@ -167,6 +167,9 @@ pub struct NativeRenderWorldView<'a> {
     /// Current source GameState.PlayerScore, read from the same checkpointed
     /// physical death ledger as the terminal campaign result.
     pub campaign_score: Option<(i32, i64)>,
+    /// Source GameState summary (ships lost, safely returned, credited
+    /// kills); owned by the same checkpoint as live physical combat.
+    pub player_match_counts: Option<(u64, u64, u64)>,
     pub campaign_objective: Option<bees_gameplay::campaign_dialogue::CampaignObjectiveKind>,
     /// Source Uranus III rescue identity; never a second ship lifecycle.
     pub rescue_barges: Option<[i64; 3]>,
