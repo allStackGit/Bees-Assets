@@ -2029,6 +2029,13 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
             enemy_tsv_damage_done: stats.enemy_tsv_damage_done,
             tsv_damage_received: stats.tsv_damage_received,
             minerals_mined_this_level: minerals,
+            special_actions_recorded: stats.special_actions_recorded,
+            striker_bombs_dropped: stats.striker_bombs_dropped,
+            fire_barge_explosions: stats.fire_barge_explosions,
+            yellow_jacket_detonations: stats.yellow_jacket_detonations,
+            barge_charges_started: stats.barge_charges_started,
+            scout_beacons_deployed: stats.scout_beacons_deployed,
+            queen_minions_spawned: stats.queen_minions_spawned,
         })
     }
 
