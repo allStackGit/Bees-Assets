@@ -10766,7 +10766,8 @@ fn run_battle(
                         .checked_add(combat.tsv_damage_received)
                         .ok_or_else(|| invalid("saved squad damage overflow"))?;
                     outcome.kills = outcome.kills
-                        .checked_add(combat.attributed_enemy_kills)
+                        .checked_add(combat.source_kills
+                            .unwrap_or(combat.attributed_enemy_kills))
                         .ok_or_else(|| invalid("saved squad kill count overflow"))?;
                 }
             }

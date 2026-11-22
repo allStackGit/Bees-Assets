@@ -42,6 +42,11 @@ pub struct NativeFleetCombatStats {
     pub enemy_tsv_damage_done: u64,
     pub tsv_damage_received: u64,
     pub attributed_enemy_kills: u64,
+    /// Original FleetShip.Kills and SavedSquad.Stats.Kills include credited
+    /// friendly-fire victims too. None marks legacy records whose total is
+    /// unknown; an enemy-only count must not masquerade as complete history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_kills: Option<u64>,
     /// Older career receipts have no special-action observations. A
     /// false value is UNKNOWN, not proof of zero specials in that match.
     #[serde(default)]
@@ -299,11 +304,16 @@ impl NativeFleetInventory {
             .then_some(self.opponent_match_counts)
     }
 
+    fn fresh_combat_stats() -> NativeFleetCombatStats {
+        NativeFleetCombatStats { source_kills: Some(0), ..NativeFleetCombatStats::default() }
+    }
+
     pub fn combat_stats(&self, ship_id: i64) -> Option<NativeFleetCombatStats> {
         if !self.career_tracking { return None; }
         self.entries.get(&ship_id)
             .filter(|entry| entry.has_persistent_fleet_value)?;
-        let mut stats = self.combat.get(&ship_id).copied().unwrap_or_default();
+        let mut stats = self.combat.get(&ship_id).copied()
+            .unwrap_or_else(Self::fresh_combat_stats);
         stats.special_actions_recorded = true;
         Some(stats)
     }
@@ -325,7 +335,7 @@ impl NativeFleetInventory {
         -> Option<&mut NativeFleetCombatStats>
     {
         let owner = self.persistent_credit_owner(world, ship_id)?;
-        Some(self.combat.entry(owner).or_default())
+        Some(self.combat.entry(owner).or_insert_with(Self::fresh_combat_stats))
     }
 
     /// Apply original GameState player death scoring independently for
@@ -342,6 +352,13 @@ impl NativeFleetInventory {
             }
             return;
         }
+        // Unity Ship.Kill records a player-attributed kill before the
+        // beacon-specific LogKilledStats exclusion. Beacon deaths do not
+        // change fleet-loss counts or score, but can credit the killer.
+        if killer_side == Some(player_side) {
+            counts.ships_destroyed_by_player =
+                counts.ships_destroyed_by_player.saturating_add(1);
+        }
         if victim_type == BEACON_TYPE { return; }
         if victim_side == player_side && victim_type != HUMAN_TARGET_TYPE {
             counts.ships_lost = counts.ships_lost.saturating_add(1);
@@ -350,10 +367,6 @@ impl NativeFleetInventory {
             {
                 *count = count.saturating_add(1);
             }
-        }
-        if killer_side == Some(player_side) {
-            counts.ships_destroyed_by_player =
-                counts.ships_destroyed_by_player.saturating_add(1);
         }
         if victim_side != player_side || victim_type != HUMAN_TARGET_TYPE {
             *score = score.saturating_add(if victim_side == player_side {
@@ -485,14 +498,20 @@ impl NativeFleetInventory {
                             .saturating_add(delta.tsv_loss.max(0) as u64);
                     }
                 }
-                CombatEvent::ShipDied { victim_id, killer_id, .. } => {
-                    if killer_id == victim_id || *killer_id <= 0 {
+                CombatEvent::ShipDied { victim_id, killer_id, end_kill, .. } => {
+                    if *end_kill || killer_id == victim_id || *killer_id <= 0 {
                         continue;
                     }
-                    let opposing = world.ship(*killer_id).zip(world.ship(*victim_id))
-                        .is_some_and(|(killer, victim)| killer.side != victim.side);
-                    if opposing {
-                        if let Some(row) = self.special_stats(world, *killer_id) {
+                    let Some((killer, victim)) = world.ship(*killer_id)
+                        .zip(world.ship(*victim_id)) else { continue };
+                    let opposing = killer.side != victim.side;
+                    if let Some(row) = self.special_stats(world, *killer_id) {
+                        // The source calls LogKillerStats irrespective of
+                        // faction. Retain enemy-only diagnostics separately.
+                        if let Some(kills) = row.source_kills.as_mut() {
+                            *kills = kills.saturating_add(1);
+                        }
+                        if opposing {
                             row.attributed_enemy_kills =
                                 row.attributed_enemy_kills.saturating_add(1);
                         }
@@ -513,7 +532,7 @@ impl NativeFleetInventory {
         {
             return;
         }
-        let row = self.combat.entry(killer_id).or_default();
+        let row = self.combat.entry(killer_id).or_insert_with(Self::fresh_combat_stats);
         row.enemy_tsv_damage_done = row.enemy_tsv_damage_done
             .saturating_add(tsv_loss as u64);
     }
