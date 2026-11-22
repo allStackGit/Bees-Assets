@@ -199,6 +199,42 @@ function placements(machines,reservations,input) {
     });
 }
 
+// One GPU request can run on any verified free device, not just the
+// machine's first capacity-ranked GPU. Give the coordinator a bounded set
+// of *actual* individual GPU choices so measured end-to-end useful work
+// can select the fastest device, and scarcity lookahead can avoid reserving
+// the only GPU that a later pinned job can use. No additional job capacity,
+// isolation or reservation is created by listing these alternatives.
+function placementAlternatives(machines,reservations,input) {
+    const wanted=request(input);
+    const defaults=placements(machines,reservations,wanted);
+    if(wanted.gpu_count!==1||wanted.gpus.length)return defaults;
+    const byMachine=new Map(machines.map(machine=>[machine.id,machine]));
+    const alternatives=[];
+    for(const original of defaults) {
+        if(!original.capacity_fits) {
+            alternatives.push(original);
+            continue;
+        }
+        const machine=byMachine.get(original.machine_id);
+        let added=0;
+        for(const candidate of original.available.gpu_capacity) {
+            if(candidate.exclusive)continue;
+            // The ordinary planner remains authoritative for all pinned
+            // VRAM, compute, CPU/RAM and observed headroom checks.
+            const option=placements([machine],reservations,{
+                ...wanted,gpus:[candidate.id],
+            })[0];
+            if(option?.capacity_fits) {
+                alternatives.push(option);
+                added++;
+            }
+        }
+        if(!added)alternatives.push(original);
+    }
+    return alternatives;
+}
+
 // Observed pressure breaks ties only *after* feasibility/headroom, never
 // creates capacity. CPU-only jobs prefer hosts with less current total CPU
 // activity (including Bees). Single-GPU jobs favor more physical free VRAM,
@@ -346,5 +382,5 @@ function approvedEndpointSubset(approved,selected) {
         ordered.every((endpoint,index)=>endpoint===selected[index])?selected:null;
 }
 
-module.exports={request,matchingLeaseBudget,remaining,placements,plan,startHeadroom,
+module.exports={request,matchingLeaseBudget,remaining,placements,placementAlternatives,plan,startHeadroom,
     observedLoadPreference,ensureLocalCpuRamCapacity,fixedCpuParallelism,approvedEndpointSubset};
