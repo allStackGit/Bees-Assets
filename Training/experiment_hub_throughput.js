@@ -261,8 +261,8 @@ class ThroughputHistory {
         const future={
             jobs:context.jobs.filter(item=>item.id!==job.id).concat(running),
             reservations:context.reservations.concat({
-                id:virtualId,job_id:job.id,machine_id,status:'acknowledged',
-                resources:{...job.resources,gpus},
+                id:virtualId,job_id:job.id,machine_id:machineId,
+                status:'acknowledged',resources:{...job.resources,gpus},
             }),
         };
         for(const peer of peers) {
