@@ -1349,7 +1349,7 @@ impl NativeRemotePlay {
                                 "request_id": request_id,
                                 "world_id": claimed_world,
                                 "episode_revision": claimed_revision,
-                                "ship_id": ship_id, "processed": false,
+                                "ship_id": ship_id, "processed": false, "tick": null,
                                 "stats": null, "minerals_mined_this_level": null,
                             }));
                             self.measurements.ship_inspection_replies += 1;
@@ -1791,6 +1791,7 @@ impl NativeRemotePlay {
                     "episode_revision": requested_revision,
                     "ship_id": ship_id,
                     "processed": stats.is_some(),
+                    "tick": view.tick,
                     "stats": stats,
                     "minerals_mined_this_level": minerals,
                 }));
