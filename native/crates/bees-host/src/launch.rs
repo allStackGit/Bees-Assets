@@ -3609,6 +3609,42 @@ fn run_transfer_ship(
     Ok(())
 }
 
+/// Prove an original FleetShip identity through the same selected,
+/// source-authored player scene used for physical roster reassignment.
+fn original_fleet_source_squad(
+    catalog: &battle_catalog::BattleCatalog,
+    progress: &battle_catalog::CampaignProgress<'_>,
+    root: &Path, side: i32, fleet_ship_id: i64,
+) -> Result<Option<i64>, Box<dyn Error>> {
+    let has_upcoming = catalog.battles.iter().filter_map(|battle|
+        battle.mission.as_ref()).any(|mission|
+        mission.player_side == side && !progress.completed(&mission.id));
+    for battle in &catalog.battles {
+        let Some(mission) = battle.mission.as_ref().filter(|mission|
+            mission.player_side == side &&
+            (!has_upcoming || !progress.completed(&mission.id))
+        ) else { continue };
+        let scene = load_native_fleet_edit_scene(
+            &resolve(root, battle.config_for(progress)))?;
+        let Some(parent) = scene.entities.iter().find_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) if ship.side == side &&
+                ship.fleet_ship_id == Some(fleet_ship_id) &&
+                scene.fleet.get(ship.entity_id)
+                    .is_some_and(|value| value.has_persistent_fleet_value) =>
+                        Some(ship.entity_id),
+            _ => None,
+        }) else { continue };
+        if let Some(squad) = scene.source_squads.iter().find(|squad|
+            squad.side == side && squad.saved_squad_id.is_some() &&
+            squad.player_permissions.user_controlled &&
+            squad.members.contains(&parent)
+        ) {
+            return Ok(squad.saved_squad_id);
+        }
+    }
+    Ok(None)
+}
+
 fn run_reassign_authored_ship(
     catalog_path: &Path, output_root: &Path, side: i32,
     fleet_ship_id: i64, from_squad: i64, to_squad: i64,
@@ -3636,39 +3672,11 @@ fn run_reassign_authored_ship(
     let root = catalog_path.parent().ok_or_else(||
         invalid("missing campaign catalog directory"))?;
     if progress.authored_current_squad(fleet_ship_id).is_none() {
-        // The first edit establishes a durable provenance in the campaign
-        // ledger. Verify it against the currently selected authored scene;
-        // after that, FleetShip ID and the saved destination govern every
-        // route variant, even when its initial source squad differs.
-        let has_upcoming = catalog.battles.iter().filter_map(|battle|
-            battle.mission.as_ref()).any(|mission|
-                mission.player_side == side && !progress.completed(&mission.id));
-        let mut source_proven = false;
-        for battle in &catalog.battles {
-            let Some(mission) = battle.mission.as_ref().filter(|mission|
-                mission.player_side == side &&
-                (!has_upcoming || !progress.completed(&mission.id))
-            ) else { continue };
-            let scene = load_native_fleet_edit_scene(
-                &resolve(root, battle.config_for(&progress)))?;
-            let Some(parent) = scene.entities.iter().find_map(|entity| match entity {
-                NativeAuthoredEntity::Ship(ship) if ship.side == mission.player_side &&
-                    ship.fleet_ship_id == Some(fleet_ship_id) &&
-                    scene.fleet.get(ship.entity_id)
-                        .is_some_and(|value| value.has_persistent_fleet_value) => Some(ship.entity_id),
-                _ => None,
-            }) else { continue };
-            if scene.source_squads.iter().any(|squad|
-                squad.side == side && squad.saved_squad_id == Some(from_squad) &&
-                squad.player_permissions.user_controlled &&
-                squad.members.contains(&parent))
-            {
-                source_proven = true;
-                break;
-            }
-        }
-        if !source_proven {
-            return Err(invalid("original FleetShip source squad differs from every active authored mission assignment").into());
+        // First ownership claim must match an actual playable source scene.
+        if original_fleet_source_squad(
+            &catalog, &progress, root, side, fleet_ship_id,
+        )? != Some(from_squad) {
+            return Err(invalid("original FleetShip source squad differs from active authored mission").into());
         }
     }
     let mut projected = progress.authored_roster_for_side(side);
@@ -3714,7 +3722,23 @@ fn run_name_fleet_ship(
     let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
     ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
     let progress = catalog.load_progress(output_root)?;
-    catalog.name_fleet_ship(&progress, output_root, side, fleet_ship_id, name)?;
+    if !progress.nameable_fleet_ships().contains(&(side, fleet_ship_id)) {
+        let root = catalog_path.parent()
+            .ok_or_else(|| invalid("missing campaign catalog directory"))?;
+        let source_squad = original_fleet_source_squad(
+            &catalog, &progress, root, side, fleet_ship_id,
+        )?.ok_or_else(|| invalid("FleetShip is not owned by an authored player squad"))?;
+        // Do not mint an independent identity for a ship outside the
+        // original playable scene. The same career ledger owns assignments
+        // and names across menu, CLI and campaign restarts.
+        catalog.register_authored_ship(
+            &progress, output_root, side, fleet_ship_id, source_squad,
+        )?;
+        let registered = catalog.load_progress(output_root)?;
+        catalog.name_fleet_ship(&registered, output_root, side, fleet_ship_id, name)?;
+    } else {
+        catalog.name_fleet_ship(&progress, output_root, side, fleet_ship_id, name)?;
+    }
     println!("{}", json!({
         "kind": "native_campaign_fleet_ship_named",
         "campaign_id": catalog.campaign_id,
@@ -5684,7 +5708,12 @@ fn run_campaign_game_menu(
         // Existing numbered FleetShips have one durable name regardless
         // of their temporary squad assignment. The menu never fabricates
         // a source FleetShip identity from a Stage hull or type number.
-        for (side, fleet_ship_id) in progress.nameable_fleet_ships() {
+        let mut fleet_name_targets = progress.nameable_fleet_ships();
+        fleet_name_targets.extend(original_choices.iter().map(|&(side, id, _)|
+            (side, id)));
+        fleet_name_targets.sort_unstable();
+        fleet_name_targets.dedup();
+        for (side, fleet_ship_id) in fleet_name_targets {
             if !catalog.battles.iter().filter_map(|entry| entry.mission.as_ref())
                 .any(|mission| mission.player_side == side)
             {
