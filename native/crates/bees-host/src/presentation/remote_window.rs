@@ -1635,6 +1635,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     text::draw_at(pixels, WIDTH, FIELD + 14, 18, "BEES NATIVE", 2, TEXT);
     text::draw_at(pixels, WIDTH, FIELD + 14, 57,
         &format!("Remote player side {side}"), 1, MUTED);
+    text::draw_at(pixels, WIDTH, FIELD + 14, 76,
+        "F1: controls and shortcuts", 1, MUTED);
     if let (Some(state), Some(camera)) = (state,camera) {
         if let Some(map) = bounds(state) {
             let a=screen(camera,map.min);
