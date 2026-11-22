@@ -3628,6 +3628,17 @@ impl NativeSoftwareRenderer {
         }
     }
 
+    /// Original GameMenus.ShowLevelSummary adapted to the native
+    /// authoritative match receipt. The window prepares cached strings
+    /// only when the result/owner changes; this renderer merely rasterizes
+    /// the already committed, read-only physical score counters.
+    #[cfg(feature = "client")]
+    pub fn draw_match_summary(&mut self, lines: &[&str]) {
+        Self::draw_help_panel(
+            &mut self.pixels,self.width,self.height,lines,&[0,1],
+        );
+    }
+
     /// F1 help uses the same static source-control wording on every world,
     /// without building a string or allocating a second framebuffer.
     #[cfg(feature = "client")]

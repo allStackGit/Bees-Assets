@@ -167,6 +167,10 @@ pub struct NativeClient {
     double_left_press: bool,
     input_feedback: &'static str,
     result_controls: Option<NativeResultControls>,
+    /// Post-battle GameMenus.ShowLevelSummary, projected once from the
+    /// same completed physical match accounting as the remote receipts.
+    match_summary_visible: bool,
+    match_summary: Option<(WorldId,u64,i32,Vec<String>)>,
     playback: bool,
     dialogue_sequence: Option<u32>,
     dialogue_line: usize,
@@ -273,6 +277,7 @@ impl NativeClient {
             right_was_down: false, right_press: None, last_left_press: None, double_left_press: false,
             input_feedback: "",
             result_controls: None,
+            match_summary_visible: false, match_summary: None,
             playback: false,
             dialogue_sequence: None,
             dialogue_line: 0,
@@ -453,7 +458,14 @@ impl NativeClient {
 
     pub fn report_move(&mut self, feedback: &'static str) { self.input_feedback = feedback; }
 
-    pub fn show_result(&mut self, controls: NativeResultControls) { self.result_controls = Some(controls); }
+    pub fn show_result(&mut self, controls: NativeResultControls) {
+        self.result_controls = Some(controls);
+        self.match_summary_visible = true;
+        self.match_summary = None;
+        // The original ShowLevelEndedDialogue resets Time.timeScale to 1.
+        // Never carry accelerated playback into an unrelated next battle.
+        self.game_speed = 0;
+    }
     pub fn set_playback(&mut self) { self.playback = true; }
 
     pub fn result_action(&self) -> Option<NativeResultAction> {
@@ -599,6 +611,11 @@ impl NativeClient {
                 Some(4) => return Ok(NativeClientAction::Quit),
                 _ => {},
             }
+        }
+        if self.result_controls.is_some() && view.terminal_result.is_some() &&
+            self.window.is_key_pressed(Key::F5,KeyRepeat::No)
+        {
+            self.match_summary_visible = !self.match_summary_visible;
         }
         if self.window.is_key_pressed(Key::F1, KeyRepeat::No) &&
             self.held_fire_target.is_none() && !self.battle_menu_open
@@ -1747,6 +1764,53 @@ impl NativeClient {
             self.renderer.draw_fleet_codex(&view, self.codex_selected);
         } else if self.show_controls_help {
             self.renderer.draw_controls_help();
+        } else if self.match_summary_visible && self.result_controls.is_some() {
+            if let Some(result) = view.terminal_result {
+                let owner = view.player_authority.player_viewer_side().unwrap_or(0);
+                let key = (view.world_id,view.episode_revision,owner);
+                if self.match_summary.as_ref().is_none_or(|(world,revision,side,_)|
+                    (*world,*revision,*side)!=key)
+                {
+                    let mut summary=vec![
+                        "BATTLE SUMMARY / ORIGINAL MATCH COUNTS".to_owned(),
+                        format!("{} - {}",
+                            crate::presentation::battle_outcome_label(result),
+                            crate::presentation::battle_outcome_reason(&view,result)),
+                        format!("Duration: {:.1} s",result.duration_seconds),
+                    ];
+                    if let Some((score,counts))=view.player_match_for_side(owner) {
+                        summary.push(format!("Score: {score:+}"));
+                        if let Some((lost,returned,destroyed))=counts {
+                            summary.push(format!("Ships destroyed: {destroyed}"));
+                            summary.push(format!("Ships safely returned: {returned}"));
+                            summary.push(format!("Ships lost: {lost}"));
+                        }
+                    } else {
+                        summary.push("No owned player score for this battle".into());
+                    }
+                    if let Some(mined)=view.minerals_mined_for_side(owner) {
+                        summary.push(format!("Minerals physically mined: {mined}"));
+                    }
+                    summary.push(" ".into());
+                    summary.push("F5: hide/show this summary".into());
+                    summary.push("Enter: play again when available  |  Esc: exit".into());
+                    self.match_summary=Some((
+                        view.world_id,view.episode_revision,owner,summary,
+                    ));
+                }
+                if let Some((_,_,_,lines))=&self.match_summary {
+                    // The cached result has a fixed small number of
+                    // original scoreboard fields. Borrow them directly;
+                    // no allocation is required on repeated render frames.
+                    let mut rows=[""; 14];
+                    let mut count=0;
+                    for line in lines.iter().take(rows.len()) {
+                        rows[count]=line.as_str();
+                        count+=1;
+                    }
+                    self.renderer.draw_match_summary(&rows[..count]);
+                }
+            }
         }
         self.render_wall_seconds += render_started.elapsed().as_secs_f64();
         let ui_started = Instant::now();
