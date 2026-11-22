@@ -491,6 +491,10 @@ impl CampaignProgress<'_> {
         (self.player_match_totals, self.player_match_history_complete)
     }
 
+    pub fn latest_mission_match_counts(&self, id: &str) -> Option<NativePlayerMatchCounts> {
+        self.missions.get(id).and_then(|mission| mission.latest_player_match_counts)
+    }
+
     /// Current native menu presentation of the same durable career record
     /// exposed by the read-only campaign status API.
     pub fn lost_player_fleet_ids(&self, side: i32) -> io::Result<HashSet<i64>> {
