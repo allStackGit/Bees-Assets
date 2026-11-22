@@ -367,6 +367,13 @@ def static_box(value: str) -> dict:
     }
 
 
+def static_polygon(value: str) -> dict:
+    """One source 208-vertex concave polygon at a scaled world transform."""
+    source = static_box("Polygon Obstacle:" + value)
+    source.pop("prefab_name")
+    return source
+
+
 def resize_empty_arena(scene: dict, map_size: float) -> None:
     """Native equivalent of the Unity RL MapSize/MapBorder transformation.
 
@@ -1166,7 +1173,7 @@ def author(args) -> tuple[dict, dict, dict]:
         scene["fleet_template_squads"] = reserve_squads
     else:
         scene.pop("fleet_template_squads", None)
-    if args.static_boxes:
+    if args.static_boxes or args.static_polygons:
         assets = Path(__file__).resolve().parents[1] / "assets"
         prefab_rows = load_json(assets / "box-obstacle-colliders.json")["obstacles"]
         source_boxes = {asset["name"] for asset in prefab_rows
@@ -1190,12 +1197,17 @@ def author(args) -> tuple[dict, dict, dict]:
             ) for obj in scene.get("layout", {}).get(key, [])],
         ]
         next_static_id = max(allocated_ids, default=0) + 1
-        if next_static_id + len(args.static_boxes) >= (1 << 63):
+        requested_count = len(args.static_boxes) + len(args.static_polygons)
+        if next_static_id + requested_count >= (1 << 63):
             raise ValueError("no source-compatible entity IDs remain for static obstacles")
         layout = scene.setdefault("layout", {})
-        added = layout.setdefault("add_static_boxes", [])
+        boxes = layout.setdefault("add_static_boxes", [])
+        polygons = layout.setdefault("add_static_polygons", [])
         for index, box in enumerate(args.static_boxes):
-            added.append({**box, "entity_id": next_static_id + index})
+            boxes.append({**box, "entity_id": next_static_id + index})
+        next_polygon_id = next_static_id + len(args.static_boxes)
+        for index, polygon in enumerate(args.static_polygons):
+            polygons.append({**polygon, "entity_id": next_polygon_id + index})
     if args.arena_size is not None:
         # Border IDs must be allocated AFTER all real battle ships and
         # reinforcements. The common native layout installer requires each
@@ -2101,6 +2113,10 @@ def battle_parser() -> argparse.ArgumentParser:
                         dest="static_boxes", default=[],
                         metavar="PREFAB:X:Y:SCALE_X:SCALE_Y[:DEGREES]",
                         help="place an authentic scaled source StaticObstacle; repeatable, also available for trainable battles")
+    parser.add_argument("--static-polygon", action="append", type=static_polygon,
+                        dest="static_polygons", default=[],
+                        metavar="X:Y:SCALE_X:SCALE_Y[:DEGREES]",
+                        help="place the verified concave Polygon Obstacle with nonuniform scaling; repeatable")
     parser.add_argument("--lethal-borders", action="store_true",
                         help="with --arena-size: make physical border contact immediately damage/kill ships in both gameplay and training")
     parser.add_argument("--trainable", action="store_true",
