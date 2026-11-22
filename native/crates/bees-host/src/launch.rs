@@ -4599,10 +4599,12 @@ fn new_library_battle_output(save_root: &Path, game_id: &str)
 #[cfg(feature = "client")]
 fn archived_library_battle_wins(
     save_root: &Path, game_id: &str,
-) -> Result<(u64, u64), Box<dyn Error>> {
+) -> Result<(u64, u64, i64, bool), Box<dyn Error>> {
     let root = save_root.join("battles").join(game_id);
-    if !root.is_dir() { return Ok((0, 0)); }
+    if !root.is_dir() { return Ok((0, 0, 0, true)); }
     let mut side_wins = [0_u64; 2];
+    let mut player_score = 0_i64;
+    let mut score_complete = true;
     for entry in fs::read_dir(root)? {
         let entry = entry?;
         if !entry.file_type()?.is_dir() { continue; }
@@ -4641,9 +4643,17 @@ fn archived_library_battle_wins(
             side_wins[0] = side_wins[0].saturating_add(1);
         } else if side == bee {
             side_wins[1] = side_wins[1].saturating_add(1);
+        } else { continue; }
+        if let Some(delta) = summary["player_score"].as_i64() {
+            player_score = player_score.checked_add(delta)
+                .ok_or_else(|| invalid("archived native match score overflow"))?;
+        } else {
+            // Existing win archives may predate the per-match score.
+            // Preserve their wins without presenting a fabricated zero.
+            score_complete = false;
         }
     }
-    Ok((side_wins[0], side_wins[1]))
+    Ok((side_wins[0], side_wins[1], player_score, score_complete))
 }
 
 /// The library and LAN host both pick a checkpointed quick battle under
@@ -5162,11 +5172,15 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let mut completed_by_campaign = HashMap::<String, HashSet<String>>::new();
         let status = library.games.iter().zip(&games).map(|(item, config)| {
             if item.kind != "campaign" {
-                let (human, bees) = archived_library_battle_wins(save_root, &item.id)?;
+                let (human, bees, score, score_complete) =
+                    archived_library_battle_wins(save_root, &item.id)?;
                 return Ok(if human == 0 && bees == 0 {
                     "  [Battle]".to_string()
                 } else {
-                    format!("  [Completed wins: Humans {human} / Bees {bees}]")
+                    format!(
+                        "  [Wins H{human}/B{bees} | Score {score:+}{}]",
+                        if score_complete { "" } else { " partial" },
+                    )
                 });
             }
             let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(&fs::read(config)?)?;
