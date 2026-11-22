@@ -34,7 +34,8 @@ def read_suite(file: Path) -> dict:
         "learner_slot", "learner_side", "policy_seed", "trials",
     }
     if (not isinstance(suite, dict) or
-            set(suite) - {"success_metric"} != keys or
+            set(suite) - {"success_metric", "inference_device"} != keys or
+            (suite.get("inference_device", "cpu") not in ("cpu", "cuda:0")) or
             ("success_metric" in suite and suite["success_metric"] not in (
                 "physical_mission_success_or_interception", "learner_faction_victory")) or
             not isinstance(suite.get("suite_id"), str) or
@@ -181,11 +182,15 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
 
     # Only the learner changes across candidates. Every other policy uses
     # the same immutable reference bytes, including all temporary minions.
+    # The optional device is part of the frozen suite fingerprint: CPU/GPU
+    # samples cannot be mixed in a single checkpoint comparison. Original
+    # ONNX opponents retain their explicitly CPU-only provider contract.
+    device = suite.get("inference_device", "cpu")
     models = []
     for model in reference["models"]:
         if model["slot"] == suite["learner_slot"]:
             models.append({
-                **learner[0], "path": str(checkpoint.resolve()), "device": "cpu",
+                **learner[0], "path": str(checkpoint.resolve()), "device": device,
             })
             continue
         original = (reference_path.parent / model["path"]).resolve(strict=True)
@@ -198,7 +203,7 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
                 raise ValueError("Independent native benchmark requires CPU-only ONNX reference inference.")
             cpu.pop("device", None)
         else:
-            cpu["device"] = "cpu"
+            cpu["device"] = device
         models.append(cpu)
     derived = {**reference, "models": models}
     frozen = work / "fixed-reference-manifest.json"
@@ -208,6 +213,7 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
     receipt = evaluate_native_policy(
         run_file, frozen, work / "native-evaluation",
         suite["learner_side"], rollout_binary, suite["policy_seed"],
+        inference_device=device,
     )
     if (receipt.get("kind") != "native_policy_evaluation_complete" or
             receipt.get("episodes") != suite["trials"] or
@@ -308,6 +314,7 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
         "successes": successes,
         "success_metric": metric,
         "trials": receipt["episodes"],
+        "inference_device": device,
         "metrics": metrics,
     }, sort_keys=True), flush=True)
     return {"successes": successes, "metrics": metrics}
@@ -327,6 +334,8 @@ def create_suite_main(arguments) -> int:
     parser.add_argument("--learner-slot", type=int, required=True)
     parser.add_argument("--learner-side", type=int, required=True)
     parser.add_argument("--policy-seed", type=int, default=0)
+    parser.add_argument("--inference-device", choices=("cpu", "cuda:0"),
+                        help="pin CPU (default) or CUDA/ROCm for every evaluation of this suite")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(arguments)
     if not SUITE_ID.fullmatch(args.suite_id):
@@ -369,6 +378,8 @@ def create_suite_main(arguments) -> int:
         "learner_slot": args.learner_slot,
         "learner_side": args.learner_side,
         "policy_seed": args.policy_seed,
+        **({"inference_device": args.inference_device}
+           if args.inference_device is not None else {}),
         "trials": len(config["levels"]) * episodes,
         "success_metric": (
             "physical_mission_success_or_interception"
