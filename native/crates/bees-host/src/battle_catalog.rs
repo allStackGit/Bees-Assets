@@ -157,6 +157,11 @@ pub struct Mission {
     /// Source endings that add the physical match score on victory only.
     #[serde(default)]
     pub score_on_victory_only: bool,
+    /// Neptune I defeat converts surviving Bee FleetShips' real mining
+    /// credit to unassigned Bumblebee, Leafcutter and Hornet reserves.
+    /// Prices are the source full-health TSV in that exact greedy order.
+    #[serde(default)]
+    pub defeat_salvage_prices: Option<[u64; 3]>,
     #[serde(default)]
     pub intermission: Option<CampaignIntermission>,
     #[serde(default)]
@@ -1002,6 +1007,9 @@ impl BattleCatalog {
                 (mission.grants_on_finished() &&
                     !matches!(mission.advance_on, AdvanceOn::Finished)) ||
                 (mission.evacuation_rewards && !mission.grants_on_finished()) ||
+                (mission.defeat_salvage_prices.is_some_and(|prices|
+                    !mission.record_fleet_stats ||
+                    prices.iter().any(|&price| price == 0 || price > i32::MAX as u64))) ||
                 (mission.evacuation_rewards && {
                     let classes = [(18, 5), (13, 8), (12, 4), (7, 2)];
                     classes.iter().any(|&(kind, count)|
@@ -1594,6 +1602,61 @@ impl BattleCatalog {
                         progress.awarded_fleet_ids.insert(ship.fleet_ship_id);
                     }
                     state.grants_claimed = true;
+                }
+                // Original Neptune I defeat recycles only surviving enemy
+                // miners' physical FleetShip cargo into unassigned Bee hulls.
+                // Recompute the exact source conversion from the committed
+                // combat receipt; a crafted outcome cannot mint free ships.
+                if let Some(prices) = mission.defeat_salvage_prices {
+                    let ledger = campaign_fleet.as_deref().ok_or_else(||
+                        invalid("Neptune defeat salvage requires real FleetShip receipts"))?;
+                    let mined = ledger.iter().filter(|ship|
+                        ship.side == 3 - mission.player_side &&
+                        ship.is_dead == Some(false)
+                    ).try_fold(0_u64, |total, ship| {
+                        total.checked_add(ship.minerals_mined_this_level as u64)
+                            .ok_or_else(|| invalid("Neptune enemy mineral credit overflow"))
+                    })?;
+                    let mut remaining = if outcome.winner_side != mission.player_side {
+                        mined
+                    } else { 0 };
+                    let mut received = outcome.defeat_salvage_ships.iter();
+                    let mut previous_id = progress.highest_fleet_id();
+                    for (kind, price) in [(3_u8, prices[0]), (16, prices[1]), (15, prices[2])] {
+                        let count = remaining / price;
+                        remaining %= price;
+                        if count > 32768 {
+                            return Err(invalid("Neptune salvage fleet reward exceeds safe capacity"));
+                        }
+                        for _ in 0..count {
+                            let ship = received.next().ok_or_else(||
+                                invalid("Neptune salvage omitted a mined FleetShip"))?;
+                            if ship.ship_type != kind || ship.price_tsv != price ||
+                                ship.saved_squad_id != 0 || ship.fleet_ship_id <= previous_id ||
+                                progress.fleet.contains_key(&ship.fleet_ship_id) ||
+                                progress.authored_roster.contains_key(&ship.fleet_ship_id)
+                            {
+                                return Err(invalid("Neptune salvage FleetShip identity or value is invalid"));
+                            }
+                            previous_id = ship.fleet_ship_id;
+                        }
+                    }
+                    if received.next().is_some() {
+                        return Err(invalid("Neptune salvage exceeds observed mined FleetShip credit"));
+                    }
+                    for ship in &outcome.defeat_salvage_ships {
+                        progress.fleet.insert(ship.fleet_ship_id, FleetProgress {
+                            side: 3 - mission.player_side,
+                            ship_type: Some(ship.ship_type),
+                            loss_history_complete: true,
+                            combat_history_complete: true,
+                            special_history_complete: true,
+                            ..FleetProgress::default()
+                        });
+                        progress.purchases.push((3 - mission.player_side, *ship));
+                    }
+                } else if !outcome.defeat_salvage_ships.is_empty() {
+                    return Err(invalid("campaign has unauthorized defeat salvage FleetShips"));
                 }
                 if mission.bank_player_minerals {
                     if let Some(minerals) = campaign_banked_minerals {

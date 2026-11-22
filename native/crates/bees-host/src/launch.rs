@@ -1785,6 +1785,8 @@ struct CampaignMission<'a> {
     bank_player_minerals: bool,
     bank_on_finished: bool,
     score_on_victory_only: bool,
+    defeat_salvage_prices: Option<[u64; 3]>,
+    defeat_salvage_first_id: Option<i64>,
     lost_fleet_ids: Option<&'a HashSet<i64>>,
     enemy_lost_fleet_ids: Option<&'a HashSet<i64>>,
     purchased_ships: Option<&'a [NativePurchasedShip]>,
@@ -1839,6 +1841,10 @@ struct CampaignReplaySetup {
     bank_on_finished: bool,
     #[serde(default)]
     score_on_victory_only: bool,
+    #[serde(default)]
+    defeat_salvage_prices: Option<[u64; 3]>,
+    #[serde(default)]
+    defeat_salvage_first_id: Option<i64>,
     lost_fleet_ids: Option<HashSet<i64>>,
     #[serde(default)]
     enemy_lost_fleet_ids: Option<HashSet<i64>>,
@@ -1887,6 +1893,8 @@ impl CampaignReplaySetup {
             bank_player_minerals: mission.bank_player_minerals,
             bank_on_finished: mission.bank_on_finished,
             score_on_victory_only: mission.score_on_victory_only,
+            defeat_salvage_prices: mission.defeat_salvage_prices,
+            defeat_salvage_first_id: mission.defeat_salvage_first_id,
             lost_fleet_ids: mission.lost_fleet_ids.cloned(),
             enemy_lost_fleet_ids: mission.enemy_lost_fleet_ids.cloned(),
             purchased_ships: mission.purchased_ships.map(|ships| ships.to_vec()),
@@ -1934,6 +1942,8 @@ impl CampaignReplaySetup {
             bank_player_minerals: self.bank_player_minerals,
             bank_on_finished: self.bank_on_finished,
             score_on_victory_only: self.score_on_victory_only,
+            defeat_salvage_prices: self.defeat_salvage_prices,
+            defeat_salvage_first_id: self.defeat_salvage_first_id,
             lost_fleet_ids: self.lost_fleet_ids.as_ref(),
             enemy_lost_fleet_ids: self.enemy_lost_fleet_ids.as_ref(),
             purchased_ships: self.purchased_ships.as_deref(),
@@ -1978,6 +1988,10 @@ struct CampaignOutcome {
     /// incomplete/defeated mission never mints a FleetShip.
     #[serde(default)]
     awarded_ships: Vec<NativePurchasedShip>,
+    /// Source Neptune I defeat grants Bee reserves paid entirely by the
+    /// opponent's surviving mined minerals, not by the player account.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    defeat_salvage_ships: Vec<NativePurchasedShip>,
     #[serde(default)]
     awarded_squads: Vec<NativeCreatedSquad>,
     /// One permanent source campaign action, committed with this battle's
@@ -3360,6 +3374,17 @@ fn launch_catalog_battle(
             0, &grant_squads,
         )?;
     }
+    // Freeze the future Bee salvage IDs before the World starts. The same
+    // identity space serves authored FleetShips, purchases and victory
+    // rewards; a recovered defeat may not allocate against newer progress.
+    let defeat_salvage_first_id = entry.mission.as_ref()
+        .filter(|mission| mission.defeat_salvage_prices.is_some())
+        .map(|_| {
+            progress.highest_fleet_id()
+                .max(grants.iter().map(|ship| ship.fleet_ship_id).max().unwrap_or(0))
+                .checked_add(1).ok_or_else(||
+                    invalid("Neptune salvage FleetShip identities exhausted"))
+        }).transpose()?;
     let codex_known = catalog.codex_known_types(&progress);
     let mission = catalog.campaign_id.as_deref().zip(entry.mission.as_ref())
         .map(|(campaign_id, mission)| CampaignMission {
@@ -3371,6 +3396,8 @@ fn launch_catalog_battle(
             bank_player_minerals: mission.bank_player_minerals,
             bank_on_finished: mission.bank_on_finished,
             score_on_victory_only: mission.score_on_victory_only,
+            defeat_salvage_prices: mission.defeat_salvage_prices,
+            defeat_salvage_first_id,
             lost_fleet_ids: lost.as_ref(),
             enemy_lost_fleet_ids: enemy_lost.as_ref(),
             purchased_ships: purchased.as_deref(),
@@ -9944,7 +9971,7 @@ fn run_battle(
     let rate = |count: u64, seconds: f64| {
         (seconds > 0.0).then(|| count as f64 / seconds)
     };
-    let campaign_outcome = mission.filter(|_| replay_inputs.is_none() && !user_closed &&
+    let mut campaign_outcome = mission.filter(|_| replay_inputs.is_none() && !user_closed &&
         failed_window.is_none() && cleanup_errors.is_empty() && completed_episodes == [1])
         .and_then(|mission| {
             let finalized = host.simulation().world(0)?
@@ -9988,6 +10015,7 @@ fn run_battle(
                 mission_success: Some(mission_success),
                 evacuated_personnel,
                 awarded_ships,
+                defeat_salvage_ships: Vec::new(),
                 awarded_squads: if mission_success || mission.grants_on_finished {
                     mission.victory_squads.to_vec()
                 } else { Vec::new() },
@@ -10057,6 +10085,53 @@ fn run_battle(
         // persistent fleet statistics or bank minerals.
         Some(Vec::new())
     } else { None };
+    // Source Neptune1Ending: on any non-player victory, each surviving Bee
+    // FleetShip contributes its actual MineralsMinedThisLevel (the death
+    // path already retired destroyed ships' credit). Spend that TSV in
+    // source order: Bumblebee, Leafcutter, then Hornet. The hulls enter
+    // the existing career reserve and are never spawned in this battle.
+    if let (Some(mission), Some(outcome)) = (mission, campaign_outcome.as_mut()) {
+        if let Some(prices) = mission.defeat_salvage_prices {
+            if outcome.winner_side != mission.player_side {
+                let state = &host.simulation().world(0)
+                    .ok_or_else(|| invalid("Neptune salvage World unavailable"))?.state;
+                let mut mined = 0_u64;
+                for ship in state.combat.ships() {
+                    if ship.side != 3 - mission.player_side ||
+                        state.metadata.fleet.was_killed(ship.entity_id) {
+                        continue;
+                    }
+                    let Some(fleet) = state.metadata.fleet.get(ship.entity_id) else { continue };
+                    if !fleet.has_persistent_fleet_value { continue; }
+                    mined = mined.checked_add(
+                        u64::try_from(fleet.minerals_mined_this_level)
+                            .map_err(|_| invalid("negative Neptune mining credit"))?
+                    ).ok_or_else(|| invalid("Neptune mining credit overflow"))?;
+                }
+                let mut next_id = mission.defeat_salvage_first_id
+                    .ok_or_else(|| invalid("Neptune salvage has no frozen FleetShip ID"))?;
+                for (ship_type, price) in [(3_u8, prices[0]), (16, prices[1]), (15, prices[2])] {
+                    if price == 0 { return Err(invalid("Neptune salvage TSV must be positive").into()); }
+                    let count = mined / price;
+                    mined %= price;
+                    if count > 32768 ||
+                        outcome.defeat_salvage_ships.len()
+                            .checked_add(count as usize).is_none_or(|total| total > 32768)
+                    {
+                        return Err(invalid("Neptune salvage exceeds bounded reserve size").into());
+                    }
+                    for _ in 0..count {
+                        outcome.defeat_salvage_ships.push(NativePurchasedShip {
+                            fleet_ship_id: next_id, saved_squad_id: 0,
+                            ship_type, price_tsv: price,
+                        });
+                        next_id = next_id.checked_add(1).ok_or_else(||
+                            invalid("Neptune salvage FleetShip IDs exhausted"))?;
+                    }
+                }
+            }
+        }
+    }
     // Saved-squad career stats are derived from exactly the same verified
     // FleetShip outcomes. This does not create a second damage, death or
     // mining ledger in the host, and never mistakes Stage ItemIds for

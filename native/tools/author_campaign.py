@@ -1793,6 +1793,38 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             mission["preparation"] = story
         if story == "neptune_seize_means":
             mission["intermission"] = {"kind": "pluto_to_neptune"}
+            # Neptune1Ending converts enemy FleetShips' surviving mining
+            # credit into unassigned Bee reserves on a player defeat.
+            # Take full-health TSV from the captured physical source, not
+            # a separately maintained or inferred reward price table.
+            prices = []
+            enemy_hulls = [
+                *scene.get("ships", []),
+                *scene.get("fleet_templates", []),
+            ]
+            for kind in (3, 16, 15):  # Bumblebee, Leafcutter, Hornet
+                source_prices = {
+                    ship.get("max_tsv") for ship in enemy_hulls
+                    if ship.get("side") == 3 - args.player_side
+                    and ship.get("ship_type") == kind
+                    and isinstance(ship.get("max_tsv"), int)
+                    and ship["max_tsv"] > 0
+                }
+                if len(source_prices) != 1:
+                    raise ValueError(
+                        f"Neptune Seize the Means needs a single captured "
+                        f"Bee TSV for ship type {kind}; add the original "
+                        "enemy fleet template to the source scene"
+                    )
+                prices.append(source_prices.pop())
+            if not any(ship.get("side") == 3 - args.player_side
+                       and ship.get("persistent_fleet")
+                       for ship in scene.get("ships", [])):
+                raise ValueError(
+                    "Neptune defeat salvage requires the physical Bee "
+                    "FleetShip registry, not transient enemy proxies"
+                )
+            mission["defeat_salvage_prices"] = prices
         elif story == "titania_minesweeper":
             mission["intermission"] = {"kind": "neptune_to_titania"}
         elif story == "uranus_on_the_offensive":
