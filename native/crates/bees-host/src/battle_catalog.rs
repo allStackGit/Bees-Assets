@@ -984,7 +984,9 @@ impl BattleCatalog {
     ) -> io::Result<()> {
         let campaign_id = self.campaign_id.as_deref()
             .ok_or_else(|| invalid("ship naming requires a native campaign"))?;
-        if !progress.nameable_fleet_ships().contains(&(side, fleet_ship_id)) ||
+        if !self.battles.iter().filter_map(|entry| entry.mission.as_ref())
+                .any(|mission| mission.player_side == side) ||
+            !progress.nameable_fleet_ships().contains(&(side, fleet_ship_id)) ||
             !valid_saved_squad_name(name) ||
             progress.fleet_ship_name(fleet_ship_id) == Some(name)
         {
