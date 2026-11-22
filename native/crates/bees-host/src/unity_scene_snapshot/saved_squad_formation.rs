@@ -297,10 +297,20 @@ impl NativePhysicalScene {
                 });
                 let custom = fleet_id.and_then(|key| overrides.get(&key)).copied();
                 // Manual placement is an additive nudge from the original
-                // authored/preset slot. Zero never teleports a ship to the
-                // squad center. Unedited ships retain their exact layout.
-                let offset = slot - slot_center + custom.unwrap_or(Vec2::ZERO);
-                let destination = original_center + offset + translation;
+                // authored/preset slot. The authored SavedSquad carries an
+                // explicit per-ship source offset that need not equal the
+                // mean of its physical hull centers: retain that authentic
+                // movement offset rather than replacing it with a guess.
+                let delta_slot = custom.unwrap_or(Vec2::ZERO);
+                let (offset, destination) = if authored {
+                    let saved_offset = self.source_formation.get(&id)
+                        .expect("validated authored source ship offset").offset;
+                    (saved_offset + delta_slot,
+                        original + delta_slot + translation)
+                } else {
+                    let adjusted = slot - slot_center + delta_slot;
+                    (adjusted, original_center + adjusted + translation)
+                };
                 // An individual saved placement must not disturb the
                 // remaining source-authored ships. Skip untouched owners
                 // instead of revalidating/copying their entire families.
