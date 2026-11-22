@@ -1889,7 +1889,7 @@ def main() -> None:
     parser.add_argument("--mission-story", action="append", type=mission_story,
                         default=[], metavar="MISSION:STORY",
                         help="attach original native campaign dialogue and terminal cues to an authored mission")
-    parser.add_argument("--codex-initial", type=ship_types, default=[13, 18],
+    parser.add_argument("--codex-initial", type=ship_types, default=[1, 8, 13, 18, 19],
                         metavar="TYPE[,TYPE]",
                         help="originally known ship classes (human campaign: Gunship and Scout)")
     parser.add_argument("--mission-codex", action="append", type=mission_codex,
