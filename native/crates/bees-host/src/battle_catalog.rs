@@ -499,7 +499,14 @@ impl CampaignProgress<'_> {
     }
 
     pub fn highest_fleet_id(&self) -> i64 {
-        self.fleet.keys().copied().max().unwrap_or(0)
+        // A ship may have a durable purchase or original-roster identity
+        // before any successful battle has created its career statistics.
+        // Neither source-authored identities nor reserve purchases may
+        // ever be recycled when minting a new FleetShip.
+        self.fleet.keys().copied()
+            .chain(self.purchases.iter().map(|(_, ship)| ship.fleet_ship_id))
+            .chain(self.authored_roster.keys().copied())
+            .max().unwrap_or(0)
     }
 
     pub fn original_fleet_is_editable(&self, side: i32, fleet_id: i64) -> bool {
