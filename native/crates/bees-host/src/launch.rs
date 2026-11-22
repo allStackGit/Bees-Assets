@@ -2206,8 +2206,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             )));
             let session_file = default_native_user_save_root(&env::current_dir()?)
                 .join("multiplayer").join(format!("{session_key}.json"));
+            let audio_preferences = session_file.parent()
+                .and_then(Path::parent)
+                .ok_or_else(|| invalid("missing native multiplayer save root"))?
+                .join("audio-settings.json");
             return bees_host::presentation::connect_remote(
-                &address.to_string_lossy(), &token_file, side, Some(&session_file),
+                &address.to_string_lossy(), &token_file, side,
+                Some(&session_file), Some(&audio_preferences),
             );
         }
         #[cfg(not(feature = "client"))]
