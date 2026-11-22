@@ -893,12 +893,45 @@ class RemoteBattleWindow:
                 s for s in self.sidebar_owners if s["owner"] in self.selected
             ]
             if details:
-                self.squad_detail.set("\n".join(
-                    f"Squad {s['owner']['squad_id']}: {s.get('command') or 'Idle'}; "
-                    f"cease {s.get('cease_fire')}; chase {s.get('chasing')}; "
-                    f"lock {s.get('locked_on')}; shooting {s.get('shooting')}"
-                    for s in details[:3]
-                ))
+                owned_ships = {
+                    ship["id"]: ship for ship in self.state["ships"] if ship["owned"]
+                }
+                lines = []
+                total_health = total_max_health = total_tsv = total_base = total_cargo = 0
+                total_members = 0
+                for row in details:
+                    ships = [owned_ships[ship_id] for ship_id in row["members"]
+                             if ship_id in owned_ships]
+                    health = sum(ship["health"] for ship in ships)
+                    max_health = sum(ship["max_health"] for ship in ships)
+                    tsv = sum(ship.get("tsv") or 0 for ship in ships)
+                    base = sum(ship.get("base_tsv") or 0 for ship in ships)
+                    cargo = sum(ship.get("mined_cargo") or 0 for ship in ships)
+                    total_health += health
+                    total_max_health += max_health
+                    total_tsv += tsv
+                    total_base += base
+                    total_cargo += cargo
+                    total_members += len(ships)
+                    if len(lines) < 3:
+                        lines.append(
+                            f"Squad {row['owner']['squad_id']} ({len(ships)} ships)"
+                            f"  HP {health}/{max_health}"
+                            f"  TSV {tsv} (base {base})  Mined {cargo}\n"
+                            f"{row.get('command') or 'Idle'}; "
+                            f"cease {row.get('cease_fire')}; "
+                            f"chase {row.get('chasing')}; "
+                            f"lock {row.get('locked_on')}; "
+                            f"shooting {row.get('shooting')}"
+                        )
+                if len(details) > 1:
+                    lines.insert(0,
+                        f"Selected {len(details)} squads / {total_members} ships\n"
+                        f"HP {total_health}/{total_max_health}  "
+                        f"TSV {total_tsv} (base {total_base})  Mined {total_cargo}")
+                if len(details) > 3:
+                    lines.append(f"…and {len(details)-3} more selected squads")
+                self.squad_detail.set("\n\n".join(lines))
             else:
                 self.squad_detail.set("Select a friendly squad to issue orders")
             first_owner = details[0]["owner"] if details else None
