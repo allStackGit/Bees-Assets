@@ -785,19 +785,27 @@ class RemoteConsole:
                 print(f"  {entry['ship_type']:>2}  {entry['name']}")
             return
         if cmd == "ships":
+            known = {entry["ship_type"]: entry["name"]
+                     for entry in self.codex_entries(state) or []}
             for ship in state["ships"]:
-                print(f"  {ship['id']:>8} side {ship['side']} type {ship['ship_type']:>2}"
+                label = known.get(ship["ship_type"], f"type {ship['ship_type']}")
+                print(f"  {ship['id']:>8} side {ship['side']} {label}"
                       f"  ({ship['x']:8.1f}, {ship['y']:8.1f})"
                       f"  HP {ship['health']}/{ship['max_health']}"
                       f" {'ours' if ship['owned'] else 'ally' if ship['friendly'] else 'enemy'}")
             return
         if cmd == "squads":
+            known = {entry["ship_type"]: entry["name"]
+                     for entry in self.codex_entries(state) or []}
             for squad in state["squads"]:
                 owner = squad["owner"]
+                lead = squad.get("lead_ship_type")
+                lead_label = known.get(lead, f"type {lead}" if lead is not None else "")
                 print(f"  {owner['squad_id']:>8} side {squad['side']}"
                       f" {'ours' if squad['owned'] else 'ally' if squad['side'] == state['viewer_side'] else 'enemy'}"
                       f"{' (orders disabled)' if squad['owned'] and not squad['controllable'] else ''}"
                       f" ships {squad['members']}"
+                      f" {lead_label}"
                       f"{' hotkey '+str(squad['source_number']) if squad.get('source_number') is not None else ''}")
             return
         if cmd == "weapons":
