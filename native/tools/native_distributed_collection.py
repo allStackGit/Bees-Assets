@@ -859,7 +859,9 @@ def aggregate_collection_metrics(bundles):
         # preserve missing measurements as unavailable, not measured zero.
         navigation_keys = ("navigation_lookups_skipped",
                            "steering_lookups_skipped",
-                           "unarmed_weapon_holders_skipped")
+                           "unarmed_weapon_holders_skipped",
+                           "capability_cooldown_owners_advanced",
+                           "capability_cooldown_owners_skipped")
         if all(all(key in row["ship_slot_work"] for key in navigation_keys)
                for row in rows):
             result["ship_slot_work"].update({
