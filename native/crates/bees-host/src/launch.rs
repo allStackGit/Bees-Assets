@@ -6708,6 +6708,9 @@ fn run_battle(
     #[cfg(feature = "client")]
     let mut client = if view {
         let mut client = bees_host::client::NativeClient::new(client_bounds[0])?;
+        client.set_audio_preferences(
+            default_native_user_save_root(root).join("audio-settings.json"),
+        );
         // Hot-seat is restricted to a single offline source Level whose
         // BOTH factions actually own selectable, input-enabled squads.
         // This is never enabled for a policy opponent, campaign replay or
