@@ -116,6 +116,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         'ppo_fused_adam_probe_samples',
             'ppo_compile_compiled_samples','ppo_compile_eager_samples',
             'ppo_compile_restored','ppo_gradient_foreach_batches',
+            'ppo_gradient_clip_norm_reused_batches',
             'ppo_gpu_batch_target_pixels',
             'ppo_gpu_batch_next_target','ppo_gpu_batch_settled',
             // Report exposed CPU-prep wait, not concurrent background work
