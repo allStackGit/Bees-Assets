@@ -1564,6 +1564,8 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
                 .filter(|wave| wave.is_campaign_triggered()).count(),
             waiting_for_ship_death: self.reinforcements.iter()
                 .filter(|wave| wave.is_ship_death_triggered()).count(),
+            waiting_for_ship_exit: self.reinforcements.iter()
+                .filter(|wave| wave.is_ship_exit_triggered()).count(),
             waiting_for_map_object_destruction: self.reinforcements.iter()
                 .filter(|wave| wave.is_map_object_death_triggered()).count(),
             waiting_for_mining_asteroid_depletion: self.reinforcements.iter()
