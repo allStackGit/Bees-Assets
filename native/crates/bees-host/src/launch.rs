@@ -2012,8 +2012,10 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         let root = catalog_path.parent()
             .ok_or_else(|| invalid("missing campaign catalog directory"))?;
         let roster_probe_start = Instant::now();
-        let (_, source_ships, source_squads, _, _, failed_scenes) =
-            authored_menu_fleet(&catalog, root, &progress);
+        let AuthoredMenuFleet {
+            owned: source_ships, destinations: source_squads,
+            reservable, failed_scenes, ..
+        } = authored_menu_fleet(&catalog, root, &progress);
         let roster_probe_elapsed_ms =
             roster_probe_start.elapsed().as_secs_f64() * 1000.0;
         let observed_source_ship_count = source_ships.len();
@@ -2045,6 +2047,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             "elapsed_ms": roster_probe_elapsed_ms,
             "source_ships": observed_source_ship_count,
             "source_squads": source_squads.len(),
+            "reservable_classes": reservable.len(),
             "failed_scene_probes": failed_scenes,
             "complete": failed_scenes == 0,
         });
@@ -5640,8 +5643,11 @@ fn run_campaign_game_menu(
                 title: entry.title.trim(), status, unlocked: *unlocked,
             }).collect::<Vec<_>>();
         let available = progress.unspent_minerals()?;
-        let (original_choices, source_owned, authored_squads, squad_templates, editable_tactics, _) =
-            authored_menu_fleet(&catalog, root, &progress);
+        let AuthoredMenuFleet {
+            editable: original_choices, owned: source_owned,
+            destinations: authored_squads, templates: squad_templates,
+            tactics: editable_tactics, reservable, ..
+        } = authored_menu_fleet(&catalog, root, &progress);
         let fleet_rows = progress.fleet_rows_with_source(&source_owned);
         let squad_rows = progress.squad_rows_with_source(&authored_squads);
         // The same set of persistent player SavedSquads must exist in
@@ -5665,11 +5671,14 @@ fn run_campaign_game_menu(
                 title: format!(
                     "Type {}  ->  Reserve   TSV {}{}",
                     ship.ship_type, ship.price_tsv,
-                    if !unlocked { "  [Locked]" }
+                    if !reservable.contains(&(ship.player_side, ship.ship_type)) {
+                        "  [Unavailable in source routes]"
+                    } else if !unlocked { "  [Locked]" }
                     else if available < ship.price_tsv { "  [Insufficient]" }
                     else { "" },
                 ),
-                unlocked: affordable,
+                unlocked: affordable &&
+                    reservable.contains(&(ship.player_side, ship.ship_type)),
                 side: ship.player_side,
                 ship_type: ship.ship_type,
                 saved_squad_id: 0,
