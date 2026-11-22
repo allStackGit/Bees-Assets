@@ -555,6 +555,19 @@ where
                 .expect("validated registered world index");
             world.state.commit_recovery_owners(level);
             world.state.metadata.commit_metadata_recovery(metadata);
+            // Original Pluto II HiveMind is activated only when the
+            // checkpointed Scout-selection tutorial releases its real
+            // enemy squad wave. Re-derive this transition from the one
+            // authoritative dialogue owner; do not persist an additional
+            // possibly divergent HiveMind boolean.
+            if world.state.campaign_dialogue.as_ref()
+                .and_then(|dialogue| dialogue.pluto_reinforcements_progress())
+                .is_some_and(|(_, combat_released)| combat_released)
+            {
+                world.state.metadata.observe_campaign_cue(
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoReinforcementsCombatReady,
+                );
+            }
             world.commit_owner_checkpoint(clock);
         }
         self.driver = driver;
