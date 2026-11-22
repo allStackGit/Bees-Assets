@@ -1365,6 +1365,25 @@ impl NativeRemotePlay {
             self.measurements.fog_query_views_skipped_no_output += sides.len() as u64;
             return;
         }
+        // With only view-only clients connected there is no commander
+        // projection to produce on alternating idle publish ticks. Keep
+        // advancing the REAL fog fade above, but avoid generating a
+        // temporary vision grid or allocating any serializable World view
+        // until the next spectator frame. Never skip accumulated sound,
+        // first join, or a terminal receipt.
+        if publish_frame && !force_view && !has_events &&
+            view.tick % SPECTATOR_IDLE_STATE_EVERY_TICKS != 0 &&
+            self.pending_audio.values().all(Vec::is_empty) &&
+            self.peers.iter().all(|peer|
+                peer.closed || peer.side.is_none() || peer.spectator)
+        {
+            self.measurements.spectator_idle_frames_deferred +=
+                self.peers.iter().filter(|peer|
+                    !peer.closed && peer.spectator && peer.side.is_some()
+                ).count() as u64;
+            self.measurements.fog_query_views_skipped_no_output += sides.len() as u64;
+            return;
+        }
         let fog_enabled = view.player_authority.player_fog_of_war_enabled();
         let mut vision = HashMap::<i32, RemoteFogSources>::new();
         for &side in &sides {
