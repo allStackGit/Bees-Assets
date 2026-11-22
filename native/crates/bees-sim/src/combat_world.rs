@@ -12,7 +12,7 @@
 //! use stable entity IDs for ordering; Unity callback ordering is not
 //! guaranteed to match until checked with a live reference build.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::collision::{Aabb, Pose};
@@ -1083,6 +1083,10 @@ pub struct CombatWorld {
     // A sparse non-serialized work gauge: restored from canonical owners.
     policy_capability_owner_count: usize,
     ship_weapons: BTreeMap<i64, ShipWeapons>,
+    // Only ships with at least one real mount require weapon advancement
+    // or RangeCollider sweeps. Ordered exactly like ship_weapons; rebuilt
+    // from canonical mounts after checkpoint restore, never serialized.
+    armed_weapon_ships: BTreeSet<i64>,
     automatic_weapon_measurements: AutomaticWeaponMeasurements,
     automatic_rank_candidates: Vec<crate::targeting::NativeEnemyTargetStats>,
     automatic_distance_keys: HashMap<i64, f32>,
@@ -1323,6 +1327,7 @@ impl CombatWorld {
             policy_ship_runtime: BTreeMap::new(),
             policy_capability_owner_count: 0,
             ship_weapons: BTreeMap::new(),
+            armed_weapon_ships: BTreeSet::new(),
             automatic_weapon_measurements: AutomaticWeaponMeasurements::default(),
             automatic_rank_candidates: Vec::new(), automatic_distance_keys: HashMap::new(),
             weapon_rank_history: weapon_rank_history::WeaponRankHistory::default(),
@@ -1576,9 +1581,13 @@ impl CombatWorld {
         self.game_scout_runtime.remove(&victim_id);
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
         self.ship_weapons.remove(&victim_id);
-        // Source Kill removes the victim from every weapon cache BEFORE later
-        // targeting callbacks, not only on the next physical trigger sweep.
-        for weapons in self.ship_weapons.values_mut() {
+        self.armed_weapon_ships.remove(&victim_id);
+        // Only physical mounts can own enemy trigger contacts. Walk live
+        // armed ships, not thousands of policy-bound empty weapon holders.
+        // Preserve the original sorted ship-ID contact exit order.
+        for &owner in &self.armed_weapon_ships {
+            let weapons = self.ship_weapons.get_mut(&owner)
+                .expect("mounted ship index has a physical weapons owner");
             for contacts in &mut weapons.range_contacts {
                 self.pending_weapon_range_exits += u64::from(contacts.remove(victim_id));
             }
@@ -2425,6 +2434,10 @@ impl CombatWorld {
         self.queen_spawn_measurements = snapshot.queen_measurements;
         self.queen_spawn_ids.clear();
         self.ship_weapons = snapshot.weapons;
+        self.armed_weapon_ships = self.ship_weapons.iter()
+            .filter_map(|(&id, runtime)|
+                runtime.turrets.iter().any(Option::is_some).then_some(id))
+            .collect();
         self.special_weapons = snapshot.special_weapons;
         self.level_geometry = snapshot.level_geometry;
         self.extraction = snapshot.extraction;
