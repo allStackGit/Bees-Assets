@@ -32,8 +32,9 @@ const COORDINATOR_ONLY=new Set([
     'experiment_hub_admin.js','experiment_hub_releases.js',
     'experiment_hub_local_services.js','experiment_hub_job_export.js',
     'experiment_hub_history.js','experiment_hub_evaluation_history.js',
-    'experiment_hub_observations.js','experiment_hub_evaluation.js',
-    'experiment_hub_design_fields.js',
+    'experiment_hub_observations.js',
+    // Evaluation and Design helpers are also imported by native agent
+    // adapters: updates must restart BOTH processes at an idle boundary.
 ]);
 const AGENT_ONLY=new Set([
     'experiment_hub_agent.js','experiment_hub_host.js',

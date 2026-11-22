@@ -488,15 +488,26 @@ async function main(argv=process.argv.slice(2)) {
                 console.log('[hub-updates] Local fast-forwarded software: '+
                     result.changed.join(', '));
             if(agentNeedsRestart) {
-                const agent=spawnSync('systemctl',
-                    ['--user','is-active','--quiet','bees-experiment-hub-agent.service'],
+                const service='bees-experiment-hub-agent.service';
+                // A failed agent may have exhausted systemd's StartLimitBurst.
+                // An installed, enabled agent must recover on the next good
+                // idle release even if it is no longer active.
+                const enabled=spawnSync('systemctl',
+                    ['--user','is-enabled','--quiet',service],
                     {timeout:5000,windowsHide:true});
-                if(agent.status===0) {
+                if(enabled.status===0) {
+                    const reset=spawnSync('systemctl',
+                        ['--user','reset-failed',service],
+                        {timeout:5000,windowsHide:true});
+                    if(reset.status!==0)
+                        throw Error('Learner source activated but agent failure state could not be reset.');
                     const restart=spawnSync('systemctl',
-                        ['--user','restart','bees-experiment-hub-agent.service'],
+                        ['--user','restart',service],
                         {timeout:60000,windowsHide:true});
                     if(restart.status!==0)
                         throw Error('Learner source activated but local agent restart failed.');
+                }else {
+                    console.log('[hub-updates] Agent activation skipped: local service is not enabled.');
                 }
             }
             for(const name of pendingSimulations)

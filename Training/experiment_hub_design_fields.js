@@ -138,7 +138,15 @@ function applyOverrides(config,project,overrides) {
     return result;
 }
 function described(config,project) {
-    return {version:1,fields:fieldsFor(config,project)};
+    const fields=fieldsFor(config,project);
+    // Agent capabilities must use the exact schema accepted by the Hub.
+    // Invalid optional Design controls must never prevent an authenticated
+    // worker heartbeat or disconnect its unrelated training adapters.
+    const approved=fields.filter(validField).slice(0,128);
+    if(approved.length!==fields.length)
+        console.warn('[hub-design] Ignoring invalid or excessive optional '+project+
+            ' Design controls ('+(fields.length-approved.length)+').');
+    return {version:1,fields:approved};
 }
 // An authenticated worker describes locally installed, approved defaults.
 // Reject malformed descriptions before they become UI or placement evidence.
