@@ -2025,6 +2025,18 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 text::draw_at(pixels,WIDTH,16,23,
                     text::fit(label,FIELD-32),1,[255,211,130]);
             }
+            if objective.get("kind").and_then(Value::as_str) == Some("target_ship") {
+                let attacker = objective.get("attacking_side")
+                    .and_then(Value::as_i64) == Some(i64::from(side));
+                let label = if attacker {
+                    format!("Eliminate target ship #{}",
+                        objective["target_ship_id"].as_i64().unwrap_or(0))
+                } else {
+                    "Protect the mission target from the opposing fleet".to_owned()
+                };
+                text::draw_at(pixels,WIDTH,16,23,
+                    text::fit(&label,FIELD-32),1,[255,211,130]);
+            }
             if objective.get("kind").and_then(Value::as_str) == Some("campaign_elimination") {
                 let attacking = objective.get("attacking_side")
                     .and_then(Value::as_i64) == Some(i64::from(side));
