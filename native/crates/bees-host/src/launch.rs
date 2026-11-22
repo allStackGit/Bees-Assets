@@ -4359,6 +4359,15 @@ fn authored_menu_fleet(
             if let Ok(path) = resolve(root, config).canonicalize() {
                 if let Ok(mut scene) = load_native_fleet_edit_scene(&path) {
                     if scene.install_created_squads(side, &created).is_ok() {
+                        // Build one lookup for the selected physical source
+                        // scene, not a full entity scan per fleet member.
+                        let source_ships = if active && config == selected {
+                            scene.entities.iter().filter_map(|entity| match entity {
+                                NativeAuthoredEntity::Ship(ship) =>
+                                    Some((ship.entity_id, ship)),
+                                _ => None,
+                            }).collect::<HashMap<_, _>>()
+                        } else { HashMap::new() };
                         for squad in &scene.source_squads {
                             let Some(saved_id) = squad.saved_squad_id else { continue };
                             if squad.side != side ||
@@ -4376,11 +4385,8 @@ fn authored_menu_fleet(
                             }
                             if !active || config != selected { continue; }
                             for &entity_id in &squad.members {
-                                let Some(ship) = scene.entities.iter().find_map(|entity| match entity {
-                                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == entity_id =>
-                                        Some(ship),
-                                    _ => None,
-                                }) else { continue };
+                                let Some(&ship) = source_ships.get(&entity_id)
+                                    else { continue };
                                 let Some(fleet_id) = ship.fleet_ship_id else { continue };
                                 if fleet_id <= 0 || !scene.fleet.get(entity_id)
                                     .is_some_and(|row| row.has_persistent_fleet_value)
