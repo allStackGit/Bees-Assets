@@ -222,7 +222,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_concurrency_limit','training_concurrency_next_limit',
     'training_environment_version','training_sim_early_dispatches',
     'training_sim_group_dispatches','training_sim_grouped_shards',
-    'training_sim_ipc_commands_saved',
+    'training_sim_ipc_commands_saved','training_sim_idle_interaction_skips',
     'training_sim_prestaged_actions','training_sim_queue_peak_shards',
     'training_sim_multiplexed_shards','training_sim_child_os_threads',
     'training_sim_topology_trial_lineages','training_sim_topology_accepted',
@@ -395,7 +395,8 @@ function courierMetrics(source) {
         'training_profile_round','training_end_to_end_steps_per_second',
         'training_useful_steps_per_second','training_total_useful_steps',
         'training_collector_workers','training_lineage_workers',
-        'training_sim_processes','training_gpu_devices_active',
+        'training_sim_processes','training_sim_idle_interaction_skips',
+        'training_gpu_devices_active',
         'training_gpu_devices_assigned','training_slowest_worker',
         'training_shared_last_wire_worker',
         'training_shared_gpu_collectors',
@@ -522,7 +523,7 @@ function courierMetrics(source) {
             name.endsWith('_owner')||name.endsWith('_train_seq')||
             /^worker_[0-9]{1,2}_(?:probe|resume|live)_maps_(?:before|after)$/.test(name)||
             /^worker_[0-9]{1,2}_sim_(?:trial|next_processes|process_ceiling|physical_processes)$/.test(name)||
-            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_group_dispatches|sim_grouped_shards|sim_ipc_saved|sim_multiplexed_shards|sim_os_threads|gpu_output_batches|gpu_output_reused|gpu_input_device_copies|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
+            /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_group_dispatches|sim_grouped_shards|sim_ipc_saved|sim_idle_interactions|sim_multiplexed_shards|sim_os_threads|gpu_output_batches|gpu_output_reused|gpu_input_device_copies|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
             /^training_shared_(?:async|serial|confirm)_probe_sps$/.test(name)?'rate':
