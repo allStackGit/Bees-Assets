@@ -400,6 +400,9 @@ pub(super) struct FleetChoice {
     carrier_deck: usize,
     terrain: Terrain,
     fog_of_war: bool,
+    /// Source's live CollisionAsteroid timer configuration. No per-mode
+    /// implementation: the same native Level owns each timed spawn.
+    asteroid_timer: Option<[u32;2]>,
     ore_count: usize,
     /// None preserves the original authored 320x200 map.
     arena_size: Option<u32>,
@@ -449,6 +452,7 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
+    let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
@@ -521,7 +525,7 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, ore_count, arena_size, lethal_borders,
+        player_side, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: mode == 3, benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
@@ -561,6 +565,7 @@ pub(super) fn choose_multiplayer(
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
+    let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
@@ -594,7 +599,7 @@ pub(super) fn choose_multiplayer(
     };
     Ok(Some(FleetChoice {
         player_side: if use_hivemind { authenticated_side } else { None },
-        fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, ore_count, arena_size, lethal_borders,
+        fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: false,
         benchmark: false,
         spectator_episodes: 1,
@@ -610,6 +615,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
+    let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size)? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
@@ -660,7 +666,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(threads) = choose_resource("CPU physics workers", &workers)?
         else { return Ok(None); };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, ore_count, arena_size, lethal_borders,
+        player_side: None, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: true,
         benchmark: true,
         spectator_episodes: 1,
@@ -995,6 +1001,32 @@ fn choose_arena_size(terrain: Terrain) -> Result<Option<(Option<u32>, bool)>, Bo
             _ => (Some(1024), true),
         }
     }))
+}
+
+/// Configure Unity's ordinary collision-asteroid timer as an explicit
+/// environment parameter. Intervals are user-selected seconds, not
+/// fabricated from a missing Stage prefab setting; the Level validates
+/// and executes every spawn through its existing World RNG and physics.
+fn choose_collision_asteroid_timer()
+    -> Result<Option<Option<[u32;2]>>, Box<dyn Error>>
+{
+    let choices: [(Option<[u32;2]>, &str, &str);5] = [
+        (None,"No timed asteroids","  [Initial physical field only]"),
+        (Some([45,90]),"Occasional arrivals",
+            "  [New source asteroid every 45-90 simulation seconds]"),
+        (Some([20,45]),"Regular arrivals",
+            "  [New source asteroid every 20-45 simulation seconds]"),
+        (Some([10,20]),"Frequent arrivals",
+            "  [New source asteroid every 10-20 simulation seconds]"),
+        (Some([1,5]),"Constant asteroid hazard",
+            "  [New source asteroid every 1-5 simulation seconds]"),
+    ];
+    let rows=choices.iter().map(|(_,title,status)|BattleMenuRow {
+        title,status,unlocked:true,
+    }).collect::<Vec<_>>();
+    let mut selected=0_usize;
+    Ok(select_library(&rows,&mut selected,false)?
+        .map(|index|choices[index].0))
 }
 
 fn choose_terrain() -> Result<Option<Terrain>, Box<dyn Error>> {
@@ -2072,7 +2104,7 @@ pub(super) fn archive(
         Terrain::AsteroidStorm => 48,
         _ => 0,
     };
-    if full_asteroids > 0 {
+    if full_asteroids > 0 || selected.asteroid_timer.is_some() {
         // Source two-player duels intentionally use one small prefab.
         // Asteroid scenarios instead author the complete REAL collider
         // palette. Each creation still draws its type and speed through
@@ -2085,8 +2117,14 @@ pub(super) fn archive(
             .map(|asset| asset.prefab_number).collect::<Vec<_>>();
         run["native_stage"]["asteroid_prefab_numbers"] = json!(palette);
     }
-    scene["activate_collision_asteroids"] = json!(full_asteroids > 0);
+    scene["activate_collision_asteroids"] =
+        json!(full_asteroids > 0 || selected.asteroid_timer.is_some());
     scene["initial_random_full_asteroids"] = json!(full_asteroids);
+    if let Some([minimum,maximum])=selected.asteroid_timer {
+        run["levels"][0]["collision_asteroid_timer"] = json!({
+            "minimum_seconds":minimum,"maximum_seconds":maximum,
+        });
+    }
     scene["level_name"] = json!(format!(
         "{level_name}  |  Support: {} {}, {} {}  |  Specialist hulls: {} Bees, {} Humans",
         support_count[0],
@@ -2466,6 +2504,14 @@ pub(super) fn archive(
         if selected.arena_size.is_none() { "source" }
         else if selected.lethal_borders { "lethal" } else { "solid" },
     ));
+    if let Some([minimum,maximum])=selected.asteroid_timer {
+        let identity=run["run_id"].as_str()
+            .ok_or_else(||invalid("timed asteroid battle has no run identity"))?
+            .to_owned();
+        run["run_id"]=json!(format!(
+            "{identity}-timed-asteroids-{minimum}to{maximum}s",
+        ));
+    }
     if selected.ai_both || !matches!(selected.ai_tactics,
         [AiTactics::Aggressive, AiTactics::Aggressive])
     {
