@@ -32,6 +32,14 @@ function rolloutEndpoint(value) {
 const PCI = /^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const CUDA_UUID = /^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const now = () => new Date().toISOString();
+function softwareActivationBlock(snapshot,machineId) {
+    const activating=Object.entries(snapshot.machine_software?.[machineId]||{})
+        .filter(([,item])=>item?.status==='activating');
+    if(!activating.length)return null;
+    return 'Machine '+machineId+' software update still reports activating ('+
+        activating.map(([name,item])=>name+' since '+(item.at||'unknown')).join(', ')+
+        '). New leases are blocked until the authenticated worker updater reports active, waiting, or failed.';
+}
 const AGENT_HEARTBEAT_TTL_MS = 45000;
 const DISTRIBUTED_LAUNCH_TTL_MS = 20 * 60 * 1000;
 const FINAL_EVALUATION_GRACE_MS = 24 * 60 * 60 * 1000;
@@ -987,7 +995,8 @@ function nativeStartReadiness(snapshot, job) {
     if(!machine||machine.status!=='connected')
         return block('The assigned machine must have a fresh authenticated heartbeat.');
     if(machine.software_update_blocked)
-        return block('Machine software update is activating; wait for version confirmation.');
+        return block(softwareActivationBlock(snapshot,machine.id)||
+            'Machine software update is activating; wait for version confirmation.');
     if(!['linux','win32'].includes(machine.agent_platform)||
         machine.local_executor_enabled!==true)
         return block('A supported locally installed native executor is required.');
@@ -3047,7 +3056,8 @@ class ExperimentHub {
         if(!machine || machine.id!==machineId || machine.status!=='connected')
             throw Error('Machine must have a currently authenticated agent.');
         if(machine.software_update_blocked)
-            throw Error('Machine software update is activating; new leases are blocked.');
+            throw Error(softwareActivationBlock(this.snapshot(),machine.id)||
+                'Machine software update is activating; new leases are blocked.');
         const place=resourcePlacements([machine],next.reservations,wanted)[0];
         if(!place.online || !place.capacity_fits)
             throw Error('Requested capacity is unavailable on this machine.');
