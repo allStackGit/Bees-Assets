@@ -58,10 +58,11 @@ impl CombatWorld {
         if !self.ship(enemy_id).is_some_and(|ship| !ship.vitals.is_dead()) {
             return false;
         }
-        self.ship_weapons.iter().any(|(&ship_id, weapons)|
+        self.armed_weapon_ships.iter().any(|&ship_id|
             self.ship(ship_id).is_some_and(|ship|
                 ship.side == player_side && !ship.vitals.is_dead()) &&
-            weapons.range_contacts.iter().any(|contacts| contacts.contains(enemy_id))
+            self.ship_weapons[&ship_id].range_contacts.iter()
+                .any(|contacts| contacts.contains(enemy_id))
         )
     }
 
