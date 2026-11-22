@@ -265,6 +265,21 @@ function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null,
             (req.headers['sec-fetch-site']&&
                 !['same-origin','none'].includes(req.headers['sec-fetch-site'])))
             return json(res,403,{error:'Local administrator dashboard only.'});
+        // Count every in-flight administration response, including asynchronous
+        // status reads, before automatic release activation can tear it down.
+        if(localOperations.activating) {
+            res.setHeader('Retry-After','2');
+            return json(res,503,{error:'Coordinator software activation in progress; retry after reconnect.'});
+        }
+        localOperations.active++;
+        let released=false;
+        const finish=()=>{
+            if(released)return;
+            released=true;
+            localOperations.active--;
+        };
+        res.once('finish',finish);
+        res.once('close',finish);
         try {
             const url=new URL(req.url,'http://localhost');
             const route=url.pathname;
@@ -317,19 +332,12 @@ function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null,
                 return json(res,202,{...result,restart_requested:requested.requested});
             }
             if(req.method==='POST'&&route==='/api/hub/local-services/evaluators') {
-                // Evaluator setup can export large models. Hold the current
-                // coordinator generation until the operation commits or fails;
-                // never tear down its HTTP request during an auto-update.
-                if(localOperations.activating)
-                    return json(res,409,{error:'Hub software activation is in progress; retry after reconnection.'});
-                localOperations.active++;
-                try {
-                    const body=await readJson(req);
-                    if(body.confirm_action!==true)
-                        return json(res,400,{error:'Explicit evaluator confirmation required.'});
-                    const result=await localServices.evaluatorAction(hub,body);
-                    return json(res,200,result);
-                }finally {localOperations.active--;}
+                // The server-wide request lease also protects long-running
+                // immutable-model export and service installation.
+                const body=await readJson(req);
+                if(body.confirm_action!==true)
+                    return json(res,400,{error:'Explicit evaluator confirmation required.'});
+                return json(res,200,await localServices.evaluatorAction(hub,body));
             }
             if(req.method==='POST'&&route==='/api/hub/local-services/remote-evaluator') {
                 return json(res,202,hub.queueEvaluatorAction(await readJson(req)));
