@@ -109,7 +109,11 @@ class ThroughputHistory {
         };
         const left=score(a),right=score(b);
         // Missing evidence is neutral. Only like-for-like workloads compete.
-        return left===null||right===null?0:right-left;
+        if(left===null||right===null)return 0;
+        // Avoid flipping placements on measurement noise; this is a
+        // scheduling preference, not a claim of statistically proven speedup.
+        if(Math.abs(right-left)<=0.05*Math.max(left,right))return 0;
+        return right-left;
     }
 }
 module.exports={ThroughputHistory,workloadKey};
