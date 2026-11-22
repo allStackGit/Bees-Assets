@@ -2309,8 +2309,15 @@ fn collect_remote_audio(
             },
             CombatEvent::ShipDied { victim_id, end_kill: false, .. } => (
                 view.combat.ship(*victim_id)
-                    .map(|ship| crate::presentation::NativeShipExplosionSound::
-                        for_ship_type(ship.ship_type).wire_name())
+                    .map(|ship| {
+                        // Keep the death receipt for remote hull/remains
+                        // visuals without playing a second Fire Barge
+                        // nuclear sound. Its true FireTankExploded event
+                        // below carries the sole explosion audio.
+                        if ship.ship_type == 10 { "silent_explosion" }
+                        else { crate::presentation::NativeShipExplosionSound::
+                            for_ship_type(ship.ship_type).wire_name() }
+                    })
                     .unwrap_or("explosion"),
                 view.combat.ship_body(*victim_id)
                     .map(|body| body.motion.position),

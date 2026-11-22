@@ -917,6 +917,11 @@ impl NativeGameAudio {
             let (effect, point): (Effect, Option<Vec2>) = match event {
                 CombatEvent::ShipDied { victim_id, end_kill: false, .. } => (
                     match view.combat.ship(*victim_id) {
+                        // FireBarge.Kill plays the explosion prefab's
+                        // AudioSource once. The same death emits a real
+                        // FireTankExploded event below; replaying both
+                        // would double its nuclear sound.
+                        Some(ship) if ship.ship_type == 10 => continue,
                         Some(ship) => {
                             let Some(effect) = Effect::ship_explosion(ship.ship_type)
                                 else { continue };
@@ -932,8 +937,8 @@ impl NativeGameAudio {
                     view.combat.ship_body(*ship_id)
                         .map(|body| body.motion.position),
                 ),
-                // Fire Barge death is already represented by ShipDied;
-                // sounding both would double the same physical explosion.
+                // The Fire Barge's actual explosion prefab owns the one
+                // source sound cue; ShipDied only retires its visible hull.
                 CombatEvent::FireTankExploded {
                     origin, explosion_projectile_id, ..
                 } => (
