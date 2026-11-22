@@ -2451,6 +2451,25 @@ impl NativeSoftwareRenderer {
             text::draw_centered(&mut self.pixels, self.width, 8,
                 &label, 1, [239, 247, 255]);
         } else if view.campaign_objective == Some(
+            bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoReinforcements,
+        ) {
+            let text = if view.player_authority.player_viewer_side()
+                != view.campaign_dialogue_side {
+                "Defend the approaching Bee fleet"
+            } else if view.campaign_dialogue.is_some_and(|(_, cue)|
+                matches!(cue,
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoReinforcementsCombatReady))
+            {
+                "Find and destroy the enemy ships!"
+            } else if view.campaign_dialogue.is_some_and(|(_, cue)|
+                matches!(cue,
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoReinforcementsScoutSelected))
+            {
+                "Learn your squad controls before the enemy arrives"
+            } else { "Use the Scout" };
+            text::draw_centered(&mut self.pixels, self.width, 8,
+                text, 1, [239, 247, 255]);
+        } else if view.campaign_objective == Some(
             bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoAnomaly,
         ) {
             let label = if view.player_authority.player_viewer_side()
