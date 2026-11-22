@@ -369,6 +369,10 @@ pub struct RemotePlayMeasurements {
     /// Counts skipped allocations/index preparations, not estimated time.
     #[serde(default)]
     pub fog_query_views_skipped_no_output: u64,
+    /// Side-scoped fog indexes not built because the authored battle
+    /// exposes all ships. Count actual avoided constructions, not CPU time.
+    #[serde(default)]
+    pub fog_query_views_skipped_clear_sight: u64,
     /// Source-authored shrinking vision masks, sampled only for connected sides.
     pub fog_fading_source_ticks: u64,
     pub fog_fading_sources_peak: usize,
@@ -1224,6 +1228,7 @@ impl NativeRemotePlay {
                     .expect("authenticated side has live sight")
                     .sources(view, &mut self.measurements)
             } else {
+                self.measurements.fog_query_views_skipped_clear_sight += 1;
                 RemoteFogSources::default()
             };
             vision.insert(side, source);
