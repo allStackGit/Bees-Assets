@@ -328,6 +328,11 @@ pub struct NativeEpisodeTerminal {
     /// CombatWorld remains authoritative for live and reserved ships.
     #[serde(default)]
     delayed_elimination: Option<(i32, u64)>,
+    /// Some authored continuous mission triggers observe only the live
+    /// deployed fleet, not future SavedSquads. On simultaneous losses
+    /// the mission's player loses unless a successful exit was recorded.
+    #[serde(default)]
+    deployed_elimination_player_side: Option<i32>,
     elapsed_seconds: f32,
     completed: Option<EpisodeTerminalResult>,
     /// A SquadRetired event would have eliminated an active side, but
@@ -346,6 +351,7 @@ impl NativeEpisodeTerminal {
         self.human_side == recovered.human_side &&
         self.timeout_seconds == recovered.timeout_seconds &&
         self.delayed_elimination == recovered.delayed_elimination &&
+        self.deployed_elimination_player_side == recovered.deployed_elimination_player_side &&
         self.survival.as_ref().map(|v| (
             v.objective.defending_side, v.objective.protected_ship_id,
             v.objective.seconds, v.deadline_tick,
@@ -377,6 +383,11 @@ impl NativeEpisodeTerminal {
         self.delayed_elimination.is_none_or(|(side, tick)|
             [self.bee_side, self.human_side].contains(&side) && tick > 0 &&
             tick < u64::MAX) &&
+        self.deployed_elimination_player_side.is_none_or(|side|
+            [self.bee_side, self.human_side].contains(&side) &&
+            self.delayed_elimination.is_none() &&
+            self.survival.is_none() && self.demolition.is_none() &&
+            self.escort.is_none() && self.target_ship.is_none()) &&
         self.completed.is_none_or(|result|
             result.duration_seconds.is_finite() &&
             result.duration_seconds >= 0.0 &&
@@ -406,10 +417,31 @@ impl NativeEpisodeTerminal {
         Ok(Self {
             bee_side, human_side, timeout_seconds, survival: None, demolition: None,
             escort: None, target_ship: None, delayed_elimination: None,
+            deployed_elimination_player_side: None,
             elapsed_seconds: 0.0, completed: None,
             deferred_elimination: false,
             measurements: EpisodeTerminalMeasurements::default(),
         })
+    }
+
+    /// Observe the source continuous elimination trigger for an authored
+    /// extraction mission. Future reserved hulls do not prevent the
+    /// trigger from resolving; the authoritative extraction receipt
+    /// still wins over an ordinary deployed-fleet death.
+    pub fn resolve_deployed_fleet_elimination(
+        &mut self, player_side: i32,
+    ) -> Result<(), EpisodeTerminalError> {
+        if self.deployed_elimination_player_side.is_some() ||
+            self.delayed_elimination.is_some() ||
+            self.survival.is_some() || self.demolition.is_some() ||
+            self.escort.is_some() || self.target_ship.is_some() ||
+            self.measurements.ticks_observed != 0 ||
+            ![self.bee_side, self.human_side].contains(&player_side)
+        {
+            return Err(EpisodeTerminalError::InvalidEliminationGate);
+        }
+        self.deployed_elimination_player_side = Some(player_side);
+        Ok(())
     }
 
     /// The authored campaign can arm a victory trigger only after its
@@ -421,7 +453,8 @@ impl NativeEpisodeTerminal {
         &mut self, side: i32, seconds: f32, fixed_dt_seconds: f32,
     ) -> Result<(), EpisodeTerminalError> {
         let tick = (f64::from(seconds) / f64::from(fixed_dt_seconds)).floor() + 1.0;
-        if self.delayed_elimination.is_some() || self.survival.is_some() ||
+        if self.delayed_elimination.is_some() || self.deployed_elimination_player_side.is_some() ||
+            self.survival.is_some() ||
             self.demolition.is_some() || self.escort.is_some() ||
             self.target_ship.is_some() ||
             self.measurements.ticks_observed != 0 ||
@@ -450,6 +483,7 @@ impl NativeEpisodeTerminal {
         ) || self.survival.is_some() || self.demolition.is_some() ||
             self.escort.is_some() || self.target_ship.is_some() ||
             self.delayed_elimination.is_some() ||
+            self.deployed_elimination_player_side.is_some() ||
             self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.defending_side) ||
             objective.protected_ship_id <= 0 ||
@@ -474,6 +508,7 @@ impl NativeEpisodeTerminal {
         ) || self.survival.is_some() || self.demolition.is_some() ||
             self.escort.is_some() || self.target_ship.is_some() ||
             self.delayed_elimination.is_some() ||
+            self.deployed_elimination_player_side.is_some() ||
             self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.attacking_side) ||
             objective.target_map_object_id <= 0 ||
@@ -496,6 +531,7 @@ impl NativeEpisodeTerminal {
         ) || self.survival.is_some() || self.demolition.is_some() ||
             self.escort.is_some() || self.target_ship.is_some() ||
             self.delayed_elimination.is_some() ||
+            self.deployed_elimination_player_side.is_some() ||
             self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.escorting_side) ||
             objective.escorted_ship_id <= 0 ||
@@ -518,6 +554,7 @@ impl NativeEpisodeTerminal {
         if self.survival.is_some() || self.demolition.is_some() ||
             self.escort.is_some() || self.target_ship.is_some() ||
             self.delayed_elimination.is_some() ||
+            self.deployed_elimination_player_side.is_some() ||
             self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.attacking_side) ||
             objective.target_ship_id <= 0
@@ -919,8 +956,11 @@ impl NativeEpisodeTerminal {
         // wave requires a ship-death trigger that can no longer occur.
         // Source survival and extraction retain their independent terminal
         // conditions; only ordinary SquadRetired elimination is deferred.
-        let bee_waiting = world.has_reserved_future_ships_on_side(self.bee_side);
-        let human_waiting = world.has_reserved_future_ships_on_side(self.human_side);
+        let deployed_only = self.deployed_elimination_player_side.is_some();
+        let bee_waiting = !deployed_only &&
+            world.has_reserved_future_ships_on_side(self.bee_side);
+        let human_waiting = !deployed_only &&
+            world.has_reserved_future_ships_on_side(self.human_side);
         // An authored victory trigger may not exist until the final wave
         // has been constructed. Evaluate after that wave's admission tick:
         // the Level deploys reinforcements after this terminal pass.
@@ -933,7 +973,8 @@ impl NativeEpisodeTerminal {
         let bee_eliminated = bee_dead && !bee_waiting && !suppressed(self.bee_side);
         let human_eliminated = human_dead && !human_waiting && !suppressed(self.human_side);
         if squad_was_retired || self.deferred_elimination ||
-            extraction_outcome.is_some() || gate_due {
+            extraction_outcome.is_some() || gate_due ||
+            (deployed_only && (bee_dead || human_dead)) {
             self.measurements.elimination_checks += 1;
             self.measurements.authored_elimination_release_checks += u64::from(gate_due);
             self.measurements.authored_eliminations_deferred += u64::from(
@@ -946,7 +987,10 @@ impl NativeEpisodeTerminal {
             self.deferred_elimination =
                 (bee_dead && bee_waiting) || (human_dead && human_waiting);
             let elimination = || if bee_eliminated || human_eliminated {
-                Some((if bee_eliminated == human_eliminated { 0 }
+                Some((if bee_eliminated == human_eliminated {
+                    self.deployed_elimination_player_side.map_or(0, |player|
+                        if player == self.bee_side { self.human_side } else { self.bee_side })
+                    }
                     else if bee_eliminated { self.human_side }
                     else { self.bee_side }, false))
             } else { None };

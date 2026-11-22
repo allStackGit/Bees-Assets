@@ -204,7 +204,7 @@ fn titania_minesweeper_matches_source(
         _ => None,
     }).collect();
     if authored_reinforcement_types(wave, bee_side, &by_squad, &by_ship)
-        .is_none_or(|types| types.as_slice() != [Some(15), Some(21), Some(16)])
+        .is_none_or(|types| !authored_type_sequence_matches(&types, &[15, 21, 16], false))
     {
         return false;
     }
@@ -3829,6 +3829,16 @@ impl NativePhysicalScene {
                     setup.escort.is_some() =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             _ => {}
+        }
+        // Titania I observes the current deployed fleets continuously.
+        // Killing the last patrol before the 90s callback is a real
+        // victory; the original campaign cancels that pending timer.
+        if let Some(CampaignDialogueSpec::TitaniaMinesweeper { player_side }) =
+            setup.campaign_dialogue
+        {
+            episode.resolve_deployed_fleet_elimination(player_side)
+                .map_err(NativeSnapshotError::Episode)
+                .map_err(NativePolicyOnlyLevelError::Snapshot)?;
         }
         // Uranus II installs its Bee-defeat victory trigger only after
         // the sixth 600-second wave. If the Bee fleet is exhausted sooner,

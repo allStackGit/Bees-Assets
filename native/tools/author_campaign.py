@@ -1156,8 +1156,9 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 abs(wave["after_seconds"] - 90.0) <= 0.0001 and
                 same_point(wave.get("spawn"), [325, -225]) and
                 same_point(wave.get("entry"), [200, -225]) and
-                source_wave_types(wave, source_squads, source_ships,
-                                  3 - args.player_side) == [15, 21, 16]
+                source_types_in_order(source_wave_types(
+                    wave, source_squads, source_ships, 3 - args.player_side),
+                    [15, 21, 16])
             )
             if (scene.get("native_game_schema") != 1 or
                     scene.get("human_side") != args.player_side or

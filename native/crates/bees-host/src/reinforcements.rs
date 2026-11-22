@@ -422,7 +422,8 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             let empty_campaign_timer = matches!(self.campaign_dialogue,
                 Some(CampaignDialogueSpec::UranusDefensive { .. } |
                      CampaignDialogueSpec::UranusNewThreat { .. } |
-                     CampaignDialogueSpec::NeptuneProduction { .. })
+                     CampaignDialogueSpec::NeptuneProduction { .. } |
+                     CampaignDialogueSpec::TitaniaMinesweeper { .. })
             ) && matches!(plan.activation,
                 NativeReinforcementActivation::AfterSeconds(_));
             if (plan.squad_item_ids.is_empty() && !empty_campaign_timer) ||

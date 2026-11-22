@@ -290,6 +290,18 @@ impl NativeEpisodeRewardCoordinator {
         Ok(())
     }
 
+    pub fn resolve_deployed_fleet_elimination(
+        &mut self, player_side: i32,
+    ) -> Result<(), NativeEpisodeRewardError> {
+        if !matches!(&self.mode, EpisodeMode::Game(_)) {
+            return Err(NativeEpisodeRewardError::Terminal(
+                EpisodeTerminalError::InvalidEliminationGate,
+            ));
+        }
+        self.terminal.resolve_deployed_fleet_elimination(player_side)?;
+        Ok(())
+    }
+
     pub fn arm_survival(
         &mut self, objective: SurvivalObjective, fixed_dt_seconds: f32,
     ) -> Result<(), NativeEpisodeRewardError> {

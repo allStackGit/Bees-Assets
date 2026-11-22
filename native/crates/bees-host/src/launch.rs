@@ -6696,7 +6696,8 @@ fn run_battle(
                 let preserve_timed_story = matches!(level.campaign_dialogue,
                     Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusDefensive { .. } |
                          bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusNewThreat { .. } |
-                         bees_gameplay::campaign_dialogue::CampaignDialogueSpec::NeptuneProduction { .. })
+                         bees_gameplay::campaign_dialogue::CampaignDialogueSpec::NeptuneProduction { .. } |
+                         bees_gameplay::campaign_dialogue::CampaignDialogueSpec::TitaniaMinesweeper { .. })
                 );
                 level.reinforcements.retain(|wave|
                     !wave.squad_item_ids.is_empty() ||
