@@ -73,7 +73,8 @@ class ThroughputHistory {
         const time=Date.parse(progress?.source_modified_at);
         if(!key||key.length>4096||typeof machineId!=='string'||!machineId||
             !Number.isSafeInteger(steps)||steps<0||!Number.isFinite(time))return;
-        const identity=String(job.id);
+        const identity=JSON.stringify([job.id,job.dispatch_id||null,
+            progress.segment_id||null]);
         const prior=this.last.get(identity);
         this.last.delete(identity);
         this.last.set(identity,{key,machineId,deviceKey,steps,time});
