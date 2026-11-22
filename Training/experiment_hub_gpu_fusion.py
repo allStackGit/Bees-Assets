@@ -491,6 +491,8 @@ class FrozenGpuGraphs:
         self.calls = self.replays = self.qualifications = self.rejections = 0
         self.saved_launch_groups = 0
         self.last_issue = None
+        self.last_graph_seconds = None
+        self.last_eager_seconds = None
 
     def _inputs(self, batches):
         if len(batches) != len(self.models):
@@ -606,6 +608,8 @@ class FrozenGpuGraphs:
                 eager_times.append(self._elapsed(lambda: self._eager(args)))
                 graph_times.append(self._elapsed(lambda: self._replay(profile, args)))
             eager, graph_time = median(eager_times), median(graph_times)
+            self.last_eager_seconds = eager
+            self.last_graph_seconds = graph_time
             if graph_time < eager*(1-self.min_speedup):
                 return profile
         except (RuntimeError, MemoryError, ValueError, TypeError,
@@ -667,13 +671,14 @@ class MeasuredGpuExecution:
     def __init__(self, models: Sequence[nn.Module], *, min_speedup=0.10,
                  max_profiles=16, max_streams=4, max_padding_ratio=1.5,
                  max_stacked_bytes=128*1048576, rtol=1e-5, atol=1e-6,
-                 allow_fusion=True):
+                 allow_fusion=True, allow_graphs=True):
         # Some backends already provide an exact specialized grouped kernel.
         # Their generic fallback should try independent GPU streams without
         # retaining a second stacked model population.
-        if type(allow_fusion) is not bool:
-            raise ValueError("GPU fusion admission must be explicit")
+        if type(allow_fusion) is not bool or type(allow_graphs) is not bool:
+            raise ValueError("GPU execution strategies must be explicitly enabled")
         self.allow_fusion = allow_fusion
+        self.allow_graphs = allow_graphs
         self.fusion = FrozenGpuFusion(
             models, min_speedup=min_speedup, max_profiles=max_profiles,
             max_padding_ratio=max_padding_ratio,
@@ -681,9 +686,13 @@ class MeasuredGpuExecution:
         self.streams = FrozenGpuStreams(
             models, min_speedup=min_speedup, max_profiles=max_profiles,
             max_streams=max_streams, rtol=rtol, atol=atol)
+        self.graphs = FrozenGpuGraphs(
+            models, max_graphs=min(max_profiles, 8),
+            max_capture_bytes=max_stacked_bytes,
+            min_speedup=min_speedup, rtol=rtol, atol=atol)
         self.max_profiles = max_profiles
         self.choices = OrderedDict()
-        self.calls = self.eager_calls = self.fused_calls = self.stream_calls = 0
+        self.calls = self.eager_calls = self.fused_calls = self.stream_calls = self.graph_calls = 0
 
     @staticmethod
     def _signature(batches):
@@ -717,6 +726,16 @@ class MeasuredGpuExecution:
                     self.streams.profiles[stream_shape] = decision
                     if decision.fused and decision.fused_seconds < best_seconds:
                         choice, best_seconds = "streams", decision.fused_seconds
+                if self.allow_graphs and self.graphs.enabled:
+                    graph_args, graph_shape = self.graphs._inputs(batches)
+                    self.graphs.qualifications += 1
+                    profile = self.graphs._qualify(graph_args)
+                    if profile is None:
+                        self.graphs.rejections += 1
+                    self.graphs.profiles[graph_shape] = profile
+                    if profile is not None and self.graphs.last_graph_seconds < best_seconds:
+                        choice = "graph"
+                        best_seconds = self.graphs.last_graph_seconds
             self.choices[signature] = choice
             if len(self.choices) > self.max_profiles:
                 self.choices.popitem(last=False)
@@ -742,6 +761,15 @@ class MeasuredGpuExecution:
             else:
                 self.stream_calls += 1
             return result
+        if choice == "graph":
+            before = self.graphs.replays
+            result = self.graphs.run(batches)
+            if self.graphs.replays == before:
+                self.choices[signature] = "eager"
+                self.eager_calls += 1
+            else:
+                self.graph_calls += 1
+            return result
         self.eager_calls += 1
         return self.fusion._eager([
             FrozenGpuFusion._args(batch) for batch in batches])
@@ -752,7 +780,9 @@ class MeasuredGpuExecution:
             gpu_execution_eager_calls=self.eager_calls,
             gpu_execution_fused_calls=self.fused_calls,
             gpu_execution_stream_calls=self.stream_calls,
+            gpu_execution_graph_calls=self.graph_calls,
             gpu_execution_profiles=len(self.choices),
             **self.fusion.metrics(),
             **self.streams.metrics(),
+            **self.graphs.metrics(),
         )
