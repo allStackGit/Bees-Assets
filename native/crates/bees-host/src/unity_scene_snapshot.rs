@@ -1560,6 +1560,49 @@ pub struct NativeSourcePolicyGroup {
 }
 
 impl NativePhysicalScene {
+    /// Independent native arenas share immutable physical templates, but
+    /// their live SquadLifetime IDs are allocated from one Stage stream.
+    /// A native scene's mission is part of that same source roster: rewrite
+    /// only squad references after the launcher allocates replacement
+    /// identities, never physical ship IDs, destination positions or cues.
+    /// All arrays retain author order and this runs only at episode setup.
+    pub fn remap_native_mission_squad_ids(&mut self, changed: &HashMap<i64, i64>) {
+        if changed.is_empty() { return; }
+        let Some(mission) = self.native_mission.as_mut() else { return; };
+        for wave in &mut mission.reinforcements {
+            for id in &mut wave.squad_item_ids {
+                if let Some(&replacement) = changed.get(id) { *id = replacement; }
+            }
+        }
+        use crate::policy_only_metadata::NativeScriptedOrder;
+        for queue in &mut mission.scripted_queues {
+            if let Some(&replacement) = changed.get(&queue.squad_item_id) {
+                queue.squad_item_id = replacement;
+            }
+            for order in &mut queue.orders {
+                let reference = match order {
+                    NativeScriptedOrder::Aggressive { enemy_squad_item_id: id } |
+                    NativeScriptedOrder::TargetEnemy { enemy_squad_item_id: id } |
+                    NativeScriptedOrder::Retreat { enemy_squad_item_id: id } |
+                    NativeScriptedOrder::CircleSquad { enemy_squad_item_id: id } |
+                    NativeScriptedOrder::RightSwipe { enemy_squad_item_id: id } |
+                    NativeScriptedOrder::LeftSwipe { enemy_squad_item_id: id } |
+                    NativeScriptedOrder::InAndOut { enemy_squad_item_id: id } |
+                    NativeScriptedOrder::BombingRun { enemy_squad_item_id: id } |
+                    NativeScriptedOrder::Charge { enemy_squad_item_id: id } |
+                    NativeScriptedOrder::Guard { friendly_squad_item_id: id } =>
+                        Some(id),
+                    _ => None,
+                };
+                if let Some(id) = reference {
+                    if let Some(&replacement) = changed.get(id) {
+                        *id = replacement;
+                    }
+                }
+            }
+        }
+    }
+
     /// Pluto II starts with four real player squads (two single Scouts,
     /// two pairs of Gunships) but only the first Scout accepts orders.
     /// The first authentic player selection releases the original squad
