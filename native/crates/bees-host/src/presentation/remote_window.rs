@@ -2152,7 +2152,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     map_object_health_bars: &mut u64,
     minimap_ship_markers: &mut u64, minimap_terrain_markers: &mut u64,
     minimap_objective_markers: &mut u64,
-    fog_masked_pixels: &mut u64) {
+    fog_masked_pixels: &mut u64,
+    fog_source_texture_pixels: &mut u64) {
     // F6 avoids allocating or clearing a second per-frame art layer,
     // while normal mode reuses the exact local game sprite raster.
     if show_art {
@@ -2407,7 +2408,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         *fog_masked_pixels += masked;
         // The source texture work is measured separately from circle
         // visibility stamps and actual obscured presentation pixels.
-        stats.fog_source_texture_pixels += source_textured;
+        *fog_source_texture_pixels += source_textured;
         // Objective markers use only the host's already-fog-filtered
         // ship/obstacle projection. A remote peer cannot look up a target
         // whose coordinates were withheld by the host.
@@ -4609,6 +4610,7 @@ pub fn connect_remote(
         let mut map_terrain = 0_u64;
         let mut map_objectives = 0_u64;
         let mut fog_masked = 0_u64;
+        let mut fog_textured = 0_u64;
         let mut combat_hud_draws = [0_u64; 7];
         let hud_started=Instant::now();
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,squad_list_offset,&peer.notice,
@@ -4618,7 +4620,7 @@ pub fn connect_remote(
             show_minimap,
             &mut combat_hud_draws, &mut hulls, &mut map_object_health_bars,
             &mut map_ships, &mut map_terrain, &mut map_objectives,
-            &mut fog_masked);
+            &mut fog_masked, &mut fog_textured);
         // Remote selection geometry reads only the host's already-filtered
         // visible ships. Do not query private enemies, guess mineral values,
         // or send a new host command just to draw this tooltip.
@@ -4828,6 +4830,7 @@ pub fn connect_remote(
             }
         }
         peer.metrics.fog_masked_pixels += fog_masked;
+        peer.metrics.fog_source_texture_pixels += fog_textured;
         peer.metrics.obstacle_hull_draws += hulls;
         peer.metrics.minimap_ship_markers += map_ships;
         peer.metrics.minimap_terrain_markers += map_terrain;

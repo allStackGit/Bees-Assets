@@ -896,14 +896,14 @@ fn obscure_fog_pixels(
                     .then(|| &sprite.pixels[(start + u as usize)*4..
                                           (start + u as usize)*4 + 4])
             );
-            *pixel = if let Some([r,g,b,a]) = rgba.and_then(|colors|
-                <&[u8;4]>::try_from(colors).ok()) {
-                let rgb = [*r,*g,*b];
+            *pixel = if let Some(rgba) = rgba {
+                let rgb = [rgba[0], rgba[1], rgba[2]];
                 sampled += 1;
-                if *a == 255 {
-                    u32::from(*r) << 16 | u32::from(*g) << 8 | u32::from(*b)
+                if rgba[3] == 255 {
+                    u32::from(rgb[0]) << 16 |
+                    u32::from(rgb[1]) << 8 | u32::from(rgb[2])
                 } else {
-                    text::blend(DARK, rgb, u32::from(*a))
+                    text::blend(DARK, rgb, u32::from(rgba[3]))
                 }
             } else { DARK };
         }
