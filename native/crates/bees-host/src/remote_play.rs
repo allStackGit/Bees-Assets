@@ -919,6 +919,16 @@ impl NativeRemotePlay {
                                 }
                                 let mut result = receipt.battle_result.clone();
                                 result["viewer_side"] = json!(side);
+                                if spectator {
+                                    if let Some(fields) = result.as_object_mut() {
+                                        for name in ["player_score", "player_match_counts",
+                                            "player_minerals_mined", "campaign_outcome",
+                                            "banked_minerals", "campaign_score_delta"]
+                                        {
+                                            fields.remove(name);
+                                        }
+                                    }
+                                }
                                 let (score, counts, loss_types, mined) = if receipt.scored_player_side ==
                                     Some(side)
                                 {
@@ -1345,20 +1355,44 @@ impl NativeRemotePlay {
                     view.player_authority.player_permissions(owner)
                         .is_some_and(|permission| permission.can_accept_input)));
         }
-        let mut snapshots = HashMap::<i32, Vec<u8>>::new();
+        // Encode at most one projection per (faction, privilege).
+        // Spectators share the identical source fog and visible physics,
+        // but never inherit the authenticated commander's private match
+        // score, campaign dialogue, or surrender capability. A player seat
+        // cannot be upgraded by requesting the observer snapshot.
+        let mut snapshots = HashMap::<(i32, bool), Vec<u8>>::new();
         let measurements = &mut self.measurements;
         for peer in &mut self.peers {
             let Some(side) = peer.side else { continue };
-            let encoded = snapshots.entry(side).or_insert_with(|| {
+            let spectator = peer.spectator;
+            let encoded = snapshots.entry((side, spectator)).or_insert_with(|| {
                 let started = Instant::now();
                 let cues = pending_audio.get(&side).map(Vec::as_slice).unwrap_or(&[]);
-                let payload = serde_json::to_vec(&current_state(
+                let mut state = current_state(
                     view, bounds, side, music_location, cues,
                     vision.get(&side).expect("authenticated side has sight"),
                     briefing_paused,
-                    requires_briefing_ack && view.campaign_dialogue_side==Some(side),
+                    !spectator && requires_briefing_ack &&
+                        view.campaign_dialogue_side==Some(side),
                     overlay_by_side.get(&side), measurements,
-                )).unwrap_or_default();
+                );
+                if spectator {
+                    // Strip side-private fields before serialization.
+                    // Only the existing side-filtered public battlefield,
+                    // mission objectives and source fog remain observable.
+                    for field in ["player_score", "player_match_counts",
+                        "player_minerals_mined", "campaign_dialogue"]
+                    {
+                        state[field] = Value::Null;
+                    }
+                    state["can_surrender"] = json!(false);
+                    if let Some(squads) = state["squads"].as_array_mut() {
+                        for squad in squads {
+                            squad["controllable"] = json!(false);
+                        }
+                    }
+                }
+                let payload = serde_json::to_vec(&state).unwrap_or_default();
                 measurements.snapshot_projection_wall_seconds +=
                     started.elapsed().as_secs_f64();
                 measurements.snapshot_unique_encoded_bytes += payload.len() as u64;
