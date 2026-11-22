@@ -96,6 +96,7 @@ const COURIER_METRIC_CATALOG={
         'training_lineage_async_lag_max_updates',
         'training_lineage_async_recalibrations',
         'training_lineage_async_discarded_steps',
+        'training_lineage_async_adopted_bytes',
         'training_shared_serial_probe_sps',
         'training_shared_confirm_probe_sps',
         'training_shared_policy_lag_updates',
