@@ -133,6 +133,10 @@ pub struct NativeRenderCounts {
     pub combat_impacts_observed: usize,
     pub combat_impact_visual_draws: usize,
     pub combat_impact_visuals_dropped: usize,
+    /// Source Heal.HealShips visual pulses and the active 2.5s crosses.
+    pub healing_crosses_observed: usize,
+    pub healing_crosses_drawn: usize,
+    pub healing_crosses_dropped: usize,
     /// Loaded source-art types, not the number of active ship entities.
     pub ship_art_types_loaded: usize,
     pub asteroid_sprite_draws: usize,
@@ -251,6 +255,7 @@ pub struct NativeSoftwareRenderer {
     death_owner: Option<(WorldId, u64)>,
     death_effects: Vec<ShipDeathVisual>,
     impact_effects: Vec<CombatImpactVisual>,
+    healing_crosses: Vec<HealingCrossVisual>,
     /// Cosmetic first-seen ticks belong to the displayed world and
     /// episode. No world model state or RNG changes when sprites animate.
     projectile_art_owner: Option<(WorldId, u64)>,
@@ -287,6 +292,16 @@ struct CombatImpactVisual {
     target_id: i64,
     position: Vec2,
     fatal: bool,
+}
+
+/// Pure rendering of the source Beehive.SpawnHealingCross callback. The
+/// physical Heal timer decides when one exists; the renderer owns only
+/// its 2.5-second lifetime and upward movement.
+#[derive(Clone, Copy)]
+struct HealingCrossVisual {
+    beehive_id: i64,
+    born_tick: u64,
+    origin: Vec2,
 }
 
 struct ObstacleDebris {
@@ -926,7 +941,7 @@ impl NativeSoftwareRenderer {
             hovered_tactical_action: None,
             debris_frame: None, obstacle_debris: Vec::new(),
             death_owner: None, death_effects: Vec::new(),
-            impact_effects: Vec::new(),
+            impact_effects: Vec::new(), healing_crosses: Vec::new(),
             projectile_art_owner: None, projectile_art_ticks: HashMap::new() })
     }
 
@@ -939,6 +954,7 @@ impl NativeSoftwareRenderer {
             self.death_owner = Some(owner);
             self.death_effects.clear();
             self.impact_effects.clear();
+            self.healing_crosses.clear();
         }
     }
 
@@ -1012,6 +1028,64 @@ impl NativeSoftwareRenderer {
             self.shape(&ShipShape::Circle { offset: Vec2::ZERO, radius },
                 Pose { position: fx.position, rotation_degrees: 0.0 },
                 if fx.fatal { 0xff8e77 } else { 0xffe19c });
+            drawn += 1;
+        }
+        drawn
+    }
+
+    /// Record one real command-timer pulse, using the Beehive's physical
+    /// position at that callback. Repeated graphical frames cannot rearm
+    /// the same effect, and previous world/episode pulses are cleared.
+    pub(super) fn record_healing_cross(
+        &mut self, born_tick: u64, beehive_id: i64, origin: Vec2,
+    ) -> (bool, bool) {
+        if !origin.is_finite() || self.healing_crosses.iter().any(|effect|
+            effect.born_tick == born_tick && effect.beehive_id == beehive_id) {
+            return (false, false);
+        }
+        let dropped = if self.healing_crosses.len() == 512 {
+            self.healing_crosses.remove(0);
+            true
+        } else { false };
+        self.healing_crosses.push(HealingCrossVisual {
+            beehive_id, born_tick, origin,
+        });
+        (true, dropped)
+    }
+
+    /// The original HealingCross drifts 0.5 world units every 0.1 seconds
+    /// and expires at 2.5 seconds. The cosmetic spawn position uses a
+    /// repeatable event-derived hash instead of consuming game RNG.
+    pub(super) fn draw_healing_cross_visuals(
+        &mut self, tick: u64, fixed_dt: f32,
+    ) -> usize {
+        if !fixed_dt.is_finite() || fixed_dt <= 0.0 { return 0; }
+        self.healing_crosses.retain(|effect| tick >= effect.born_tick &&
+            (tick - effect.born_tick) as f32 * fixed_dt < 2.5);
+        let mut drawn = 0;
+        for index in 0..self.healing_crosses.len() {
+            let effect = self.healing_crosses[index];
+            let elapsed = (tick - effect.born_tick) as f32 * fixed_dt;
+            let seed = (effect.beehive_id as u64)
+                .wrapping_mul(0x9e3779b97f4a7c15) ^ effect.born_tick;
+            let hash = |value: u64| {
+                let mut x = value.wrapping_add(0x9e3779b97f4a7c15);
+                x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+                x = (x ^ (x >> 27)).wrapping_mul(0x94d049bb133111eb);
+                (x ^ (x >> 31)) as u32
+            };
+            let x = hash(seed) as f32 / u32::MAX as f32 * 16.0 - 8.0;
+            let y = hash(seed ^ 0x94d049bb133111eb) as f32 /
+                u32::MAX as f32 * 16.0 - 8.0;
+            let point = effect.origin + Vec2::new(
+                x, y + (elapsed / 0.1).floor() * 0.5,
+            );
+            let (px, py) = self.project(point);
+            if px < -8.0 || py < -8.0 ||
+                px > self.width as f32 + 8.0 || py > self.height as f32 + 8.0 {
+                continue;
+            }
+            self.cross(point, 5.0, 0x75dbab);
             drawn += 1;
         }
         drawn
@@ -2299,6 +2373,16 @@ impl NativeSoftwareRenderer {
         }
         self.begin_death_scene(view.world_id, view.episode_revision);
         for event in view.combat.events() {
+            if let bees_sim::combat_world::CombatEvent::CommandHealingCross { beehive_id } = event {
+                if let Some(body) = view.combat.ship_body(*beehive_id) {
+                    let (admitted, dropped) = self.record_healing_cross(
+                        view.tick, *beehive_id, body.motion.position,
+                    );
+                    counts.healing_crosses_observed += usize::from(admitted);
+                    counts.healing_crosses_dropped += usize::from(dropped);
+                }
+                continue;
+            }
             if let bees_sim::combat_world::CombatEvent::Hit(hit) = event {
                 if hit.delta.applied_damage > 0 {
                     if let Some(body) = view.combat.ship_body(hit.target_id) {
@@ -2439,6 +2523,8 @@ impl NativeSoftwareRenderer {
         counts.ship_remains_color_cache_variants = self.colored_ship_remains.len();
         counts.combat_impact_visual_draws =
             self.draw_combat_impact_visuals(view.tick, view.fixed_step_seconds);
+        counts.healing_crosses_drawn =
+            self.draw_healing_cross_visuals(view.tick, view.fixed_step_seconds);
         counts.sprite_raster_candidate_pixels = self.sprite_raster_candidate_pixels;
         counts.sprite_raster_opaque_pixels = self.sprite_raster_opaque_pixels;
         counts.sprite_raster_blended_pixels = self.sprite_raster_blended_pixels;
