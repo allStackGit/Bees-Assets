@@ -2347,7 +2347,7 @@ fn persist_remote_session(
 
 pub fn connect_remote(
     address: &str, token_file: &Path, expected_side: i32,
-    session_file: Option<&Path>,
+    session_file: Option<&Path>, audio_preferences: Option<&Path>,
 ) -> Result<(), Box<dyn Error>> {
     if !(1..=2).contains(&expected_side) {
         return Err(invalid("remote player side must be 1 or 2").into());
@@ -2402,6 +2402,9 @@ pub fn connect_remote(
     let mut pixels=vec![0;WIDTH*HEIGHT];
     let mut artwork=RemoteArtwork::new()?;
     let mut audio=NativeGameAudio::new();
+    if let Some(path) = audio_preferences {
+        audio.load_preferences(path.to_path_buf());
+    }
     let mut soundtrack_paused=false;
     let mut last_audio_snapshot:Option<(u64,u64,u64)>=None;
     let mut camera:Option<NativeCamera>=None;
@@ -2459,6 +2462,16 @@ pub fn connect_remote(
             peer.notice=if audio.toggle_muted() {
                 "Native audio muted".into()
             } else { "Native audio enabled".into() };
+        }
+        let lower = window.is_key_pressed(Key::F10, KeyRepeat::No);
+        let higher = window.is_key_pressed(Key::F11, KeyRepeat::No);
+        if lower || higher {
+            let music = window.is_key_down(Key::LeftShift) ||
+                window.is_key_down(Key::RightShift);
+            let level = audio.adjust_levels(music, if higher { 0.1 } else { -0.1 });
+            peer.notice = format!("{} volume: {}%",
+                if music { "Music" } else { "Effects" },
+                (level * 100.0).round() as u32);
         }
         if window.is_key_pressed(Key::Space, KeyRepeat::No) {
             soundtrack_paused=!soundtrack_paused;
