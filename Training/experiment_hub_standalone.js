@@ -254,7 +254,8 @@ async function readJson(req) {
     return JSON.parse(raw||'{}');
 }
 
-function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null}={}) {
+function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null,
+    localOperations={active:0,activating:false}}={}) {
     const exporter=new JobExporter(dataRoot,hub);
     return http.createServer(async(req,res)=>{
         const host=req.headers.host,origin=req.headers.origin;
@@ -316,10 +317,19 @@ function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null}={}
                 return json(res,202,{...result,restart_requested:requested.requested});
             }
             if(req.method==='POST'&&route==='/api/hub/local-services/evaluators') {
-                const body=await readJson(req);
-                if(body.confirm_action!==true)
-                    return json(res,400,{error:'Explicit evaluator confirmation required.'});
-                return json(res,200,await localServices.evaluatorAction(hub,body));
+                // Evaluator setup can export large models. Hold the current
+                // coordinator generation until the operation commits or fails;
+                // never tear down its HTTP request during an auto-update.
+                if(localOperations.activating)
+                    return json(res,409,{error:'Hub software activation is in progress; retry after reconnection.'});
+                localOperations.active++;
+                try {
+                    const body=await readJson(req);
+                    if(body.confirm_action!==true)
+                        return json(res,400,{error:'Explicit evaluator confirmation required.'});
+                    const result=await localServices.evaluatorAction(hub,body);
+                    return json(res,200,result);
+                }finally {localOperations.active--;}
             }
             if(req.method==='POST'&&route==='/api/hub/local-services/remote-evaluator') {
                 return json(res,202,hub.queueEvaluatorAction(await readJson(req)));
@@ -384,7 +394,11 @@ async function main(argv=process.argv.slice(2)) {
         backendPending:false,agentPending:false,snapshots:new Map([
             [initialFrontend.revision,initialFrontend]])};
     const releases=new ReleaseStore(root);
-    const admin=createAdminServer(hub,{frontend,dataRoot:root,releases,runtime});
+    // Shared with the administrator API: release activation and long-lived
+    // evaluator setup are mutually exclusive on this coordinator process.
+    const localOperations={active:0,activating:false};
+    const admin=createAdminServer(hub,{frontend,dataRoot:root,releases,
+        runtime,localOperations});
     const worker=createAgentServer(()=>hub,AGENT_HOST,releases);
     const remoteWorker=tailnet?createAgentServer(()=>hub,tailnet,releases,root):null;
     async function listen(server,port,host) {
@@ -457,6 +471,11 @@ async function main(argv=process.argv.slice(2)) {
             // restart re-arm authorization. An explicit mid-job software
             // override may pause automation, never stop native workloads.
             if(!override&&hub.automation.enabled&&!hub.state.automation_restart)return;
+            // Refreshing archives is safe during setup, but changing the live
+            // checkout or restarting services is not. Serialise activation
+            // with every local evaluator administration request.
+            if(localOperations.active>0)return;
+            localOperations.activating=true;
             hub.softwareMaintenance=true;
             const result=await releases.applyLocalWhenIdle(hub,override);
             // Compare with the running coordinator's commit, not merely
@@ -533,6 +552,7 @@ async function main(argv=process.argv.slice(2)) {
             console.error('[hub-updates] Local activation: '+String(error.message||error));
         }finally {
             hub.softwareMaintenance=false;
+            localOperations.activating=false;
             releaseBusy=false;
         }
     }
