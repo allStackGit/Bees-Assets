@@ -2165,6 +2165,18 @@ pub(super) fn archive(
             // a fabricated extraction victory. Real surviving hulls
             // and their already mined resources remain in the World.
             run["levels"][0]["extraction"]["retreat_on_exit"] = json!(true);
+            // A human commander must explicitly open the corridor. AI-vs-AI
+            // benchmarks and a non-human mission owner retain the existing
+            // active-zone scenario until scripted AI can issue a recorded
+            // player-authorized retreat input.
+            let human_owner = !selected.ai_both && !selected.benchmark &&
+                selected.player_side.is_none_or(|side| side == player) &&
+                !selected.hivemind.as_ref().is_some_and(|network|
+                    network.controlled_side == player);
+            if human_owner {
+                run["levels"][0]["extraction"]["requires_player_activation"] =
+                    json!(true);
+            }
         }
         if matches!(selected.objective, Objective::Escort) {
             // The first commander is a real mobile, immediately deployed
