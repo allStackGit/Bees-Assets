@@ -5457,6 +5457,71 @@ fn select_library_quick_battle_output(
     }
 }
 
+/// Archive the exact original one-Level physical scene and RunConfig for
+/// later replay, before the first tick. Unlike a newly serialized scene,
+/// byte-for-byte copies preserve the existing trace's configuration hash.
+/// External model/HiveMind/stage-asset games retain their original pinned
+/// paths and are never published as incomplete portable archives.
+#[cfg(feature = "client")]
+fn archive_quick_battle_replay_source(
+    config:&Path,output:&Path,
+) -> Result<(),Box<dyn Error>> {
+    let run_meta=fs::symlink_metadata(config)?;
+    if !run_meta.file_type().is_file() || run_meta.len()>1024*1024 {
+        return Ok(());
+    }
+    let run_bytes=fs::read(config)?;
+    let run:RunConfig=serde_json::from_slice(&run_bytes)?;
+    if run.levels.len()!=1 || run.native_stage.is_none() ||
+        run.model_manifest.is_some() || !run.model_updates.is_empty() ||
+        run.hivemind.is_some() || run.collision_matrix.is_some() ||
+        run.stage_palette.is_some() || run.python.is_some() ||
+        run.policy_worker.is_some() || !run.recover_notifications.is_empty() ||
+        !run.recover_outcome_journals.is_empty()
+    {
+        return Ok(());
+    }
+    let scene_name=&run.levels[0].scene;
+    if scene_name.is_absolute() || scene_name.components().count()!=1 ||
+        scene_name.file_name().is_none_or(|name|name=="replay-source-run.json")
+    {
+        return Ok(());
+    }
+    let parent=config.parent().ok_or_else(||
+        invalid("recorded game source has no physical scene directory"))?;
+    let scene_path=parent.join(scene_name);
+    let scene_meta=fs::symlink_metadata(&scene_path)?;
+    if !scene_meta.file_type().is_file() || scene_meta.len()>4*1024*1024 {
+        return Ok(());
+    }
+    let scene_bytes=fs::read(&scene_path)?;
+    let saved=output.parent().ok_or_else(||
+        invalid("recorded game has no numbered archive"))?;
+    let persist=|target:&Path,bytes:&[u8]|->Result<(),Box<dyn Error>> {
+        match bees_host::checkpoint_file::persist_new_bytes(target,bytes) {
+            Ok(())=>Ok(()),
+            Err(bees_host::checkpoint_file::CheckpointFileError::Io(error))
+                if error.kind()==ErrorKind::AlreadyExists =>{
+                let meta=fs::symlink_metadata(target)?;
+                if meta.file_type().is_file() && fs::read(target)?==bytes {
+                    Ok(())
+                } else {
+                    Err(invalid("original native replay source archive changed").into())
+                }
+            },
+            Err(error)=>Err(invalid(format!(
+                "could not freeze original native replay source: {error:?}"
+            )).into()),
+        }
+    };
+    // Scene first, run last: the frozen RunConfig acts as the presence
+    // marker. An interrupted source write can be resumed from identical
+    // original bytes without replaying or modifying any prior World.
+    persist(&saved.join(scene_name),&scene_bytes)?;
+    persist(&saved.join("replay-source-run.json"),&run_bytes)?;
+    Ok(())
+}
+
 #[cfg(feature = "client")]
 fn run_library_quick_battle(
     save_root: &Path, game_id: &str, config: &Path,
@@ -5468,6 +5533,7 @@ fn run_library_quick_battle(
         Some(battle_catalog::CampaignWriterLease::acquire(&root)?)
     } else { None };
     let output = select_library_quick_battle_output(save_root, game_id, config, false)?;
+    archive_quick_battle_replay_source(config,&output)?;
     run_session(config, true, true, Some(output), None, None, None)
 }
 

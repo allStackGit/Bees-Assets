@@ -122,6 +122,30 @@ fn completed_quick_battles(directory: &Path)
     Ok(completed)
 }
 
+/// A quick game's self-contained original RunConfig is copied *before*
+/// play and retains the exact bytes hashed by the authoritative replay
+/// trace. A newer packaged level must not silently replace its physical
+/// map or fleet. The full trace loader validates these frozen bytes at play.
+fn frozen_quick_battle_source(folder:&Path)->Option<PathBuf> {
+    let run=folder.join("replay-source-run.json");
+    let meta=fs::symlink_metadata(&run).ok()?;
+    if !meta.file_type().is_file() || meta.len()>1024*1024 {return None;}
+    let document:Value=serde_json::from_slice(&fs::read(&run).ok()?).ok()?;
+    let levels=document["levels"].as_array()?;
+    if levels.len()!=1 {return None;}
+    let scene=levels[0]["scene"].as_str()?;
+    let scene=Path::new(scene);
+    if scene.is_absolute() || scene.components().count()!=1 {
+        return None;
+    }
+    let scene=folder.join(scene);
+    let meta=fs::symlink_metadata(scene).ok()?;
+    if !meta.file_type().is_file() || meta.len()>4*1024*1024 {
+        return None;
+    }
+    Some(run)
+}
+
 /// Restrict recordings to game IDs already validated by NativeLibrary and
 /// to their directly owned save directories; no recursive filesystem walk.
 pub(super) fn list(
@@ -130,12 +154,17 @@ pub(super) fn list(
     let mut clips = Vec::new();
     for (game_id, title, config) in games {
         let directory = save_root.join("battles").join(&game_id);
-        for (number, _, trace) in completed_quick_battles(&directory)? {
+        for (number, folder, trace) in completed_quick_battles(&directory)? {
+            let archived=frozen_quick_battle_source(&folder);
             clips.push(RecordedBattle {
                 title: format!("{title}  |  Battle {number:06}"),
-                status: "  [Recorded]".to_owned(),
+                status: if archived.is_some() {
+                    "  [Archived source replay]".to_owned()
+                } else {"  [Recorded]".to_owned()},
                 game_id: game_id.clone(),
-                source: RecordedSource::QuickBattle(config.clone()),
+                source: RecordedSource::QuickBattle(
+                    archived.unwrap_or_else(||config.clone()),
+                ),
                 trace,
                 number,
             });

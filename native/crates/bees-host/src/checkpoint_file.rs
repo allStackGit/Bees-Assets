@@ -343,6 +343,32 @@ pub fn persist_new_json(
     result
 }
 
+/// Preserve a recorded game's original input bytes without re-serializing
+/// JSON. The replay trace pins SHA-256 of the source RunConfig, so an
+/// equivalent serialization would still be a different historical game.
+/// The existing unique temporary inode and exclusive hard-link publication
+/// make this create-only copy crash-safe on Windows and Linux.
+pub fn persist_new_bytes(path:&Path,bytes:&[u8])
+    -> Result<(),CheckpointFileError>
+{
+    let target=canonical_writer_checkpoint_path(path.to_path_buf())?;
+    let parent=target.parent().ok_or(CheckpointFileError::InvalidPath)?;
+    let name=target.file_name().ok_or(CheckpointFileError::InvalidPath)?;
+    let (temporary,mut file)=create_unique_temporary_file(parent,name)?;
+    let result=(||->Result<(),CheckpointFileError>{
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        fs::hard_link(&temporary,&target)?;
+        #[cfg(unix)]
+        File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+    let cleanup=fs::remove_file(&temporary);
+    if result.is_ok(){cleanup?;}
+    result
+}
+
 /// One durable checkpoint write path for both network connection identity
 /// and native World+Level state. No extra file rewriting strategy or
 /// duplicate temporary-file allocator exists for gameplay persistence.
