@@ -890,6 +890,21 @@ impl BattleCatalog {
         {
             return Err(invalid("campaign Codex requires distinct real ship classes 0..22"));
         }
+        // The original Codex belongs to the campaign's one human account.
+        // Do not accidentally merge rival player sides into one career
+        // projection when a custom catalog contains mixed missions.
+        if !self.codex_initial.is_empty() ||
+            self.battles.iter().filter_map(|battle| battle.mission.as_ref())
+                .any(|mission| !mission.codex_reveals.is_empty())
+        {
+            let codex_sides = self.battles.iter()
+                .filter_map(|battle| battle.mission.as_ref().map(|mission|
+                    mission.player_side))
+                .collect::<HashSet<_>>();
+            if codex_sides.len() != 1 {
+                return Err(invalid("campaign Codex progression requires one player faction"));
+            }
+        }
         let mut available = HashSet::new();
         for ship in &self.buildable_ships {
             if self.campaign_id.is_none() ||
