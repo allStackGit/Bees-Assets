@@ -260,7 +260,32 @@ fn select_battle_inner(
     let mut shop_first = 0_usize;
     let mut fleet_selected = 0_usize;
     let mut fleet_first = 0_usize;
-    while window.is_open() && !window.is_key_down(Key::Escape) {
+    while window.is_open() {
+        // Escape returns to the parent campaign screen. A player browsing
+        // ships, changing tactics or renaming a squad should not have to
+        // abandon the entire battle launcher to reach mission selection.
+        if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
+            if show_names {
+                show_names = false;
+            } else if show_shop || show_transfer || show_create ||
+                show_delete || show_tactics
+            {
+                show_shop = false;
+                show_transfer = false;
+                show_create = false;
+                show_delete = false;
+                show_tactics = false;
+                tactic_edit_index = None;
+            } else if career_view.is_some() {
+                career_view = None;
+            } else {
+                break;
+            }
+            // A pointer release that closes a view must not become a
+            // purchase, transfer or battle activation on the parent.
+            mouse_down = window.get_mouse_down(MouseButton::Left);
+            continue;
+        }
         if !library_mode && !show_tactics && !show_names &&
             window.is_key_pressed(Key::R, KeyRepeat::No)
         {
@@ -650,7 +675,7 @@ fn select_battle_inner(
                 if show_tactics {
                     "Left/Right strategy   C chase   V fire   M speed   R color   F formation   W width   Enter save"
                 } else if show_delete {
-                    "Up/Down select   Enter delete   D close   Esc exit"
+                    "Up/Down select   Enter delete   D close   Esc back"
                 } else {
                     "Enter select   B build   T transfer   N new   D delete   P tactics"
                 }, 1, MUTED);
@@ -691,7 +716,7 @@ fn select_battle_inner(
                 text::draw_centered(&mut pixels, WIDTH, 417, &page, 1, MUTED);
             }
             text::draw_centered(&mut pixels, WIDTH, 441,
-                "F fleet   S squads   Wheel / arrows / PageUp / PageDown browse   Esc exit", 1, MUTED);
+                "F fleet   S squads   Wheel / arrows / PageUp / PageDown browse   Esc back", 1, MUTED);
             mouse_down = window.get_mouse_down(MouseButton::Left);
             window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
             continue;
