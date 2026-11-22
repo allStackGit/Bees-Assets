@@ -1097,7 +1097,16 @@ class RemoteBattleWindow:
             # renderer's responsibility; multiplayer targeting must never
             # substitute a generic triangle for a huge or irregular hull.
             shape, points = self.collider_screen_shape(ship)
-            outline = OUTLINE if ship["owned"] else color
+            # Use the original SavedSquad color when provided by the
+            # authenticated host, while keeping allegiance distinguishable
+            # through the stable friendly/enemy fill colors.
+            custom = ship.get("color_rgb")
+            squad_color = ("#%02x%02x%02x" % tuple(custom)
+                           if isinstance(custom, list) and len(custom) == 3
+                           and all(isinstance(channel, int) and
+                                   0 <= channel <= 255 for channel in custom)
+                           else OUTLINE)
+            outline = squad_color if ship["owned"] else color
             left, top, right, bottom = self.collider_screen_bounds(shape, points)
             if shape == "polygon":
                 self.canvas.create_polygon(*points, fill=color, outline=outline)
