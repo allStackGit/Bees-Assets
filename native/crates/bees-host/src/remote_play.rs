@@ -275,6 +275,14 @@ pub struct NativeArchivedBattleReceipt {
 pub struct RemotePlayMeasurements {
     pub connections_accepted: u64,
     pub authenticated_peers: u64,
+    /// Actual side-scoped view-only authentications, not inferred
+    /// from sockets or client-declared role flags.
+    #[serde(default)]
+    pub authenticated_spectators: u64,
+    #[serde(default)]
+    pub spectator_commands_rejected: u64,
+    #[serde(default)]
+    pub spectator_snapshots_encoded: u64,
     pub rejected_connections: u64,
     pub orders_received: u64,
     pub orders_processed: u64,
@@ -307,8 +315,8 @@ pub struct RemotePlayMeasurements {
     /// Actual time spent accepting/parsing/authenticating remote inputs at
     /// fixed-tick boundaries; does not include simulation or render work.
     pub input_poll_wall_seconds: f64,
-    /// Count one projection/JSON encoding per distinct authenticated side,
-    /// never once per cooperative peer who consumes the same bytes.
+    /// Count one projection/JSON encoding per distinct authenticated
+    /// (side, authority) seat, never once per cooperative peer.
     pub snapshot_unique_encoded_bytes: u64,
     #[serde(default)]
     pub asteroid_pieces_projected: u64,
@@ -879,6 +887,9 @@ impl NativeRemotePlay {
                             peer.side = Some(side);
                             peer.spectator = spectator;
                             self.measurements.authenticated_peers += 1;
+                            if spectator {
+                                self.measurements.authenticated_spectators += 1;
+                            }
                             if let Some(original) = resume_session_id.as_deref()
                                 .filter(|id| *id != self.host_session_id)
                             {
@@ -1043,6 +1054,7 @@ impl NativeRemotePlay {
                                 "feedback": "spectator seat has no command authority",
                             }));
                             self.measurements.orders_rejected += 1;
+                            self.measurements.spectator_commands_rejected += 1;
                             peer_orders += 1;
                             continue;
                         }
@@ -1377,6 +1389,7 @@ impl NativeRemotePlay {
                     overlay_by_side.get(&side), measurements,
                 );
                 if spectator {
+                    measurements.spectator_snapshots_encoded += 1;
                     // Strip side-private fields before serialization.
                     // Only the existing side-filtered public battlefield,
                     // mission objectives and source fog remain observable.
