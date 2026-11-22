@@ -48,6 +48,7 @@ def remote_token(side, spectator=False):
 HELP = """Commands:
   status               Show the latest world and selected friendly squads
   objective            Show the authored mission and reinforcement status
+  codex                Show genuinely unlocked campaign ship classes
   ready                Acknowledge the current hosted campaign briefing
   surrender confirm    Concede the battle (irreversible after host commits)
   activate-retreat     Open your side's authored retreat exit
@@ -698,6 +699,20 @@ class RemoteConsole:
             objective = self.objective_summary(state)
             print(f"Objective: {objective}" if objective is not None
                   else "No active authored objective")
+            return
+        if cmd == "codex":
+            if argv:
+                raise ValueError("codex takes no arguments")
+            if state.get("campaign_codex_gate") is not True:
+                print("Campaign Codex unavailable to this player side")
+                return
+            entries = state.get("campaign_codex_entries")
+            if entries is None:
+                print("This native host does not expose named Codex entries")
+                return
+            print(f"Campaign Codex — {len(entries)} unlocked ship classes")
+            for entry in entries:
+                print(f"  {entry['ship_type']:>2}  {entry['name']}")
             return
         if cmd == "ships":
             for ship in state["ships"]:
