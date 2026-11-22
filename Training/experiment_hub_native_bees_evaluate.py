@@ -337,7 +337,7 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
         raise ValueError("Native evaluation faction results exceed completed trials.")
     # These are actual completed native physics/accelerator observations.
     # Never claim requested workers were active; report the observed peak.
-    metrics["requested_physics_workers"] = {
+    metrics["requested_cpu_workers"] = {
         "value": receipt["requested_physics_workers"], "unit": "count",
     }
     metrics["peak_physics_workers"] = {
