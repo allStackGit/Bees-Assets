@@ -125,6 +125,9 @@ pub struct NativeRenderCounts {
     pub ship_remains_source_frame_draws: usize,
     /// Source QueenExplosionAnimation has four real 4s sprite layers.
     pub queen_explosion_layer_draws: usize,
+    /// Original 1.4s Beehive Shrinking clip and delayed final blast.
+    pub beehive_shrinking_frame_draws: usize,
+    pub beehive_final_blast_draws: usize,
     pub ship_remains_art_classes_loaded: usize,
     pub ship_remains_color_cache_variants: usize,
     /// Oldest effects evicted to keep large battles bounded.
@@ -1105,22 +1108,30 @@ impl NativeSoftwareRenderer {
     /// A paused simulation keeps its remains indefinitely until time runs.
     /// Source ShipRemains.Place uses the final physical ship pose and
     /// animates its real sprite slices before Kill at five world seconds.
+    /// Beehive overrides DropExplosionAnimation: its shrinking clip triggers
+    /// FinalExplosion at 1.4s and never spawns an ordinary ShipRemains.
     /// The original 20-slice clips stop on their last sprite; no timer,
     /// corpse collider or new actor is added to physics or training.
     pub(super) fn draw_ship_death_visuals(
         &mut self, tick: u64, fixed_dt: f32,
-    ) -> (usize, usize, usize, usize) {
+    ) -> (usize, usize, usize, usize, usize, usize) {
         if !fixed_dt.is_finite() || fixed_dt <= 0.0 {
-            return (0, 0, 0, 0);
+            return (0, 0, 0, 0, 0, 0);
         }
         self.death_effects.retain(|fx|
             tick >= fx.born_tick &&
             (tick - fx.born_tick) as f32 * fixed_dt <
-                if fx.ship_type == 17 { 9.0 } else { 5.0 });
+                match fx.ship_type {
+                    2 => 1.8, // Beehive shrink callback at 1.4s, then explosion flash
+                    17 => 9.0, // Queen 4s animation then five-second remains
+                    _ => 5.0,
+                });
         let mut remains_drawn = 0;
         let mut flashes_drawn = 0;
         let mut source_frames_drawn = 0;
         let mut queen_layers_drawn = 0;
+        let mut beehive_shrinking = 0;
+        let mut beehive_blasts = 0;
         let authored_remains = if self.death_effects.is_empty() {
             None
         } else {
@@ -1132,6 +1143,48 @@ impl NativeSoftwareRenderer {
         for index in 0..self.death_effects.len() {
             let fx = self.death_effects[index];
             let seconds = (tick - fx.born_tick) as f32 * fixed_dt;
+            if fx.ship_type == 2 {
+                // Beehive.DropExplosionAnimation does NOT call ShipRemains.Place.
+                // The original source Beehive Shrinking.anim has fifteen
+                // frames at 10 FPS and fires its Kill/FinalExplosion callback
+                // at 1.4s. The imported BSR1 entry for class 2 is that clip,
+                // not a persistent wreck. Render it as a separate lifecycle.
+                if seconds < 1.4 {
+                    let source = authored_remains
+                        .and_then(|atlas| atlas.clips.get(2))
+                        .and_then(Option::as_ref);
+                    let drawn = source.is_some_and(|clip| {
+                        let frame = ((seconds * clip.frames_per_second).floor()
+                            as usize).min(clip.frames.len() - 1);
+                        let art = &clip.frames[frame];
+                        self.draw_sprite(&art.sprite, fx.position,
+                            fx.rotation_degrees.to_radians(),
+                            self.camera.pixels_per_unit / art.pixels_per_unit, 1.0)
+                    });
+                    if !drawn {
+                        // Keep a visible death animation if optional source
+                        // artwork is absent from a minimal native package.
+                        self.shape(&ShipShape::Circle {
+                            offset: Vec2::ZERO,
+                            radius: fx.radius * (1.0 - seconds / 1.4).max(0.05),
+                        }, Pose { position: fx.position, rotation_degrees: 0.0 },
+                            0x75dbab);
+                    }
+                    beehive_shrinking += usize::from(drawn);
+                } else {
+                    // Source FinalExplosion begins only after the shrinking
+                    // callback, not on the same frame as the lethal hit.
+                    let progress = ((seconds - 1.4) / 0.4).clamp(0.0, 1.0);
+                    self.shape(&ShipShape::Circle {
+                        offset: Vec2::ZERO,
+                        radius: fx.radius * (0.75 + 1.5 * progress),
+                    }, Pose { position: fx.position, rotation_degrees: 0.0 },
+                        if fx.side == 1 { 0xffca81 } else { 0xffa281 });
+                    beehive_blasts += 1;
+                    flashes_drawn += 1;
+                }
+                continue;
+            }
             if fx.ship_type == 17 && seconds < 4.0 {
                 if let Some(queen) = queen_explosion {
                     // Queen Explosion Body.anim fires Kill at 4s. Until
@@ -1233,7 +1286,8 @@ impl NativeSoftwareRenderer {
                 flashes_drawn += 1;
             }
         }
-        (remains_drawn, flashes_drawn, source_frames_drawn, queen_layers_drawn)
+        (remains_drawn, flashes_drawn, source_frames_drawn, queen_layers_drawn,
+            beehive_shrinking, beehive_blasts)
     }
 
     pub fn size(&self) -> (usize, usize) { (self.width, self.height) }
@@ -2531,12 +2585,15 @@ impl NativeSoftwareRenderer {
         // view; retained battles with millions of shots cannot accumulate
         // stale animation state over time.
         self.projectile_art_ticks.retain(|_, &mut (_, seen)| seen == view.tick);
-        let (remains, explosions, source_frames, queen_layers) =
+        let (remains, explosions, source_frames, queen_layers,
+            beehive_shrinking, beehive_blasts) =
             self.draw_ship_death_visuals(view.tick, view.fixed_step_seconds);
         counts.ship_remains_draws = remains;
         counts.ship_explosion_visual_draws = explosions;
         counts.ship_remains_source_frame_draws = source_frames;
         counts.queen_explosion_layer_draws = queen_layers;
+        counts.beehive_shrinking_frame_draws = beehive_shrinking;
+        counts.beehive_final_blast_draws = beehive_blasts;
         counts.ship_remains_art_classes_loaded =
             loaded_ship_remains_art_classes();
         counts.ship_remains_color_cache_variants = self.colored_ship_remains.len();

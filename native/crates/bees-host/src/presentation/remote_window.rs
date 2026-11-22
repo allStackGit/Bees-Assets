@@ -132,6 +132,8 @@ struct WireCounts {
     ship_remains_source_frame_draws: u64,
     ship_explosion_visual_draws: u64,
     queen_explosion_layer_draws: u64,
+    beehive_shrinking_frame_draws: u64,
+    beehive_final_blast_draws: u64,
     obstacle_hull_draws: u64,
     minimap_ship_markers: u64,
     minimap_terrain_markers: u64,
@@ -415,12 +417,15 @@ impl RemoteArtwork {
             );
             stats.ship_deaths_received += u64::from(admitted);
         }
-        let (remains, flashes, source_frames, queen_layers) =
+        let (remains, flashes, source_frames, queen_layers,
+            beehive_shrinking, beehive_blasts) =
             self.raster.draw_ship_death_visuals(tick, dt);
         stats.ship_remains_draws += remains as u64;
         stats.ship_remains_source_frame_draws += source_frames as u64;
         stats.ship_explosion_visual_draws += flashes as u64;
         stats.queen_explosion_layer_draws += queen_layers as u64;
+        stats.beehive_shrinking_frame_draws += beehive_shrinking as u64;
+        stats.beehive_final_blast_draws += beehive_blasts as u64;
         stats.combat_impact_visual_draws +=
             self.raster.draw_combat_impact_visuals(tick, dt) as u64;
         stats.healing_crosses_drawn +=
@@ -4410,6 +4415,8 @@ pub fn connect_remote(
         "ship_remains_source_frame_draws":peer.metrics.ship_remains_source_frame_draws,
         "ship_explosion_visual_draws":peer.metrics.ship_explosion_visual_draws,
         "queen_explosion_layer_draws":peer.metrics.queen_explosion_layer_draws,
+        "beehive_shrinking_frame_draws":peer.metrics.beehive_shrinking_frame_draws,
+        "beehive_final_blast_draws":peer.metrics.beehive_final_blast_draws,
         "projectile_sprite_draws":peer.metrics.projectile_sprite_draws,
         "asteroid_sprite_draws":peer.metrics.asteroid_sprite_draws,
         "asteroid_piece_sprite_draws":peer.metrics.asteroid_piece_sprite_draws,
