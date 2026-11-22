@@ -888,7 +888,8 @@ impl CampaignProgress<'_> {
                     "#{id}{name} S{}{type_label} W{}/{} M{} Hit{} Taken{} Kill{}{}{}",
                     ship.side, ship.battles_won, ship.battles_fought,
                     ship.minerals_mined, ship.combat.enemy_tsv_damage_done,
-                    ship.combat.tsv_damage_received, ship.combat.attributed_enemy_kills,
+                    ship.combat.tsv_damage_received,
+                    ship.combat.source_kills.map_or("?".to_owned(), |count| count.to_string()),
                     if ship.is_dead { " LOST" } else { "" }, assignment,
                 ));
             }
@@ -1596,6 +1597,10 @@ impl BattleCatalog {
                         progress.fleet.insert(ship.fleet_ship_id, FleetProgress {
                             side: mission.player_side, loss_history_complete: true,
                             combat_history_complete: true, special_history_complete: true,
+                            combat: NativeFleetCombatStats {
+                                source_kills: Some(0),
+                                ..NativeFleetCombatStats::default()
+                            },
                             ..FleetProgress::default()
                         });
                         progress.purchases.push((mission.player_side, *ship));
@@ -1651,6 +1656,10 @@ impl BattleCatalog {
                             loss_history_complete: true,
                             combat_history_complete: true,
                             special_history_complete: true,
+                            combat: NativeFleetCombatStats {
+                                source_kills: Some(0),
+                                ..NativeFleetCombatStats::default()
+                            },
                             ..FleetProgress::default()
                         });
                         progress.purchases.push((3 - mission.player_side, *ship));
@@ -1711,7 +1720,11 @@ impl BattleCatalog {
                                 loss_history_complete: true,
                                 combat_history_complete: true,
                                 special_history_complete: true,
-                                ..FleetProgress::default() }
+                                combat: NativeFleetCombatStats {
+                                source_kills: Some(0),
+                                ..NativeFleetCombatStats::default()
+                            },
+                            ..FleetProgress::default() }
                         });
                         if let Some(kind) = ship.ship_type {
                             if fleet.ship_type.is_some_and(|recorded| recorded != kind) {
@@ -1733,6 +1746,17 @@ impl BattleCatalog {
                                 add(fleet.combat.tsv_damage_received, stats.tsv_damage_received)?;
                             fleet.combat.attributed_enemy_kills =
                                 add(fleet.combat.attributed_enemy_kills, stats.attributed_enemy_kills)?;
+                            // Unity FleetShip.Kills counts every attributed
+                            // kill, even friendly-fire victims. Older match
+                            // receipts only recorded enemy kills; once any
+                            // sample is missing, the exact career total is
+                            // permanently unknown rather than an estimate.
+                            fleet.combat.source_kills = match (
+                                fleet.combat.source_kills, stats.source_kills,
+                            ) {
+                                (Some(total), Some(delta)) => Some(add(total, delta)?),
+                                _ => None,
+                            };
                             fleet.combat.striker_bombs_dropped =
                                 add(fleet.combat.striker_bombs_dropped, stats.striker_bombs_dropped)?;
                             fleet.combat.fire_barge_explosions =
@@ -1751,6 +1775,7 @@ impl BattleCatalog {
                         } else {
                             fleet.combat_history_complete = false;
                             fleet.special_history_complete = false;
+                            fleet.combat.source_kills = None;
                         }
                         if let Some(dead) = ship.is_dead {
                             fleet.is_dead |= dead;
@@ -1807,7 +1832,11 @@ impl BattleCatalog {
                                 loss_history_complete: true,
                                 combat_history_complete: true,
                                 special_history_complete: true,
-                                ..FleetProgress::default()
+                                combat: NativeFleetCombatStats {
+                                source_kills: Some(0),
+                                ..NativeFleetCombatStats::default()
+                            },
+                            ..FleetProgress::default()
                             }
                         );
                         if fleet.side != mission.player_side {
@@ -1918,7 +1947,11 @@ impl BattleCatalog {
                     loss_history_complete: true,
                     combat_history_complete: true,
                     special_history_complete: true,
-                    ..FleetProgress::default()
+                    combat: NativeFleetCombatStats {
+                                source_kills: Some(0),
+                                ..NativeFleetCombatStats::default()
+                            },
+                            ..FleetProgress::default()
                 });
             if fleet.side != purchase.player_side ||
                 fleet.ship_type.is_some_and(|kind| kind != purchase.ship.ship_type)
@@ -2287,6 +2320,9 @@ impl BattleCatalog {
                 "enemy_tsv_damage_done": record.combat.enemy_tsv_damage_done,
                 "tsv_damage_received": record.combat.tsv_damage_received,
                 "attributed_enemy_kills": record.combat.attributed_enemy_kills,
+                "source_kills": record.combat.source_kills,
+                "friendly_fire_kills": record.combat.source_kills.map(|total|
+                    total.saturating_sub(record.combat.attributed_enemy_kills)),
                 "combat_history_complete": record.combat_history_complete,
                 "special_history_complete": record.special_history_complete,
                 "striker_bombs_dropped": record.special_history_complete
