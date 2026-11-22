@@ -2187,6 +2187,20 @@ fn source_ship_names() -> &'static [String] {
         .ships().iter().map(|ship| ship.name.clone()).collect())
 }
 
+fn source_codex_entry(
+    kind: usize, names: &[String],
+    live: Option<(i32, i32, i32, i32)>,
+) -> Value {
+    json!({
+        "ship_type": kind as u8,
+        "name": names[kind].as_str(),
+        "live": live.map(|(health, max_health, tsv, max_tsv)| json!({
+            "health": health, "max_health": max_health,
+            "tsv": tsv, "max_tsv": max_tsv,
+        })),
+    })
+}
+
 fn current_state(
     view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32,
     music_location: Option<NativeMusicLocation>, audio_events: &[Value],
@@ -2209,11 +2223,23 @@ fn current_state(
             .map(|(ship, _)| ship.entity_id).collect())
     } else { None };
     let mut visible_ship_types = [false; SHIP_TYPE_COUNT];
+    let mut visible_class_vitals = [None; SHIP_TYPE_COUNT];
     let ships: Vec<_> = view.combat.render_ships().filter_map(|(ship, body)| {
         if visible_ids.as_ref().is_some_and(|ids| !ids.contains(&ship.entity_id)) { return None; }
-        if !spectator && view.campaign_codex.is_none() {
-            if let Some(seen) = visible_ship_types.get_mut(usize::from(ship.ship_type)) {
-                *seen = true;
+        if !spectator {
+            let kind = usize::from(ship.ship_type);
+            if let Some(live) = visible_class_vitals.get_mut(kind) {
+                if live.is_none() {
+                    *live = Some((
+                        ship.vitals.health(), ship.vitals.max_health(),
+                        ship.vitals.tsv(), ship.vitals.max_tsv(),
+                    ));
+                }
+            }
+            if view.campaign_codex.is_none() {
+                if let Some(seen) = visible_ship_types.get_mut(kind) {
+                    *seen = true;
+                }
             }
         }
         let owner = view.roster.owning_squad(ship.entity_id);
@@ -2343,9 +2369,8 @@ fn current_state(
     let visible_ship_classes = (!spectator && view.campaign_codex.is_none()).then(|| {
         let names = source_ship_names();
         visible_ship_types.iter().enumerate().filter_map(|(kind, &seen)| {
-            (seen && kind != usize::from(HUMAN_TARGET_TYPE)).then(|| json!({
-                "ship_type": kind as u8, "name": names[kind].as_str(),
-            }))
+            (seen && kind != usize::from(HUMAN_TARGET_TYPE))
+                .then(|| source_codex_entry(kind, names, visible_class_vitals[kind]))
         }).collect::<Vec<_>>()
     });
     let obstacles: Vec<_> = view.combat.render_obstacles().filter_map(|(object, body)| {
@@ -2784,10 +2809,8 @@ fn current_state(
             .map(|(_, allowed)| {
                 let names = source_ship_names();
                 allowed.iter().enumerate().filter_map(|(kind, &known)| {
-                    (known && kind != usize::from(HUMAN_TARGET_TYPE)).then(|| json!({
-                        "ship_type": kind as u8,
-                        "name": names[kind].as_str(),
-                    }))
+                    (known && kind != usize::from(HUMAN_TARGET_TYPE))
+                        .then(|| source_codex_entry(kind, names, visible_class_vitals[kind]))
                 }).collect::<Vec<_>>()
             }),
         "visible_ship_classes": visible_ship_classes,
