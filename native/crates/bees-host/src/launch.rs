@@ -4188,6 +4188,13 @@ fn run_duplicate_saved_squad(
         .map_err(|e| contextual("purchased FleetShip owners", e))?;
     scene.omit_killed_fleet_ships(side, casualties)
         .map_err(|e| contextual("template fleet casualties", e))?;
+    // Matching speed and formation are finalized from the physically
+    // restored roster, after losses and purchased/deployed ship families.
+    // Copy the same live Squad state that the next native battle will use,
+    // not an unfinalized SavedSquad command-default snapshot.
+    scene.finalize_campaign_squad_tactics(
+        side, &progress.tactics_for_side(side),
+    ).map_err(|e| contextual("template effective command settings", e))?;
     let squad = scene.source_squads.iter().find(|squad|
         squad.saved_squad_id == Some(template_id) && squad.side == side &&
         squad.player_permissions.user_controlled
