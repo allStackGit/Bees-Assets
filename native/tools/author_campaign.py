@@ -1793,30 +1793,48 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             mission["preparation"] = story
         if story == "neptune_seize_means":
             mission["intermission"] = {"kind": "pluto_to_neptune"}
-            # Neptune1Ending converts enemy FleetShips' surviving mining
-            # credit into unassigned Bee reserves on a player defeat.
-            # Take full-health TSV from the captured physical source, not
-            # a separately maintained or inferred reward price table.
+            # Neptune1Ending converts surviving Bee miners' accrued
+            # mineral credit into unassigned Bumblebee, Leafcutter and
+            # Hornet reserves. Those reward types need not all be present
+            # in this specific battle: Unity GetShipInfo resolves prices
+            # from the global v5 ship-stats registry, not deployed hulls.
+            # Reuse the immutable v5 source-stat import already packaged
+            # for the native Codex, and check all deployed physical
+            # archetypes against it rather than guessing absent prices.
+            codex = read(Path(__file__).resolve().parents[2] /
+                         "native/assets/ship-codex.json")
+            if (codex.get("schema_version") != 1 or
+                    codex.get("source_ship_stats_version") != 5 or
+                    not isinstance(codex.get("ships"), list) or
+                    len(codex["ships"]) != 23 or
+                    [ship.get("ship_type") for ship in codex["ships"]] != list(range(23))):
+                raise ValueError(
+                    "Neptune salvage requires complete original version-5 ship prices"
+                )
             prices = []
             enemy_hulls = [
                 *scene.get("ships", []),
                 *scene.get("fleet_templates", []),
             ]
             for kind in (3, 16, 15):  # Bumblebee, Leafcutter, Hornet
+                price = codex["ships"][kind].get("tsv")
+                if type(price) is not int or not 0 < price <= 2**31 - 1:
+                    raise ValueError(
+                        f"Neptune salvage has no valid source TSV for ship type {kind}"
+                    )
                 source_prices = {
                     ship.get("max_tsv") for ship in enemy_hulls
-                    if ship.get("side") == 3 - args.player_side
+                    if isinstance(ship, dict)
+                    and ship.get("side") == 3 - args.player_side
                     and ship.get("ship_type") == kind
-                    and isinstance(ship.get("max_tsv"), int)
-                    and ship["max_tsv"] > 0
+                    and type(ship.get("max_tsv")) is int
                 }
-                if len(source_prices) != 1:
+                if source_prices and source_prices != {price}:
                     raise ValueError(
-                        f"Neptune Seize the Means needs a single captured "
-                        f"Bee TSV for ship type {kind}; add the original "
-                        "enemy fleet template to the source scene"
+                        f"Neptune Bee source hull type {kind} TSV {source_prices} "
+                        f"differs from the original version-5 price {price}"
                     )
-                prices.append(source_prices.pop())
+                prices.append(price)
             if not any(ship.get("side") == 3 - args.player_side
                        and ship.get("persistent_fleet")
                        for ship in scene.get("ships", [])):
