@@ -5599,7 +5599,8 @@ fn run_campaign_game_menu(
         BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
         NativeTransferMenuRow, NativeCreateSquadMenuRow,
         NativeDeleteSquadMenuRow, NativeTacticsMenuRow,
-        NativeNameMenuRow, NativeNameTarget, select_battle, select_library,
+        NativeNameMenuRow, NativeNameTarget, NativeCampaignMenuStats,
+        select_battle, select_library,
     };
 
     let catalog_path = catalog_path.canonicalize()?;
@@ -5980,7 +5981,17 @@ fn run_campaign_game_menu(
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
             &fleet_rows, &squad_rows, &shop_rows, available, &transfer_rows,
             &create_rows, &tactics_rows, &delete_rows, &name_rows,
-            progress.campaign_score_summary())?
+            {
+                let (score, score_complete) = progress.campaign_score_summary();
+                let (counts, match_history_complete) = progress.player_match_summary();
+                NativeCampaignMenuStats {
+                    score, score_complete,
+                    ships_lost: counts.ships_lost,
+                    ships_returned: counts.ships_returned,
+                    credited_kills: counts.ships_destroyed_by_player,
+                    match_history_complete,
+                }
+            })?
             else { break };
         let index = match action {
             NativeBattleMenuAction::Play(index) => index,
