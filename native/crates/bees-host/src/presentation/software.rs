@@ -95,6 +95,9 @@ pub struct NativeRenderCounts {
     pub ship_sprite_draws: usize,
     /// Real source Carrier deck overlays matched to a custom squad color.
     pub carrier_deck_overlay_draws: usize,
+    /// Original wind-up / active Barge charge clip overlays, drawn on
+    /// physically charged hulls only, never on an inferred UI timer.
+    pub barge_charge_effect_draws: usize,
     /// Frames from original Carpenter, Factory and WarpGate clips.
     pub ship_animated_sprite_draws: usize,
     pub ship_animation_clips_loaded: usize,
@@ -1135,11 +1138,49 @@ impl NativeSoftwareRenderer {
         )
     }
 
+    /// Source BargeLoadingChargeAnimation / BargeChargeAnimation use the
+    /// exact authored clips and child transform. Their phase comes only
+    /// from the shared CombatWorld (or an authenticated LAN projection).
+    fn draw_barge_charge_effect(
+        &mut self, phase: Option<(u8, f32)>, color: Option<[u8; 3]>,
+        position: Vec2, radians: f32,
+    ) -> bool {
+        let Some((phase, elapsed)) = phase.filter(|(phase, seconds)|
+            matches!(phase, 1 | 2) && seconds.is_finite() && *seconds >= 0.0)
+        else { return false; };
+        let Some(atlas) = source_ship_animation_art() else { return false; };
+        let variant = usize::from(phase - 1);
+        let Some(clip) = atlas.clips[variant].as_ref() else { return false; };
+        let frame = ((elapsed * clip.frames_per_second).floor() as usize)
+            % clip.frames.len();
+        let art = &clip.frames[frame];
+        let recolored = color.filter(|_| art.recolor_mask.is_some()).map(|rgb| {
+            let key = (0, variant as u8, frame, rgb);
+            if !self.animated_ship_art.contains_key(&key) {
+                if self.animated_ship_art.len() >= 512 {
+                    self.animated_ship_art.clear();
+                }
+                self.animated_ship_art.insert(key, Arc::new(art.recolored(rgb)));
+            }
+            Arc::clone(self.animated_ship_art.get(&key)
+                .expect("installed original Barge charge sprite"))
+        });
+        // Barge.prefab's loading sprite is at (0,0), while its active
+        // charge animation child is at local (0,-1.5), rotating with hull.
+        let offset = if phase == 2 { 1.5 } else { 0.0 };
+        let point = position + Vec2::new(offset * radians.sin(),
+            -offset * radians.cos());
+        let sprite = recolored.as_deref().unwrap_or(&art.sprite);
+        self.draw_sprite(sprite, point, radians,
+            self.camera.pixels_per_unit / art.pixels_per_unit, 1.0)
+    }
+
     #[cfg(feature = "client")]
     pub(super) fn remote_ship_art(
         &mut self, ship_type: u8, point: Vec2, rotation_degrees: f32,
         color_rgb: Option<[u8; 3]>, animation: Option<(u8, f32)>,
-    ) -> Option<bool> {
+        barge_charge: Option<(u8, f32)>,
+    ) -> Option<(bool, bool)> {
         // Authenticated host packets select a presentation clip only for
         // already visible ships. Both local and remote use the *same*
         // native original-art decoder and exact source squad recolor mask.
@@ -1193,8 +1234,11 @@ impl NativeSoftwareRenderer {
         self.draw_sprite(
             sprite, point, radians,
             self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
-        ).then(|| ship_type == 5 &&
-            self.draw_carrier_deck(color_rgb, point, radians))
+        ).then(|| (
+            ship_type == 5 && self.draw_carrier_deck(color_rgb, point, radians),
+            ship_type == 0 && self.draw_barge_charge_effect(
+                barge_charge, color_rgb, point, radians),
+        ))
     }
 
     #[cfg(feature = "client")]
@@ -1873,6 +1917,13 @@ impl NativeSoftwareRenderer {
                         custom_rgb, pose.position, pose.rotation_degrees.to_radians(),
                     ) {
                     counts.carrier_deck_overlay_draws += 1;
+                }
+                if ship.ship_type == 0 &&
+                    self.draw_barge_charge_effect(
+                        view.combat.barge_charge_visual_phase(ship.entity_id),
+                        custom_rgb, pose.position, pose.rotation_degrees.to_radians(),
+                    ) {
+                    counts.barge_charge_effect_draws += 1;
                 }
             } else {
                 counts.ship_fallback_hulls += 1;
