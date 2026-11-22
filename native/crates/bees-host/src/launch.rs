@@ -10033,6 +10033,18 @@ fn run_battle(
         // records completed fixed-step work separately across all episodes.
         "vision_current_episodes": status.vision,
         "vision_completed_step_totals": status.simulation.vision,
+        "physics_collision_work": {
+            "broadphase_candidates": status.simulation.broadphase_candidates,
+            "narrowphase_tests": status.simulation.narrowphase_tests,
+            "ship_grid_rebuilds": status.simulation.ship_grid_rebuilds,
+            "obstacle_grid_rebuilds": status.simulation.obstacle_grid_rebuilds,
+            "ship_grid_cells_indexed": status.simulation.ship_grid_cells_indexed,
+            "obstacle_grid_cells_indexed": status.simulation.obstacle_grid_cells_indexed,
+            // Number of separate broadphase queries avoided when both the
+            // true asteroid hull and its proximity zone needed contacts.
+            "obstacle_contact_queries_merged":
+                status.simulation.obstacle_contact_queries_merged,
+        },
         "ship_slot_work": {
             "integrated_bodies": status.simulation.integrated_bodies,
             "inactive_ship_slots_skipped": status.simulation.inactive_ship_slots_skipped,
