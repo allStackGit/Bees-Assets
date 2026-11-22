@@ -428,63 +428,81 @@ def package_game_library(
 def package_extra_career_library(
     destination: Path, library: Path, kind: str, unlock_after: str | None = None,
 ) -> None:
-    """Include a complete authored native career in the unified release.
+    """Include an original career and its real unlockable modes in one game.
 
-    Both original Campaign and Challenge are ordinary BattleCatalog careers
-    played by the same physical Bees game. Reuse the existing portable JSON,
-    source scene, Stage, policy and original-asset dependency exporter rather
-    than building a second pipeline for one mode.
+    Unity's original Campaign authors standalone Training Room/Fish Tank
+    battles alongside the campaign. Retain those authored scenes, source
+    requirements and shared progression gates, not just the main mission
+    list. The Challenge is one independent persistent career.
     """
     if kind not in ("campaign", "challenge"):
         raise ValueError("extra native game must be a persistent career")
     nested = destination / kind
     nested.mkdir()
     if package_game_library(nested, library):
-        raise ValueError("native career must not introduce an external policy worker")
+        raise ValueError("native career requires physical gameplay, not an external policy worker")
     source_menu = nested / "native-library.json"
     extra = json.loads(source_menu.read_text(encoding="utf-8"))
     entries = extra.get("games")
     if (extra.get("library_schema") != 1 or
-            not isinstance(entries, list) or len(entries) != 1 or
-            not isinstance(entries[0], dict) or entries[0].get("kind") != kind):
-        raise ValueError(f"extra {kind} library must contain one authored {kind} career")
-    menu_path = destination / "native-library.json"
-    menu = json.loads(menu_path.read_text(encoding="utf-8"))
-    entry = entries[0].copy()
-    if any(game["id"] == entry["id"] for game in menu["games"]):
-        raise ValueError(f"native library already contains the {kind} career ID")
-    entry["config"] = kind + "/" + entry["config"]
+            not isinstance(entries, list) or not entries or
+            not all(isinstance(entry, dict) for entry in entries)):
+        raise ValueError(f"extra {kind} library has no playable career")
+    primary = [entry for entry in entries if entry.get("kind") == kind]
+    if len(primary) != 1 or (
+            kind == "challenge" and len(entries) != 1):
+        raise ValueError(f"extra {kind} library must have one original career")
+    # An original Campaign can author later Training Room and Fish Tank
+    # battles. They must belong to that same campaign, never import an
+    # unrelated entry whose ownership cannot be restored by this library.
+    primary_id = primary[0]["id"]
+    for entry in entries:
+        if entry is primary[0]:
+            continue
+        gate = entry.get("unlock_after")
+        if (kind != "campaign" or entry.get("kind") != "battle" or
+                not isinstance(gate, dict) or
+                gate.get("campaign_id") != primary_id):
+            raise ValueError("extra campaign game must be a genuine locked post-campaign battle")
     if unlock_after is not None:
         if kind != "challenge" or ":" not in unlock_after:
             raise ValueError("Challenge unlock requires CAMPAIGN:MISSION")
         campaign_id, mission_id = unlock_after.split(":", 1)
         if not campaign_id or not mission_id:
             raise ValueError("Challenge unlock requires CAMPAIGN:MISSION")
-        entry["unlock_after"] = {
+        primary[0]["unlock_after"] = {
             "campaign_id": campaign_id, "mission_id": mission_id,
         }
-    # Source-authored unlock gates must resolve too. Import Campaign first
-    # so a Challenge may depend on its original mission instead of using
-    # a placeholder, a fake progression flag, or a hardcoded filename.
-    gate = entry.get("unlock_after")
-    if gate is not None:
-        if (kind != "challenge" or not isinstance(gate, dict) or
-                set(gate) != {"campaign_id", "mission_id"} or
-                not all(isinstance(value, str) and value for value in gate.values())):
-            raise ValueError("invalid native career unlock reference")
-        parents = [game for game in menu["games"] if
-                   game["kind"] == "campaign" and game["id"] == gate["campaign_id"]]
-        if len(parents) != 1:
-            raise ValueError("Challenge unlock must refer to a packaged campaign")
-        catalog_path = destination / parents[0]["config"]
-        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-        if not any((battle.get("mission") or {}).get("id") == gate["mission_id"]
-                   for battle in catalog.get("battles", [])):
-            raise ValueError("Challenge unlock milestone does not exist in the campaign")
-    menu["games"].append(entry)
+    menu_path = destination / "native-library.json"
+    menu = json.loads(menu_path.read_text(encoding="utf-8"))
+    staged = [entry.copy() for entry in entries]
+    for entry in staged:
+        if any(game["id"] == entry["id"] for game in menu["games"]):
+            raise ValueError(f"native library already contains {entry['id']}")
+        entry["config"] = kind + "/" + entry["config"]
+        if entry.get("kind") == "campaign":
+            menu["games"].append(entry)
+            continue
+        gate = entry.get("unlock_after")
+        if gate is not None:
+            if (not isinstance(gate, dict) or
+                    set(gate) != {"campaign_id", "mission_id"} or
+                    not all(isinstance(value, str) and value for value in gate.values())):
+                raise ValueError("invalid native post-campaign or Challenge unlock reference")
+            parents = [game for game in menu["games"] if
+                       game["kind"] == "campaign" and game["id"] == gate["campaign_id"]]
+            if len(parents) != 1:
+                raise ValueError("native mode unlock must refer to a packaged campaign")
+            catalog_path = destination / parents[0]["config"]
+            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+            if not any((battle.get("mission") or {}).get("id") == gate["mission_id"]
+                       for battle in catalog.get("battles", [])):
+                raise ValueError("native mode unlock milestone is missing from the campaign")
+        menu["games"].append(entry)
     menu_path.write_text(json.dumps(menu, indent=2, ensure_ascii=False) + "\n",
                          encoding="utf-8")
-    # The single launcher reads one merged menu and owns both career roots.
+    # One final library entry controls all frozen games; leave no orphaned
+    # nested menu file in the manifest's immutable source inventory.
     source_menu.unlink()
 
 
