@@ -2837,9 +2837,9 @@ fn archived_native_remote_receipts_from_root(
         {
             return Err(invalid("archived campaign receipt has no authorized player side").into());
         }
-        let scored_player_side = campaign.as_ref()
-            .and_then(|outcome| outcome["player_side"].as_i64())
-            .or_else(|| summary["battle_factions"]["human_side"].as_i64())
+        let scored_player_side = summary["scored_player_side"].as_i64()
+            .or_else(|| campaign.as_ref()
+                .and_then(|outcome| outcome["player_side"].as_i64()))
             .and_then(|side| i32::try_from(side).ok())
             .filter(|side| matches!(side, 1 | 2));
         let player_match_counts = summary.get("player_match_counts").and_then(|row|
@@ -9273,6 +9273,11 @@ fn run_battle(
         host.simulation().world(0)
             .and_then(|world| world.state.metadata.fleet.player_match_counts())
     );
+    let scored_player_side = player_score.and_then(|_|
+        host.simulation().world(0)
+            .and_then(|world| world.state.metadata.fleet.campaign_score_snapshot())
+            .map(|(side, _)| side)
+    );
     // Include all current episode admissions as well as those from
     // previously recycled worlds. This covers independent multi-episode
     // training and fixed-seed evaluation without requiring hot-path logs.
@@ -9477,6 +9482,7 @@ fn run_battle(
         "campaign_banked_minerals": campaign_banked_minerals,
         "campaign_score_delta": campaign_score_delta,
         "player_score": player_score,
+        "scored_player_side": scored_player_side,
         "player_match_counts": player_match_counts,
         "aborted_worlds": status.aborted_worlds,
         "failed_worlds": status.failed_worlds,
