@@ -1481,6 +1481,29 @@ where
         self.finish_window(result)
     }
 
+    /// Client-only read-only event observation at completed fixed-step
+    /// boundaries. This uses the same notification and durable outcome
+    /// handoff as the ordinary window; an observer never owns a game tick.
+    pub fn run_window_observing<F>(
+        &mut self,
+        rounds: NonZeroU32,
+        delivery_every: NonZeroU32,
+        observe: F,
+    ) -> Result<NativeLevelWindowCounts,
+        HostWindowError<
+            <M as NativeLevelObservationContext>::Error, B::Error, S::Error,
+        >>
+    where F: FnMut(&Simulation<NativeLevelState<M, A>, NativeLevelRules>)
+    {
+        let result = self.connection.with_level_lifecycle(|connection|
+            self.driver.run_window_observing(
+                &mut self.simulation, &mut self.model, connection,
+                &mut self.sink, rounds, delivery_every, observe,
+            )
+        ).map_err(HostWindowError::Connection)?;
+        self.finish_window(result)
+    }
+
     /// Parallel physical execution after one shared inference batch. The
     /// same ordered sink flush and checkpoint protocol runs after workers
     /// join; neither the connection nor the model crosses worker threads.

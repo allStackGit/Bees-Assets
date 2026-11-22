@@ -1720,6 +1720,38 @@ impl NativeLevelBatchDriver {
         self.run_window_with_step(
             simulation, backend, connection, sink, max_rounds, delivery_every,
             |driver, simulation, backend| driver.step(simulation, backend),
+            |_| {},
+        )
+    }
+
+    /// A client observing live gameplay must consume event cues after EVERY
+    /// successful fixed tick, before the following tick clears CombatWorld's
+    /// transient event buffer. No callback is installed on normal/headless
+    /// windows, so inference, physics, and training incur no audio cost.
+    pub fn run_window_observing<M, A, B, S, F>(
+        &mut self,
+        simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        backend: &mut B,
+        connection: &mut NativeHiveMindConnection,
+        sink: &mut S,
+        max_rounds: NonZeroU32,
+        delivery_every: NonZeroU32,
+        observe: F,
+    ) -> Result<NativeLevelWindowCounts,
+        NativeLevelWindowError<
+            <M as NativeLevelObservationContext>::Error, B::Error, S::Error>>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelCommandContext +
+            NativeLevelObservationContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+        B: NativePolicyInference,
+        S: NativeLevelNotificationSink,
+        F: FnMut(&Simulation<NativeLevelState<M, A>, NativeLevelRules>),
+    {
+        self.run_window_with_step(
+            simulation, backend, connection, sink, max_rounds, delivery_every,
+            |driver, simulation, backend| driver.step(simulation, backend),
+            observe,
         )
     }
 
@@ -1750,10 +1782,11 @@ impl NativeLevelBatchDriver {
             simulation, backend, connection, sink, max_rounds, delivery_every,
             |driver, simulation, backend|
                 driver.step_parallel(simulation, backend, workers),
+            |_| {},
         )
     }
 
-    fn run_window_with_step<M, A, B, S, D>(
+    fn run_window_with_step<M, A, B, S, D, F>(
         &mut self,
         simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
         backend: &mut B,
@@ -1762,6 +1795,7 @@ impl NativeLevelBatchDriver {
         max_rounds: NonZeroU32,
         delivery_every: NonZeroU32,
         mut step: D,
+        mut observe: F,
     ) -> Result<NativeLevelWindowCounts,
         NativeLevelWindowError<
             <M as NativeLevelObservationContext>::Error, B::Error, S::Error>>
@@ -1777,6 +1811,7 @@ impl NativeLevelBatchDriver {
             &mut B,
         ) -> Result<NativeBatchedStepCounts,
             NativeBatchedStepError<NativeLevelSourceError<M::Error>, B::Error>>,
+        F: FnMut(&Simulation<NativeLevelState<M, A>, NativeLevelRules>),
     {
         let mut counts = NativeLevelWindowCounts::default();
         // An earlier window may have deferred its last notification
@@ -1794,6 +1829,11 @@ impl NativeLevelBatchDriver {
                 .map_err(|error| NativeLevelWindowError::Step {
                     round, error,
                 })?;
+            if step.worlds_stepped != 0 {
+                // The live client sees even short-lived shots and explosions
+                // before the next fixed step replaces this event buffer.
+                observe(simulation);
+            }
             if step.policy_agents_inferred != 0 {
                 sink.accept_applied_policy_batch(&self.inference)
                     .map_err(|error| NativeLevelWindowError::PolicyDelivery { round, error })?;

@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bees_sim::collision::Aabb;
-use bees_sim::combat_world::{CombatEvent, WARP_GATE_OPENING_SECONDS};
+use bees_sim::combat_world::{CombatEvent, CombatWorld, WARP_GATE_OPENING_SECONDS};
 use bees_sim::geometry::Vec2;
 use bees_sim::simulation::WorldId;
 use serde_json::Value;
@@ -825,26 +825,36 @@ impl NativeGameAudio {
     /// Presentation-only projection of current canonical physical events.
     /// Once-per-entity sound identity is scoped to world AND episode and
     /// bounded by the number of currently active shots.
+    /// Rendering may be slower than physical catch-up. Consume each game's
+    /// real event buffer at its own tick, not only the final rendered frame.
     pub fn observe(
         &mut self, view: &NativeRenderWorldView<'_>, visible: Aabb,
     ) {
-        let scope = (view.world_id, view.episode_revision);
+        self.observe_combat(view.world_id, view.episode_revision,
+            view.tick, view.combat, visible);
+    }
+
+    pub(crate) fn observe_combat(
+        &mut self, world_id: WorldId, episode_revision: u64, tick: u64,
+        combat: &CombatWorld, visible: Aabb,
+    ) {
+        let scope = (world_id, episode_revision);
         if self.current_episode != Some(scope) {
             self.reset_warp_gate_audio();
             self.current_episode = Some(scope);
             self.last_tick = None;
             self.seen_projectiles.clear();
         }
-        if self.last_tick == Some(view.tick) { return; }
+        if self.last_tick == Some(tick) { return; }
         // A client attaching to an already-running Level must not sound
         // every currently airborne projectile as a newly fired weapon.
         // Still record those identities so later frames remain launch-only.
         let first_snapshot = self.last_tick.is_none();
         if let Some(previous) = self.last_tick {
             self.measurements.missed_visualized_ticks +=
-                view.tick.saturating_sub(previous).saturating_sub(1);
+                tick.saturating_sub(previous).saturating_sub(1);
         }
-        self.last_tick = Some(view.tick);
+        self.last_tick = Some(tick);
         self.voices.retain(|sink| !sink.empty());
         let mut budget = MAX_NEW_EFFECTS_PER_FRAME;
         let mut new_effects = [None; MAX_NEW_EFFECTS_PER_FRAME];
@@ -855,7 +865,7 @@ impl NativeGameAudio {
         // canonical fire event and installed turret survive that short
         // lifetime, while the original simulation remains unchanged.
         let mut previous_launch: Option<(i64, u8, i64)> = None;
-        for event in view.combat.events() {
+        for event in combat.events() {
             let (ship_id, slot, projectile_id) = match event {
                 CombatEvent::GameWeaponFired { ship_id, slot, projectile_id } |
                 CombatEvent::PolicyWeaponFired { ship_id, slot, projectile_id } =>
@@ -868,21 +878,21 @@ impl NativeGameAudio {
             let second_barrel = previous_launch.is_some_and(|(prior_ship, prior_slot, prior_id)|
                 prior_ship == ship_id && prior_slot == slot &&
                 prior_id.checked_add(1) == Some(projectile_id) &&
-                view.combat.weapon_is_dual_cannon(ship_id, slot));
+                combat.weapon_is_dual_cannon(ship_id, slot));
             previous_launch = Some((ship_id, slot, projectile_id));
-            if self.seen_projectiles.insert(projectile_id, view.tick).is_some() ||
+            if self.seen_projectiles.insert(projectile_id, tick).is_some() ||
                 first_snapshot || second_barrel { continue; }
-            let Some(kind) = view.combat.weapon_projectile_type(ship_id, slot)
+            let Some(kind) = combat.weapon_projectile_type(ship_id, slot)
                 else { continue };
             let Some(effect) = Effect::weapon(
-                view.combat.weapon_sound_type(ship_id, slot), kind,
+                combat.weapon_sound_type(ship_id, slot), kind,
             ) else { continue };
             let effect = effect.clip_variant(
                 crate::presentation::mounted_weapon_clip_variant(
-                    ship_id, slot, view.world_id.0, view.episode_revision,
+                    ship_id, slot, world_id.0, episode_revision,
                 )
             );
-            let Some(point) = view.combat.ship_body(ship_id)
+            let Some(point) = combat.ship_body(ship_id)
                 .map(|body| body.motion.position) else { continue };
             if !on_screen(visible, point) { continue; }
             if budget > 0 {
@@ -897,8 +907,8 @@ impl NativeGameAudio {
         // host versions or a client that joined between fixed steps.
         // Every launch already sounded above is marked, so it cannot be
         // sounded twice merely because its projectile is still active.
-        for (projectile, body) in view.combat.render_projectiles() {
-            if self.seen_projectiles.insert(projectile.entity_id, view.tick).is_some() {
+        for (projectile, body) in combat.render_projectiles() {
+            if self.seen_projectiles.insert(projectile.entity_id, tick).is_some() {
                 continue;
             }
             if first_snapshot || !on_screen(visible, body.motion.position) { continue; }
@@ -912,11 +922,11 @@ impl NativeGameAudio {
                 }
             }
         }
-        self.seen_projectiles.retain(|_, seen| *seen == view.tick);
-        for event in view.combat.events() {
+        self.seen_projectiles.retain(|_, seen| *seen == tick);
+        for event in combat.events() {
             let (effect, point): (Effect, Option<Vec2>) = match event {
                 CombatEvent::ShipDied { victim_id, end_kill: false, .. } => (
-                    match view.combat.ship(*victim_id) {
+                    match combat.ship(*victim_id) {
                         // FireBarge.Kill plays the explosion prefab's
                         // AudioSource once. The same death emits a real
                         // FireTankExploded event below; replaying both
@@ -929,12 +939,12 @@ impl NativeGameAudio {
                         }
                         None => Effect::Explosion,
                     },
-                    view.combat.ship_body(*victim_id)
+                    combat.ship_body(*victim_id)
                         .map(|body| body.motion.position),
                 ),
                 CombatEvent::StrikerBombDropped { ship_id, .. } => (
                     Effect::StrikerBomb,
-                    view.combat.ship_body(*ship_id)
+                    combat.ship_body(*ship_id)
                         .map(|body| body.motion.position),
                 ),
                 // The Fire Barge's actual explosion prefab owns the one
@@ -943,7 +953,7 @@ impl NativeGameAudio {
                     origin, explosion_projectile_id, ..
                 } => (
                     Effect::HugeExplosion,
-                    (*origin).or_else(|| view.combat.render_projectile(
+                    (*origin).or_else(|| combat.render_projectile(
                         *explosion_projectile_id,
                     ).map(|(_, body)| body.motion.position)),
                 ),
@@ -951,12 +961,12 @@ impl NativeGameAudio {
                     origin, target_id, ..
                 } => (
                     Effect::HugeExplosion,
-                    (*origin).or_else(|| view.combat.ship_body(*target_id)
+                    (*origin).or_else(|| combat.ship_body(*target_id)
                         .map(|body| body.motion.position)),
                 ),
                 CombatEvent::ShipWarped { ship_id, .. } => (
                     Effect::Warp,
-                    view.combat.ship_body(*ship_id)
+                    combat.ship_body(*ship_id)
                         .map(|body| body.motion.position),
                 ),
                 // Source Barge charging has no authenticated sound
@@ -980,18 +990,18 @@ impl NativeGameAudio {
         // Query only the two physical WarpGate registries, not every
         // deployed ship. This remains client-only presentation cost;
         // headless simulation and PPO never iterate audio state.
-        for gate_id in view.combat.live_warp_gate_ids() {
-            let Some(elapsed) = view.combat.game_warp_gate_animation_elapsed(gate_id)
+        for gate_id in combat.live_warp_gate_ids() {
+            let Some(elapsed) = combat.game_warp_gate_animation_elapsed(gate_id)
                 else { continue };
-            let Some(position) = view.combat.game_warp_gate_position(gate_id)
+            let Some(position) = combat.game_warp_gate_position(gate_id)
                 else { continue };
             if on_screen(visible, position) {
                 self.sync_warp_gate(
-                    gate_id, elapsed, view.combat.game_warp_gate_ready(gate_id),
-                    view.tick,
+                    gate_id, elapsed, combat.game_warp_gate_ready(gate_id),
+                    tick,
                 );
             }
         }
-        self.finish_warp_gate_audio(view.tick);
+        self.finish_warp_gate_audio(tick);
     }
 }

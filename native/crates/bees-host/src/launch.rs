@@ -10107,7 +10107,26 @@ fn run_battle(
         {
             host.run_window_parallel(count, delivery, physical_workers)
         } else {
-            host.run_window(count, delivery)
+            #[cfg(feature = "client")]
+            {
+                if let Some(client) = client.as_mut() {
+                    let selected_world = client.selected_world();
+                    host.run_window_observing(count, delivery, |simulation| {
+                        if let Some(world) = simulation.world(selected_world) {
+                            client.observe_audio_tick(
+                                world.id, world.episode_revision(), world.tick(),
+                                &world.state.combat,
+                            );
+                        }
+                    })
+                } else {
+                    host.run_window(count, delivery)
+                }
+            }
+            #[cfg(not(feature = "client"))]
+            {
+                host.run_window(count, delivery)
+            }
         };
         let counts = match physical_result {
             Ok(counts) => counts,

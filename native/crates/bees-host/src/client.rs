@@ -551,6 +551,21 @@ impl NativeClient {
         }
     }
 
+    /// Collect the authoritative transient sound cues during every
+    /// completed simulation tick, including catch-up ticks not rendered.
+    /// Never steps physics or queries objects outside the visual viewport.
+    pub fn observe_audio_tick(
+        &mut self, world_id: WorldId, episode_revision: u64, tick: u64,
+        combat: &bees_sim::combat_world::CombatWorld,
+    ) {
+        let (width, height) = self.renderer.size();
+        let camera = self.renderer.camera;
+        let half = Vec2::new(width as f32, height as f32) *
+            (0.5 / camera.pixels_per_unit);
+        self.audio.observe_combat(world_id, episode_revision, tick, combat,
+            Aabb { min: camera.center - half, max: camera.center + half });
+    }
+
     pub fn poll(
         &mut self, view: NativeRenderWorldView<'_>, bounds: Aabb, world_count: usize, fixed_dt: Duration,
     ) -> Result<NativeClientAction, Box<dyn std::error::Error>> {
