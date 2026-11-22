@@ -44,6 +44,34 @@ function observedMeasure(progress) {
     }
     return {name:'progress_updates',kind:'counter',value:progress.steps_completed};
 }
+// The same physical GPU can serve a workload alone or alongside entirely
+// different neural networks. Those are different throughput experiments.
+// Associate each measured placement with the frozen identities of OTHER
+// Hub-owned native jobs actively sharing its GPUs. Unknown/external GPU
+// processes are not inferred from host utilization.
+function gpuCohort(machineId,gpus,context,excludeJobId=null) {
+    if(!context||!Array.isArray(context.jobs)||
+        !Array.isArray(context.reservations)||!Array.isArray(gpus))
+        return null;
+    const byId=new Map(context.jobs.map(j=>[j.id,j]));
+    return JSON.stringify(gpus.slice().sort().map(gpu=>{
+        const peers=[];
+        for(const lease of context.reservations) {
+            if(lease.machine_id!==machineId||lease.job_id===excludeJobId||
+                !['active','offered','acknowledged'].includes(lease.status)||
+                !Array.isArray(lease.resources?.gpus)||
+                !lease.resources.gpus.includes(gpu))continue;
+            const peer=byId.get(lease.job_id);
+            if(!peer||!['running','stop_requested'].includes(peer.status)||
+                peer.lease_id!==lease.id)continue;
+            const key=workloadKey(peer);
+            if(key)peers.push(crypto.createHash('sha256').update(key)
+                .digest('hex').slice(0,16));
+        }
+        return peers.sort();
+    }));
+}
+
 function rateEvidence(windows,now=Date.now()) {
     const fresh=windows.filter(w=>w.recorded_at<=now&&
         now-w.recorded_at<=MAX_SAMPLE_AGE_MS);
@@ -108,9 +136,10 @@ class ThroughputHistory {
             try{fs.unlinkSync(tmp);}catch(error){if(error.code!=='ENOENT')this.persist_issue=String(error.message||error);}
         }
     }
-    observe(job,machineId,progress,gpus=[]) {
+    observe(job,machineId,progress,gpus=[],context=null) {
         const key=workloadKey(job);
         const deviceKey=JSON.stringify(Array.isArray(gpus)?gpus.slice().sort():[]);
+        const cohort=gpuCohort(machineId,gpus,context,job?.id);
         const steps=progress?.steps_completed;
         const time=Date.parse(progress?.source_modified_at);
         if(!key||key.length>4096||typeof machineId!=='string'||!machineId||
@@ -122,12 +151,13 @@ class ThroughputHistory {
         // Ignore duplicate/out-of-order progress; replacing the baseline
         // here would overstate the next completed update's useful SPS.
         if(prior&&(time<=prior.time||steps===prior.steps))return;
-        const next={key,machineId,deviceKey,steps,time,measure};
+        const next={key,machineId,deviceKey,cohort,steps,time,measure};
         this.last.delete(identity);
         this.last.set(identity,next);
         if(this.last.size>MAX_KEYS*4)this.last.delete(this.last.keys().next().value);
         if(!prior||prior.key!==key||prior.machineId!==machineId||
-            prior.deviceKey!==deviceKey||steps<prior.steps||
+            prior.deviceKey!==deviceKey||prior.cohort!==cohort||
+            steps<prior.steps||
             prior.measure.name!==measure.name||
             prior.measure.kind!==measure.kind)return;
         const seconds=(time-prior.time)/1000;
@@ -135,7 +165,9 @@ class ThroughputHistory {
         const work=measure.kind==='rate'
             ?measure.value*seconds:measure.value-prior.measure.value;
         if(!Number.isFinite(work)||work<0||work>1e15)return;
-        const id=JSON.stringify([key,machineId,deviceKey]);
+        const id=JSON.stringify(cohort===null
+            ?[key,machineId,deviceKey]
+            :[key,machineId,deviceKey,cohort]);
         let windows=this.windows.get(id)||[];
         // Never combine PPO updates and actual useful decisions in one
         // placement score, or mix different backends' rate definitions.
@@ -154,7 +186,7 @@ class ThroughputHistory {
         for(const [identity,windows] of this.windows) {
             let parts;
             try{parts=JSON.parse(identity);}catch{continue;}
-            if(!Array.isArray(parts)||parts.length!==3)continue;
+            if(!Array.isArray(parts)||![3,4].includes(parts.length))continue;
             const evidence=rateEvidence(windows,now);
             if(!evidence)continue;
             let project,gpus;
@@ -167,6 +199,14 @@ class ThroughputHistory {
                 observed_work_per_second:evidence.rate,
                 samples:evidence.samples,
                 last_observed_at:evidence.last_observed_at};
+            if(parts.length===4) {
+                try {
+                    const peers=JSON.parse(parts[3]);
+                    if(Array.isArray(peers)&&peers.length===gpus.length&&
+                        peers.every(x=>Array.isArray(x)))
+                        row.hub_gpu_peer_counts=peers.map(x=>x.length);
+                }catch{}
+            }
             if(evidence.measure==='training_total_useful_steps'||
                 evidence.measure==='useful_steps_completed'||
                 evidence.measure.endsWith('_useful_steps_per_second'))
@@ -175,14 +215,17 @@ class ThroughputHistory {
         }
         return rows;
     }
-    compare(job,a,b) {
+    compare(job,a,b,context=null) {
         const key=workloadKey(job);
         if(!key)return 0;
         const score=placement=>{
-            const devices=JSON.stringify((placement.suggested_gpus||[]).slice().sort());
-            const windows=this.windows.get(JSON.stringify([
-                key,placement.machine_id,devices]))||[];
-            return rateEvidence(windows);
+            const gpus=placement.suggested_gpus||[];
+            const devices=JSON.stringify(gpus.slice().sort());
+            const cohort=gpuCohort(placement.machine_id,gpus,context,job?.id);
+            const identity=cohort===null
+                ?[key,placement.machine_id,devices]
+                :[key,placement.machine_id,devices,cohort];
+            return rateEvidence(this.windows.get(JSON.stringify(identity))||[]);
         };
         const left=score(a),right=score(b);
         // Missing or non-comparable measurements are neutral, not zero SPS.
