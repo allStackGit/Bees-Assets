@@ -872,8 +872,9 @@ class RemoteConsole:
             for entry in entries:
                 live = entry.get("live")
                 detail = (f" | Health {live['health']}/{live['max_health']}"
-                          f" | TSV {live['tsv']}/{live['max_tsv']}"
                           if live is not None else "")
+                if live is not None and live.get("tsv") is not None:
+                    detail += f" | TSV {live['tsv']}/{live['max_tsv']}"
                 print(f"  {entry['ship_type']:>2}  {entry['name']}{detail}")
             return
         if cmd == "ships":
