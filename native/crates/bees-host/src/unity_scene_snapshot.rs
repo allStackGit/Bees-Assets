@@ -179,6 +179,60 @@ fn authored_type_sequence_matches(
     }
 }
 
+/// Require Titania I's real demolition maze and source-composed 90s Bee
+/// arrival. RepairMinesweeperDemolitionTargets gives each Fire Tank its
+/// own static obstacle; duplicate links must never survive publication.
+fn titania_minesweeper_matches_source(
+    waves: &[crate::reinforcements::NativeReinforcementPlan],
+    bee_side: i32,
+    squads: &[NativeSourceSquad],
+    entities: &[NativeAuthoredEntity],
+) -> bool {
+    use crate::reinforcements::NativeReinforcementActivation::AfterSeconds;
+    let [wave] = waves else { return false };
+    if !matches!(wave.activation, AfterSeconds(seconds)
+        if (seconds - 90.0).abs() <= 0.001) ||
+        !wave.spawn.is_some_and(|at| at.unity_equal(Vec2::new(325.0, -225.0))) ||
+        !wave.entry.is_some_and(|at| at.unity_equal(Vec2::new(200.0, -225.0)))
+    {
+        return false;
+    }
+    let by_squad: HashMap<_, _> = squads.iter()
+        .map(|squad| (squad.item_id, squad)).collect();
+    let by_ship: HashMap<_, _> = entities.iter().filter_map(|entity| match entity {
+        NativeAuthoredEntity::Ship(ship) => Some((ship.entity_id, ship)),
+        _ => None,
+    }).collect();
+    if authored_reinforcement_types(wave, bee_side, &by_squad, &by_ship)
+        .is_none_or(|types| types.as_slice() != [Some(15), Some(21), Some(16)])
+    {
+        return false;
+    }
+
+    let obstacle_ids = entities.iter().filter_map(|entity| match entity {
+        NativeAuthoredEntity::BoxObstacle { entity_id, .. } |
+        NativeAuthoredEntity::PolygonObstacle { entity_id, .. } => Some(*entity_id),
+        _ => None,
+    }).collect::<HashSet<_>>();
+    let mut linked = HashSet::new();
+    let mut fire_tanks = 0;
+    for entity in entities {
+        let NativeAuthoredEntity::MapObject { object, .. } = entity else {
+            continue;
+        };
+        if object.kind != bees_sim::map_object::MapObjectKind::FireTank {
+            continue;
+        }
+        fire_tanks += 1;
+        let Some(target_id) = object.fire_tank
+            .and_then(|tank| tank.target_obstacle_id) else { return false };
+        if !obstacle_ids.contains(&target_id) || !linked.insert(target_id) {
+            return false;
+        }
+    }
+    fire_tanks > 0
+}
+
 /// Titania II stages 15 original timed Bee counterattack callbacks after
 /// the opening deployment. Each independently routed arrival keeps its
 /// real SavedSquad and original ship class. Validate only on import; the
@@ -3374,18 +3428,10 @@ impl NativePhysicalScene {
                         (zone.activation_radius - 50.0).abs() <= 0.001 &&
                         zone.activation_from_center &&
                         zone.layer == 20) ||
-                    !self.entities.iter().any(|entity| matches!(entity,
-                        NativeAuthoredEntity::MapObject { object, .. }
-                            if object.kind == bees_sim::map_object::MapObjectKind::FireTank &&
-                            object.fire_tank.is_some_and(|tank|
-                                tank.target_obstacle_id.is_some()))) ||
-                    setup.reinforcements.len() != 1 ||
-                    !setup.reinforcements.iter().all(|wave|
-                        matches!(wave.activation,
-                            crate::reinforcements::NativeReinforcementActivation::AfterSeconds(t)
-                                if (t - 90.0).abs() <= 0.001) &&
-                        wave.spawn.is_some_and(|at| at.unity_equal(Vec2::new(325.0, -225.0))) &&
-                        wave.entry.is_some_and(|at| at.unity_equal(Vec2::new(200.0, -225.0)))) ||
+                    !titania_minesweeper_matches_source(
+                        &setup.reinforcements, bee_side,
+                        &self.source_squads, &self.entities,
+                    ) ||
                     setup.groups.is_some() || setup.survival.is_some() ||
                     setup.demolition.is_some() || setup.escort.is_some() ||
                     setup.target_ship.is_some() =>
