@@ -5987,7 +5987,8 @@ class ExperimentHub {
                 if(archived&&liveOwner) {
                     const lease=this.state.reservations.find(r=>r.id===job.lease_id);
                     if(lease&&lease.machine_id===machine.id)
-                        this.throughputHistory.observe(job,lease.machine_id,chartProgress);
+                        this.throughputHistory.observe(job,lease.machine_id,chartProgress,
+                            lease.resources?.gpus||[]);
                 }
                 // When a source update is unchanged or absent, keep the
                 // authenticated host observation with no invented trainer
