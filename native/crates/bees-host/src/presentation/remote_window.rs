@@ -2660,7 +2660,23 @@ pub fn connect_remote(
                         codex_seen.fill(false);
                         codex_last_tick=None;
                     }
-                    if codex_last_tick!=Some(tick) {
+                    if state["campaign_codex_gate"] == true {
+                        // Host-authenticated story progression overrides
+                        // encounter discovery for campaign battles. A
+                        // different faction receives no source-player
+                        // Codex classes through its LAN snapshot.
+                        codex_seen.fill(false);
+                        for item in state["campaign_codex_types"].as_array()
+                            .into_iter().flatten()
+                        {
+                            if let Some(kind) = item.as_u64()
+                                .and_then(|kind| usize::try_from(kind).ok())
+                                .filter(|&kind| kind < codex_seen.len())
+                            {
+                                codex_seen[kind] = true;
+                            }
+                        }
+                    } else if codex_last_tick!=Some(tick) {
                         codex_last_tick=Some(tick);
                         for ship in state["ships"].as_array().into_iter().flatten() {
                             if let Some(kind)=ship["ship_type"].as_u64()
