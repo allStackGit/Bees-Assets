@@ -7145,6 +7145,11 @@ fn run_battle(
                 escorted_ship_id: o.escorted_ship_id, seconds: o.seconds,
             }
         ).or_else(|| authored.and_then(|m| m.escort));
+        let effective_target_ship = level.target_ship.map(|o|
+            bees_sim::episode_terminal::TargetShipObjective {
+                attacking_side: o.attacking_side, target_ship_id: o.target_ship_id,
+            }
+        ).or_else(|| authored.and_then(|m| m.target_ship));
         let effective_dialogue = level.campaign_dialogue
             .or_else(|| authored.and_then(|m| m.campaign_dialogue));
         if let Some(m) = authored {
@@ -7349,6 +7354,35 @@ fn run_battle(
                         required as u64, config.max_rounds,
                     )).into());
                 }
+            }
+        }
+        if let Some(target) = effective_target_ship {
+            // TargetShip is a mission win condition, not a generic
+            // elimination rule. Its named enemy must already be alive
+            // at episode creation, not waiting in a future wave; the
+            // attacking side must have a real actionable controller.
+            let target_is_initial_enemy = source.entities.iter().any(|entity|
+                matches!(entity, NativeAuthoredEntity::Ship(ship)
+                    if ship.entity_id == target.target_ship_id &&
+                    ship.side != target.attacking_side &&
+                    !ship.vitals.is_dead() &&
+                    source.source_squads.iter().any(|squad|
+                        squad.side == ship.side &&
+                        !deferred_squads.contains(&squad.item_id) &&
+                        squad.members.contains(&ship.entity_id))
+                ));
+            if !sides.contains(&target.attacking_side) ||
+                mission.is_some_and(|m| m.player_side != target.attacking_side) ||
+                !objective_has_controller(target.attacking_side) ||
+                !target_is_initial_enemy ||
+                effective_survival.is_some() ||
+                effective_demolition.is_some() ||
+                effective_escort.is_some() ||
+                effective_extraction.is_some()
+            {
+                return Err(invalid(
+                    "Named-ship mission requires an initially deployed live enemy and an authenticated attacking controller",
+                ).into());
             }
         }
         if let Some(dialogue) = effective_dialogue {
