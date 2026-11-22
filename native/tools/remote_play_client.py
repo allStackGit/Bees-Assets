@@ -49,6 +49,7 @@ HELP = """Commands:
   status               Show the latest world and selected friendly squads
   objective            Show the authored mission and reinforcement status
   codex                Show genuinely unlocked campaign ship classes
+  rewards              Show exact committed campaign awards and retirements
   ready                Acknowledge the current hosted campaign briefing
   surrender confirm    Concede the battle (irreversible after host commits)
   activate-retreat     Open your side's authored retreat exit
@@ -755,12 +756,28 @@ class RemoteConsole:
             self.alive = False
             return
         if self.spectator and cmd not in (
-            "status", "objective", "ships", "squads", "obstacles"
+            "status", "objective", "ships", "squads", "obstacles", "codex"
         ):
             raise ValueError("spectator seats are read-only")
+        if cmd == "rewards":
+            if argv:
+                raise ValueError("rewards takes no arguments")
+            receipt = self.campaign_receipt_snapshot()
+            if receipt is None:
+                print("No committed campaign rewards received")
+                return
+            state = self.snapshot()
+            classes = {entry["ship_type"]: entry["name"]
+                       for entry in self.codex_entries(state) or []}
+            print(self.campaign_reward_details(receipt, classes))
+            return
         state = self.snapshot()
         if state is None:
-            print("No authoritative world snapshot received yet")
+            final = self.battle_receipt_snapshot()
+            if cmd == "status" and final is not None:
+                print(f"{final.get('label', 'Battle result')}: {final['reason']}")
+            else:
+                print("No authoritative world snapshot received yet")
             return
         if cmd == "status":
             print(f"World {state['world_id']} episode {state['episode_revision']}"
@@ -1075,7 +1092,16 @@ def main():
                 if not console.alive:
                     if line.strip().lower() == "quit":
                         break
-                    print("Connection closed; enter 'rejoin' to resume the original battle, or 'quit'")
+                    # A final receipt is useful even when the host closes
+                    # before the next input prompt. Preserve read-only
+                    # access to already received, side-authenticated data.
+                    readonly = {"status", "objective", "ships", "squads",
+                                "obstacles", "weapons", "codex", "rewards", "help"}
+                    keyword = line.strip().split(None, 1)
+                    if keyword and keyword[0].lower() in readonly:
+                        console.command(line)
+                    else:
+                        print("Connection closed; use 'rewards', 'status', 'rejoin', or 'quit'")
                     continue
                 console.command(line)
                 if line.strip().lower() == "quit":
