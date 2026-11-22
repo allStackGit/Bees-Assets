@@ -25,6 +25,36 @@ async function workerChangedPaths(repo,base,head) {
     return changed?changed.split(/\r?\n/).filter(Boolean):[];
 }
 
+// Keep remote agent release identity independent of frontend and coordinator
+// code. Unknown runtime modules are conservatively shared between processes.
+const COORDINATOR_ONLY=new Set([
+    'experiment_hub_standalone.js','experiment_hub_core.js',
+    'experiment_hub_admin.js','experiment_hub_releases.js',
+    'experiment_hub_local_services.js','experiment_hub_job_export.js',
+    'experiment_hub_history.js','experiment_hub_evaluation_history.js',
+    'experiment_hub_observations.js','experiment_hub_evaluation.js',
+    'experiment_hub_design_fields.js',
+]);
+const AGENT_ONLY=new Set([
+    'experiment_hub_agent.js','experiment_hub_host.js',
+    'experiment_hub_execution.js','experiment_hub_artifact_agent.js',
+    'experiment_hub_evaluator_health.js',
+    'experiment_hub_remote_evaluator_control.js',
+    'experiment_hub_gpu_inventory.js',
+    'experiment_hub_worker_updater.js',
+]);
+function workerActivationImpact(changes) {
+    const impact={coordinator:false,agent:false};
+    for(const file of changes) {
+        if(FRONTEND_PATHS.has(file)||/\.(?:md|meta)$/.test(file)||
+            /(?:_test|_tests)\.(?:js|py)$/.test(file))continue;
+        const name=path.basename(file);
+        if(!AGENT_ONLY.has(name))impact.coordinator=true;
+        if(!COORDINATOR_ONLY.has(name))impact.agent=true;
+    }
+    return impact;
+}
+
 const SHA=/^[0-9a-f]{40}$/;
 const DIGEST=/^[0-9a-f]{64}$/;
 const MAX_BYTES=512*1024*1024;
@@ -167,6 +197,7 @@ class ReleaseStore {
         this.localVersions={};
         this.bootVersions={};
         this.pending=null;
+        this.workerReleaseActivationReady=false;
         fs.mkdirSync(this.root,{recursive:true,mode:0o700});
     }
     async publish(name,source) {
@@ -178,14 +209,15 @@ class ReleaseStore {
         const sha=await git(['rev-parse','FETCH_HEAD'],repo);
         if(!SHA.test(sha))throw Error('Invalid Git commit from '+name);
         if(name==='worker') {
-            // Latest trusted source can supply browser assets immediately.
-            // Do not create a worker release or restart remote agents for
-            // changes confined to the browser.
+            // Browser and coordinator assets come from the newest trusted
+            // source, but remote worker packages advance only when code
+            // actually executed by an agent changes.
             this.frontendSourceCommit=sha;
+            this.workerSourceCommit=sha;
             const prior=this.latest.worker;
             if(prior&&prior.source_commit!==sha) {
                 const changes=await workerChangedPaths(repo,prior.source_commit,sha);
-                if(changes.every(file=>FRONTEND_PATHS.has(file)))return;
+                if(!workerActivationImpact(changes).agent)return;
             }
         }
         // A Git commit and its vendored dependencies together identify a
@@ -252,6 +284,19 @@ class ReleaseStore {
                     console.error('[hub-updates] '+name+': '+this.failures[name]);
                 }
             }
+            const worker=this.latest.worker;
+            if(worker&&this.bootVersions.worker) {
+                try {
+                    const paths=await workerChangedPaths(this.sources.worker.path,
+                        worker.source_commit,this.bootVersions.worker);
+                    this.workerReleaseActivationReady=
+                        !workerActivationImpact(paths).agent;
+                }catch(error) {
+                    this.workerReleaseActivationReady=false;
+                    this.failures.worker='Worker activation check: '+
+                        String(error.message||error).slice(0,190);
+                }
+            }
         };
         this.pending=run().finally(()=>{this.pending=null;});
         return this.pending;
@@ -264,7 +309,10 @@ class ReleaseStore {
                 ...entry,
                 // Remote activation waits until both the local checkout and
                 // coordinator generation were refreshed after a safe restart.
-                activation_ready:entry.source_commit===this.bootVersions[name],
+                activation_ready:name==='worker'
+                    ?this.workerReleaseActivationReady||
+                        entry.source_commit===this.bootVersions.worker
+                    :entry.source_commit===this.bootVersions[name],
             };
         return components;
     }
@@ -281,7 +329,8 @@ class ReleaseStore {
             if(active&&name!=='worker')continue;
             try {
                 const local=await git(['rev-parse','HEAD'],source.path);
-                const target=this.latest[name]?.source_commit;
+                const target=name==='worker'
+                    ?this.workerSourceCommit:this.latest[name]?.source_commit;
                 if(!target||local===target)continue;
                 const branch=await git(['branch','--show-current'],source.path);
                 if(branch!==source.branch)
@@ -305,4 +354,5 @@ class ReleaseStore {
         return {path:file,bytes:fs.statSync(file).size};
     }
 }
-module.exports={ReleaseStore,configuration,COMPONENTS,FRONTEND_PATHS,workerChangedPaths};
+module.exports={ReleaseStore,configuration,COMPONENTS,FRONTEND_PATHS,
+    workerChangedPaths,workerActivationImpact};
