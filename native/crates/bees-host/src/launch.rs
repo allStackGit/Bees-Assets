@@ -9278,14 +9278,19 @@ fn run_battle(
     ) {
         let state = &host.simulation().world(0)
             .ok_or_else(|| invalid("completed campaign score World is unavailable"))?.state;
-        let combat_score = state.metadata.fleet.campaign_player_score()
-            .ok_or_else(|| invalid("completed campaign lacks player score tracking"))?;
-        let minerals = if mission.bank_player_minerals {
-            i64::try_from(banked_minerals)
-                .map_err(|_| invalid("campaign mineral score exceeds supported signed range"))?
-        } else { 0 };
-        Some(combat_score.checked_add(minerals)
-            .ok_or_else(|| invalid("campaign score overflow"))?)
+        if let Some(combat_score) = state.metadata.fleet.campaign_player_score() {
+            let minerals = if mission.bank_player_minerals {
+                i64::try_from(banked_minerals)
+                    .map_err(|_| invalid("campaign mineral score exceeds supported signed range"))?
+            } else { 0 };
+            Some(combat_score.checked_add(minerals)
+                .ok_or_else(|| invalid("campaign score overflow"))?)
+        } else {
+            // A World recovered from an older scoring-free checkpoint
+            // retains its real outcome, fleet and currency, but has no
+            // defensible score for the missing pre-upgrade ticks.
+            None
+        }
     } else { None };
     // Ordinary playable skirmishes also use the source GameState score.
     // One physical match / one authoritative World is required; an
