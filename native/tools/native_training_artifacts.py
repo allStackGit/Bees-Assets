@@ -13,6 +13,41 @@ import re
 from pathlib import Path
 
 
+# Consistent measured collision work through local shards, signed remote
+# collectors, and the Experiment Hub. Historical collectors lacking these
+# counters retain unknown values; never present them as measured zeroes.
+PHYSICS_COLLISION_COUNTERS = (
+    "broadphase_candidates", "narrowphase_tests",
+    "ship_grid_rebuilds", "obstacle_grid_rebuilds",
+    "ship_grid_cells_indexed", "obstacle_grid_cells_indexed",
+    "obstacle_contact_queries_merged",
+)
+
+
+def verified_physics_collision_work(work):
+    if work is None:
+        return None
+    if (not isinstance(work, dict) or any(
+        type(work.get(key)) is not int or work[key] < 0
+        for key in PHYSICS_COLLISION_COUNTERS
+    )):
+        raise ValueError("native collector has invalid measured collision work")
+    return {key: work[key] for key in PHYSICS_COLLISION_COUNTERS}
+
+
+def combined_physics_collision_work(shards):
+    if not shards or not all("physics_collision_work" in row for row in shards):
+        return None
+    measured = [verified_physics_collision_work(row["physics_collision_work"])
+                for row in shards]
+    if any(row is None for row in measured):
+        return None
+    return {
+        key: sum(row[key] for row in measured)
+        for key in PHYSICS_COLLISION_COUNTERS
+    }
+
+
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -69,7 +104,7 @@ def native_headless_environment():
     """
     env = os.environ.copy()
     for key in ("BEES_NATIVE_REMOTE_LISTEN", "BEES_NATIVE_REMOTE_SIDE_TOKENS",
-                "BEES_NATIVE_REMOTE_TOKEN"):
+                "BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS", "BEES_NATIVE_REMOTE_TOKEN"):
         env.pop(key, None)
     return env
 
