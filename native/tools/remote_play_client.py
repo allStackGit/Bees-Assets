@@ -100,6 +100,7 @@ class RemoteConsole:
         self.silent = silent
         self.expected_side = expected_side
         self.spectator = spectator
+        self.surrender_requested_episode = None
         # One host_session_id belongs to the original authoritative World
         # across native checkpoint recovery. Rejoining an unrelated host
         # with the same tokens must never carry old player authority.
@@ -452,7 +453,11 @@ class RemoteConsole:
                 self.battle_receipt_snapshot() is not None or
                 self.held_scope is not None):
             raise ValueError("surrender unavailable during briefing, held fire, or after battle")
+        scope = (state["world_id"], state["episode_revision"])
+        if self.surrender_requested_episode == scope:
+            raise ValueError("surrender already submitted for this battle")
         self.send(("surrender", {"side": state["viewer_side"]}), state, [])
+        self.surrender_requested_episode = scope
 
     def held_fire(self, kind, target=None, *, owners=None):
         """Submit native Begin/Aim/End, retaining the original episode."""
