@@ -425,6 +425,58 @@ def package_game_library(
     return has_policy
 
 
+def package_extra_challenge_library(
+    destination: Path, challenge_library: Path,
+    unlock_after: str | None,
+) -> None:
+    """Add the original Challenge as a real career beside existing games.
+
+    Reuse package_game_library for its whole original run/scene/Stage
+    dependency graph. Only the top-level menu is merged; all Challenge
+    assets retain their independent relative source paths and career ID.
+    """
+    nested = destination / "challenge"
+    nested.mkdir()
+    if package_game_library(nested, challenge_library):
+        raise ValueError("original Challenge must use the shared native physical game, not an external model worker")
+    source_menu = nested / "native-library.json"
+    extra = json.loads(source_menu.read_text(encoding="utf-8"))
+    entries = extra.get("games")
+    if (extra.get("library_schema") != 1 or
+            not isinstance(entries, list) or len(entries) != 1 or
+            entries[0].get("kind") != "challenge"):
+        raise ValueError("extra Challenge library must have exactly one original Challenge career")
+    menu_path = destination / "native-library.json"
+    menu = json.loads(menu_path.read_text(encoding="utf-8"))
+    entry = entries[0].copy()
+    if any(game["id"] == entry["id"] for game in menu["games"]):
+        raise ValueError("native game library already contains this Challenge ID")
+    entry["config"] = "challenge/" + entry["config"]
+    if unlock_after is not None:
+        if ":" not in unlock_after:
+            raise ValueError("Challenge unlock requires CAMPAIGN:MISSION")
+        campaign_id, mission_id = unlock_after.split(":", 1)
+        if not campaign_id or not mission_id:
+            raise ValueError("Challenge unlock requires CAMPAIGN:MISSION")
+        parents = [game for game in menu["games"] if
+                   game["kind"] == "campaign" and game["id"] == campaign_id]
+        if len(parents) != 1:
+            raise ValueError("Challenge unlock must refer to a real packaged campaign")
+        catalog_path = destination / parents[0]["config"]
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        if not any(battle.get("mission", {}).get("id") == mission_id
+                   for battle in catalog.get("battles", [])):
+            raise ValueError("Challenge unlock milestone does not exist in the campaign")
+        entry["unlock_after"] = {"campaign_id": campaign_id,
+                                  "mission_id": mission_id}
+    menu["games"].append(entry)
+    menu_path.write_text(json.dumps(menu, indent=2, ensure_ascii=False) + "\n",
+                         encoding="utf-8")
+    # The single launcher reads only the merged menu. Do not leave a
+    # second, unreferenced library entry in the release inventory.
+    source_menu.unlink()
+
+
 def original_audio_paths() -> list[tuple[Path, Path]]:
     """The native client source owns the actual clip list.
 
@@ -768,6 +820,10 @@ def main() -> None:
     parser.add_argument("--library", type=Path,
                         default=ROOT / "native/examples/native-library.json",
                         help="native game library to package (built-in or Unity-free authored campaign)")
+    parser.add_argument("--challenge-library", type=Path,
+                        help="additional original ten-stage Challenge library to ship beside the normal games")
+    parser.add_argument("--challenge-unlock-after",
+                        help="main packaged CAMPAIGN:MISSION that unlocks the additional Challenge")
     parser.add_argument("--include-policies", action="store_true",
                         help="include SHA-verified model manifests, weights and the native worker")
     parser.add_argument("--include-training", action="store_true",
@@ -785,12 +841,15 @@ def main() -> None:
         if (args.binary is not None or args.output is not None or
                 args.include_policies or args.include_training or
                 args.rollout_binary is not None or args.manifest_binary is not None or
-                args.policy_device is not None or args.python_command is not None):
+                args.policy_device is not None or args.python_command is not None or
+                args.challenge_library is not None or args.challenge_unlock_after is not None):
             parser.error("--verify accepts only the completed distribution directory")
         print(json.dumps(verify_native_package(args.verify)), flush=True)
         return
     if args.binary is None or args.output is None:
         parser.error("create a native release with --binary and --output")
+    if args.challenge_unlock_after and args.challenge_library is None:
+        parser.error("--challenge-unlock-after requires --challenge-library")
     if args.policy_device is not None and not args.include_policies:
         parser.error("--policy-device requires --include-policies")
     if (args.rollout_binary is not None or args.manifest_binary is not None) and not args.include_training:
@@ -842,6 +901,10 @@ def main() -> None:
             examples, args.library, include_policies=args.include_policies,
             python_command=python_command, policy_device=args.policy_device,
         )
+        if args.challenge_library is not None:
+            package_extra_challenge_library(
+                examples, args.challenge_library, args.challenge_unlock_after,
+            )
         if policy_used:
             package_policy_runtime(staging)
         if args.include_training:
