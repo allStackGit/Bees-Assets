@@ -85,6 +85,17 @@ const COURIER_METRIC_CATALOG={
         'training_shared_async_settled',
         'training_shared_async_probe',
         'training_shared_async_probe_sps',
+        'training_shared_async_recalibrations',
+        'training_shared_async_drift_windows',
+        'training_lineage_async_active',
+        'training_lineage_async_prefetched',
+        'training_lineage_async_selected',
+        'training_lineage_async_calibrated',
+        'training_lineage_async_overlap_seconds',
+        'training_lineage_async_wait_max_seconds',
+        'training_lineage_async_lag_max_updates',
+        'training_lineage_async_recalibrations',
+        'training_lineage_async_discarded_steps',
         'training_shared_serial_probe_sps',
         'training_shared_confirm_probe_sps',
         'training_shared_policy_lag_updates',
@@ -209,6 +220,15 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_shared_async_selected',
     'training_shared_async_settled',
     'training_shared_async_probe',
+    'training_shared_async_recalibrations',
+    'training_shared_async_drift_windows',
+    'training_lineage_async_active',
+    'training_lineage_async_prefetched',
+    'training_lineage_async_selected',
+    'training_lineage_async_calibrated',
+    'training_lineage_async_lag_max_updates',
+    'training_lineage_async_recalibrations',
+    'training_lineage_async_discarded_steps',
     'training_shared_policy_lag_updates',
     'training_async_next_collecting',
     'training_ppo_gradient_foreach_batches','training_ppo_finite_foreach_groups','training_ppo_input_foreach_batches',
@@ -332,6 +352,7 @@ function courierMetrics(source) {
         name.startsWith('training_gpu_memory_')||
         name.startsWith('training_async_')||
         name.startsWith('training_shared_async_')||
+        name.startsWith('training_lineage_async_')||
         name==='training_shared_policy_lag_updates'||
         name.startsWith('training_ppo_')||
         name.startsWith('training_gpu_placement_')||
@@ -408,6 +429,7 @@ function courierMetrics(source) {
         // Native history retains the descriptive metric names; bounded Hub
         // keys have an existing 40-character wire contract.
         ['training_shared_async_collection_overlap_seconds','training_shared_overlap_seconds'],
+        ['training_lineage_async_overlap_max_seconds','training_lineage_async_overlap_seconds'],
         ['training_shared_async_collection_wait_seconds','training_shared_collect_wait_seconds'],
         ['training_shared_async_collection_exposed_fraction','training_shared_exposed_fraction'],
         ['training_shared_async_collection_overlap_fraction','training_shared_overlap_fraction'],
