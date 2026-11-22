@@ -2918,7 +2918,9 @@ class ExperimentHub {
                 if(!chosen)continue;
                 const result=this.allocateJobs({
                     all_projects:true,job_ids:[job.id],
-                    machine_id:chosen.machine_id,confirm_allocate:true,
+                    machine_id:chosen.machine_id,
+                    selected_gpus:chosen.suggested_gpus,
+                    confirm_allocate:true,
                 });
                 if(result.results[0]?.status!=='claimed')
                     throw Error('Selected placement did not produce an atomic claim.');
@@ -3242,6 +3244,16 @@ class ExperimentHub {
         if(value.machine_id!=null &&
             (!ID.test(String(value.machine_id))||jobs.length!==1))
             throw Error('A preferred machine may only be selected for one job.');
+        // Used by the native queue optimizer to carry its exact physical
+        // choice into an atomic offer. The real capacity planner and PCI
+        // binding checks still revalidate the selected device IDs.
+        if(value.selected_gpus!==undefined&&(
+            jobs.length!==1||value.machine_id==null||
+            !Array.isArray(value.selected_gpus)||
+            value.selected_gpus.length!==jobs[0].resources.gpu_count||
+            value.selected_gpus.some(id=>!ID.test(String(id)))||
+            new Set(value.selected_gpus).size!==value.selected_gpus.length))
+            throw Error('Selected GPUs must match one explicitly placed job.');
         const machines=this.snapshot().machines.filter(m=>m.status==='connected');
         const results=[];
         for(const [index,job] of jobs.entries()) {
@@ -3264,9 +3276,10 @@ class ExperimentHub {
                 continue;
             }
             const lease=this.claimJobIn(next,job,chosen.machine_id,undefined,
-                chosen.suggested_gpus);
+                value.selected_gpus!==undefined
+                    ?value.selected_gpus:chosen.suggested_gpus);
             results.push({job_id:job.id,machine_id:lease.machine_id,
-                lease_id:lease.id,status:'claimed'});
+                lease_id:lease.id,gpu_ids:lease.resources.gpus,status:'claimed'});
         }
         if(results.some(r=>r.status==='claimed'))this.commit(next);
         return {results,executable:false,
