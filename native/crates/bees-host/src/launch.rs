@@ -265,7 +265,7 @@ struct SourceSupplyCapacity {
 /// final selected native roster AFTER saved squad transfers, purchases and
 /// combat casualties have been reconciled, before any physics starts.
 fn validate_source_supply_capacity(
-    source: &bees_host::unity_scene_snapshot::NativeSourceLevel,
+    source: &bees_host::unity_scene_snapshot::NativePhysicalScene,
     capacity: SourceSupplyCapacity,
 ) -> io::Result<u64> {
     if !(1..=2).contains(&capacity.player_side) || capacity.max_tsv == 0 {
