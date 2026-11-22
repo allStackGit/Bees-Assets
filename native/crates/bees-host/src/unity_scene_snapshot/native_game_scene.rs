@@ -50,6 +50,12 @@ struct GameScene {
     /// prefab, speed, movement and durability are explicitly authored.
     #[serde(default)]
     full_collision_asteroids: Vec<GameFullCollisionAsteroid>,
+    /// Additional source-palette asteroids created by the canonical World
+    /// RNG after explicit initial objects have been installed. Native
+    /// scenario authors can therefore use the full game asteroid pool
+    /// without first exporting a Unity snapshot.
+    #[serde(default)]
+    initial_random_full_asteroids: usize,
     #[serde(default)]
     map_objects: Vec<GameMapObject>,
     /// Supply the authentic MA-POCA group/episode baselines explicitly when
@@ -1606,6 +1612,7 @@ impl NativePhysicalScene {
             command_settings: settings,
             entities,
             native_mission: raw.mission,
+            native_initial_full_asteroids: Some(raw.initial_random_full_asteroids),
             fleet_templates,
             fleet_template_squads,
             // Apply explicitly authored initial static layout before
