@@ -104,21 +104,29 @@ impl ReinforcementWakeup {
     }
 
     fn may_be_due(&self, tick: u64, world: &CombatWorld, events: &NativeLevelEventProcessor) -> bool {
-        self.next_tick.is_some_and(|at| tick >= at) ||
-            (self.campaign_event && events.campaign_cue_fired(tick, |_| true)) ||
-            (self.ship_death_event && world.events().iter().any(|event|
-                matches!(event, bees_sim::combat_world::CombatEvent::ShipDied {
-                    end_kill: false, ..
-                })
-            )) ||
-            (self.map_object_death_event && world.events().iter().any(|event|
-                matches!(event,
-                    bees_sim::combat_world::CombatEvent::MapObjectDestroyed { .. })
-            )) ||
-            (self.mining_depletion_event && world.events().iter().any(|event|
-                matches!(event,
-                    bees_sim::combat_world::CombatEvent::MiningAsteroidDepleted { .. })
-            ))
+        if self.next_tick.is_some_and(|at| tick >= at) ||
+            (self.campaign_event && events.campaign_cue_fired(tick, |_| true))
+        {
+            return true;
+        }
+        if !(self.ship_death_event || self.map_object_death_event ||
+            self.mining_depletion_event)
+        {
+            return false;
+        }
+        // One canonical event pass, regardless of how many physical
+        // trigger classes are armed. Large battles can destroy ships,
+        // props and ore on the same fixed tick, but an idle simulation
+        // still does zero event work before its next scheduled wakeup.
+        world.events().iter().any(|event| match event {
+            bees_sim::combat_world::CombatEvent::ShipDied { end_kill: false, .. } =>
+                self.ship_death_event,
+            bees_sim::combat_world::CombatEvent::MapObjectDestroyed { .. } =>
+                self.map_object_death_event,
+            bees_sim::combat_world::CombatEvent::MiningAsteroidDepleted { .. } =>
+                self.mining_depletion_event,
+            _ => false,
+        })
     }
 }
 
