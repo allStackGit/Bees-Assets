@@ -4715,6 +4715,17 @@ pub fn connect_remote(
                 } else { "Orders: hostile or neutral" };
                 let mut lines=vec![title,health,tsv,identity,status.to_owned()];
                 if ship["owned"]==true {
+                    if ship["ship_type"].as_u64()==Some(0) {
+                        let queued=ship["barge_charge_queued"].as_bool();
+                        let available=ship["barge_charge_input_available"].as_bool();
+                        let detail=match (queued,available) {
+                            (Some(true),_) => "Charge: next activation queued",
+                            (_,Some(true)) => "Charge: Q to activate or queue",
+                            (_,Some(false)) => "Charge: currently unavailable",
+                            _ => "Charge: no source player capability",
+                        };
+                        lines.push(detail.to_owned());
+                    }
                     if let Some((world,revision,id,stats,minerals,_,in_combat))=
                         peer.inspection_result.as_ref()
                     {
@@ -4949,7 +4960,7 @@ pub fn connect_remote(
                 "C: hold   A: attack on sight   V: cease fire   E: chase",
                 "G: guard   P: patrol   M: mine   H: heal   R: retreat",
                 "S: priority picker   Shift+letter: direct source priorities 1-16",
-                "K: beacon   D: detonate   Q: charge",
+                "K: beacon   D: detonate   Q: charge (queues during cooldown)",
                 "T: point fire   Hold J: fire   J+B or W: range+fire   X: stop",
                 "Shift+Q/W/E/R/T/Y/U/I/O/P: source tactical orders",
                 "NETWORK / AUDIO",

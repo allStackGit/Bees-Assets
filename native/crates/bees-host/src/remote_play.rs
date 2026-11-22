@@ -2704,6 +2704,15 @@ fn current_state(
             "barge_charge": if ship.ship_type == 0 {
                 view.combat.barge_charge_visual_phase(ship.entity_id)
             } else { None },
+            // A queued player input is private command intent, unlike the
+            // visually observable charge animation. Never disclose it to
+            // opponents or spectators, even when the hull is fog-visible.
+            "barge_charge_queued": if owned && ship.ship_type == 0 {
+                Some(view.combat.player_game_barge_charge_queued(ship.entity_id))
+            } else { None },
+            "barge_charge_input_available": if owned && ship.ship_type == 0 {
+                Some(view.combat.player_game_barge_charge_ready(ship.entity_id))
+            } else { None },
             "x": body.motion.position.x, "y": body.motion.position.y,
             "rotation": body.motion.rotation_degrees,
             "collider": wire_primary_hull(body.shape()),
