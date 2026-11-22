@@ -99,16 +99,28 @@ class IndependentGpuTraining:
                 state_value for state in optimizer.state.values()
                 for state_value in state.values()
                 if isinstance(state_value, torch.Tensor))
-            for tensor in (*params, *model.buffers(), *state_tensors):
+            for tensor in (*params, *model.buffers()):
                 if device is None:
                     device = tensor.device
                 if tensor.device != device:
-                    raise ValueError("All independent updates must share one GPU")
+                    raise ValueError("All independent learner parameters must use one GPU")
                 ptr = _storage_identity(tensor)
-                if ptr is not None and ptr in identities:
+                key = (str(tensor.device), ptr)
+                if ptr is not None and key in identities:
                     raise ValueError("Independent learners cannot share parameter/buffer storage")
                 if ptr is not None:
-                    identities.add(ptr)
+                    identities.add(key)
+            for tensor in state_tensors:
+                # Standard Adam may maintain its scalar step count on the
+                # CPU while every parameter and accumulator lives on GPU.
+                if tensor.device not in (device, torch.device("cpu")):
+                    raise ValueError("Optimizer state belongs to another GPU device")
+                ptr = _storage_identity(tensor)
+                key = (str(tensor.device), ptr)
+                if ptr is not None and key in identities:
+                    raise ValueError("Independent optimizers cannot share state storage")
+                if ptr is not None:
+                    identities.add(key)
         if device is None or device.type != "cuda":
             raise ValueError("Concurrent optimizer steps require a CUDA/HIP device")
         self.device = device
