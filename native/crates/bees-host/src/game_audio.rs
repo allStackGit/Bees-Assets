@@ -6,8 +6,8 @@
 //! startup, avoiding file I/O during combat frames.
 
 use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::{BufReader, Cursor};
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, BufReader, Cursor, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,6 +29,16 @@ const MUSIC_VOLUME: f32 = 0.14;
 const EFFECT_VOLUME: f32 = 0.30;
 const TITANIA_INTRO_END: f32 = 26.565_215;
 const TITANIA_LOOP_END: f32 = 185.461_18;
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AudioPreferences {
+    schema_version: u32,
+    music_level: f32,
+    effects_level: f32,
+    muted: bool,
+}
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Effect {
@@ -208,6 +218,7 @@ pub struct NativeGameAudio {
     muted: bool,
     music_level: f32,
     effects_level: f32,
+    preferences_path: Option<PathBuf>,
     measurements: NativeAudioMeasurements,
     // Drop the output stream only AFTER music and effect sinks.
     _stream: Option<OutputStream>,
@@ -248,6 +259,7 @@ impl NativeGameAudio {
             warp_gate_loops: HashMap::new(),
             paused: false, muted: false,
             music_level: 1.0, effects_level: 1.0,
+            preferences_path: None,
             measurements, _stream: stream,
         }
     }
@@ -258,6 +270,74 @@ impl NativeGameAudio {
             music_level: self.music_level,
             effects_level: self.effects_level,
             ..self.measurements
+        }
+    }
+
+    /// User-local settings are independent of game saves, level setup,
+    /// replay, network authorization and trainer checkpoints. Malformed or
+    /// inaccessible preferences cannot prevent the physical game starting.
+    pub fn load_preferences(&mut self, path: PathBuf) {
+        if let Ok(bytes) = fs::read(&path) {
+            let parsed = (bytes.len() <= 4096).then(|| {
+                serde_json::from_slice::<AudioPreferences>(&bytes).ok()
+            }).flatten();
+            if let Some(config) = parsed.filter(|settings|
+                settings.schema_version == 1 &&
+                settings.music_level.is_finite() &&
+                settings.effects_level.is_finite() &&
+                (0.0..=1.0).contains(&settings.music_level) &&
+                (0.0..=1.0).contains(&settings.effects_level)
+            ) {
+                self.music_level = config.music_level;
+                self.effects_level = config.effects_level;
+                self.muted = config.muted;
+                self.apply_levels();
+            } else {
+                eprintln!("Ignoring invalid native audio preferences at {}", path.display());
+            }
+        }
+        self.preferences_path = Some(path);
+    }
+
+    fn save_preferences(&self) -> io::Result<()> {
+        let Some(path) = self.preferences_path.as_ref() else { return Ok(()); };
+        let parent = path.parent().ok_or_else(|| io::Error::new(
+            io::ErrorKind::InvalidInput, "native audio preferences have no parent directory"
+        ))?;
+        fs::create_dir_all(parent)?;
+        let payload = serde_json::to_vec_pretty(&AudioPreferences {
+            schema_version: 1, music_level: self.music_level,
+            effects_level: self.effects_level, muted: self.muted,
+        })?;
+        // A tiny write only on user interaction, never from the combat tick.
+        // An exclusive temporary file avoids following an existing symlink;
+        // rename publishes a complete JSON record on both Windows and Linux.
+        for attempt in 0..8 {
+            let temporary = path.with_extension(format!(
+                "tmp-{}-{attempt}", std::process::id()
+            ));
+            let file = OpenOptions::new().write(true).create_new(true)
+                .open(&temporary);
+            let mut file = match file {
+                Ok(file) => file,
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error),
+            };
+            let saved = file.write_all(&payload)
+                .and_then(|_| file.sync_all())
+                .and_then(|_| fs::rename(&temporary, path));
+            if saved.is_err() {
+                let _ = fs::remove_file(&temporary);
+            }
+            return saved;
+        }
+        Err(io::Error::new(io::ErrorKind::AlreadyExists,
+            "native audio preference temporary files are occupied"))
+    }
+
+    fn record_preferences(&self) {
+        if let Err(error) = self.save_preferences() {
+            eprintln!("Could not save native audio preferences: {error}");
         }
     }
 
@@ -289,12 +369,14 @@ impl NativeGameAudio {
         }
         let updated = *level;
         self.apply_levels();
+        self.record_preferences();
         updated
     }
 
     pub fn toggle_muted(&mut self) -> bool {
         self.muted = !self.muted;
         self.apply_levels();
+        self.record_preferences();
         self.muted
     }
 
