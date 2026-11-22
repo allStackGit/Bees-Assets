@@ -936,7 +936,7 @@ impl CampaignDialogue {
                 return Some(CampaignCue::PlutoAnomalyGunshipBriefingComplete);
             }
             if *gunship_briefed && !*honeybee_destroyed && world.ship(*honeybee_id)
-                .is_some_and(|ship| ship.vitals.is_dead())
+                .is_none_or(|ship| ship.vitals.is_dead())
             {
                 *honeybee_destroyed = true;
                 return Some(CampaignCue::PlutoAnomalyHoneybeeDestroyed);
