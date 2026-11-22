@@ -761,6 +761,7 @@ fn make_setup(
             seconds: objective.seconds,
         }),
         campaign_dialogue: level.campaign_dialogue,
+        campaign_codex: None,
         reinforcements: level.reinforcements.iter().map(|wave| {
             let activation = match (
                 wave.after_seconds, wave.on_campaign_cue, wave.on_ship_destroyed,
