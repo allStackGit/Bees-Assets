@@ -460,6 +460,16 @@ def author(args) -> tuple[dict, dict, dict]:
     }
     if len(source_mining) != len(scene.get("mining_asteroids", [])):
         raise ValueError("original scene contains duplicate mining asteroid identities")
+    source_map_objects = {
+        row["entity_id"]: copy.deepcopy(row)
+        for row in scene.get("map_objects", [])
+    }
+    if len(source_map_objects) != len(scene.get("map_objects", [])):
+        raise ValueError("original scene contains duplicate MapObject identities")
+    source_linked_statics = {
+        row["entity_id"]: copy.deepcopy(row)
+        for row in scene.get("layout", {}).get("add_static_boxes", [])
+    }
     run = load_json(args.source_run)
     if (scene.get("native_game_schema") != 1 or
             scene.get("policy_episode") is not None or
@@ -1226,6 +1236,60 @@ def author(args) -> tuple[dict, dict, dict]:
             # consumed by CombatWorld, the renderer and MA-POCA discovery.
             scene.setdefault("mining_asteroids", []).append(entity)
         scene["activate_mining"] = True
+    if args.map_objects:
+        used = [
+            *[ship["entity_id"] for ship in new_ships],
+            *[ship["entity_id"] for ship in reserve_templates],
+            *[resource["entity_id"] for key in ("mining_asteroids", "map_objects")
+              for resource in scene.get(key, [])],
+            *[obj["entity_id"] for key in (
+                "add_static_boxes", "add_static_polygons", "add_map_borders"
+            ) for obj in scene.get("layout", {}).get(key, [])],
+        ]
+        # Two IDs per source Fire Tank: its actual MapObject and the
+        # linked physical static collider removed by its explosion.
+        next_object_id = max(used, default=0) + 1
+        if next_object_id + 2 * len(args.map_objects) >= (1 << 63):
+            raise ValueError("no source-compatible entity IDs remain for MapObjects")
+        bounds = scene["bounds"]
+        layout = scene.setdefault("layout", {})
+        statics = layout.setdefault("add_static_boxes", [])
+        for index, (original_id, x, y) in enumerate(args.map_objects):
+            source = source_map_objects.get(original_id)
+            if source is None or source.get("kind") != "fire_tank":
+                raise ValueError(
+                    f"MapObject {original_id} is not an authenticated source Fire Tank"
+                )
+            if not all(bounds["min"][axis] <= coordinate <= bounds["max"][axis]
+                       for axis, coordinate in enumerate((x, y))):
+                raise ValueError("authored MapObject center must lie within the physical map")
+            original_link = source.get("linked_obstacle_id")
+            source_static = source_linked_statics.get(original_link)
+            if source_static is None or original_link == original_id:
+                raise ValueError(
+                    f"Fire Tank {original_id} needs its exact linked source static obstacle"
+                )
+            obj_id = next_object_id + index * 2
+            new_link_id = obj_id + 1
+            object_delta = [
+                x - source["position"][0],
+                y - source["position"][1],
+            ]
+            tank = copy.deepcopy(source)
+            tank["entity_id"] = obj_id
+            tank["position"] = [x, y]
+            tank["linked_obstacle_id"] = new_link_id
+            obstacle = copy.deepcopy(source_static)
+            obstacle["entity_id"] = new_link_id
+            obstacle["position"] = [
+                obstacle["position"][axis] + object_delta[axis]
+                for axis in (0, 1)
+            ]
+            # Both physical bodies are installed by NativePhysicalScene.
+            # The existing FireTankKilled event retires this exact linked
+            # obstacle; no extra damage callback or second registry exists.
+            scene.setdefault("map_objects", []).append(tank)
+            statics.append(obstacle)
     if args.static_boxes or args.static_polygons:
         assets = Path(__file__).resolve().parents[1] / "assets"
         prefab_rows = load_json(assets / "box-obstacle-colliders.json")["obstacles"]
@@ -2174,6 +2238,10 @@ def battle_parser() -> argparse.ArgumentParser:
                         dest="mining_asteroids", default=[],
                         metavar="SOURCE_ID:X:Y",
                         help="clone the real physical collider, layer and durability of a named source mining asteroid at a new map location")
+    parser.add_argument("--map-object", action="append", type=mining_placement,
+                        dest="map_objects", default=[],
+                        metavar="SOURCE_ID:X:Y",
+                        help="clone a verified source Fire Tank and its linked physical static obstacle at a new position")
     parser.add_argument("--lethal-borders", action="store_true",
                         help="with --arena-size: make physical border contact immediately damage/kill ships in both gameplay and training")
     parser.add_argument("--trainable", action="store_true",
