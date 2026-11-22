@@ -265,7 +265,10 @@ fn list_career_replays(
             let Ok(stored): Result<Value, _> = serde_json::from_slice(&bytes) else {
                 continue;
             };
-            if stored["schema_version"] != 1 ||
+            // Newer saved careers use the same immutable replay setup
+            // with additional pinned physical World and source identities.
+            // CampaignReplaySetup validates those when opening the replay.
+            if !matches!(stored["schema_version"].as_u64(), Some(1..=5)) ||
                 stored["kind"] != "native_campaign_replay_setup" { continue; }
             let Some(mission_id) = stored["mission_id"].as_str()
                 .filter(|name| !name.is_empty() && name.len() <= 80)

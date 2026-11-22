@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 LEVEL_COUNT = 10
-SOURCE_CAPACITIES = (25, 175, 150, 500, 500, 750, 750, 1500, 1500, 2500)
+SOURCE_LEVELS = Path(__file__).resolve().parents[2] / "Scripts/Data/challenge_levels.json"
 
 def load(path, root):
     if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(root):
@@ -19,6 +19,12 @@ def load(path, root):
     return json.loads(path.read_text(encoding="utf-8"))
 
 def assemble(root, gate, base_library):
+    original_source = json.loads(SOURCE_LEVELS.read_text(encoding="utf-8"))
+    levels = original_source.get("Levels")
+    if not isinstance(levels, list) or len(levels) != LEVEL_COUNT or sorted(
+            level.get("Id", -1) for level in levels) != list(range(LEVEL_COUNT)):
+        raise ValueError("the ten original Unity Challenge definitions changed")
+    original_source_by_id = {level["Id"]: level for level in levels}
     original = []
     battles = []
     persistent = {}
@@ -31,8 +37,8 @@ def assemble(root, gate, base_library):
         run = load(stage / "challenge.run.json", root)
         if (source.get("schema_version") != 1 or
                 source.get("source_level_id") != index or
-                not isinstance(source.get("source_name"), str) or
-                not source["source_name"].strip() or
+                source.get("source_name") != original_source_by_id[index]["Name"] or
+                source.get("source_map_index") != original_source_by_id[index]["MapIndex"] or
                 scene.get("native_game_schema") != 1 or
                 scene.get("bee_side") != 1 or scene.get("human_side") != 2 or
                 scene.get("policy_episode") is not None or
@@ -41,7 +47,8 @@ def assemble(root, gate, base_library):
                 len(run.get("levels", [])) != 1 or
                 run["levels"][0].get("scene") != "challenge.scene.json" or
                 run["levels"][0].get("supply_capacity") != {
-                    "player_side": 2, "max_tsv": SOURCE_CAPACITIES[index]
+                    "player_side": 2,
+                    "max_tsv": original_source_by_id[index]["SupplyCapacity"]
                 }):
             raise ValueError(f"original Challenge level {index} has a mismatched native source contract")
         # Explicit source identity and manifest are not independently
