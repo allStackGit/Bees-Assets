@@ -1480,6 +1480,13 @@ impl NativeSoftwareRenderer {
             !self.selection.squads().is_empty()).then_some(action)
     }
 
+    fn squad_tab_label(number: u32, ship_type: u8, ships: usize) -> String {
+        let key = if number == 10 { 0 } else { number };
+        let name = Self::source_ship_catalog().by_type(ship_type)
+            .map_or("Unknown", |asset| asset.name.as_str());
+        format!("{key}: {name} / {ships} ships")
+    }
+
     /// The original 1..0 shortcuts remain physical keyboard bindings,
     /// but additional genuine numbered squads also need clickable tabs.
     fn squad_tab_capacity(&self) -> usize {
@@ -1574,9 +1581,8 @@ impl NativeSoftwareRenderer {
                 skipped += 1;
                 continue;
             }
-            let key = if number == 10 { 0 } else { number };
-            let label = format!("{key}: type {} / {} ships",
-                ship.ship_type, squad.members.len());
+            let label = Self::squad_tab_label(
+                number, ship.ship_type, squad.members.len());
             let rect = tactical_hud::squad_tab_rect(
                 self.width, self.height, row, text::HEIGHT,
                 text::width(&label, 1))?;
@@ -2972,9 +2978,8 @@ impl NativeSoftwareRenderer {
             } else {
                 self.selection.squads().contains(&owner)
             };
-            let key = if number == 10 { 0 } else { number };
-            let label = format!("{key}: type {} / {} ships",
-                ship.ship_type, squad.members.len());
+            let label = Self::squad_tab_label(
+                number, ship.ship_type, squad.members.len());
             let Some(rect) = tactical_hud::squad_tab_rect(
                 self.width, self.height, row, text::HEIGHT,
                 text::width(&label, 1)) else { break };
