@@ -17,6 +17,7 @@ from native_training_artifacts import (
     atomic_json, file_sha256, native_source_contract_sha256,
     verified_source_scene_cache, combined_source_scene_cache,
     combined_rollout_lifecycle_metrics,
+    verified_physics_collision_work, combined_physics_collision_work,
 )
 from native_gpu_allocation import GPU_MASK_ENVIRONMENTS
 from native_mission_contract import (
@@ -805,6 +806,7 @@ def aggregate_collection_metrics(bundles):
                 "queen_minion_controllers": row.get("queen_minion_controllers"),
                 "map_border_ships": row.get("map_border_ships"),
                 "ship_slot_work": row.get("ship_slot_work"),
+                "physics_collision_work": row.get("physics_collision_work"),
                 "source_scene_template_cache": row.get("source_scene_template_cache"),
                 "policy_observations": row.get("policy_observations"),
                 "world_steps": row["successful_world_steps"],
@@ -857,6 +859,9 @@ def aggregate_collection_metrics(bundles):
         if all(projectile_key in row["ship_slot_work"] for row in rows):
             result["ship_slot_work"][projectile_key] = sum(
                 row["ship_slot_work"][projectile_key] for row in rows)
+    collision_work = combined_physics_collision_work(rows)
+    if collision_work is not None:
+        result["physics_collision_work"] = collision_work
     # A partial set of timed actors cannot be presented as timing for
     # the full distributed round. Preserve individual evidence above.
     result["collectors_with_sampled_model_timing"] = len(sampled)
