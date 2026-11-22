@@ -161,6 +161,7 @@ class RemoteBattleWindow:
         self.mouse_middle = None
         self.minimap_dragging = False
         self.selected = []
+        self.follow_ship_id = None
         self.last_ship_click = None
         # Presentation-only combat cues; the server owns every hit, death,
         # warped ship, and explosion, and has already filtered them by fog.
@@ -374,6 +375,7 @@ class RemoteBattleWindow:
         self.dialogue_identity = None
         self.dialogue_line = 0
         self.selected = []
+        self.follow_ship_id = None
         self.last_ship_click = None
         self.minimap_dragging = False
         self.visible_effects = []
@@ -408,6 +410,7 @@ class RemoteBattleWindow:
         self.send("shooting", {"strategy_id": int(self.strategy.get())})
 
     def fit(self):
+        self.follow_ship_id = None
         self.zoom = 1.0
         self.offset = (0.0, 0.0)
         self.draw()
@@ -433,6 +436,7 @@ class RemoteBattleWindow:
         return (x - cx) / scale, (cy - y) / scale
 
     def zoom_at(self, event, factor):
+        self.follow_ship_id = None
         before = self.to_world(event.x, event.y)
         self.zoom = min(32.0, max(0.25, self.zoom * factor))
         after = self.to_screen(*before)
@@ -449,6 +453,7 @@ class RemoteBattleWindow:
     def pan_move(self, event):
         if self.mouse_middle is None:
             return
+        self.follow_ship_id = None
         dx, dy = event.x - self.mouse_middle[0], event.y - self.mouse_middle[1]
         self.offset = (self.offset[0] + dx, self.offset[1] + dy)
         self.mouse_middle = (event.x, event.y)
@@ -501,6 +506,7 @@ class RemoteBattleWindow:
                     key[1] != self.drawn_scope[1]
                 ):
                     self.selected = []
+                    self.follow_ship_id = None
                     self.last_ship_click = None
                     self.minimap_dragging = False
                     self.visible_effects = []
@@ -510,6 +516,16 @@ class RemoteBattleWindow:
                     self.mode = None
                 self.state = state
                 self.drawn_scope = key
+                if self.follow_ship_id is not None:
+                    # Visibility is authoritative and per-episode. Never
+                    # extrapolate a lost or undisclosed unit position.
+                    followed = next((ship for ship in state["ships"]
+                                     if ship["id"] == self.follow_ship_id), None)
+                    if followed is None:
+                        self.follow_ship_id = None
+                    else:
+                        self.center_camera_on(followed["x"], followed["y"],
+                                              redraw=False)
                 now = time.monotonic()
                 self.visible_effects = [
                     (started, duration, event)
@@ -1105,6 +1121,7 @@ class RemoteBattleWindow:
         }.get(event.keysym)
         if movement is None:
             return
+        self.follow_ship_id = None
         self.offset = (self.offset[0] + movement[0],
                        self.offset[1] + movement[1])
         self.draw()
@@ -1137,16 +1154,18 @@ class RemoteBattleWindow:
         (x0, _), (_, y1) = self.map_bounds
         return (x0 + (x-left)/scale, y1 - (y-top)/scale)
 
-    def center_camera_on(self, world_x, world_y):
+    def center_camera_on(self, world_x, world_y, *, redraw=True):
         x, y = self.to_screen(world_x, world_y)
         width, height = self.canvas.winfo_width(), self.canvas.winfo_height()
         self.offset = (self.offset[0] + width*0.5 - x,
                        self.offset[1] + height*0.5 - y)
-        self.draw()
+        if redraw:
+            self.draw()
 
     def minimap_pan(self, event):
         target = self.minimap_world_at(event.x, event.y)
         if target is not None:
+            self.follow_ship_id = None
             self.center_camera_on(*target)
 
     def draw_combat_cues(self):
@@ -1306,6 +1325,13 @@ class RemoteBattleWindow:
             self.minimap_pan(event)
             return
         if self.console.spectator:
+            kind, target = self.hit(event.x, event.y)
+            self.follow_ship_id = (target["id"] if kind == "ship" else None)
+            if self.follow_ship_id is not None:
+                self.center_camera_on(target["x"], target["y"])
+                self.notice(f"Following visible ship {self.follow_ship_id}")
+            else:
+                self.draw()
             return
         self.drag_origin = (event.x, event.y)
         self.drag_box = None
@@ -1760,6 +1786,11 @@ class RemoteBattleWindow:
                 else:
                     self.canvas.create_oval(x-8, y-8, x+8, y+8,
                                             outline="#ffffff", width=2)
+            if ship["id"] == self.follow_ship_id:
+                self.canvas.create_oval(
+                    left-8, top-8, right+8, bottom+8,
+                    outline="#ffffff", dash=(4, 3), width=2,
+                )
             if ship["id"] in marked_targets:
                 self.canvas.create_rectangle(
                     left-4, top-4, right+4, bottom+4,
@@ -1813,6 +1844,8 @@ class RemoteBattleWindow:
             info += f"  |  Winner: side {state['terminal_result']} (uncommitted)"
         if self.mode and outcome is None:
             info += f"  |  Targeting: {self.mode}"
+        if self.follow_ship_id is not None:
+            info += f"  |  Following ship {self.follow_ship_id}"
         self.canvas.create_text(14, 14, text=info, anchor="nw", fill="#e7efff",
                                 font=("TkDefaultFont", 11, "bold"))
         if outcome is not None:
