@@ -10,6 +10,11 @@ pub struct NativeSpecialWeaponSpec {
     pub power: i32,
     /// Captured Weapon.GetPosition relative to the ship, not its visual piece.
     pub mount_offset: Vec2,
+    /// Source Weapon.HasClearLineOfFire starts from PieceTransform, not
+    /// Weapon.GetPosition. Distinct from the authored gameplay muzzle.
+    /// Only Barge's base Weapon performs this special-target LOS query.
+    #[serde(default)]
+    pub linecast_offset: Option<Vec2>,
     /// Charge.ShipsWithinRange, in ship-local coordinates.
     pub charge_range: Option<NativeTurretRangeSpec>,
     /// ProximityCollider.NearbyEnemyShips, in ship-local coordinates.
@@ -55,6 +60,7 @@ impl SpecialWeaponContacts {
     pub(super) fn valid_recovery(&self, ship_type: u8) -> bool {
         self.spec.weapon_id > 0 && self.spec.slot < 5 &&
         self.spec.power >= 0 && self.spec.mount_offset.is_finite() &&
+        self.spec.linecast_offset.is_none_or(|offset| offset.is_finite()) &&
         self.spec.charge_range.is_none_or(|range| range.valid()) &&
         self.spec.proximity.is_none_or(|range| range.valid()) &&
         (ship_type == 0 && self.spec.charge_range.is_some() ||
@@ -71,6 +77,7 @@ impl CombatWorld {
         let ship = self.ship(ship_id).ok_or(CombatWorldError::UnknownShip)?;
         if !matches!(ship.ship_type, 0 | 10 | 19 | 22) || spec.weapon_id <= 0 ||
             spec.power < 0 || spec.slot >= 5 || !spec.mount_offset.is_finite() ||
+            spec.linecast_offset.is_some_and(|offset| !offset.is_finite()) ||
             spec.charge_range.is_some_and(|value| !value.valid()) ||
             spec.proximity.is_some_and(|value| !value.valid()) ||
             (ship.ship_type == 0 && spec.charge_range.is_none()) ||
@@ -142,8 +149,16 @@ impl CombatWorld {
                 if !level.has_obstacles { return Ok(true); }
                 // Unlike Turret.IsShipValidTarget, the Barge uses the
                 // base Weapon.HasClearLineOfFire: no target bounds latch.
-                let origin = self.special_weapon_origin(ship_id)
+                // The source PieceTransform may differ from the actual
+                // Weapon.GetPosition. Never guess when it is not exported.
+                let offset = special.spec.linecast_offset
                     .ok_or(CombatWorldError::MissingAutomaticTargetingInputs)?;
+                let body = self.ship_body(ship_id)
+                    .ok_or(CombatWorldError::UnknownShip)?;
+                let origin = Pose {
+                    position: body.motion.position,
+                    rotation_degrees: body.motion.rotation_degrees,
+                }.transform_point(offset);
                 let point = self.ship_body(target_id)
                     .ok_or(CombatWorldError::UnknownShip)?
                     .primary_closest_point_readonly(origin);
