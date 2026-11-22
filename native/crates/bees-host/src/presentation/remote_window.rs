@@ -2932,6 +2932,12 @@ pub fn connect_remote(
     let mut show_weapon_ranges=false;
     let mut show_diagnostics=false;
     let mut show_controls_help=false;
+    // One-second source Ship.ShowShipStats delay on this authenticated
+    // visible snapshot, with no extra network subscription or game logic.
+    let mut hovered_ship:Option<i64>=None;
+    let mut hover_started=Instant::now();
+    let mut hover_sampled=hover_started;
+    let mut inspection_frames=0_u64;
     let mut show_battle_menu=false;
     let mut battle_menu_press:Option<usize>=None;
     let mut surrender_confirmation: Option<(String,u64,u64)> = None;
@@ -3300,6 +3306,9 @@ pub fn connect_remote(
             shooting_menu=false;
             last_middle=None;minimap_dragging=false;
             camera=None;
+            hovered_ship=None;
+            hover_started=now;
+            hover_sampled=now;
             current_episode=(0,0);
             squad_list_offset=0;
             dialogue_key=None;dialogue_line=0;dialogue_pause_started=None;
@@ -3389,6 +3398,9 @@ pub fn connect_remote(
                     fitted.constrain_to_map(map,FIELD,HEIGHT);
                     camera=Some(fitted);
                     current_episode=episode;
+                    hovered_ship=None;
+                    hover_started=now;
+                    hover_sampled=now;
                     squad_list_offset=0;
                     selected.clear();
                     submitted_selection=None;
@@ -4248,6 +4260,74 @@ pub fn connect_remote(
             &mut combat_hud_draws, &mut hulls, &mut map_object_health_bars,
             &mut map_ships, &mut map_terrain, &mut map_objectives,
             &mut fog_masked);
+        // Remote selection geometry reads only the host's already-filtered
+        // visible ships. Do not query private enemies, guess mineral values,
+        // or send a new host command just to draw this tooltip.
+        let inspect = window.is_active() && peer.connected &&
+            peer.authenticated && !show_controls_help &&
+            !show_battle_menu && surrender_confirmation.is_none() &&
+            !shooting_menu && mode.is_none() && !held_fire_active &&
+            !minimap_dragging && drag_start.is_none() &&
+            !window.get_mouse_down(MouseButton::Left) &&
+            !window.get_mouse_down(MouseButton::Right);
+        if !inspect {
+            hovered_ship=None;
+            hover_started=now;
+        } else if now.duration_since(hover_sampled)>=Duration::from_millis(100) {
+            hover_sampled=now;
+            let candidate=peer.state.as_ref().zip(camera).and_then(|(state,cam)| {
+                window.get_mouse_pos(MouseMode::Discard).and_then(|(x,y)| {
+                    if x<0.0||y<0.0||x>=FIELD as f32||y>=HEIGHT as f32 ||
+                        (show_minimap && bounds(state)
+                            .and_then(|map|MiniMapLayout::top_right(FIELD,HEIGHT,map))
+                            .is_some_and(|map|map.world_at(x,y).is_some())) {
+                        return None;
+                    }
+                    hit(state,cam,x as i32,y as i32,&peer.visual,visual_fraction,
+                        |_|true, |_|false,
+                    ).and_then(|(kind,ship)|
+                        (kind=="ship").then(||ship["id"].as_i64()).flatten())
+                })
+            });
+            if candidate!=hovered_ship {
+                hovered_ship=candidate;
+                hover_started=now;
+            }
+        }
+        if inspect && now.duration_since(hover_started)>=Duration::from_secs(1) {
+            if let Some(ship)=peer.state.as_ref().and_then(|state|
+                state["ships"].as_array()).into_iter().flatten().find(|ship|
+                    ship["id"].as_i64()==hovered_ship
+            ) {
+                let name=ship["ship_type"].as_u64()
+                    .and_then(|kind|u8::try_from(kind).ok())
+                    .and_then(|kind|source_ship_catalog().by_type(kind))
+                    .map_or("Unknown ship",|class|class.name.as_str());
+                let owner=match ship["side"].as_i64() {
+                    Some(1)=>"Bees", Some(2)=>"Humans", _=>"Neutral",
+                };
+                let title=format!("{name}  |  {owner}");
+                let health=format!("Health: {} / {}",
+                    ship["health"].as_i64().unwrap_or(0),
+                    ship["max_health"].as_i64().unwrap_or(0));
+                let tsv=match (ship["tsv"].as_i64(),ship["base_tsv"].as_i64()) {
+                    (Some(now),Some(max))=>format!("TSV: {now} / {max}"),
+                    _=>"TSV: private enemy fleet data".to_owned(),
+                };
+                let identity=format!("Physical ship: {}",
+                    ship["id"].as_i64().unwrap_or(0));
+                let status=if ship["owned"]==true {
+                    "Orders: controlled by your fleet"
+                } else if ship["friendly"]==true {
+                    "Orders: allied fleet"
+                } else { "Orders: hostile or neutral" };
+                NativeSoftwareRenderer::draw_ship_inspection_panel(
+                    &mut pixels,WIDTH,HEIGHT,
+                    &[&title,&health,&tsv,&identity,status],
+                );
+                inspection_frames+=1;
+            }
+        }
         peer.metrics.map_object_health_bars += map_object_health_bars;
         peer.metrics.weapon_range_draws += combat_hud_draws[0];
         peer.metrics.weapon_charge_draws += combat_hud_draws[1];
@@ -4480,6 +4560,7 @@ pub fn connect_remote(
         "network_poll_max_milliseconds":peer.metrics.network_poll_max_seconds*1000.0,
         "snapshots_rendered":peer.metrics.snapshots,
         "frames_rendered":peer.metrics.frames_rendered,
+        "ship_inspection_frames":inspection_frames,
         "rendered_fps":if session_seconds > 0.0 {
             peer.metrics.frames_rendered as f64 / session_seconds
         } else { 0.0 },
