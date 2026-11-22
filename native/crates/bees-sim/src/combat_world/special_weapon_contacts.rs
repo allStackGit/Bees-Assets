@@ -53,6 +53,14 @@ pub struct SpecialWeaponMeasurements {
 }
 
 impl SpecialWeaponContacts {
+    /// Existing physical ProximityCollider contact from the shared combat
+    /// sweep. A BombingRun may use this to continue closing into hull
+    /// contact instead of stopping at the normal ShipTurningRadius.
+    pub(super) fn selected_bomber_target_nearby(&self, target_id: i64) -> bool {
+        self.spec.proximity.is_some_and(|spec| spec.enabled) &&
+            self.proximity.contains(target_id)
+    }
+
     pub(super) fn matches_source(&self, source: &Self) -> bool {
         self.spec == source.spec
     }

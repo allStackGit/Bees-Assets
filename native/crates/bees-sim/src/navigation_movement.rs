@@ -276,6 +276,21 @@ impl GameShipSteering {
         motion: &mut ShipMotion,
         dt: f32,
     ) -> MotionUpdate {
+        self.fixed_step_with_bomber_contact(motion, dt, false)
+    }
+
+    /// Striker/YellowJacket.IsCloseEnoughToTargetCoordinates must not
+    /// end an unobstructed BombingRun approach merely because the ship
+    /// entered its turning radius while its selected target remains in
+    /// ProximityCollider.NearbyEnemyShips. The owning CombatWorld supplies
+    /// that real trigger/weapon-lease state; route waypoints still finish
+    /// normally and other ship orders use the ordinary stop threshold.
+    pub fn fixed_step_with_bomber_contact(
+        &mut self,
+        motion: &mut ShipMotion,
+        dt: f32,
+        selected_bomber_target_nearby: bool,
+    ) -> MotionUpdate {
         // Most game ships never follow a moving A* target. Keep their
         // fixed-step hot path free of needless cooldown arithmetic.
         if self.tracked_replan_wait_seconds > 0.0 {
@@ -309,7 +324,8 @@ impl GameShipSteering {
         motion.is_moving = true;
         if motion.has_target_coordinates &&
             (motion.target_coordinates - motion.position).length_squared() <
-                self.profile.turning_radius.powi(2) {
+                self.profile.turning_radius.powi(2) &&
+            !(selected_bomber_target_nearby && !self.is_following_path) {
             self.skip_close_waypoints(motion.position);
             self.advance_waypoint(motion);
         }

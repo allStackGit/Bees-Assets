@@ -664,6 +664,10 @@ pub struct GameBombMeasurements {
     pub yellow_jacket_contact_checks: u64,
     pub yellow_jacket_contact_misses: u64,
     pub yellow_jacket_detonations: u64,
+    /// Fixed steps where a true BombingRun contact overrides the normal
+    /// turning-radius arrival stop. No guessed collision or separate sim.
+    #[serde(default)]
+    pub bomber_contact_approach_steps: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5868,7 +5872,26 @@ impl CombatWorld {
             if matches!(policy_step, MotionUpdate::NotPolicyControlled) {
                 if has_game_steering {
                     if let Some(steering) = self.game_ship_steering.get_mut(&ship.id) {
-                        steering.fixed_step(&mut ship.motion, dt);
+                        // Only Striker and YellowJacket override the
+                        // ordinary arrival threshold, and only during
+                        // a live BombingRun's selected Bomb.TargetShip
+                        // physical ProximityCollider contact. The lease
+                        // and trigger are already held by CombatWorld.
+                        // A policy step never executes this game steering.
+                        let bomber_contact = matches!(self.ships[index].ship_type, 19 | 22) &&
+                            self.game_bomb_weapon_by_ship.get(&ship.id)
+                                .and_then(|&weapon| self.reservations.held_by(weapon))
+                                .is_some_and(|held|
+                                    self.special_weapons.get(&ship.id)
+                                        .is_some_and(|contacts|
+                                            contacts.selected_bomber_target_nearby(held.target_id)));
+                        if bomber_contact && !steering.is_following_path &&
+                            ship.motion.has_target_coordinates &&
+                            (ship.motion.target_coordinates - ship.motion.position)
+                                .length_squared() < steering.profile.turning_radius.powi(2) {
+                            self.game_bomb_measurements.bomber_contact_approach_steps += 1;
+                        }
+                        steering.fixed_step_with_bomber_contact(&mut ship.motion, dt, bomber_contact);
                     }
                 } else {
                     steering_lookups_skipped += 1;
