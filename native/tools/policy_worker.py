@@ -615,6 +615,7 @@ class InferenceOutputBuffers:
         self.continuous = np.empty((0, CONTINUOUS), dtype="<f4")
         self.discrete = np.empty((0, DISCRETE), dtype=np.uint8)
         self.allowed = np.empty((0, MASK_WIDTH), dtype="<f4")
+        self.row_indices = np.empty(0, dtype=np.intp)
         self.behavior = None
         self.action_growths = 0
         self.behavior_allocations = 0
@@ -627,6 +628,10 @@ class InferenceOutputBuffers:
             self.continuous = np.empty((self.capacity, CONTINUOUS), dtype="<f4")
             self.discrete = np.empty((self.capacity, DISCRETE), dtype=np.uint8)
             self.allowed = np.empty((self.capacity, MASK_WIDTH), dtype="<f4")
+            # Special-mask validation uses this same [0..rows) index every
+            # batch. Retain it alongside action buffers instead of creating
+            # a new np.arange at every synchronous policy decision.
+            self.row_indices = np.arange(self.capacity, dtype=np.intp)
             if self.behavior is not None:
                 self.behavior = np.empty(
                     (self.capacity, CONTINUOUS * 2 + DISCRETE), dtype="<f4"
@@ -634,6 +639,11 @@ class InferenceOutputBuffers:
                 self.behavior_allocations += 1
             self.action_growths += 1
         return self.continuous[:rows], self.discrete[:rows]
+
+    def indices(self, rows):
+        if rows > self.capacity:
+            self.actions(rows)
+        return self.row_indices[:rows]
 
     def mask(self, rows):
         if rows > self.capacity:
@@ -784,10 +794,18 @@ def collect_predictions(
         discrete[indices] = np.asarray(out_disc, dtype=np.uint8)
     if np.any(discrete[:, :5] > 1) or np.any(discrete[:, 5] > 4):
         raise ValueError("out-of-range discrete branch")
-    for slot in range(5):
-        if np.any((discrete[:, slot] == 1) & ~fire[:, slot]):
-            raise ValueError("model selected masked weapon firing")
-    if np.any(~special[np.arange(rows), discrete[:, 5]]):
+    if rows <= 3:
+        # Avoid reduction dispatch and temporary matrices in tiny 1v1
+        # decisions. Larger native battles validate all fire slots in one
+        # vectorized pass rather than five Python-to-NumPy calls.
+        for slot in range(5):
+            if np.any((discrete[:, slot] == 1) & ~fire[:, slot]):
+                raise ValueError("model selected masked weapon firing")
+    elif np.any((discrete[:, :5] == 1) & ~fire):
+        raise ValueError("model selected masked weapon firing")
+    row_indices = (output_buffers.indices(rows) if output_buffers is not None
+                   else np.arange(rows))
+    if np.any(~special[row_indices, discrete[:, 5]]):
         raise ValueError("model selected unavailable special action")
     return continuous, discrete, behavior
 
