@@ -2325,8 +2325,13 @@ function createNativeBeesAdapter({
                             if (sha256(fs.readFileSync(file)) !== pins.get(file))
                                 throw Error('Native Bees gallery source or publisher changed after adapter installation.');
                         }
-                        if (round.receipt.source_run_config_sha256 !== pins.get(galleryRun))
-                            throw Error('Native game gallery physical source differs from verified collector run.');
+                        // Local training retains exact-byte source identity.
+                        // Distributed releases are independently authenticated
+                        // by the publisher's native v2 portable scene contract,
+                        // which excludes Windows/Linux installation paths.
+                        if (!bundleRound &&
+                            round.receipt.source_run_config_sha256 !== pins.get(galleryRun))
+                            throw Error('Native game gallery physical source differs from verified local run.');
                         const gameId = 'hub-' + context.job_id;
                         const {stdout} = await execFileAsync(executable, [
                             '-B', publisher, galleryRun, output, gallery, gameId,
