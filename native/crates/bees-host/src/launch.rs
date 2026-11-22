@@ -3629,10 +3629,25 @@ fn preflight_native_fleet_edit_with_squads(
     authored_roster: &[(i64, i64, i64)], target_saved_squad_id: i64,
     new_squads: &[NativeCreatedSquad],
 ) -> Result<i64, Box<dyn Error>> {
+    preflight_native_fleet_edit_with_squads_and_tactics(
+        catalog, root, progress, side, projected, authored_roster,
+        target_saved_squad_id, new_squads, &[],
+    )
+}
+
+fn preflight_native_fleet_edit_with_squads_and_tactics(
+    catalog: &battle_catalog::BattleCatalog, root: &Path,
+    progress: &battle_catalog::CampaignProgress<'_>, side: i32,
+    projected: &[NativePurchasedShip],
+    authored_roster: &[(i64, i64, i64)], target_saved_squad_id: i64,
+    new_squads: &[NativeCreatedSquad], new_tactics: &[NativeSavedSquadTactics],
+) -> Result<i64, Box<dyn Error>> {
     let max_size = catalog.max_squad_ships.ok_or_else(||
         invalid("native shop needs the source's maximum squad size"))? as usize;
     let dead = progress.lost_player_fleet_ids(side)?;
     let no_casualties = HashSet::new();
+    let mut projected_tactics = progress.tactics_for_side(side);
+    projected_tactics.extend_from_slice(new_tactics);
     // A reserve hull is not deployed, but its permanent fleet identity,
     // source price and class still need the same verification as purchases.
     let mut identities = HashSet::new();
@@ -3707,7 +3722,7 @@ fn preflight_native_fleet_edit_with_squads(
             source.install_created_squads(
                 side, &projected_squads,
             ).map_err(|error| contextual("shop created SavedSquads", error))?;
-            source.apply_saved_squad_tactics(side, &progress.tactics_for_side(side))
+            source.apply_saved_squad_tactics(side, &projected_tactics)
                 .map_err(|error| contextual("shop saved squad tactics", error))?;
             source.apply_authored_fleet_roster(&source_archetypes, side, roster, casualties)
                 .map_err(|error| contextual("shop original FleetShip reassignment", error))?;
@@ -3718,7 +3733,7 @@ fn preflight_native_fleet_edit_with_squads(
             source.validate_campaign_deployment(side)
                 .map_err(|error| contextual("shop final campaign deployment", error))?;
             source.finalize_campaign_squad_tactics(
-                side, &progress.tactics_for_side(side),
+                side, &projected_tactics,
             ).map_err(|error| contextual("shop saved matching speed", error))?;
             reconcile_campaign_carrier_deployment(&mut level, &source_archetypes, &source, side)?;
             let persistent_count = |squad: &bees_host::unity_scene_snapshot::NativeSourceSquad|
