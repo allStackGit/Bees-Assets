@@ -77,6 +77,13 @@ def watch_stop(path, done):
 def main():
     source, root, dispatch, stop = sys.argv[1:5]
     script = Path(source).resolve(strict=True)
+    # The trusted Hub runtime is shared by every native training project.
+    # Preserve this path in multiprocessing spawn children, including
+    # Windows -c launches, so optional GPU executors resolve from the
+    # authenticated worker release rather than a project-local copy.
+    hub_training = str(Path(__file__).resolve().parent)
+    if hub_training not in sys.path:
+        sys.path.insert(0, hub_training)
     sys.path.insert(0, str(script.parent))
     if root != '-':
         install_snapshot_publisher(root, dispatch)
