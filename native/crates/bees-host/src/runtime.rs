@@ -353,6 +353,44 @@ pub struct NativeHostRuntime<M, A, B, S> {
     sampler: NativeStatusSampler,
 }
 
+/// Hot policy changes are separate from PPO hyperparameter changes. A
+/// successful resident worker reload advances model generation and the
+/// SHA-256 identity used by the same replay/recovery and action journals.
+/// Failure to checkpoint the new identity is a recovery failure, not a
+/// successful durable model update.
+#[derive(Debug)]
+pub enum HostPolicyReloadError {
+    Model(crate::policy_process::PolicyProcessError),
+    Checkpoint(HostRecoveryError),
+}
+
+impl<M, A, S> NativeHostRuntime<M, A, crate::policy_process::ResidentPolicyProcess, S>
+where
+    M: NativeLevelRewardMetadata + NativeLevelActivationContext +
+        NativeLevelObservationContext + NativeHostRecoverableMetadata,
+    A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+    S: NativeLevelNotificationSink + NativeHostRecoverableNotifications,
+{
+    /// Switch to an independently optimized real model between completed
+    /// native game/rollout windows, then commit the new model digest,
+    /// generation, sampler, World and notification ownership together.
+    /// Nothing in the canonical physics, active squad commands, reward
+    /// semantics or per-episode policy schedule is reset by this handoff.
+    /// Callers must treat a checkpoint error as failed durable update:
+    /// do not advance another window before persistence is reconciled.
+    pub fn reload_policy_and_checkpoint(
+        &mut self,
+        manifest: &std::path::Path,
+        checkpoint_file: &NativeHostCheckpointFile,
+    ) -> Result<u64, HostPolicyReloadError> {
+        let generation = self.model.reload_manifest(manifest)
+            .map_err(HostPolicyReloadError::Model)?;
+        self.persist_recovery_checkpoint(checkpoint_file)
+            .map_err(HostPolicyReloadError::Checkpoint)?;
+        Ok(generation)
+    }
+}
+
 impl<M, A, B, S> NativeHostRuntime<M, A, B, S>
 where
     M: NativeLevelRewardMetadata + NativeLevelActivationContext +
