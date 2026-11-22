@@ -254,9 +254,11 @@ pub struct NativeArchivedBattleReceipt {
     pub scored_player_side: Option<i32>,
     pub player_score: Option<i64>,
     pub player_match_counts: Option<(u64, u64, u64)>,
+    pub player_loss_types: Option<[u64; bees_sim::ship_assets::SHIP_TYPE_COUNT]>,
     pub opposing_scored_side: Option<i32>,
     pub opposing_player_score: Option<i64>,
     pub opposing_player_match_counts: Option<(u64, u64, u64)>,
+    pub opposing_loss_types: Option<[u64; bees_sim::ship_assets::SHIP_TYPE_COUNT]>,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -862,17 +864,18 @@ impl NativeRemotePlay {
                                 }
                                 let mut result = receipt.battle_result.clone();
                                 result["viewer_side"] = json!(side);
-                                let (score, counts) = if receipt.scored_player_side ==
+                                let (score, counts, loss_types) = if receipt.scored_player_side ==
                                     Some(side)
                                 {
                                     (receipt.scored_player_side.zip(receipt.player_score),
-                                     receipt.player_match_counts)
+                                     receipt.player_match_counts, receipt.player_loss_types)
                                 } else {
                                     (receipt.opposing_scored_side.zip(receipt.opposing_player_score),
-                                     receipt.opposing_player_match_counts)
+                                     receipt.opposing_player_match_counts,
+                                     receipt.opposing_loss_types)
                                 };
                                 Self::attach_authorized_match_score(
-                                    &mut result, side, score, counts,
+                                    &mut result, side, score, counts, loss_types,
                                 );
                                 let _ = peer.enqueue(&result);
                                 self.measurements.archived_terminal_receipts_sent += 1;
@@ -1329,6 +1332,7 @@ impl NativeRemotePlay {
     fn attach_authorized_match_score(
         receipt: &mut Value, viewer_side: i32,
         score: Option<(i32, i64)>, counts: Option<(u64, u64, u64)>,
+        loss_types: Option<[u64; bees_sim::ship_assets::SHIP_TYPE_COUNT]>,
     ) {
         let Some((owner, value)) = score.filter(|(side, _)| *side == viewer_side)
             else { return };
@@ -1339,6 +1343,7 @@ impl NativeRemotePlay {
                 "ships_lost": lost,
                 "ships_returned": returned,
                 "ships_destroyed_by_player": kills,
+                "ships_lost_by_type": loss_types,
             });
         }
     }
@@ -1363,6 +1368,7 @@ impl NativeRemotePlay {
                 &mut receipt, owner,
                 player_match.map(|(score, _)| (owner, score)),
                 player_match.and_then(|(_, counts)| counts),
+                view.loss_types_for_side(owner),
             );
             let _ = peer.enqueue(&receipt);
             if !peer.closed {
@@ -2222,6 +2228,7 @@ fn current_state(
                 "ships_returned": returned,
                 "ships_destroyed_by_player": kills,
             })),
+        "player_lost_by_type": view.loss_types_for_side(side),
         // Source-owned initial story pacing; never required for local
         // hosts or after this World has taken its first physical step.
         "briefing_requires_ack": requires_briefing_ack,

@@ -2858,6 +2858,19 @@ fn archived_native_remote_receipts_from_root(
                 row.get("ships_returned")?.as_u64()?,
                 row.get("ships_destroyed_by_player")?.as_u64()?,
             )));
+        let archived_loss_types = |field: &str|
+            -> Option<[u64; bees_sim::ship_assets::SHIP_TYPE_COUNT]>
+        {
+            let entries = summary[field]["ships_lost_by_type"].as_array()?;
+            if entries.len() != bees_sim::ship_assets::SHIP_TYPE_COUNT {
+                return None;
+            }
+            let mut types = [0; bees_sim::ship_assets::SHIP_TYPE_COUNT];
+            for (count, value) in types.iter_mut().zip(entries) {
+                *count = value.as_u64()?;
+            }
+            Some(types)
+        };
         receipts.push(bees_host::remote_play::NativeArchivedBattleReceipt {
             session_id: id.to_owned(),
             authorized_sides: sides,
@@ -2869,9 +2882,11 @@ fn archived_native_remote_receipts_from_root(
             scored_player_side,
             player_score: summary["player_score"].as_i64(),
             player_match_counts,
+            player_loss_types: archived_loss_types("player_match_counts"),
             opposing_scored_side,
             opposing_player_score: summary["opposing_player_score"].as_i64(),
             opposing_player_match_counts,
+            opposing_loss_types: archived_loss_types("opposing_player_match_counts"),
         });
     }
     Ok(receipts)
