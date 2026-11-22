@@ -195,6 +195,13 @@ impl NativeSceneAssets {
 
     pub fn stage_name(&self) -> &str { &self.stage_name }
 
+    /// Original Stage.Prefabs.CollisionAsteroidPrefabs is the legal source
+    /// palette for both its random asteroid pool and explicitly pre-placed
+    /// source asteroids. Keep this ownership in the one loaded Stage.
+    pub fn has_stage_asteroid_prefab(&self, prefab: u8) -> bool {
+        self.asteroid_stage.prefabs.contains(&prefab)
+    }
+
     pub fn load_measurements(&self) -> NativeSceneAssetLoadMeasurements {
         self.load_measurements
     }
