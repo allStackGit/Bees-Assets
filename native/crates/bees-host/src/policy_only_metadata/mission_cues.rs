@@ -122,6 +122,8 @@ pub(crate) enum NativeMissionEvent {
     /// Only the canonical physical MapObject death event can release this.
     /// Stable Level entity IDs never alias a ship or a replacement collider.
     MapObjectDestroyed(i64),
+    /// Real MiningAsteroid.Kill(false), never an inferred ore counter.
+    MiningAsteroidDepleted(i64),
 }
 
 impl NativeMissionEvent {
@@ -129,11 +131,14 @@ impl NativeMissionEvent {
         self, campaign: Option<CampaignDialogueSpec>,
         known_ship: impl FnOnce(i64) -> bool,
         known_map_object: impl FnOnce(i64) -> bool,
+        known_mining_asteroid: impl FnOnce(i64) -> bool,
     ) -> bool {
         match self {
             Self::CampaignCue(cue) => cue.valid_for(campaign),
             Self::ShipDestroyed(id) => id > 0 && known_ship(id),
             Self::MapObjectDestroyed(id) => id > 0 && known_map_object(id),
+            Self::MiningAsteroidDepleted(id) =>
+                id > 0 && known_mining_asteroid(id),
         }
     }
 
@@ -155,6 +160,12 @@ impl NativeMissionEvent {
                 matches!(event,
                     bees_sim::combat_world::CombatEvent::MapObjectDestroyed { object_id, .. }
                         if *object_id == id
+                )
+            ),
+            Self::MiningAsteroidDepleted(id) => world.events().iter().any(|event|
+                matches!(event,
+                    bees_sim::combat_world::CombatEvent::MiningAsteroidDepleted { obstacle_id }
+                        if *obstacle_id == id
                 )
             ),
         }
