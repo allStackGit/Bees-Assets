@@ -190,6 +190,10 @@ pub struct NativePolicyOnlyMetadata {
     navigation_worker_counts: NativeNavigationWorkerMeasurements,
     pub activate_collision_asteroids: bool,
     pub fleet: NativeFleetInventory,
+    /// Authored Codex progression is a UI-only immutable snapshot from
+    /// the campaign start. Checkpoint recovery rebuilds it from the frozen
+    /// setup; no second mutable gameplay or learning owner is added.
+    campaign_codex: Option<(i32, [bool; bees_sim::ship_assets::SHIP_TYPE_COUNT])>,
     pub ship_catalog: Arc<ShipAssetCatalog>,
     authored_ships: HashMap<i64, AuthoredShipPerception>,
     /// Exact sight ranges for ALL original allied ships, including
@@ -475,6 +479,13 @@ pub struct NativePolicySourceLedgerPrepared {
 }
 
 impl NativePolicyOnlyMetadata {
+    pub fn set_campaign_codex(
+        &mut self,
+        source: Option<(i32, [bool; bees_sim::ship_assets::SHIP_TYPE_COUNT])>,
+    ) {
+        self.campaign_codex = source;
+    }
+
     /// One real Level's long-lived FleetShip and mission progress, with no
     /// duplicate physical health or inferred command result.
     pub fn source_ledger_checkpoint(&self) -> NativePolicySourceLedgerCheckpoint {
@@ -901,7 +912,8 @@ impl NativePolicyOnlyMetadata {
             hivemind_squads: HashMap::new(),
             bounds, navigation, navigation_scheduler: None,
             navigation_worker_counts: NativeNavigationWorkerMeasurements::default(),
-            activate_collision_asteroids, fleet, ship_catalog,
+            activate_collision_asteroids, fleet,
+            campaign_codex: None, ship_catalog,
             authored_ships, effective_vision,
             source_static_discovery_values,
             explorers: Vec::new(),
@@ -1257,6 +1269,10 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 
     fn observe_fleet_combat_tick(&mut self, world: &CombatWorld) {
         self.fleet.record_combat_events(world);
+    }
+
+    fn campaign_codex_classes(&self) -> Option<(i32, &[bool; bees_sim::ship_assets::SHIP_TYPE_COUNT])> {
+        self.campaign_codex.as_ref().map(|(side, classes)| (*side, classes))
     }
 
     fn campaign_score_snapshot(&self) -> Option<(i32, i64)> {
