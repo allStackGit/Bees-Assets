@@ -14,6 +14,9 @@ pub const TITANIA_II_CENTER: Vec2 = Vec2::new(-32.0, 55.0);
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum CampaignDialogueSpec {
+    /// Pluto I's real scout notices the authored Honeybee through the
+    /// original 60-unit temporary ProximityCollider, not a map timer.
+    PlutoAnomaly { player_side: i32, scout_id: i64, honeybee_id: i64 },
     TitaniaMinesweeper { player_side: i32 },
     TitaniaBeenoculars {
         player_side: i32,
@@ -48,6 +51,7 @@ pub enum CampaignDialogueSpec {
 impl CampaignDialogueSpec {
     pub fn player_side(self) -> i32 {
         match self {
+            Self::PlutoAnomaly { player_side, .. } |
             Self::TitaniaMinesweeper { player_side } |
             Self::TitaniaBeenoculars { player_side, .. } |
             Self::PlutoPushback { player_side, .. } |
@@ -87,6 +91,10 @@ impl UploadMilestone {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CampaignCue {
+    PlutoAnomalyBriefing,
+    PlutoAnomalyHoneybeeSpotted,
+    PlutoAnomalyVictory,
+    PlutoAnomalyDefeat,
     MinesweeperBriefing,
     FireTankSpotted { object_id: i64 },
     FireTankDestroyed { object_id: i64 },
@@ -128,7 +136,8 @@ pub enum CampaignCue {
 
 impl CampaignCue {
     pub fn is_briefing(self) -> bool {
-        matches!(self, Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. } |
+        matches!(self, Self::PlutoAnomalyBriefing |
+            Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. } |
             Self::PlutoPushbackBriefing { .. } |
             Self::NeptunePressingForwardBriefing | Self::NeptuneSeizeBriefing |
             Self::PlutoEvacuationBriefing | Self::NeptuneProductionBriefing |
@@ -140,6 +149,7 @@ impl CampaignCue {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 enum DialogueMode {
+    PlutoAnomaly { scout_id: i64, honeybee_id: i64, spotted: bool },
     Minesweeper { tracked_tank: Option<i64> },
     Beenoculars { under_heavy_fire: bool, next_milestone: usize },
     PlutoPushback { speaker_mask: u8 },
@@ -216,6 +226,12 @@ impl CampaignDialogue {
 
     pub fn new(spec: CampaignDialogueSpec) -> Self {
         let (mode, cue) = match spec {
+            CampaignDialogueSpec::PlutoAnomaly { scout_id, honeybee_id, .. } => (
+                DialogueMode::PlutoAnomaly {
+                    scout_id, honeybee_id, spotted: false,
+                },
+                CampaignCue::PlutoAnomalyBriefing,
+            ),
             CampaignDialogueSpec::TitaniaMinesweeper { .. } => (
                 DialogueMode::Minesweeper { tracked_tank: None },
                 CampaignCue::MinesweeperBriefing,
@@ -298,6 +314,9 @@ impl CampaignDialogue {
             return Err(CampaignDialogueRestoreError::InvalidVersion);
         }
         let same_authored_story = match (&mode, &self.mode) {
+            (DialogueMode::PlutoAnomaly { scout_id: a, honeybee_id: b, .. },
+                DialogueMode::PlutoAnomaly { scout_id: c, honeybee_id: d, .. }) =>
+                a == c && b == d,
             (DialogueMode::Minesweeper { .. }, DialogueMode::Minesweeper { .. }) =>
                 true,
             (DialogueMode::Beenoculars { under_heavy_fire: saved, .. },
@@ -337,6 +356,21 @@ impl CampaignDialogue {
             return Err(CampaignDialogueRestoreError::WrongStory);
         }
         let valid = match (&mode, cue) {
+            (DialogueMode::PlutoAnomaly {
+                scout_id, honeybee_id, spotted: false,
+            }, CampaignCue::PlutoAnomalyBriefing) =>
+                *scout_id > 0 && *honeybee_id > 0 &&
+                scout_id != honeybee_id && sequence == 0,
+            (DialogueMode::PlutoAnomaly {
+                scout_id, honeybee_id, spotted: true,
+            }, CampaignCue::PlutoAnomalyHoneybeeSpotted) =>
+                *scout_id > 0 && *honeybee_id > 0 &&
+                scout_id != honeybee_id && sequence == 1,
+            (DialogueMode::PlutoAnomaly {
+                scout_id, honeybee_id, spotted,
+            }, CampaignCue::PlutoAnomalyVictory | CampaignCue::PlutoAnomalyDefeat) =>
+                *scout_id > 0 && *honeybee_id > 0 &&
+                scout_id != honeybee_id && sequence == 1 + u32::from(*spotted),
             (DialogueMode::Minesweeper { tracked_tank: None },
                 CampaignCue::MinesweeperBriefing) => sequence == 0,
             (DialogueMode::Minesweeper { tracked_tank: None },
@@ -477,6 +511,16 @@ impl CampaignDialogue {
 
     /// Read-only objective identity for local and authenticated LAN HUDs.
     /// The three source FleetShip hulls are still owned by CombatWorld.
+    /// The first source Pluto encounter remains active until the actual
+    /// Scout ProximityCollider overlaps its specific Honeybee.
+    pub fn pluto_anomaly_target(&self) -> Option<(i64, i64)> {
+        match self.mode {
+            DialogueMode::PlutoAnomaly { scout_id, honeybee_id, spotted: false } =>
+                Some((scout_id, honeybee_id)),
+            _ => None,
+        }
+    }
+
     pub fn uranus_offensive_target(&self) -> Option<i64> {
         if let DialogueMode::UranusOffensive { bumblebee_id, discovered: false, .. } =
             self.mode {
@@ -508,6 +552,8 @@ impl CampaignDialogue {
         survival: Option<SurvivalStatus>,
     ) -> CampaignCue {
         match (&self.mode, winner_side == self.player_side) {
+            (DialogueMode::PlutoAnomaly { .. }, true) => CampaignCue::PlutoAnomalyVictory,
+            (DialogueMode::PlutoAnomaly { .. }, false) => CampaignCue::PlutoAnomalyDefeat,
             (DialogueMode::Minesweeper { .. }, true) => CampaignCue::MinesweeperVictory,
             (DialogueMode::Minesweeper { .. }, false) => CampaignCue::MinesweeperDefeat,
             (DialogueMode::Beenoculars { .. }, true) => CampaignCue::BeenocularsVictory,
@@ -688,7 +734,15 @@ impl CampaignDialogue {
 
     pub(crate) fn observe_combat(
         &mut self, world: &CombatWorld, source_bumblebee_spotted: bool,
+        source_pluto_honeybee_spotted: bool,
     ) -> Option<CampaignCue> {
+        if let DialogueMode::PlutoAnomaly { spotted, .. } = &mut self.mode {
+            if !*spotted && source_pluto_honeybee_spotted {
+                *spotted = true;
+                return Some(CampaignCue::PlutoAnomalyHoneybeeSpotted);
+            }
+            return None;
+        }
         if let DialogueMode::UranusOffensive {
             bumblebee_id, discovered, hit_seen, hit_reported,
             destroyed_reported, ..
