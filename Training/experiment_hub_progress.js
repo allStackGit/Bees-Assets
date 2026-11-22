@@ -1232,6 +1232,16 @@ class BottleneckEvidence {
                     (raw.value-wire.value)/raw.value);
             const collection=seconds('training_collect_max_seconds');
             const optimization=seconds('training_optimize_max_seconds');
+            // Pipelined shared learners may finish a rollout begun while the
+            // previous PPO update was running. Total collection wall time
+            // can exceed this update's wall; only the observed join wait
+            // delays the current learner update. Preserve the synchronous
+            // interpretation for old or non-overlapped trainers.
+            const lag=metrics.training_shared_policy_lag_updates;
+            const overlap=seconds('training_shared_async_collection_overlap_seconds');
+            const joinWait=seconds('training_shared_async_collection_wait_seconds');
+            const pipelineActive=lag?.unit==='count'&&lag.value>0||overlap>0;
+            const criticalCollection=pipelineActive?joinWait:collection;
             const gpuForwardOwner=metrics.training_shared_last_wire_worker?.value;
             const replyOwner=metrics.training_shared_last_reply_worker?.value;
             let sharedForwardShare=null,sharedForwardSeconds=null;
@@ -1287,7 +1297,9 @@ class BottleneckEvidence {
             const decodedOwner=metrics.training_shared_last_reply_worker?.value;
             const count=metrics.training_ingestion_peak_parallel_copies;
             const measured=(collection!==null&&optimization!==null&&
-                collection<=wall*1.02&&optimization<=wall*1.02&&
+                criticalCollection!==null&&criticalCollection<=wall*1.02&&
+                optimization<=wall*1.02&&
+                (!pipelineActive||overlap!==null&&overlap<=collection)&&
                 exposed!==null&&exposed<=collection&&
                 copied!==null&&count?.unit==='count'&&
                 Number.isSafeInteger(count.value)&&count.value>=1&&
@@ -1302,13 +1314,13 @@ class BottleneckEvidence {
             // and its distinct wire-arrival gap extends the PPO round.
             const sharedForwardHint=sharedForwardShare!==null&&
                 sharedForwardShare>=0.50&&sharedForwardSeconds>=0.25&&
-                sharedForwardSeconds>=0.20*wall&&collection!==null&&
-                collection>=0.50*wall&&wireShare!==null&&
+                sharedForwardSeconds>=0.20*wall&&criticalCollection!==null&&
+                criticalCollection>=0.50*wall&&wireShare!==null&&
                 wireShare>=0.20&&wireGap>=0.25&&
                 gpuForwardOwner===wireOwner&&wireOwner===decodedOwner;
             const refreshHint=refreshShare!==null&&refreshShare>=0.25&&
-                lastGpuRefresh>=0.25&&collection!==null&&
-                collection>=0.50*wall&&wireShare!==null&&
+                lastGpuRefresh>=0.25&&criticalCollection!==null&&
+                criticalCollection>=0.50*wall&&wireShare!==null&&
                 wireShare>=0.20&&wireGap>=0.25&&
                 gpuForwardOwner===wireOwner&&wireOwner===decodedOwner;
             if(wireShare!==null)
@@ -1356,11 +1368,12 @@ class BottleneckEvidence {
             // imbalance, not evidence of a saturated CPU or slow network.
             // Ignore it if collection is mostly hidden by PPO optimization.
             const imbalance=spread!==null&&spread>=0.25&&
-                collection>=0.50*wall&&collection>=0.50;
-            const collectionDominant=measured&&collection>=0.70*wall&&
+                criticalCollection!==null&&criticalCollection>=0.50*wall&&
+                criticalCollection>=0.50;
+            const collectionDominant=measured&&criticalCollection>=0.70*wall&&
                 optimization<=0.30*wall;
             const optimizationDominant=measured&&optimization>=0.70*wall&&
-                collection<=0.30*wall;
+                criticalCollection<=0.30*wall;
             const {at,prior}=history();
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,resourceHints,
