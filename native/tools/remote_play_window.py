@@ -480,8 +480,8 @@ class RemoteBattleWindow:
                 return squad
         return None
 
-    def obstacle_screen_shape(self, obj):
-        """Project the authoritative physics collider, including local offsets."""
+    def collider_screen_shape(self, obj):
+        """Project a host-owned ship or obstacle collider with its live pose."""
         collider = obj.get("collider") or {}
         kind = collider.get("kind")
         scale, cx, cy = self.transform()
@@ -520,6 +520,11 @@ class RemoteBattleWindow:
                               max(ax, bx), max(ay, by))
         return "point", self.to_screen(obj["x"], obj["y"])
 
+    # Preserve a single geometry projector for map objects and physical
+    # ships; no remote-only collision or steering model is introduced.
+    def obstacle_screen_shape(self, obj):
+        return self.collider_screen_shape(obj)
+
     @staticmethod
     def obstacle_distance(shape, points, x, y):
         """Screen-space distance to a collider, zero when inside its hull."""
@@ -548,10 +553,12 @@ class RemoteBattleWindow:
         if self.state is None:
             return None, None
         closest = None
-        distance = 17 ** 2
+        distance = 17.0
         for ship in self.state["ships"]:
-            sx, sy = self.to_screen(ship["x"], ship["y"])
-            d = (sx - x) ** 2 + (sy - y) ** 2
+            shape, points = self.collider_screen_shape(ship)
+            d = self.obstacle_distance(shape, points, x, y)
+            # A small screen-space tolerance allows selecting thin hulls,
+            # even at low zoom; the full real hull is clickable.
             if d < distance:
                 closest, distance = ("ship", ship), d
         # Ships drawn over an obstacle retain selection priority.
@@ -954,20 +961,33 @@ class RemoteBattleWindow:
                                 fill=ENEMY if contact[2] else FRIENDLY,
                                 dash=(4, 3) if contact[2] else (),
                             )
-            # Rotation comes from the authoritative native ship motion.
-            angle = math.radians(ship.get("rotation", 0.0))
-            sn, cs = math.sin(angle), math.cos(angle)
-            triangle = []
-            for local_x, local_y in ((0, 11), (-7, -7), (7, -7)):
-                triangle.extend((x + local_x * cs + local_y * sn,
-                                 y + local_x * sn - local_y * cs))
             color = FRIENDLY if ship["friendly"] else ENEMY
-            # Controlled ships retain the strong outline; allied AI hulls
-            # remain visibly friendly without acquiring player selection.
-            self.canvas.create_polygon(*triangle, fill=color,
-                                       outline=OUTLINE if ship["owned"] else "")
+            # Map-scale silhouettes use the exact current physical collider
+            # supplied by CombatWorld. Sprites remain the local native
+            # renderer's responsibility; multiplayer targeting must never
+            # substitute a generic triangle for a huge or irregular hull.
+            shape, points = self.collider_screen_shape(ship)
+            outline = OUTLINE if ship["owned"] else color
+            if shape == "polygon":
+                self.canvas.create_polygon(*points, fill=color, outline=outline)
+            elif shape == "oval":
+                self.canvas.create_oval(*points, fill=color, outline=outline)
+            elif shape == "bounds":
+                self.canvas.create_rectangle(*points, fill=color, outline=outline)
+            else:
+                px, py = points
+                self.canvas.create_oval(px-4, py-4, px+4, py+4,
+                                        fill=color, outline=outline)
             if ship["id"] in selected_ship_ids:
-                self.canvas.create_oval(x-14, y-14, x+14, y+14, outline="#ffffff", width=2)
+                if shape == "polygon":
+                    self.canvas.create_polygon(*points, fill="", outline="#ffffff", width=2)
+                elif shape == "oval":
+                    self.canvas.create_oval(*points, outline="#ffffff", width=2)
+                elif shape == "bounds":
+                    self.canvas.create_rectangle(*points, outline="#ffffff", width=2)
+                else:
+                    self.canvas.create_oval(x-8, y-8, x+8, y+8,
+                                            outline="#ffffff", width=2)
             if ship["id"] == protected_id:
                 self.canvas.create_oval(x-19, y-19, x+19, y+19,
                                         outline=MINERAL, dash=(4, 3), width=2)
