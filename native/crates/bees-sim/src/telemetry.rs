@@ -46,6 +46,8 @@ pub struct StepCounts {
     /// Occupied cell insertions by physical population; excludes empty cells.
     pub ship_grid_cells_indexed: u64,
     pub obstacle_grid_cells_indexed: u64,
+    /// Measured obstacle contact spatial searches combined this tick.
+    pub obstacle_contact_queries_merged: u64,
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
     pub automatic_weapon_target_queries: u64,
@@ -110,6 +112,8 @@ pub struct Measurements {
     /// Occupied cell insertions by physical population; excludes empty cells.
     pub ship_grid_cells_indexed: u64,
     pub obstacle_grid_cells_indexed: u64,
+    /// Measured obstacle contact spatial searches combined this tick.
+    pub obstacle_contact_queries_merged: u64,
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
     pub automatic_weapon_target_queries: u64,
@@ -187,6 +191,7 @@ impl Default for Measurements {
             obstacle_grid_rebuilds: 0,
             ship_grid_cells_indexed: 0,
             obstacle_grid_cells_indexed: 0,
+            obstacle_contact_queries_merged: 0,
             narrowphase_tests: 0,
             trigger_enters: 0,
             automatic_weapon_target_queries: 0,
@@ -271,6 +276,7 @@ impl Measurements {
         self.obstacle_grid_rebuilds += counts.obstacle_grid_rebuilds;
         self.ship_grid_cells_indexed += counts.ship_grid_cells_indexed;
         self.obstacle_grid_cells_indexed += counts.obstacle_grid_cells_indexed;
+        self.obstacle_contact_queries_merged += counts.obstacle_contact_queries_merged;
         self.narrowphase_tests += counts.narrowphase_tests;
         self.trigger_enters += counts.trigger_enters;
         self.automatic_weapon_target_queries += counts.automatic_weapon_target_queries;
@@ -350,6 +356,7 @@ impl Measurements {
         self.obstacle_grid_rebuilds += other.obstacle_grid_rebuilds;
         self.ship_grid_cells_indexed += other.ship_grid_cells_indexed;
         self.obstacle_grid_cells_indexed += other.obstacle_grid_cells_indexed;
+        self.obstacle_contact_queries_merged += other.obstacle_contact_queries_merged;
         self.narrowphase_tests += other.narrowphase_tests;
         self.trigger_enters += other.trigger_enters;
         self.automatic_weapon_target_queries += other.automatic_weapon_target_queries;
