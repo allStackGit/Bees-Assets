@@ -1,6 +1,7 @@
 //! Scenario selection using the same window and bitmap font as play.
 
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
+use std::time::Instant;
 
 use super::{text, codex::{native_codex, codex_lines}};
 use crate::unity_scene_snapshot::{NativeSquadColorSetting, NativeSavedSquadFormation,
@@ -336,8 +337,16 @@ pub fn show_campaign_intermission(
     window.set_target_fps(30);
     let mut pixels = vec![0; WIDTH * HEIGHT];
     let mut page = 0_usize;
+    let mut displayed_page = usize::MAX;
+    let mut page_started = Instant::now();
+    let mut show_complete_line = false;
     let mut mouse_down = false;
     while window.is_open() {
+        if page != displayed_page {
+            displayed_page = page;
+            page_started = Instant::now();
+            show_complete_line = false;
+        }
         if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
             return Ok(false);
         }
@@ -361,10 +370,28 @@ pub fn show_campaign_intermission(
                 .is_some_and(|(_, y)| y >= 400.0));
         mouse_down = click;
         if next {
-            page += 1;
-            if page == lines.len() { return Ok(true); }
+            let message = lines[page].2;
+            let incomplete = !show_complete_line &&
+                page_started.elapsed().as_secs_f32() * 50.0 <
+                    message.chars().count() as f32;
+            if incomplete {
+                show_complete_line = true;
+            } else {
+                page += 1;
+                if page == lines.len() { return Ok(true); }
+            }
+        }
+        if displayed_page != page {
+            displayed_page = page;
+            page_started = Instant::now();
+            show_complete_line = false;
         }
         let (title, speaker, message) = lines[page];
+        let elapsed = if show_complete_line { 1_000_000.0 } else {
+            page_started.elapsed().as_secs_f32()
+        };
+        let (visible, speaking_frame) =
+            super::campaign_dialogue::revealed_dialogue_text(message, elapsed);
         pixels.fill(0x080e19);
         text::draw_centered(&mut pixels, WIDTH, 35,
             title, 2, TEXT);
@@ -373,15 +400,34 @@ pub fn show_campaign_intermission(
         for y in 130..380 {
             pixels[y * WIDTH + 40..y * WIDTH + WIDTH - 40].fill(0x111e2e);
         }
-        text::draw_at(&mut pixels, WIDTH, 64, 150, speaker, 2, [117, 219, 171]);
+        // Reuse the SAME original 14-speaker, two-frame source art
+        // already presented inside the battle and authenticated LAN.
+        // The travel scene has no CombatWorld and does not alter careers.
+        super::software::draw_dialogue_portrait(
+            &mut pixels, WIDTH, WIDTH, HEIGHT, speaker,
+            64, 180, 132, speaking_frame,
+        );
+        text::draw_at(&mut pixels, WIDTH, 220, 150,
+            speaker, 2, [117, 219, 171]);
         let mut rest = message;
+        let mut remaining = visible.chars().count();
         let mut y = 205;
         while !rest.is_empty() {
-            let prefix = text::fit(rest, WIDTH - 128);
+            let prefix = text::fit(rest, WIDTH - 300);
             if prefix.is_empty() { break; }
             let length = if prefix.len() == rest.len() { prefix.len() }
                 else { prefix.rfind(' ').filter(|&i| i != 0).unwrap_or(prefix.len()) };
-            text::draw_at(&mut pixels, WIDTH, 64, y, &rest[..length], 1, TEXT);
+            let line = &rest[..length];
+            let chars = line.chars().count();
+            let drawn = if remaining >= chars { line } else {
+                let end = line.char_indices().nth(remaining)
+                    .map_or(line.len(), |(offset, _)| offset);
+                &line[..end]
+            };
+            if !drawn.is_empty() {
+                text::draw_at(&mut pixels, WIDTH, 220, y, drawn, 1, TEXT);
+            }
+            remaining = remaining.saturating_sub(chars + 1);
             y += text::HEIGHT + 8;
             rest = rest[length..].trim_start();
         }
@@ -389,7 +435,7 @@ pub fn show_campaign_intermission(
             if page + 1 == lines.len() { "Continue to fleet preparation" }
                 else { "Continue dialogue" }, 2, TEXT);
         text::draw_centered(&mut pixels, WIDTH, 458,
-            "Space / Enter / Click next   Left previous   S skip   Esc back", 1, MUTED);
+            "Space / Enter / Click reveal/next   Left previous   S skip   Esc back", 1, MUTED);
         window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
     }
     Ok(false)
