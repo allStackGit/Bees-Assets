@@ -108,6 +108,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         }
         for(const name of ['ppo_compiled_loss_active',
             'ppo_compile_calibration_complete','ppo_compile_fallbacks',
+            'ppo_graph_mode_requested',
             'ppo_compile_compiled_samples','ppo_compile_eager_samples',
             'ppo_compile_restored','ppo_gradient_foreach_batches',
             'ppo_gpu_batch_target_pixels',
@@ -184,7 +185,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_policy_lag_updates',
             'training_async_next_collecting',
             'training_ppo_gradient_foreach_batches',
-            'training_ppo_compiled_active','training_ppo_compile_settled',
+            'training_ppo_compiled_active','training_ppo_graph_mode_requested',
+            'training_ppo_compile_settled',
             'training_ppo_compiled_samples','training_ppo_eager_samples',
             'training_ppo_compile_fallbacks',
             // Exposed Python simulation packing is a cross-project CPU
