@@ -5512,11 +5512,11 @@ fn run_campaign_game_menu(
             .map(|(entry, (unlocked, status))| BattleMenuRow {
                 title: entry.title.trim(), status, unlocked: *unlocked,
             }).collect::<Vec<_>>();
-        let squad_rows = progress.squad_rows();
         let available = progress.unspent_minerals()?;
         let (original_choices, authored_squads, squad_templates, editable_tactics) =
             authored_menu_fleet(&catalog, root, &progress);
         let fleet_rows = progress.fleet_rows_with_source(&original_choices);
+        let squad_rows = progress.squad_rows_with_source(&authored_squads);
         // The same set of persistent player SavedSquads must exist in
         // every replayable physical mission configuration, not only the
         // currently selected mission or the career history.
