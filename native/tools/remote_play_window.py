@@ -24,6 +24,17 @@ ENEMY = "#f0a365"
 NEUTRAL = "#8a96a8"
 MINERAL = "#d9c778"
 OUTLINE = "#cad7e6"
+
+# Tk has no per-item Canvas alpha. Quantize the host's actual fading
+# debris opacity into 17 blended colors once, not during each redraw.
+PIECE_FADE = tuple(
+    "#%02x%02x%02x" % tuple(
+        round(int(BACKGROUND[1+2*channel:3+2*channel], 16) * (1 - shade/16) +
+              int(MINERAL[1+2*channel:3+2*channel], 16) * shade/16)
+        for channel in range(3)
+    )
+    for shade in range(17)
+)
 MODES = {
     "Move": "move", "Attack": "attack", "Circle": "circle",
     "Right swipe": "right-swipe", "Left swipe": "left-swipe",
@@ -158,7 +169,7 @@ class RemoteBattleWindow:
         self.view_height = 1
         self.performance_enabled = False
         self.performance_started_ns = time.perf_counter_ns()
-        self.performance_counts = [0] * 7
+        self.performance_counts = [0] * 9
         self.performance_label = ""
 
         if not console.spectator:
@@ -1149,7 +1160,7 @@ class RemoteBattleWindow:
     def toggle_performance(self, _event=None):
         self.performance_enabled = not self.performance_enabled
         self.performance_started_ns = time.perf_counter_ns()
-        self.performance_counts = [0] * 7
+        self.performance_counts = [0] * 9
         self.performance_label = ""
         self.draw()
 
@@ -1234,6 +1245,31 @@ class RemoteBattleWindow:
                                              mx-width/2+width*remaining, my+3,
                                              fill=MINERAL if obj["mining"] else ENEMY,
                                              outline="")
+        pieces_drawn = pieces_culled = 0
+        for piece in state.get("asteroid_pieces", []):
+            # These IDs, current poses, and fade fractions are from the
+            # authoritative CombatWorld, and were already fog-filtered
+            # for this viewer. Map glyphs are visual only; not colliders.
+            x, y = self.to_screen(piece["x"], piece["y"])
+            if not (-7 <= x <= self.view_width+7 and
+                    -7 <= y <= self.view_height+7):
+                if measuring:
+                    pieces_culled += 1
+                continue
+            shade = max(0, min(16, round(piece["opacity"] * 16)))
+            if shade == 0:
+                continue
+            if measuring:
+                pieces_drawn += 1
+            angle = math.radians(piece["rotation"])
+            sn, cs = math.sin(angle), math.cos(angle)
+            coords = []
+            for dx, dy in ((-4, -2), (3, -3), (5, 2), (-3, 4)):
+                coords.extend((x + dx * cs - dy * sn,
+                               y + dx * sn + dy * cs))
+            self.canvas.create_polygon(*coords, fill=PIECE_FADE[shade],
+                                       outline="")
+
         for shot in state.get("projectiles", []):
             x, y = self.to_screen(shot["x"], shot["y"])
             if -4 <= x <= self.view_width+4 and -4 <= y <= self.view_height+4:
@@ -1468,6 +1504,7 @@ class RemoteBattleWindow:
             for index, addition in enumerate((
                 1, elapsed_ns, ships_drawn, ships_culled,
                 obstacles_drawn, obstacles_culled, shots_drawn,
+                pieces_drawn, pieces_culled,
             )):
                 stats[index] += addition
             sampled_ns = time.perf_counter_ns() - self.performance_started_ns
@@ -1479,9 +1516,10 @@ class RemoteBattleWindow:
                     f"Ships {stats[2] / frames:.0f} drawn / {stats[3] / frames:.0f} culled"
                     f"  |  objects {stats[4] / frames:.0f} drawn / {stats[5] / frames:.0f} culled"
                     f"  |  shots {stats[6] / frames:.0f}"
+                    f"  |  pieces {stats[7] / frames:.0f} / {stats[8] / frames:.0f} culled"
                 )
                 self.performance_started_ns = time.perf_counter_ns()
-                self.performance_counts = [0] * 7
+                self.performance_counts = [0] * 9
             if self.performance_label:
                 self.canvas.create_text(
                     self.view_width-14, 14, text=self.performance_label,
