@@ -2474,6 +2474,24 @@ pub(super) fn archive(
                     "kind": "target_enemy",
                     "enemy_squad_item_id": squad_ids[1 - side][0],
                 })]
+            } else if !mission_owner &&
+                matches!(selected.objective, Objective::TargetFlagship) &&
+                position == 0
+            {
+                // The actual flagship holds its starting defensive lane
+                // instead of chasing a distant decoy into the attacking
+                // fleet. Its original turrets keep firing automatically.
+                vec![json!({"kind": "hold"})]
+            } else if !mission_owner &&
+                matches!(selected.objective, Objective::TargetFlagship) &&
+                !bomber && !charger && scout.is_none() && !miner
+            {
+                // Protect the real hull with the shared Guard command's
+                // changing live formation, pursuit and target lifetime.
+                vec![json!({
+                    "kind": "guard",
+                    "friendly_squad_item_id": squad_ids[side][0],
+                })]
             } else if miner {
                 // A genuine source Carpenter Bee uses the existing
                 // authored mining order; on depletion it selects the next
