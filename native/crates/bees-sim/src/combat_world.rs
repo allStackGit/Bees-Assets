@@ -5507,11 +5507,11 @@ impl CombatWorld {
         collision_matrix: &CollisionMatrix, random: &mut RandomStream,
         command: &dyn Fn(i64) -> Option<i64>, context: Option<&dyn NativeAutomaticWeaponContext>,
     ) -> Result<StepCounts, CombatWorldError> {
-        if !self.frozen_after_elimination {
+        if !self.frozen_after_elimination && self.surrendered_side.is_none() {
             self.apply_policy_decisions(decisions)?;
         }
         let mut counts = self.step_fixed_inner(dt, collision_matrix, Some(random), Some(command), context)?;
-        counts.decisions = if self.frozen_after_elimination {
+        counts.decisions = if self.frozen_after_elimination || self.surrendered_side.is_some() {
             0
         } else {
             decisions.len() as u64

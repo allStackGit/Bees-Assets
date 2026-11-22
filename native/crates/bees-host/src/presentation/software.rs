@@ -3309,7 +3309,7 @@ impl NativeSoftwareRenderer {
             "CAMERA / GAME",
             "Right click or drag: move / attack   Arrows: pan   Wheel: zoom",
             "F: fit map   I: minimap   B: weapon ranges   F6: edge pan",
-            "Space: pause   N: single step while paused",
+            "Space: pause   N: single step while paused   F4: surrender",
             "COMMANDS",
             "C: hold   A: attack on sight   V: cease fire   E: chase",
             "G: guard   P: patrol   M: mine   H: heal   R: retreat",
@@ -3538,10 +3538,20 @@ impl NativeSoftwareRenderer {
 
     #[cfg(feature = "client")]
     pub(crate) fn draw_surrender_confirmation(&mut self) {
-        self.draw_campaign_dialogue("Surrender this battle?",
-            "All your deployed ships will be permanently destroyed. Y confirm, N or Esc cancel.");
+        Self::draw_surrender_panel(&mut self.pixels, self.width, self.height);
     }
 
+    #[cfg(feature = "client")]
+    pub(super) fn draw_surrender_panel(pixels: &mut [u32], width: usize, height: usize) {
+        Self::draw_help_panel(pixels, width, height, &[
+            "SURRENDER THIS BATTLE?",
+            "All your deployed ships will be permanently destroyed.",
+            "This ends the battle in defeat.",
+            "Y: surrender   N or Esc: cancel",
+        ], &[3]);
+    }
+
+    #[cfg(feature = "client")]
     pub(crate) fn draw_campaign_dialogue(&mut self, speaker: &str, message: &str) {
         let panel_width = self.width.min(680);
         let max_text_width = panel_width.saturating_sub(32).max(1);

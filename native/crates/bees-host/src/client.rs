@@ -451,7 +451,7 @@ impl NativeClient {
         if let Some((world, revision, side)) = self.surrender_confirmation {
             if (world, revision) != (view.world_id, view.episode_revision) ||
                 view.player_authority.player_viewer_side() != Some(side) ||
-                view.terminal_result.is_some() {
+                !view.can_surrender(side) {
                 self.surrender_confirmation = None;
             } else {
                 let (width, height) = self.window.get_size();
@@ -674,14 +674,9 @@ impl NativeClient {
         if view.terminal_result.is_some() { self.held_fire_target = None; }
         if !self.playback && !self.show_controls_help && !briefing &&
             self.held_fire_target.is_none() && view.terminal_result.is_none() &&
-            self.window.is_active() && self.window.is_key_pressed(Key::F5, KeyRepeat::No) {
+            self.window.is_active() && self.window.is_key_pressed(Key::F4, KeyRepeat::No) {
             if let Some(side) = view.player_authority.player_viewer_side() {
-                use bees_gameplay::campaign_dialogue::{CampaignCue, CampaignObjectiveKind};
-                let blocked = view.campaign_objective == Some(CampaignObjectiveKind::PlutoAnomaly) &&
-                    !view.campaign_dialogue.is_some_and(|(_, cue)| matches!(cue,
-                        CampaignCue::PlutoAnomalyGunshipBriefingComplete |
-                        CampaignCue::PlutoAnomalyHoneybeeDestroyed));
-                if !blocked {
+                if view.can_surrender(side) {
                     self.surrender_confirmation = Some((view.world_id, view.episode_revision, side));
                     self.selection_drag = None;
                     self.renderer.selection_box = None;
@@ -1606,7 +1601,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} selected | {}{} | {} | Weapon contacts {} | F1 controls | F5 surrender | Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} selected | {}{} | {} | Weapon contacts {} | F1 controls | F4 surrender | Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,

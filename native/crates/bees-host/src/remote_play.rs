@@ -2242,6 +2242,7 @@ fn current_state(
         // Both sides use the one authoritative Level clock. The opposing
         // side sees only this pause flag, never the owner's private story.
         "briefing_paused": briefing_paused,
+        "can_surrender": view.can_surrender(side),
         // Only authenticated side-owned vision and its authored fading
         // masks are sent. The remote window reuses the native pixel stencil
         // instead of revealing old sprites outside the current host sight.

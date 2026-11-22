@@ -2554,6 +2554,7 @@ pub fn connect_remote(
     let mut show_weapon_ranges=false;
     let mut show_diagnostics=false;
     let mut show_controls_help=false;
+    let mut surrender_confirmation: Option<(String,u64,u64)> = None;
     let mut show_codex=false;
     let mut codex_seen=[false;bees_sim::ship_assets::SHIP_TYPE_COUNT];
     let mut codex_selected=18_u8;
@@ -2573,7 +2574,7 @@ pub fn connect_remote(
         let now=Instant::now();
         let elapsed=now.duration_since(previous_frame).as_secs_f32().min(0.1);
         previous_frame=now;
-        if window.is_key_pressed(Key::F1, KeyRepeat::No) && !held_fire_active {
+        if surrender_confirmation.is_none() && window.is_key_pressed(Key::F1, KeyRepeat::No) && !held_fire_active {
             show_codex=false;
             show_controls_help=!show_controls_help;
             if show_controls_help {
@@ -2587,7 +2588,7 @@ pub fn connect_remote(
             last_left=window.get_mouse_down(MouseButton::Left);
             last_right=window.get_mouse_down(MouseButton::Right);
         }
-        if window.is_key_pressed(Key::F2, KeyRepeat::No) && !held_fire_active {
+        if surrender_confirmation.is_none() && window.is_key_pressed(Key::F2, KeyRepeat::No) && !held_fire_active {
             show_codex=!show_codex;
             show_controls_help=show_codex;
             if show_codex {
@@ -2656,7 +2657,9 @@ pub fn connect_remote(
         // targeting or shooting UI is active.
         let cancel = window.is_key_pressed(Key::Backspace, KeyRepeat::No);
         let escape = window.is_key_pressed(Key::Escape, KeyRepeat::No);
-        if escape && show_controls_help {
+        if surrender_confirmation.is_some() && (escape || cancel) {
+            surrender_confirmation=None;
+        } else if escape && show_controls_help {
             show_controls_help=false;
             show_codex=false;
             last_left=window.get_mouse_down(MouseButton::Left);
@@ -2673,7 +2676,7 @@ pub fn connect_remote(
         // Dropping the previous socket makes the authoritative host release
         // the old peer's held-fire weapons at its next fixed-tick boundary.
         let mut rejoined=false;
-        if !show_controls_help && window.is_key_pressed(Key::F5, KeyRepeat::No) {
+        if surrender_confirmation.is_none() && !show_controls_help && window.is_key_pressed(Key::F5, KeyRepeat::No) {
             peer.metrics.reconnect_attempts+=1;
             let original = peer.host_session_id.as_deref()
                 .or(peer.expected_host_session_id.as_deref());
@@ -2959,7 +2962,33 @@ pub fn connect_remote(
         // its reliable reply may precede the next lossy World snapshot.
         let host_briefing_paused=peer.state.as_ref()
             .is_some_and(|state|state["briefing_paused"]==true);
+        let surrender_owner = if !terminal && !briefing && !host_briefing_paused &&
+            !show_controls_help && !held_fire_active && peer.connected && peer.authenticated {
+            peer.state.as_ref().and_then(|state| {
+                if state["can_surrender"] != true { return None; }
+                Some((peer.host_session_id.clone()?, state["world_id"].as_u64()?,
+                    state["episode_revision"].as_u64()?))
+            })
+        } else { None };
         peer.input_suppressed=terminal||briefing||host_briefing_paused||show_controls_help;
+        if let Some(owner) = surrender_confirmation.as_ref() {
+            if surrender_owner.as_ref() != Some(owner) ||
+                window.is_key_pressed(Key::N,KeyRepeat::No) {
+                surrender_confirmation=None;
+            } else if window.is_key_pressed(Key::Y,KeyRepeat::No) {
+                let (_,world,revision)=owner.clone();
+                surrender_confirmation=None;
+                let action=json!({"kind":"surrender","input":{
+                    "world_id":world,"episode_revision":revision,"side":expected_side
+                }});
+                if let Err(error)=peer.send_action(action,"Surrender submitted".into()) {
+                    peer.notice=error.to_string();
+                }
+            }
+        } else if window.is_active() && window.is_key_pressed(Key::F4,KeyRepeat::No) {
+            surrender_confirmation=surrender_owner;
+        }
+        peer.input_suppressed |= surrender_confirmation.is_some();
         if peer.input_suppressed {
             // A completed battle has no further physical input boundary,
             // whereas a story briefing pauses only this commander's UI.
@@ -2989,7 +3018,7 @@ pub fn connect_remote(
             hud_press=None;squad_tab_press=None;shooting_press=None;
             minimap_dragging=false;
         }
-        if !show_controls_help {
+        if !show_controls_help && surrender_confirmation.is_none() {
         if let Some(mut cam)=camera {
             let keys=window.get_keys_pressed(KeyRepeat::No);
             let shift=window.is_key_down(Key::LeftShift)||
@@ -3618,7 +3647,9 @@ pub fn connect_remote(
             text::draw_at(&mut pixels, WIDTH, 10, HEIGHT-43,
                 text::fit(receipt, FIELD-20), 1, [255, 211, 130]);
         }
-        if show_codex {
+        if surrender_confirmation.is_some() {
+            NativeSoftwareRenderer::draw_surrender_panel(&mut pixels,WIDTH,HEIGHT);
+        } else if show_codex {
             static SHIPS:OnceLock<bees_sim::ship_assets::ShipAssetCatalog>=OnceLock::new();
             let catalog=SHIPS.get_or_init(||
                 bees_sim::ship_assets::ShipAssetCatalog::embedded()
@@ -3677,7 +3708,7 @@ pub fn connect_remote(
                 "T: point fire   Hold J: manual fire   X: stop fire",
                 "Backspace: cancel target   Shift+T: attack ship",
                 "NETWORK / AUDIO",
-                "F5: reconnect original session   F8: network measurements",
+                "F4: surrender   F5: reconnect   F8: network measurements",
                 "F7: mute   F10/F11: effects   Shift+F10/F11: music",
                 "Space: pause local soundtrack (not remote battle)",
             ];

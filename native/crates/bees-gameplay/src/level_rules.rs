@@ -1440,7 +1440,8 @@ where
         // Unity's YellowJacket.OnTriggerEnter2D is independent of the
         // command timer. Consume these source-ordered contacts INSIDE the
         // owning completed tick, before the sole reward/roster event pass.
-        if state.events.needs_bomber_contacts(&state.combat) {
+        if state.combat.surrendered_side().is_none() &&
+            state.events.needs_bomber_contacts(&state.combat) {
             state.command_bomber_contacts.clear();
             state.metadata.collect_bomber_contacts(
                 &state.combat, state.events.roster(),
@@ -1459,7 +1460,9 @@ where
                 )?;
             }
         }
-        state.combat.step_extraction(&self.collision_matrix)?;
+        if state.combat.surrendered_side().is_none() {
+            state.combat.step_extraction(&self.collision_matrix)?;
+        }
         state.combat.consume_weapon_rank_events()?;
         state.metadata.register_scout_beacons(&state.combat, state.combat.events())?;
         state.metadata.register_spawned_policy_ships(

@@ -241,6 +241,19 @@ impl<'a> NativeRenderWorldView<'a> {
     /// shortcuts, fog and the minimap. A different side's ships cannot
     /// inherit this viewer's UI access just because another controller
     /// marked its squads user-controlled in the shared Level.
+    pub fn can_surrender(&self, side: i32) -> bool {
+        self.terminal_result.is_none() && self.combat.surrendered_side().is_none() &&
+            self.roster.active_lifetimes().any(|owner|
+                self.roster.get(owner).is_some_and(|squad| squad.side == side &&
+                    self.player_authority.player_permissions(owner)
+                        .is_some_and(|p| p.user_controlled && p.can_accept_input))) &&
+            (self.campaign_objective != Some(
+                bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoAnomaly) ||
+                self.campaign_dialogue.is_some_and(|(_, cue)| matches!(cue,
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipBriefingComplete |
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeDestroyed)))
+    }
+
     pub fn is_local_player_squad(&self, owner: SquadLifetime) -> bool {
         let Some(squad) = self.roster.get(owner) else { return false };
         self.player_authority.player_owns_squad(owner, squad.side)
