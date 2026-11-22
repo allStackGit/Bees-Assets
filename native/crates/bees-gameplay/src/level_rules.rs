@@ -81,6 +81,12 @@ pub trait NativeLevelRewardMetadata {
     /// authorized player side. Non-campaign training need not store one.
     fn campaign_score_snapshot(&self) -> Option<(i32, i64)> { None }
 
+    /// Original campaign Codex rights. Presentation-only; never a model
+    /// observation or a second physical discovery system.
+    fn campaign_codex_classes(
+        &self,
+    ) -> Option<(i32, &[bool; bees_sim::ship_assets::SHIP_TYPE_COUNT])> { None }
+
     /// Original GameState match counters: ships lost, returned, and
     /// kills credited to the player. A None value is not a zero count.
     fn player_match_counts(&self) -> Option<(u64, u64, u64)> { None }
