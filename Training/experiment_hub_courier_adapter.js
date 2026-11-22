@@ -82,6 +82,8 @@ const COURIER_METRIC_CATALOG={
         'training_shared_policy_lag_updates',
         'training_shared_async_collection_overlap_seconds',
         'training_shared_async_collection_wait_seconds',
+        'training_shared_async_collection_exposed_fraction',
+        'training_shared_async_collection_overlap_fraction',
         'training_async_ppo_overlap_seconds',
         'training_async_exposed_wait_seconds',
         'training_async_collection_wall_seconds',
