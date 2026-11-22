@@ -212,9 +212,25 @@ pub(super) fn list_trained(
 pub(super) fn list_campaigns(
     save_root: &Path, campaigns: impl Iterator<Item = (String, String)>,
 ) -> io::Result<Vec<RecordedBattle>> {
+    list_career_replays(save_root, campaigns, "campaigns")
+}
+
+/// Challenge and Campaign retain independent progress, but their original
+/// authoritative input recordings and immutable career replay setup are
+/// identical. Reuse one replay discovery/reader instead of a second format.
+pub(super) fn list_challenges(
+    save_root: &Path, challenges: impl Iterator<Item = (String, String)>,
+) -> io::Result<Vec<RecordedBattle>> {
+    list_career_replays(save_root, challenges, "challenges")
+}
+
+fn list_career_replays(
+    save_root: &Path, careers: impl Iterator<Item = (String, String)>,
+    save_folder: &str,
+) -> io::Result<Vec<RecordedBattle>> {
     let mut clips = Vec::new();
-    for (game_id, title) in campaigns {
-        let directory = save_root.join("campaigns").join(&game_id);
+    for (game_id, title) in careers {
+        let directory = save_root.join(save_folder).join(&game_id);
         match fs::symlink_metadata(&directory) {
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
             Err(error) => return Err(error),
@@ -256,9 +272,12 @@ pub(super) fn list_campaigns(
             else { continue };
             clips.push(RecordedBattle {
                 title: format!("{title}: {mission_id}  |  Battle {number:04}"),
-                status: "  [Career replay]".to_owned(),
+                status: if save_folder == "challenges" {
+                    "  [Challenge replay]".to_owned()
+                } else { "  [Career replay]".to_owned() },
                 // Replays are ordinary game outputs, not campaign receipts.
-                game_id: format!("campaign-replay-{game_id}"),
+                game_id: format!("{}-replay-{game_id}",
+                    if save_folder == "challenges" { "challenge" } else { "campaign" }),
                 source: RecordedSource::CampaignSetup(setup),
                 trace,
                 number,

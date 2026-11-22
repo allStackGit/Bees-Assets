@@ -5584,7 +5584,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             !entry.id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') ||
             !seen.insert(entry.id.as_str()) ||
             entry.title.trim().is_empty() || entry.title.len() > 120 ||
-            !matches!(entry.kind.as_str(), "campaign" | "battle") ||
+            !matches!(entry.kind.as_str(), "campaign" | "challenge" | "battle") ||
             entry.config.extension().and_then(|ext| ext.to_str()) != Some("json") ||
             (entry.config.to_string_lossy().contains('\\') ||
              entry.config.to_string_lossy().contains(':')) ||
@@ -5597,7 +5597,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             return Err(invalid("native library content must reside within the library directory").into());
         }
         // Fail before showing the window, not halfway through a menu choice.
-        if entry.kind == "campaign" {
+        if matches!(entry.kind.as_str(), "campaign" | "challenge") {
             let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(&fs::read(&config)?)?;
             catalog.validate()?;
         } else {
@@ -5612,7 +5612,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let Some(gate) = &item.unlock_after else { continue };
         let campaign_index = library.games.iter().position(|entry|
             entry.kind == "campaign" && entry.id == gate.campaign_id);
-        if item.kind != "battle" || gate.mission_id.trim().is_empty() ||
+        if !matches!(item.kind.as_str(), "battle" | "challenge") ||
+            gate.mission_id.trim().is_empty() ||
             campaign_index.is_none()
         {
             return Err(invalid(
@@ -5636,6 +5637,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         "games": library.games.len(),
         "trained_models": trained.len(),
         "campaigns": library.games.iter().filter(|entry| entry.kind == "campaign").count(),
+        "challenges": library.games.iter().filter(|entry| entry.kind == "challenge").count(),
         "battles": library.games.iter().filter(|entry| entry.kind == "battle").count(),
     }));
     let mut selected = 0_usize;
@@ -5663,7 +5665,13 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 });
             }
             let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(&fs::read(config)?)?;
-            let career_root = save_root.join("campaigns").join(&item.id);
+            // A Challenge is a full ten-level source career but has its
+            // OWN permanent fleet, score and progression in the original.
+            // Use the existing campaign ledger under an isolated save root;
+            // no second persistence system or simulation is introduced.
+            let career_root = save_root.join(
+                if item.kind == "challenge" { "challenges" } else { "campaigns" }
+            ).join(&item.id);
             let progress = catalog.load_progress(&career_root)?;
             completed_by_campaign.insert(item.id.clone(),
                 catalog.battles.iter().filter_map(|entry| entry.mission.as_ref())
@@ -5682,7 +5690,15 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             let total = catalog.battles.iter().filter_map(|b| b.mission.as_ref()).count();
             let complete = catalog.battles.iter().filter_map(|b| b.mission.as_ref())
                 .filter(|mission| progress.completed(&mission.id)).count();
-            Ok::<String, Box<dyn Error>>(format!("  [Career {complete}/{total}]"))
+            if item.kind == "challenge" {
+                let (score, score_complete) = progress.campaign_score_summary();
+                Ok::<String, Box<dyn Error>>(format!(
+                    "  [Challenge {complete}/{total} | Score {score:+}{}]",
+                    if score_complete { "" } else { " partial" },
+                ))
+            } else {
+                Ok::<String, Box<dyn Error>>(format!("  [Career {complete}/{total}]"))
+            }
         }).collect::<Result<Vec<_>,_>>()?;
         let unlocked_games = library.games.iter().map(|game|
             game.unlock_after.as_ref().is_none_or(|gate|
@@ -5719,6 +5735,11 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         recordings.extend(recorded_library::list_campaigns(
             save_root,
             library.games.iter().filter(|item| item.kind == "campaign")
+                .map(|item| (item.id.clone(), item.title.clone())),
+        )?);
+        recordings.extend(recorded_library::list_challenges(
+            save_root,
+            library.games.iter().filter(|item| item.kind == "challenge")
                 .map(|item| (item.id.clone(), item.title.clone())),
         )?);
         recordings.extend(recorded_library::list_trained(
@@ -6072,8 +6093,10 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 }));
                 run_session(&source, true, true, Some(output), None, None, None)
             })()
-        } else if game_kind == "campaign" {
-            run_menu(&games[index], &save_root.join("campaigns").join(game_id))
+        } else if matches!(game_kind, "campaign" | "challenge") {
+            run_menu(&games[index], &save_root.join(
+                if game_kind == "challenge" { "challenges" } else { "campaigns" }
+            ).join(game_id))
         } else {
             run_library_quick_battle(save_root, game_id, &games[index])
         };
