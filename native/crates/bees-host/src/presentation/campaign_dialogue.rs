@@ -15,6 +15,10 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
             ("Samuel", "It isn't responding, sir."),
             ("Samuel", "Understood, sir. We'll send Lieutenant Tom out immediately."),
         ],
+        // A non-speaking, gameplay-authenticated boundary. The original
+        // Scout report has finished; deferred real source reinforcements
+        // and scripted orders can now observe this one committed cue.
+        CampaignCue::PlutoAnomalyScoutReportComplete => &[],
         CampaignCue::PlutoAnomalyHoneybeeDestroyed => &[
             ("Tom", "Uh, Commander? Are you seeing this?"),
             ("Samuel", "Commander, more unidentified vessels are approaching."),
