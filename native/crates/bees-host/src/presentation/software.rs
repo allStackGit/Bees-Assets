@@ -3631,6 +3631,54 @@ impl NativeSoftwareRenderer {
     /// F1 help uses the same static source-control wording on every world,
     /// without building a string or allocating a second framebuffer.
     #[cfg(feature = "client")]
+    /// The in-battle menu shares the ordinary input-free help-panel raster.
+    /// Rows are actionable only through the local window's edge-triggered
+    /// input handler, never through a physical game event or remote session.
+    #[cfg(feature = "client")]
+    pub fn draw_battle_menu(&mut self, was_paused: bool, can_surrender: bool) {
+        let lines: &[&str] = if can_surrender {
+            &["BEES NATIVE  /  BATTLE MENU",
+              "Esc or R: resume the battle",
+              "H or F1: open controls and shortcuts",
+              "C or F2: inspect the Fleet Codex",
+              "S: surrender this battle (confirmation required)",
+              "Q: leave battle and return to the game library",
+              if was_paused { "Battle was already paused" }
+              else { "Battle paused while menu is open" }]
+        } else {
+            &["BEES NATIVE  /  BATTLE MENU",
+              "Esc or R: resume the battle",
+              "H or F1: open controls and shortcuts",
+              "C or F2: inspect the Fleet Codex",
+              "S: surrender is unavailable for this World",
+              "Q: leave battle and return to the game library",
+              if was_paused { "Battle was already paused" }
+              else { "Battle paused while menu is open" }]
+        };
+        Self::draw_help_panel(&mut self.pixels, self.width, self.height,
+            lines, &[0, 6]);
+    }
+
+    /// Hit exactly the same centered lines drawn by draw_battle_menu.
+    /// Returns 0..4 for Resume/Help/Codex/Surrender/Leave respectively.
+    #[cfg(feature = "client")]
+    pub fn battle_menu_at(&self, x: f32, y: f32) -> Option<usize> {
+        if self.width < 490 || self.height < 400 ||
+            !x.is_finite() || !y.is_finite() { return None; }
+        let row_height = text::HEIGHT + 5;
+        let panel_height = (7 * row_height + 28).min(self.height);
+        let panel_width = self.width.saturating_sub(40).min(875);
+        let left = (self.width - panel_width) / 2;
+        let top = (self.height - panel_height) / 2;
+        if x < (left + 16) as f32 ||
+            x >= (left + panel_width - 16) as f32 { return None; }
+        let row = ((y as isize - (top + 12) as isize)
+            / row_height as isize) as usize;
+        (y >= (top + 12) as f32 && (1..=5).contains(&row) &&
+            y < (top + 12 + (row + 1) * row_height) as f32)
+            .then_some(row - 1)
+    }
+
     pub fn draw_controls_help(&mut self) {
         const LINES: &[&str] = &[
             "BEES NATIVE  /  CONTROLS",

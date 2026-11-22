@@ -128,6 +128,9 @@ pub struct NativeClient {
     hotseat: Option<NativeHotseat>,
     paused: bool,
     show_controls_help: bool,
+    /// Original in-battle menu; reuses help's frozen simulation clock.
+    battle_menu_open: bool,
+    battle_menu_press: Option<usize>,
     surrender_confirmation: Option<(WorldId, u64, i32)>,
     /// Read-only Fleet Codex modal. Reuses the existing help pause/input
     /// boundary rather than introducing an independent game clock.
@@ -244,7 +247,9 @@ impl NativeClient {
             music_locations: Vec::new(), bounds,
             selected_world: 0, selection_owner: None,
             submitted_selection: Vec::new(), hotseat: None,
-            paused: false, show_controls_help: false, surrender_confirmation: None,
+            paused: false, show_controls_help: false,
+            battle_menu_open: false, battle_menu_press: None,
+            surrender_confirmation: None,
             codex_open: false,
             codex_selected: 18,
             last_title_update: None,
@@ -481,23 +486,97 @@ impl NativeClient {
                 return Ok(NativeClientAction::Wait);
             }
         }
-        // Esc dismisses the temporary strategy picker before affecting
-        // the running battle. Use the press edge so a held key cannot
-        // also quit on the following frame after closing the modal.
+        // Escape returns to the game menu rather than silently abandoning
+        // an active campaign. Keep playback/terminal close semantics intact.
         if self.window.is_key_pressed(Key::Escape, KeyRepeat::No) {
             if self.show_controls_help {
                 self.show_controls_help = false;
                 self.codex_open = false;
+                self.battle_menu_open = false;
+                self.battle_menu_press = None;
                 self.next_step = Instant::now();
             } else if self.renderer.show_shooting_menu {
                 self.renderer.show_shooting_menu = false;
                 self.shooting_press = None;
-            } else {
+            } else if self.playback || view.terminal_result.is_some() {
                 return Ok(NativeClientAction::Quit);
+            } else {
+                self.battle_menu_open = true;
+                self.show_controls_help = true;
+                self.next_step = Instant::now();
+                self.selection_drag = None;
+                self.renderer.selection_box = None;
+                self.hud_press = None;
+                self.squad_tab_press = None;
+                self.minimap_dragging = false;
+                self.right_press = None;
+                self.renderer.show_shooting_menu = false;
+                self.shooting_press = None;
+                // A held manual-fire gesture belongs to the game host;
+                // never freeze the window while leaving those weapons aimed.
+                if self.held_fire_target.take().is_some() {
+                    return Ok(NativeClientAction::Input {
+                        action: NativePlayerInput::HeldFire(NativePlayerHeldFire {
+                            world_id: view.world_id,
+                            episode_revision: view.episode_revision,
+                            controller_id: 0,
+                            action: NativeHeldFireAction::End,
+                        }),
+                        step: false,
+                    });
+                }
+            }
+        }
+        // The menu owns its input surface. An action is dispatched only
+        // after a direct key press or mouse release over the pressed row.
+        if self.battle_menu_open {
+            let left = self.window.get_mouse_down(MouseButton::Left);
+            let hover = self.window.get_mouse_pos(MouseMode::Discard)
+                .and_then(|(x, y)| self.renderer.battle_menu_at(x, y));
+            if left && !self.left_was_down {
+                self.battle_menu_press = hover;
+            }
+            let click = if !left && self.left_was_down {
+                self.battle_menu_press.take().filter(|&pressed| Some(pressed) == hover)
+            } else { None };
+            self.left_was_down = left;
+            let choice = if self.window.is_key_pressed(Key::R, KeyRepeat::No) {
+                Some(0)
+            } else if self.window.is_key_pressed(Key::H, KeyRepeat::No) ||
+                self.window.is_key_pressed(Key::F1, KeyRepeat::No) { Some(1) }
+            else if self.window.is_key_pressed(Key::C, KeyRepeat::No) ||
+                self.window.is_key_pressed(Key::F2, KeyRepeat::No) { Some(2) }
+            else if self.window.is_key_pressed(Key::S, KeyRepeat::No) { Some(3) }
+            else if self.window.is_key_pressed(Key::Q, KeyRepeat::No) { Some(4) }
+            else { click };
+            match choice {
+                Some(0 | 1 | 2) => {
+                    self.battle_menu_open = false;
+                    self.battle_menu_press = None;
+                    self.show_controls_help = choice != Some(0);
+                    self.codex_open = choice == Some(2);
+                    self.next_step = Instant::now();
+                    return Ok(NativeClientAction::Wait);
+                }
+                Some(3) => {
+                    if let Some(side) = view.player_authority.player_viewer_side()
+                        .filter(|&side| view.can_surrender(side)) {
+                        self.battle_menu_open = false;
+                        self.battle_menu_press = None;
+                        self.show_controls_help = false;
+                        self.surrender_confirmation = Some((
+                            view.world_id, view.episode_revision, side,
+                        ));
+                        self.next_step = Instant::now();
+                        return Ok(NativeClientAction::Wait);
+                    }
+                }
+                Some(4) => return Ok(NativeClientAction::Quit),
+                _ => {},
             }
         }
         if self.window.is_key_pressed(Key::F1, KeyRepeat::No) &&
-            self.held_fire_target.is_none()
+            self.held_fire_target.is_none() && !self.battle_menu_open
         {
             self.codex_open = false;
             self.show_controls_help = !self.show_controls_help;
@@ -1585,7 +1664,11 @@ impl NativeClient {
         }
         // Help is a noninteractive presentation overlay. All underlying
         // authenticated player commands remain disabled until it closes.
-        if self.codex_open {
+        if self.battle_menu_open {
+            let can_surrender = view.player_authority.player_viewer_side()
+                .is_some_and(|side| view.can_surrender(side));
+            self.renderer.draw_battle_menu(self.paused, can_surrender);
+        } else if self.codex_open {
             self.renderer.draw_fleet_codex(&view, self.codex_selected);
         } else if self.show_controls_help {
             self.renderer.draw_controls_help();
@@ -1633,7 +1716,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} selected | {}{} | {} | Weapon contacts {} | F1 controls | F4 surrender | Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} selected | {}{} | {} | Weapon contacts {} | F1 controls | F4 surrender | Esc menu",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
