@@ -3734,6 +3734,24 @@ impl NativePhysicalScene {
 
         let squads = self.squads_for_level(setup.level_id)
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        let pluto_tutorial_controls = if let Some(
+            CampaignDialogueSpec::PlutoReinforcements { player_side, scout_id },
+        ) = setup.campaign_dialogue {
+            let owners = self.source_squads.iter()
+                .filter(|source| !source.members.is_empty())
+                .zip(&squads)
+                .filter(|(source, _)| source.side == player_side &&
+                    source.player_permissions.user_controlled)
+                .map(|(source, squad)| (source, squad.owner))
+                .collect::<Vec<_>>();
+            let scout = owners.iter().find_map(|(source, owner)|
+                source.members.contains(&scout_id).then_some(*owner)
+            ).ok_or(NativePolicyOnlyLevelError::InvalidCampaignDialogue)?;
+            let others = owners.iter().filter_map(|(_, owner)|
+                (*owner != scout).then_some(*owner)
+            ).collect::<Vec<_>>();
+            Some((scout, others))
+        } else { None };
         let queen_templates = self.entities.iter().filter_map(|entity| match entity {
             NativeAuthoredEntity::Ship(ship) => match &ship.special {
                 Some(NativeAuthoredShipSpecial::Queen { minions }) =>
@@ -3799,6 +3817,9 @@ impl NativePhysicalScene {
         metadata.install_queen_templates(queen_templates)
             .map_err(NativePolicyOnlyLevelError::Metadata)?;
         metadata.set_campaign_codex(setup.campaign_codex);
+        if let Some((scout, others)) = pluto_tutorial_controls {
+            metadata.configure_pluto_tutorial_controls(scout, others);
+        }
         metadata.targeting_context = self.targeting_context;
         metadata.activate_mining = self.activate_mining;
         metadata.activate_fog_of_war = self.activate_fog_of_war;
