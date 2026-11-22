@@ -14,7 +14,6 @@ Resource leases and GPU device identity remain the Hub agent's authority.
 """
 from __future__ import annotations
 
-from contextlib import nullcontext
 from statistics import median
 from time import perf_counter
 from typing import Callable, Sequence
@@ -72,12 +71,15 @@ class IndependentGpuTraining:
         self.models, self.optimizers = tuple(models), tuple(optimizers)
         self.max_streams, self.sample_windows = max_streams, sample_windows
         self.min_speedup = min_speedup
-        identities, device = set(), None
+        identities, device, owned_optimizers = set(), None, set()
         forbidden_random = (nn.Dropout, nn.Dropout1d, nn.Dropout2d, nn.Dropout3d,
                             nn.AlphaDropout, nn.FeatureAlphaDropout, nn.RReLU)
         for model, optimizer in zip(self.models, self.optimizers):
             if not isinstance(model, nn.Module) or not isinstance(optimizer, torch.optim.Optimizer):
                 raise ValueError("A registered training step needs an owned model and optimizer")
+            if id(optimizer) in owned_optimizers:
+                raise ValueError("Independent learners cannot share an optimizer instance")
+            owned_optimizers.add(id(optimizer))
             if any(isinstance(module, forbidden_random) and module.training
                    for module in model.modules()):
                 raise ValueError("GPU stream training requires explicit RNG-free learner forwards")
@@ -89,7 +91,15 @@ class IndependentGpuTraining:
             if not owned or len({id(p) for p in owned}) != len(owned) or any(
                     id(p) not in param_ids for p in owned):
                 raise ValueError("Optimizer updates must be owned by their registered model")
-            for tensor in (*params, *model.buffers()):
+            # Optimizer momentum, variance and step-state tensors are part
+            # of the independent update ownership contract too. Sharing
+            # an Adam state allocation between learners would race even
+            # when their model parameter objects are distinct.
+            state_tensors = tuple(
+                state_value for state in optimizer.state.values()
+                for state_value in state.values()
+                if isinstance(state_value, torch.Tensor))
+            for tensor in (*params, *model.buffers(), *state_tensors):
                 if device is None:
                     device = tensor.device
                 if tensor.device != device:
@@ -107,8 +117,8 @@ class IndependentGpuTraining:
         self.phase = "serial_probe"
         self.calls = self.serial_calls = self.concurrent_calls = 0
         self.work_completed = 0.0
-        self.last_observed_seconds = 0.0
-        self.last_observed_work_rate = 0.0
+        self.last_qualified_seconds = 0.0
+        self.last_qualified_work_rate = 0.0
         self.selected = None
 
     def _parallel(self, steps):
@@ -173,8 +183,9 @@ class IndependentGpuTraining:
         self.work_completed += count
         self.serial_calls += int(mode == "serial")
         self.concurrent_calls += int(mode == "parallel")
-        self.last_observed_seconds = seconds if measuring else 0.0
-        self.last_observed_work_rate = count/seconds if measuring and seconds>0 else 0.0
+        if measuring and seconds>0:
+            self.last_qualified_seconds = seconds
+            self.last_qualified_work_rate = count/seconds
         if measuring and seconds>0:
             rates = self.serial_rates if mode == "serial" else self.concurrent_rates
             rates.append(count/seconds)
@@ -194,6 +205,6 @@ class IndependentGpuTraining:
             gpu_training_calibration_parallel=len(self.concurrent_rates),
             gpu_training_selected_parallel=int(self.selected == "parallel"),
             gpu_training_calibration_complete=int(self.phase == "settled"),
-            gpu_training_last_service_seconds=self.last_observed_seconds,
-            gpu_training_last_work_per_second=self.last_observed_work_rate,
+            gpu_training_last_qualified_seconds=self.last_qualified_seconds,
+            gpu_training_last_qualified_work_per_second=self.last_qualified_work_rate,
         )
