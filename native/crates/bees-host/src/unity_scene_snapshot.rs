@@ -1362,6 +1362,77 @@ pub struct NativeSourcePolicyGroup {
 }
 
 impl NativePhysicalScene {
+    /// Pluto II starts with four real player squads (two single Scouts,
+    /// two pairs of Gunships) but only the first Scout accepts orders.
+    /// The first authentic player selection releases the original squad
+    /// tutorial and the ensuing Bee wave contains one Honeybee and two
+    /// three-Hornet squads. All remain real scene hulls and Squads.
+    fn pluto_reinforcements_authored(
+        &self, player_side: i32, first_scout: i64,
+        waves: &[crate::reinforcements::NativeReinforcementPlan],
+    ) -> bool {
+        use crate::reinforcements::NativeReinforcementActivation;
+        use crate::policy_only_metadata::NativeMissionCue;
+        let hulls = self.entities.iter().filter_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) =>
+                (!ship.vitals.is_dead()).then_some((
+                    ship.entity_id, (ship.side, ship.ship_type),
+                )),
+            _ => None,
+        }).collect::<HashMap<_, _>>();
+        let player = self.source_squads.iter().filter(|squad|
+            squad.side == player_side && !squad.members.is_empty() &&
+            squad.player_permissions.user_controlled
+        ).collect::<Vec<_>>();
+        if player.len() != 4 { return false; }
+        let mut player_kinds = Vec::with_capacity(4);
+        let mut first_owner = false;
+        for squad in player {
+            let mut types = squad.members.iter().map(|member|
+                hulls.get(member).copied()
+            ).collect::<Vec<_>>();
+            if types.iter().any(|value|
+                value.is_none_or(|(side, _)| side != player_side))
+            { return false; }
+            let types = types.drain(..).map(|value| value.expect("source validated").1)
+                .collect::<Vec<_>>();
+            if squad.members.contains(&first_scout) &&
+                types.as_slice() == [18] {
+                first_owner = true;
+            }
+            player_kinds.push(types);
+        }
+        player_kinds.sort();
+        if !first_owner || player_kinds != [
+            vec![13, 13], vec![13, 13], vec![18], vec![18],
+        ] { return false; }
+
+        let mut combat_waves = waves.iter().filter(|wave| matches!(
+            wave.activation,
+            NativeReinforcementActivation::OnCampaignCue(
+                NativeMissionCue::PlutoReinforcementsCombatReady)
+        ));
+        let Some(wave) = combat_waves.next() else { return false };
+        if combat_waves.next().is_some() || wave.squad_item_ids.len() != 3 {
+            return false;
+        }
+        let mut bee_types = Vec::with_capacity(3);
+        for squad_id in &wave.squad_item_ids {
+            let Some(squad) = self.source_squads.iter().find(|squad|
+                squad.item_id == *squad_id && squad.side == 3 - player_side
+            ) else { return false };
+            let mut types = Vec::with_capacity(squad.members.len());
+            for member in &squad.members {
+                let Some(&(side, kind)) = hulls.get(member) else { return false };
+                if side != 3 - player_side { return false; }
+                types.push(kind);
+            }
+            bee_types.push(types);
+        }
+        bee_types.sort();
+        bee_types == [vec![14], vec![15, 15, 15], vec![15, 15, 15]]
+    }
+
     /// The original Pluto I story physically withdraws its first Scout
     /// upon Honeybee contact, then admits one actual Gunship after the
     /// player's report finishes. These plans must refer to the existing
@@ -3137,6 +3208,15 @@ impl NativePhysicalScene {
         }.map_err(NativePolicyOnlyLevelError::Snapshot)?;
         use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
         match setup.campaign_dialogue {
+            Some(CampaignDialogueSpec::PlutoReinforcements { player_side, scout_id })
+                if player_side != human_side || scout_id <= 0 ||
+                    !self.pluto_reinforcements_authored(
+                        player_side, scout_id, &setup.reinforcements,
+                    ) || self.activate_hivemind == Some(true) ||
+                    setup.groups.is_some() || setup.survival.is_some() ||
+                    setup.demolition.is_some() || setup.escort.is_some() ||
+                    setup.extraction.is_some() || setup.target_ship.is_some() =>
+                return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::PlutoAnomaly {
                 player_side, scout_id, honeybee_id, gunship_id,
             }) if player_side != human_side || scout_id <= 0 ||
