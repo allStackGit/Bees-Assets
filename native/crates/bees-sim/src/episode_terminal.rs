@@ -781,8 +781,11 @@ impl NativeEpisodeTerminal {
             let defender_side = if attacking_side == self.bee_side {
                 self.human_side
             } else { self.bee_side };
+            // The source CombatWorld may retire the physical hull on
+            // death. Its absence after a verified initial registration
+            // is destruction, just as for protected and escorted ships.
             let target_destroyed = world.ship(target.target_ship_id)
-                .is_some_and(|ship| ship.vitals.is_dead());
+                .is_none_or(|ship| ship.vitals.is_dead());
             let attacker_eliminated =
                 world.living_mobile_ships_on_side(attacking_side) == 0 &&
                 !world.has_reserved_future_ships_on_side(attacking_side);
