@@ -499,11 +499,99 @@ pub(crate) fn pause_seconds(cue: CampaignCue, visible_index: usize) -> Option<f3
 // Original LevelIntro travel dialogue, separate from in-battle cues.
 // The authored Titania-to-Uranus middle exchange exists only if A.M.I.
 // survived the committed Beenoculars outcome.
+/// The source LevelIntro mission briefing, shown before fleet preparation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+pub enum NativeCampaignPreparation {
+    #[serde(rename = "pluto_reinforcements")]
+    PlutoReinforcements,
+    #[serde(rename = "pluto_pushback")]
+    PlutoPushback,
+    #[serde(rename = "pluto_bluer_pastures")]
+    PlutoBluerPastures,
+    #[serde(rename = "neptune_seize_means")]
+    NeptuneSeizeMeans,
+    #[serde(rename = "neptune_of_production")]
+    NeptuneProduction,
+    #[serde(rename = "neptune_pressing_forward")]
+    NeptunePressingForward,
+    #[serde(rename = "titania_minesweeper")]
+    TitaniaMinesweeper,
+    #[serde(rename = "titania_beenoculars")]
+    TitaniaBeenoculars,
+    #[serde(rename = "uranus_on_the_offensive")]
+    UranusOffensive,
+    #[serde(rename = "uranus_on_the_defensive")]
+    UranusDefensive,
+    #[serde(rename = "uranus_new_threat")]
+    UranusNewThreat,
+}
+
+impl NativeCampaignPreparation {
+    fn title(self) -> &'static str {
+        match self {
+            Self::PlutoReinforcements => "Reinforcements",
+            Self::PlutoPushback => "Pushback",
+            Self::PlutoBluerPastures => "Bluer Pastures",
+            Self::NeptuneSeizeMeans => "Seize the Means",
+            Self::NeptuneProduction => "Of Production",
+            Self::NeptunePressingForward => "Pressing Forward",
+            Self::TitaniaMinesweeper => "Minesweeper",
+            Self::TitaniaBeenoculars => "Beenoculars",
+            Self::UranusOffensive => "On the Offensive",
+            Self::UranusDefensive => "On the Defensive",
+            Self::UranusNewThreat => "A New Threat",
+        }
+    }
+
+    fn lines(self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            Self::PlutoReinforcements => &[
+                ("Samuel", "We've been caught off guard by the strange alien fleet cutting our communications. Only our patrol ships are ready for combat for the moment, but we have sent orders to the rest."),
+                ("Samuel", "Commander, you need to engage in this fight with the patrol ships and buy time for the rest of the fleet to mobilize."),
+            ],
+            Self::PlutoPushback => &[
+                ("Samuel", "With the full force of Pluto's fleet and the cover of some floating space junk coming our way, we're going to try and push back the assault from these aliens."),
+            ],
+            Self::PlutoBluerPastures => &[
+                ("Samuel", "Scouts are reporting overwhelming reinforcements from the enemy. We can't defeat them, but we have to try and buy enough time for those on the planet to evacuate."),
+            ],
+            Self::NeptuneSeizeMeans => &[
+                ("Samuel", "We're approaching Neptune to see if we can gather any allies there."),
+                ("Samuel", "The scout team has reported movement, but were unable to determine if it's friendly or not. We'll just have to find out."),
+            ],
+            Self::NeptuneProduction => &[
+                ("Samuel", "Scouts are reporting the bee forces on all sides. Their fleet from Pluto is catching up, and they've already established a blockade between here and Uranus."),
+                ("Samuel", "Now that we have Factories, we can gather resources from the same asteroids the bees were defending. That'll give us a fighting chance against the blockade, but we need to be quick."),
+            ],
+            Self::NeptunePressingForward => &[
+                ("Samuel", "It's time to break through this blockade, commander. Use everything at your disposal."),
+            ],
+            Self::TitaniaMinesweeper => &[
+                ("Samuel", "We need to clear out the debris surrounding Titania to give our new friends an exit path. Bee patrols have also been spotted around the area, trying to make sure nothing gets in or out."),
+            ],
+            Self::TitaniaBeenoculars => &[
+                ("Samuel", "Commander, we have to defend Titania's base long enough for all of their personnel to escape the surface."),
+            ],
+            Self::UranusOffensive => &[
+                ("Samuel", "There is still fighting around Uranus, another resource-rich area. If we take the bees down, we can bolster our own fleet with resources and personnel."),
+                ("Samuel", "Radars are jammed in the area, so we'll need to rely on our Scouts for vision."),
+            ],
+            Self::UranusDefensive => &[
+                ("Samuel", "Our success has bought us some time to collect resources around Uranus. There will likely be reinforcements called on from the bees we just fought, though. Take care."),
+            ],
+            Self::UranusNewThreat => &[
+                ("Samuel", "We need to check out a grouping of bees further out from Uranus. They're moving... very slowly."),
+            ],
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeCampaignIntermission {
     PlutoToNeptune,
     NeptuneToTitania,
     TitaniaToUranus { ami_survived: bool },
+    Preparation(NativeCampaignPreparation),
 }
 
 const PLUTO_TO_NEPTUNE: &[(&str, &str)] = &[
@@ -609,6 +697,7 @@ impl NativeCampaignIntermission {
             Self::PlutoToNeptune => "Pluto to Neptune",
             Self::NeptuneToTitania => "Neptune to Titania",
             Self::TitaniaToUranus { .. } => "Titania to Uranus",
+            Self::Preparation(preparation) => preparation.title(),
         }
     }
 
@@ -616,6 +705,7 @@ impl NativeCampaignIntermission {
         let (first, middle, last) = match self {
             Self::PlutoToNeptune => (PLUTO_TO_NEPTUNE, &[][..], &[][..]),
             Self::NeptuneToTitania => (NEPTUNE_TO_TITANIA, &[][..], &[][..]),
+            Self::Preparation(preparation) => (preparation.lines(), &[][..], &[][..]),
             Self::TitaniaToUranus { ami_survived } => (
                 TITANIA_TO_URANUS_START,
                 if ami_survived { TITANIA_TO_URANUS_AMI } else { &[][..] },

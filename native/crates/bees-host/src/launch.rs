@@ -5806,6 +5806,7 @@ fn run_campaign_game_menu(
         NativeDeleteSquadMenuRow, NativeTacticsMenuRow,
         NativeNameMenuRow, NativeNameTarget, NativeCampaignMenuStats,
         select_battle, select_library, show_campaign_intermission,
+        NativeCampaignIntermission,
     };
 
     let catalog_path = catalog_path.canonicalize()?;
@@ -6326,13 +6327,19 @@ fn run_campaign_game_menu(
             if !progress.attempted(&mission.id) &&
                 !seen_intermission.contains(&mission.id)
             {
+                let mut transmission = Vec::with_capacity(2);
                 if let Some(intermission) = &mission.intermission {
-                    if show_campaign_intermission(intermission.resolve(&progress))? {
+                    transmission.push(intermission.resolve(&progress));
+                }
+                if let Some(preparation) = mission.preparation {
+                    transmission.push(NativeCampaignIntermission::Preparation(preparation));
+                }
+                if !transmission.is_empty() {
+                    if show_campaign_intermission(&transmission)? {
                         seen_intermission.insert(mission.id.clone());
                     }
-                    // The original LevelIntro leads into fleet preparation.
-                    // Let the commander build/reassign before choosing Play
-                    // again; do not create a mission on closing the dialogue.
+                    // Both original LevelIntro screens precede fleet
+                    // preparation. Never create a World on closing either.
                     continue;
                 }
             }

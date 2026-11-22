@@ -1771,6 +1771,18 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         # Original LevelIntro interplanetary transmissions. The conditional
         # Titania II outcome is resolved by the native career ledger.
         story = mission_stories.get(index)
+        if story in ("pluto_reinforcements",
+                     "pluto_pushback",
+                     "pluto_bluer_pastures",
+                     "neptune_seize_means",
+                     "neptune_of_production",
+                     "neptune_pressing_forward",
+                     "titania_minesweeper",
+                     "titania_beenoculars",
+                     "uranus_on_the_offensive",
+                     "uranus_on_the_defensive",
+                     "uranus_new_threat"):
+            mission["preparation"] = story
         if story == "neptune_seize_means":
             mission["intermission"] = {"kind": "pluto_to_neptune"}
         elif story == "titania_minesweeper":

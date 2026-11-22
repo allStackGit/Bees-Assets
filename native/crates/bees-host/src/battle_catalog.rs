@@ -159,6 +159,8 @@ pub struct Mission {
     pub score_on_victory_only: bool,
     #[serde(default)]
     pub intermission: Option<CampaignIntermission>,
+    #[serde(default)]
+    pub preparation: Option<bees_host::presentation::NativeCampaignPreparation>,
     /// Opt-in historical FleetShip deaths on the next authored Level.
     /// Only ships belonging to the player side are removed at setup;
     /// opposing authored forces remain owned by their scenario.

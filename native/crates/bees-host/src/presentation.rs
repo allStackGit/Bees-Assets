@@ -21,7 +21,7 @@ mod text;
 // Authored mission dialogue also belongs to the headless remote host;
 // it contains no window or audio dependency.
 pub(crate) mod campaign_dialogue;
-pub use campaign_dialogue::NativeCampaignIntermission;
+pub use campaign_dialogue::{NativeCampaignIntermission, NativeCampaignPreparation};
 #[cfg(feature = "client")]
 mod battle_menu;
 #[cfg(feature = "client")]

@@ -233,11 +233,14 @@ pub enum NativeBattleMenuAction {
 /// Returns a playable battle or purchase request, never applies
 /// gameplay/economic changes inside the presentation layer.
 pub fn show_campaign_intermission(
-    intermission: super::campaign_dialogue::NativeCampaignIntermission,
+    intermissions: &[super::campaign_dialogue::NativeCampaignIntermission],
 ) -> Result<bool, minifb::Error> {
     // A travel intermission owns presentation only: no physical World,
     // mission receipt, or fleet changes are created until battle launch.
-    let lines = intermission.lines().collect::<Vec<_>>();
+    let lines = intermissions.iter().copied().flat_map(|intermission|
+        intermission.lines().map(move |(speaker, message)|
+            (intermission.title(), speaker, message))
+    ).collect::<Vec<_>>();
     if lines.is_empty() { return Ok(true); }
     let mut window = Window::new("Bees | Campaign intermission",
         WIDTH, HEIGHT, WindowOptions::default())?;
@@ -250,7 +253,13 @@ pub fn show_campaign_intermission(
             return Ok(false);
         }
         if window.is_key_pressed(Key::S, KeyRepeat::No) {
-            return Ok(true);
+            // Skip the current travel dialogue, but still show the next
+            // original mission briefing when the sequence has one.
+            let title = lines[page].0;
+            while page < lines.len() && lines[page].0 == title {
+                page += 1;
+            }
+            if page == lines.len() { return Ok(true); }
         }
         if window.is_key_pressed(Key::Left, KeyRepeat::No) {
             page = page.saturating_sub(1);
@@ -266,10 +275,10 @@ pub fn show_campaign_intermission(
             page += 1;
             if page == lines.len() { return Ok(true); }
         }
-        let (speaker, message) = lines[page];
+        let (title, speaker, message) = lines[page];
         pixels.fill(0x080e19);
         text::draw_centered(&mut pixels, WIDTH, 35,
-            intermission.title(), 2, TEXT);
+            title, 2, TEXT);
         text::draw_centered(&mut pixels, WIDTH, 90,
             &format!("Transmission {} / {}", page + 1, lines.len()), 1, MUTED);
         for y in 130..380 {
