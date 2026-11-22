@@ -1299,6 +1299,12 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
                     permission.can_accept_input = true;
                 }
             }
+        } else if cue == bees_gameplay::campaign_dialogue::CampaignCue::PlutoReinforcementsCombatReady &&
+            !self.pluto_tutorial_locked.is_empty()
+        {
+            // Original Stage.ActivateHiveMind becomes true only as the
+            // real deferred Honeybee/Hornet squads enter combat.
+            self.hivemind_active = Some(true);
         }
     }
 
