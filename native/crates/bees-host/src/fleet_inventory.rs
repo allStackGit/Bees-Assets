@@ -98,6 +98,16 @@ pub struct NativeFleetInventory {
     score_history_incomplete: bool,
     #[serde(default)]
     player_match_counts: NativePlayerMatchCounts,
+    /// Only a genuine two-human/dual-controller Level enables the second
+    /// player. No AI-controlled side gains an invented player scoreboard.
+    #[serde(default)]
+    score_opponent: bool,
+    #[serde(default)]
+    opponent_score: i64,
+    #[serde(default)]
+    opponent_match_counts: NativePlayerMatchCounts,
+    #[serde(default)]
+    opponent_history_incomplete: bool,
 }
 
 /// Durable FleetShip career/mining credit, distinct from physical hull TSV.
@@ -142,11 +152,21 @@ impl NativeFleetInventory {
             restored.campaign_player_side.is_none() &&
             restored.campaign_score == 0 &&
             restored.player_match_counts == NativePlayerMatchCounts::default();
+        let legacy_opponent_score = self.score_opponent &&
+            !restored.score_opponent &&
+            restored.opponent_score == 0 &&
+            restored.opponent_match_counts == NativePlayerMatchCounts::default();
         if self.career_tracking != restored.career_tracking ||
             (self.campaign_player_side != restored.campaign_player_side &&
-                !legacy_score_owner)
+                !legacy_score_owner) ||
+            (self.score_opponent != restored.score_opponent &&
+                !legacy_opponent_score)
         {
             return Err(Error::ChangedFleetOwnership);
+        }
+        if legacy_opponent_score {
+            restored.score_opponent = true;
+            restored.opponent_history_incomplete = true;
         }
         if legacy_score_owner {
             // Keep the original physical World and its mineral/career
@@ -208,6 +228,9 @@ impl NativeFleetInventory {
             campaign_player_side: None, campaign_score: 0,
             score_history_incomplete: false,
             player_match_counts: NativePlayerMatchCounts::default(),
+            score_opponent: false, opponent_score: 0,
+            opponent_match_counts: NativePlayerMatchCounts::default(),
+            opponent_history_incomplete: false,
         })
     }
 
@@ -234,6 +257,11 @@ impl NativeFleetInventory {
         self.campaign_player_side = Some(player_side);
     }
 
+    pub fn enable_opponent_match_score(&mut self) {
+        assert!(self.campaign_player_side.is_some());
+        self.score_opponent = true;
+    }
+
     pub fn campaign_player_score(&self) -> Option<i64> {
         self.campaign_player_side.filter(|_| !self.score_history_incomplete)
             .map(|_| self.campaign_score)
@@ -247,6 +275,18 @@ impl NativeFleetInventory {
     pub fn player_match_counts(&self) -> Option<NativePlayerMatchCounts> {
         self.campaign_player_side.filter(|_| !self.score_history_incomplete)
             .map(|_| self.player_match_counts)
+    }
+
+    pub fn opponent_score_snapshot(&self) -> Option<(i32, i64)> {
+        if !self.score_opponent || self.opponent_history_incomplete {
+            return None;
+        }
+        self.campaign_player_side.map(|side| (3 - side, self.opponent_score))
+    }
+
+    pub fn opponent_match_counts(&self) -> Option<NativePlayerMatchCounts> {
+        (self.score_opponent && !self.opponent_history_incomplete)
+            .then_some(self.opponent_match_counts)
     }
 
     pub fn combat_stats(&self, ship_id: i64) -> Option<NativeFleetCombatStats> {
@@ -278,6 +318,35 @@ impl NativeFleetInventory {
         Some(self.combat.entry(owner).or_default())
     }
 
+    /// Apply original GameState player death scoring independently for
+    /// each authenticated faction, using the SAME CombatEvent and physical
+    /// full-health TSV. This function owns only terminal counters.
+    fn record_player_death(
+        score: &mut i64, counts: &mut NativePlayerMatchCounts,
+        player_side: i32, victim_side: i32, victim_type: u8,
+        victim_tsv: i64, killer_side: Option<i32>, end_kill: bool,
+    ) {
+        if end_kill {
+            if victim_side == player_side {
+                counts.ships_returned = counts.ships_returned.saturating_add(1);
+            }
+            return;
+        }
+        if victim_type == BEACON_TYPE { return; }
+        if victim_side == player_side && victim_type != HUMAN_TARGET_TYPE {
+            counts.ships_lost = counts.ships_lost.saturating_add(1);
+        }
+        if killer_side == Some(player_side) {
+            counts.ships_destroyed_by_player =
+                counts.ships_destroyed_by_player.saturating_add(1);
+        }
+        if victim_side != player_side || victim_type != HUMAN_TARGET_TYPE {
+            *score = score.saturating_add(if victim_side == player_side {
+                -victim_tsv
+            } else { victim_tsv });
+        }
+    }
+
     /// One pass over the authoritative combat event buffer per completed
     /// tick. No extra full-fleet scan, independent damage ledger, or work
     /// in quiet ticks. All three source gameplay paths share these events.
@@ -293,29 +362,20 @@ impl NativeFleetInventory {
                 victim_id, killer_id, end_kill, ..
             }) = (self.campaign_player_side, event) {
                 if let Some(victim) = world.ship(*victim_id) {
-                    if *end_kill {
-                        if victim.side == side {
-                            self.player_match_counts.ships_returned = self.player_match_counts
-                                .ships_returned.saturating_add(1);
-                        }
-                    } else if victim.ship_type != BEACON_TYPE {
-                        if victim.side == side && victim.ship_type != HUMAN_TARGET_TYPE {
-                            self.player_match_counts.ships_lost = self.player_match_counts
-                                .ships_lost.saturating_add(1);
-                        }
-                        if *killer_id > 0 && world.ship(*killer_id)
-                            .is_some_and(|killer| killer.side == side)
-                        {
-                            self.player_match_counts.ships_destroyed_by_player =
-                                self.player_match_counts.ships_destroyed_by_player
-                                    .saturating_add(1);
-                        }
-                        if victim.side != side || victim.ship_type != HUMAN_TARGET_TYPE {
-                            let tsv = i64::from(victim.vitals.max_tsv());
-                            self.campaign_score = self.campaign_score.saturating_add(
-                                if victim.side == side { -tsv } else { tsv }
-                            );
-                        }
+                    let killer_side = world.ship(*killer_id).map(|killer| killer.side);
+                    let victim_tsv = i64::from(victim.vitals.max_tsv());
+                    Self::record_player_death(
+                        &mut self.campaign_score, &mut self.player_match_counts,
+                        side, victim.side, victim.ship_type, victim_tsv,
+                        killer_side, *end_kill,
+                    );
+                    if self.score_opponent {
+                        Self::record_player_death(
+                            &mut self.opponent_score,
+                            &mut self.opponent_match_counts,
+                            3 - side, victim.side, victim.ship_type,
+                            victim_tsv, killer_side, *end_kill,
+                        );
                     }
                 }
             }
