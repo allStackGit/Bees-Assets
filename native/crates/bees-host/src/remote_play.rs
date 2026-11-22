@@ -1339,10 +1339,13 @@ impl NativeRemotePlay {
     /// The same actual Level result and source labels used by local play
     /// remain authoritative for both authenticated opposing commanders.
     pub fn publish_battle_result(&mut self, view: &NativeRenderWorldView<'_>) {
-        let Some(mut receipt) = Self::authoritative_battle_receipt(view) else { return };
+        let Some(base_receipt) = Self::authoritative_battle_receipt(view) else { return };
         for peer in self.peers.iter_mut().filter(|peer|
             !peer.closed && peer.side.is_some()
         ) {
+            // Score is private to its authenticated side. Never reuse a
+            // previously decorated receipt for a different recipient.
+            let mut receipt = base_receipt.clone();
             receipt["viewer_side"] = json!(peer.side);
             Self::attach_authorized_match_score(
                 &mut receipt,
