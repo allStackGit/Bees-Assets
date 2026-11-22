@@ -93,6 +93,8 @@ pub struct NativeRenderCounts {
     pub ships: usize,
     /// Source PNG sprites rendered instead of the fallback hull outline.
     pub ship_sprite_draws: usize,
+    /// Real source Carrier deck overlays matched to a custom squad color.
+    pub carrier_deck_overlay_draws: usize,
     /// Frames from original Carpenter, Factory and WarpGate clips.
     pub ship_animated_sprite_draws: usize,
     pub ship_animation_clips_loaded: usize,
@@ -465,6 +467,91 @@ impl SourceShipAtlas {
         if at != bytes.len() { return Err(invalid()); }
         Ok(Self { sprites, loaded: count })
     }
+}
+
+/// Carrier.SetColor: an authored 13-cell atlas, with deck sprites already
+/// stretched to the base Carrier's world-space bounds by the offline importer.
+/// The overlay's choice is derived from SavedSquad.Color; no extra fleet field
+/// is persisted or mirrored into the remote wire projection.
+struct SourceCarrierDeckAtlas {
+    pixels_per_unit: f32,
+    sprites: Vec<NativeSprite>,
+}
+
+impl SourceCarrierDeckAtlas {
+    fn decode(bytes: &[u8]) -> io::Result<Self> {
+        let invalid = || io::Error::new(io::ErrorKind::InvalidData,
+            "invalid native Carrier deck atlas");
+        if bytes.get(..4) != Some(&b"BCD1"[..]) { return Err(invalid()); }
+        let mut at = 4usize;
+        let count = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+        let ppu = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+        let width = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+        let height = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+        if count != 13 || ppu == 0 || width == 0 || height == 0 ||
+            width > 512 || height > 512 {
+            return Err(invalid());
+        }
+        let mut sprites = Vec::with_capacity(count);
+        for _ in 0..count {
+            sprites.push(source_art_sprite(bytes, &mut at, width, height)?);
+        }
+        if at != bytes.len() { return Err(invalid()); }
+        Ok(Self { pixels_per_unit: ppu as f32, sprites })
+    }
+}
+
+fn source_carrier_decks() -> Option<&'static SourceCarrierDeckAtlas> {
+    static ATLAS: OnceLock<Option<SourceCarrierDeckAtlas>> = OnceLock::new();
+    ATLAS.get_or_init(|| load_source_art(
+        "carrier-decks.rgba", SourceCarrierDeckAtlas::decode,
+    )).as_ref()
+}
+
+fn carrier_deck_hsv(rgb: [u8; 3]) -> (f32, f32, f32) {
+    let [r, g, b] = rgb.map(|v| f32::from(v) / 255.0);
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let delta = max - min;
+    if delta <= f32::EPSILON { return (0.0, 0.0, max); }
+    let hue = if max == r { ((g - b) / delta).rem_euclid(6.0) }
+        else if max == g { (b - r) / delta + 2.0 }
+        else { (r - g) / delta + 4.0 };
+    (hue / 6.0, if max == 0.0 { 0.0 } else { delta / max }, max)
+}
+
+/// Source CarrierDeckVariants.GetDeckIndex: bounded HSV neighborhoods,
+/// nearest-source anchor, and *no overlay* for unmatched custom colors.
+fn carrier_deck_index(rgb: [u8; 3]) -> Option<usize> {
+    const ANCHORS: [[u8; 3]; 13] = [
+        [195, 98, 107], [193, 111, 56], [220, 213, 74],
+        [147, 204, 93], [68, 137, 108], [79, 180, 79],
+        [98, 180, 197], [95, 108, 195], [155, 124, 171],
+        [214, 135, 189], [152, 104, 104], [184, 196, 221],
+        [105, 168, 63],
+    ];
+    let (h, s, v) = carrier_deck_hsv(rgb);
+    let mut selected = None;
+    let mut best = f32::MAX;
+    for (index, anchor) in ANCHORS.into_iter().enumerate() {
+        let (ah, asat, av) = carrier_deck_hsv(anchor);
+        let ds = (s - asat).abs();
+        let dv = (v - av).abs();
+        let distance = if asat < 0.2 {
+            if ds > 0.10 || dv > 0.12 { continue; }
+            ds + dv
+        } else {
+            let dh = (h - ah).abs();
+            let dh = dh.min(1.0 - dh);
+            if dh > 0.035 || ds > 0.18 || dv > 0.18 { continue; }
+            dh * 3.2 + ds * 0.15 + dv * 0.1
+        };
+        if distance < best {
+            best = distance;
+            selected = Some(index);
+        }
+    }
+    selected
 }
 
 /// Optional original animated ship art. The offline importer preserves
