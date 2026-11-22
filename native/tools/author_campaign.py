@@ -1540,7 +1540,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 return next(iter(types)) if len(types) == 1 else None
             new_kinds = {new_id: template_kind(template_id)
                          for _, new_id, template_id in squad_grants}
-            if sorted(new_kinds.values()) != [13, 18]:
+            if any(kind is None for kind in new_kinds.values()) or \
+                    sorted(new_kinds.values()) != [13, 18]:
                 raise ValueError(
                     "Pluto Anomaly new SavedSquads must clone original "
                     "Gunship and Scout squads"
