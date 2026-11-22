@@ -345,14 +345,16 @@ class FrozenInferenceMicrobatcher:
         mode = "grouped"
         output = None
         if len(group)>1:
-            # Same shape/job multiset has the same GPU execution cost
-            # regardless of which concurrent collector arrived first.
-            # Stringify dtypes so heterogeneous layout keys are sortable.
-            shape = tuple(sorted(
-                (item.model_id,item.rows,
+            # Grouped batch sizes fluctuate as asynchronous collectors
+            # finish. Use power-of-two row/request buckets, not the exact
+            # arrival pattern, or every slight variation induces expensive
+            # new numerical calibration and GPU-wide timing syncs.
+            shape = tuple(
+                (key, sum(item.rows for item in members).bit_length(),
+                 len(members).bit_length(),
                  tuple((tuple(t.shape[1:]),str(t.dtype))
-                       for t in item.inputs))
-                for item in group))
+                       for t in members[0].inputs))
+                for key in keys for members in (owners[key],))
             mode = self._admission.get(shape)
             if mode is None:
                 started = perf_counter()
