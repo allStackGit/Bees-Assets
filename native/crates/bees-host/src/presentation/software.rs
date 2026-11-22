@@ -3586,31 +3586,45 @@ impl NativeSoftwareRenderer {
             });
         let mined_total = view.player_authority.player_viewer_side()
             .and_then(|side| view.minerals_mined_for_side(side));
-        let loss_breakdown = view.player_authority.player_viewer_side()
-            .and_then(|side| view.loss_types_for_side(side))
-            .and_then(|losses| {
-                let catalog = Self::source_ship_catalog();
-                let parts = losses.iter().enumerate()
-                    .filter(|(_, &amount)| amount != 0)
-                    .map(|(type_id, amount)| {
-                        let name = catalog.by_type(type_id as u8)
-                            .map_or("Unknown", |ship| ship.name.as_str());
-                        format!("{name}:{amount}")
-                    })
-                    .collect::<Vec<_>>();
-                (!parts.is_empty()).then(|| format!("Lost by class: {}", parts.join("  ")))
-            });
+        // Present all authentic FleetShip casualties, rather than fitting
+        // the entire roster to one line and silently dropping later classes.
+        // This cold-path allocation is limited to the terminal result UI.
+        let available_width = self.width.saturating_sub(40).max(1);
+        let mut loss_rows = Vec::<String>::new();
+        if let Some(losses) = view.player_authority.player_viewer_side()
+            .and_then(|side| view.loss_types_for_side(side)) {
+            let catalog = Self::source_ship_catalog();
+            let mut line = String::from("Lost by class:");
+            let mut has_losses = false;
+            for (type_id, amount) in losses.iter().enumerate() {
+                if *amount == 0 { continue; }
+                has_losses = true;
+                let name = catalog.by_type(type_id as u8)
+                    .map_or("Unknown", |ship| ship.name.as_str());
+                let entry = format!("{name}:{amount}");
+                let next = format!("{line}  {entry}");
+                if line != "Lost by class:" &&
+                    text::width(&next, 1) > available_width {
+                    loss_rows.push(line);
+                    line = format!("  {entry}");
+                } else {
+                    line = next;
+                }
+            }
+            if has_losses { loss_rows.push(line); }
+        }
         let title_scale = if self.width >= 400 && self.height >= 176 { 2 } else { 1 };
         let top = if self.height >= 200 { 20 } else { 0 };
         let width = (text::width(&title, title_scale).max(text::width(&detail, 1))
             .max(text::width(&context, 1))
             .max(player_summary.as_deref().map_or(0, |row| text::width(row, 1)))
-            .max(loss_breakdown.as_deref().map_or(0, |row| text::width(row, 1))) +
+            .max(loss_rows.iter().map(|row| text::width(row, 1))
+                .max().unwrap_or(0)) +
             40).min(self.width);
         let left = (self.width - width) / 2;
         let panel_height = (title_scale + 2) * text::HEIGHT + 20 +
             usize::from(player_summary.is_some()) * (text::HEIGHT + 4) +
-            usize::from(loss_breakdown.is_some()) * (text::HEIGHT + 4) +
+            loss_rows.len() * (text::HEIGHT + 4) +
             usize::from(mined_total.is_some_and(|amount| amount > 0)) *
                 (text::HEIGHT + 4);
         for y in top..(top + panel_height).min(self.height) {
@@ -3627,16 +3641,17 @@ impl NativeSoftwareRenderer {
                 title_top + (title_scale + 1) * text::HEIGHT + 4,
                 &summary, 1, [198, 231, 248]);
         }
-        if let Some(breakdown) = &loss_breakdown {
+        for (index, row) in loss_rows.iter().enumerate() {
             text::draw_centered(&mut self.pixels, self.width,
-                title_top + (title_scale + 2) * text::HEIGHT + 8,
-                &text::fit(breakdown, width.saturating_sub(12)),
+                title_top + (title_scale + 2) * text::HEIGHT + 8 +
+                    index * (text::HEIGHT + 4),
+                &text::fit(row, width.saturating_sub(12)),
                 1, [198, 231, 248]);
         }
         if let Some(mined) = mined_total.filter(|&value| value > 0) {
             text::draw_centered(&mut self.pixels, self.width,
                 title_top + (title_scale + 2) * text::HEIGHT + 8 +
-                    usize::from(loss_breakdown.is_some()) * (text::HEIGHT + 4),
+                    loss_rows.len() * (text::HEIGHT + 4),
                 &format!("Mined by player: {mined} TSV"), 1, [198, 231, 248]);
         }
     }
