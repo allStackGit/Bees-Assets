@@ -7478,10 +7478,21 @@ class ExperimentHub {
                     'launch_requested','running','stop_requested','finished','stopped'].includes(j.status)))
             throw Error('Candidate jobs must belong to one supported project and have independent evaluations.');
         const roots=jobs.map(j=>j.artifact_lineage_root_id||j.id);
+        // A verified finished checkpoint may be forked into independent
+        // training jobs. Those siblings are valid candidate experiments
+        // even though their source artifact lineage root is shared.
+        const parentId=jobs[0].continuation_of_job_id;
+        const forkSource=this.state.jobs.find(j=>j.id===parentId);
+        const independentForks=Boolean(parentId&&forkSource&&
+            forkSource.status==='finished'&&forkSource.capacity_released_at&&
+            forkSource.checkpoint_ready_verified===true&&
+            SHA256.test(String(forkSource.checkpoint_model_sha256||''))&&
+            jobs.every(j=>j.continuation_of_job_id===parentId&&
+                j.expected_parent_model_sha256===forkSource.checkpoint_model_sha256));
         const policies=jobs.map(candidateEvaluationPolicy);
-        if(new Set(roots).size!==roots.length||
+        if((new Set(roots).size!==roots.length&&!independentForks)||
             new Set(policies.map(item=>item.signature)).size!==1)
-            throw Error('Candidate models need independent lineages and matching frozen evaluation policies.');
+            throw Error('Candidate models need independent lineages or verified checkpoint forks, and matching frozen evaluation policies.');
         const suiteDigests=new Map();
         for(const [index,job] of jobs.entries()) {
             for(const rule of evaluationRules(policies[index].policy)) {
