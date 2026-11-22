@@ -676,6 +676,23 @@ impl NativeClient {
         if view.terminal_result.is_some() { self.held_fire_target = None; }
         if !self.playback && !self.show_controls_help && !briefing &&
             self.held_fire_target.is_none() && view.terminal_result.is_none() &&
+            self.window.is_active() && self.window.is_key_pressed(Key::F3, KeyRepeat::No)
+        {
+            if let Some(side) = view.player_authority.player_viewer_side() {
+                if view.combat.retreat_activation_available(side) {
+                    return Ok(NativeClientAction::Input {
+                        action: NativePlayerInput::ActivateRetreat {
+                            world_id: view.world_id,
+                            episode_revision: view.episode_revision,
+                            side,
+                        },
+                        step: false,
+                    });
+                }
+            }
+        }
+        if !self.playback && !self.show_controls_help && !briefing &&
+            self.held_fire_target.is_none() && view.terminal_result.is_none() &&
             self.window.is_active() && self.window.is_key_pressed(Key::F4, KeyRepeat::No) {
             if let Some(side) = view.player_authority.player_viewer_side() {
                 if view.can_surrender(side) {
