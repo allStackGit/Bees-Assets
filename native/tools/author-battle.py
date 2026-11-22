@@ -1914,7 +1914,7 @@ def fleet_template(value: str) -> tuple[int, int]:
     return side, kind
 
 
-def main() -> None:
+def battle_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output_dir", type=Path,
                         help="new directory for a complete playable native battle")
@@ -2055,6 +2055,11 @@ def main() -> None:
     parser.add_argument("--source-run", type=Path,
                         default=EXAMPLES / "native-skirmish.run.json",
                         help="paired native run with the same map/physics asset matrix")
+    return parser
+
+
+def main() -> None:
+    parser = battle_parser()
     args = parser.parse_args()
     if args.hivemind_run is None and (
             args.hivemind_opponent_id is not None or
