@@ -3676,7 +3676,7 @@ impl NativeSoftwareRenderer {
     #[cfg(feature = "client")]
     pub fn draw_battle_menu(
         &mut self,was_paused:bool,can_surrender:bool,can_restart:bool,
-        can_save_level:bool,can_choose_squads:bool,
+        can_save_level:bool,can_choose_squads:bool,can_switch_sides:bool,
     ) {
         let surrender=if can_surrender {
             "S: surrender this battle (confirmation required)"
@@ -3693,8 +3693,7 @@ impl NativeSoftwareRenderer {
             "C or F2: inspect the Fleet Codex",
             surrender,
             "Q: exit battle (return to library when launched there)",
-            "", "", "", "",
-            "",
+            "", "", "", "", "", "",
         ];
         let mut count=6;
         if can_restart {
@@ -3709,6 +3708,10 @@ impl NativeSoftwareRenderer {
             lines[count]="B: choose new squads in the original Fleet Builder";
             count+=1;
         }
+        if can_switch_sides {
+            lines[count]="Z: switch sides in Squad Maker (new physical battle)";
+            count+=1;
+        }
         lines[count]=status;
         count+=1;
         Self::draw_help_panel(&mut self.pixels,self.width,self.height,
@@ -3720,12 +3723,12 @@ impl NativeSoftwareRenderer {
     #[cfg(feature = "client")]
     pub fn battle_menu_at(
         &self,x:f32,y:f32,can_restart:bool,can_save_level:bool,
-        can_choose_squads:bool,
+        can_choose_squads:bool,can_switch_sides:bool,
     ) -> Option<usize> {
         Self::battle_menu_hit(
             self.width,self.height,x,y,
             5 + usize::from(can_restart) + usize::from(can_save_level) +
-                usize::from(can_choose_squads),
+                usize::from(can_choose_squads) + usize::from(can_switch_sides),
         )
     }
 

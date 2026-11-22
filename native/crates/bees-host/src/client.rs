@@ -22,7 +22,8 @@ use bees_sim::geometry::Vec2;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum NativeClientAction {
-    Wait, Step, Quit, Restart, ChooseNewSquads, WorldChanged, SideChanged,
+    Wait, Step, Quit, Restart, ChooseNewSquads, SwitchSides { from_side:i32 },
+    WorldChanged, SideChanged,
     SaveLevel { name: String },
     Input { action: NativePlayerInput, step: bool },
 }
@@ -691,7 +692,9 @@ impl NativeClient {
                 .and_then(|(x, y)|
                     self.renderer.battle_menu_at(
                         x,y,self.allow_freeplay_restart,self.allow_freeplay_save,
-                        self.allow_new_squads));
+                        self.allow_new_squads,
+                        self.allow_new_squads &&
+                            view.player_authority.player_viewer_side().is_some()));
             if left && !self.left_was_down {
                 self.battle_menu_press = hover;
             }
@@ -713,6 +716,9 @@ impl NativeClient {
                 self.window.is_key_pressed(Key::L,KeyRepeat::No) {Some(6)}
             else if self.allow_new_squads &&
                 self.window.is_key_pressed(Key::B,KeyRepeat::No) {Some(7)}
+            else if self.allow_new_squads &&
+                view.player_authority.player_viewer_side().is_some() &&
+                self.window.is_key_pressed(Key::Z,KeyRepeat::No) {Some(8)}
             else { click };
             match choice {
                 Some(0 | 1 | 2) => {
@@ -759,6 +765,15 @@ impl NativeClient {
                     self.battle_menu_open=false;
                     self.battle_menu_press=None;
                     return Ok(NativeClientAction::ChooseNewSquads);
+                },
+                Some(8) if self.allow_new_squads => {
+                    if let Some(side)=view.player_authority.player_viewer_side()
+                        .filter(|&side|matches!(side,1|2))
+                    {
+                        self.battle_menu_open=false;
+                        self.battle_menu_press=None;
+                        return Ok(NativeClientAction::SwitchSides {from_side:side});
+                    }
                 },
                 _ => {},
             }
@@ -1946,6 +1961,8 @@ impl NativeClient {
                 self.paused,can_surrender,
                 self.allow_freeplay_restart,self.allow_freeplay_save,
                 self.allow_new_squads,
+                self.allow_new_squads &&
+                    view.player_authority.player_viewer_side().is_some(),
             );
         } else if self.codex_open {
             self.renderer.draw_fleet_codex(&view, self.codex_selected);

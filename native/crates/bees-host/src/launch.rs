@@ -1772,6 +1772,9 @@ struct BattleRestart {
     /// The original FreePlay "Choose New Squads" returns to the actual
     /// authored fleet builder after the current World is fully retired.
     choose_new_squads: bool,
+    /// None opens ordinary Squad Maker; Some selects the opposing side
+    /// after Unity-style SwitchSides without transferring a running World.
+    preferred_player_side:Option<i32>,
 }
 
 #[derive(Clone, Copy)]
@@ -2648,7 +2651,9 @@ fn run_session(
             // Re-enter the *same* native authoring/simulation pipeline.
             let save_root=native_library_save_root(battle_output.as_deref())
                 .ok_or_else(||invalid("squad maker requires a native game library"))?;
-            let Some(choice)=fleet_builder::choose(save_root)? else {
+            let Some(choice)=fleet_builder::choose_for_preferred_side(
+                save_root,restart.preferred_player_side,
+            )? else {
                 // Cancelling Squad Maker returns to the library rather
                 // than restoring the already-retired CombatWorld.
                 break;
@@ -9011,6 +9016,8 @@ fn run_battle(
     #[cfg(feature = "client")]
     let mut choose_new_squads = false;
     #[cfg(feature = "client")]
+    let mut preferred_player_side:Option<i32>=None;
+    #[cfg(feature = "client")]
     let mut client_step_budget = 1_u32;
     #[cfg(not(feature = "client"))]
     let client_step_budget = 1_u32;
@@ -9703,6 +9710,17 @@ fn run_battle(
                     user_closed=true;
                     restart_requested=true;
                     choose_new_squads=true;
+                    break;
+                },
+                Ok(bees_host::client::NativeClientAction::SwitchSides {from_side}) => {
+                    if !matches!(from_side,1|2) {
+                        failed_window=Some("invalid FreePlay side switch".to_owned());
+                    } else {
+                        user_closed=true;
+                        restart_requested=true;
+                        choose_new_squads=true;
+                        preferred_player_side=Some(3-from_side);
+                    }
                     break;
                 },
                 Ok(bees_host::client::NativeClientAction::Restart) => {
@@ -11249,6 +11267,7 @@ fn run_battle(
                     };
                     return Ok(Some(BattleRestart {
                         replay_inputs,choose_new_squads:false,
+                        preferred_player_side:None,
                     }));
                 }
             }
@@ -11258,6 +11277,7 @@ fn run_battle(
     if restart_requested {
         return Ok(Some(BattleRestart {
             replay_inputs:None,choose_new_squads,
+            preferred_player_side,
         }));
     }
     Ok(None)

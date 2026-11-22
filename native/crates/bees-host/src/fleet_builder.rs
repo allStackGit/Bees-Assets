@@ -432,6 +432,18 @@ fn invalid(message: &'static str) -> io::Error {
 }
 
 pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Error>> {
+    choose_for_preferred_side(save_root,None)
+}
+
+/// Original FreePlay SwitchSides leaves the active Level and opens Squad
+/// Maker with the other faction selected. The player's existing physical
+/// world is never re-owned while it is running.
+pub(super) fn choose_for_preferred_side(
+    save_root:&Path,preferred_side:Option<i32>,
+) -> Result<Option<FleetChoice>,Box<dyn Error>> {
+    if preferred_side.is_some_and(|side|!matches!(side,1|2)) {
+        return Err(invalid("preferred Fleet Builder side must be Bee or Human").into());
+    }
     let has_network = has_hivemind_profile(save_root);
     let mut choices = vec![
         ("Bees commander vs Human AI", "  [Player side 1]"),
@@ -448,7 +460,7 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
     let rows = choices.iter().map(|(title, status)| BattleMenuRow {
         title, status, unlocked: true,
     }).collect::<Vec<_>>();
-    let mut selection = 0_usize;
+    let mut selection = usize::from(preferred_side == Some(2));
     let Some(mode) = select_library(&rows, &mut selection, false)? else {
         return Ok(None);
     };
