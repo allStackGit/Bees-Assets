@@ -1504,6 +1504,11 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         // until they release control. Read only the existing player
         // preference: no parallel gameplay speed table is introduced.
         for (&owner, &speed) in &self.player.matching_speeds {
+            // Ship.MoveToTargetCoordinates checks Squad.CurrentSpeed > 0
+            // before applying an inherited match-speed. Fresh Scout and
+            // Queen minion squads start with zero, which is not a command
+            // to halt their ships.
+            if speed <= 0.0 { continue; }
             let Some(squad) = roster.get(owner) else { continue };
             for &ship_id in &squad.members {
                 let Some(body) = world.ship_body(ship_id) else { continue };
