@@ -6727,6 +6727,7 @@ fn run_battle(
         {
             // StageTitania2HumanFleetAtCenter uses the surviving fleet,
             // not the publisher's immutable pre-purchase squad positions.
+            let staged_started = Instant::now();
             let squad_count = source.stage_titania_ii_player_fleet(
                 player_side, assets,
             ).map_err(|error| contextual("Titania II fleet staging", error))?;
@@ -6734,6 +6735,8 @@ fn run_battle(
                 "kind": "native_titania_ii_fleet_staged",
                 "player_side": player_side,
                 "squads": squad_count,
+                "setup_wall_micros": staged_started.elapsed().as_micros()
+                    .min(u128::from(u64::MAX)) as u64,
             }));
         }
         use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
