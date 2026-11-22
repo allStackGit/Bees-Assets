@@ -83,6 +83,10 @@ const FLEET_RANK_CATEGORIES: [&str; 6] = [
     "Shots fired", "Enemy damage", "Damage received",
     "Kills", "Battle record", "Minerals mined",
 ];
+const SQUAD_RANK_CATEGORIES: [&str; 5] = [
+    "Damage done", "Damage received", "Kills",
+    "Ships lost", "Battle record",
+];
 const TEXT: [u8; 3] = [232, 240, 250];
 const MUTED: [u8; 3] = [155, 178, 206];
  
@@ -395,6 +399,7 @@ pub fn select_battle(
     rows: &[BattleMenuRow<'_>], selected: &mut usize, launch_failed: bool,
     fleet_rows: &[String], squad_rows: &[String],
     ranking_rows: Option<&[Vec<String>; 6]>,
+    squad_ranking_rows: Option<&[Vec<String>; 5]>,
     shop_rows: &[NativeShopMenuRow], banked_tsv: u64,
     transfer_rows: &[NativeTransferMenuRow],
     create_rows: &[NativeCreateSquadMenuRow],
@@ -405,7 +410,8 @@ pub fn select_battle(
     career_stats: NativeCampaignMenuStats,
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     select_battle_inner(rows, selected, launch_failed, fleet_rows, squad_rows,
-        ranking_rows, shop_rows, banked_tsv, transfer_rows, create_rows, tactics_rows,
+        ranking_rows, squad_ranking_rows, shop_rows, banked_tsv,
+        transfer_rows, create_rows, tactics_rows,
         delete_rows, name_rows, codex_types, Some(career_stats), false)
 }
 
@@ -415,7 +421,7 @@ pub fn select_library(
     rows: &[BattleMenuRow<'_>], selected: &mut usize, launch_failed: bool,
 ) -> Result<Option<usize>, minifb::Error> {
     match select_battle_inner(rows, selected, launch_failed,
-        &[], &[], None, &[], 0, &[], &[], &[], &[], &[], None, None, true)? {
+        &[], &[], None, None, &[], 0, &[], &[], &[], &[], &[], None, None, true)? {
         Some(NativeBattleMenuAction::Play(index)) => Ok(Some(index)),
         _ => Ok(None),
     }
@@ -425,6 +431,7 @@ fn select_battle_inner(
     rows: &[BattleMenuRow<'_>], selected: &mut usize, launch_failed: bool,
     fleet_rows: &[String], squad_rows: &[String],
     ranking_rows: Option<&[Vec<String>; 6]>,
+    squad_ranking_rows: Option<&[Vec<String>; 5]>,
     shop_rows: &[NativeShopMenuRow], banked_tsv: u64,
     transfer_rows: &[NativeTransferMenuRow],
     create_rows: &[NativeCreateSquadMenuRow],
@@ -787,6 +794,7 @@ fn select_battle_inner(
         }
         if !library_mode && !show_tactics &&
             window.is_key_pressed(Key::F, KeyRepeat::No) {
+            ranking_metric = None;
             career_view = if career_view == Some(false) && !show_shop && !show_transfer && !show_create {
                 None
             } else { Some(false) };
@@ -850,8 +858,8 @@ fn select_battle_inner(
         }
         // Do not let a hidden ranking tab capture Left/Right input in
         // fleet tactics, shops or ordinary battle selection.
-        if career_view != Some(false) { ranking_metric = None; }
-        if career_view == Some(false) &&
+        if career_view.is_none() { ranking_metric = None; }
+        if career_view.is_some() &&
             window.is_key_pressed(Key::K, KeyRepeat::No)
         {
             ranking_metric = if ranking_metric.is_some() {
@@ -861,11 +869,13 @@ fn select_battle_inner(
             fleet_first = 0;
         }
         if let Some(metric) = ranking_metric {
+            let category_count = if career_view == Some(true) {
+                SQUAD_RANK_CATEGORIES.len()
+            } else { FLEET_RANK_CATEGORIES.len() };
             let next = if window.is_key_pressed(Key::Right, KeyRepeat::No) {
-                Some((metric + 1) % FLEET_RANK_CATEGORIES.len())
+                Some((metric + 1) % category_count)
             } else if window.is_key_pressed(Key::Left, KeyRepeat::No) {
-                Some((metric + FLEET_RANK_CATEGORIES.len() - 1)
-                    % FLEET_RANK_CATEGORIES.len())
+                Some((metric + category_count - 1) % category_count)
             } else { None };
             if let Some(metric) = next {
                 ranking_metric = Some(metric);
@@ -1265,26 +1275,32 @@ fn select_battle_inner(
             continue;
         }
         if let Some(show_squads) = career_view {
-            let career_rows = if show_squads { squad_rows }
-                else if let Some(metric) = ranking_metric {
-                    ranking_rows.map_or(fleet_rows, |sets| &sets[metric][..])
-                } else { fleet_rows };
+            let career_rows = if show_squads {
+                if let Some(metric) = ranking_metric {
+                    squad_ranking_rows.map_or(squad_rows, |sets| &sets[metric][..])
+                } else { squad_rows }
+            } else if let Some(metric) = ranking_metric {
+                ranking_rows.map_or(fleet_rows, |sets| &sets[metric][..])
+            } else { fleet_rows };
             // Each screen has a different set of persisted identities.
             // Clamp when switching between long ship lists and short
             // squad lists, rather than rendering an apparently empty page.
             navigate_rows(&window, &mut fleet_selected, &mut fleet_first, career_rows.len());
             pixels.fill(0x080e19);
             let title = if show_squads {
-                "Saved squads".to_owned()
+                if let Some(metric) = ranking_metric {
+                    format!("Squad rankings: {}", SQUAD_RANK_CATEGORIES[metric])
+                } else { "Saved squads".to_owned() }
             } else if let Some(metric) = ranking_metric {
                 format!("Fleet rankings: {}", FLEET_RANK_CATEGORIES[metric])
             } else { "Fleet career".to_owned() };
             text::draw_centered(&mut pixels, WIDTH, 24, &title, 2, TEXT);
             text::draw_centered(&mut pixels, WIDTH, 78,
-                if show_squads { "Completed campaign battles (saved squads only)" }
-                    else if ranking_metric.is_some() {
-                        "Living FleetShips ranked separately within each faction"
-                    } else { "Completed campaign battles (saved FleetShips only)" }, 1, MUTED);
+                if ranking_metric.is_some() {
+                    "Active career identities ranked separately within each faction"
+                } else if show_squads {
+                    "Completed campaign battles (saved squads only)"
+                } else { "Completed campaign battles (saved FleetShips only)" }, 1, MUTED);
             if career_rows.is_empty() {
                 text::draw_centered(&mut pixels, WIDTH, 218,
                     if show_squads { "No recorded saved squad careers yet" }
@@ -1310,7 +1326,7 @@ fn select_battle_inner(
                 if ranking_metric.is_some() {
                     "K career   Left/Right category   Up/Down browse   Esc back"
                 } else if show_squads {
-                    "F fleet   S squads   Wheel / arrows / PageUp / PageDown browse"
+                    "K rankings   F fleet   Wheel / arrows / PageUp / PageDown browse"
                 } else {
                     "K rankings   S squads   Wheel / arrows / PageUp / PageDown browse"
                 }, 1, MUTED);
