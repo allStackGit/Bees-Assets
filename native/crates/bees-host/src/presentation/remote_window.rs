@@ -3359,6 +3359,14 @@ pub fn connect_remote(
         "briefing_rejections":peer.metrics.briefing_rejections,
         "orders_accepted":peer.metrics.orders_accepted,
         "orders_rejected":peer.metrics.orders_rejected,
+        "order_ack_latency_samples":peer.metrics.order_ack_latency_samples,
+        "order_ack_latency_mean_milliseconds":if peer.metrics.order_ack_latency_samples>0 {
+            Some(peer.metrics.order_ack_latency_sum_seconds*1000.0/
+                peer.metrics.order_ack_latency_samples as f64)
+        } else {None},
+        "order_ack_latency_max_milliseconds":if peer.metrics.order_ack_latency_samples>0 {
+            Some(peer.metrics.order_ack_latency_max_seconds*1000.0)
+        } else {None},
         "campaign_receipts":peer.metrics.campaign_receipts,
         "battle_result_receipts":peer.metrics.battle_result_receipts,
         "interrupted_battle_notices":peer.metrics.interrupted_battle_notices,
