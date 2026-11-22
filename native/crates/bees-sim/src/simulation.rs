@@ -789,7 +789,6 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                 panic!("native model-step physics worker panicked");
             }
         };
-        report.parallel_workers = workers;
         // Rayon's fold may split one physical worker into several tasks.
         // Merge by its actual pool thread index after all workers join so
         // measurements remain one entry per contributing CPU worker.
@@ -808,6 +807,11 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         }
         for (measurements, arenas, elapsed) in per_worker.iter() {
             if *arenas == 0 { continue; }
+            // Count contributing OS worker threads, not merely the requested
+            // pool size. Direct dispatch means each participating worker
+            // actually handled at most one arena this tick.
+            report.parallel_workers += 1;
+            report.direct_dispatch &= *arenas == 1;
             report.worlds_stepped += measurements.ticks as usize;
             report.worker_loads.push(ParallelWorkerMeasurements::from_report(
                 *arenas, measurements, *elapsed,
