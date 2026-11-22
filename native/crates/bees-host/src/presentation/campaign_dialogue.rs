@@ -48,21 +48,21 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
         CampaignCue::PlutoAnomalyDefeat => &[
             ("Samuel", "We've lost contact with our scouting force, commander."),
         ],
-        // Pluto II original five-line patrol combat briefing, followed by
-        // the native command interface tutorial at the actual Scout
-        // selection gate (a gameplay prerequisite, not cosmetic guessing).
+        // Pluto II's first two original lines are already given by
+        // LevelIntro preparation, outside the playable mission. The live
+        // cue begins with the original third line and its Scout objective.
         CampaignCue::PlutoReinforcementsBriefing => &[
-            ("Samuel", "We’ve been caught off guard by the strange alien fleet cutting our communications. Only our patrol ships are ready for combat for the moment, but we have sent orders to the rest."),
-            ("Samuel", "Commander, you need to engage in this fight with the patrol ships and buy time for the rest of the fleet to mobilize."),
             ("Samuel", "Okay, commander, it's up to you to lead us to victory."),
-            ("Samuel", "I recommend you try to find out where the enemy is with your scouts, then form a plan of attack. I’ll be working on restoring our local communications with the rest of the base."),
-            ("Samuel", " . . .Also, Marco wants me to remind you that we are… now at war, so all of our combat vessels are ordered to fire on sight by default."),
             ("Samuel", "Start with the first Scout. Select it to inspect its squad controls."),
         ],
         CampaignCue::PlutoReinforcementsScoutSelected => &[
-            ("Samuel", "Here are the different settings for your ship. Try the squad flight patterns and shooting strategies."),
-            ("Samuel", "Use the number hotkeys to select squads, or drag a box to select multiple squads."),
-            ("Samuel", "Hold R to see weapon ranges, and press F to fire manually."),
+            ("Samuel", "Here are different settings for your ship. You can determine your squad’s flight pattern and shooting strategies here. Take some time to familiarize yourself with these options."),
+            ("Samuel", "You can also select squads with the number hotkeys on your keyboard. These are displayed at the top of the screen."),
+            ("Samuel", "If you need to select multiple squads, click and drag the mouse over the squads."),
+            ("Samuel", "Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ ranges at any time by holding R."),
+            ("Samuel", "You can manually fire towards your cursor with any selected ships by pressing F."),
+            ("Samuel", "I recommend you try to find out where the enemy is with your scouts, then form a plan of attack. I’ll be working on restoring our local communications with the rest of the base."),
+            ("Samuel", " . . .Also, Marco wants me to remind you that we are… now at war, so all of our combat vessels are ordered to fire on sight by default."),
         ],
         CampaignCue::PlutoReinforcementsCombatReady => &[],
         CampaignCue::PlutoReinforcementsVictory => &[
@@ -100,11 +100,11 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
         CampaignCue::NeptuneProductionEnding { .. } => &[
             ("Samuel", "We've lost the last ships we sent out, commander. It’s time to regroup."),
         ],
-        // Exact original PlutoLines_Pushback sections: intro 0..12,
+        // Original Pluto III line 0 is shown by LevelIntro, while
+        // this battle's gated dialogue starts at source index 1.
         // victory 13..22, defeat 22..31. Source one-second pauses
         // remain empty, non-speaking dialogue lines.
         CampaignCue::PlutoPushbackBriefing { .. } => &[
-            ("Samuel", "With the full force of Pluto’s fleet and the cover of some floating space junk coming our way, we’re going to try and push back the assault from these aliens."),
             ("Samuel", "Alright, commander, we have all of our Lieutenants online. They’ll be giving orders for each of your vessels as you direct the entire fleet."),
             ("Oviya", "I'm Oviya, your scout lieutenant. Use the scout to… well, scout the battlefield. They get around fast, so as long as you keep giving orders they probably won't get hit by enemy fire. They don’t have any guns, though, so please don’t leave them out to dry when they can’t fight back."),
             ("Oviya", "Oh! Right, I almost forgot: Scouts also come loaded up with five beacons! You can drop them anywhere and they'll detect enemies that enter their field of vision."),
@@ -380,7 +380,8 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
         // with the real five-minute HumanTarget and reinforcement schedule;
         // no separate tutorial simulation, timer or staged enemy is created.
         CampaignCue::PlutoEvacuationBriefing => &[
-            ("Samuel", "Scouts are reporting overwhelming reinforcements from the enemy. We can’t defeat them, but we have to try and buy enough time for those on the planet to evacuate."),
+            // Original line 0 was spoken in the prior mission's travel
+            // preparation, not repeated inside Pluto4BluerPastures.
             ("Samuel", "Commander, these… What do we call the mysterious alien fleet, anyway?"),
             ("Oviya", "They do look like Bees. We can call them that."),
             ("Joey", "Let’s just call ‘em that. It’s easier than U.F.O.s. or ‘mysterious alien fleet.’"),
