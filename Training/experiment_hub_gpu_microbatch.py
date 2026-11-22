@@ -24,7 +24,7 @@ from time import perf_counter
 import torch
 from torch import nn
 
-from experiment_hub_gpu_fusion import MeasuredGpuExecution, _leaves
+from experiment_hub_gpu_fusion import MeasuredGpuExecution, _leaves, _equivalent
 
 
 def _split_results(value, sizes):
@@ -91,7 +91,7 @@ class FrozenInferenceMicrobatcher:
 
     def __init__(self, models: dict[str, nn.Module], versions: dict[str, object],
                  *, max_pending=256, max_requests=32, max_batch_rows=4096,
-                 wait_ms=1.0, max_cohorts=16, allow_graphs=True):
+                 wait_ms=0.25, max_cohorts=16, allow_graphs=True):
         if (not isinstance(models, dict) or not models or
                 set(models) != set(versions) or
                 not 1 <= max_pending <= 65536 or
@@ -116,12 +116,14 @@ class FrozenInferenceMicrobatcher:
         self.max_batch_rows, self.wait_seconds = max_batch_rows, wait_ms/1000
         self.max_cohorts, self.allow_graphs = max_cohorts, allow_graphs
         self._pending, self._executors = deque(), OrderedDict()
+        self._admission = OrderedDict()
         self._condition = Condition()
         self._closed = False
         self._outstanding = 0
         self._counters = dict(submitted=0, dispatched=0, model_forwards=0,
                               groups=0, coalesced=0, rejected=0, fallbacks=0,
-                              max_queue_depth=0)
+                              max_queue_depth=0, admitted_groups=0,
+                              rejected_groups=0, qualification_seconds=0.0)
         self._worker = Thread(target=self._serve, name="hub-gpu-microbatch", daemon=True)
         self._worker.start()
 
@@ -196,6 +198,19 @@ class FrozenInferenceMicrobatcher:
                         self._counters["dispatched"] += len(group)
                         self._counters["groups"] += 1
 
+    def _time(self, action):
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
+        start = perf_counter()
+        output = action()
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
+        return perf_counter()-start, output
+
+    def _individual(self, group):
+        with torch.inference_mode():
+            return [self.models[item.model_id](*item.inputs) for item in group]
+
     def _dispatch(self, group):
         stream = (torch.cuda.current_stream(self.device)
                   if self.device.type == "cuda" else None)
@@ -218,31 +233,83 @@ class FrozenInferenceMicrobatcher:
                 self._executors.popitem(last=False)
         else:
             self._executors.move_to_end(keys)
-        inputs = []
-        for members in owners.values():
-            inputs.append(tuple(
-                torch.cat([item.inputs[i] for item in members], dim=0)
-                if len(members)>1 else members[0].inputs[i]
-                for i in range(len(members[0].inputs))))
-        result = executor.run(inputs)
-        resolved = {}
-        for key, output in zip(keys, result):
-            members = owners[key]
-            try:
-                pieces = _split_results(output, [item.rows for item in members])
-            except (ValueError, TypeError):
-                # Unsupported state axis: preserve exact independent forwards.
-                with torch.inference_mode():
-                    pieces = [self.models[key](*item.inputs) for item in members]
-                self._counters["fallbacks"] += 1
-            for item, piece in zip(members, pieces):
-                resolved[id(item)] = piece
+        def grouped():
+            inputs = []
+            for members in owners.values():
+                inputs.append(tuple(
+                    torch.cat([item.inputs[i] for item in members], dim=0)
+                    if len(members)>1 else members[0].inputs[i]
+                    for i in range(len(members[0].inputs))))
+            values = executor.run(inputs)
+            resolved = {}
+            for key, value in zip(keys, values):
+                members = owners[key]
+                pieces = _split_results(value, [item.rows for item in members])
+                for item, piece in zip(members, pieces):
+                    resolved[id(item)] = piece
+            return [resolved[id(item)] for item in group]
+
+        mode = "grouped"
+        output = None
+        if len(group)>1:
+            shape = tuple((item.model_id,item.rows,
+                           tuple((tuple(t.shape[1:]),t.dtype)
+                                 for t in item.inputs)) for item in group)
+            mode = self._admission.get(shape)
+            if mode is None:
+                started = perf_counter()
+                try:
+                    candidate = grouped()
+                    reference = self._individual(group)
+                    if not all(_equivalent(a,b,1e-5,1e-6)
+                               for a,b in zip(reference,candidate)):
+                        raise ValueError("Coalesced inference changed frozen model outputs")
+                    grouped_times, solo_times = [], []
+                    for _ in range(2):
+                        t,_ = self._time(grouped)
+                        grouped_times.append(t)
+                        t,_ = self._time(lambda:self._individual(group))
+                        solo_times.append(t)
+                    # Packing, splitting and GPU completion belong in
+                    # the actual service-cost comparison. A fast model
+                    # forward alone is not enough to admit coalescing.
+                    mode = ("grouped" if min(grouped_times) <
+                            min(solo_times)*0.95 else "individual")
+                    output = candidate if mode=="grouped" else reference
+                except (ValueError, TypeError, RuntimeError,
+                        torch.OutOfMemoryError) as error:
+                    mode = "individual"
+                    output = self._individual(group)
+                    self._counters["fallbacks"] += 1
+                self._counters["qualification_seconds"] += perf_counter()-started
+                self._counters["admitted_groups" if mode=="grouped" else
+                               "rejected_groups"] += 1
+                self._admission[shape] = mode
+                if len(self._admission)>self.max_cohorts*8:
+                    self._admission.popitem(last=False)
+            else:
+                self._admission.move_to_end(shape)
+        if output is None:
+            if mode=="grouped":
+                try:
+                    output = grouped()
+                except (ValueError, TypeError, RuntimeError,
+                        torch.OutOfMemoryError):
+                    output = self._individual(group)
+                    self._counters["fallbacks"] += 1
+                    if len(group)>1:
+                        self._admission[shape] = "individual"
+                    mode = "individual"
+            else:
+                output = self._individual(group)
+        resolved = {id(item):value for item,value in zip(group,output)}
         event = None
         if stream is not None:
             event = torch.cuda.Event()
             event.record(stream)
-        self._counters["model_forwards"] += len(keys)
-        self._counters["coalesced"] += len(group)-len(keys)
+        self._counters["model_forwards"] += len(keys) if mode=="grouped" else len(group)
+        if mode=="grouped":
+            self._counters["coalesced"] += len(group)-len(keys)
         for item in group:
             item.future.done_event = event
             item.future.set_result(resolved[id(item)])
@@ -250,7 +317,8 @@ class FrozenInferenceMicrobatcher:
     def metrics(self):
         with self._condition:
             return dict(self._counters, pending=self._outstanding,
-                        cached_model_cohorts=len(self._executors))
+                        cached_model_cohorts=len(self._executors),
+                        calibrated_batch_shapes=len(self._admission))
 
     def close(self, *, cancel_pending=False):
         with self._condition:
