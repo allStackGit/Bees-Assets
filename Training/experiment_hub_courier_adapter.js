@@ -98,6 +98,14 @@ const COURIER_METRIC_CATALOG={
         'training_lineage_async_recalibrations',
         'training_lineage_async_discarded_steps',
         'training_lineage_async_adopted_bytes',
+        'training_gpu_fused_adam_active',
+        'training_gpu_fused_adam_selected',
+        'training_gpu_fused_adam_settled',
+        'training_gpu_fused_adam_steps',
+        'training_gpu_fused_adam_failures',
+        'training_gpu_foreach_input_batches',
+        'training_gpu_foreach_grad_batches',
+        'training_gpu_foreach_integrity_tensors',
         'training_shared_serial_probe_sps',
         'training_shared_confirm_probe_sps',
         'training_shared_policy_lag_updates',
@@ -215,6 +223,14 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_placement_moved_lineage',
     'training_gpu_metric_readbacks','training_gpu_metric_rows',
     'training_gpu_guard_readbacks',
+    'training_gpu_fused_adam_active',
+    'training_gpu_fused_adam_selected',
+    'training_gpu_fused_adam_settled',
+    'training_gpu_fused_adam_steps',
+    'training_gpu_fused_adam_failures',
+    'training_gpu_foreach_input_batches',
+    'training_gpu_foreach_grad_batches',
+    'training_gpu_foreach_integrity_tensors',
     'training_shared_async_collector_overlap',
     'training_shared_async_next_started',
     'training_shared_async_buffers',
@@ -352,6 +368,8 @@ function courierMetrics(source) {
     ].includes(name)||name.startsWith('training_broker_')||
         name.startsWith('training_live_')||
         name.startsWith('training_gpu_memory_')||
+        name.startsWith('training_gpu_fused_adam_')||
+        name.startsWith('training_gpu_foreach_')||
         name.startsWith('training_async_')||
         name.startsWith('training_shared_async_')||
         name.startsWith('training_lineage_async_')||
