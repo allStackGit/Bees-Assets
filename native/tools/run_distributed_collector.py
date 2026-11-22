@@ -18,7 +18,7 @@ from native_training_artifacts import (
     check_learner, file_sha256, native_source_contract_sha256,
     normalized_python_source_sha256, sync_directory,
 )
-from native_distributed_collection import verify_bundle
+from native_distributed_collection import verify_bundle, read_bundle_receipt
 from transfer_policy_bundle import (
     export_bundle_archive, verified_existing_bundle_archive,
     checked_order, verify_bundle_files,
@@ -126,12 +126,17 @@ def reusable_collection(receipt_path, job, orders, leased_gpu_inference=False,
         return None
     try:
         receipt = verify_bundle(receipt_path, job, orders)
-        document = json.loads(receipt_path.read_text(encoding="utf-8"))
+        raw = read_bundle_receipt(receipt_path)
+        if file_sha256(receipt_path) != receipt["sha256"]:
+            return None
+        document = json.loads(raw)
         if bool(document.get("leased_gpu_inference", False)) != leased_gpu_inference:
             return None
         if leased_gpu_inference and document.get("leased_gpu_count", 1) != leased_gpu_count:
             return None
-        verify_bundle_files(receipt_path)
+        verify_bundle_files(
+            receipt_path, expected_receipt_sha256=receipt["sha256"],
+        )
         return receipt
     except (OSError, ValueError, KeyError, TypeError):
         return None
