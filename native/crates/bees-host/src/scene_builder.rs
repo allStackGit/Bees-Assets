@@ -129,6 +129,7 @@ pub enum NativeAuthoredEntity {
         /// Original source PolygonCollider2D path in owning obstacle-local
         /// coordinates. None only for direct immutable prefab spawning.
         live_vertices: Option<Vec<Vec2>>,
+        kills_ships_on_contact: bool,
     },
     /// Real source MapObject with its current primary collider and
     /// optional authored Fire Tank explosion/obstacle relationship.
@@ -427,7 +428,7 @@ impl NativeSceneAssets {
                         .map_err(NativeSceneBuildError::Combat)?;
                 }
                 NativeAuthoredEntity::PolygonObstacle {
-                    entity_id, pose, live_vertices,
+                    entity_id, pose, live_vertices, kills_ships_on_contact,
                 } => {
                     if let Some(vertices) = live_vertices {
                         let pose = pose.ok_or(
@@ -440,6 +441,10 @@ impl NativeSceneAssets {
                         combat.spawn_polygon_obstacle(
                             self.polygon_catalog(), entity_id, pose,
                         ).map_err(NativeSceneBuildError::Combat)?;
+                    }
+                    if kills_ships_on_contact {
+                        combat.configure_lethal_static_obstacle(entity_id)
+                            .map_err(NativeSceneBuildError::Combat)?;
                     }
                 }
             }

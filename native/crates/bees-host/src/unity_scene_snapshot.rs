@@ -1226,6 +1226,10 @@ pub struct NativePlacedStaticPolygon {
     /// only when scaling is absent; specifying both is invalid.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_scale: Option<[f32; 2]>,
+    /// The original StaticObstacle flag is inherited by the same concave
+    /// polygon physics implementation used by playable and policy Levels.
+    #[serde(default)]
+    pub kills_ships_on_contact: bool,
 }
 
 impl NativePlacedStaticPolygon {
@@ -2256,7 +2260,7 @@ impl NativePhysicalScene {
                     }
                 }
                 NativeAuthoredEntity::PolygonObstacle {
-                    entity_id, pose, live_vertices,
+                    entity_id, pose, live_vertices, ..
                 } => {
                     let catalog = assets.polygon_catalog();
                     if let Some(vertices) = live_vertices {
@@ -3762,6 +3766,7 @@ impl NativePhysicalScene {
                 .insert(placement.entity_id, polygons.authored_health);
             self.entities.push(NativeAuthoredEntity::PolygonObstacle {
                 entity_id: placement.entity_id,
+                kills_ships_on_contact: placement.kills_ships_on_contact,
                 pose: Some(Pose {
                     position: Vec2::new(placement.position[0], placement.position[1]),
                     rotation_degrees: placement.rotation_degrees,
@@ -5500,6 +5505,7 @@ impl NativePhysicalScene {
                         entity_id: obstacle.entity_id,
                         pose: Some(pose),
                         live_vertices: Some(vertices),
+                        kills_ships_on_contact: obstacle.kills_ships_on_contact,
                     }
                 },
                 "mining" => {

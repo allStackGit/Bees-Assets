@@ -193,6 +193,9 @@ internal static class NativePhysicalSceneExporter
         public int speed, health, effective_max_health;
         public int layer;
         public bool is_shard;
+        // Original StaticObstacle.KillsShipsOnContact belongs to the
+        // physical prefab instance, not to the episode controller.
+        public bool kills_ships_on_contact;
         public Vector2 position, velocity;
         public float rotation_degrees, angular_velocity_degrees;
         public List<Vector2> collider_vertices = new List<Vector2>();
@@ -887,7 +890,9 @@ internal static class NativePhysicalSceneExporter
                 map.eulerAngles.z, obstacle.transform.eulerAngles.z),
             health = obstacle.Health,
             effective_max_health = obstacle.OriginalHealth,
-            layer = obstacle.Collider.gameObject.layer
+            layer = obstacle.Collider.gameObject.layer,
+            kills_ships_on_contact = obstacle is StaticObstacle staticObstacle &&
+                !(obstacle is MapBorder) && staticObstacle.KillsShipsOnContact
         };
         if (obstacle is MiningAsteroid)
         {

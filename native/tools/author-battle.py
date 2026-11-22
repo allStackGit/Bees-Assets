@@ -396,6 +396,11 @@ def static_polygon(value: str) -> dict:
     return source
 
 
+def lethal_static_polygon(value: str) -> dict:
+    """Use the source polygon body with KillsShipsOnContact enabled."""
+    return {**static_polygon(value), "kills_ships_on_contact": True}
+
+
 def resize_empty_arena(scene: dict, map_size: float) -> None:
     """Native equivalent of the Unity RL MapSize/MapBorder transformation.
 
@@ -1296,7 +1301,8 @@ def author(args) -> tuple[dict, dict, dict]:
             scene.setdefault("map_objects", []).append(tank)
             statics.append(obstacle)
     all_static_boxes = args.static_boxes + args.lethal_static_boxes
-    if all_static_boxes or args.static_polygons or args.map_borders:
+    all_static_polygons = args.static_polygons + args.lethal_static_polygons
+    if all_static_boxes or all_static_polygons or args.map_borders:
         assets = Path(__file__).resolve().parents[1] / "assets"
         prefab_rows = load_json(assets / "box-obstacle-colliders.json")["obstacles"]
         source_boxes = {asset["name"] for asset in prefab_rows
@@ -1327,7 +1333,7 @@ def author(args) -> tuple[dict, dict, dict]:
             ) for obj in scene.get("layout", {}).get(key, [])],
         ]
         next_static_id = max(allocated_ids, default=0) + 1
-        requested_count = len(all_static_boxes) + len(args.static_polygons) + len(args.map_borders)
+        requested_count = len(all_static_boxes) + len(all_static_polygons) + len(args.map_borders)
         if next_static_id + requested_count >= (1 << 63):
             raise ValueError("no source-compatible entity IDs remain for static obstacles")
         layout = scene.setdefault("layout", {})
@@ -1336,10 +1342,10 @@ def author(args) -> tuple[dict, dict, dict]:
         for index, box in enumerate(all_static_boxes):
             boxes.append({**box, "entity_id": next_static_id + index})
         next_polygon_id = next_static_id + len(all_static_boxes)
-        for index, polygon in enumerate(args.static_polygons):
+        for index, polygon in enumerate(all_static_polygons):
             polygons.append({**polygon, "entity_id": next_polygon_id + index})
         custom_borders = layout.setdefault("add_map_borders", [])
-        next_border_id = next_polygon_id + len(args.static_polygons)
+        next_border_id = next_polygon_id + len(all_static_polygons)
         for index, border in enumerate(args.map_borders):
             custom_borders.append({**border, "entity_id": next_border_id + index})
     if args.arena_size is not None:
@@ -2255,6 +2261,10 @@ def battle_parser() -> argparse.ArgumentParser:
                         dest="static_polygons", default=[],
                         metavar="X:Y:SCALE_X:SCALE_Y[:DEGREES]",
                         help="place the verified concave Polygon Obstacle with nonuniform scaling; repeatable")
+    parser.add_argument("--lethal-static-polygon", action="append", type=lethal_static_polygon,
+                        dest="lethal_static_polygons", default=[],
+                        metavar="X:Y:SCALE_X:SCALE_Y[:DEGREES]",
+                        help="place an authentic lethal concave source StaticObstacle")
     parser.add_argument("--map-border", action="append", type=static_box,
                         dest="map_borders", default=[],
                         metavar="PREFAB:X:Y:SCALE_X:SCALE_Y[:DEGREES]",
