@@ -1808,6 +1808,7 @@ where
                 .and_then(|dialogue| dialogue.rescue_barges()),
             survival: world.state.events.survival_status(),
             demolition: world.state.events.demolition_status(),
+            target_ship: world.state.events.target_ship_objective(),
             escort: world.state.events.escort_status(),
             reinforcement_waves_pending:
                 world.state.metadata.pending_reinforcement_waves(),
