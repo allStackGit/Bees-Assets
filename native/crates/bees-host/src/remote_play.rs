@@ -2369,6 +2369,23 @@ fn current_state(
                             bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeDestroyed))),
             }))
         } else if view.campaign_objective == Some(
+            bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoReinforcements,
+        ) {
+            // The opponent sees the public goal, not the campaign
+            // commander's private tutorial stage or dialogue.
+            let own = view.campaign_dialogue_side == Some(side);
+            Some(json!({
+                "kind": "pluto_reinforcements",
+                "player_side": view.campaign_dialogue_side,
+                "scout_selected": own.then(|| view.campaign_dialogue.is_some_and(|(_, cue)|
+                    matches!(cue,
+                        bees_gameplay::campaign_dialogue::CampaignCue::PlutoReinforcementsScoutSelected |
+                        bees_gameplay::campaign_dialogue::CampaignCue::PlutoReinforcementsCombatReady))),
+                "combat_ready": own.then(|| view.campaign_dialogue.is_some_and(|(_, cue)|
+                    matches!(cue,
+                        bees_gameplay::campaign_dialogue::CampaignCue::PlutoReinforcementsCombatReady))),
+            }))
+        } else if view.campaign_objective == Some(
             bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoPushback,
         ) {
             Some(json!({

@@ -2014,6 +2014,21 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 text::draw_at(pixels, WIDTH, 16, 23,
                     text::fit(label, FIELD - 32), 1, [255, 211, 130]);
             }
+            if objective.get("kind").and_then(Value::as_str) == Some("pluto_reinforcements") {
+                let owner = objective.get("player_side").and_then(Value::as_i64)
+                    == Some(i64::from(side));
+                let label = if !owner {
+                    "Break the Pluto defense fleet"
+                } else if objective["combat_ready"] == true {
+                    "Repel the incoming Honeybee and Hornet squads"
+                } else if objective["scout_selected"] == true {
+                    "Review squad controls  |  Prepare for the Bee attack"
+                } else {
+                    "Select the first Scout to unlock squad controls"
+                };
+                text::draw_at(pixels, WIDTH, 16, 23,
+                    text::fit(label, FIELD - 32), 1, [255, 211, 130]);
+            }
             if objective.get("kind").and_then(Value::as_str) == Some("pluto_pushback") {
                 let owner = objective.get("player_side").and_then(Value::as_i64)
                     == Some(i64::from(side));

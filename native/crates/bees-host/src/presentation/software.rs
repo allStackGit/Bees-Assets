@@ -2487,6 +2487,27 @@ impl NativeSoftwareRenderer {
             text::draw_centered(&mut self.pixels, self.width, 8,
                 label, 1, [239, 247, 255]);
         } else if view.campaign_objective == Some(
+            bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoReinforcements,
+        ) {
+            use bees_gameplay::campaign_dialogue::CampaignCue;
+            let label = if view.player_authority.player_viewer_side()
+                != view.campaign_dialogue_side
+            {
+                "Break the Pluto defense fleet"
+            } else if view.campaign_dialogue.is_some_and(|(_, cue)|
+                matches!(cue, CampaignCue::PlutoReinforcementsCombatReady))
+            {
+                "Repel the incoming Honeybee and Hornet squads"
+            } else if view.campaign_dialogue.is_some_and(|(_, cue)|
+                matches!(cue, CampaignCue::PlutoReinforcementsScoutSelected))
+            {
+                "Review squad controls  |  Prepare for the Bee attack"
+            } else {
+                "Select the first Scout to unlock squad controls"
+            };
+            text::draw_centered(&mut self.pixels, self.width, 8,
+                label, 1, [239, 247, 255]);
+        } else if view.campaign_objective == Some(
             bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoPushback,
         ) {
             let label = if view.player_authority.player_viewer_side()
