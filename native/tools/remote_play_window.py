@@ -939,6 +939,30 @@ class RemoteBattleWindow:
             sid for squad in state["squads"] if squad["owner"] in selected
             for sid in squad["members"]
         }
+        # The host discloses only actual visible enemy hull IDs currently
+        # marked by the shared aggressive/bombing command director. Render
+        # the same live targets without running a second target selector.
+        visible_ships = {ship["id"]: ship for ship in state["ships"]}
+        marked_targets = set()
+        for squad in state["squads"]:
+            if squad["owner"] not in selected:
+                continue
+            targets = [visible_ships[ship_id] for ship_id in squad.get("command_targets", [])
+                       if ship_id in visible_ships]
+            if not targets:
+                continue
+            marked_targets.update(ship["id"] for ship in targets)
+            members = [visible_ships[ship_id] for ship_id in squad["members"]
+                       if ship_id in visible_ships]
+            if members:
+                sx = sum(ship["x"] for ship in members) / len(members)
+                sy = sum(ship["y"] for ship in members) / len(members)
+                tx = sum(ship["x"] for ship in targets) / len(targets)
+                ty = sum(ship["y"] for ship in targets) / len(targets)
+                ax, ay = self.to_screen(sx, sy)
+                bx, by = self.to_screen(tx, ty)
+                self.canvas.create_line(ax, ay, bx, by,
+                                        fill=ENEMY, dash=(5, 4), width=2)
         protected_id = (objective.get("protected_ship_id")
                         if objective.get("kind") == "survival" else
                         objective.get("escorted_ship_id")
@@ -998,6 +1022,10 @@ class RemoteBattleWindow:
                 else:
                     self.canvas.create_oval(x-8, y-8, x+8, y+8,
                                             outline="#ffffff", width=2)
+            if ship["id"] in marked_targets:
+                self.canvas.create_rectangle(
+                    left-4, top-4, right+4, bottom+4,
+                    outline=ENEMY, dash=(3, 2), width=2)
             if ship["id"] == protected_id:
                 self.canvas.create_rectangle(left-5, top-5, right+5, bottom+5,
                                              outline=MINERAL, dash=(4, 3), width=2)
