@@ -2929,6 +2929,8 @@ pub fn connect_remote(
     let mut show_weapon_ranges=false;
     let mut show_diagnostics=false;
     let mut show_controls_help=false;
+    let mut show_battle_menu=false;
+    let mut battle_menu_press:Option<usize>=None;
     let mut surrender_confirmation: Option<(String,u64,u64)> = None;
     let mut show_codex=false;
     let mut show_campaign_rewards=false;
@@ -2954,7 +2956,50 @@ pub fn connect_remote(
         let now=Instant::now();
         let elapsed=now.duration_since(previous_frame).as_secs_f32().min(0.1);
         previous_frame=now;
-        if surrender_confirmation.is_none() && window.is_key_pressed(Key::F1, KeyRepeat::No) && !held_fire_active {
+        let menu_action_consumed=show_battle_menu;
+        let mut menu_surrender_requested=false;
+        // The host must continue advancing for other commanders. This is
+        // only an input-capturing local overlay, never a network pause.
+        if show_battle_menu {
+            let left=window.get_mouse_down(MouseButton::Left);
+            let hover=window.get_mouse_pos(MouseMode::Discard)
+                .and_then(|(x,y)|NativeSoftwareRenderer::battle_menu_hit(
+                    WIDTH,HEIGHT,x,y));
+            if left&&!last_left {battle_menu_press=hover;}
+            let clicked=if !left&&last_left {
+                battle_menu_press.take().filter(|&start|Some(start)==hover)
+            } else {None};
+            let choice=if window.is_key_pressed(Key::Escape,KeyRepeat::No)||
+                window.is_key_pressed(Key::R,KeyRepeat::No){Some(0)}
+            else if window.is_key_pressed(Key::H,KeyRepeat::No)||
+                window.is_key_pressed(Key::F1,KeyRepeat::No){Some(1)}
+            else if window.is_key_pressed(Key::C,KeyRepeat::No)||
+                window.is_key_pressed(Key::F2,KeyRepeat::No){Some(2)}
+            else if window.is_key_pressed(Key::S,KeyRepeat::No){Some(3)}
+            else if window.is_key_pressed(Key::Q,KeyRepeat::No){Some(4)}
+            else{clicked};
+            match choice {
+                Some(0..=2)=>{
+                    show_battle_menu=false;
+                    battle_menu_press=None;
+                    show_controls_help=choice!=Some(0);
+                    show_codex=choice==Some(2);
+                    show_campaign_rewards=false;
+                },
+                Some(3)=>{
+                    if !peer.spectator {
+                        show_battle_menu=false;
+                        battle_menu_press=None;
+                        show_controls_help=false;
+                        menu_surrender_requested=true;
+                    }
+                },
+                Some(4)=>break,
+                _=>{},
+            }
+        }
+        if surrender_confirmation.is_none() && !menu_action_consumed &&
+            window.is_key_pressed(Key::F1, KeyRepeat::No) && !held_fire_active {
             show_codex=false;
             show_campaign_rewards=false;
             show_controls_help=!show_controls_help;
@@ -2969,7 +3014,8 @@ pub fn connect_remote(
             last_left=window.get_mouse_down(MouseButton::Left);
             last_right=window.get_mouse_down(MouseButton::Right);
         }
-        if surrender_confirmation.is_none() && window.is_key_pressed(Key::F2, KeyRepeat::No) && !held_fire_active {
+        if surrender_confirmation.is_none() && !menu_action_consumed &&
+            window.is_key_pressed(Key::F2, KeyRepeat::No) && !held_fire_active {
             show_codex=!show_codex;
             show_campaign_rewards=false;
             show_controls_help=show_codex;
@@ -3091,18 +3137,37 @@ pub fn connect_remote(
         let escape = window.is_key_pressed(Key::Escape, KeyRepeat::No);
         if surrender_confirmation.is_some() && (escape || cancel) {
             surrender_confirmation=None;
-        } else if escape && show_controls_help {
+        } else if !menu_action_consumed && escape && show_controls_help {
             show_controls_help=false;
             show_codex=false;
             show_campaign_rewards=false;
             last_left=window.get_mouse_down(MouseButton::Left);
             last_right=window.get_mouse_down(MouseButton::Right);
-        } else if !show_controls_help && (cancel || escape) {
+        } else if !menu_action_consumed && !show_controls_help && (cancel || escape) {
             if shooting_menu {
                 shooting_menu=false;shooting_press=None;
             } else if mode.is_some() {
                 mode=None;patrol_start=None;drag_start=None;right_press=None;
-            } else if escape {break;}
+            } else if escape {
+                if held_fire_active {
+                    if let Err(error)=peer.held_fire(&selected,"End",None) {
+                        let _=peer.socket.shutdown(std::net::Shutdown::Both);
+                        peer.connected=false;
+                        peer.notice=error.to_string();
+                    }
+                    held_fire_active=false;held_fire_target=None;
+                }
+                show_battle_menu=true;
+                show_controls_help=true;
+                show_codex=false;show_campaign_rewards=false;
+                shooting_menu=false;shooting_press=None;
+                mode=None;patrol_start=None;drag_start=None;right_press=None;
+                hud_press=None;squad_tab_press=None;minimap_dragging=false;
+                battle_menu_press=None;
+                last_selection_press=None;double_left_press=false;
+                last_left=window.get_mouse_down(MouseButton::Left);
+                last_right=window.get_mouse_down(MouseButton::Right);
+            }
         }
         // Reconnecting is an explicit new authenticated seat, never a
         // replay of commands or a restoration of unacknowledged gestures.
@@ -3416,8 +3481,11 @@ pub fn connect_remote(
                     state["episode_revision"].as_u64()?))
             })
         } else { None };
+        if menu_surrender_requested {
+            surrender_confirmation=surrender_owner.clone();
+        }
         peer.input_suppressed=peer.spectator||terminal||briefing||
-            host_briefing_paused||show_controls_help;
+            host_briefing_paused||show_controls_help||menu_action_consumed;
         if !peer.input_suppressed && !held_fire_active &&
             peer.connected && peer.authenticated && window.is_active() &&
             window.is_key_pressed(Key::F3, KeyRepeat::No)
@@ -3454,7 +3522,8 @@ pub fn connect_remote(
                     peer.notice=error.to_string();
                 }
             }
-        } else if window.is_active() && window.is_key_pressed(Key::F4,KeyRepeat::No) {
+        } else if !menu_action_consumed && window.is_active() &&
+            window.is_key_pressed(Key::F4,KeyRepeat::No) {
             surrender_confirmation=surrender_owner;
         }
         peer.input_suppressed |= surrender_confirmation.is_some();
@@ -4254,6 +4323,19 @@ pub fn connect_remote(
                 .iter().map(String::as_str));
             NativeSoftwareRenderer::draw_help_panel(
                 &mut pixels,WIDTH,HEIGHT,&rows,&[1,2],
+            );
+        } else if show_battle_menu {
+            const ROWS:&[&str]=&[
+                "BEES NATIVE / ONLINE BATTLE MENU",
+                "Esc or R: return to the live battle",
+                "H or F1: open multiplayer controls",
+                "C or F2: inspect the Fleet Codex",
+                "S: request surrender (commander only; confirmation required)",
+                "Q: disconnect and return to the game library",
+                "The host battle continues for all players",
+            ];
+            NativeSoftwareRenderer::draw_help_panel(
+                &mut pixels,WIDTH,HEIGHT,ROWS,&[0,6],
             );
         } else if show_codex {
             let catalog=source_ship_catalog();

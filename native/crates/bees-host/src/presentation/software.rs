@@ -3663,13 +3663,20 @@ impl NativeSoftwareRenderer {
     /// Returns 0..4 for Resume/Help/Codex/Surrender/Leave respectively.
     #[cfg(feature = "client")]
     pub fn battle_menu_at(&self, x: f32, y: f32) -> Option<usize> {
-        if self.width < 490 || self.height < 400 ||
+        Self::battle_menu_hit(self.width, self.height, x, y)
+    }
+
+    #[cfg(feature = "client")]
+    pub(super) fn battle_menu_hit(
+        width: usize, height: usize, x: f32, y: f32,
+    ) -> Option<usize> {
+        if width < 490 || height < 400 ||
             !x.is_finite() || !y.is_finite() { return None; }
         let row_height = text::HEIGHT + 5;
-        let panel_height = (7 * row_height + 28).min(self.height);
-        let panel_width = self.width.saturating_sub(40).min(875);
-        let left = (self.width - panel_width) / 2;
-        let top = (self.height - panel_height) / 2;
+        let panel_height = (7 * row_height + 28).min(height);
+        let panel_width = width.saturating_sub(40).min(875);
+        let left = (width - panel_width) / 2;
+        let top = (height - panel_height) / 2;
         if x < (left + 16) as f32 ||
             x >= (left + panel_width - 16) as f32 { return None; }
         let row = ((y as isize - (top + 12) as isize)
