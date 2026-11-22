@@ -9,7 +9,8 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::time::Instant;
 use sha2::{Digest, Sha256};
 
 use bees_gameplay::level_rules::NativeLevelRules;
@@ -28,6 +29,42 @@ use bees_sim::ship_assets::{AssetError, ShipAssetCatalog};
 use bees_sim::projectile_assets::{ProjectileAssetError, ProjectileAssetCatalog};
 use bees_sim::box_obstacle_assets::{BoxObstacleCatalog, BoxObstacleAssetError};
 use bees_sim::polygon_obstacle_assets::{PolygonObstacleCatalog, PolygonObstacleAssetError};
+
+// Embedded collider manifests are immutable and identical for every Stage.
+// Reuse their already validated Arc-backed geometry across campaign missions,
+// parallel training worlds and repeated matches. Stage-specific collision
+// matrices, prefab selection, rules and asset digests remain per Stage.
+static SHIP_CATALOG: OnceLock<Arc<ShipAssetCatalog>> = OnceLock::new();
+static PROJECTILE_CATALOG: OnceLock<Arc<ProjectileAssetCatalog>> = OnceLock::new();
+static ASTEROID_CATALOG: OnceLock<Arc<CollisionAsteroidCatalog>> = OnceLock::new();
+static BOX_CATALOG: OnceLock<Arc<BoxObstacleCatalog>> = OnceLock::new();
+static POLYGON_CATALOG: OnceLock<Arc<PolygonObstacleCatalog>> = OnceLock::new();
+static FRAGMENT_PALETTE: OnceLock<AsteroidFragmentPalette> = OnceLock::new();
+
+/// Real setup work, distinct from in-game simulation steps per second.
+/// Cold parses include racing initializations; warm reuse is allocation-free.
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+pub struct NativeSceneAssetLoadMeasurements {
+    pub embedded_catalog_parses: u8,
+    pub embedded_catalog_reuses: u8,
+    pub elapsed_wall_micros: u64,
+}
+
+/// Invalid embedded manifests are still reported through the exact existing
+/// typed error. Never cache an error as a default/empty gameplay catalog.
+fn shared_catalog<T>(
+    cache: &OnceLock<Arc<T>>,
+    load: impl FnOnce() -> Result<T, NativeSceneAssetError>,
+    measurements: &mut NativeSceneAssetLoadMeasurements,
+) -> Result<Arc<T>, NativeSceneAssetError> {
+    if let Some(catalog) = cache.get() {
+        measurements.embedded_catalog_reuses += 1;
+        return Ok(Arc::clone(catalog));
+    }
+    let loaded = Arc::new(load()?);
+    measurements.embedded_catalog_parses += 1;
+    Ok(Arc::clone(cache.get_or_init(|| loaded)))
+}
 
 #[derive(Debug)]
 pub enum NativeSceneAssetError {
@@ -55,6 +92,7 @@ pub struct NativeSceneAssets {
     projectile_catalog: Arc<ProjectileAssetCatalog>,
     box_catalog: Arc<BoxObstacleCatalog>,
     polygon_catalog: Arc<PolygonObstacleCatalog>,
+    load_measurements: NativeSceneAssetLoadMeasurements,
 }
 
 impl NativeSceneAssets {
@@ -100,33 +138,50 @@ impl NativeSceneAssets {
         matrix_json: &str, stage_json: &str, expected_stage_name: &str,
         authored_map_settings: FragmentSpawnSettings,
     ) -> Result<Self, NativeSceneAssetError> {
+        let started = Instant::now();
+        let mut load_measurements = NativeSceneAssetLoadMeasurements::default();
         let collision_matrix = CollisionMatrix::from_unity_export(matrix_json)
             .map_err(NativeSceneAssetError::CollisionMatrix)?;
-        let catalog = Arc::new(CollisionAsteroidCatalog::embedded()
-            .map_err(NativeSceneAssetError::AsteroidCatalog)?);
+        let catalog = shared_catalog(&ASTEROID_CATALOG, || {
+            CollisionAsteroidCatalog::embedded().map_err(NativeSceneAssetError::AsteroidCatalog)
+        }, &mut load_measurements)?;
         let asteroid_stage = FullAsteroidStage::from_unity_export(
             stage_json, expected_stage_name, catalog, authored_map_settings,
         ).map_err(NativeSceneAssetError::StagePalette)?;
-        let fragment_palette = AsteroidFragmentPalette::embedded()
-            .map_err(NativeSceneAssetError::FragmentPalette)?;
-        let ship_catalog = Arc::new(ShipAssetCatalog::embedded()
-            .map_err(NativeSceneAssetError::ShipCatalog)?);
-        let projectile_catalog = Arc::new(ProjectileAssetCatalog::embedded()
-            .map_err(NativeSceneAssetError::ProjectileCatalog)?);
-        let box_catalog = Arc::new(BoxObstacleCatalog::embedded()
-            .map_err(NativeSceneAssetError::BoxCatalog)?);
-        let polygon_catalog = Arc::new(PolygonObstacleCatalog::embedded()
-            .map_err(NativeSceneAssetError::PolygonCatalog)?);
+        let fragment_palette = if let Some(palette) = FRAGMENT_PALETTE.get() {
+            load_measurements.embedded_catalog_reuses += 1;
+            palette.clone()
+        } else {
+            let loaded = AsteroidFragmentPalette::embedded()
+                .map_err(NativeSceneAssetError::FragmentPalette)?;
+            load_measurements.embedded_catalog_parses += 1;
+            FRAGMENT_PALETTE.get_or_init(|| loaded).clone()
+        };
+        let ship_catalog = shared_catalog(&SHIP_CATALOG, || {
+            ShipAssetCatalog::embedded().map_err(NativeSceneAssetError::ShipCatalog)
+        }, &mut load_measurements)?;
+        let projectile_catalog = shared_catalog(&PROJECTILE_CATALOG, || {
+            ProjectileAssetCatalog::embedded().map_err(NativeSceneAssetError::ProjectileCatalog)
+        }, &mut load_measurements)?;
+        let box_catalog = shared_catalog(&BOX_CATALOG, || {
+            BoxObstacleCatalog::embedded().map_err(NativeSceneAssetError::BoxCatalog)
+        }, &mut load_measurements)?;
+        let polygon_catalog = shared_catalog(&POLYGON_CATALOG, || {
+            PolygonObstacleCatalog::embedded().map_err(NativeSceneAssetError::PolygonCatalog)
+        }, &mut load_measurements)?;
         let mut digest = Sha256::new();
         for source in [&matrix_json, &stage_json] {
             digest.update((source.len() as u64).to_le_bytes());
             digest.update(source.as_bytes());
         }
+        load_measurements.elapsed_wall_micros =
+            started.elapsed().as_micros().min(u64::MAX as u128) as u64;
         Ok(Self {
             stage_name: expected_stage_name.to_owned(),
             source_assets_sha256: format!("{:x}", digest.finalize()),
             collision_matrix, asteroid_stage, fragment_palette,
             ship_catalog, projectile_catalog, box_catalog, polygon_catalog,
+            load_measurements,
         })
     }
 
@@ -139,6 +194,10 @@ impl NativeSceneAssets {
     pub fn source_assets_sha256(&self) -> &str { &self.source_assets_sha256 }
 
     pub fn stage_name(&self) -> &str { &self.stage_name }
+
+    pub fn load_measurements(&self) -> NativeSceneAssetLoadMeasurements {
+        self.load_measurements
+    }
 
     pub fn ship_catalog(&self) -> &ShipAssetCatalog { &self.ship_catalog }
 
