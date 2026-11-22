@@ -262,6 +262,18 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
         "policy_rows_per_second": {
             "value": receipt["policy_rows"] / receipt["wall_seconds"], "unit": "scalar",
         },
+        # Compare the end-to-end evaluation wall rate with physical
+        # execution throughput. They measure different costs and must
+        # not be silently substituted for each other.
+        "execution_seconds": {
+            "value": receipt["execution_wall_seconds"], "unit": "seconds",
+        },
+        "execution_steps_per_sec": {
+            "value": receipt["world_steps_per_execution_second"], "unit": "scalar",
+        },
+        "physics_worker_seconds": {
+            "value": receipt["parallel_worker_wall_seconds_sum"], "unit": "seconds",
+        },
         "success_rate": {"value": successes / receipt["episodes"], "unit": "ratio"},
     }
     # Timeouts and battle duration are physical EpisodeFinal observations,
