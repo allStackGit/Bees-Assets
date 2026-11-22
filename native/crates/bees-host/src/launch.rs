@@ -5854,6 +5854,27 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             },
             unlocked: !saved_fleet_sources.is_empty(),
         });
+        // Source FreePlay exposes previous authored Levels in its menu.
+        // An archived quick battle is reusable only if its original start
+        // identity was durably saved; old traces without source proof may
+        // still be WATCHED, but cannot become a newly played game.
+        let saved_level_sources = recordings.iter().filter(|recording|
+            recording.game_id != fleet_builder::GAME_ID &&
+            matches!(&recording.source,recorded_library::RecordedSource::QuickBattle(_)) &&
+            recording.trace.parent().and_then(Path::parent)
+                .is_some_and(|root|root.join("native-quick-battle-start.json")
+                    .is_file())
+        ).collect::<Vec<_>>();
+        let saved_level_index = rows.len();
+        rows.push(BattleMenuRow {
+            title: "Play Saved Level Again",
+            status: if saved_level_sources.is_empty() {
+                "  [No saved source-verified FreePlay levels]"
+            } else {
+                "  [New physical battle from archived level setup]"
+            },
+            unlocked: !saved_level_sources.is_empty(),
+        });
         let fleet_train_index = rows.len();
         let training_available = fleet_training::training_available();
         rows.push(BattleMenuRow {
@@ -5879,6 +5900,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             else { break };
         let creating_fleet = index == fleet_builder_index;
         let reusing_fleet = index == saved_fleet_index;
+        let reusing_level = index == saved_level_index;
         let training_fleet = index == fleet_train_index;
         let inspecting_fleet_training = index == fleet_training_jobs_index;
         let benchmarking_fleet = index == fleet_benchmark_index;
@@ -5895,6 +5917,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             (fleet_builder::GAME_ID, "custom_fleet", "Build Fleet Skirmish")
         } else if reusing_fleet {
             (fleet_builder::GAME_ID, "saved_fleet", "Play Saved Fleet Again")
+        } else if reusing_level {
+            ("saved-freeplay-level", "saved_level", "Play Saved Level Again")
         } else if training_fleet {
             ("fleet-training", "train", "Train Saved Fleet")
         } else if inspecting_fleet_training {
@@ -5992,6 +6016,44 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     "source_recording": recorded.trace,
                 }));
                 run_session(source, true, true, Some(output), None, None, None)
+            })()
+        } else if reusing_level {
+            (|| {
+                let choices = saved_level_sources.iter().map(|recording|
+                    BattleMenuRow {
+                        title: &recording.title,
+                        status: "  [Reopen original physical setup]",
+                        unlocked: true,
+                    }
+                ).collect::<Vec<_>>();
+                let mut selected = 0_usize;
+                let Some(index) = select_library(&choices,&mut selected,false)?
+                else {return Ok::<(), Box<dyn Error>>(());};
+                let recording = saved_level_sources[index];
+                let recorded_library::RecordedSource::QuickBattle(source) =
+                    &recording.source else {
+                        return Err(invalid("saved FreePlay Level has no authored source").into());
+                    };
+                let original = recording.trace.parent().and_then(Path::parent)
+                    .ok_or_else(||invalid("saved FreePlay level lacks a numbered battle root"))?
+                    .join("native-quick-battle-start.json");
+                let prior = QuickBattleStart::load(&original)?;
+                let current = QuickBattleStart::capture(source,false)?
+                    .ok_or_else(||invalid("saved FreePlay Level no longer has source recovery"))?;
+                if prior.remote_host || current.remote_host ||
+                    prior.source_config != current.source_config ||
+                    prior.source_sha256 != current.source_sha256 ||
+                    prior.assets_sha256.as_ref().is_none_or(|asset|
+                        Some(asset)!=current.assets_sha256.as_ref())
+                {
+                    return Err(invalid(
+                        "saved FreePlay setup differs from its original source or asset manifest",
+                    ).into());
+                }
+                // The normal library owner, crash recovery and fresh
+                // CombatWorld initialization apply unchanged. We replay
+                // neither the old physical World nor its recorded inputs.
+                run_library_quick_battle(save_root,&recording.game_id,source)
             })()
         } else if training_fleet {
             fleet_training::choose_and_train(save_root)
