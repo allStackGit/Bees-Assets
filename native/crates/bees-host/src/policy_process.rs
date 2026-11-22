@@ -188,6 +188,10 @@ impl ResidentPolicyProcess {
         if rows == 0 {
             return Ok(());
         }
+        // Reserve the expected behavior payload length before beginning a
+        // binary exchange. All InvalidBatch exits must precede pipe writes.
+        let behavior_count = rows.checked_mul(BEHAVIOR_STATS_PER_ROW)
+            .ok_or(PolicyProcessError::InvalidBatch)?;
         let seq = self.sequence.checked_add(1)
             .ok_or(PolicyProcessError::RequestSequenceExhausted)?;
         // Validate and stage the entire route/mask frame before touching
@@ -246,9 +250,7 @@ impl ResidentPolicyProcess {
         read_floats(&mut self.output, continuous)?;
         self.output.read_exact(discrete)?;
         if has_behavior {
-            let count = rows.checked_mul(BEHAVIOR_STATS_PER_ROW)
-                .ok_or(PolicyProcessError::InvalidBatch)?;
-            self.behavior_statistics.resize(count, 0.0);
+            self.behavior_statistics.resize(behavior_count, 0.0);
             read_floats(&mut self.output, &mut self.behavior_statistics)?;
         }
         Ok(())
@@ -502,6 +504,9 @@ impl NativePolicyInference for ResidentPolicyProcess {
             routes, observations, action_masks, continuous, discrete,
         ) {
             Ok(()) => Ok(()),
+            // Shape/mask errors are rejected before the first byte is sent.
+            // The worker remains synchronized and its loaded weights valid.
+            Err(error @ PolicyProcessError::InvalidBatch) => Err(error),
             Err(error) => {
                 self.unavailable = true;
                 Err(error)
