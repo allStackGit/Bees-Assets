@@ -15,6 +15,7 @@ Resource leases and GPU device identity remain the Hub agent's authority.
 from __future__ import annotations
 
 from statistics import median
+from threading import Lock
 from time import perf_counter
 from typing import Callable, Sequence
 
@@ -132,8 +133,9 @@ class IndependentGpuTraining:
         self.last_qualified_seconds = 0.0
         self.last_qualified_work_rate = 0.0
         self.selected = None
+        self._busy = Lock()
 
-    def _parallel(self, steps):
+    def _parallel(self, steps, inputs):
         caller = torch.cuda.current_stream(self.device)
         if not self.streams:
             self.streams = [
@@ -141,11 +143,16 @@ class IndependentGpuTraining:
                 for _ in range(min(self.max_streams, len(self.models)))
             ]
         result = []
-        for index, step in enumerate(steps):
+        for index, (step, tensors) in enumerate(zip(steps, inputs)):
             stream = self.streams[index % len(self.streams)]
             stream.wait_stream(caller)
             with torch.cuda.stream(stream):
                 result.append(step())
+            # The caller may discard a minibatch after run() returns even
+            # though CUDA kernels on the independent stream are still
+            # consuming it. Register that lifetime with the allocator.
+            for tensor in tensors:
+                tensor.record_stream(stream)
         for stream in self.streams:
             caller.wait_stream(stream)
         for value in result:
@@ -163,11 +170,28 @@ class IndependentGpuTraining:
         self.selected = "parallel" if parallel >= baseline*(1+self.min_speedup) else "serial"
         self.phase = "settled"
 
-    def run(self, steps: Sequence[Callable[[], object]], *, work_units=None):
+    def run(self, steps: Sequence[Callable[[], object]], *,
+            inputs, work_units=None):
+        if not self._busy.acquire(blocking=False):
+            raise RuntimeError("Independent GPU optimizer executor is already in use")
+        try:
+            return self._run(steps, inputs, work_units)
+        finally:
+            self._busy.release()
+
+    def _run(self, steps, inputs, work_units):
         if (not isinstance(steps, (list, tuple)) or
                 len(steps) != len(self.models) or
                 any(not callable(step) for step in steps)):
             raise ValueError("One optimizer-step callback is needed per registered model")
+        # Every live minibatch source buffer that callbacks read must be
+        # registered for stream lifetime. An explicit empty tuple is valid
+        # only for updates without external input tensors.
+        if (not isinstance(inputs, (tuple, list)) or len(inputs)!=len(steps) or
+                any(not isinstance(row, (tuple, list)) or
+                    any(not isinstance(t, torch.Tensor) or t.device != self.device
+                        for t in row) for row in inputs)):
+            raise ValueError("Provide every per-step GPU input tensor for safe stream ownership")
         if work_units is None:
             work_units = (1,)*len(steps)
         if (not isinstance(work_units, (list, tuple)) or
@@ -187,7 +211,7 @@ class IndependentGpuTraining:
         if measuring:
             torch.cuda.current_stream(self.device).synchronize()
         begun = perf_counter()
-        output = self._parallel(steps) if mode == "parallel" else self._serial(steps)
+        output = self._parallel(steps, inputs) if mode == "parallel" else self._serial(steps)
         if measuring:
             torch.cuda.current_stream(self.device).synchronize()
         seconds = perf_counter()-begun
