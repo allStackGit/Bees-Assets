@@ -86,6 +86,7 @@ const COURIER_METRIC_CATALOG={
         'training_shared_async_probe',
         'training_shared_async_probe_sps',
         'training_shared_serial_probe_sps',
+        'training_shared_confirm_probe_sps',
         'training_shared_policy_lag_updates',
         'training_shared_overlap_seconds',
         'training_shared_collect_wait_seconds',
@@ -438,7 +439,7 @@ function courierMetrics(source) {
             /^worker_[0-9]{1,2}_(?:sim_early_dispatches|sim_group_dispatches|sim_grouped_shards|sim_ipc_saved|sim_multiplexed_shards|sim_os_threads|gpu_output_batches|gpu_output_reused|gpu_input_device_copies|gpu_snapshot_reused|gpu_prefetch_skipped_batches|gpu_policy_retained|gpu_policy_reused|gpu_device|rollout_gpu_device|rollout_compressed|is_remote)$/.test(name)||
             /^training_gpu_device_[0-7]_(?:lineages|next_lineages)$/.test(name))?'count':
             name.endsWith('_bytes')?'bytes':
-            /^training_shared_(?:async|serial)_probe_sps$/.test(name)?'rate':
+            /^training_shared_(?:async|serial|confirm)_probe_sps$/.test(name)?'rate':
             /_probe_map_steps_per_second$/.test(name)?'rate':
             name.endsWith('_mb')?'mb':
             name==='training_gpu_snapshot_work_share'&&value>=0&&value<=1?'ratio':
