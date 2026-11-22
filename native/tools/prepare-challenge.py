@@ -109,8 +109,8 @@ def main():
                 not 1 <= args.stage_asteroid_minimum_rate <=
                     args.stage_asteroid_maximum_rate <= 3600):
                 raise ValueError("source asteroid spawn rates must satisfy 1 <= minimum <= maximum <= 3600")
-        with tempfile.TemporaryDirectory(prefix=".bees-native-challenge-", dir=parent) as temp:
-            staging = Path(temp)
+        staging = Path(tempfile.mkdtemp(prefix=".bees-native-challenge-", dir=parent))
+        try:
             for level in sorted(levels, key=lambda item: item["Id"]):
                 index = level["Id"]
                 map_index = level["MapIndex"]
@@ -142,6 +142,12 @@ def main():
             if output.exists() or output.is_symlink():
                 raise ValueError("Challenge destination appeared during authoring")
             staging.rename(output)
+        finally:
+            # After publication the temporary pathname no longer exists.
+            # Before publication, even a failed stage leaves no half-built
+            # career directory on either Windows or Linux.
+            if staging.exists():
+                shutil.rmtree(staging)
         print(json.dumps({
             "kind": "native_original_challenge_ready",
             "levels": 10,
