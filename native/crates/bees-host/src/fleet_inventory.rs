@@ -130,7 +130,8 @@ impl NativeFleetInventory {
             return Err(Error::InvalidEntry);
         }
         if restored.killed.iter().any(|id|
-            !restored.entries.contains_key(id)
+            !restored.entries.get(id).is_some_and(|entry|
+                entry.minerals_mined_this_level == 0)
         ) || restored.combat.iter().any(|(id, _)|
             !restored.entries.get(id).is_some_and(|entry|
                 entry.has_persistent_fleet_value
