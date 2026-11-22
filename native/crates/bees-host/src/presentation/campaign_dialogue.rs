@@ -679,6 +679,10 @@ pub enum NativeCampaignIntermission {
     Preparation(NativeCampaignPreparation),
 }
 
+const CHALLENGE_COMPLETED: &[(&str, &str)] = &[
+    ("Challenge", "Congratulations! You've finished the Challenge Mode!"),
+];
+
 const PLUTO_TO_NEPTUNE: &[(&str, &str)] = &[
     ("Samuel", "What do we do now? Those... bees outnumber us."),
     ("Marco", "Heavily."),
@@ -789,10 +793,7 @@ impl NativeCampaignIntermission {
 
     pub(crate) fn lines(self) -> impl Iterator<Item = (&'static str, &'static str)> {
         let (first, middle, last) = match self {
-            Self::ChallengeCompleted => (
-                &[("Challenge", "Congratulations! You've finished the Challenge Mode!")][..],
-                &[][..], &[][..],
-            ),
+            Self::ChallengeCompleted => (CHALLENGE_COMPLETED, &[][..], &[][..]),
             Self::PlutoToNeptune => (PLUTO_TO_NEPTUNE, &[][..], &[][..]),
             Self::NeptuneToTitania => (NEPTUNE_TO_TITANIA, &[][..], &[][..]),
             Self::Preparation(preparation) => (preparation.lines(), &[][..], &[][..]),
