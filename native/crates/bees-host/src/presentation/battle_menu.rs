@@ -151,6 +151,17 @@ pub struct NativeShopMenuRow {
     pub saved_squad_id: i64,
 }
 
+/// Read-only projection from the committed source campaign ledger. No
+/// presentation-side match archive or independent score ownership.
+pub struct NativeCampaignMenuStats {
+    pub score: i64,
+    pub score_complete: bool,
+    pub ships_lost: u64,
+    pub ships_returned: u64,
+    pub credited_kills: u64,
+    pub match_history_complete: bool,
+}
+
 pub struct NativeTransferMenuRow {
     pub title: String,
     pub fleet_ship_id: i64,
@@ -228,11 +239,11 @@ pub fn select_battle(
     tactics_rows: &[NativeTacticsMenuRow],
     delete_rows: &[NativeDeleteSquadMenuRow],
     name_rows: &[NativeNameMenuRow],
-    campaign_score: (i64, bool),
+    career_stats: NativeCampaignMenuStats,
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     select_battle_inner(rows, selected, launch_failed, fleet_rows, squad_rows,
         shop_rows, banked_tsv, transfer_rows, create_rows, tactics_rows,
-        delete_rows, name_rows, Some(campaign_score), false)
+        delete_rows, name_rows, Some(career_stats), false)
 }
 
 /// The packaged-game launcher uses the same list renderer without exposing
@@ -256,7 +267,7 @@ fn select_battle_inner(
     tactics_rows: &[NativeTacticsMenuRow],
     delete_rows: &[NativeDeleteSquadMenuRow],
     name_rows: &[NativeNameMenuRow],
-    campaign_score: Option<(i64, bool)>,
+    career_stats: Option<NativeCampaignMenuStats>,
     library_mode: bool,
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     if rows.is_empty() { return Ok(None); }
@@ -851,10 +862,14 @@ fn select_battle_inner(
         text::draw_centered(&mut pixels, WIDTH, 78,
             if library_mode { "Campaigns and quick battles" }
             else { "Choose a battle to play" }, 1, MUTED);
-        if let Some((score, complete)) = campaign_score {
+        if let Some(career) = &career_stats {
             text::draw_centered(&mut pixels, WIDTH, 96, &format!(
-                "Campaign score: {score}{}",
-                if complete { "" } else { " (partial older history)" },
+                "Score {:+}  |  Lost {}  Returned {}  Kills {}{}",
+                career.score, career.ships_lost, career.ships_returned,
+                career.credited_kills,
+                if career.score_complete && career.match_history_complete {
+                    ""
+                } else { " (partial older history)" },
             ), 1, MUTED);
         }
         for (row, title) in titles.iter().skip(first).take(PAGE_SIZE).enumerate() {
