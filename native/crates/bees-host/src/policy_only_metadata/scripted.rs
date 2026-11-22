@@ -39,6 +39,13 @@ pub enum NativeScriptedOrder {
     /// issuing the ordinary Aggressive command, then select again after
     /// its exact target lifetime ends. No extra movement or weapon logic.
     AggressiveNearest,
+    /// Reacquire the closest live opposing squad when a scripted targeting
+    /// order starts. Uses the normal target-command/weapon eligibility
+    /// checks, without caching an enemy across squad retirements.
+    TargetNearestEnemy,
+    /// Execute the source defensive retreat relative to the currently
+    /// nearest living enemy, including the normal delayed completion.
+    RetreatNearest,
     /// Select a live opponent, then execute the shared BombingRun engine.
     BombingNearest,
     /// Select a live opponent, then execute the shared Barge Charge engine.
@@ -89,10 +96,12 @@ impl NativeScriptedOrder {
                 NativeLocalCommandAction::MoveToRandom { range },
             Self::Aggressive { .. } | Self::AggressiveNearest =>
                 NativeLocalCommandAction::Aggressive,
-            Self::TargetEnemy { .. } => NativeLocalCommandAction::TargetEnemy {
+            Self::TargetEnemy { .. } | Self::TargetNearestEnemy =>
+                NativeLocalCommandAction::TargetEnemy {
                 target: target.expect("authenticated current enemy squad"),
             },
-            Self::Retreat { .. } => NativeLocalCommandAction::Retreat,
+            Self::Retreat { .. } | Self::RetreatNearest =>
+                NativeLocalCommandAction::Retreat,
             Self::CircleSquad { .. } | Self::CircleNearest =>
                 NativeLocalCommandAction::CircleSquad,
             Self::RightSwipe { .. } | Self::RightSwipeNearest =>
@@ -142,6 +151,7 @@ impl NativeScriptedOrder {
             Self::Patrol { top_left, bottom_right } =>
                 top_left.is_finite() && bottom_right.is_finite(),
             Self::Hold | Self::ClosestFriendly | Self::AggressiveNearest |
+            Self::TargetNearestEnemy | Self::RetreatNearest |
             Self::BombingNearest | Self::ChargeNearest |
             Self::CircleNearest | Self::RightSwipeNearest |
             Self::LeftSwipeNearest | Self::InAndOutNearest |
@@ -157,7 +167,8 @@ impl NativeScriptedOrder {
 
     fn targets_nearest_enemy(&self) -> bool {
         matches!(self,
-            Self::AggressiveNearest | Self::BombingNearest |
+            Self::AggressiveNearest | Self::TargetNearestEnemy |
+            Self::RetreatNearest | Self::BombingNearest |
             Self::ChargeNearest | Self::CircleNearest |
             Self::RightSwipeNearest | Self::LeftSwipeNearest |
             Self::InAndOutNearest
@@ -793,6 +804,8 @@ impl NativePolicyOnlyMetadata {
             let enemy = if matches!(&order,
                 NativeScriptedOrder::Aggressive { .. } |
                 NativeScriptedOrder::AggressiveNearest |
+                NativeScriptedOrder::TargetNearestEnemy |
+                NativeScriptedOrder::RetreatNearest |
                 NativeScriptedOrder::BombingNearest |
                 NativeScriptedOrder::ChargeNearest |
                 NativeScriptedOrder::CircleNearest |
@@ -814,6 +827,7 @@ impl NativePolicyOnlyMetadata {
                 if matches!(&order,
                     NativeScriptedOrder::Aggressive { .. } |
                     NativeScriptedOrder::AggressiveNearest |
+                    NativeScriptedOrder::TargetNearestEnemy |
                     NativeScriptedOrder::TargetEnemy { .. }
                 ) {
                     // Ordinary attack and specialized bombers have
