@@ -4481,10 +4481,19 @@ impl NativePhysicalScene {
         let format: Format = serde_json::from_str(json)
             .map_err(NativeSnapshotError::Malformed)?;
         if format.native_game_schema.is_some() {
-            Self::parse_native_game_scene(
+            let scene = Self::parse_native_game_scene(
                 json, assets.ship_catalog(), assets.box_catalog(),
                 assets.polygon_catalog(), assets.collision_asteroid_catalog(),
-            )
+            )?;
+            // The loaded Stage supplies the real collision matrix,
+            // asteroid pool and fragment palette. A different native
+            // scene's Stage cannot silently inherit those physical rules.
+            if scene.stage_name != assets.stage_name() {
+                return Err(NativeSnapshotError::InvalidNativeLayout(
+                    "native game scene Stage does not match loaded physical assets",
+                ));
+            }
+            Ok(scene)
         } else {
             Self::parse_with_ship_catalog(json, assets.ship_catalog())
         }
