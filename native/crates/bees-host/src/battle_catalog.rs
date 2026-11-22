@@ -341,6 +341,18 @@ struct CampaignSquadNameEdit {
     name: String,
 }
 
+/// Player-authored FleetShip identity persists across squad transfers,
+/// health loss, mission completion and eventual destruction. Names are
+/// presentation-only; immutable combat receipts never gain a mutable label.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignFleetShipNameEdit {
+    campaign_id: String,
+    side: i32,
+    fleet_ship_id: i64,
+    name: String,
+}
+
 fn valid_saved_squad_name(name: &str) -> bool {
     (1..=32).contains(&name.len()) &&
     name.trim() == name &&
@@ -397,6 +409,7 @@ pub struct CampaignProgress<'a> {
     created_squads: Vec<NativeCreatedSquad>,
     retired_squad_ids: HashSet<i64>,
     squad_names: HashMap<i64, String>,
+    fleet_names: HashMap<i64, String>,
     tactics: Vec<NativeSavedSquadTactics>,
     tactics_edits: u64,
     transfer_count: u64,
@@ -561,6 +574,27 @@ impl CampaignProgress<'_> {
         self.squad_names.get(&saved_squad_id).map(String::as_str)
     }
 
+    pub fn fleet_ship_name(&self, fleet_ship_id: i64) -> Option<&str> {
+        self.fleet_names.get(&fleet_ship_id).map(String::as_str)
+    }
+
+    /// Live durable identities which can be named in the career editor.
+    /// Include new purchases with no completed battle statistics yet, but
+    /// never transient Stage-only ships or retired hulls.
+    pub fn nameable_fleet_ships(&self) -> Vec<(i32, i64)> {
+        let mut ids = self.fleet.iter()
+            .filter_map(|(&id, ship)| (!ship.is_dead).then_some((ship.side, id)))
+            .chain(self.purchases.iter().filter_map(|(side, ship)|
+                (!self.fleet.get(&ship.fleet_ship_id)
+                    .is_some_and(|entry| entry.is_dead))
+                    .then_some((*side, ship.fleet_ship_id))))
+            .filter(|(side, id)| matches!(*side, 1 | 2) && *id > 0)
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
     pub fn squad_label(&self, saved_squad_id: i64) -> String {
         let label = format!("Squad #{saved_squad_id}");
         match self.squad_name(saved_squad_id) {
@@ -639,8 +673,10 @@ impl CampaignProgress<'_> {
         ids.sort_unstable();
         ids.into_iter().map(|id| {
             let ship = &self.fleet[&id];
+            let name = self.fleet_ship_name(id)
+                .map_or(String::new(), |name| format!(" ({name})"));
             format!(
-                "#{id} S{} W{}/{} M{} Hit{} Taken{} Kill{}{}",
+                "#{id}{name} S{} W{}/{} M{} Hit{} Taken{} Kill{}{}",
                 ship.side, ship.battles_won, ship.battles_fought,
                 ship.minerals_mined, ship.combat.enemy_tsv_damage_done,
                 ship.combat.tsv_damage_received, ship.combat.attributed_enemy_kills,
@@ -913,6 +949,27 @@ impl BattleCatalog {
             &CampaignSquadNameEdit {
                 campaign_id: campaign_id.to_owned(),
                 side, saved_squad_id, name: name.to_owned(),
+            })
+    }
+
+    /// One immutable player FleetShip rename. No combat, ownership,
+    /// economic or original squad assignment is modified by this edit.
+    pub fn name_fleet_ship(
+        &self, progress: &CampaignProgress<'_>, output: &Path,
+        side: i32, fleet_ship_id: i64, name: &str,
+    ) -> io::Result<()> {
+        let campaign_id = self.campaign_id.as_deref()
+            .ok_or_else(|| invalid("ship naming requires a native campaign"))?;
+        if !progress.nameable_fleet_ships().contains(&(side, fleet_ship_id)) ||
+            !valid_saved_squad_name(name) ||
+            progress.fleet_ship_name(fleet_ship_id) == Some(name)
+        {
+            return Err(invalid("fleet rename needs a live owned FleetShip and printable name"));
+        }
+        commit_campaign_edit(output, "fleet-name-", "name.json",
+            &CampaignFleetShipNameEdit {
+                campaign_id: campaign_id.to_owned(),
+                side, fleet_ship_id, name: name.to_owned(),
             })
     }
 
@@ -1530,6 +1587,31 @@ impl BattleCatalog {
             }
             progress.squad_names.insert(edit.saved_squad_id, edit.name);
         }
+        // Names remain readable even after the original FleetShip is lost.
+        // The durable owner must have existed at some historical battle
+        // or purchase; an unrecognized numeric identity is never accepted.
+        for directory in numbered_directories(output, "fleet-name-")? {
+            let bytes = match fs::read(directory.join("name.json")) {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            let edit: CampaignFleetShipNameEdit = serde_json::from_slice(&bytes)
+                .map_err(|error| invalid(format!("invalid FleetShip name: {error}")))?;
+            let recorded_side = progress.fleet.get(&edit.fleet_ship_id)
+                .map(|entry| entry.side)
+                .or_else(|| progress.purchases.iter().find_map(|(side, ship)|
+                    (ship.fleet_ship_id == edit.fleet_ship_id).then_some(*side)));
+            if edit.campaign_id != *campaign ||
+                !matches!(edit.side, 1 | 2) || edit.fleet_ship_id <= 0 ||
+                recorded_side != Some(edit.side) ||
+                !valid_saved_squad_name(&edit.name) ||
+                progress.fleet_ship_name(edit.fleet_ship_id) == Some(edit.name.as_str())
+            {
+                return Err(invalid("invalid or stale FleetShip name receipt"));
+            }
+            progress.fleet_names.insert(edit.fleet_ship_id, edit.name);
+        }
         // Retirement is replayed after every fleet assignment. Because
         // retirement is allowed only for an empty created squad, later
         // valid transfers cannot depend on a removed identity. Keep an
@@ -1791,6 +1873,15 @@ impl BattleCatalog {
                 let mut ids = progress.retired_squad_ids.iter().copied().collect::<Vec<_>>();
                 ids.sort_unstable();
                 ids
+            },
+            "named_fleet_ships": {
+                let mut ids = progress.fleet_names.keys().copied().collect::<Vec<_>>();
+                ids.sort_unstable();
+                ids.into_iter().map(|id| json!({
+                    "fleet_ship_id": id,
+                    "name": progress.fleet_names[&id],
+                    "retired": progress.fleet.get(&id).is_some_and(|ship| ship.is_dead),
+                })).collect::<Vec<_>>()
             },
             "named_saved_squads": {
                 let mut ids = progress.squad_names.keys().copied().collect::<Vec<_>>();
