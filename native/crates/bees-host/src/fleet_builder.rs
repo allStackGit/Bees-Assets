@@ -619,7 +619,12 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
     let mut ai_tactics = [AiTactics::Aggressive; 2];
     for side in 0..2 {
-        let Some(value) = choose_ai_tactics(side)? else { return Ok(None); };
+        // The headless benchmark must use exactly the same available AI
+        // doctrine set as playable native battles. In particular, the
+        // source FullRetreat command requires a real allied WarpGate.
+        let Some(value) = choose_ai_tactics(
+            side, side == 0 && matches!(mix[side], FleetMix::Gate),
+        )? else { return Ok(None); };
         ai_tactics[side] = value;
     }
     let Some(objective) = choose_objective()? else { return Ok(None); };
