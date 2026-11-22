@@ -247,6 +247,19 @@ impl CombatWorld {
         ids
     }
 
+    /// A source Heal command's one-second timer requested the original
+    /// Beehive.SpawnHealingCross effect. The single CombatWorld emits its
+    /// immutable event only for an active physical Beehive; graphical
+    /// adapters decide whether to display it without affecting training.
+    pub fn emit_command_healing_cross(&mut self, beehive_id: i64) {
+        let Some(hive) = self.ship(beehive_id) else { return };
+        if hive.ship_type != BEEHIVE_TYPE || hive.vitals.is_dead() ||
+            !self.ship_body(beehive_id).is_some_and(|body| body.active) {
+            return;
+        }
+        self.events.push(CombatEvent::CommandHealingCross { beehive_id });
+    }
+
     /// Shared Beehive healing transaction for policy decisions and
     /// gameplay Heal command timers. Contact and one-second cooldown
     /// belong to their respective callers; the real health, TSV, damage

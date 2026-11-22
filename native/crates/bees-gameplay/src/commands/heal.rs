@@ -331,6 +331,16 @@ impl HealRun {
             .and_then(|timer| timer.begin_update(dt)) {
             callbacks += 1;
             self.release_unavailable(world);
+            // Unity spawns one cross per active hive per command pulse,
+            // not one per healed ship. Reuse the existing temporary ID
+            // set before its usual release bookkeeping later in this tick.
+            self.released_scratch.clear();
+            for &id in &self.healing {
+                let hive = self.assigned[&id];
+                if self.released_scratch.insert(hive) {
+                    world.emit_command_healing_cross(hive);
+                }
+            }
             self.cleanup_scratch.clear();
             for &id in &self.healing {
                 let hive = self.assigned[&id];
