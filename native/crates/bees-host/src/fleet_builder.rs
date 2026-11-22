@@ -16,6 +16,9 @@ use bees_host::unity_scene_snapshot::{
     NativeSquadShortcut,
 };
 use bees_sim::asteroid_assets::CollisionAsteroidCatalog;
+use bees_sim::box_obstacle_assets::BoxObstacleCatalog;
+use bees_sim::collision::{Aabb, Pose};
+use bees_sim::geometry::Vec2;
 use bees_sim::ship_assets::ShipAssetCatalog;
 use serde_json::{json, Value};
 
@@ -697,8 +700,11 @@ fn choose_visibility() -> Result<Option<bool>, Box<dyn Error>> {
 fn choose_mining_field(
     terrain: Terrain, arena_size: Option<u32>,
 ) -> Result<Option<usize>, Box<dyn Error>> {
-    if !matches!(terrain, Terrain::Open | Terrain::Original |
-        Terrain::AsteroidField | Terrain::AsteroidStorm) {
+    // Original Level.RandomizeOptions supports explicitly enabled
+    // mining even with static obstacles. Constrain combined layouts to
+    // maps large enough for both genuine collider families.
+    if matches!(terrain,Terrain::Cover | Terrain::DenseCover | Terrain::RandomCover) &&
+        !arena_size.is_some_and(|size|size>=512) {
         return Ok(Some(0));
     }
     let mut choices = vec![
@@ -1274,6 +1280,83 @@ fn original_random_cover(size: u32)
     Ok(result)
 }
 
+/// Reposition physical source MiningAsteroid colliders when the player
+/// explicitly combines ore with static terrain. Source LevelOptions allow
+/// both, but a fixed 320x200 duel's center cover overlaps its default ore.
+/// Use each verified source box's REAL collider bounds, and the ore's
+/// authored polygon vertices, solely to choose collision-free placements
+/// on the larger map. After authoring the single CombatWorld owns mining,
+/// obstacles, damage, navigation and rewards for game and training.
+fn place_minerals_around_cover(
+    scene:&mut Value,layout:&NativeLevelLayout,size:u32,
+) -> Result<(),Box<dyn Error>> {
+    if size<512 {return Err(invalid("cover with mining needs a 512+ physical map").into());}
+    let boxes=BoxObstacleCatalog::embedded().map_err(|_|
+        invalid("mining and cover need authentic source box colliders"))?;
+    let mut occupied=Vec::<Aabb>::with_capacity(layout.add_static_boxes.len()+16);
+    for placement in &layout.add_static_boxes {
+        let asset=boxes.by_name(&placement.prefab_name)
+            .ok_or_else(||invalid("static mining cover has no original prefab"))?;
+        let pose=Pose {
+            position:Vec2::new(placement.position[0],placement.position[1]),
+            rotation_degrees:placement.rotation_degrees,
+        };
+        let (_,body)=match placement.local_corners {
+            Some(corners)=>asset.prepare_spawn_live_box(
+                placement.entity_id,pose,
+                corners.map(|corner|Vec2::new(corner[0],corner[1])),
+            ),
+            None=>asset.prepare_spawn(placement.entity_id,Some(pose)),
+        }.map_err(|_|invalid("invalid original obstacle collider in mining layout"))?;
+        let bounds=body.primary_bounds().ok_or_else(||
+            invalid("original obstacle has no physical cover bounds"))?;
+        occupied.push(bounds);
+    }
+    let ores=scene["mining_asteroids"].as_array_mut()
+        .ok_or_else(||invalid("combined mining scene lacks physical source ore"))?;
+    for ore in ores.iter_mut() {
+        let vertices=ore["local_vertices"].as_array().ok_or_else(||
+            invalid("combined mining needs the original asteroid polygon"))?;
+        let mut half=[0.0_f32;2];
+        for vertex in vertices {
+            let point=vertex.as_array().filter(|pair|pair.len()==2)
+                .ok_or_else(||invalid("invalid original ore collider vertex"))?;
+            for axis in 0..2 {
+                let coordinate=point[axis].as_f64()
+                    .filter(|number|number.is_finite())
+                    .ok_or_else(||invalid("non-finite mining polygon"))?
+                    .abs() as f32;
+                half[axis]=half[axis].max(coordinate);
+            }
+        }
+        if half.iter().any(|&extent|extent<=0.0 || extent>80.0) {
+            return Err(invalid("invalid original mining asteroid dimensions").into());
+        }
+        let top=(size as f32*0.5-40.0).min(380.0);
+        let mut chosen=None;
+        'search: for row in 0..24_u32 {
+            let y=top-row as f32*35.0;
+            if y<130.0 {break;}
+            for sign in [1.0_f32,-1.0] {
+                for x in [0.0_f32,-36.0,36.0,-72.0,72.0] {
+                    let center=Vec2::new(x,y*sign);
+                    let safety=Vec2::new(half[0]+4.0,half[1]+4.0);
+                    let area=Aabb {min:center-safety,max:center+safety};
+                    if occupied.iter().all(|box_bounds|!box_bounds.overlaps(area)) {
+                        chosen=Some((center,area));
+                        break 'search;
+                    }
+                }
+            }
+        }
+        let (center,area)=chosen.ok_or_else(||
+            invalid("no unblocked source-sized mining deposit positions in the selected cover"))?;
+        ore["position"]=json!([center.x,center.y]);
+        occupied.push(area);
+    }
+    Ok(())
+}
+
 fn cover_box(id: i64, position: [f32; 2]) -> NativePlacedStaticBox {
     NativePlacedStaticBox {
         entity_id: id, prefab_name: "Box".to_owned(),
@@ -1633,8 +1716,9 @@ pub(super) fn archive(
             !matches!(selected.ore_count, 2 | 8 | 16) ||
             (selected.ore_count > 2 &&
                 !selected.arena_size.is_some_and(|size| size >= 512)) ||
-            !matches!(selected.terrain, Terrain::Open | Terrain::Original |
-                Terrain::AsteroidField | Terrain::AsteroidStorm)
+            (matches!(selected.terrain,
+                Terrain::Cover | Terrain::DenseCover | Terrain::RandomCover) &&
+                !selected.arena_size.is_some_and(|size|size>=512))
         {
             return Err(invalid("native mineral field needs a valid physical arena and source ore").into());
         }
@@ -2287,6 +2371,14 @@ pub(super) fn archive(
                 original_squad_count: count,
             });
         }
+    }
+    if selected.ore_count>0 &&
+        matches!(selected.terrain,
+            Terrain::Cover | Terrain::DenseCover | Terrain::RandomCover)
+    {
+        let size=selected.arena_size.ok_or_else(||
+            invalid("mixed cover-and-mining authoring needs a real large map"))?;
+        place_minerals_around_cover(&mut scene,&cloned,size)?;
     }
     run["levels"][0]["native_layout"] = serde_json::to_value(&cloned)?;
     // Clamp the extraction trigger inside its physical arena, leaving
