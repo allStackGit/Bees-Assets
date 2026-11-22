@@ -7433,6 +7433,11 @@ fn run_battle(
                 seen_squad_ids.insert(item_id);
             }
         }
+        // Native-authored waves and mission orders refer to the same
+        // source squad identities as imported run-config commands.
+        // Both must follow the newly allocated Stage lifetime before
+        // the initial physical World is assembled.
+        source.remap_native_mission_squad_ids(&remapped);
         remapped_squads_by_level.push(remapped);
     }
     let source_fixed_dt_by_level: Vec<f32> =
@@ -9002,6 +9007,11 @@ fn run_battle(
                     remapped.insert(squad.item_id, item_id);
                     squad.item_id = item_id;
                 }
+                // Every recycled episode uses fresh shared Stage IDs,
+                // including native scene-embedded mission references.
+                // Only the per-episode clone changes; the reusable source
+                // template retains its original authored identities.
+                scene.remap_native_mission_squad_ids(&remapped);
                 let seed = level.episode_seed(completed_episodes[index]);
                 if let Some(group) = &level.groups {
                     bind_group_routes(
