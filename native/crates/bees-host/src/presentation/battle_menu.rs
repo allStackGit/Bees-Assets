@@ -2,6 +2,9 @@
 
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use std::time::Instant;
+use std::path::Path;
+
+use crate::game_audio::NativeGameAudio;
 
 use super::{text, codex::{native_codex, codex_lines}};
 use crate::unity_scene_snapshot::{NativeSquadColorSetting, NativeSavedSquadFormation,
@@ -324,6 +327,7 @@ pub fn show_campaign_debrief(
 /// gameplay/economic changes inside the presentation layer.
 pub fn show_campaign_intermission(
     intermissions: &[super::campaign_dialogue::NativeCampaignIntermission],
+    audio_settings: &Path,
 ) -> Result<bool, minifb::Error> {
     // A travel intermission owns presentation only: no physical World,
     // mission receipt, or fleet changes are created until battle launch.
@@ -335,6 +339,9 @@ pub fn show_campaign_intermission(
     let mut window = Window::new("Bees | Campaign intermission",
         WIDTH, HEIGHT, WindowOptions::default())?;
     window.set_target_fps(30);
+    let mut audio = NativeGameAudio::new();
+    audio.load_preferences(audio_settings.to_path_buf());
+    let mut active_transmission: Option<&str> = None;
     let mut pixels = vec![0; WIDTH * HEIGHT];
     let mut page = 0_usize;
     let mut displayed_page = usize::MAX;
@@ -346,6 +353,11 @@ pub fn show_campaign_intermission(
             displayed_page = page;
             page_started = Instant::now();
             show_complete_line = false;
+            let title = lines[page].0;
+            if active_transmission != Some(title) {
+                audio.campaign_dialogue_presented();
+                active_transmission = Some(title);
+            }
         }
         if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
             return Ok(false);
@@ -385,6 +397,11 @@ pub fn show_campaign_intermission(
             displayed_page = page;
             page_started = Instant::now();
             show_complete_line = false;
+            let title = lines[page].0;
+            if active_transmission != Some(title) {
+                audio.campaign_dialogue_presented();
+                active_transmission = Some(title);
+            }
         }
         let (title, speaker, message) = lines[page];
         let elapsed = if show_complete_line { 1_000_000.0 } else {

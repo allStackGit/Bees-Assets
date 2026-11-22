@@ -7416,7 +7416,10 @@ fn run_campaign_game_menu(
                     transmission.push(NativeCampaignIntermission::Preparation(preparation));
                 }
                 if !transmission.is_empty() {
-                    if show_campaign_intermission(&transmission)? {
+                    if show_campaign_intermission(
+                        &transmission,
+                        &default_native_user_save_root(root).join("audio-settings.json"),
+                    )? {
                         seen_intermission.insert(mission.id.clone());
                     }
                     // Both original LevelIntro screens precede fleet
