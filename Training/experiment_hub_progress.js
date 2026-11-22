@@ -94,7 +94,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         retain('ant_decisions_per_second',reported.ant_decisions_per_second);
         retain('simulation_match_steps_per_second',
             reported.simulation_match_steps_per_second);
-        for(const name of ['ppo_gpu_batch_target_pixels',
+        for(const name of ['ppo_compiled_forward_active',
+            'ppo_compile_calibration_complete','ppo_compile_fallbacks',
+            'ppo_gradient_foreach_batches',
+            'ppo_gpu_batch_target_pixels',
             'ppo_gpu_batch_next_target','ppo_gpu_batch_settled',
             // Report exposed CPU-prep wait, not concurrent background work
             // as a separate portion of whole-update wall.
@@ -163,6 +166,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             retain(name,reported[name]);
         for(const name of ['training_end_to_end_steps_per_second',
             'training_useful_steps_per_second',
+            'training_ppo_gradient_foreach_batches',
             // Exposed Python simulation packing is a cross-project CPU
             // throughput clue, not an independent hardware saturation claim.
             'training_info_pack_max_seconds',
