@@ -476,6 +476,14 @@ impl CampaignProgress<'_> {
         self.missions.get(id).is_some_and(|mission| mission.grants_claimed)
     }
 
+    pub fn campaign_score_summary(&self) -> (i64, bool) {
+        (self.campaign_score, self.score_history_complete)
+    }
+
+    pub fn latest_mission_score_delta(&self, id: &str) -> Option<i64> {
+        self.missions.get(id).and_then(|mission| mission.latest_score_delta)
+    }
+
     /// Current native menu presentation of the same durable career record
     /// exposed by the read-only campaign status API.
     pub fn lost_player_fleet_ids(&self, side: i32) -> io::Result<HashSet<i64>> {
@@ -1919,6 +1927,7 @@ impl BattleCatalog {
                 "completed": progress.completed(&mission.id),
                 "latest_victory": progress.latest_victory(&mission.id),
                 "victory_grants_claimed": progress.grants_claimed(&mission.id),
+                "latest_score_delta": progress.latest_mission_score_delta(&mission.id),
                 "victory_squads": mission.victory_squads.iter().map(|grant| json!({
                     "saved_squad_id": grant.saved_squad_id,
                     "template_saved_squad_id": grant.template_saved_squad_id,
