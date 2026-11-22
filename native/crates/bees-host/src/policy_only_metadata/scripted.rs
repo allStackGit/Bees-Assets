@@ -947,6 +947,12 @@ impl NativePolicyOnlyMetadata {
                     self.scripted_queues[index].cursor += 1;
                     self.scripted_counts.commands_started += 1;
                     match order {
+                        NativeScriptedOrder::TargetNearestEnemy =>
+                            self.scripted_counts.target_nearest_commands_started += 1,
+                        NativeScriptedOrder::RetreatNearest =>
+                            self.scripted_counts.retreat_nearest_commands_started += 1,
+                        NativeScriptedOrder::FullRetreatNearest =>
+                            self.scripted_counts.full_retreat_nearest_commands_started += 1,
                         NativeScriptedOrder::MiningNearest =>
                             self.scripted_counts.mining_nearest_commands_started += 1,
                         NativeScriptedOrder::HealAvailable =>
