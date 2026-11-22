@@ -602,6 +602,7 @@ impl PeerClient {
         for index in 0..self.incoming.len() {
             if self.incoming[index] != b'\n' { continue; }
             let message: Value = serde_json::from_slice(&self.incoming[start..index])?;
+            let message_bytes=index-start;
             start = index + 1;
             match message["kind"].as_str() {
                 Some("welcome") => {
@@ -651,7 +652,6 @@ impl PeerClient {
                     if self.visual.snapshot(self.state.as_ref(), &message) {
                         self.metrics.snapshot_pairs_interpolated += 1;
                     }
-                    let message_bytes=index-start+1;
                     self.metrics.world_snapshot_bytes+=message_bytes as u64;
                     self.metrics.world_snapshot_max_bytes=self.metrics.world_snapshot_max_bytes.max(message_bytes);
                     self.state = Some(message);
