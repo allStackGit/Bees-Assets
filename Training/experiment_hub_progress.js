@@ -96,6 +96,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             reported.simulation_match_steps_per_second);
         for(const name of ['ppo_compiled_loss_active',
             'ppo_compile_calibration_complete','ppo_compile_fallbacks',
+            'ppo_compile_compiled_samples','ppo_compile_eager_samples',
             'ppo_compile_restored','ppo_gradient_foreach_batches',
             'ppo_gpu_batch_target_pixels',
             'ppo_gpu_batch_next_target','ppo_gpu_batch_settled',
@@ -167,6 +168,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         for(const name of ['training_end_to_end_steps_per_second',
             'training_useful_steps_per_second',
             'training_ppo_gradient_foreach_batches',
+            'training_ppo_compiled_active','training_ppo_compile_settled',
+            'training_ppo_compiled_samples','training_ppo_eager_samples',
+            'training_ppo_compile_fallbacks',
             // Exposed Python simulation packing is a cross-project CPU
             // throughput clue, not an independent hardware saturation claim.
             'training_info_pack_max_seconds',
