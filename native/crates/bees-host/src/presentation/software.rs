@@ -97,6 +97,8 @@ pub struct NativeRenderCounts {
     pub ships: usize,
     /// Actual backdrop pixels emitted by the native client, not an estimate.
     pub map_background_pixels: usize,
+    /// Fast framebuffer copies used instead of per-pixel RGBA sampling.
+    pub map_background_cached_pixels: usize,
     pub map_background_art_loaded: usize,
     /// Original Uranus Ring Sparkle, one drawn rotated child layer.
     pub map_ring_layer_draws: usize,
@@ -204,6 +206,12 @@ pub struct NativeSoftwareRenderer {
     pixels: Vec<u32>,
     /// Cosmetic source Map.SpriteRenderer; never included in game physics.
     map_background: Option<NativeMapBackdrop>,
+    /// One render-only cached planet surface. Do not allocate it until a
+    /// camera and ring phase repeat; a continuously panning view never
+    /// pays an extra copy of its newly sampled backdrop.
+    cached_map_background: Vec<u32>,
+    cached_map_key: Option<(NativeMapBackdrop, usize, usize, u32, u32, u32, u16)>,
+    last_drawn_map_key: Option<(NativeMapBackdrop, usize, usize, u32, u32, u32, u16)>,
     /// Allocated only for fog-enabled graphical Levels and reused by frame.
     fog_coverage: Vec<u8>,
     /// Original FreePlay's ToggleFogOfWar. Never available in a campaign
@@ -952,6 +960,8 @@ impl NativeSoftwareRenderer {
         }
         Ok(Self { width, height, pixels: vec![0; width * height],
             map_background: None,
+            cached_map_background: Vec::new(),
+            cached_map_key: None, last_drawn_map_key: None,
             fog_coverage: Vec::new(), fog_override_off: false,
             fog_context: None, fog_render_pass: 0,
             codex_owner: None,
@@ -1489,7 +1499,7 @@ impl NativeSoftwareRenderer {
     #[cfg(feature = "client")]
     pub(super) fn begin_remote_art(
         &mut self, camera: NativeCamera, tick: u64, dt: f32,
-    ) -> (usize, usize, usize) {
+    ) -> (usize, usize, usize, usize) {
         self.camera = camera;
         self.sprite_raster_candidate_pixels = 0;
         self.sprite_raster_opaque_pixels = 0;
@@ -2246,10 +2256,15 @@ impl NativeSoftwareRenderer {
     /// Unity Map.SpriteRenderer stretches its imported PNG over its actual
     /// centered 512- or 1024-unit prefab square, independent of Level bounds.
     /// Clamp the scan to on-screen texels and draw only in the native client.
-    fn draw_map_background(&mut self, tick: u64, dt: f32) -> (usize, usize, usize) {
-        self.pixels.fill(0x080e19);
-        let Some(background) = self.map_background else { return (0, 0, 0) };
-        let Some(atlas) = source_map_backgrounds() else { return (0, 0, 0) };
+    fn draw_map_background(&mut self, tick: u64, dt: f32) -> (usize, usize, usize, usize) {
+        let Some(background) = self.map_background else {
+            self.pixels.fill(0x080e19);
+            return (0, 0, 0, 0);
+        };
+        let Some(atlas) = source_map_backgrounds() else {
+            self.pixels.fill(0x080e19);
+            return (0, 0, 0, 0);
+        };
         let (index, half) = match background {
             NativeMapBackdrop::Pluto => (0, 256.0_f32),
             NativeMapBackdrop::Neptune => (1, 512.0),
@@ -2257,20 +2272,38 @@ impl NativeSoftwareRenderer {
             NativeMapBackdrop::Uranus => (3, 512.0),
         };
         let Some(art) = atlas.sprites.get(index).and_then(Option::as_ref)
-            else { return (0, atlas.loaded, 0) };
+            else {
+                self.pixels.fill(0x080e19);
+                return (0, atlas.loaded, 0, 0);
+            };
         let sprite = &art.sprite;
         let camera = self.camera;
         let ppu = camera.pixels_per_unit;
-        if !ppu.is_finite() || ppu <= 0.0 { return (0, atlas.loaded, 0) }
+        if !ppu.is_finite() || ppu <= 0.0 {
+            self.pixels.fill(0x080e19);
+            return (0, atlas.loaded, 0, 0);
+        }
+        let ring_phase = if matches!(background, NativeMapBackdrop::Uranus) {
+            ((f64::from(dt) * tick as f64 * 5.0 + 1.0e-6)
+                .floor().max(0.0) as u64 % 300) as u16
+        } else { 0 };
+        let key = (background, self.width, self.height,
+            camera.center.x.to_bits(), camera.center.y.to_bits(),
+            ppu.to_bits(), ring_phase);
+        if self.cached_map_key == Some(key) &&
+            self.cached_map_background.len() == self.pixels.len()
+        {
+            self.pixels.copy_from_slice(&self.cached_map_background);
+            return (0, atlas.loaded, 0, self.pixels.len());
+        }
+        self.pixels.fill(0x080e19);
         // Uranus.prefab has a Ring Sparkle child at (-195,-125) with
         // m_SortingOrder -1, behind its main sliced SpriteRenderer. Its
         // ImageSpinner advances at 5 Hz by 6 deg/second, using the same
         // authoritative fixed elapsed time as the displayed World.
         let ring_drawn = if matches!(background, NativeMapBackdrop::Uranus) {
             if let Some(ring) = atlas.sprites.get(4).and_then(Option::as_ref) {
-                let steps = (f64::from(dt) * tick as f64 * 5.0 + 1.0e-6)
-                    .floor().max(0.0);
-                let angle = ((steps * 1.2).rem_euclid(360.0) as f32).to_radians();
+                let angle = (ring_phase as f32 * 1.2).to_radians();
                 usize::from(self.draw_sprite(
                     &ring.sprite, Vec2::new(-195.0, -125.0), angle,
                     ppu * 1024.0 / ring.sprite.width as f32, 1.0,
@@ -2285,7 +2318,9 @@ impl NativeSoftwareRenderer {
             self.height as f32 * 0.5).floor().max(0.0) as usize;
         let bottom = ((camera.center.y + half) * ppu +
             self.height as f32 * 0.5).ceil().min(self.height as f32) as usize;
-        if left >= right || top >= bottom { return (0, atlas.loaded, ring_drawn) }
+        if left >= right || top >= bottom {
+            return (0, atlas.loaded, ring_drawn, 0);
+        }
         let inverse = ppu.recip();
         let u_factor = sprite.width as f32 / (half * 2.0);
         let v_factor = sprite.height as f32 / (half * 2.0);
@@ -2318,7 +2353,17 @@ impl NativeSoftwareRenderer {
                 samples += 1;
             }
         }
-        (samples, atlas.loaded, ring_drawn)
+        // On a first camera/phase sample, skip cache population rather
+        // than copying all pixels on a camera that is moving each frame.
+        // A repeated phase pays one cached-frame write, then future frames
+        // use one memcpy until the camera or original 5 Hz ring changes.
+        if self.last_drawn_map_key == Some(key) {
+            self.cached_map_background.clear();
+            self.cached_map_background.extend_from_slice(&self.pixels);
+            self.cached_map_key = Some(key);
+        }
+        self.last_drawn_map_key = Some(key);
+        (samples, atlas.loaded, ring_drawn, 0)
     }
 
     pub fn render(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) -> NativeRenderCounts {
@@ -2346,13 +2391,14 @@ impl NativeSoftwareRenderer {
         self.sprite_raster_candidate_pixels = 0;
         self.sprite_raster_opaque_pixels = 0;
         self.sprite_raster_blended_pixels = 0;
-        let (background_pixels, background_types, map_ring_layers) =
+        let (background_pixels, background_types, map_ring_layers, cached_pixels) =
             self.draw_map_background(view.tick, view.fixed_step_seconds);
         if self.death_owner != Some((view.world_id, view.episode_revision)) {
             self.pending_visual_event_counts = NativeRenderCounts::default();
         }
         let mut counts = std::mem::take(&mut self.pending_visual_event_counts);
         counts.map_background_pixels = background_pixels;
+        counts.map_background_cached_pixels = cached_pixels;
         counts.map_background_art_loaded = background_types;
         counts.map_ring_layer_draws = map_ring_layers;
         self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
