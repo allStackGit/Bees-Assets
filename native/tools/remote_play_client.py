@@ -384,6 +384,14 @@ class RemoteConsole:
         if kind == "survival":
             description = (f"Defend ship {objective['protected_ship_id']}"
                            f" (side {objective['defending_side']})")
+            if objective.get("titania_defense"):
+                description = "Defend Titania | " + description
+                duration = objective.get("duration_seconds")
+                elapsed = objective.get("elapsed_seconds")
+                if duration and elapsed is not None:
+                    description += f" | A.M.I. {min(100, max(0, int(100*elapsed/duration)))}%"
+            elif objective.get("pluto_evacuation"):
+                description = "Protect the Pluto evacuation | " + description
         elif kind == "demolition":
             description = (f"Demolish map target {objective['target_map_object_id']}"
                            f" (attacking side {objective['attacking_side']})")
@@ -391,7 +399,47 @@ class RemoteConsole:
             description = (f"Escort ship {objective['escorted_ship_id']}"
                            f" to the destination (side {objective['escorting_side']})")
         elif kind == "extraction":
-            description = f"Extract ships from side {objective['exiting_side']}"
+            side = objective["exiting_side"]
+            if objective.get("mine_and_withdraw"):
+                description = f"Mine resources and withdraw side {side}"
+            elif objective.get("titania_minesweeper"):
+                description = f"Guide side {side} through Titania's extraction zone"
+            elif objective.get("retreat_on_exit"):
+                description = f"Retreat side {side} through the exit"
+            else:
+                description = f"Extract ships from side {side}"
+        elif kind == "withdrawal_pending":
+            side = objective["exiting_side"]
+            description = (f"Open the retreat exit for side {side}"
+                           if state["viewer_side"] == side else
+                           f"Prevent side {side} from withdrawing")
+        elif kind == "barge_rescue":
+            remaining = objective.get("barges_remaining")
+            description = ("Rescue surviving barges" if remaining is None
+                           else f"Rescue barges | {remaining} of 3 remain")
+        elif kind == "pluto_reinforcements":
+            description = "Pluto reinforcements"
+            if objective.get("scout_selected") is False:
+                description += " | Select the Scout"
+            elif objective.get("combat_released") is False:
+                description += " | Await the source briefing"
+            elif objective.get("combat_released") is True:
+                description += " | Defend against the arriving force"
+        elif kind == "pluto_anomaly":
+            description = "Investigate the Pluto anomaly"
+            if objective.get("honeybee_spotted") is True:
+                description += " | Honeybee identified"
+            if objective.get("gunship_arrived") is True:
+                description += " | Gunship arrived"
+            if objective.get("honeybee_destroyed") is True:
+                description += " | Honeybee destroyed"
+        elif kind == "pluto_pushback":
+            description = "Push back the enemy fleet"
+        elif kind == "campaign_elimination":
+            side = objective.get("attacking_side")
+            description = ("Eliminate the enemy fleet"
+                           if side == state["viewer_side"] else
+                           "Defend against the attacking fleet")
         elif kind == "target_ship":
             attacking_side = objective["attacking_side"]
             target = objective["target_ship_id"]
