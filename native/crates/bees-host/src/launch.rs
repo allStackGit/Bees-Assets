@@ -225,6 +225,8 @@ struct ReinforcementConfig {
     entry: Option<[f32; 2]>,
 }
 
+fn extraction_activation_disabled(value: &bool) -> bool { !value }
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ExtractionConfig {
@@ -239,7 +241,7 @@ struct ExtractionConfig {
     retreat_on_exit: bool,
     /// Explicit source retreat button activation. Absence preserves
     /// earlier authored native skirmishes and durable configuration IDs.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "extraction_activation_disabled")]
     requires_player_activation: bool,
 }
 
