@@ -19,6 +19,12 @@ pub struct ExtractionZone {
     /// the opponent; ordinary extraction remains a player victory.
     #[serde(default)]
     pub retreat_on_exit: bool,
+    /// Source Neptune II / Uranus II create the physical retreat exit
+    /// ONLY after the player explicitly chooses to withdraw. This is an
+    /// authored game rule, not a client-only visibility toggle.
+    /// Older withdrawal runs retain their previously active zone.
+    #[serde(default)]
+    pub requires_player_activation: bool,
 }
 
 impl ExtractionZone {
@@ -55,6 +61,7 @@ impl CombatWorld {
     pub fn configure_extraction(&mut self, zone: ExtractionZone) -> Result<(), CombatWorldError> {
         let bounds = zone.bounds();
         if self.extraction.is_some() || !matches!(zone.player_side, 1 | 2) || zone.layer >= 32 ||
+            (zone.requires_player_activation && !zone.retreat_on_exit) ||
             !zone.activation_radius.is_finite() || zone.activation_radius <= 0.0 ||
             !(zone.activation_radius * zone.activation_radius).is_finite() ||
             !bounds.min.is_finite() || !bounds.max.is_finite() ||
@@ -63,11 +70,11 @@ impl CombatWorld {
             return Err(CombatWorldError::InvalidExtractionZone);
         }
         self.extraction = Some(ExtractionState {
-            // Uranus II creates its full-height retreat trigger before
-            // combat and never hides it behind a proximity activation.
-            // Ordinary extraction/escort still use their source activation
-            // radius and first-contact delay.
-            active: zone.retreat_on_exit, zone,
+            // A source player-activated retreat is NOT in the World
+            // until the authenticated user orders it. Legacy withdrawal
+            // and ordinary proximity-based extraction keep their existing
+            // creation/activation semantics.
+            active: zone.retreat_on_exit && !zone.requires_player_activation, zone,
             last_mobile_extracted: false,
             escort_ship_id: None, escort_delivered: false,
         });
@@ -105,7 +112,9 @@ impl CombatWorld {
     /// contract is shared by gameplay HUD and policy perception; actual
     /// extraction still occurs exclusively through step_extraction.
     pub fn extraction_objective(&self) -> Option<(i32, Aabb, bool)> {
-        self.extraction.as_ref().map(|state| (
+        self.extraction.as_ref()
+            .filter(|state| !state.zone.requires_player_activation || state.active)
+            .map(|state| (
             state.zone.player_side, state.zone.bounds(),
             state.escort_ship_id.is_some(),
         ))
@@ -113,6 +122,23 @@ impl CombatWorld {
 
     pub fn extraction_is_withdrawal(&self) -> bool {
         self.extraction.as_ref().is_some_and(|state| state.zone.retreat_on_exit)
+    }
+
+    /// Authoritative and side-scoped; a second button press cannot reset
+    /// an active retreat or add another physical collider to the World.
+    pub fn retreat_activation_available(&self, side: i32) -> bool {
+        self.extraction.as_ref().is_some_and(|state|
+            state.zone.retreat_on_exit && state.zone.requires_player_activation &&
+            !state.active && state.zone.player_side == side)
+    }
+
+    /// The original retreat action opens an exit zone; it does not kill,
+    /// teleport or award any ship. Actual saved hulls still have to cross
+    /// the source collider on later real physics steps.
+    pub fn activate_player_retreat(&mut self, side: i32) -> bool {
+        if !self.retreat_activation_available(side) { return false; }
+        self.extraction.as_mut().expect("preflighted withdrawal zone").active = true;
+        true
     }
 
     /// Read-only physical withdrawal outcome for campaign progression.
@@ -161,6 +187,12 @@ impl CombatWorld {
     pub fn step_extraction(&mut self, collisions: &CollisionMatrix) -> Result<(), CombatWorldError> {
         let Some(state) = self.extraction.as_ref() else { return Ok(()) };
         let zone = state.zone;
+        if !state.active && zone.requires_player_activation {
+            // The player has not opened the original campaign retreat
+            // corridor. Merely flying near its future coordinates must
+            // never activate it or trigger a successful extraction.
+            return Ok(());
+        }
         if !state.active {
             let radius_squared = zone.activation_radius * zone.activation_radius;
             let bounds = zone.bounds();
