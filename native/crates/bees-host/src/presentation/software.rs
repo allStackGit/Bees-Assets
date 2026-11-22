@@ -3790,7 +3790,7 @@ impl NativeSoftwareRenderer {
             "Backspace: cancel target   F9: change local commander",
             "AUDIO / PERFORMANCE",
             "F7: mute   Shift+F7: FreePlay fog   F10/F11: effect level",
-            "F8: performance   Shift+letter: direct shooting 1-16",
+            "F8: performance   Shift+letters: shooting 1-16 and source tactics",
         ];
         Self::draw_help_panel(&mut self.pixels, self.width, self.height,
             LINES, &[2, 6, 10, 17]);

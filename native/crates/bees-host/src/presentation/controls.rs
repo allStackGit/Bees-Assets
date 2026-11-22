@@ -57,6 +57,22 @@ const SHIFTED: &[(&str, Key)] = &[
     ("Shooting: Least Valuable", Key::Comma),
 ];
 
+// Unity UserSettingsData's source tactical actions are independent from
+// both unmodified native controls and the sixteen direct shooting keys.
+// Keep one shared config and one unique Shift-key assignment namespace.
+const TACTICAL_SHIFTED: &[(&str,Key)] = &[
+    ("Tactic: Match Speed", Key::Q),
+    ("Tactic: Attack on Sight", Key::W),
+    ("Tactic: Cease Fire", Key::E),
+    ("Tactic: Patrol", Key::R),
+    ("Tactic: Guard", Key::T),
+    ("Tactic: Chase", Key::Y),
+    ("Tactic: Hold", Key::U),
+    ("Tactic: Detonate", Key::I),
+    ("Tactic: Charge", Key::O),
+    ("Tactic: Beacon", Key::P),
+];
+
 const LETTERS: &[Key] = &[
     Key::A, Key::B, Key::C, Key::D, Key::E, Key::F, Key::G,
     Key::H, Key::I, Key::J, Key::K, Key::L, Key::M, Key::N,
@@ -94,6 +110,7 @@ impl NativeControls {
             root.join("bees-native").join("controls.json")
         };
         let mut keys=DEFAULTS.iter().chain(SHIFTED.iter())
+            .chain(TACTICAL_SHIFTED.iter())
             .map(|&(_,key)|key).collect::<Vec<_>>();
         match fs::symlink_metadata(&path) {
             Ok(metadata) if !metadata.file_type().is_file() =>
@@ -108,6 +125,7 @@ impl NativeControls {
                 }
                 for (action, letter) in stored.bindings {
                     let index=DEFAULTS.iter().chain(SHIFTED.iter())
+                        .chain(TACTICAL_SHIFTED.iter())
                         .position(|&(name,_)|name==action)
                         .ok_or_else(||io::Error::new(io::ErrorKind::InvalidData,
                             format!("unknown native hotkey action: {action}")))?;
@@ -162,8 +180,8 @@ impl NativeControls {
     /// by the one native Level, not applied to any client-owned weapon.
     pub(crate) fn shooting_for_key(&self,key:Key,shift:bool) -> Option<u8> {
         if !shift {return None;}
-        self.keys[DEFAULTS.len()..].iter()
-            .position(|&binding|binding==key)
+        self.keys[DEFAULTS.len()..DEFAULTS.len()+SHIFTED.len()]
+            .iter().position(|&binding|binding==key)
             .map(|index|(index+1) as u8)
     }
 
@@ -173,15 +191,44 @@ impl NativeControls {
             window.is_key_down(Key::RightCtrl) {
             return None;
         }
-        self.keys[DEFAULTS.len()..].iter().enumerate().find_map(|(index,&key)|
+        self.keys[DEFAULTS.len()..DEFAULTS.len()+SHIFTED.len()]
+            .iter().enumerate().find_map(|(index,&key)|
             window.is_key_pressed(key,KeyRepeat::No)
                 .then_some((index+1) as u8))
+    }
+
+    /// Source tactical combinations are interchangeable bindings for the
+    /// existing typed gameplay actions; only input recognition changes.
+    /// In particular, Shift+I is Detonate and Shift+O is Charge, not the
+    /// old native-only flanking gestures.
+    pub(crate) fn shifted_tactical_for_key(
+        &self,key:Key,shift:bool,
+    ) -> Option<&'static str> {
+        if !shift {return None;}
+        let start=DEFAULTS.len()+SHIFTED.len();
+        self.keys[start..].iter().position(|&binding|binding==key)
+            .and_then(|i| TACTICAL_SHIFTED[i].0.strip_prefix("Tactic: "))
+    }
+
+    pub(crate) fn command_pressed(
+        &self,window:&Window,action:&str,repeat:KeyRepeat,
+    ) -> bool {
+        if window.is_key_down(Key::LeftCtrl) ||
+            window.is_key_down(Key::RightCtrl) {return false;}
+        if !Self::shift_held(window) {
+            return self.pressed(window,action,repeat);
+        }
+        let start=DEFAULTS.len()+SHIFTED.len();
+        TACTICAL_SHIFTED.iter().enumerate().any(|(i,&(label,_))|
+            label.strip_prefix("Tactic: ")==Some(action) &&
+            window.is_key_pressed(self.keys[start+i],repeat))
     }
 
     fn is_shifted(index:usize)->bool {index>=DEFAULTS.len()}
 
     fn name(index:usize)->&'static str {
-        DEFAULTS.iter().chain(SHIFTED.iter()).nth(index)
+        DEFAULTS.iter().chain(SHIFTED.iter())
+            .chain(TACTICAL_SHIFTED.iter()).nth(index)
             .expect("settings selection must be within the authored list").0
     }
 
@@ -193,7 +240,7 @@ impl NativeControls {
     fn save(&self) -> io::Result<()> {
         let mut bindings=BTreeMap::new();
         for ((name,_), key) in DEFAULTS.iter().chain(SHIFTED.iter())
-            .zip(&self.keys) {
+            .chain(TACTICAL_SHIFTED.iter()).zip(&self.keys) {
             bindings.insert((*name).to_string(),format!("{key:?}"));
         }
         let record=StoredBindings {schema_version:1,bindings};

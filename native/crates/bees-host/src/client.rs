@@ -1454,21 +1454,30 @@ impl NativeClient {
         } else { None };
         let point_fire_available = self.held_fire_target.is_none() && held_fire.is_none();
         if accepts_orders {
-            for (key, button, mode, prompt) in [
+            for (key_action, button, mode, prompt) in [
                 (None, HudAction::Attack, NativeTargetMode::Support(NativeSupportMode::Attack), "Attack: click an enemy ship"),
                 (None, HudAction::Circle, NativeTargetMode::Support(NativeSupportMode::Circle), "Circle: click an enemy squad"),
                 (None, HudAction::RightSwipe, NativeTargetMode::Support(NativeSupportMode::RightSwipe), "Right Swipe: click an enemy squad"),
                 (None, HudAction::LeftSwipe, NativeTargetMode::Support(NativeSupportMode::LeftSwipe), "Left Swipe: click an enemy squad"),
                 (None, HudAction::InAndOut, NativeTargetMode::Support(NativeSupportMode::InAndOut), "In and Out: click an enemy squad"),
-                (Some(self.controls.key("Guard")), HudAction::Guard, NativeTargetMode::Support(NativeSupportMode::Guard), "Guard: click a friendly ship"),
-                (Some(self.controls.key("Patrol")), HudAction::Patrol, NativeTargetMode::Support(NativeSupportMode::Patrol), "Patrol: drag the patrol area"),
-                (Some(self.controls.key("Mine")), HudAction::Mine, NativeTargetMode::Support(NativeSupportMode::Mining), "Mine: click a mining asteroid"),
-                (Some(self.controls.key("Heal")), HudAction::Heal, NativeTargetMode::Support(NativeSupportMode::Heal), "Heal: click a friendly Beehive"),
-                (Some(self.controls.key("Retreat")), HudAction::Retreat, NativeTargetMode::Support(NativeSupportMode::FullRetreat), "Retreat: click a friendly WarpGate"),
-                (Some(self.controls.key("Point Fire")), HudAction::PointFire, NativeTargetMode::ManualFire, "Point fire: click a point; X stops selected weapons"),
+                (Some("Guard"), HudAction::Guard, NativeTargetMode::Support(NativeSupportMode::Guard), "Guard: click a friendly ship"),
+                (Some("Patrol"), HudAction::Patrol, NativeTargetMode::Support(NativeSupportMode::Patrol), "Patrol: drag the patrol area"),
+                (Some("Mine"), HudAction::Mine, NativeTargetMode::Support(NativeSupportMode::Mining), "Mine: click a mining asteroid"),
+                (Some("Heal"), HudAction::Heal, NativeTargetMode::Support(NativeSupportMode::Heal), "Heal: click a friendly Beehive"),
+                (Some("Retreat"), HudAction::Retreat, NativeTargetMode::Support(NativeSupportMode::FullRetreat), "Retreat: click a friendly WarpGate"),
+                (Some("Point Fire"), HudAction::PointFire, NativeTargetMode::ManualFire, "Point fire: click a point; X stops selected weapons"),
             ] {
+                // Source Shift tactical aliases and direct shooting keys
+                // must never issue *both* a priority and a target order.
                 let triggered = clicked_hud == Some(button) ||
-                    key.is_some_and(|key| self.window.is_key_pressed(key, KeyRepeat::No));
+                    key_action.is_some_and(|action|
+                        match action {
+                            "Guard" | "Patrol" =>
+                                self.controls.command_pressed(
+                                    &self.window,action,KeyRepeat::No),
+                            _ => self.controls.pressed(
+                                &self.window,action,KeyRepeat::No),
+                        });
                 if triggered &&
                     (mode != NativeTargetMode::ManualFire || point_fire_available)
                 {
@@ -1523,13 +1532,13 @@ impl NativeClient {
         } else { None };
         let firing_mode = if accepts_orders &&
             (clicked_hud == Some(HudAction::CeaseFire) ||
-             self.controls.pressed(&self.window,"Cease Fire",KeyRepeat::No)) {
+             self.controls.command_pressed(&self.window,"Cease Fire",KeyRepeat::No)) {
             Some(true)
         } else if accepts_orders &&
             (clicked_hud == Some(HudAction::AttackOnSight) ||
              (!self.window.is_key_down(Key::LeftCtrl) &&
               !self.window.is_key_down(Key::RightCtrl) &&
-              self.controls.pressed(&self.window,"Attack on Sight",KeyRepeat::No))) {
+              self.controls.command_pressed(&self.window,"Attack on Sight",KeyRepeat::No))) {
             Some(false)
         } else { None };
         let cease_fire_input = firing_mode.and_then(|cease_fire| {
@@ -1553,17 +1562,17 @@ impl NativeClient {
         let special_kind = if accepts_orders && pointer_active &&
             !self.dialogue_visible && self.held_fire_target.is_none() &&
             (clicked_hud == Some(HudAction::Beacon) ||
-             self.controls.pressed(&self.window,"Beacon",KeyRepeat::No)) {
+             self.controls.command_pressed(&self.window,"Beacon",KeyRepeat::No)) {
             Some(NativePlayerShipSpecialKind::DropBeacon)
         } else if accepts_orders && pointer_active &&
             self.held_fire_target.is_none() &&
             (clicked_hud == Some(HudAction::Detonate) ||
-             self.controls.pressed(&self.window,"Detonate",KeyRepeat::No)) {
+             self.controls.command_pressed(&self.window,"Detonate",KeyRepeat::No)) {
             Some(NativePlayerShipSpecialKind::Detonate)
         } else if accepts_orders && pointer_active &&
             self.held_fire_target.is_none() &&
             (clicked_hud == Some(HudAction::Charge) ||
-             self.controls.pressed(&self.window,"Charge",KeyRepeat::No)) {
+             self.controls.command_pressed(&self.window,"Charge",KeyRepeat::No)) {
             Some(NativePlayerShipSpecialKind::Charge)
         } else { None };
         let special_input = special_kind.and_then(|kind| {
@@ -1598,7 +1607,7 @@ impl NativeClient {
         let chase_input = (accepts_orders && pointer_active &&
             self.held_fire_target.is_none() &&
             (clicked_hud == Some(HudAction::Chase) ||
-             self.controls.pressed(&self.window,"Chase",KeyRepeat::No)))
+             self.controls.command_pressed(&self.window,"Chase",KeyRepeat::No)))
             .then(|| {
                 if self.renderer.selection.squads().is_empty() {
                     self.input_feedback = "Select squads first";
@@ -1632,7 +1641,7 @@ impl NativeClient {
             }).flatten();
         let matching = if accepts_orders && pointer_active &&
             (clicked_hud == Some(HudAction::MatchSpeed) ||
-             self.controls.pressed(&self.window,"Match Speed",KeyRepeat::No)) {
+             self.controls.command_pressed(&self.window,"Match Speed",KeyRepeat::No)) {
             Some(true)
         } else if accepts_orders && pointer_active &&
             (clicked_hud == Some(HudAction::FreeSpeed) ||
@@ -1658,7 +1667,7 @@ impl NativeClient {
         let mut support_command = None;
         if accepts_orders &&
             (clicked_hud == Some(HudAction::Hold) ||
-             self.controls.pressed(&self.window,"Hold",KeyRepeat::No)) {
+             self.controls.command_pressed(&self.window,"Hold",KeyRepeat::No)) {
             if self.renderer.selection.squads().is_empty() {
                 self.input_feedback = "Select squads first";
             } else {

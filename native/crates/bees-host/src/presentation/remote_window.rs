@@ -4788,7 +4788,7 @@ pub fn connect_remote(
                 "S: priority picker   Shift+letter: direct source priorities 1-16",
                 "K: beacon   D: detonate   Q: charge",
                 "T: point fire   Hold J: manual fire   X: stop fire",
-                "Backspace: cancel target   Shift+T: attack ship",
+                "Shift+Q/W/E/R/T/Y/U/I/O/P: source tactical orders",
                 "NETWORK / AUDIO",
                 "F4: surrender   F5: reconnect   F8: network measurements",
                 "F7: mute   F10/F11: effects   Shift+F10/F11: music",
