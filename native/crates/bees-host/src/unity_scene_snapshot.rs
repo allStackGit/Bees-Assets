@@ -1426,7 +1426,60 @@ impl NativePhysicalScene {
                         } if *enemy_squad_item_id == enemy.item_id))
                 ).count() == 1
             });
-        gunship && departure && gunship_attack
+        // Original Pluto I's approaching counterattack consists of
+        // genuinely owned Bee squads: one Honeybee, Hornet contingents,
+        // and two Wasp groups. Depleted veteran squad choices may be
+        // missing, but a later type cannot be substituted by an earlier
+        // one. Their source entry is at the Bee home, from y+50.
+        let mut counterattacks = waves.iter().filter(|wave| matches!(
+            wave.activation, NativeReinforcementActivation::OnCampaignCue(
+                NativeMissionCue::PlutoGunshipBriefingComplete)
+        ));
+        let Some(counterattack) = counterattacks.next() else { return false };
+        if counterattacks.next().is_some() ||
+            counterattack.squad_item_ids.is_empty() ||
+            counterattack.squad_item_ids.len() > 9
+        {
+            return false;
+        }
+        let enemy_side = 3 - player_side;
+        let positions = self.starting_positions.as_ref()
+            .is_some_and(|homes| {
+                let home = homes[(enemy_side - 1) as usize];
+                counterattack.spawn.is_some_and(|point|
+                    (point.x - home.x).abs() < 0.001 &&
+                    (point.y - home.y - 50.0).abs() < 0.001
+                ) && counterattack.entry.is_some_and(|point|
+                    (point.x - home.x).abs() < 0.001 &&
+                    (point.y - home.y).abs() < 0.001
+                )
+            });
+        let source_hulls = self.entities.iter().filter_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) =>
+                Some((ship.entity_id, (ship.side, ship.ship_type))),
+            _ => None,
+        }).collect::<HashMap<_, _>>();
+        let mut order = [14_u8, 15, 15, 15, 14, 15, 15, 21, 21].into_iter();
+        let mut seen_ids = HashSet::new();
+        let source_wave = counterattack.squad_item_ids.iter().all(|squad_id| {
+            let Some(squad) = self.source_squads.iter().find(|squad|
+                squad.item_id == *squad_id && squad.side == enemy_side &&
+                !squad.members.is_empty()
+            ) else { return false };
+            let mut kind = None;
+            for ship_id in &squad.members {
+                let Some(&(side, member_type)) = source_hulls.get(ship_id)
+                    else { return false };
+                if side != enemy_side || !seen_ids.insert(*ship_id) ||
+                    kind.is_some_and(|existing| existing != member_type)
+                {
+                    return false;
+                }
+                kind = Some(member_type);
+            }
+            order.any(|expected| Some(expected) == kind)
+        });
+        gunship && departure && gunship_attack && positions && source_wave
     }
 
     /// Training sources remain frozen. A gameplay encounter may edit only
