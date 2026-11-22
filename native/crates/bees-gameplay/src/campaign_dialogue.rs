@@ -16,7 +16,10 @@ pub const TITANIA_II_CENTER: Vec2 = Vec2::new(-32.0, 55.0);
 pub enum CampaignDialogueSpec {
     /// Pluto I's real scout notices the authored Honeybee through the
     /// original 60-unit temporary ProximityCollider, not a map timer.
-    PlutoAnomaly { player_side: i32, scout_id: i64, honeybee_id: i64 },
+    PlutoAnomaly {
+        player_side: i32, scout_id: i64, honeybee_id: i64,
+        gunship_id: i64,
+    },
     TitaniaMinesweeper { player_side: i32 },
     TitaniaBeenoculars {
         player_side: i32,
@@ -96,6 +99,8 @@ pub enum CampaignCue {
     /// The player completed the Scout report; existing source-authored
     /// deferred Gunship squads may now enter the same physical World.
     PlutoAnomalyScoutReportComplete,
+    PlutoAnomalyGunshipArrived,
+    PlutoAnomalyGunshipBriefingComplete,
     PlutoAnomalyHoneybeeDestroyed,
     PlutoAnomalyVictory,
     PlutoAnomalyDefeat,
@@ -142,6 +147,7 @@ impl CampaignCue {
     pub fn is_briefing(self) -> bool {
         matches!(self, Self::PlutoAnomalyBriefing |
             Self::PlutoAnomalyHoneybeeSpotted |
+            Self::PlutoAnomalyGunshipArrived |
             Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. } |
             Self::PlutoPushbackBriefing { .. } |
             Self::NeptunePressingForwardBriefing | Self::NeptuneSeizeBriefing |
@@ -155,10 +161,14 @@ impl CampaignCue {
 #[serde(deny_unknown_fields)]
 enum DialogueMode {
     PlutoAnomaly {
-        scout_id: i64, honeybee_id: i64,
+        scout_id: i64, honeybee_id: i64, gunship_id: i64,
         spotted: bool,
         #[serde(default)]
         report_completed: bool,
+        #[serde(default)]
+        gunship_arrived: bool,
+        #[serde(default)]
+        gunship_briefed: bool,
         honeybee_destroyed: bool,
     },
     Minesweeper { tracked_tank: Option<i64> },
@@ -240,10 +250,13 @@ impl CampaignDialogue {
 
     pub fn new(spec: CampaignDialogueSpec) -> Self {
         let (mode, cue) = match spec {
-            CampaignDialogueSpec::PlutoAnomaly { scout_id, honeybee_id, .. } => (
+            CampaignDialogueSpec::PlutoAnomaly {
+                scout_id, honeybee_id, gunship_id, ..
+            } => (
                 DialogueMode::PlutoAnomaly {
-                    scout_id, honeybee_id,
+                    scout_id, honeybee_id, gunship_id,
                     spotted: false, report_completed: false,
+                    gunship_arrived: false, gunship_briefed: false,
                     honeybee_destroyed: false,
                 },
                 CampaignCue::PlutoAnomalyBriefing,
@@ -330,9 +343,11 @@ impl CampaignDialogue {
             return Err(CampaignDialogueRestoreError::InvalidVersion);
         }
         let same_authored_story = match (&mode, &self.mode) {
-            (DialogueMode::PlutoAnomaly { scout_id: a, honeybee_id: b, .. },
-                DialogueMode::PlutoAnomaly { scout_id: c, honeybee_id: d, .. }) =>
-                a == c && b == d,
+            (DialogueMode::PlutoAnomaly {
+                scout_id: a, honeybee_id: b, gunship_id: e, ..
+            }, DialogueMode::PlutoAnomaly {
+                scout_id: c, honeybee_id: d, gunship_id: f, ..
+            }) => a == c && b == d && e == f,
             (DialogueMode::Minesweeper { .. }, DialogueMode::Minesweeper { .. }) =>
                 true,
             (DialogueMode::Beenoculars { under_heavy_fire: saved, .. },
