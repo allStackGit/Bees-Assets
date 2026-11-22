@@ -31,7 +31,7 @@ pub use remote_window::connect_remote;
 pub use battle_menu::{
     BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
     NativeTransferMenuRow, NativeCreateSquadMenuRow, NativeDeleteSquadMenuRow,
-    NativeTacticsMenuRow, NativeNameMenuRow,
+    NativeTacticsMenuRow, NativeNameMenuRow, NativeNameTarget,
     select_battle, select_library,
 };
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
