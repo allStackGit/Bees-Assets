@@ -275,6 +275,14 @@ pub struct NativeScriptedQueueMeasurements {
     pub nearest_enemy_candidates_scanned: u64,
     /// Squad-center geometry calculations reused across same-tick nearest orders.
     pub nearest_enemy_centers_sampled: u64,
+    /// Real source targeting, defense and extraction decisions issued
+    /// against live combat identities (rather than planned attempts).
+    #[serde(default)]
+    pub target_nearest_commands_started: u64,
+    #[serde(default)]
+    pub retreat_nearest_commands_started: u64,
+    #[serde(default)]
+    pub full_retreat_nearest_commands_started: u64,
     /// Real mining command placements that selected a live asteroid.
     pub mining_nearest_commands_started: u64,
     /// Real healing commands that reserved a same-side Beehive.
@@ -318,6 +326,9 @@ impl NativeScriptedQueueMeasurements {
         self.nearest_enemy_resolutions += other.nearest_enemy_resolutions;
         self.nearest_enemy_candidates_scanned += other.nearest_enemy_candidates_scanned;
         self.nearest_enemy_centers_sampled += other.nearest_enemy_centers_sampled;
+        self.target_nearest_commands_started += other.target_nearest_commands_started;
+        self.retreat_nearest_commands_started += other.retreat_nearest_commands_started;
+        self.full_retreat_nearest_commands_started += other.full_retreat_nearest_commands_started;
         self.mining_nearest_commands_started += other.mining_nearest_commands_started;
         self.healing_available_commands_started += other.healing_available_commands_started;
         self.bombing_nearest_commands_started += other.bombing_nearest_commands_started;
