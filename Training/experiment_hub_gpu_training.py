@@ -14,6 +14,7 @@ Resource leases and GPU device identity remain the Hub agent's authority.
 """
 from __future__ import annotations
 
+from collections import deque
 from statistics import median
 from threading import Lock
 from time import perf_counter
@@ -129,10 +130,14 @@ class IndependentGpuTraining:
         ceiling = min(self.max_streams, len(self.models))
         self.stream_candidates = sorted(set(
             [ceiling]+[n for n in (2, 4, 8, 16) if n<=ceiling]))
+        # Interleave the serial reference and each stream width. Running
+        # four serial samples, then four of each width, confounds training
+        # progression and changing GPU contention with the strategy itself.
+        self.probe_widths = [0, *self.stream_candidates]
         self.probe_index = 0
         self.serial_rates = []
         self.parallel_rates = {n:[] for n in self.stream_candidates}
-        self.phase = "serial_probe"
+        self.phase = "calibrating"
         self.calls = self.serial_calls = self.concurrent_calls = 0
         self.work_dispatched = 0.0
         self.last_qualified_seconds = 0.0
@@ -237,10 +242,9 @@ class IndependentGpuTraining:
         count = float(sum(work_units))
         if self.phase == "settled":
             mode, width = self.selected, self.selected_streams
-        elif self.phase == "serial_probe":
-            mode, width = "serial", 0
         else:
-            mode, width = "parallel", self.stream_candidates[self.probe_index]
+            width = self.probe_widths[self.probe_index]
+            mode = "serial" if width == 0 else "parallel"
         # Measure actual elapsed GPU service including CPU dispatch and
         # outstanding kernels, but synchronize ONLY during qualification.
         # Settled updates retain asynchronous caller-stream dependencies.
@@ -263,12 +267,11 @@ class IndependentGpuTraining:
         if measuring and seconds>0:
             rates = self.serial_rates if mode == "serial" else self.parallel_rates[width]
             rates.append(count/seconds)
-            if self.phase == "serial_probe" and len(self.serial_rates)>=self.sample_windows:
-                self.phase = "parallel_probe"
-            elif self.phase == "parallel_probe" and len(rates)>=self.sample_windows:
-                self.probe_index += 1
-                if self.probe_index == len(self.stream_candidates):
-                    self._settle()
+            self.probe_index = (self.probe_index+1) % len(self.probe_widths)
+            if (len(self.serial_rates)>=self.sample_windows and
+                    all(len(rates)>=self.sample_windows
+                        for rates in self.parallel_rates.values())):
+                self._settle()
         return output
 
     def metrics(self):
