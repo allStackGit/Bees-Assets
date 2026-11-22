@@ -6010,8 +6010,10 @@ class ExperimentHub {
             const progressAccepted=chartProgress&&this.progressHistory.record(
                 job.id,job.project_id,chartProgress,received);
             if(progressAccepted)changedHistory=true;
-            if(['finished','failed','stopped'].includes(job.status))
+            if(['finished','failed','stopped'].includes(job.status)) {
                 terminalHistory=true;
+                this.throughputHistory.persist();
+            }
             this.executionTelemetry.set(item.job_id,{
                 at:new Date(received).toISOString(),state:item.state,
                 dispatch_id:item.dispatch_id,agent_instance_id:instance||null,
