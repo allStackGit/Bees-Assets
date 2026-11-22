@@ -844,7 +844,7 @@ fn obscure_fog_pixels(
     pixels: &mut [u32], coverage: Option<&[u8]>,
     stride: usize, field_width: usize, field_height: usize,
     camera: NativeCamera, background: Option<NativeMapBackdrop>,
-) -> usize {
+) -> (usize, usize) {
     const DARK: u32 = 0x080e19;
     let art = background.and_then(|kind| {
         let index = match kind {
@@ -865,15 +865,17 @@ fn obscure_fog_pixels(
         camera.pixels_per_unit.recip()
     } else { 0.0 };
     let Some((sprite, half)) = art else {
+        let mut obscured = 0usize;
         for (y, row) in pixels.chunks_exact_mut(stride).take(field_height).enumerate() {
             for (x, pixel) in row[..field_width].iter_mut().enumerate() {
                 if coverage.is_none_or(|mask|
                     mask[y * field_width + x] == 0) {
                     *pixel = DARK;
+                    obscured += 1;
                 }
             }
         }
-        return 0;
+        return (0, obscured);
     };
     let sx = sprite.width as f32 / (half * 2.0);
     let sy = sprite.height as f32 / (half * 2.0);
@@ -881,6 +883,7 @@ fn obscure_fog_pixels(
     let u_first = (camera.center.x +
         (0.5 - field_width as f32 * 0.5) * inv_ppu + half) * sx;
     let mut sampled = 0usize;
+    let mut obscured = 0usize;
     for (y, row) in pixels.chunks_exact_mut(stride).take(field_height).enumerate() {
         let v = (half - camera.center.y +
             (y as f32 + 0.5 - field_height as f32 * 0.5) * inv_ppu) * sy;
@@ -890,6 +893,7 @@ fn obscure_fog_pixels(
             if coverage.is_some_and(|mask| mask[y * field_width + x] != 0) {
                 continue;
             }
+            obscured += 1;
             let u = u_first + x as f32 * du;
             let rgba = source_row.and_then(|start|
                 (0.0..sprite.width as f32).contains(&u)
@@ -908,7 +912,7 @@ fn obscure_fog_pixels(
             } else { DARK };
         }
     }
-    sampled
+    (sampled, obscured)
 }
 
 fn source_map_backgrounds() -> Option<&'static SourceShipAtlas> {
@@ -2190,11 +2194,12 @@ impl NativeSoftwareRenderer {
         if counts.fog_sources == 0 && counts.fog_fading_sources == 0 {
             // An empty player fleet has no sight. Clearing the final image
             // directly avoids two full-resolution stencil passes.
-            counts.fog_source_texture_pixels = obscure_fog_pixels(
+            let (textured, obscured) = obscure_fog_pixels(
                 &mut self.pixels, None, self.width, self.width, self.height,
                 self.camera, self.map_background,
             );
-            counts.fog_occluded_pixels = self.pixels.len();
+            counts.fog_source_texture_pixels = textured;
+            counts.fog_occluded_pixels = obscured;
             counts.fog_empty_viewport_fills = 1;
             return;
         }
@@ -2212,12 +2217,12 @@ impl NativeSoftwareRenderer {
             Self::reveal_fog_circle(stencil, camera, width, height,
                 fade.position, fade.current_radius(view.tick, view.fixed_step_seconds));
         }
-        counts.fog_occluded_pixels = stencil.iter()
-            .filter(|&&visible| visible == 0).count();
-        counts.fog_source_texture_pixels = obscure_fog_pixels(
+        let (textured, obscured) = obscure_fog_pixels(
             &mut self.pixels, Some(stencil), self.width, self.width, self.height,
             self.camera, self.map_background,
         );
+        counts.fog_source_texture_pixels = textured;
+        counts.fog_occluded_pixels = obscured;
     }
 
     /// Use the authoritative hull and healing-zone colliders for clicks,
@@ -2355,7 +2360,7 @@ impl NativeSoftwareRenderer {
     pub(super) fn mask_remote_fog(
         &self, pixels: &mut [u32], coverage: &[u8],
         pitch: usize, field_width: usize, field_height: usize,
-    ) -> usize {
+    ) -> (usize, usize) {
         obscure_fog_pixels(pixels, Some(coverage), pitch, field_width,
             field_height, self.camera, self.map_background)
     }

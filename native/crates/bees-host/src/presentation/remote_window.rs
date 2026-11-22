@@ -460,11 +460,10 @@ impl RemoteArtwork {
 
     fn mask_field(&self, pixels: &mut [u32]) -> (u64, u64) {
         if !self.fog_enabled { return (0, 0); }
-        let masked = self.fog_coverage.iter().filter(|&&v| v == 0).count() as u64;
-        let textured = self.raster.mask_remote_fog(
+        let (textured, masked) = self.raster.mask_remote_fog(
             pixels, &self.fog_coverage, WIDTH, FIELD, HEIGHT,
-        ) as u64;
-        (masked, textured)
+        );
+        (masked as u64, textured as u64)
     }
 }
 
