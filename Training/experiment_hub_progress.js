@@ -112,7 +112,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         for(const name of [
             'gpu_microbatch_submitted','gpu_microbatch_coalesced',
             'gpu_microbatch_groups','gpu_microbatch_fallbacks',
-            'gpu_microbatch_admitted_groups','gpu_microbatch_rejected_groups',
+            'gpu_microbatch_admitted_profiles','gpu_microbatch_rejected_profiles',
             'gpu_microbatch_qualification_seconds',
             'gpu_execution_fused_calls','gpu_execution_stream_calls',
             'gpu_execution_graph_calls','gpu_graph_replays',
