@@ -2356,6 +2356,13 @@ fn current_state(
                     .map(|destination| [destination.x, destination.y])
             } else { None },
             "health": ship.vitals.health(), "max_health": ship.vitals.max_health(),
+            // Source FleetShip TSV and mined cargo belong to the player's
+            // owned physical fleet. Opposing commanders may inspect the
+            // already-visible health bars, not private mineral income and
+            // per-ship career value. No client-side scoring estimate.
+            "tsv": owned.then(|| ship.vitals.tsv()),
+            "base_tsv": owned.then(|| ship.vitals.max_tsv()),
+            "mined_cargo": owned.then(|| ship.vitals.mined_cargo()),
             // Source Squad.SetColor uses a stable RGB independent of side.
             // Only already-fog-visible ships receive their visual color;
             // this is not a new command permission or roster disclosure.
