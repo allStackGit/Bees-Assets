@@ -2,6 +2,9 @@
 
 // Project-neutral measured placement history. This never changes PPO,
 // workload parameters, leases, or native process ownership.
+const fs=require('node:fs');
+const path=require('node:path');
+const crypto=require('node:crypto');
 const MAX_KEYS=256;
 const MAX_WINDOWS=12;
 const MIN_WINDOWS=2;
@@ -16,9 +19,48 @@ function workloadKey(job) {
 }
 
 class ThroughputHistory {
-    constructor() {
+    constructor(root=null) {
         this.last=new Map();
         this.windows=new Map();
+        this.file=root?path.join(root,'hub-throughput-v1.json'):null;
+        this.dirty=0;
+        if(this.file)this.load();
+    }
+    load() {
+        try {
+            const stat=fs.lstatSync(this.file);
+            if(!stat.isFile()||stat.isSymbolicLink()||stat.size>2*1024*1024)
+                return;
+            const parsed=JSON.parse(fs.readFileSync(this.file,'utf8'));
+            if(parsed.version!==1||!Array.isArray(parsed.windows))return;
+            for(const entry of parsed.windows.slice(-MAX_KEYS)) {
+                if(!Array.isArray(entry)||entry.length!==2||
+                    typeof entry[0]!=='string'||entry[0].length>16384||
+                    !Array.isArray(entry[1]))continue;
+                const samples=entry[1].filter(w=>w&&
+                    Number.isSafeInteger(w.steps)&&w.steps>0&&
+                    Number.isFinite(w.seconds)&&w.seconds>=1&&w.seconds<=3600)
+                    .slice(-MAX_WINDOWS);
+                if(samples.length)this.windows.set(entry[0],samples);
+            }
+        }catch(error) {
+            if(error.code!=='ENOENT')this.load_issue=String(error.message||error);
+        }
+    }
+    persist() {
+        if(!this.file||!this.dirty)return;
+        const tmp=this.file+'.'+process.pid+'.'+crypto.randomBytes(6).toString('hex')+'.tmp';
+        try {
+            const body=JSON.stringify({version:1,windows:[...this.windows]})+'\\n';
+            fs.writeFileSync(tmp,body,{flag:'wx',mode:0o600});
+            fs.renameSync(tmp,this.file);
+            this.dirty=0;
+            this.persist_issue=null;
+        }catch(error) {
+            this.persist_issue=String(error.message||error);
+        }finally {
+            try{fs.unlinkSync(tmp);}catch(error){if(error.code!=='ENOENT')this.persist_issue=String(error.message||error);}
+        }
     }
     observe(job,machineId,progress,gpus=[]) {
         const key=workloadKey(job);
@@ -46,6 +88,7 @@ class ThroughputHistory {
         this.windows.delete(id);
         this.windows.set(id,windows);
         if(this.windows.size>MAX_KEYS)this.windows.delete(this.windows.keys().next().value);
+        if(++this.dirty>=8)this.persist();
     }
     compare(job,a,b) {
         const key=workloadKey(job);
