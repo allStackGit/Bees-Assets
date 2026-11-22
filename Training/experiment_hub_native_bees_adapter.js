@@ -813,16 +813,6 @@ function rolloutPhysicsMeasurements(rollout) {
                 throw Error('Invalid native collision counter: ' + field);
             result['rollout_physics_' + field] = {value, unit:'count'};
         }
-        // Older native binaries correctly omit this counter; its absence
-        // must remain unknown rather than becoming a fabricated zero.
-        if (Object.hasOwn(collision, 'stationary_obstacle_hulls_reused')) {
-            const reused = collision.stationary_obstacle_hulls_reused;
-            if (!Number.isSafeInteger(reused) || reused < 0)
-                throw Error('Invalid native stationary hull reuse evidence.');
-            result.rollout_physics_stationary_obstacle_hulls_reused = {
-                value: reused, unit:'count',
-            };
-        }
         if (Number.isSafeInteger(rollout.successful_world_steps) &&
             rollout.successful_world_steps > 0)
         {
