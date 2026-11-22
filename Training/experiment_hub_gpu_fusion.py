@@ -522,6 +522,35 @@ class FrozenGpuGraphs:
             return {k: FrozenGpuGraphs._own(t) for k, t in value.items()}
         raise TypeError("Frozen graph outputs must be tensors")
 
+    @staticmethod
+    def _copy_results(values):
+        """One owned GPU allocation for compatible multi-tensor results.
+
+        Small recurrent networks may return dozens of outputs. Cloning each
+        tensor independently would add as many GPU copy launches as the
+        original network's kernels. One contiguous copy owns fresh storage
+        on every replay, with views restored to their original shapes and
+        tuple/dict structure. Mixed types retain the independent clone path.
+        """
+        leaves = [tensor for value in values for tensor in _leaves(value)]
+        if (len(leaves) < 3 or len({(tensor.dtype, tensor.device)
+                                    for tensor in leaves}) != 1):
+            return [FrozenGpuGraphs._own(value) for value in values]
+        packed = torch.cat([tensor.reshape(-1) for tensor in leaves])
+        copied = iter(packed.split([tensor.numel() for tensor in leaves]))
+        def restore(value):
+            if isinstance(value, torch.Tensor):
+                return next(copied).reshape(value.shape)
+            if isinstance(value, tuple):
+                parts = [restore(item) for item in value]
+                return type(value)(*parts) if hasattr(value, "_fields") else tuple(parts)
+            if isinstance(value, list):
+                return [restore(item) for item in value]
+            if isinstance(value, dict):
+                return {key: restore(item) for key, item in value.items()}
+            raise TypeError("Graph result contains a non-tensor value")
+        return [restore(value) for value in values]
+
     def _capture(self, args):
         if not self.enabled or any(t.device != self.device
                                    for row in args for t in row):
@@ -569,7 +598,7 @@ class FrozenGpuGraphs:
             for tensor, target in zip(row, stable):
                 target.copy_(tensor)
         graph.replay()
-        return [FrozenGpuGraphs._own(value) for value in output]
+        return FrozenGpuGraphs._copy_results(output)
 
     def _elapsed(self, operation):
         torch.cuda.synchronize(self.device)
