@@ -2816,6 +2816,56 @@ impl NativeSoftwareRenderer {
             left + 10, top + 6, message, 1, [231, 237, 248]);
     }
 
+    /// In-game controls stay readable without submitting a huge title to
+    /// X11/Win32 every rendered frame. This panel is presentation-only:
+    /// all orders still flow through the existing authoritative input.
+    #[cfg(feature = "client")]
+    pub fn draw_controls_help(&mut self) {
+        const LINES: &[&str] = &[
+            "BEES NATIVE  /  CONTROLS",
+            "F1 or Esc: close this help panel",
+            "SELECTION",
+            "Left click: select ship   Drag: box select   Double click: ship type",
+            "Ctrl+click: add/remove   Ctrl+A: all   1-0: numbered squads",
+            "PgUp / PgDn: cycle squads   Tab: next world",
+            "CAMERA / GAME",
+            "Right click or drag: move / attack   Arrows: pan   Wheel: zoom",
+            "F: fit map   I: minimap   B: weapon ranges   F6: edge pan",
+            "Space: pause   N: single step while paused",
+            "COMMANDS",
+            "C: hold   A: attack on sight   V: cease fire   E: chase",
+            "G: guard   P: patrol   M: mine   H: heal   R: retreat",
+            "S: shooting priority   O: lock on   Y: match speed   U: free speed",
+            "K: beacon   D: detonate   Q: charge",
+            "T: point fire   Hold J: manual fire   X: stop fire",
+            "Backspace: cancel target   F9: change local commander",
+            "AUDIO / PERFORMANCE",
+            "F7: mute   F10/F11: effect level   Shift+F10/F11: music",
+            "F8: measured rendering and simulation throughput",
+        ];
+        if self.width < 490 || self.height < 400 { return; }
+        let line_height = text::HEIGHT + 5;
+        let panel_height = (LINES.len() * line_height + 28).min(self.height);
+        let panel_width = self.width.saturating_sub(40).min(875);
+        let left = (self.width - panel_width) / 2;
+        let top = (self.height - panel_height) / 2;
+        for y in top..top + panel_height {
+            self.pixels[y * self.width + left
+                ..y * self.width + left + panel_width]
+                .fill(if y < top + 3 { 0x5985aa } else { 0x101c2b });
+        }
+        for (index, line) in LINES.iter().enumerate() {
+            let y = top + 12 + index * line_height;
+            if y + text::HEIGHT > top + panel_height { break; }
+            let color = if index == 0 { [239, 247, 255] }
+                else if matches!(index, 2 | 6 | 10 | 18) { [137, 195, 235] }
+                else { [209, 220, 233] };
+            let label = text::fit(line, panel_width.saturating_sub(32));
+            text::draw_at(&mut self.pixels, self.width,
+                left + 16, y, label, 1, color);
+        }
+    }
+
     /// F8 toggles measurements on the actual player window. Keep a small,
     /// fixed top-right readout separate from the authoritative combat world,
     /// its simulation RNG and recorded player actions. The HUD consumes only
