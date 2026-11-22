@@ -857,6 +857,12 @@ fn select_battle_inner(
                     if window.is_key_pressed(Key::F, KeyRepeat::No) {
                         tactic_formation = tactic_formation.cycle_kind();
                     }
+                    if window.is_key_pressed(Key::O, KeyRepeat::No) {
+                        tactic_formation = tactic_formation.rotate_clockwise();
+                    }
+                    if window.is_key_pressed(Key::X, KeyRepeat::No) {
+                        tactic_formation = tactic_formation.mirror();
+                    }
                     if window.is_key_pressed(Key::W, KeyRepeat::No) {
                         tactic_formation.max_width = if tactic_formation.max_width >= 16 {
                             1
@@ -967,8 +973,10 @@ fn select_battle_inner(
                         NativeSquadColorSetting::Custom(rgb) =>
                             format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]),
                     };
-                    format!("Form {}:{} | {} | {} | Chase {} | Fire {} | Speed {} | RGB {}",
+                    format!("Form {}:{} {}deg{} | {} | {} | Chase {} | Fire {} | Speed {} | RGB {}",
                         formation.label(), formation.max_width,
+                        formation.clockwise_quarters * 90,
+                        if formation.mirrored { " mirrored" } else { "" },
                         row.title, name, if chase { "on" } else { "off" },
                         if cease { "hold" } else { "auto" },
                         if match_speed { "matched" } else { "normal" }, color)
@@ -984,7 +992,7 @@ fn select_battle_inner(
             }
             text::draw_centered(&mut pixels, WIDTH, 441,
                 if show_tactics {
-                    "Arrows strategy | C chase V fire M speed | R swatch H RGB | F form W width | Enter save"
+                    "Arrows strategy | C chase V fire M speed | R color H RGB | F form W width O rotate X mirror | Enter save"
                 } else if show_delete {
                     "Up/Down select   Enter delete   D close   Esc back"
                 } else if show_shop {

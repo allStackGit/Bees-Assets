@@ -25,14 +25,28 @@ pub struct NativeSavedSquadFormation {
     /// Unity's ConfigData.Configuration.MaxSquadWidth. For game-created
     /// squads the player can change this without requiring Unity settings.
     pub max_width: u8,
+    /// Source SquadMaker permits rotating the deployed formation. Quarter
+    /// turns avoid platform-dependent trigonometry in the physical scene.
+    #[serde(default)]
+    pub clockwise_quarters: u8,
+    /// Reverse the saved ship order across the source formation's X axis.
+    #[serde(default)]
+    pub mirrored: bool,
 }
 
 impl NativeSavedSquadFormation {
     pub fn authored() -> Self {
-        Self { kind: NativeSquadFormationKind::Authored, max_width: 5 }
+        Self {
+            kind: NativeSquadFormationKind::Authored, max_width: 5,
+            clockwise_quarters: 0, mirrored: false,
+        }
     }
 
-    pub fn is_valid(self) -> bool { (1..=32).contains(&self.max_width) }
+    pub fn is_valid(self) -> bool {
+        (1..=32).contains(&self.max_width) && self.clockwise_quarters < 4 &&
+            (self.kind != NativeSquadFormationKind::Authored ||
+                (self.clockwise_quarters == 0 && !self.mirrored))
+    }
 
     pub fn cycle_kind(self) -> Self {
         use NativeSquadFormationKind::*;
@@ -44,7 +58,18 @@ impl NativeSavedSquadFormation {
             Pyramid => HollowPyramid,
             HollowPyramid => Authored,
         };
-        Self { kind, ..self }
+        if kind == Authored { Self::authored() }
+        else { Self { kind, ..self } }
+    }
+
+    pub fn rotate_clockwise(self) -> Self {
+        if self.kind == NativeSquadFormationKind::Authored { return self; }
+        Self { clockwise_quarters: (self.clockwise_quarters + 1) % 4, ..self }
+    }
+
+    pub fn mirror(self) -> Self {
+        if self.kind == NativeSquadFormationKind::Authored { return self; }
+        Self { mirrored: !self.mirrored, ..self }
     }
 
     pub fn label(self) -> &'static str {
@@ -150,9 +175,22 @@ fn source_formation_slots(
             }
         }
     }
-    positions.into_iter().collect::<Option<Vec<_>>>().ok_or(
+    let mut slots = positions.into_iter().collect::<Option<Vec<_>>>().ok_or(
         invalid("formation cannot place every persistent FleetShip within the requested width"),
-    )
+    )?;
+    // Modify only setup-time slot geometry. Same per-ship IDs, physical
+    // motion, Carrier descendants and authoritative weapon ownership survive.
+    for slot in &mut slots {
+        if formation.mirrored { slot.x = -slot.x; }
+        *slot = match formation.clockwise_quarters {
+            0 => *slot,
+            1 => Vec2::new(slot.y, -slot.x),
+            2 => Vec2::new(-slot.x, -slot.y),
+            3 => Vec2::new(-slot.y, slot.x),
+            _ => unreachable!("validated formation quarter turn"),
+        };
+    }
+    Ok(slots)
 }
 
 impl NativePhysicalScene {

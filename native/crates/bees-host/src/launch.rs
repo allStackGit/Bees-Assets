@@ -4590,9 +4590,17 @@ fn parse_squad_color_setting(value: &str) -> io::Result<NativeSquadColorSetting>
 /// from a headless/Windows CLI without depending on Unity settings.
 fn parse_squad_formation_setting(value: &str) -> io::Result<NativeSavedSquadFormation> {
     use NativeSquadFormationKind as Kind;
-    let (kind, width) = value.split_once(':').map_or((value, None),
-        |(name, width)| (name, Some(width)));
-    let kind = match kind {
+    // Legacy kind[:width] remains valid; the two optional additions
+    // specify clockwise rotation (degrees) and horizontal reflection.
+    let mut parts = value.split(':');
+    let name = parts.next().expect("split yields at least one component");
+    let width = parts.next();
+    let rotation = parts.next();
+    let mirror = parts.next();
+    if parts.next().is_some() {
+        return Err(invalid("formation syntax is kind[:width[:0|90|180|270[:mirror|normal]]]"));
+    }
+    let kind = match name {
         "source" => Kind::Authored,
         "line" => Kind::Line,
         "box" => Kind::Box,
@@ -4604,7 +4612,17 @@ fn parse_squad_formation_setting(value: &str) -> io::Result<NativeSavedSquadForm
     let max_width = width.map(|width| width.parse::<u8>())
         .transpose().map_err(|_| invalid("formation width must be 1..32"))?
         .unwrap_or(5);
-    let formation = NativeSavedSquadFormation { kind, max_width };
+    let clockwise_quarters = match rotation.unwrap_or("0") {
+        "0" => 0, "90" => 1, "180" => 2, "270" => 3,
+        _ => return Err(invalid("formation rotation must be 0, 90, 180 or 270")),
+    };
+    let mirrored = match mirror.unwrap_or("normal") {
+        "normal" => false, "mirror" => true,
+        _ => return Err(invalid("formation reflection must be mirror or normal")),
+    };
+    let formation = NativeSavedSquadFormation {
+        kind, max_width, clockwise_quarters, mirrored,
+    };
     if !formation.is_valid() {
         return Err(invalid("formation width must be 1..32"));
     }
