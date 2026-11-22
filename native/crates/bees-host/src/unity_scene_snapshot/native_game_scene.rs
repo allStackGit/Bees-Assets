@@ -460,6 +460,8 @@ impl GameQueenSpawn {
                 special_weapon: bees_sim::combat_world::NativeSpecialWeaponSpec {
                     weapon_id: 0, slot: weapon.slot, power: weapon.power,
                     mount_offset: offset,
+                    linecast_offset: weapon.linecast_offset.map(|xy|
+                        Vec2::new(xy[0], xy[1])),
                     charge_range: None,
                     proximity: weapon.proximity.map(GameWeaponRange::into_native),
                 },
@@ -573,6 +575,9 @@ struct GameSpecialWeapon {
     slot: usize,
     power: i32,
     mount_offset: [f32; 2],
+    /// Distinct original PieceTransform origin for Barge obstacle LOS.
+    #[serde(default)]
+    linecast_offset: Option<[f32; 2]>,
     #[serde(default)]
     charge_range: Option<GameWeaponRange>,
     #[serde(default)]
@@ -1004,6 +1009,8 @@ impl NativePhysicalScene {
                 Some(bees_sim::combat_world::NativeSpecialWeaponSpec {
                     weapon_id: weapon.weapon_id, slot: weapon.slot,
                     power: weapon.power, mount_offset,
+                    linecast_offset: weapon.linecast_offset.map(|xy|
+                        Vec2::new(xy[0], xy[1])),
                     charge_range: charge, proximity,
                 })
             } else { None };
