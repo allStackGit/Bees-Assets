@@ -678,9 +678,10 @@ fn select_battle_inner(
                         if index < count {
                             shop_selected = index;
                             if (y - LIST_TOP) % ROW_HEIGHT < ROW_HEIGHT - 4 {
-                                if show_tactics || show_delete {
-                                    // Destructive actions require Enter after
-                                    // selection, never an accidental click.
+                                if show_tactics || show_delete || show_shop {
+                                    // Spending mined TSV also requires Enter;
+                                    // selecting a row by mouse cannot
+                                    // accidentally commit a fleet purchase.
                                     if show_tactics { tactic_edit_index = None; }
                                 } else if let Some(action) = choose(index, tactic_edit_index,
                                     tactic_strategy, tactic_chase, tactic_cease_fire,
@@ -706,7 +707,7 @@ fn select_battle_inner(
                 else if show_create { "Choose a player squad to copy its command settings" }
                 else if show_delete { "Created squads only; assigned ships return to fleet reserve" }
                 else if show_tactics { "Left/Right strategy, C chase, V fire, M speed, R palette, H custom RGB" }
-                else { "Buy a source-authored ship" }, 1, MUTED);
+                else { "Purchase for deployment or buy into reserve; Enter spends mined TSV" }, 1, MUTED);
             if show_shop {
                 text::draw_centered(&mut pixels, WIDTH, 94,
                     &format!("Available mined TSV: {banked_tsv}"), 1, MUTED);
@@ -717,7 +718,7 @@ fn select_battle_inner(
                     else if show_create { "No native player squad templates" }
                     else if show_delete { "No deletable created SavedSquads" }
                     else if show_tactics { "No editable authored player squads" }
-                    else { "Finish a campaign battle to register saved squads" }, 1, MUTED);
+                    else { "No purchasable source FleetShip classes" }, 1, MUTED);
             }
             for index in shop_first..(shop_first + PAGE_SIZE).min(count) {
                 let top = LIST_TOP + (index - shop_first) * ROW_HEIGHT;
@@ -774,6 +775,8 @@ fn select_battle_inner(
                     "Arrows strategy | C chase V fire M speed | R swatch H RGB | F form W width | Enter save"
                 } else if show_delete {
                     "Up/Down select   Enter delete   D close   Esc back"
+                } else if show_shop {
+                    "Up/Down select   Enter purchase   B close   Esc back"
                 } else {
                     "Enter select   B build   T transfer   N new   D delete   P tactics"
                 }, 1, MUTED);
