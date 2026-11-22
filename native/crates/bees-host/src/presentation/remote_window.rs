@@ -2859,6 +2859,9 @@ pub fn connect_remote(
     let mut camera:Option<NativeCamera>=None;
     let mut current_episode=(0_u64,0_u64);
     let mut selected:Vec<i64>=Vec::new();
+    // Presentation-only spectator camera target. Scoped to the exact
+    // authenticated World/episode and never sent to the game or host.
+    let mut spectator_follow:Option<(u64,u64,i64)>=None;
     // One actual selection receipt per source lifetime change, not per
     // network snapshot or pointer hover. Follows the same authenticated
     // input stream as native tactical commands.
@@ -3158,6 +3161,7 @@ pub fn connect_remote(
             sent_weapon_overlay=None;
             peer.visual=RemoteVisual::default();
             selected.clear();
+            spectator_follow=None;
             submitted_selection=None;
             mode=None;patrol_start=None;drag_start=None;
             last_left=false;last_right=false;
@@ -3550,6 +3554,10 @@ pub fn connect_remote(
             // Same source-native camera speed in physical pixels/second,
             // independent of the remote window's rendered frame rate.
             let pan=500.0*elapsed/cam.pixels_per_unit;
+            if window.is_key_down(Key::Up)||window.is_key_down(Key::Down)||
+                window.is_key_down(Key::Left)||window.is_key_down(Key::Right) {
+                spectator_follow=None;
+            }
             if window.is_key_down(Key::Up){cam.center.y+=pan;}
             if window.is_key_down(Key::Down){cam.center.y-=pan;}
             if window.is_key_down(Key::Left){cam.center.x-=pan;}
@@ -3575,6 +3583,7 @@ pub fn connect_remote(
                     }
                     squad_tab_press=None;
                 } else {
+                spectator_follow=None;
                 let wheel_pixels=120.0/cam.pixels_per_unit;
                 let mut wheel_pan=Vec2::new(
                     horizontal.clamp(-10.0,10.0)*wheel_pixels,0.0);
@@ -3700,7 +3709,8 @@ pub fn connect_remote(
                     peer.state.as_ref().and_then(|state|
                         mouse.and_then(|(x,y)|remote_squad_tab_hit(state,x,y,squad_list_offset)))
                 }else{None};
-                minimap_dragging=battlefield_input&&mode.is_none()&&hud_press.is_none()&&
+                minimap_dragging=(battlefield_input||peer.spectator)&&
+                    mode.is_none()&&hud_press.is_none()&&
                     squad_tab_press.is_none()&&minimap_point.is_some();
             }
             if !left && last_left {
@@ -3740,6 +3750,7 @@ pub fn connect_remote(
                 }
             }
             if left && minimap_dragging {
+                spectator_follow=None;
                 if let Some(point) = minimap_point {
                     if !cam.center.unity_equal(point) {
                         cam.center = point;
@@ -3755,11 +3766,33 @@ pub fn connect_remote(
             if minimap_release { drag_start = None; }
             if middle {
                 if let (Some((x,y)),Some((old_x,old_y)))=(mouse,last_middle) {
+                    spectator_follow=None;
                     cam.center.x-=(x-old_x)/cam.pixels_per_unit;
                     cam.center.y+=(y-old_y)/cam.pixels_per_unit;
                 }
                 last_middle=mouse;
             }else{last_middle=None;}
+            if !left && last_left && peer.spectator &&
+                window.is_active() && !minimap_release
+            {
+                if let (Some((x,y)),Some(state))=(within,peer.state.as_ref()) {
+                    // Spectators can inspect only ships in the current
+                    // host-fog-filtered physical projection. This does
+                    // not create a squad selection or player input.
+                    let target=hit(state,cam,x,y,&peer.visual,
+                        peer.visual.fraction(),|_|true,|_|false);
+                    spectator_follow=target.and_then(|(kind,ship)|
+                        (kind=="ship").then(||(
+                            state["world_id"].as_u64()?,
+                            state["episode_revision"].as_u64()?,
+                            ship["id"].as_i64()?,
+                        )).flatten()
+                    );
+                    peer.notice=if let Some((_,_,id))=spectator_follow {
+                        format!("Following visible ship {id}; pan to release")
+                    } else {"Spectator camera unlocked".to_owned()};
+                }
+            }
             if let Some((x,y))=mouse {
                 let (x,y)=(x as i32,y as i32);
                 if battlefield_input&&left&&!last_left&&!minimap_dragging&&
@@ -3933,6 +3966,23 @@ pub fn connect_remote(
                     }
                 }
             }
+            if let Some((world,revision,id))=spectator_follow {
+                let current=peer.state.as_ref().filter(|state|
+                    state["world_id"].as_u64()==Some(world) &&
+                    state["episode_revision"].as_u64()==Some(revision));
+                let ship=current.and_then(|state|
+                    state["ships"].as_array()?.iter().find(|ship|
+                        ship["id"].as_i64()==Some(id)));
+                if let Some(point)=ship.and_then(|ship|
+                    peer.visual.position(ship,0,peer.visual.fraction())) {
+                    cam.center=point;
+                    if let Some(map)=current.and_then(bounds) {
+                        cam.constrain_to_map(map,FIELD,HEIGHT);
+                    }
+                } else {
+                    spectator_follow=None;
+                }
+            }
             last_left=left;last_right=right;
             camera=Some(cam);
             }
@@ -4086,6 +4136,11 @@ pub fn connect_remote(
             text::draw_at(&mut pixels, WIDTH, 10, HEIGHT-43,
                 text::fit(receipt, FIELD-20), 1, [255, 211, 130]);
         }
+        if let Some((_,_,id))=spectator_follow {
+            text::draw_at(&mut pixels,WIDTH,12,53,
+                &format!("Spectator camera following visible ship #{id}"),
+                1,[198,231,248]);
+        }
         if surrender_confirmation.is_some() {
             NativeSoftwareRenderer::draw_surrender_panel(&mut pixels,WIDTH,HEIGHT);
         } else if show_campaign_rewards && !peer.campaign_reward_details.is_empty() {
@@ -4173,6 +4228,8 @@ pub fn connect_remote(
                     "AUTHENTICATED SPECTATOR - READ ONLY",
                     "Side-filtered battlefield and original fog of war",
                     "CAMERA / DISPLAY",
+                    "Click a visible ship: follow it  |  Pan: stop following",
+                    "Click or drag minimap: reposition camera",
                     "Arrows: pan   Wheel: zoom   F: fit map",
                     "Shift+wheel: horizontal pan   Ctrl+wheel: vertical pan",
                     "B: weapon ranges   F6: source art / fast view",
