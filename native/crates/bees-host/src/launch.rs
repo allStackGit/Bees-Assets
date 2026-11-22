@@ -5376,7 +5376,8 @@ fn run_campaign_game_menu(
     // Scenario cap values are immutable authored Level options. Cache the
     // parsed cap once per route/config; progress can redirect a mission to
     // a different physical Level after the preceding result.
-    let mut supply_caps = HashMap::<PathBuf, Option<SourceSupplyCapacity>>::new();
+    let mut supply_caps =
+        HashMap::<(PathBuf, i32), Option<SourceSupplyCapacity>>::new();
     // These defaults come from the active authored mission configurations.
     // A victory route can change those source squads without creating any
     // new SavedSquad. Keep the parsed menu cache until either the player's
@@ -5436,14 +5437,15 @@ fn run_campaign_game_menu(
             if unlocked {
                 if let Some(mission) = entry.mission.as_ref() {
                     let path = resolve(root, entry.config_for(&progress));
-                    let cap = if let Some(cached) = supply_caps.get(&path) {
+                    let key = (path, mission.player_side);
+                    let cap = if let Some(cached) = supply_caps.get(&key) {
                         *cached
                     } else {
-                        let run: RunConfig = serde_json::from_slice(&fs::read(&path)?)?;
+                        let run: RunConfig = serde_json::from_slice(&fs::read(&key.0)?)?;
                         let value = run.levels.iter()
                             .filter_map(|level| level.supply_capacity)
                             .find(|cap| cap.player_side == mission.player_side);
-                        supply_caps.insert(path, value);
+                        supply_caps.insert(key, value);
                         value
                     };
                     if let Some(cap) = cap {
