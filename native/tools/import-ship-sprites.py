@@ -49,6 +49,15 @@ SHIP_ANIMATIONS = (
 # are reconstructed in the common native local/LAN presentation path.
 QUEEN_PART_IMAGES = ("queen_crown.png", "queen_eye.png")
 
+# The Queen Explosion prefab has four independently sorted SpriteRenderers
+# with original 40-frame, 10 FPS clips and one Kill event at 4s.
+QUEEN_EXPLOSION = (
+    ("queen_death_body.png", "Queen Explosion Body.anim"),
+    ("queen_death_crown.png", "Queen Explosion Crown.anim"),
+    ("queen_death_wings_eyes.png", "Queen Explosion Wings.anim"),
+    ("queen_death_rings.png", "Queen Explosion Rings.anim"),
+)
+
 # Original ShipRemains and Beehive Shrinking sheets. The tuple is keyed
 # directly by ConfigData.ShipTypes; None denotes source classes without
 # authored wreck art. The 20-slice clips hold their final frame until the
@@ -324,6 +333,37 @@ def pack_ship_remains(palettes):
     return data, len(entries)
 
 
+def pack_queen_explosion():
+    """Pack all Queen death layers in the existing lazy remains envelope.
+
+    The source QueenExplosionAnimation completes after 4 seconds. Its
+    parts are rendered only after a true ShipDied combat event; no gameplay
+    clock, debris physics, or extra train-time state is introduced.
+    """
+    data = bytearray(struct.pack("<4sH", b"BSR1", len(QUEEN_EXPLOSION)))
+    for layer, (filename, clip) in enumerate(QUEEN_EXPLOSION):
+        path = ROOT / "Sprites/Ships/Parts/Ship Explosions" / filename
+        ppu, frames = source_frames(path, True)
+        text = (ROOT / "Sprites/Ships/Animations" / clip).read_text(
+            encoding="utf-8",
+        )
+        match = re.search(r"^  m_SampleRate: (\\d+)(?:\\.0+)?$", text, re.MULTILINE)
+        if match is None or int(match[1]) != 10 or len(frames) != 40:
+            raise ValueError(f"Queen explosion must retain 40 frames at 10FPS: {clip}")
+        data.extend(struct.pack("<BHHH", layer, ppu, 10, len(frames)))
+        for frame in frames:
+            data.extend(struct.pack("<HH", frame.width, frame.height))
+            packed_pixels(data, frame)
+            # Queen explosion has no source squad-recolor surface. The
+            # existing remains decoder requires one bounded zero mask.
+            left = frame.width * frame.height
+            while left:
+                run = min(left, 65535)
+                data.extend(struct.pack("<HB", run, 0))
+                left -= run
+    return data
+
+
 def write_atomic(output: Path, data: bytearray):
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -357,6 +397,8 @@ def main():
                         default=ROOT / "native/assets/carrier-decks.rgba")
     parser.add_argument("--queen-output", type=Path,
                         default=ROOT / "native/assets/queen-parts.rgba")
+    parser.add_argument("--queen-explosion-output", type=Path,
+                        default=ROOT / "native/assets/queen-explosion.rgba")
     args = parser.parse_args()
     palettes = source_ship_color_palettes()
     ships, ship_count = pack(
@@ -369,6 +411,7 @@ def main():
     queen_parts, queen_part_count = pack(
         QUEEN_PART_IMAGES, ROOT / "Sprites/Ships/Parts", b"BSS1", False,
     )
+    queen_explosion = pack_queen_explosion()
     projectiles, projectile_count = pack(
         PROJECTILE_IMAGES, ROOT / "Sprites/Projectiles", b"BPS1", True,
     )
@@ -382,6 +425,8 @@ def main():
     remains_path = write_atomic(args.remains_output, remains)
     decks_path = write_atomic(args.deck_output, decks)
     queen_path = write_atomic(args.queen_output, queen_parts)
+    queen_explosion_path = write_atomic(args.queen_explosion_output, queen_explosion)
+    print(f"Queen explosion: 4 original animated layers, {len(queen_explosion)} bytes at {queen_explosion_path}")
     print(f"Queen prefab parts: {queen_part_count} sprites, {len(queen_parts)} bytes at {queen_path}")
     print(f"Carrier deck overlays: 13 variants, {len(decks)} bytes at {decks_path}")
     print(f"Ship remains: {remains_count} classes, "
