@@ -131,6 +131,7 @@ struct WireCounts {
     queen_explosion_layer_draws: u64,
     obstacle_hull_draws: u64,
     minimap_ship_markers: u64,
+    minimap_terrain_markers: u64,
     minimap_objective_markers: u64,
     minimap_camera_moves: u64,
     ship_type_multiselections: u64,
@@ -1389,10 +1390,10 @@ fn draw_remote_primary_hull(
 fn draw_remote_minimap(
     pixels: &mut [u32], state: &Value, camera: NativeCamera,
     highlighted: &HashSet<i64>, visual: &RemoteVisual, fraction: f32,
-) -> (u64, u64) {
-    let Some(bounds) = bounds(state) else { return (0, 0) };
+) -> (u64, u64, u64) {
+    let Some(bounds) = bounds(state) else { return (0, 0, 0) };
     let Some(layout) = MiniMapLayout::top_right(FIELD, HEIGHT, bounds)
-        else { return (0, 0) };
+        else { return (0, 0, 0) };
     for y in layout.top..layout.bottom {
         pixels[y * WIDTH + layout.left..y * WIDTH + layout.right]
             .fill(0x101c2e);
@@ -1406,6 +1407,42 @@ fn draw_remote_minimap(
     for (x0, y0, x1, y1) in edges {
         line(pixels, (x0.round() as i32, y0.round() as i32),
             (x1.round() as i32, y1.round() as i32), 0x6e829e);
+    }
+    // One physical Level's fog-filtered static objects are authoritative
+    // for cover and mining. Outline large collider AABBs; deduplicate
+    // subpixel terrain markers in dense asteroid fields. Neither path
+    // samples undisclosed objects or constructs a second navigation map.
+    let mut terrain_markers = 0_u64;
+    let mut cells = HashSet::new();
+    for object in state["obstacles"].as_array().into_iter().flatten() {
+        let Some(point) = visual.position(object, 2, fraction) else { continue };
+        let Some((x,y)) = layout.project(point) else { continue };
+        let mining = object["mining"] == true;
+        let color = if mining {GOLD} else {0x8195a9};
+        let bounds = object["collider_bounds"].as_array()
+            .filter(|bounds|bounds.len()==2)
+            .and_then(|bounds|Some((
+                point_from_wire(&bounds[0])?,
+                point_from_wire(&bounds[1])?,
+            )));
+        if let Some((min,max))=bounds {
+            let a=layout.project_unbounded(Vec2::new(min.x,max.y));
+            let b=layout.project_unbounded(Vec2::new(max.x,min.y));
+            let left=a.0.max(layout.plot_left).round() as i32;
+            let top=a.1.max(layout.plot_top).round() as i32;
+            let right=b.0.min(layout.plot_right).round() as i32;
+            let bottom=b.1.min(layout.plot_bottom).round() as i32;
+            if right-left>=4 && bottom-top>=4 {
+                outline(pixels,left,top,right-left,bottom-top,color);
+                terrain_markers+=1;
+                continue;
+            }
+        }
+        let cell=(x.round() as i32,y.round() as i32,mining);
+        if cells.insert(cell) {
+            plot(pixels,cell.0,cell.1,color);
+            terrain_markers+=1;
+        }
     }
     let target = &state["campaign_objective"];
     let objective_ship = target["protected_ship_id"].as_i64()
@@ -1472,7 +1509,7 @@ fn draw_remote_minimap(
         outline(pixels, x0.round() as i32, y0.round() as i32,
             (x1-x0).round() as i32, (y1-y0).round() as i32, 0xe2c473);
     }
-    (ship_markers, objective_markers)
+    (ship_markers, terrain_markers, objective_markers)
 }
 
 fn first_selected<'a>(state: Option<&'a Value>, selected: &[i64]) -> Option<&'a Value> {
@@ -2124,11 +2161,15 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 }
             }
         }
-        let (ships, objectives) = draw_remote_minimap(
+        let (ships, terrain, objectives) = draw_remote_minimap(
             pixels, state, camera, &highlighted, visual, fraction,
         );
         *minimap_ship_markers += ships;
         *minimap_objective_markers += objectives;
+        // Count genuine rendered terrain indicators, not total source
+        // asteroid entities or speculative obstacles outside the map.
+        // The primary per-frame measurement is added below.
+        let _ = terrain;
         text::draw_at(pixels, WIDTH, FIELD+14, 90,
             &format!("World {}  Tick {}",state["world_id"],state["tick"]),1,TEXT);
         let friendly=state["squads"].as_array().into_iter().flatten().filter(|s|s["owned"]==true).count();
