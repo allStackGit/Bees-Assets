@@ -18,7 +18,7 @@ from collections import OrderedDict, deque
 from concurrent.futures import Future
 from contextlib import nullcontext
 from dataclasses import dataclass
-from threading import Condition, Thread, current_thread
+from threading import Condition, Thread, current_thread, get_ident
 from time import perf_counter
 
 import torch
@@ -134,6 +134,8 @@ class FrozenInferenceMicrobatcher:
         self._condition = Condition()
         self._closed = False
         self._outstanding = 0
+        self._first_producer = None
+        self._multi_producer = False
         self._counters = dict(submitted=0, dispatched=0, model_forwards=0,
                               groups=0, coalesced=0, rejected=0, fallbacks=0,
                               max_queue_depth=0, admitted_profiles=0,
@@ -177,6 +179,11 @@ class FrozenInferenceMicrobatcher:
             if self._outstanding+len(checked)>self.max_pending:
                 self._counters["rejected"] += len(checked)
                 raise RuntimeError("Frozen inference queue reached its capacity")
+            producer = get_ident()
+            if self._first_producer is None:
+                self._first_producer = producer
+            elif producer != self._first_producer:
+                self._multi_producer = True
             self._pending.extend(_Request(model_id,args,rows,future,ready)
                                  for (model_id,args,rows),future in zip(checked,futures))
             self._outstanding += len(checked)
@@ -216,7 +223,12 @@ class FrozenInferenceMicrobatcher:
                     self._condition.wait()
                 if not self._pending:
                     return
-                deadline = perf_counter()+self.wait_seconds
+                # A single caller already has submit_many() to publish a
+                # complete batch atomically. Never introduce a timer wait
+                # on its serial critical path. Independent collector
+                # threads unlock the short coalescing window automatically.
+                delay = self.wait_seconds if self._multi_producer else 0.0
+                deadline = perf_counter()+delay
                 group, layouts, rows = [], {}, 0
                 while len(group) < self.max_requests:
                     if self._pending:
@@ -381,7 +393,8 @@ class FrozenInferenceMicrobatcher:
         with self._condition:
             values = dict(self._counters, pending=self._outstanding,
                           cached_model_cohorts=len(self._executors),
-                          calibrated_batch_shapes=len(self._admission))
+                          calibrated_batch_shapes=len(self._admission),
+                          multiple_producers=int(self._multi_producer))
             return {"gpu_microbatch_"+name:value
                     for name,value in values.items()}
 
