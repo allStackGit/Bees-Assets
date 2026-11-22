@@ -588,13 +588,24 @@ class RemoteConsole:
                     for kind, name in sorted(self.seen_ship_classes.items())]
 
     def selected_owners(self, state):
-        squads = {row["owner"]["squad_id"]: row["owner"]
-                  for row in state["squads"] if row["controllable"]
+        # An authored SquadItemId may be reused during one episode.
+        # Keep the full authenticated lifetime instead of transferring
+        # stale selection authority to the next generated squad.
+        squads = {
+            (owner["level_id"], owner["squad_id"], owner["lifecycle_id"]): owner
+            for row in state["squads"] if row["controllable"]
+            for owner in (row["owner"],)
+        }
         scope = (state["world_id"], state["episode_revision"])
         with self.lock:
             if self.selected_scope != scope:
                 return []
-            return [squads[id] for id in self.selected if id in squads]
+            return [
+                squads[key] for owner in self.selected
+                for key in ((owner["level_id"], owner["squad_id"],
+                             owner["lifecycle_id"]),)
+                if key in squads
+            ]
 
     def locate_squad(self, state, value, *, owned=None, friendly=None):
         squad_id = int(value)
@@ -796,7 +807,7 @@ class RemoteConsole:
             print(f"World {state['world_id']} episode {state['episode_revision']}"
                   f" tick {state['tick']} side {state['viewer_side']}"
                   f" ships visible {len(state['ships'])}"
-                  f" squads selected {self.selected}")
+                  f" squads selected {[owner['squad_id'] for owner in self.selected]}")
             final = self.battle_receipt_snapshot()
             outcome = state.get("terminal_outcome")
             if final is not None:
@@ -935,11 +946,11 @@ class RemoteConsole:
                 return
             self.submit_selection(state, [owner])
             with self.lock:
-                self.selected = [owner["squad_id"]]
+                self.selected = [owner]
                 self.selected_scope = (state["world_id"], state["episode_revision"])
             if self.weapon_overlay_enabled:
                 self.request_weapon_overlay(state, [owner])
-            print(f"Selected: {self.selected}")
+            print(f"Selected: {[owner['squad_id'] for owner in self.selected]}")
             return
         if cmd == "select":
             if argv == ["all"]:
@@ -956,13 +967,13 @@ class RemoteConsole:
                 raise ValueError("select requires squad IDs, all, or clear")
             self.submit_selection(state, owners)
             with self.lock:
-                self.selected = [owner["squad_id"] for owner in owners]
+                self.selected = list(owners)
                 self.selected_scope = (state["world_id"], state["episode_revision"])
             if self.weapon_overlay_enabled:
                 self.request_weapon_overlay(state, owners)
                 if not owners:
                     self.weapon_overlay_enabled = False
-            print(f"Selected: {self.selected}")
+            print(f"Selected: {[owner['squad_id'] for owner in self.selected]}")
             return
         if cmd == "overlay" and len(argv) == 1:
             enabled = self.flag(argv[0])
