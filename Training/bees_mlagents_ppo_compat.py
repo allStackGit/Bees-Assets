@@ -133,6 +133,11 @@ def poca_learner_optimization_options() -> PocaLearnerOptimizationOptions:
     return _POCA_OPTIMIZATIONS
 
 
+def poca_completed_gpu_execution_metrics() -> dict:
+    """Actual previous PPO update execution counters, not GPU busy estimates."""
+    return dict(getattr(_POCA_TIMING_STATE, "last_update_execution_metrics", None) or {})
+
+
 _ORIGINAL_GAUSSIAN_FORWARD = None
 _ORIGINAL_ACTION_MODEL_FORWARD = None
 _ORIGINAL_ACTION_MODEL_EVALUATE = None
@@ -6977,6 +6982,7 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         _POCA_TIMING_STATE.timing_counts = {} if diagnostics_enabled else None
         _POCA_TIMING_STATE.timing_samples = {} if diagnostics_enabled else None
         _POCA_TIMING_STATE.cuda_events = [] if diagnostics_enabled else None
+        _POCA_TIMING_STATE.last_update_execution_metrics = None
         _POCA_TIMING_STATE.graph_warmups = 0
         _POCA_TIMING_STATE.graph_captures = 0
         _POCA_TIMING_STATE.graph_replays = 0
@@ -7591,6 +7597,19 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 flush=True,
             )
 
+        # The native optimizer subprocess reports its checkpoint only
+        # AFTER update_policy() returns. Preserve small, device-free
+        # execution evidence before resetting per-update counters.
+        _POCA_TIMING_STATE.last_update_execution_metrics = {
+            name: int(getattr(_POCA_TIMING_STATE, name, 0))
+            for name in (
+                "graph_warmups", "graph_captures", "graph_replays",
+                "graph_skips", "graph_memory_skips", "graph_layout_skips",
+                "graph_full_captures", "graph_full_replays",
+                "graph_adam_captures", "graph_adam_replays")
+        }
+        _POCA_TIMING_STATE.last_update_execution_metrics[
+            "completed_minibatches"] = int(completed_minibatches)
         _POCA_TIMING_STATE.timing_totals = None
         _POCA_TIMING_STATE.timing_counts = None
         _POCA_TIMING_STATE.timing_samples = None
