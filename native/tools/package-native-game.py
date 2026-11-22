@@ -223,6 +223,8 @@ def package_game_library(
     destination: Path, library: Path, *,
     include_policies: bool = False, python_command: str = "python3",
     policy_device: str | None = None,
+    release_root: Path | None = None,
+    copied_manifests: set[str] | None = None,
 ) -> bool:
     """Freeze a game library and all of its native source dependencies.
 
@@ -235,9 +237,16 @@ def package_game_library(
     if library.suffix != ".json" or not library.is_file():
         raise ValueError("native game package requires a JSON library file")
     source_root = library.parent
+    # Nested original careers still share the ONE game distribution's
+    # policy worker and content-addressed models. Their scene/run links
+    # remain relative to each nested catalog, but trained weights do not
+    # get duplicated into examples/.
+    if release_root is None:
+        release_root = destination.parent
+    if copied_manifests is None:
+        copied_manifests = set()
     pending = [(library.name, "library")]
     copied: dict[str, str] = {}
-    copied_manifests: set[str] = set()
     has_policy = False
 
     def catalog_config(value: str, label: str) -> str:
@@ -363,7 +372,7 @@ def package_game_library(
                 if not original.is_file():
                     raise ValueError("trained policy manifest must be a regular file")
                 digest = hashlib.sha256(original.read_bytes()).hexdigest()
-                models_root = destination.parent / "assets/policies"
+                models_root = release_root / "assets/policies"
                 if digest not in copied_manifests:
                     models_root.mkdir(parents=True, exist_ok=True)
                     # The existing portable model exporter verifies all
@@ -384,7 +393,7 @@ def package_game_library(
                 )).as_posix()
                 data["python"] = python_command
                 data["policy_worker"] = relative_to_run(
-                    destination.parent / "native/tools/policy_worker.py"
+                    release_root / "native/tools/policy_worker.py"
                 )
                 data["model_manifest"] = relative_to_run(
                     models_root / digest / "manifest.json"
@@ -427,7 +436,10 @@ def package_game_library(
 
 def package_extra_career_library(
     destination: Path, library: Path, kind: str, unlock_after: str | None = None,
-) -> None:
+    *, include_policies: bool = False, python_command: str = "python3",
+    policy_device: str | None = None,
+    copied_manifests: set[str] | None = None,
+) -> bool:
     """Include an original career and its real unlockable modes in one game.
 
     Unity's original Campaign authors standalone Training Room/Fish Tank
@@ -439,8 +451,11 @@ def package_extra_career_library(
         raise ValueError("extra native game must be a persistent career")
     nested = destination / kind
     nested.mkdir()
-    if package_game_library(nested, library):
-        raise ValueError("native career requires physical gameplay, not an external policy worker")
+    policy_used = package_game_library(
+        nested, library, include_policies=include_policies,
+        python_command=python_command, policy_device=policy_device,
+        release_root=destination.parent, copied_manifests=copied_manifests,
+    )
     source_menu = nested / "native-library.json"
     extra = json.loads(source_menu.read_text(encoding="utf-8"))
     entries = extra.get("games")
@@ -504,6 +519,7 @@ def package_extra_career_library(
     # One final library entry controls all frozen games; leave no orphaned
     # nested menu file in the manifest's immutable source inventory.
     source_menu.unlink()
+    return policy_used
 
 
 def original_audio_paths() -> list[tuple[Path, Path]]:
@@ -929,19 +945,29 @@ def main() -> None:
             shutil.copy2(source, destination)
         examples = staging / "examples"
         examples.mkdir()
+        exported_manifests: set[str] = set()
         policy_used = package_game_library(
             examples, args.library, include_policies=args.include_policies,
             python_command=python_command, policy_device=args.policy_device,
+            copied_manifests=exported_manifests,
         )
         if args.campaign_library is not None:
-            package_extra_career_library(
+            campaign_policy_used = package_extra_career_library(
                 examples, args.campaign_library, "campaign",
+                include_policies=args.include_policies,
+                python_command=python_command, policy_device=args.policy_device,
+                copied_manifests=exported_manifests,
             )
+            policy_used |= campaign_policy_used
         if args.challenge_library is not None:
-            package_extra_career_library(
+            challenge_policy_used = package_extra_career_library(
                 examples, args.challenge_library, "challenge",
                 args.challenge_unlock_after,
+                include_policies=args.include_policies,
+                python_command=python_command, policy_device=args.policy_device,
+                copied_manifests=exported_manifests,
             )
+            policy_used |= challenge_policy_used
         if policy_used:
             package_policy_runtime(staging)
         if args.include_training:
