@@ -182,6 +182,7 @@ pub struct NativeClient {
     pub culled_ship_draws: u64,
     pub ship_sprite_draws: u64,
     pub carrier_deck_overlay_draws: u64,
+    pub barge_charge_effect_draws: u64,
     pub combat_impacts_observed: u64,
     pub combat_impact_visual_draws: u64,
     pub combat_impact_visuals_dropped: u64,
@@ -258,6 +259,7 @@ impl NativeClient {
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
             culled_ship_draws: 0, ship_sprite_draws: 0,
             carrier_deck_overlay_draws: 0,
+            barge_charge_effect_draws: 0,
             combat_impacts_observed: 0, combat_impact_visual_draws: 0,
             combat_impact_visuals_dropped: 0,
             custom_ship_color_draws: 0, ship_color_cache_misses: 0,
@@ -1509,6 +1511,8 @@ impl NativeClient {
         self.ship_sprite_draws = self.ship_sprite_draws.saturating_add(counts.ship_sprite_draws as u64);
         self.carrier_deck_overlay_draws = self.carrier_deck_overlay_draws
             .saturating_add(counts.carrier_deck_overlay_draws as u64);
+        self.barge_charge_effect_draws = self.barge_charge_effect_draws
+            .saturating_add(counts.barge_charge_effect_draws as u64);
         self.combat_impacts_observed = self.combat_impacts_observed
             .saturating_add(counts.combat_impacts_observed as u64);
         self.combat_impact_visual_draws = self.combat_impact_visual_draws
