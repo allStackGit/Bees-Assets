@@ -64,9 +64,12 @@ impl CombatWorld {
         if runtime.healing.is_some() {
             return Err(CombatWorldError::InvalidPolicyHealing);
         }
+        // A miner that gains healing is still one cooldown-owning ship.
+        let first_capability = runtime.mining.is_none();
         runtime.healing = Some(PolicyHealingRuntime {
             cooldown_remaining: 0.0,
         });
+        self.policy_capability_owner_count += usize::from(first_capability);
         Ok(())
     }
 
