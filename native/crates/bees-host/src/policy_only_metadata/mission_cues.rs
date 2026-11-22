@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum NativeMissionCue {
     PlutoHoneybeeSpotted,
+    PlutoHoneybeeDestroyed,
     FireTankSpotted,
     FireTankDestroyed,
     UranusBargeLost,
@@ -29,6 +30,7 @@ impl NativeMissionCue {
     pub(crate) fn matches(self, cue: CampaignCue) -> bool {
         matches!((self, cue),
             (Self::PlutoHoneybeeSpotted, CampaignCue::PlutoAnomalyHoneybeeSpotted) |
+            (Self::PlutoHoneybeeDestroyed, CampaignCue::PlutoAnomalyHoneybeeDestroyed) |
             (Self::FireTankSpotted, CampaignCue::FireTankSpotted { .. }) |
             (Self::FireTankDestroyed, CampaignCue::FireTankDestroyed { .. }) |
             (Self::UranusBargeLost, CampaignCue::UranusNewThreatBargeLost) |
@@ -45,7 +47,7 @@ impl NativeMissionCue {
     pub(crate) fn valid_for(self, spec: Option<CampaignDialogueSpec>) -> bool {
         match spec {
             Some(CampaignDialogueSpec::PlutoAnomaly { .. }) =>
-                matches!(self, Self::PlutoHoneybeeSpotted),
+                matches!(self, Self::PlutoHoneybeeSpotted | Self::PlutoHoneybeeDestroyed),
             Some(CampaignDialogueSpec::TitaniaMinesweeper { .. }) =>
                 matches!(self, Self::FireTankSpotted | Self::FireTankDestroyed),
             Some(CampaignDialogueSpec::TitaniaBeenoculars { .. }) =>
