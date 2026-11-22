@@ -142,7 +142,20 @@ def titania_beenoculars_waves_match_source(scene: dict, level: dict) -> bool:
         if types is None:
             return False
         by_second.setdefault(second, []).extend(types)
-    return (set(by_second) == set(expected) and
+    # The opening four real Bee squads enter before the survival clock
+    # starts, so they must not masquerade as delayed waves or disappear
+    # from the authored physical Level.
+    opening_ids = [squad["item_id"] for squad in scene.get("squads", [])
+                   if isinstance(squad, dict) and
+                   squad.get("side") == scene.get("bee_side") and
+                   squad.get("item_id") not in reserved_squads and
+                   squad_members(squad)]
+    opening_types = source_wave_types(
+        {"squad_item_ids": opening_ids}, squads, ships, scene.get("bee_side")
+    )
+    return (opening_types is not None and
+            sorted(opening_types) == [14, 15, 16, 21] and
+            set(by_second) == set(expected) and
             all(by_second[second] == types
                 for second, types in expected.items()))
 

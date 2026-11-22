@@ -229,8 +229,34 @@ fn titania_beenoculars_waves_match_source(
             by_time.entry(due).or_default().push(kind);
         }
     }
-    by_time.len() == EXPECTED.len() && EXPECTED.iter().all(|(due, types)|
-        by_time.get(due).is_some_and(|actual| actual.as_slice() == *types))
+    if by_time.len() != EXPECTED.len() ||
+        !EXPECTED.iter().all(|(due, types)|
+            by_time.get(due).is_some_and(|actual| actual.as_slice() == *types))
+    {
+        return false;
+    }
+    // Four independent Bee squads (Hornet, Wasp, Honeybee, Leafcutter)
+    // enter when the original intro ends; they must be physically present
+    // rather than hidden behind the later timer queue.
+    let mut opening = Vec::new();
+    for squad in squads.iter().filter(|squad|
+        squad.side == bee_side && !squad.members.is_empty() &&
+        !claimed.contains(&squad.item_id)
+    ) {
+        let mut kind = None;
+        for member in &squad.members {
+            let Some(ship) = by_ship.get(member) else { return false };
+            if ship.side != bee_side || kind.is_some_and(|known|
+                known != ship.ship_type
+            ) {
+                return false;
+            }
+            kind = Some(ship.ship_type);
+        }
+        opening.push(kind.expect("nonempty source squad"));
+    }
+    opening.sort_unstable();
+    opening == [14, 15, 16, 21]
 }
 
 /// Neptune II's original 120/240/360/480-second waves and growing
