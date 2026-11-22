@@ -858,7 +858,8 @@ def aggregate_collection_metrics(bundles):
         # A mixed fleet of old and new native binary revisions must
         # preserve missing measurements as unavailable, not measured zero.
         navigation_keys = ("navigation_lookups_skipped",
-                           "steering_lookups_skipped")
+                           "steering_lookups_skipped",
+                           "unarmed_weapon_holders_skipped")
         if all(all(key in row["ship_slot_work"] for key in navigation_keys)
                for row in rows):
             result["ship_slot_work"].update({
