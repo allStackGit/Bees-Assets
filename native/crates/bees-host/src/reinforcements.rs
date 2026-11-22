@@ -25,6 +25,7 @@ pub enum NativeReinforcementActivation {
     OnCampaignCue(NativeMissionCue),
     OnShipDestroyed(i64),
     OnMapObjectDestroyed(i64),
+    OnMiningAsteroidDepleted(i64),
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -79,6 +80,7 @@ pub(crate) struct ReinforcementWakeup {
     campaign_event: bool,
     ship_death_event: bool,
     map_object_death_event: bool,
+    mining_depletion_event: bool,
 }
 
 impl ReinforcementWakeup {
@@ -94,6 +96,8 @@ impl ReinforcementWakeup {
                     state.ship_death_event = true,
                 ReinforcementDue::Event(NativeMissionEvent::MapObjectDestroyed(_)) =>
                     state.map_object_death_event = true,
+                ReinforcementDue::Event(NativeMissionEvent::MiningAsteroidDepleted(_)) =>
+                    state.mining_depletion_event = true,
             }
         }
         state
@@ -110,6 +114,10 @@ impl ReinforcementWakeup {
             (self.map_object_death_event && world.events().iter().any(|event|
                 matches!(event,
                     bees_sim::combat_world::CombatEvent::MapObjectDestroyed { .. })
+            )) ||
+            (self.mining_depletion_event && world.events().iter().any(|event|
+                matches!(event,
+                    bees_sim::combat_world::CombatEvent::MiningAsteroidDepleted { .. })
             ))
     }
 }
@@ -172,6 +180,11 @@ impl ReinforcementWave {
     pub(crate) fn is_map_object_death_triggered(&self) -> bool {
         matches!(self.due,
             ReinforcementDue::Event(NativeMissionEvent::MapObjectDestroyed(_))
+        )
+    }
+    pub(crate) fn is_mining_depletion_triggered(&self) -> bool {
+        matches!(self.due,
+            ReinforcementDue::Event(NativeMissionEvent::MiningAsteroidDepleted(_))
         )
     }
     pub(crate) fn squad_count(&self) -> usize { self.squads.len() }
@@ -412,7 +425,8 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 }
                 NativeReinforcementActivation::OnCampaignCue(cue) => {
                     let event = NativeMissionEvent::CampaignCue(cue);
-                    if !event.valid_for(self.campaign_dialogue, |_| false, |_| false) {
+                    if !event.valid_for(self.campaign_dialogue,
+                        |_| false, |_| false, |_| false) {
                         return Err("Reinforcement campaign cue is unavailable in this Level");
                     }
                     ReinforcementDue::Event(event)
@@ -423,7 +437,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                         self.entities.iter().any(|entity| matches!(
                             entity,
                             NativeAuthoredEntity::Ship(ship) if ship.entity_id == id
-                        )), |_| false
+                        )), |_| false, |_| false
                     ) {
                         return Err("Reinforcement ship-death trigger needs an authored source ship");
                     }
@@ -431,14 +445,29 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 }
                 NativeReinforcementActivation::OnMapObjectDestroyed(object_id) => {
                     let event = NativeMissionEvent::MapObjectDestroyed(object_id);
-                    if !event.valid_for(self.campaign_dialogue, |_| false, |id|
-                        self.entities.iter().any(|entity| matches!(entity,
+                    if !event.valid_for(self.campaign_dialogue,
+                        |_| false,
+                        |id| self.entities.iter().any(|entity| matches!(entity,
                             NativeAuthoredEntity::MapObject { object, body }
                                 if object.entity_id == id &&
                                     object.health > 0 && body.active
-                        ))
+                        )),
+                        |_| false
                     ) {
                         return Err("Reinforcement MapObject trigger requires a living authored physical object");
+                    }
+                    ReinforcementDue::Event(event)
+                }
+                NativeReinforcementActivation::OnMiningAsteroidDepleted(asteroid_id) => {
+                    let event = NativeMissionEvent::MiningAsteroidDepleted(asteroid_id);
+                    if !event.valid_for(self.campaign_dialogue,
+                        |_| false, |_| false,
+                        |id| self.entities.iter().any(|entity| matches!(entity,
+                            NativeAuthoredEntity::MiningAsteroid { obstacle, body }
+                                if obstacle.entity_id == id && body.active
+                        ))
+                    ) {
+                        return Err("Reinforcement mining trigger requires a live source ore collider");
                     }
                     ReinforcementDue::Event(event)
                 }
