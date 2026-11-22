@@ -119,16 +119,21 @@ impl NativeMissionCue {
 pub(crate) enum NativeMissionEvent {
     CampaignCue(NativeMissionCue),
     ShipDestroyed(i64),
+    /// Only the canonical physical MapObject death event can release this.
+    /// Stable Level entity IDs never alias a ship or a replacement collider.
+    MapObjectDestroyed(i64),
 }
 
 impl NativeMissionEvent {
     pub(crate) fn valid_for(
         self, campaign: Option<CampaignDialogueSpec>,
         known_ship: impl FnOnce(i64) -> bool,
+        known_map_object: impl FnOnce(i64) -> bool,
     ) -> bool {
         match self {
             Self::CampaignCue(cue) => cue.valid_for(campaign),
             Self::ShipDestroyed(id) => id > 0 && known_ship(id),
+            Self::MapObjectDestroyed(id) => id > 0 && known_map_object(id),
         }
     }
 
@@ -144,6 +149,12 @@ impl NativeMissionEvent {
                     bees_sim::combat_world::CombatEvent::ShipDied {
                         victim_id, end_kill: false, ..
                     } if *victim_id == id
+                )
+            ),
+            Self::MapObjectDestroyed(id) => world.events().iter().any(|event|
+                matches!(event,
+                    bees_sim::combat_world::CombatEvent::MapObjectDestroyed { object_id, .. }
+                        if *object_id == id
                 )
             ),
         }
