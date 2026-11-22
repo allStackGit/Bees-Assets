@@ -34,7 +34,10 @@ enum Terrain {
 }
 
 #[derive(Clone, Copy)]
-enum Objective { Elimination, Survival, Extraction, Escort, Demolition, TargetFlagship }
+enum Objective {
+    Elimination, Survival, Extraction, Withdrawal,
+    Escort, Demolition, TargetFlagship,
+}
 
 /// Native Level waves are source-authored physical squads. This option
 /// changes only when squads enter the same live combat/roster pipeline,
@@ -127,24 +130,25 @@ impl AiTactics {
 /// setting with zero waves.
 fn choose_reinforcements(
     fleet_sizes: [usize; 2],
+    no_reserves_side: Option<usize>,
 ) -> Result<Option<ReinforcementPattern>, Box<dyn Error>> {
     let mut patterns = vec![
         (ReinforcementPattern::AllAtStart,
          "All squads deploy at the start", "  [Ordinary skirmish]"),
     ];
-    if fleet_sizes[0] > 1 {
+    if fleet_sizes[0] > 1 && no_reserves_side != Some(0) {
         patterns.push((ReinforcementPattern::BeesTimed,
             "Bee timed reinforcement waves", "  [Additional Bees at 25s and 55s]"));
         patterns.push((ReinforcementPattern::BeesOnDeath,
             "Bee command-ship-loss reserves", "  [Bees arrive when Bee command ship dies]"));
     }
-    if fleet_sizes[1] > 1 {
+    if fleet_sizes[1] > 1 && no_reserves_side != Some(1) {
         patterns.push((ReinforcementPattern::HumansTimed,
             "Human timed reinforcement waves", "  [Additional Humans at 25s and 55s]"));
         patterns.push((ReinforcementPattern::HumansOnDeath,
             "Human command-ship-loss reserves", "  [Humans arrive when Human command ship dies]"));
     }
-    if fleet_sizes.iter().all(|&size| size > 1) {
+    if fleet_sizes.iter().all(|&size| size > 1) && no_reserves_side.is_none() {
         patterns.push((ReinforcementPattern::BothTimed,
             "Both factions receive timed waves", "  [Each side at 25s and 55s]"));
         patterns.push((ReinforcementPattern::BothOnDeath,
@@ -283,6 +287,7 @@ impl Objective {
             Self::Elimination => "Elimination",
             Self::Survival => "Defend Command Ship",
             Self::Extraction => "Escape to Extraction",
+            Self::Withdrawal => "Withdraw Fleet (Concede Battle)",
             Self::Escort => "Deliver Command Convoy",
             Self::Demolition => "Destroy Enemy Objective",
             Self::TargetFlagship => "Hunt Enemy Flagship",
@@ -474,7 +479,10 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
         // Preserve the original dedicated incoming-enemy wave objective.
         ReinforcementPattern::AllAtStart
     } else {
-        let Some(pattern) = choose_reinforcements(fleet_sizes)? else {
+        let reserved_side = objective_side
+            .filter(|_| matches!(objective, Objective::Withdrawal))
+            .map(|side| (side - 1) as usize);
+        let Some(pattern) = choose_reinforcements(fleet_sizes, reserved_side)? else {
             return Ok(None);
         };
         pattern
@@ -538,7 +546,10 @@ pub(super) fn choose_multiplayer(
     let reinforcements = if matches!(objective, Objective::Survival) {
         ReinforcementPattern::AllAtStart
     } else {
-        let Some(pattern) = choose_reinforcements(fleet_sizes)? else {
+        let reserved_side = objective_side
+            .filter(|_| matches!(objective, Objective::Withdrawal))
+            .map(|side| (side - 1) as usize);
+        let Some(pattern) = choose_reinforcements(fleet_sizes, reserved_side)? else {
             return Ok(None);
         };
         pattern
@@ -586,7 +597,10 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let reinforcements = if matches!(objective, Objective::Survival) {
         ReinforcementPattern::AllAtStart
     } else {
-        let Some(pattern) = choose_reinforcements(fleet_sizes)? else {
+        let reserved_side = objective_side
+            .filter(|_| matches!(objective, Objective::Withdrawal))
+            .map(|side| (side - 1) as usize);
+        let Some(pattern) = choose_reinforcements(fleet_sizes, reserved_side)? else {
             return Ok(None);
         };
         pattern
@@ -870,6 +884,7 @@ fn choose_objective() -> Result<Option<Objective>, Box<dyn Error>> {
         ("Eliminate all opposing ships", "  [Standard battle]"),
         ("Defend your command ship for 90 seconds", "  [Incoming waves]"),
         ("Reach the enemy-side extraction zone", "  [Tactical escape]"),
+        ("Withdraw surviving fleet", "  [Uranus withdrawal: completed defeat, retain survivors]"),
         ("Escort your command ship to extraction", "  [Defend the convoy]"),
         ("Destroy a fortified MapObject", "  [90-second assault]"),
         ("Destroy the enemy flagship", "  [Named physical commander target]"),
@@ -881,9 +896,10 @@ fn choose_objective() -> Result<Option<Objective>, Box<dyn Error>> {
     Ok(select_library(&rows, &mut selected, false)?.map(|index| match index {
         1 => Objective::Survival,
         2 => Objective::Extraction,
-        3 => Objective::Escort,
-        4 => Objective::Demolition,
-        5 => Objective::TargetFlagship,
+        3 => Objective::Withdrawal,
+        4 => Objective::Escort,
+        5 => Objective::Demolition,
+        6 => Objective::TargetFlagship,
         _ => Objective::Elimination,
     }))
 }
