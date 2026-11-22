@@ -16,6 +16,7 @@ pub enum EpisodeTerminalError {
     InvalidSurvivalObjective,
     InvalidDemolitionObjective,
     InvalidEscortObjective,
+    InvalidTargetShipObjective,
     InvalidEliminationGate,
     InvalidStep,
 }
@@ -75,6 +76,12 @@ pub struct EpisodeTerminalMeasurements {
     pub demolition_failures: u64,
     pub escorts_delivered: u64,
     pub escorts_lost: u64,
+    /// Authored target-ship objectives completed from a named physical death,
+    /// not full-side elimination or training reward estimates.
+    #[serde(default)]
+    pub target_ship_successes: u64,
+    #[serde(default)]
+    pub target_ship_failures: u64,
     /// Actual surviving-fleet withdrawal, not combat defeat or a draw.
     #[serde(default)]
     pub withdrawals_completed: u64,
@@ -253,6 +260,14 @@ pub struct EscortStatus {
     pub duration_seconds: f32,
 }
 
+/// Eliminate one real source-owned ship, independent of reinforcements on
+/// the target's side. The physical hull and death live in CombatWorld.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TargetShipObjective {
+    pub attacking_side: i32,
+    pub target_ship_id: i64,
+}
+
 /// Finished native authored mission, distinct from ordinary faction victory.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum EpisodeMissionKind {
@@ -260,6 +275,7 @@ pub enum EpisodeMissionKind {
     Demolition,
     Escort,
     Extraction,
+    TargetShip,
 }
 
 impl EpisodeMissionKind {
@@ -270,6 +286,7 @@ impl EpisodeMissionKind {
             Self::Demolition => 1,
             Self::Escort => 2,
             Self::Extraction => 3,
+            Self::TargetShip => 4,
         }
     }
 
@@ -279,6 +296,7 @@ impl EpisodeMissionKind {
             Self::Demolition => "demolition",
             Self::Escort => "escort",
             Self::Extraction => "extraction",
+            Self::TargetShip => "target_ship",
         }
     }
 }
@@ -300,6 +318,8 @@ pub struct NativeEpisodeTerminal {
     survival: Option<ArmedSurvival>,
     demolition: Option<ArmedDemolition>,
     escort: Option<ArmedEscort>,
+    #[serde(default)]
+    target_ship: Option<TargetShipObjective>,
     /// A source Level may enable victory on a side's elimination only
     /// after a timed final reinforcement callback. The underlying
     /// CombatWorld remains authoritative for live and reserved ships.
@@ -343,7 +363,8 @@ impl NativeEpisodeTerminal {
         )) == recovered.escort.as_ref().map(|v| (
             v.objective.escorting_side, v.objective.escorted_ship_id,
             v.objective.seconds, v.deadline_tick,
-        ))
+        )) &&
+        self.target_ship == recovered.target_ship
     }
 
     pub fn valid_recovery_clock(&self, completed_ticks: u64) -> bool {
@@ -381,7 +402,7 @@ impl NativeEpisodeTerminal {
         }
         Ok(Self {
             bee_side, human_side, timeout_seconds, survival: None, demolition: None,
-            escort: None, delayed_elimination: None,
+            escort: None, target_ship: None, delayed_elimination: None,
             elapsed_seconds: 0.0, completed: None,
             deferred_elimination: false,
             measurements: EpisodeTerminalMeasurements::default(),
@@ -481,6 +502,29 @@ impl NativeEpisodeTerminal {
         Ok(())
     }
 
+    /// The original campaign may end on one specifically identified ship
+    /// instead of exterminating every enemy or its reserved future waves.
+    /// No independent damage ledger or simulated death event is created.
+    pub fn arm_target_ship(
+        &mut self, objective: TargetShipObjective,
+    ) -> Result<(), EpisodeTerminalError> {
+        if self.survival.is_some() || self.demolition.is_some() ||
+            self.escort.is_some() || self.target_ship.is_some() ||
+            self.delayed_elimination.is_some() ||
+            self.measurements.ticks_observed != 0 ||
+            ![self.bee_side, self.human_side].contains(&objective.attacking_side) ||
+            objective.target_ship_id <= 0
+        {
+            return Err(EpisodeTerminalError::InvalidTargetShipObjective);
+        }
+        self.target_ship = Some(objective);
+        Ok(())
+    }
+
+    pub fn target_ship_objective(&self) -> Option<TargetShipObjective> {
+        self.target_ship
+    }
+
     pub fn result(&self) -> Option<EpisodeTerminalResult> {
         self.completed
     }
@@ -492,6 +536,15 @@ impl NativeEpisodeTerminal {
     pub fn mission_outcome(
         &self, world: &CombatWorld, result: EpisodeTerminalResult,
     ) -> Option<EpisodeMissionOutcome> {
+        if let Some(target) = self.target_ship {
+            return Some(EpisodeMissionOutcome {
+                kind: EpisodeMissionKind::TargetShip,
+                objective_side: target.attacking_side,
+                completed: result.winner_side == target.attacking_side &&
+                    world.ship(target.target_ship_id)
+                        .is_some_and(|ship| ship.vitals.is_dead()),
+            });
+        }
         if let Some(escort) = &self.escort {
             return Some(EpisodeMissionOutcome {
                 kind: EpisodeMissionKind::Escort,
@@ -716,6 +769,35 @@ impl NativeEpisodeTerminal {
         };
         let bee_dead = world.living_mobile_ships_on_side(self.bee_side) == 0;
         let human_dead = world.living_mobile_ships_on_side(self.human_side) == 0;
+        if let Some(target) = self.target_ship {
+            let attacking_side = target.attacking_side;
+            let defender_side = if attacking_side == self.bee_side {
+                self.human_side
+            } else { self.bee_side };
+            let target_destroyed = world.ship(target.target_ship_id)
+                .is_some_and(|ship| ship.vitals.is_dead());
+            let attacker_eliminated =
+                world.living_mobile_ships_on_side(attacking_side) == 0 &&
+                !world.has_reserved_future_ships_on_side(attacking_side);
+            // Named target destruction wins even on a last-ship trade.
+            // Other approaching enemy ships never hold this objective open.
+            let winner = if target_destroyed {
+                attacking_side
+            } else if attacker_eliminated {
+                defender_side
+            } else { return Ok(None) };
+            let outcome = EpisodeTerminalResult {
+                winner_side: winner, timed_out: false,
+                extraction_victory: false, duration_seconds: self.elapsed_seconds,
+                bee_side_eliminated: bee_dead,
+                human_side_eliminated: human_dead,
+            };
+            self.completed = Some(outcome);
+            self.measurements.target_ship_successes += u64::from(target_destroyed);
+            self.measurements.target_ship_failures += u64::from(!target_destroyed);
+            world.frozen_after_elimination = true;
+            return Ok(Some(outcome));
+        }
         if let Some(survival) = &self.survival {
             let objective = survival.objective;
             let defender_is_bee = objective.defending_side == self.bee_side;
