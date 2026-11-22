@@ -240,9 +240,15 @@ function verifiedSuiteDefinition(value) {
     let definition;
     try {definition=JSON.parse(canonical);}
     catch {throw Error('Independent evaluation frozen suite definition is invalid JSON.');}
-    if(!record(definition)||
-        definition.suite_id!==value.suite_id||
-        (definition.runtime_sha256??null)!==(value.runtime_sha256??null))
+    // The frozen suite identifies logical benchmark conditions. Scheduled
+    // results may report a newer, separately identified simulation runtime.
+    const changed=value.runtime_changed_from_suite===true;
+    if(!record(definition)||definition.suite_id!==value.suite_id||
+        (changed
+            ?!SHA256.test(String(definition.runtime_sha256||''))||
+             !SHA256.test(String(value.runtime_sha256||''))||
+             definition.runtime_sha256===value.runtime_sha256
+            :(definition.runtime_sha256??null)!==(value.runtime_sha256??null)))
         throw Error('Independent evaluation frozen suite or runtime identity differs.');
     return canonical;
 }
@@ -260,6 +266,10 @@ function evaluationEvidence(value,policy,dispatchId) {
             (!Number.isSafeInteger(value.steps_completed)||value.steps_completed<0))||
         (Object.hasOwn(value,'runtime_sha256')&&
             (typeof value.runtime_sha256!=='string'||!SHA256.test(value.runtime_sha256)))||
+        (Object.hasOwn(value,'runtime_changed_from_suite')&&
+            value.runtime_changed_from_suite!==true)||
+        (value.runtime_changed_from_suite===true&&
+            typeof value.suite_definition_canonical!=='string')||
         (Object.hasOwn(value,'evaluated_at')&&
             (typeof value.evaluated_at!=='string'||!Number.isFinite(Date.parse(value.evaluated_at))||
              new Date(value.evaluated_at).toISOString()!==value.evaluated_at)))
@@ -273,6 +283,7 @@ function evaluationEvidence(value,policy,dispatchId) {
         successes:value.successes,
         ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{}),
         ...(value.runtime_sha256?{runtime_sha256:value.runtime_sha256}:{}),
+        ...(value.runtime_changed_from_suite===true?{runtime_changed_from_suite:true}:{}),
         ...(value.steps_completed!==undefined?{steps_completed:value.steps_completed}:{}),
         ...(value.evaluated_at?{evaluated_at:value.evaluated_at}:{}),
         ...(frozen!==undefined?{suite_definition_canonical:frozen}:{}),

@@ -33,10 +33,16 @@ def read_suite(file):
     return suite
 
 
-def evaluate(project, checkpoint, digest, config_file, suite, work, *, with_metrics=False):
-    with pinned_runtime("courier", suite, project):
-        return _evaluate(project, checkpoint, digest, config_file, suite, work,
-                         with_metrics=with_metrics)
+def evaluate(project, checkpoint, digest, config_file, suite, work, *, with_metrics=False,
+             current_runtime=False):
+    with pinned_runtime("courier", suite, project, use_current=current_runtime) as runtime_sha256:
+        outcome = _evaluate(project, checkpoint, digest, config_file, suite, work,
+                            with_metrics=with_metrics)
+    if current_runtime:
+        if not isinstance(outcome, dict):
+            raise ValueError("Scheduled Courier evaluation requires metrics.")
+        return {**outcome, "runtime_sha256": runtime_sha256}
+    return outcome
 
 
 def _evaluate(project, checkpoint, digest, config_file, suite, work, *, with_metrics=False):

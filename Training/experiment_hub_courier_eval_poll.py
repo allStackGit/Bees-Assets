@@ -39,7 +39,7 @@ def poll(args, suites):
         if config.resolve(strict=True) != config or not config.is_file():
             raise ValueError("Courier environment file is redirected or unavailable.")
         return evaluate(args.project_root, file, digest, config, suite, work,
-                        with_metrics=True)
+                        with_metrics=True, current_runtime=True)
 
     def find_checkpoint(job):
         if "final_checkpoint_sha256" in job:

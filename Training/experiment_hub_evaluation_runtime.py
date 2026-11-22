@@ -113,16 +113,21 @@ def describe(project, project_root=None):
 
 
 @contextmanager
-def pinned_runtime(project, suite, project_root=None):
-    """Reject a different method before loading a model or publishing a result."""
+def pinned_runtime(project, suite, project_root=None, *, use_current=False):
+    """Verify actual runtime stability; keep direct historical audits pinned.
+
+    Scheduled evaluations use the current compatible simulation and
+    attach its hash to each receipt independently of the logical suite.
+    """
     expected = suite.get("runtime_sha256")
-    if expected is None:
-        yield
+    if expected is None and not use_current:
+        yield None
         return
-    if suite_digest(describe(project, project_root)) != expected:
+    observed = suite_digest(describe(project, project_root))
+    if not use_current and observed != expected:
         raise ValueError("Evaluation runtime differs from the suite's pinned SHA-256.")
-    yield
-    if suite_digest(describe(project, project_root)) != expected:
+    yield observed
+    if suite_digest(describe(project, project_root)) != observed:
         raise ValueError("Evaluation runtime changed during evaluation; no receipt published.")
 
 

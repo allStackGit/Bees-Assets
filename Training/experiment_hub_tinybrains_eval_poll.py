@@ -87,7 +87,7 @@ def poll(args, suites):
             raise ValueError("TinyBrains checkpoint advanced during private copy; retry a stable snapshot.")
 
     def evaluated(job, file, digest, work, suite):
-        return evaluate_with_metrics(file, digest, suite, work)
+        return evaluate_with_metrics(file, digest, suite, work, current_runtime=True)
 
     def find_checkpoint(job):
         if "final_checkpoint_sha256" in job:

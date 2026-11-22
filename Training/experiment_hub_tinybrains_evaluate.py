@@ -121,7 +121,7 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
     return wins, trials
 
 
-def evaluate_with_metrics(checkpoint, digest, suite, work):
+def evaluate_with_metrics(checkpoint, digest, suite, work, *, current_runtime=False):
     """Evaluate a frozen checkpoint and reconcile all independent outcomes."""
     counts = {"win": 0, "loss": 0, "draw": 0}
 
@@ -131,7 +131,8 @@ def evaluate_with_metrics(checkpoint, digest, suite, work):
             raise ValueError("Invalid TinyBrains evaluation outcome.")
         counts[outcome] += 1
 
-    wins, trials = evaluate(checkpoint, digest, suite, work, on_result=observe)
+    with pinned_runtime("tinybrains", suite, use_current=current_runtime) as runtime_sha256:
+        wins, trials = _evaluate(checkpoint, digest, suite, work, on_result=observe)
     expected = 2 * len(suite["maps"]) * len(suite["seeds"])
     if trials != expected or wins != counts["win"] or sum(counts.values()) != trials:
         raise ValueError("Unexpected TinyBrains independent match trial counts.")
@@ -140,7 +141,7 @@ def evaluate_with_metrics(checkpoint, digest, suite, work):
         "loss_count": {"value": counts["loss"], "unit": "count"},
         "draw_count": {"value": counts["draw"], "unit": "count"},
         "score_rate": {"value": (wins + counts["draw"] / 2) / trials, "unit": "ratio"},
-    }}
+    }, **({"runtime_sha256": runtime_sha256} if current_runtime else {})}
 
 
 def main():

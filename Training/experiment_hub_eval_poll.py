@@ -166,14 +166,21 @@ def final_checkpoint(artifact_root, job, filename):
     return 10**16, file  # Greater than any supported running checkpoint ordinal.
 
 
-def evaluation_outcome(result, trials: int) -> tuple[int, dict]:
-    """Normalize legacy integer results and optional domain measurements."""
+def evaluation_outcome(result, trials: int) -> tuple[int, dict, str | None]:
+    """Normalize measurements and the observed evaluator runtime identity."""
+    runtime_sha256 = None
     if type(result) is int:
         successes, metrics = result, {}
-    elif isinstance(result, dict) and set(result) == {"successes", "metrics"}:
+    elif isinstance(result, dict) and set(result) in (
+            {"successes", "metrics"}, {"successes", "metrics", "runtime_sha256"}):
         successes, metrics = result["successes"], result["metrics"]
+        runtime_sha256 = result.get("runtime_sha256")
+        if runtime_sha256 is not None and (
+                not isinstance(runtime_sha256, str) or
+                not SHA256.fullmatch(runtime_sha256)):
+            raise ValueError("Invalid observed evaluation runtime fingerprint.")
     else:
-        raise ValueError("Evaluation must return successes or successes plus measurements.")
+        raise ValueError("Evaluation must return successes, measurements and optional observed runtime.")
     if type(successes) is not int or not 0 <= successes <= trials:
         raise ValueError("Invalid independent evaluation success count.")
     if not isinstance(metrics, dict) or len(metrics) > 24:
@@ -192,10 +199,11 @@ def evaluation_outcome(result, trials: int) -> tuple[int, dict]:
              (type(sample["value"]) is not int or not 0 <= sample["value"] < 2**53))):
             raise ValueError("Invalid independent evaluation measurement.")
         normalized[key] = {"value": sample["value"], "unit": sample["unit"]}
-    return successes, normalized
+    return successes, normalized, runtime_sha256
 
 
-def receipt_provenance(job: dict, ordinal: int, suite: dict, coordinate=None) -> dict:
+def receipt_provenance(job: dict, ordinal: int, suite: dict, coordinate=None,
+                       runtime_sha256=None) -> dict:
     """Record the tested checkpoint's training coordinate when available."""
     # A project adapter can provide the measured update stored inside the
     # exact copied checkpoint. Prefer that to possibly stale trainer status.
@@ -206,7 +214,13 @@ def receipt_provenance(job: dict, ordinal: int, suite: dict, coordinate=None) ->
               .isoformat(timespec="milliseconds").replace("+00:00", "Z")}
     if type(step) is int and 0 <= step <= 2**53 - 1:
         fields["steps_completed"] = step
-    if isinstance(suite.get("runtime_sha256"), str):
+    if runtime_sha256 is not None:
+        if not isinstance(runtime_sha256, str) or not SHA256.fullmatch(runtime_sha256):
+            raise ValueError("Invalid observed evaluation runtime identity.")
+        fields["runtime_sha256"] = runtime_sha256
+        if suite.get("runtime_sha256") not in (None, runtime_sha256):
+            fields["runtime_changed_from_suite"] = True
+    elif isinstance(suite.get("runtime_sha256"), str):
         fields["runtime_sha256"] = suite["runtime_sha256"]
     return fields
 
@@ -512,7 +526,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint,
                         save_cursor(state, saved)
                         return
                     result = evaluate_checkpoint(job, frozen, checkpoint_digest, work)
-                successes, measurements = evaluation_outcome(result, receipt_suite["trials"])
+                successes, measurements, runtime_sha256 = evaluation_outcome(result, receipt_suite["trials"])
             except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
                 if verified_checkpoint is not None:
                     try:
@@ -532,7 +546,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint,
                 "schema_version": 1, "suite_id": suite_id, "suite_sha256": digest, "dispatch_id": dispatch,
                 "checkpoint_sha256": checkpoint_digest, "trials": receipt_suite["trials"], "successes": successes,
                 **({"metrics": measurements} if measurements else {}),
-                **receipt_provenance(job, update, suite, coordinate),
+                **receipt_provenance(job, update, suite, coordinate, runtime_sha256),
             }, suite)}
             save_cursor(state, {**saved, "pending_receipt": pending})
             flush_receipt(args, receipt_suite, pending, digest)
@@ -769,7 +783,7 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint,
                         ) as work:
                             result = evaluate_checkpoint(
                                 job, frozen, checkpoint_digest, Path(work), suite)
-                        successes, measurements = evaluation_outcome(result, receipt_suite["trials"])
+                        successes, measurements, runtime_sha256 = evaluation_outcome(result, receipt_suite["trials"])
                         pending.append({"target": job, "receipt": receipt_with_suite_definition({
                             "schema_version": 1, "suite_id": sid,
                             "suite_sha256": definitions[sid],
@@ -778,7 +792,7 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint,
                             "trials": receipt_suite["trials"],
                             "successes": successes,
                             **({"metrics": measurements} if measurements else {}),
-                            **receipt_provenance(job, update, suite, coordinate),
+                            **receipt_provenance(job, update, suite, coordinate, runtime_sha256),
                         }, suite)})
             except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
                 if verified_checkpoint is not None and attempted_suite is not None:
