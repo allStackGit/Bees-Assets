@@ -12,7 +12,8 @@ const {ExperimentHub}=require('./experiment_hub_core');
 const {JobExporter}=require('./experiment_hub_job_export');
 const localServices=require('./experiment_hub_local_services');
 const {route:hubRoute}=require('./experiment_hub_admin');
-const {ReleaseStore}=require('./experiment_hub_releases');
+const {ReleaseStore,FRONTEND_PATHS,workerChangedPaths}=
+    require('./experiment_hub_releases');
 const {createAgentServer,AGENT_HOST,AGENT_PORT,activeTailnetAddress}=
     require('./experiment_hub_agent_listener');
 
@@ -91,7 +92,8 @@ function renderPage(html,runtime={}) {
         !normalized.slice(at+script.length).startsWith('\n<script>'))
         throw Error('Experiment Hub HTML script boundary changed; review before serving.');
     const versionAttributes=' data-generation="'+(runtime.generation||'')+
-        '" data-commit="'+(runtime.source_commit||'')+'"';
+        '" data-commit="'+(runtime.source_commit||'')+
+        '" data-frontend-revision="'+(runtime.frontend_revision||'')+'"';
     // Render the running version immediately. The browser poll enhances this
     // label but must not be required to make the build identity visible.
     const updated=runtime.updated_at&&Number.isFinite(Date.parse(runtime.updated_at))
@@ -102,7 +104,10 @@ function renderPage(html,runtime={}) {
             ?runtime.timestamp_kind==='activated'
                 ?' · Last updated: '+updated
                 :' · Source committed: '+updated
-            :' · Update time unavailable');
+            :' · Update time unavailable')+
+        (runtime.frontend_source_commit&&
+            runtime.frontend_source_commit!==runtime.source_commit
+                ?' · UI '+runtime.frontend_source_commit.slice(0,12):'');
     const versionPanel='<div class="hub-version" id="hub-version-status"'+
         versionAttributes+' role="status">'+versionLabel+'</div>';
     const panel='<div class="hub-standalone" id="hub-local-service-controls">'+
@@ -161,6 +166,46 @@ function renderPage(html,runtime={}) {
         +'\n<script src="/experiment-hub-services.js"></script>\n</body>\n</html>\n';
 }
 
+// Browser assets have a separate, immutable revision from the native worker
+// runtime. The coordinator serves one validated snapshot, swapped atomically
+// after the authenticated release publisher fetches the Git commit. No source
+// checkout update, service restart, or agent action is needed for this path.
+const FRONTEND_ASSETS=Object.freeze({
+    html:'experiments.html',
+    ui:'experiment_hub_ui.js',
+    servicesUi:'experiment_hub_local_services_ui.js',
+    beakerIcon:'experiment_hub_beaker.svg',
+});
+function frontendSnapshot(runtime,commit=null,checkout=path.resolve(__dirname,'..')) {
+    if(commit!==null&&!SHA.test(commit))throw Error('Invalid browser source commit.');
+    const assets={};
+    const hash=crypto.createHash('sha256');
+    for(const [key,file] of Object.entries(FRONTEND_ASSETS)) {
+        let value;
+        if(commit===null)value=fs.readFileSync(path.join(__dirname,file),'utf8');
+        else {
+            const output=spawnSync('git',['show',commit+':Training/'+file],{
+                cwd:checkout,encoding:'utf8',timeout:15000,maxBuffer:8*1024*1024,
+                windowsHide:true,
+            });
+            if(output.error||output.status!==0)
+                throw Error('Cannot load frontend '+file+' from fetched commit.');
+            value=output.stdout;
+        }
+        if(!value||Buffer.byteLength(value)>8*1024*1024)
+            throw Error('Frontend asset missing or unexpectedly large: '+file);
+        assets[key]=value;
+        hash.update(file+'\0').update(value);
+    }
+    const revision=hash.digest('hex');
+    return {
+        ...assets,
+        html:renderPage(assets.html,{...runtime,frontend_revision:revision,
+            frontend_source_commit:commit||runtime.source_commit}),
+        revision,source_commit:commit||runtime.source_commit,
+    };
+}
+
 function json(res,status,data) {
     const bytes=Buffer.from(JSON.stringify(data));
     res.writeHead(status,{
@@ -204,10 +249,8 @@ async function readJson(req) {
     return JSON.parse(raw||'{}');
 }
 
-function createAdminServer(hub,{html,ui,dataRoot,releases=null,runtime=null}={}) {
+function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null}={}) {
     const exporter=new JobExporter(dataRoot,hub);
-    const servicesUi=fs.readFileSync(path.join(__dirname,'experiment_hub_local_services_ui.js'),'utf8');
-    const beakerIcon=fs.readFileSync(path.join(__dirname,'experiment_hub_beaker.svg'),'utf8');
     return http.createServer(async(req,res)=>{
         const host=req.headers.host,origin=req.headers.origin;
         const expected=['127.0.0.1:'+PORT,'localhost:'+PORT];
@@ -220,18 +263,20 @@ function createAdminServer(hub,{html,ui,dataRoot,releases=null,runtime=null}={})
             const url=new URL(req.url,'http://localhost');
             const route=url.pathname;
             if(req.method==='GET'&&route==='/')
-                return sendFile(res,html,'text/html; charset=utf-8');
+                return sendFile(res,frontend.current.html,'text/html; charset=utf-8');
             if(req.method==='GET'&&route==='/experiment-hub-beaker.svg')
-                return sendFile(res,beakerIcon,'image/svg+xml');
+                return sendFile(res,frontend.current.beakerIcon,'image/svg+xml');
             if(req.method==='GET'&&route==='/experiment-hub-ui.js')
-                return sendFile(res,ui,'text/javascript; charset=utf-8');
+                return sendFile(res,frontend.current.ui,'text/javascript; charset=utf-8');
             if(req.method==='GET'&&route==='/experiment-hub-services.js')
-                return sendFile(res,servicesUi,'text/javascript; charset=utf-8');
+                return sendFile(res,frontend.current.servicesUi,'text/javascript; charset=utf-8');
             if(req.method==='GET'&&route==='/api/hub/software/version') {
                 const candidate=releases?.latest?.worker?.source_commit;
                 return json(res,200,{
                     ...runtime,
-                    pending_commit:SHA.test(candidate||'')&&
+                    frontend_revision:frontend.current.revision,
+                    frontend_commit:frontend.current.source_commit,
+                    pending_commit:frontend.backendPending&&SHA.test(candidate||'')&&
                         candidate!==runtime?.source_commit?candidate:null,
                 });
             }
@@ -323,11 +368,10 @@ async function main(argv=process.argv.slice(2)) {
         hub.addProject({id:'courier',name:'Courier Ants'});
     }
     const runtime=activeHubVersion(root);
-    const html=renderPage(fs.readFileSync(path.join(__dirname,'experiments.html'),'utf8'),
-        runtime);
-    const ui=fs.readFileSync(path.join(__dirname,'experiment_hub_ui.js'),'utf8');
+    const frontend={current:frontendSnapshot(runtime),
+        checkedSource:runtime.source_commit,backendPending:false};
     const releases=new ReleaseStore(root);
-    const admin=createAdminServer(hub,{html,ui,dataRoot:root,releases,runtime});
+    const admin=createAdminServer(hub,{frontend,dataRoot:root,releases,runtime});
     const worker=createAgentServer(()=>hub,AGENT_HOST,releases);
     const remoteWorker=tailnet?createAgentServer(()=>hub,tailnet,releases,root):null;
     async function listen(server,port,host) {
@@ -356,6 +400,29 @@ async function main(argv=process.argv.slice(2)) {
         releaseBusy=true;
         try {
             await releases.refresh();
+            // Update browser assets independently even when all native jobs
+            // are running. Git show reads the fetched object without changing
+            // the checkout used by the coordinator or native adapters.
+            const newest=releases.frontendSourceCommit;
+            if(newest&&newest!==frontend.checkedSource) {
+                try {
+                    const next=frontendSnapshot(runtime,newest,releases.sources.worker.path);
+                    frontend.checkedSource=newest;
+                    if(next.revision!==frontend.current.revision) {
+                        frontend.current=next;
+                        console.log('[hub-updates] Browser UI activated at '+newest.slice(0,12));
+                    }
+                }catch(error) {
+                    console.error('[hub-updates] Frontend activation: '+
+                        String(error.message||error));
+                }
+            }
+            const candidate=releases.latest.worker?.source_commit;
+            frontend.backendPending=Boolean(candidate&&
+                candidate!==runtime.source_commit&&
+                (await workerChangedPaths(releases.sources.worker.path,
+                    runtime.source_commit,candidate))
+                    .some(file=>!FRONTEND_PATHS.has(file)));
             const active=hub.state.jobs.some(job=>job.dispatch_id&&
                 !job.capacity_released_at&&
                 !['finished','failed','stopped','cancelled'].includes(job.status));
