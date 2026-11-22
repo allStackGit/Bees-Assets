@@ -210,6 +210,8 @@ pub struct NativeReinforcementGauges {
     pub timed_waves: usize,
     pub waiting_for_campaign_cue: usize,
     pub waiting_for_ship_death: usize,
+    /// Source map exit or real WarpGate delivery on a named ship.
+    pub waiting_for_ship_exit: usize,
     /// Authored physical objective deaths (not ship elimination).
     pub waiting_for_map_object_destruction: usize,
     pub waiting_for_mining_asteroid_depletion: usize,
@@ -227,6 +229,7 @@ impl NativeReinforcementGauges {
         self.timed_waves += other.timed_waves;
         self.waiting_for_campaign_cue += other.waiting_for_campaign_cue;
         self.waiting_for_ship_death += other.waiting_for_ship_death;
+        self.waiting_for_ship_exit += other.waiting_for_ship_exit;
         self.waiting_for_map_object_destruction += other.waiting_for_map_object_destruction;
         self.waiting_for_mining_asteroid_depletion += other.waiting_for_mining_asteroid_depletion;
         self.idle_ticks_skipped += other.idle_ticks_skipped;
@@ -265,6 +268,8 @@ pub struct NativeScriptedQueueMeasurements {
     /// Exclusive queue categories sampled from real roster and World time.
     pub waiting_for_campaign_cue: usize,
     pub waiting_for_ship_death: usize,
+    #[serde(default)]
+    pub waiting_for_ship_exit: usize,
     #[serde(default)]
     pub waiting_for_map_object_destruction: usize,
     #[serde(default)]
@@ -325,6 +330,7 @@ impl NativeScriptedQueueMeasurements {
         self.pending_orders += other.pending_orders;
         self.waiting_for_campaign_cue += other.waiting_for_campaign_cue;
         self.waiting_for_ship_death += other.waiting_for_ship_death;
+        self.waiting_for_ship_exit += other.waiting_for_ship_exit;
         self.waiting_for_map_object_destruction += other.waiting_for_map_object_destruction;
         self.waiting_for_mining_asteroid_depletion += other.waiting_for_mining_asteroid_depletion;
         self.waiting_for_deployment += other.waiting_for_deployment;
