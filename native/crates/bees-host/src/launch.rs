@@ -2631,8 +2631,22 @@ fn require_replayable_remote_host(config: &RunConfig) -> io::Result<()> {
 
 fn run_session(
     config_path: &Path, play: bool, view: bool, output: Option<PathBuf>,
-    capture: Option<PathBuf>, mut replay_inputs: Option<PathBuf>,
+    capture: Option<PathBuf>, replay_inputs: Option<PathBuf>,
     mission: Option<CampaignMission<'_>>,
+) -> Result<(), Box<dyn Error>> {
+    run_session_with_queen_access(
+        config_path, play, view, output, capture, replay_inputs, mission, false,
+    )
+}
+
+/// Challenge completion is a player-side FreePlay entitlement, not a
+/// simulation flag or a second campaign ledger. The library reads only
+/// committed original Challenge mission outcomes before entering this
+/// session, including when the player reopens Squad Maker after a rematch.
+fn run_session_with_queen_access(
+    config_path: &Path, play: bool, view: bool, output: Option<PathBuf>,
+    capture: Option<PathBuf>, mut replay_inputs: Option<PathBuf>,
+    mission: Option<CampaignMission<'_>>, bee_queen_unlocked: bool,
 ) -> Result<(), Box<dyn Error>> {
     let mut config_path = config_path.canonicalize()?;
     let mut replay_number = 0_u64;
@@ -2672,7 +2686,7 @@ fn run_session(
             let save_root=native_library_save_root(battle_output.as_deref())
                 .ok_or_else(||invalid("squad maker requires a native game library"))?;
             let Some(choice)=fleet_builder::choose_for_preferred_side(
-                save_root,restart.preferred_player_side,
+                save_root, restart.preferred_player_side, bee_queen_unlocked,
             )? else {
                 // Cancelling Squad Maker returns to the library rather
                 // than restoring the already-retired CombatWorld.
@@ -6296,6 +6310,13 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 Ok::<String, Box<dyn Error>>(format!("  [Career {complete}/{total}]"))
             }
         }).collect::<Result<Vec<_>,_>>()?;
+        // The source's final successful Challenge level reveals the Queen
+        // for Bee FreePlay. Read all ten immutable mission completions from
+        // the EXISTING career ledger; no independently mutable unlock file.
+        let bee_queen_unlocked = completed_by_campaign
+            .get("original-human-challenge")
+            .is_some_and(|completed| (0..10).all(|level|
+                completed.contains(&format!("challenge-{level:02}"))));
         let unlocked_games = library.games.iter().map(|game| -> io::Result<bool> {
             if let Some(gate) = game.unlock_after_playtime.as_ref() {
                 return read_fish_tank_unlocked(&fish_tank_unlock_file(
@@ -6495,10 +6516,12 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                         "kind": "native_generated_battle_recovered",
                         "source": source, "run": output, "remote_host": false,
                     }));
-                    return run_session(&source, true, true,
-                        Some(output), None, None, None);
+                    return run_session_with_queen_access(&source, true, true,
+                        Some(output), None, None, None, bee_queen_unlocked);
                 }
-                let Some(choice) = fleet_builder::choose(save_root)? else {
+                let Some(choice) = fleet_builder::choose(
+                    save_root, bee_queen_unlocked,
+                )? else {
                     return Ok::<(), Box<dyn Error>>(());
                 };
                 let output = new_library_battle_output(save_root, fleet_builder::GAME_ID)?;
@@ -6513,7 +6536,10 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     "source": source,
                     "game_id": fleet_builder::GAME_ID,
                 }));
-                run_session(&source, true, true, Some(output), None, None, None)
+                run_session_with_queen_access(
+                    &source, true, true, Some(output), None, None, None,
+                    bee_queen_unlocked,
+                )
             })()
         } else if reusing_fleet {
             (|| {
@@ -6542,8 +6568,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 )? {
                     // Existing interrupted game owns its frozen start and
                     // must be completed before another new fleet is minted.
-                    return run_session(&recovery_source, true, true,
-                        Some(output), None, None, None);
+                    return run_session_with_queen_access(&recovery_source, true, true,
+                        Some(output), None, None, None, bee_queen_unlocked);
                 }
                 let output = new_library_battle_output(save_root, fleet_builder::GAME_ID)?;
                 let start = QuickBattleStart::capture(source, false)?
@@ -6554,7 +6580,10 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     "source": source, "run": output,
                     "source_recording": recorded.trace,
                 }));
-                run_session(source, true, true, Some(output), None, None, None)
+                run_session_with_queen_access(
+                    source, true, true, Some(output), None, None, None,
+                    bee_queen_unlocked,
+                )
             })()
         } else if reusing_level {
             (|| {
