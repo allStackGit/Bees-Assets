@@ -456,9 +456,13 @@ fn place_reinforcement_formation(
                     point.x <= bounds.max.x && point.y >= bounds.min.y &&
                     point.y <= bounds.max.y);
         }
-        let point = chosen.ok_or(
-            "Reinforcement fallback has no walkable Pathfinder destination",
-        )?;
+        // Source FindNearestIndividualFormationSlot returns the requested
+        // position if no valid destination exists anywhere on the map.
+        // The canonical physical world then handles any actual contact.
+        let point = chosen.unwrap_or(requested);
+        if !point.is_finite() {
+            return Err("Reinforcement fallback position is nonfinite");
+        }
         placed.push((id, point, half));
     }
     for (id, point, _) in placed {
@@ -981,26 +985,16 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                     position.x + radius > bounds.max.x ||
                     position.y - radius < bounds.min.y ||
                     position.y + radius > bounds.max.y;
-                let has_clearance = self.metadata.current_path_clearance(ship_id);
-                let pathfinder_valid = has_clearance.is_some_and(|required| {
-                    let local = self.metadata.navigation.map_frame()
-                        .world_to_level(position);
-                    position.x >= bounds.min.x && position.x <= bounds.max.x &&
-                    position.y >= bounds.min.y && position.y <= bounds.max.y &&
-                    self.metadata.navigation.clearance()
-                        .can_occupy_cell(local, required)
-                });
-                // New source-authored scenes use the exact grid clearance
-                // contract. Older imports without a source ship clearance
-                // retain the previous geometric safety preflight.
-                let valid = if has_clearance.is_some() {
-                    pathfinder_valid
-                } else {
-                    !(outside && !enters_map) &&
+                // Source SetStartingPosition owns the final placement for
+                // ships with authenticated clearance, including its explicit
+                // requested-slot fallback when the map is fully obstructed.
+                // Do not reject that source-authored overlap a second time.
+                // Legacy captures lacking clearance retain geometric checks.
+                let valid = self.metadata.current_path_clearance(ship_id).is_some() ||
+                    (!(outside && !enters_map) &&
                         !obstacles.iter().any(|obstacle|
                             obstacle.navigation_closest_point(position).is_some_and(|point|
-                                (point - position).length_squared() < radius * radius))
-                };
+                                (point - position).length_squared() < radius * radius)));
                 if !position.is_finite() || !valid {
                     return Err("Reinforcement authored spawn intersects the physical map or obstacle");
                 }
