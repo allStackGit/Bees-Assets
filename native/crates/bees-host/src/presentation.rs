@@ -170,6 +170,10 @@ pub struct NativeRenderWorldView<'a> {
     /// Source GameState summary (ships lost, safely returned, credited
     /// kills); owned by the same checkpoint as live physical combat.
     pub player_match_counts: Option<(u64, u64, u64)>,
+    /// Independent score of the second genuinely player-controlled side,
+    /// never an AI surrogate or a disclosure to the other player.
+    pub opponent_score: Option<(i32, i64)>,
+    pub opponent_match_counts: Option<(u64, u64, u64)>,
     pub campaign_objective: Option<bees_gameplay::campaign_dialogue::CampaignObjectiveKind>,
     /// Source Uranus III rescue identity; never a second ship lifecycle.
     pub rescue_barges: Option<[i64; 3]>,
@@ -193,6 +197,20 @@ pub struct NativeRenderWorldView<'a> {
 }
 
 impl<'a> NativeRenderWorldView<'a> {
+    /// Read only the scoreboard authorized for the requested faction.
+    /// Live LAN result receipts call this per authenticated peer.
+    pub fn player_match_for_side(&self, side: i32)
+        -> Option<(i64, Option<(u64, u64, u64)>)>
+    {
+        if let Some((owner, score)) = self.campaign_score {
+            if owner == side {
+                return Some((score, self.player_match_counts));
+            }
+        }
+        self.opponent_score.filter(|(owner, _)| *owner == side)
+            .map(|(_, score)| (score, self.opponent_match_counts))
+    }
+
     /// One source-scoped player ownership predicate for selection, squad
     /// shortcuts, fog and the minimap. A different side's ships cannot
     /// inherit this viewer's UI access just because another controller

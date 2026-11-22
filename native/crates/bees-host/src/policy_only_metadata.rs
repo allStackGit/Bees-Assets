@@ -1268,6 +1268,15 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             (row.ships_lost, row.ships_returned, row.ships_destroyed_by_player))
     }
 
+    fn opponent_score_snapshot(&self) -> Option<(i32, i64)> {
+        self.fleet.opponent_score_snapshot()
+    }
+
+    fn opponent_match_counts(&self) -> Option<(u64, u64, u64)> {
+        self.fleet.opponent_match_counts().map(|row|
+            (row.ships_lost, row.ships_returned, row.ships_destroyed_by_player))
+    }
+
     fn observe_fire_barge_chain_damage(&mut self, killer_ship_id: i64, tsv_loss: i32) {
         self.fleet.record_fire_barge_chain_damage(killer_ship_id, tsv_loss);
     }

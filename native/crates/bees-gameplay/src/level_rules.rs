@@ -85,6 +85,10 @@ pub trait NativeLevelRewardMetadata {
     /// kills credited to the player. A None value is not a zero count.
     fn player_match_counts(&self) -> Option<(u64, u64, u64)> { None }
 
+    /// Second real player faction, only for dual-controller matches.
+    fn opponent_score_snapshot(&self) -> Option<(i32, i64)> { None }
+    fn opponent_match_counts(&self) -> Option<(u64, u64, u64)> { None }
+
     /// A death-triggered Fire Barge explosion can credit the original
     /// external killer for damage to its allies. Persistent FleetShip
     /// accounting uses the event processor's existing death-time owner.

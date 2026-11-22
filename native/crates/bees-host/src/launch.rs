@@ -7089,6 +7089,19 @@ fn run_battle(
                 source.fleet.enable_campaign_score(score_side);
             }
         }
+        // A dual-controller native Level can present the other real
+        // commander's match score without turning the AI side of ordinary
+        // single-player games into a fictitious second player.
+        if (play || view || env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some()) {
+            if let Some((owner, _)) = source.fleet.campaign_score_snapshot() {
+                if source.source_squads.iter().any(|squad|
+                    squad.side == 3 - owner &&
+                    squad.player_permissions.user_controlled
+                ) {
+                    source.fleet.enable_opponent_match_score();
+                }
+            }
+        }
         source_levels.push(source);
         source_sides.push(sides);
     }
@@ -9312,6 +9325,17 @@ fn run_battle(
             .and_then(|world| world.state.metadata.fleet.campaign_score_snapshot())
             .map(|(side, _)| side)
     );
+    let opponent_match = if !user_closed && failed_window.is_none() &&
+        cleanup_errors.is_empty() && completed_episodes == [1] &&
+        config.levels.len() == 1 && replay_inputs.is_none()
+    {
+        host.simulation().world(0)
+            .and_then(|world| world.state.metadata.fleet.opponent_score_snapshot())
+    } else { None };
+    let opponent_match_counts = opponent_match.and_then(|_|
+        host.simulation().world(0)
+            .and_then(|world| world.state.metadata.fleet.opponent_match_counts())
+    );
     // Include all current episode admissions as well as those from
     // previously recycled worlds. This covers independent multi-episode
     // training and fixed-seed evaluation without requiring hot-path logs.
@@ -9518,6 +9542,9 @@ fn run_battle(
         "player_score": player_score,
         "scored_player_side": scored_player_side,
         "player_match_counts": player_match_counts,
+        "opposing_scored_side": opponent_match.map(|(side, _)| side),
+        "opposing_player_score": opponent_match.map(|(_, score)| score),
+        "opposing_player_match_counts": opponent_match_counts,
         "aborted_worlds": status.aborted_worlds,
         "failed_worlds": status.failed_worlds,
         "running_worlds": status.running_worlds,
