@@ -2017,6 +2017,21 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
 }
 
 impl NativePlayerAuthority for NativePolicyOnlyMetadata {
+    fn player_ship_battle_statistics(&self, ship_id: i64)
+        -> Option<bees_gameplay::player_inputs::NativeShipBattleStatistics>
+    {
+        let stats = self.fleet.combat_stats(ship_id)?;
+        let minerals = self.fleet.get(ship_id)
+            .map(|ship| ship.minerals_mined_this_level);
+        Some(bees_gameplay::player_inputs::NativeShipBattleStatistics {
+            observed_turret_shots: stats.observed_turret_shots,
+            source_kills: stats.source_kills,
+            enemy_tsv_damage_done: stats.enemy_tsv_damage_done,
+            tsv_damage_received: stats.tsv_damage_received,
+            minerals_mined_this_level: minerals,
+        })
+    }
+
     fn player_fog_of_war_enabled(&self) -> bool {
         self.activate_fog_of_war == Some(true)
     }
