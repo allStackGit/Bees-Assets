@@ -915,6 +915,109 @@ impl CampaignProgress<'_> {
         }).collect()
     }
 
+    /// Original Ships.GetShipRanking compares living FleetShips only,
+    /// independently per side. Equal values receive the first shared rank
+    /// (1,1,3), never an arbitrary ship ID tie-breaker. Source-authored
+    /// unplayed ships and fresh purchases participate with zero career
+    /// counts. No rank is asserted when old receipts lack the information
+    /// needed to compare the entire side's fleet.
+    pub fn fleet_ranking_rows_with_source(
+        &self, source: &[(i32, i64, i64, u8)],
+    ) -> [Vec<String>; 6] {
+        #[derive(Clone, Copy)]
+        struct Candidate<'a> {
+            id: i64,
+            side: i32,
+            record: Option<&'a FleetProgress>,
+        }
+        let purchased = self.purchases.iter().map(|(side, ship)|
+            (ship.fleet_ship_id, *side)).collect::<HashMap<_, _>>();
+        let authored = self.authored_roster.iter().map(|(&id, owner)|
+            (id, owner.side)).collect::<HashMap<_, _>>();
+        let imported = source.iter().map(|&(side, id, _, _)|
+            (id, side)).collect::<HashMap<_, _>>();
+        let mut ids = self.fleet.keys().copied()
+            .chain(purchased.keys().copied())
+            .chain(authored.keys().copied())
+            .chain(imported.keys().copied()).collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids.dedup();
+        let candidates = ids.into_iter().filter_map(|id| {
+            let record = self.fleet.get(&id);
+            if record.is_some_and(|ship| ship.is_dead) { return None; }
+            let side = record.map(|record| record.side)
+                .or_else(|| purchased.get(&id).copied())
+                .or_else(|| authored.get(&id).copied())
+                .or_else(|| imported.get(&id).copied())?;
+            matches!(side, 1 | 2).then_some(Candidate { id, side, record })
+        }).collect::<Vec<_>>();
+        let score = |entry: &Candidate<'_>, metric: usize| -> (u64, u64) {
+            let record = entry.record;
+            match metric {
+                0 => (record.map_or(0, |item| item.combat.observed_turret_shots), 1),
+                1 => (record.map_or(0, |item| item.combat.enemy_tsv_damage_done), 1),
+                2 => (record.map_or(0, |item| item.combat.tsv_damage_received), 1),
+                3 => (record.and_then(|item| item.combat.source_kills).unwrap_or(0), 1),
+                4 => record.filter(|item| item.battles_fought > 0)
+                    .map_or((0, 1), |item| (item.battles_won, item.battles_fought)),
+                _ => (record.map_or(0, |item| item.minerals_mined), 1),
+            }
+        };
+        let compare = |a: (u64, u64), b: (u64, u64)| ->
+            std::cmp::Ordering {
+            (u128::from(a.0) * u128::from(b.1))
+                .cmp(&(u128::from(b.0) * u128::from(a.1)))
+        };
+        std::array::from_fn(|metric| {
+            let missing = self.battles_without_fleet_data > 0 ||
+                (metric <= 3 && candidates.iter().any(|ship| ship.record.is_some_and(
+                    |record| !record.combat_history_complete ||
+                        (metric == 3 && record.combat.source_kills.is_none())
+                )));
+            if missing {
+                return vec![
+                    "Historical FleetShip records are incomplete".to_owned(),
+                    "Ranking requires complete comparable battle receipts".to_owned(),
+                ];
+            }
+            let mut ranked = candidates.clone();
+            ranked.sort_unstable_by(|a, b|
+                a.side.cmp(&b.side)
+                    .then_with(|| compare(score(b, metric), score(a, metric)))
+                    .then_with(|| a.id.cmp(&b.id))
+            );
+            let mut rows = Vec::with_capacity(ranked.len());
+            let mut previous_side = 0;
+            let mut previous_score = (0_u64, 1_u64);
+            let mut rank = 0;
+            let mut members_in_side = 0;
+            for candidate in ranked {
+                let value = score(&candidate, metric);
+                if candidate.side != previous_side {
+                    rank = 1;
+                    members_in_side = 0;
+                } else if compare(value, previous_score) != std::cmp::Ordering::Equal {
+                    rank = members_in_side + 1;
+                }
+                let label = self.fleet_ship_name(candidate.id)
+                    .map(|name| format!(" ({name})")).unwrap_or_default();
+                let amount = if metric == 4 {
+                    let percent = value.0 as f64 / value.1 as f64 * 100.0;
+                    format!("W{}/{} ({percent:.1}%)", value.0,
+                        candidate.record.map_or(0, |item| item.battles_fought))
+                } else { value.0.to_string() };
+                rows.push(format!(
+                    "S{}  Rank {}  FleetShip #{}{}  {}",
+                    candidate.side, rank, candidate.id, label, amount,
+                ));
+                previous_side = candidate.side;
+                previous_score = value;
+                members_in_side += 1;
+            }
+            rows
+        })
+    }
+
     pub fn fleet_rows(&self) -> Vec<String> {
         self.fleet_rows_with_source(&[])
     }
