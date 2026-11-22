@@ -322,13 +322,13 @@ def package_game_library(
             if data.get("library_schema") != 1 or not isinstance(data.get("games"), list):
                 raise ValueError("Native game library schema is invalid")
             for game in data["games"]:
-                if game["kind"] not in ("campaign", "battle"):
+                if game["kind"] not in ("campaign", "challenge", "battle"):
                     raise ValueError("Unknown native game library item")
                 game["config"] = catalog_config(game["config"], "game")
                 pending.append(((PurePosixPath(path.parent.as_posix()) /
                                  game["config"]).as_posix(),
-                                game["kind"] if game["kind"] == "campaign" else "run"))
-        elif kind == "campaign":
+                                game["kind"] if game["kind"] in ("campaign", "challenge") else "run"))
+        elif kind in ("campaign", "challenge"):
             for battle in data["battles"]:
                 battle["config"] = catalog_config(battle["config"], "mission")
                 pending.append(((PurePosixPath(path.parent.as_posix()) /
@@ -414,7 +414,7 @@ def package_game_library(
         output = (destination / "native-library.json"
                   if kind == "library" else destination / path)
         output.parent.mkdir(parents=True, exist_ok=True)
-        if kind in ("run", "campaign", "library"):
+        if kind in ("run", "campaign", "challenge", "library"):
             output.write_text(
                 json.dumps(data, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
@@ -691,13 +691,13 @@ def verify_native_package(directory: Path) -> dict:
                 raise ValueError("invalid packaged native library")
             for item in data["games"]:
                 game_kind = item["kind"]
-                if game_kind not in ("campaign", "battle"):
+                if game_kind not in ("campaign", "challenge", "battle"):
                     raise ValueError("unsupported packaged native game kind")
                 pending.append((
                     owned_link(file, item["config"], "game configuration"),
-                    "campaign" if game_kind == "campaign" else "run",
+                    game_kind if game_kind in ("campaign", "challenge") else "run",
                 ))
-        elif kind == "campaign":
+        elif kind in ("campaign", "challenge"):
             for item in data["battles"]:
                 pending.append((owned_link(file, item["config"], "mission"), "run"))
                 mission = item.get("mission") or {}
