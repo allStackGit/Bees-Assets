@@ -1340,6 +1340,11 @@ impl NativeRemotePlay {
             "protocol": 1,
             "world_id": view.world_id.0,
             "episode_revision": view.episode_revision,
+            // The final reliable receipt must stand on its own after
+            // recovery: a lossy world_state may never have reached a peer.
+            // Mission identity is public; private campaign rewards remain
+            // in the separately authorized campaign receipt.
+            "campaign_mission": view.campaign_objective,
             "winner_side": result.winner_side,
             "label": crate::presentation::battle_outcome_label(result),
             "reason": crate::presentation::battle_outcome_reason(view, result),
