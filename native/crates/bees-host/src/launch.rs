@@ -118,6 +118,9 @@ struct LevelConfig {
     survival: Option<SurvivalConfig>,
     demolition: Option<DemolitionConfig>,
     escort: Option<EscortConfig>,
+    /// Physical named-hull objective in the shared CombatWorld.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    target_ship: Option<TargetShipConfig>,
     campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
     #[serde(default)]
     reinforcements: Vec<ReinforcementConfig>,
@@ -239,6 +242,13 @@ struct DemolitionConfig {
     attacking_side: i32,
     target_map_object_id: i64,
     seconds: f32,
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct TargetShipConfig {
+    attacking_side: i32,
+    target_ship_id: i64,
 }
 
 /// A named mobile ship must reach the existing physical extraction zone
@@ -760,6 +770,11 @@ fn make_setup(
             escorted_ship_id: objective.escorted_ship_id,
             seconds: objective.seconds,
         }),
+        target_ship: level.target_ship.map(|objective|
+            bees_sim::episode_terminal::TargetShipObjective {
+                attacking_side: objective.attacking_side,
+                target_ship_id: objective.target_ship_id,
+            }),
         campaign_dialogue: level.campaign_dialogue,
         campaign_codex: None,
         reinforcements: level.reinforcements.iter().map(|wave| {
@@ -1039,6 +1054,10 @@ fn gameplay_config_sha256(
         level.demolition.map(|objective| (level.world_id, objective)))
         .collect::<Vec<_>>();
     if !demolition.is_empty() { inputs["demolition"] = json!(demolition); }
+    let target_ships = config.levels.iter().filter_map(|level|
+        level.target_ship.map(|objective| (level.world_id, objective)))
+        .collect::<Vec<_>>();
+    if !target_ships.is_empty() { inputs["target_ships"] = json!(target_ships); }
     let escort = config.levels.iter().filter_map(|level|
         level.escort.map(|objective| (level.world_id, objective)))
         .collect::<Vec<_>>();
