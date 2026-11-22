@@ -19,6 +19,12 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
         // Scout report has finished; deferred real source reinforcements
         // and scripted orders can now observe this one committed cue.
         CampaignCue::PlutoAnomalyScoutReportComplete => &[],
+        CampaignCue::PlutoAnomalyGunshipArrived => &[
+            ("Tom", "Lieutenant Tom here. Scout's report confirmed. My Gunship has arrived, Commander."),
+            ("Tom", "The unidentified vessel hasn't responded to our warnings."),
+            ("Samuel", "Commander, the new Gunship is ready for your orders."),
+        ],
+        CampaignCue::PlutoAnomalyGunshipBriefingComplete => &[],
         CampaignCue::PlutoAnomalyHoneybeeDestroyed => &[
             ("Tom", "Uh, Commander? Are you seeing this?"),
             ("Samuel", "Commander, more unidentified vessels are approaching."),
