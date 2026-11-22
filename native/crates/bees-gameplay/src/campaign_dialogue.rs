@@ -135,6 +135,10 @@ pub enum CampaignCue {
     NeptuneProductionWave { number: u32, line: u8 },
     NeptuneProductionEnding { last_ship_retreated: bool, player_victory: bool },
     PlutoEvacuationBriefing,
+    /// Original Pluto IV combat callouts come from actual Leafcutter
+    /// SplitterShot creation and YellowJacket ship contact, respectively.
+    PlutoEvacuationSplitterShot,
+    PlutoEvacuationYellowJacketHit,
     PlutoEvacuationComplete { personnel_saved: u32, shield_health: i32, shield_max: i32 },
     UranusNewThreatBriefing,
     UranusNewThreatBargeLost,
@@ -194,7 +198,13 @@ enum DialogueMode {
     NeptunePressingForward { has_factory: bool },
     NeptuneSeizeMeans,
     NeptuneProduction { waves_reported: u32 },
-    PlutoEvacuation { protected_ship_id: i64 },
+    PlutoEvacuation {
+        protected_ship_id: i64,
+        #[serde(default)] splitter_seen: bool,
+        #[serde(default)] splitter_reported: bool,
+        #[serde(default)] yellow_jacket_contact_seen: bool,
+        #[serde(default)] yellow_jacket_contact_reported: bool,
+    },
     UranusNewThreat {
         barges: [i64; 3], has_cruiser: bool,
         loss_reported: bool, charge_observed: bool, charge_reported: bool,
@@ -323,7 +333,11 @@ impl CampaignDialogue {
                 CampaignCue::NeptuneProductionBriefing,
             ),
             CampaignDialogueSpec::PlutoEvacuation { protected_ship_id, .. } => (
-                DialogueMode::PlutoEvacuation { protected_ship_id },
+                DialogueMode::PlutoEvacuation {
+                    protected_ship_id,
+                    splitter_seen: false, splitter_reported: false,
+                    yellow_jacket_contact_seen: false, yellow_jacket_contact_reported: false,
+                },
                 CampaignCue::PlutoEvacuationBriefing,
             ),
             CampaignDialogueSpec::UranusNewThreat { barges, has_cruiser, .. } => (
@@ -408,8 +422,8 @@ impl CampaignDialogue {
                 true,
             (DialogueMode::NeptuneProduction { .. },
                 DialogueMode::NeptuneProduction { .. }) => true,
-            (DialogueMode::PlutoEvacuation { protected_ship_id: saved },
-                DialogueMode::PlutoEvacuation { protected_ship_id: authored }) =>
+            (DialogueMode::PlutoEvacuation { protected_ship_id: saved, .. },
+                DialogueMode::PlutoEvacuation { protected_ship_id: authored, .. }) =>
                 saved == authored,
             (DialogueMode::UranusNewThreat {
                 barges: saved, has_cruiser: saved_cruiser, ..
@@ -565,13 +579,32 @@ impl CampaignDialogue {
             (DialogueMode::NeptunePressingForward { has_factory: authored },
                 CampaignCue::NeptunePressingForwardDefeat { has_factory }) =>
                 sequence == 1 && *authored == has_factory,
-            (DialogueMode::PlutoEvacuation { .. },
-                CampaignCue::PlutoEvacuationBriefing) => sequence == 0,
-            (DialogueMode::PlutoEvacuation { .. },
-                CampaignCue::PlutoEvacuationComplete {
-                    personnel_saved, shield_health, shield_max,
-                }) => sequence == 1 && personnel_saved <= 60 &&
-                    shield_max > 0 && (0..=shield_max).contains(&shield_health),
+            (DialogueMode::PlutoEvacuation {
+                splitter_reported: false, yellow_jacket_contact_reported: false,
+                ..
+            }, CampaignCue::PlutoEvacuationBriefing) => sequence == 0,
+            (DialogueMode::PlutoEvacuation {
+                splitter_seen: true, splitter_reported: true,
+                yellow_jacket_contact_reported, ..
+            }, CampaignCue::PlutoEvacuationSplitterShot) =>
+                sequence == 1 + u32::from(*yellow_jacket_contact_reported),
+            (DialogueMode::PlutoEvacuation {
+                yellow_jacket_contact_seen: true,
+                yellow_jacket_contact_reported: true,
+                splitter_reported, ..
+            }, CampaignCue::PlutoEvacuationYellowJacketHit) =>
+                sequence == 1 + u32::from(*splitter_reported),
+            (DialogueMode::PlutoEvacuation {
+                splitter_seen, splitter_reported,
+                yellow_jacket_contact_seen, yellow_jacket_contact_reported, ..
+            }, CampaignCue::PlutoEvacuationComplete {
+                personnel_saved, shield_health, shield_max,
+            }) => sequence == 1 + u32::from(*splitter_reported) +
+                    u32::from(*yellow_jacket_contact_reported) &&
+                (!*splitter_reported || *splitter_seen) &&
+                (!*yellow_jacket_contact_reported || *yellow_jacket_contact_seen) &&
+                personnel_saved <= 60 &&
+                shield_max > 0 && (0..=shield_max).contains(&shield_health),
             (DialogueMode::UranusOffensive {
                 discovered: false, hit_seen: false,
                 hit_reported: false, destroyed_reported: false, ..
@@ -759,7 +792,7 @@ impl CampaignDialogue {
                         world.ship(*id).is_some_and(|ship| !ship.vitals.is_dead())),
                     has_cruiser: *has_cruiser,
                 },
-            (DialogueMode::PlutoEvacuation { protected_ship_id }, _) => {
+            (DialogueMode::PlutoEvacuation { protected_ship_id, .. }, _) => {
                 let status = survival.expect("Pluto evacuation requires survival");
                 // The protected hull may already have been retired from
                 // the active World when its lethal terminal event closed
@@ -956,6 +989,42 @@ impl CampaignDialogue {
             {
                 *honeybee_destroyed = true;
                 return Some(CampaignCue::PlutoAnomalyHoneybeeDestroyed);
+            }
+            return None;
+        }
+        if let DialogueMode::PlutoEvacuation {
+            splitter_seen, splitter_reported,
+            yellow_jacket_contact_seen, yellow_jacket_contact_reported, ..
+        } = &mut self.mode {
+            // Source Pluto4BluerPastures watches the first REAL
+            // SplitShotProjectile pool creation and the first
+            // YellowJacket.ContactedShip. Record both physical events
+            // before publishing either cue, so two triggers in one
+            // fixed step are delivered exactly once across subsequent
+            // steps and durable campaign recovery.
+            if !*splitter_seen {
+                *splitter_seen = world.events().iter().any(|event|
+                    match event {
+                        bees_sim::combat_world::CombatEvent::GameWeaponFired {
+                            ship_id, slot, ..
+                        } |
+                        bees_sim::combat_world::CombatEvent::PolicyWeaponFired {
+                            ship_id, slot, ..
+                        } => world.weapon_projectile_type(*ship_id, *slot) == Some(9),
+                        _ => false,
+                    });
+            }
+            *yellow_jacket_contact_seen |= world.events().iter().any(|event|
+                matches!(event,
+                    bees_sim::combat_world::CombatEvent::YellowJacketDetonated { .. })
+            );
+            if *splitter_seen && !*splitter_reported {
+                *splitter_reported = true;
+                return Some(CampaignCue::PlutoEvacuationSplitterShot);
+            }
+            if *yellow_jacket_contact_seen && !*yellow_jacket_contact_reported {
+                *yellow_jacket_contact_reported = true;
+                return Some(CampaignCue::PlutoEvacuationYellowJacketHit);
             }
             return None;
         }
