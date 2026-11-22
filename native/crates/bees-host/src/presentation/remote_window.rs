@@ -1874,7 +1874,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     artwork: &RemoteArtwork, show_art: bool, show_weapon_ranges: bool,
     combat_hud_draws: &mut [u64; 7], obstacle_hull_draws: &mut u64,
     map_object_health_bars: &mut u64,
-    minimap_ship_markers: &mut u64, minimap_objective_markers: &mut u64,
+    minimap_ship_markers: &mut u64, minimap_terrain_markers: &mut u64,
+    minimap_objective_markers: &mut u64,
     fog_masked_pixels: &mut u64) {
     // F6 avoids allocating or clearing a second per-frame art layer,
     // while normal mode reuses the exact local game sprite raster.
@@ -2165,11 +2166,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             pixels, state, camera, &highlighted, visual, fraction,
         );
         *minimap_ship_markers += ships;
+        *minimap_terrain_markers += terrain;
         *minimap_objective_markers += objectives;
-        // Count genuine rendered terrain indicators, not total source
-        // asteroid entities or speculative obstacles outside the map.
-        // The primary per-frame measurement is added below.
-        let _ = terrain;
         text::draw_at(pixels, WIDTH, FIELD+14, 90,
             &format!("World {}  Tick {}",state["world_id"],state["tick"]),1,TEXT);
         let friendly=state["squads"].as_array().into_iter().flatten().filter(|s|s["owned"]==true).count();
@@ -4012,6 +4010,7 @@ pub fn connect_remote(
         let mut hulls = 0_u64;
         let mut map_object_health_bars = 0_u64;
         let mut map_ships = 0_u64;
+        let mut map_terrain = 0_u64;
         let mut map_objectives = 0_u64;
         let mut fog_masked = 0_u64;
         let mut combat_hud_draws = [0_u64; 7];
@@ -4021,7 +4020,8 @@ pub fn connect_remote(
             held_fire_active,shooting_menu,shooting_focus,
             &peer.visual,visual_fraction,&artwork,show_art,show_weapon_ranges,
             &mut combat_hud_draws, &mut hulls, &mut map_object_health_bars,
-            &mut map_ships, &mut map_objectives, &mut fog_masked);
+            &mut map_ships, &mut map_terrain, &mut map_objectives,
+            &mut fog_masked);
         peer.metrics.map_object_health_bars += map_object_health_bars;
         peer.metrics.weapon_range_draws += combat_hud_draws[0];
         peer.metrics.weapon_charge_draws += combat_hud_draws[1];
@@ -4057,6 +4057,7 @@ pub fn connect_remote(
         peer.metrics.fog_masked_pixels += fog_masked;
         peer.metrics.obstacle_hull_draws += hulls;
         peer.metrics.minimap_ship_markers += map_ships;
+        peer.metrics.minimap_terrain_markers += map_terrain;
         peer.metrics.minimap_objective_markers += map_objectives;
         // A terminal outcome is reliable and survives transport closure,
         // even if the replaceable final world_state could not drain.
@@ -4266,6 +4267,7 @@ pub fn connect_remote(
         "recolor_cache_peak":peer.metrics.recolor_cache_peak,
         "obstacle_hull_draws":peer.metrics.obstacle_hull_draws,
         "minimap_ship_markers":peer.metrics.minimap_ship_markers,
+        "minimap_terrain_markers":peer.metrics.minimap_terrain_markers,
         "minimap_objective_markers":peer.metrics.minimap_objective_markers,
         "minimap_camera_moves":peer.metrics.minimap_camera_moves,
         "ship_type_multiselections":peer.metrics.ship_type_multiselections,
