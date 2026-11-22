@@ -1933,16 +1933,20 @@ fn current_state(
 ) -> Value {
     let viewer = Some(side);
     let fog = view.player_authority.player_fog_of_war_enabled();
-    // Build visibility once, before projecting weapon contacts. The
-    // contact cache may reference a ship later in render order.
-    let visible_ids: HashSet<i64> = view.combat.render_ships()
-        .filter(|(ship, body)| !fog ||
-            view.roster.owning_squad(ship.entity_id)
-                .is_some_and(|owner| owns_player_side(view, owner, side)) ||
-            sources.covers(body.motion.position, measurements))
-        .map(|(ship, _)| ship.entity_id).collect();
+    // Only fogged battles require a visibility index. In clear battles
+    // every real ship is visible; avoid building and hashing an entire
+    // ship roster on every network state projection. Fogged contacts still
+    // share one precomputed visibility set with ships and squad overlays.
+    let visible_ids: Option<HashSet<i64>> = if fog {
+        Some(view.combat.render_ships()
+            .filter(|(ship, body)|
+                view.roster.owning_squad(ship.entity_id)
+                    .is_some_and(|owner| owns_player_side(view, owner, side)) ||
+                sources.covers(body.motion.position, measurements))
+            .map(|(ship, _)| ship.entity_id).collect())
+    } else { None };
     let ships: Vec<_> = view.combat.render_ships().filter_map(|(ship, body)| {
-        if !visible_ids.contains(&ship.entity_id) { return None; }
+        if visible_ids.as_ref().is_some_and(|ids| !ids.contains(&ship.entity_id)) { return None; }
         let owner = view.roster.owning_squad(ship.entity_id);
         let owned = owner.is_some_and(|owner| owns_player_side(view, owner, side));
         let overlay = owned && owner.is_some_and(|owner|
@@ -1983,7 +1987,7 @@ fn current_state(
                             view.combat.weapon_range_contacts(ship.entity_id, slot))
                     {
                         for &target_id in contacts.ship_ids {
-                            if !visible_ids.contains(&target_id) { continue; }
+                            if visible_ids.as_ref().is_some_and(|ids| !ids.contains(&target_id)) { continue; }
                             measurements.weapon_overlay_geometry_queries += 1;
                             let Ok(Some(geometry)) = view.combat.query_weapon_target_geometry(
                                 ship.entity_id, slot, target_id, view.collision_matrix, has_obstacles)
@@ -2169,7 +2173,7 @@ fn current_state(
         let squad = view.roster.get(owner)?;
         let owned = owns_player_side(view, owner, side);
         let members: Vec<_> = squad.members.iter().copied()
-            .filter(|id| owned || visible_ids.contains(id)).collect();
+            .filter(|id| owned || visible_ids.as_ref().map_or(true, |ids| ids.contains(id))).collect();
         if members.is_empty() { return None; }
         // Gameplay and remote HUD read the SAME live command director and
         // mutable source player preferences. No network-side squad state.
@@ -2189,7 +2193,7 @@ fn current_state(
         {
             view.commands.selected_enemy(owner).and_then(|target| view.roster.get(target))
                 .into_iter().flat_map(|target| target.members.iter().copied())
-                .filter(|id| visible_ids.contains(id)).collect()
+                .filter(|id| visible_ids.as_ref().map_or(true, |ids| ids.contains(id))).collect()
         } else { Vec::new() };
         measurements.command_target_markers_projected += command_targets.len() as u64;
         Some(json!({
