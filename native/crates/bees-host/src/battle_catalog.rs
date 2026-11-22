@@ -982,6 +982,34 @@ impl BattleCatalog {
             })
     }
 
+    /// Record source-verified initial ownership without moving the ship.
+    /// Uses the original roster receipt format: equal source/destination
+    /// is legal only for the very first provenance claim, never a transfer.
+    /// The caller must prove the claimed identity against the playable
+    /// authored scene before writing; replay never invents a source ship.
+    pub fn register_authored_ship(
+        &self, progress: &CampaignProgress<'_>, output: &Path,
+        side: i32, fleet_ship_id: i64, source_squad_id: i64,
+    ) -> io::Result<()> {
+        let campaign_id = self.campaign_id.as_deref()
+            .ok_or_else(|| invalid("original FleetShip registration requires a campaign"))?;
+        if !matches!(side, 1 | 2) || fleet_ship_id <= 0 ||
+            source_squad_id <= 0 ||
+            progress.authored_roster.contains_key(&fleet_ship_id) ||
+            progress.purchased_ship(fleet_ship_id).is_some() ||
+            progress.fleet.get(&fleet_ship_id)
+                .is_some_and(|entry| entry.side != side || entry.is_dead)
+        {
+            return Err(invalid("original FleetShip needs a new, live, source-owned identity"));
+        }
+        commit_campaign_edit(output, "squad-edit-", "assignment.json",
+            &CampaignAuthoredAssignment {
+                campaign_id: campaign_id.to_owned(), player_side: side,
+                fleet_ship_id, from_saved_squad_id: source_squad_id,
+                to_saved_squad_id: source_squad_id,
+            })
+    }
+
     /// One immutable player FleetShip rename. No combat, ownership,
     /// economic or original squad assignment is modified by this edit.
     pub fn name_fleet_ship(
@@ -1569,7 +1597,9 @@ impl BattleCatalog {
             if edit.campaign_id != *campaign || !matches!(edit.player_side, 1 | 2) ||
                 edit.fleet_ship_id <= 0 ||
                 edit.from_saved_squad_id < 0 || edit.to_saved_squad_id < 0 ||
-                edit.from_saved_squad_id == edit.to_saved_squad_id ||
+                (edit.from_saved_squad_id == edit.to_saved_squad_id &&
+                    (edit.from_saved_squad_id == 0 ||
+                     progress.authored_roster.contains_key(&edit.fleet_ship_id))) ||
                 progress.purchases.iter().any(|(_, ship)|
                     ship.fleet_ship_id == edit.fleet_ship_id) ||
                 progress.fleet.get(&edit.fleet_ship_id)
@@ -1592,8 +1622,10 @@ impl BattleCatalog {
                 return Err(invalid("stale original FleetShip squad assignment"));
             }
             owner.current_saved_squad_id = edit.to_saved_squad_id;
-            progress.authored_transfer_count = progress.authored_transfer_count.checked_add(1)
-                .ok_or_else(|| invalid("authored squad edit counter overflow"))?;
+            if edit.from_saved_squad_id != edit.to_saved_squad_id {
+                progress.authored_transfer_count = progress.authored_transfer_count.checked_add(1)
+                    .ok_or_else(|| invalid("authored squad edit counter overflow"))?;
+            }
         }
         // Renames are presentation-only career history, kept separately
         // from tactics, physical source offsets, and past mission receipts.
