@@ -3236,12 +3236,22 @@ impl NativeSoftwareRenderer {
         let reason = battle_outcome_reason(view, result);
         let detail = format!("{reason}  /  {:.2} s", result.duration_seconds);
         let context = format!("World {}  /  Episode {}", view.world_id.0, view.episode_revision + 1);
+        let player_summary = view.campaign_score
+            .filter(|(side, _)| view.player_authority.player_viewer_side() == Some(*side))
+            .map(|(_, score)| {
+                let (lost, returned, kills) = view.player_match_counts
+                    .unwrap_or((0, 0, 0));
+                format!("Score {score:+}  |  Lost {lost}  Returned {returned}  Kills {kills}")
+            });
         let title_scale = if self.width >= 400 && self.height >= 176 { 2 } else { 1 };
         let top = if self.height >= 200 { 20 } else { 0 };
         let width = (text::width(&title, title_scale).max(text::width(&detail, 1))
-            .max(text::width(&context, 1)) + 40).min(self.width);
+            .max(text::width(&context, 1))
+            .max(player_summary.as_deref().map_or(0, |row| text::width(row, 1))) +
+            40).min(self.width);
         let left = (self.width - width) / 2;
-        let panel_height = (title_scale + 2) * text::HEIGHT + 20;
+        let panel_height = (title_scale + 2) * text::HEIGHT + 20 +
+            usize::from(player_summary.is_some()) * (text::HEIGHT + 4);
         for y in top..(top + panel_height).min(self.height) {
             let start = y * self.width + left;
             self.pixels[start..start + width].fill(if y < top + 2 { 0xe1a34b } else { 0x152133 });
@@ -3251,6 +3261,11 @@ impl NativeSoftwareRenderer {
         text::draw_centered(&mut self.pixels, self.width, title_top, &title, title_scale, [239, 247, 255]);
         text::draw_centered(&mut self.pixels, self.width, title_top + title_scale * text::HEIGHT,
             &detail, 1, [194, 211, 230]);
+        if let Some(summary) = player_summary {
+            text::draw_centered(&mut self.pixels, self.width,
+                title_top + (title_scale + 1) * text::HEIGHT + 4,
+                &summary, 1, [198, 231, 248]);
+        }
     }
 
     #[cfg(feature = "client")]
