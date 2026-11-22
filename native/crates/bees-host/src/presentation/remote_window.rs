@@ -2578,6 +2578,7 @@ fn persist_remote_session(
 pub fn connect_remote(
     address: &str, token_file: &Path, expected_side: i32,
     session_file: Option<&Path>, audio_preferences: Option<&Path>,
+    spectator: bool,
 ) -> Result<(), Box<dyn Error>> {
     if !(1..=2).contains(&expected_side) {
         return Err(invalid("remote player side must be 1 or 2").into());
@@ -2625,8 +2626,6 @@ pub fn connect_remote(
         }
     } else { None };
     let mut last_persisted_session = original.clone();
-    let spectator = std::env::var("BEES_NATIVE_REMOTE_SPECTATE")
-        .is_ok_and(|setting| setting == "1" || setting.eq_ignore_ascii_case("true"));
     let mut peer=PeerClient::connect(
         address, token, expected_side, original.as_deref(), spectator,
     )?;
