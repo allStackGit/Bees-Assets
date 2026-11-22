@@ -488,6 +488,8 @@ pub struct NativeRemotePlay {
     music_location: Option<NativeMusicLocation>,
     /// Authored Map.MinZoom/MaxZoom; presentation metadata, not player authority.
     camera_zoom: Option<(f32, f32)>,
+    /// Source Stage.UseMouseScrolling default, never a remote command.
+    camera_edge_scrolling: Option<bool>,
     held_fire: HashMap<u64, HeldFireLease>,
     pending_releases: Vec<RemoteOrder>,
     /// Per-connection source briefing acknowledgment, never gameplay.
@@ -589,6 +591,7 @@ impl NativeRemotePlay {
             next_peer: 1, last_state: None, force_initial_state: false,
             pending_audio: HashMap::new(), fog_by_side: HashMap::new(),
             music_location: None, camera_zoom: None,
+            camera_edge_scrolling: None,
             held_fire: HashMap::new(), pending_releases: Vec::new(),
             briefing_ready: HashMap::new(),
             measurements: RemotePlayMeasurements::default(),
@@ -772,6 +775,10 @@ impl NativeRemotePlay {
     pub fn set_camera_zoom_limits(&mut self, limits: Option<(f32, f32)>) {
         self.camera_zoom = limits.filter(|(min, max)|
             min.is_finite() && max.is_finite() && *min > 0.0 && *max >= *min);
+    }
+
+    pub fn set_camera_edge_scrolling(&mut self, enabled: Option<bool>) {
+        self.camera_edge_scrolling = enabled;
     }
 
     pub fn configured_sides(&self) -> impl Iterator<Item = i32> + '_ {
@@ -1447,6 +1454,7 @@ impl NativeRemotePlay {
         let pending_audio = std::mem::take(&mut self.pending_audio);
         let music_location = self.music_location;
         let camera_zoom = self.camera_zoom;
+        let camera_edge_scrolling = self.camera_edge_scrolling;
         // The source's introductory and mid-mission briefings prevent
         // either side issuing physical orders. Local windows pace their
         // source dialogue; dedicated servers require authenticated ACKs
@@ -1494,7 +1502,8 @@ impl NativeRemotePlay {
                 let started = Instant::now();
                 let cues = pending_audio.get(&side).map(Vec::as_slice).unwrap_or(&[]);
                 let mut state = current_state(
-                    view, bounds, side, music_location, camera_zoom, cues,
+                    view, bounds, side, music_location, camera_zoom,
+                    camera_edge_scrolling, cues,
                     vision.get(&side).expect("authenticated side has sight"),
                     briefing_paused,
                     !spectator && requires_briefing_ack &&
@@ -2214,7 +2223,7 @@ fn source_codex_entry(
 fn current_state(
     view: &NativeRenderWorldView<'_>, bounds: Aabb, side: i32,
     music_location: Option<NativeMusicLocation>, camera_zoom: Option<(f32, f32)>,
-    audio_events: &[Value], sources: &RemoteFogSources, briefing_paused: bool,
+    camera_edge_scrolling: Option<bool>, audio_events: &[Value], sources: &RemoteFogSources, briefing_paused: bool,
     requires_briefing_ack: bool, overlay_squads: Option<&HashSet<SquadLifetime>>,
     spectator: bool, measurements: &mut RemotePlayMeasurements,
 ) -> Value {
@@ -2582,7 +2591,7 @@ fn current_state(
         "episode_revision": view.episode_revision,
         "tick": view.tick, "fixed_step_seconds": view.fixed_step_seconds,
         "music_location": music_location, "camera_zoom": camera_zoom,
-        "audio_events": audio_events,
+        "camera_edge_scrolling": camera_edge_scrolling, "audio_events": audio_events,
         "viewer_side": viewer,
         // Only the authenticated side's live scoreboard, projected with
         // the same per-side privacy boundary as visible ships/commands.

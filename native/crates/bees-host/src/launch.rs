@@ -7711,6 +7711,7 @@ fn run_battle(
     let client_bounds: Vec<_> = source_levels.iter().map(|scene| scene.bounds).collect();
     let remote_music_location = source_levels[0].music_location;
     let remote_camera_zoom = source_levels[0].camera_zoom;
+    let remote_edge_scrolling = source_levels[0].camera_edge_scrolling;
     #[cfg(feature = "client")]
     let client_zoom_limits: Vec<_> =
         source_levels.iter().map(|scene| scene.camera_zoom).collect();
@@ -8216,6 +8217,7 @@ fn run_battle(
     if let Some(server) = &mut remote {
         server.set_music_location(remote_music_location);
         server.set_camera_zoom_limits(remote_camera_zoom);
+        server.set_camera_edge_scrolling(remote_edge_scrolling);
     }
     if let Some(server) = &remote {
         let world = host.render_world(0)

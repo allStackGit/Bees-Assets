@@ -134,6 +134,8 @@ struct WireCounts {
     minimap_terrain_markers: u64,
     minimap_objective_markers: u64,
     minimap_camera_moves: u64,
+    /// Frames in which the actual window edge moved the presentation camera.
+    camera_edge_pan_frames: u64,
     ship_type_multiselections: u64,
     selection_drag_preview_frames: u64,
     weapon_range_draws: u64,
@@ -2888,6 +2890,8 @@ pub fn connect_remote(
     let mut minimap_dragging=false;
     // Pure local presentation preference, never sent to the host.
     let mut show_minimap=true;
+    // Explicit local override; otherwise use source Stage/user preference.
+    let mut edge_scroll_override:Option<bool>=None;
     let mut drag_start:Option<(i32,i32)>=None;
     let mut last_middle:Option<(f32,f32)>=None;
     let mut dialogue_key:Option<(u64,u64,u64)>=None;
@@ -2999,12 +3003,19 @@ pub fn connect_remote(
             }
         }
         if !show_controls_help && window.is_key_pressed(Key::F6, KeyRepeat::No) {
-            show_art=!show_art;
-            peer.notice=if show_art {
-                "Native source sprites enabled".into()
+            if window.is_key_down(Key::LeftShift)||window.is_key_down(Key::RightShift) {
+                let authored=peer.state.as_ref().and_then(|s|
+                    s["camera_edge_scrolling"].as_bool()).unwrap_or(false);
+                let enabled=!edge_scroll_override.unwrap_or(authored);
+                edge_scroll_override=Some(enabled);
+                peer.notice=if enabled {"Mouse-edge scrolling enabled".into()}
+                    else {"Mouse-edge scrolling disabled".into()};
             } else {
-                "Fast geometric display enabled".into()
-            };
+                show_art=!show_art;
+                peer.notice=if show_art {
+                    "Native source sprites enabled".into()
+                } else {"Fast geometric display enabled".into()};
+            }
         }
         if !show_controls_help && !show_codex && !show_campaign_rewards &&
             window.is_key_pressed(Key::I, KeyRepeat::No) &&
@@ -3598,6 +3609,31 @@ pub fn connect_remote(
             let mouse=window.get_mouse_pos(MouseMode::Discard);
             let minimap = show_minimap.then(|| peer.state.as_ref().and_then(bounds)
                 .and_then(|map| MiniMapLayout::top_right(FIELD, HEIGHT, map))).flatten();
+            let authored_edge=peer.state.as_ref().and_then(|state|
+                state["camera_edge_scrolling"].as_bool()).unwrap_or(false);
+            if edge_scroll_override.unwrap_or(authored_edge) && window.is_active() &&
+                !shooting_menu && !held_fire_active && !show_codex &&
+                !show_campaign_rewards
+            {
+                // Source frame-physical edge panning. Ignore the squad HUD
+                // and clickable minimap; neither is part of the battlefield.
+                if let Some((x,y))=mouse.filter(|&(x,y)|
+                    x>=0.0&&x<FIELD as f32&&y>=0.0&&y<HEIGHT as f32&&
+                    !minimap.is_some_and(|layout|layout.world_at(x,y).is_some())) {
+                    const EDGE:f32=18.0;
+                    let mut horizontal=0.0;
+                    let mut vertical=0.0;
+                    if x<=EDGE {horizontal-=pan;}
+                    else if x>=FIELD as f32-EDGE {horizontal+=pan;}
+                    if y<=EDGE {vertical+=pan;}
+                    else if y>=HEIGHT as f32-EDGE {vertical-=pan;}
+                    if horizontal!=0.0||vertical!=0.0 {
+                        spectator_follow=None;
+                        cam.center+=Vec2::new(horizontal,vertical);
+                        peer.metrics.camera_edge_pan_frames+=1;
+                    }
+                }
+            }
             // Shift+wheel pans horizontally and Ctrl+wheel vertically,
             // matching the local native camera. Unmodified wheel zooms
             // at the pointer or centers on the real host-derived minimap.
@@ -4240,7 +4276,7 @@ pub fn connect_remote(
                 "Tab / PgUp / PgDn: cycle original squads",
                 "CAMERA / DISPLAY",
                 "Right click or drag: move / attack   Arrows: pan   Wheel: zoom",
-                "F: fit map   B: ranges   I: minimap   F6: source art",
+                "F: fit   B: ranges   I: map   F6: art   Shift+F6: edge pan",
                 "Shift+wheel: horizontal pan   Ctrl+wheel: vertical pan",
                 "COMMANDS",
                 "C: hold   A: attack on sight   V: cease fire   E: chase",
@@ -4369,6 +4405,7 @@ pub fn connect_remote(
         "minimap_terrain_markers":peer.metrics.minimap_terrain_markers,
         "minimap_objective_markers":peer.metrics.minimap_objective_markers,
         "minimap_camera_moves":peer.metrics.minimap_camera_moves,
+        "camera_edge_pan_frames":peer.metrics.camera_edge_pan_frames,
         "ship_type_multiselections":peer.metrics.ship_type_multiselections,
         "selection_drag_preview_frames":peer.metrics.selection_drag_preview_frames,
         "weapon_range_draws":peer.metrics.weapon_range_draws,
