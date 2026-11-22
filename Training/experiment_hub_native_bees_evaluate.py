@@ -231,20 +231,42 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
     source_inputs(suite_file, suite)
     if file_sha256(rollout_binary) != suite["rollout_binary_sha256"]:
         raise ValueError("Native evaluation executable changed while benchmarking.")
+    # The shared Hub scheduler accepts independent, unit-tagged
+    # observations alongside the success gate. Preserve both physical
+    # victory and objective scoring rather than mistaking training reward
+    # or a favorable draw for an independently won match. All throughput
+    # measurements originate from the same completed native rollout receipt.
+    draws = receipt["draws"]
+    metrics = {
+        "side_victories": {"value": receipt["side_victories"], "unit": "count"},
+        "opponent_victories": {
+            "value": receipt["episodes"] - receipt["side_victories"] - draws,
+            "unit": "count",
+        },
+        "draws": {"value": draws, "unit": "count"},
+        "world_steps": {"value": receipt["world_steps"], "unit": "count"},
+        "policy_rows": {"value": receipt["policy_rows"], "unit": "count"},
+        "wall_seconds": {"value": receipt["wall_seconds"], "unit": "seconds"},
+        "world_steps_per_second": {
+            "value": receipt["world_steps_per_wall_second"], "unit": "scalar",
+        },
+        "policy_rows_per_second": {
+            "value": receipt["policy_rows"] / receipt["wall_seconds"], "unit": "scalar",
+        },
+        "success_rate": {"value": successes / receipt["episodes"], "unit": "ratio"},
+    }
+    if metrics["opponent_victories"]["value"] < 0:
+        raise ValueError("Native evaluation faction results exceed completed trials.")
     print(json.dumps({
         "kind": "native_bees_independent_evaluation_observation",
         "candidate_checkpoint_sha256": checkpoint_digest,
         "suite_id": suite["suite_id"],
-        "victories": receipt["side_victories"],
         "successes": successes,
         "success_metric": metric,
         "trials": receipt["episodes"],
-        "world_steps": receipt["world_steps"],
-        "policy_rows": receipt["policy_rows"],
-        "wall_seconds": receipt["wall_seconds"],
-        "world_steps_per_wall_second": receipt["world_steps_per_wall_second"],
+        "metrics": metrics,
     }, sort_keys=True), flush=True)
-    return successes
+    return {"successes": successes, "metrics": metrics}
 
 
 def create_suite_main(arguments) -> int:
