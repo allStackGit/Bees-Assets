@@ -1240,23 +1240,23 @@ struct NativeFleetTemplate {
 /// snapshots do not carry this section and remain externally configured.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct NativeSceneMission {
+pub struct NativeSceneMission {
     #[serde(default)]
-    extraction: Option<bees_sim::combat_world::ExtractionZone>,
+    pub extraction: Option<bees_sim::combat_world::ExtractionZone>,
     #[serde(default)]
-    survival: Option<bees_sim::episode_terminal::SurvivalObjective>,
+    pub survival: Option<bees_sim::episode_terminal::SurvivalObjective>,
     #[serde(default)]
-    demolition: Option<bees_sim::episode_terminal::DemolitionObjective>,
+    pub demolition: Option<bees_sim::episode_terminal::DemolitionObjective>,
     #[serde(default)]
-    escort: Option<bees_sim::episode_terminal::EscortObjective>,
+    pub escort: Option<bees_sim::episode_terminal::EscortObjective>,
     #[serde(default)]
-    target_ship: Option<bees_sim::episode_terminal::TargetShipObjective>,
+    pub target_ship: Option<bees_sim::episode_terminal::TargetShipObjective>,
     #[serde(default)]
-    campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
+    pub campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
     #[serde(default)]
-    reinforcements: Vec<crate::reinforcements::NativeReinforcementPlan>,
+    pub reinforcements: Vec<crate::reinforcements::NativeReinforcementPlan>,
     #[serde(default)]
-    scripted_queues: Vec<crate::policy_only_metadata::NativeScriptedQueuePlan>,
+    pub scripted_queues: Vec<crate::policy_only_metadata::NativeScriptedQueuePlan>,
 }
 
 /// A source-authored INITIAL physical scene, ready to compose with actual
@@ -1560,6 +1560,14 @@ pub struct NativeSourcePolicyGroup {
 }
 
 impl NativePhysicalScene {
+    /// Read-only source mission for the launch owner's existing game
+    /// eligibility, controller and campaign preflight. Runtime ownership
+    /// stays inside the physical scene and is consumed only when building
+    /// the same authoritative Level.
+    pub fn native_mission(&self) -> Option<&NativeSceneMission> {
+        self.native_mission.as_ref()
+    }
+
     /// Independent native arenas share immutable physical templates, but
     /// their live SquadLifetime IDs are allocated from one Stage stream.
     /// A native scene's mission is part of that same source roster: rewrite
