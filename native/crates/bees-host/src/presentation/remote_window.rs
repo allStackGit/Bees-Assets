@@ -76,6 +76,8 @@ struct WireCounts {
     speed_receipts: u64,
     orders_accepted: u64,
     orders_rejected: u64,
+    inspection_requests_sent: u64,
+    inspection_receipts: u64,
     /// Client wall time from submission through authoritative host receipt,
     /// not an estimate from snapshot cadence or local frame rendering.
     order_ack_latency_samples: u64,
@@ -566,6 +568,10 @@ struct PeerClient {
     pause_pending: Option<(u64,bool)>,
     step_pending: Option<u64>,
     speed_pending: Option<u64>,
+    /// At most one outstanding UI-only inspection on this authenticated
+    /// socket. The full fleet never enters the projected world snapshot.
+    inspection_pending: Option<(u64,u64,i64,u64)>,
+    inspection_result: Option<(u64,u64,i64,Option<Value>,Option<i64>)>,
     pause_episode: Option<(u64,u64)>,
     authenticated: bool,
     connected: bool,
@@ -630,7 +636,8 @@ impl PeerClient {
             briefing_pending: None, briefing_approved: None,
             briefing_rejected: None,
             pause_owned: false, pause_pending: None, step_pending: None,
-            speed_pending: None, pause_episode: None,
+            speed_pending: None, inspection_pending: None,
+            inspection_result: None, pause_episode: None,
             authenticated: false, connected: true,
             input_suppressed: spectator, spectator, side,
             host_session_id: None,
@@ -765,6 +772,7 @@ impl PeerClient {
                         self.pause_episode = Some((world_id,revision));
                     }
                     if new_episode {
+                        self.inspection_result = None;
                         self.battle_result_receipt = None;
                         self.battle_loss_breakdown.clear();
                         self.campaign_receipt = None;
@@ -1071,6 +1079,40 @@ impl PeerClient {
                     } else {
                         "Host rejected game speed request".into()
                     };
+                }
+                Some("ship_inspection_result") => {
+                    if !self.authenticated || self.spectator {
+                        return Err(invalid("untrusted native ship inspection receipt").into());
+                    }
+                    let id=message["request_id"].as_u64()
+                        .ok_or_else(||invalid("inspection receipt lacks request identity"))?;
+                    let world=message["world_id"].as_u64()
+                        .ok_or_else(||invalid("inspection receipt lacks World"))?;
+                    let revision=message["episode_revision"].as_u64()
+                        .ok_or_else(||invalid("inspection receipt lacks revision"))?;
+                    let ship=message["ship_id"].as_i64()
+                        .ok_or_else(||invalid("inspection receipt lacks ship identity"))?;
+                    if self.inspection_pending != Some((world,revision,ship,id)) {
+                        return Err(invalid("unsolicited or mismatched ship inspection receipt").into());
+                    }
+                    let processed=message["processed"].as_bool()
+                        .ok_or_else(||invalid("inspection receipt lacks authorization decision"))?;
+                    let stats=if processed {
+                        let value=&message["stats"];
+                        if !value.is_object() || [
+                            "observed_turret_shots", "enemy_tsv_damage_done",
+                            "tsv_damage_received",
+                        ].iter().any(|name|value[*name].as_u64().is_none()) ||
+                            !value["source_kills"].is_null() &&
+                                value["source_kills"].as_u64().is_none() {
+                            return Err(invalid("invalid authenticated FleetShip statistics").into());
+                        }
+                        Some(value.clone())
+                    } else { None };
+                    let minerals=message["minerals_mined_this_level"].as_i64();
+                    self.inspection_pending=None;
+                    self.inspection_result=Some((world,revision,ship,stats,minerals));
+                    self.metrics.inspection_receipts+=1;
                 }
                 Some("input_result") => {
                     if !self.authenticated {
@@ -4880,6 +4922,8 @@ pub fn connect_remote(
         "snapshots_rendered":peer.metrics.snapshots,
         "frames_rendered":peer.metrics.frames_rendered,
         "ship_inspection_frames":inspection_frames,
+        "ship_inspection_requests_sent":peer.metrics.inspection_requests_sent,
+        "ship_inspection_receipts":peer.metrics.inspection_receipts,
         "rendered_fps":if session_seconds > 0.0 {
             peer.metrics.frames_rendered as f64 / session_seconds
         } else { 0.0 },
