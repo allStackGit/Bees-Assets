@@ -755,6 +755,19 @@ impl CampaignProgress<'_> {
             let type_label = self.known_fleet_ship_type(id)
                 .or_else(|| scene.map(|(_, _, kind)| kind))
                 .map_or(String::new(), |kind| format!(" Type {kind}"));
+            if let Some((side, purchased)) = purchase {
+                let unplayed = self.fleet.get(&id)
+                    .is_none_or(|ship| ship.battles_fought == 0 && !ship.is_dead);
+                if unplayed {
+                    let origin = if self.awarded_fleet_ids.contains(&id) {
+                        "Awarded"
+                    } else { "Purchased" };
+                    return Some(format!(
+                        "#{id}{name} S{side} Type {} {origin} - no completed battles{assignment}",
+                        purchased.ship_type,
+                    ));
+                }
+            }
             if let Some(ship) = self.fleet.get(&id) {
                 return Some(format!(
                     "#{id}{name} S{}{type_label} W{}/{} M{} Hit{} Taken{} Kill{}{}{}",
@@ -762,12 +775,6 @@ impl CampaignProgress<'_> {
                     ship.minerals_mined, ship.combat.enemy_tsv_damage_done,
                     ship.combat.tsv_damage_received, ship.combat.attributed_enemy_kills,
                     if ship.is_dead { " LOST" } else { "" }, assignment,
-                ));
-            }
-            if let Some((side, purchase)) = purchase {
-                return Some(format!(
-                    "#{id}{name} S{side} Type {} Purchased - no completed battles{assignment}",
-                    purchase.ship_type,
                 ));
             }
             if let Some(owner) = authored {
