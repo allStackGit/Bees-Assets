@@ -3688,6 +3688,11 @@ fn original_fleet_source_squad(
                         Some((ship.entity_id, ship.ship_type)),
             _ => None,
         }) else { continue };
+        if progress.known_fleet_ship_type(fleet_ship_id)
+            .is_some_and(|recorded| recorded != kind)
+        {
+            return Err(invalid("original FleetShip class conflicts with committed career history").into());
+        }
         if require_reassignment && !scene.can_reassign_authored_ship(side, parent) {
             continue;
         }
@@ -4415,6 +4420,12 @@ fn authored_menu_fleet(
                                     !scene.fleet.get(entity_id)
                                         .is_some_and(|row| row.has_persistent_fleet_value)
                                 { continue; }
+                                if progress.known_fleet_ship_type(fleet_id)
+                                    .is_some_and(|recorded| recorded != ship.ship_type)
+                                {
+                                    failed_scenes += 1;
+                                    continue;
+                                }
                                 match seen_source.insert((side, fleet_id), ship.ship_type) {
                                     None => source_owned.push((
                                         side, fleet_id, saved_id, ship.ship_type,
