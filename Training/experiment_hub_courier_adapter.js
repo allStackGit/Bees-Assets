@@ -185,6 +185,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_collector_sim_trial_workers',
     'training_collector_sim_eligible_workers',
     'training_sim_process_migrations','training_sim_process_migration_denials',
+    'training_sim_process_migration_queued',
     'training_sim_topology_rejected','training_sim_topology_unavailable',
     'training_sim_topology_unverified','training_sim_topology_migrations',
     'training_tuner_adjustments','training_tuner_accepted',
