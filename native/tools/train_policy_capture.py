@@ -1476,6 +1476,16 @@ def main():
     from bees_mlagents_ppo_compat import install_value_estimate_key_fix
     install_value_estimate_key_fix()
     set_torch_config(TorchSettings(device=str(device)))
+    # Every native CUDA/ROCm PPO minibatch previously forced multiple
+    # GPU-to-CPU scalar synchronizations for diagnostic losses and
+    # centralized-critic normalization. Delay detached statistics until
+    # the one authoritative update boundary. This preserves the same
+    # losses, gradients, batch order, Adam steps and configured PPO
+    # hyperparameters; headless CPU updates keep their existing path.
+    from bees_mlagents_ppo_compat import configure_poca_learner_optimizations
+    learner_execution = configure_poca_learner_optimizations(
+        sync_cleanup=(device.type == "cuda"),
+    )
     # ML-Agents selects CUDA at import on GPU hosts. Its CPU setting does
     # not clear that PyTorch default, so implicit critic tensors can still
     # land on CUDA. Reset it for CPU and retain the explicit CUDA index.
@@ -1711,6 +1721,17 @@ def main():
         isinstance(adam, torch.optim.Adam) and live_groups and
         all(group.get("fused") is True for group in live_groups))
     cuda_graph_requested = bool(poca_learner_optimization_options().cuda_graphs)
+    # Execution choices are settings, not measured speedups. The actual
+    # host/GPU wall-time and dispatch counters follow below.
+    learner_execution_settings = {
+        "deferred_cuda_scalar_statistics": bool(
+            learner_execution.effective_sync_cleanup),
+        "cpu_minibatch_prepare_eligible": bool(
+            learner_execution.effective_sync_cleanup and device.type == "cuda"),
+        "cuda_graphs_requested": cuda_graph_requested,
+        "stream_shards": int(learner_execution.stream_shards),
+        "minibatch_prefetch_requested": bool(learner_execution.minibatch_prefetch),
+    }
     resource_metrics["update_process_cpu_core_equivalents"] = (
         update_cpu_seconds / update_wall_seconds if update_wall_seconds > 0 else None
     )
@@ -1747,6 +1768,7 @@ def main():
             "update_wall_seconds": update_wall_seconds,
             "fused_adam_active": int(fused_adam_active),
             "cuda_graph_requested": int(cuda_graph_requested),
+            "learner_execution_settings": learner_execution_settings,
             **({"graph_execution": graph_execution} if graph_execution is not None else {}),
             "update_resource_measurements": resource_metrics,
             **cuda_metrics,
@@ -1955,6 +1977,7 @@ def main():
             sum(row["fused_adam_active"] for row in gpu_worker_metrics)
             if gpu_worker_metrics is not None else int(fused_adam_active)),
         "optimizer_cuda_graph_requested": int(cuda_graph_requested),
+        "optimizer_execution_settings": learner_execution_settings,
         **({"optimizer_graph_execution": graph_execution} if graph_execution is not None else {}),
         **cuda_metrics,
         "optimizer_update_resource_measurements": resource_metrics,
