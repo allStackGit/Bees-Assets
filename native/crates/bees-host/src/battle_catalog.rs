@@ -708,10 +708,10 @@ impl CampaignProgress<'_> {
     /// Merge source-owned player ships with existing career rows for the
     /// native menu. A real source identity needs no fabricated battle
     /// receipt just to appear in the player's pre-battle fleet history.
-    pub fn fleet_rows_with_source(&self, source: &[(i32, i64, i64)]) -> Vec<String> {
+    pub fn fleet_rows_with_source(&self, source: &[(i32, i64, i64, u8)]) -> Vec<String> {
         let mut rows = self.fleet_rows();
         let mut seen = HashSet::new();
-        for &(side, id, source_squad) in source {
+        for &(side, id, source_squad, ship_type) in source {
             if !seen.insert(id) || self.fleet.contains_key(&id) ||
                 self.purchased_ship(id).is_some() ||
                 self.authored_roster.contains_key(&id)
@@ -721,7 +721,7 @@ impl CampaignProgress<'_> {
             let name = self.fleet_ship_name(id)
                 .map_or(String::new(), |value| format!(" ({value})"));
             rows.push(format!(
-                "#{id}{name} S{side} Original - no completed battles {}",
+                "#{id}{name} S{side} Type {ship_type} Original - no completed battles {}",
                 self.squad_label(source_squad),
             ));
         }
