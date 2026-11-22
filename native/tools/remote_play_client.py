@@ -58,6 +58,8 @@ HELP = """Commands:
   weapons              Inspect live weapon status on selected ships
   overlay on|off       Request authoritative weapon range/contact detail
   select ID [ID...]    Select one or more friendly squad IDs
+  select all           Select all controllable root squads (not child drones)
+  select clear         Clear selection and requested weapon overlays
   move X Y             Move selected squads to world point
   fire X Y             Manual point fire; fire stop clears target
   held begin X Y       Begin sustained fire with selected squad weapons
@@ -646,7 +648,8 @@ class RemoteConsole:
                 print(f"  {owner['squad_id']:>8} side {squad['side']}"
                       f" {'ours' if squad['owned'] else 'ally' if squad['side'] == state['viewer_side'] else 'enemy'}"
                       f"{' (orders disabled)' if squad['owned'] and not squad['controllable'] else ''}"
-                      f" ships {squad['members']}")
+                      f" ships {squad['members']}"
+                      f"{' hotkey '+str(squad['source_number']) if squad.get('source_number') is not None else ''}")
             return
         if cmd == "weapons":
             selected = {owner["squad_id"] for owner in self.selected_owners(state)}
@@ -682,14 +685,25 @@ class RemoteConsole:
                       f" HP {object['health']}")
             return
         if cmd == "select":
-            if not argv:
-                raise ValueError("select requires at least one squad ID")
-            owners = [self.locate_squad(state, value, owned=True) for value in argv]
+            if argv == ["all"]:
+                # Match the native Ctrl+A source semantics: children retain
+                # individual command capability but mass selection excludes
+                # them to avoid doubling parent and drone orders.
+                owners = [row["owner"] for row in state["squads"]
+                          if row["controllable"] and row.get("source_root") is True]
+            elif argv == ["clear"]:
+                owners = []
+            elif argv:
+                owners = [self.locate_squad(state, value, owned=True) for value in argv]
+            else:
+                raise ValueError("select requires squad IDs, all, or clear")
             with self.lock:
                 self.selected = [owner["squad_id"] for owner in owners]
                 self.selected_scope = (state["world_id"], state["episode_revision"])
             if self.weapon_overlay_enabled:
                 self.request_weapon_overlay(state, owners)
+                if not owners:
+                    self.weapon_overlay_enabled = False
             print(f"Selected: {self.selected}")
             return
         if cmd == "overlay" and len(argv) == 1:
