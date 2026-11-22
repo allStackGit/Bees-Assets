@@ -169,7 +169,7 @@ class RemoteBattleWindow:
         self.view_height = 1
         self.performance_enabled = False
         self.performance_started_ns = time.perf_counter_ns()
-        self.performance_counts = [0] * 9
+        self.performance_counts = [0] * 10
         self.performance_label = ""
 
         if not console.spectator:
@@ -1160,7 +1160,7 @@ class RemoteBattleWindow:
     def toggle_performance(self, _event=None):
         self.performance_enabled = not self.performance_enabled
         self.performance_started_ns = time.perf_counter_ns()
-        self.performance_counts = [0] * 9
+        self.performance_counts = [0] * 10
         self.performance_label = ""
         self.draw()
 
@@ -1270,13 +1270,46 @@ class RemoteBattleWindow:
             self.canvas.create_polygon(*coords, fill=PIECE_FADE[shade],
                                        outline="")
 
+        shots_culled = 0
         for shot in state.get("projectiles", []):
-            x, y = self.to_screen(shot["x"], shot["y"])
-            if -4 <= x <= self.view_width+4 and -4 <= y <= self.view_height+4:
+            if not self.collider_on_screen(shot):
                 if measuring:
-                    shots_drawn += 1
+                    shots_culled += 1
+                continue
+            # Live projectile hulls are read from the same physics state
+            # as damage and collision. Laser beams grow, explosions expand,
+            # and missile shapes turn without a client-side weapon model.
+            shape, points = self.collider_screen_shape(shot)
+            left, top, right, bottom = self.collider_screen_bounds(shape, points)
+            if (right < -5 or left > self.view_width+5 or
+                    bottom < -5 or top > self.view_height+5):
+                if measuring:
+                    shots_culled += 1
+                continue
+            if measuring:
+                shots_drawn += 1
+            projectile_type = shot.get("type")
+            exploding = projectile_type in (13, 14, 15)
+            color = ("#f0a365" if exploding else
+                     "#f6ca8a" if projectile_type in (5, 12) else
+                     "#ffe4a2")
+            if shape == "polygon":
+                self.canvas.create_polygon(*points,
+                                           fill="" if exploding else color,
+                                           outline=color)
+            elif shape == "oval":
+                # Subpixel bullets remain perceptible at battle-map zoom.
+                cx, cy = (left+right)*0.5, (top+bottom)*0.5
+                rx, ry = max(2.0, (right-left)*0.5), max(2.0, (bottom-top)*0.5)
+                self.canvas.create_oval(cx-rx, cy-ry, cx+rx, cy+ry,
+                                       fill="" if exploding else color,
+                                       outline=color)
+            elif shape == "bounds":
+                self.canvas.create_rectangle(*points, outline=color)
+            else:
+                x, y = points
                 self.canvas.create_oval(x-2, y-2, x+2, y+2,
-                                        fill="#ffe4a2", outline="")
+                                        fill=color, outline="")
         selected = self.selected_owners()
         selected_ship_ids = {
             sid for squad in state["squads"] if squad["owner"] in selected
@@ -1504,7 +1537,7 @@ class RemoteBattleWindow:
             for index, addition in enumerate((
                 1, elapsed_ns, ships_drawn, ships_culled,
                 obstacles_drawn, obstacles_culled, shots_drawn,
-                pieces_drawn, pieces_culled,
+                pieces_drawn, pieces_culled, shots_culled,
             )):
                 stats[index] += addition
             sampled_ns = time.perf_counter_ns() - self.performance_started_ns
@@ -1515,11 +1548,11 @@ class RemoteBattleWindow:
                     f"  |  build {stats[1] / frames / 1_000_000:.2f} ms\n"
                     f"Ships {stats[2] / frames:.0f} drawn / {stats[3] / frames:.0f} culled"
                     f"  |  objects {stats[4] / frames:.0f} drawn / {stats[5] / frames:.0f} culled"
-                    f"  |  shots {stats[6] / frames:.0f}"
+                    f"  |  shots {stats[6] / frames:.0f} / {stats[9] / frames:.0f} culled"
                     f"  |  pieces {stats[7] / frames:.0f} / {stats[8] / frames:.0f} culled"
                 )
                 self.performance_started_ns = time.perf_counter_ns()
-                self.performance_counts = [0] * 9
+                self.performance_counts = [0] * 10
             if self.performance_label:
                 self.canvas.create_text(
                     self.view_width-14, 14, text=self.performance_label,
