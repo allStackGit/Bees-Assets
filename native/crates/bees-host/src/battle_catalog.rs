@@ -1857,6 +1857,9 @@ impl BattleCatalog {
             .collect::<Vec<_>>();
         roster_ids.sort_unstable();
         roster_ids.dedup();
+        let playable_sides = self.battles.iter()
+            .filter_map(|entry| entry.mission.as_ref().map(|mission| mission.player_side))
+            .collect::<HashSet<_>>();
         let fleet_roster = roster_ids.into_iter().filter_map(|id| {
             let history = progress.fleet.get(&id);
             let purchased = progress.purchased_ship(id);
@@ -1864,6 +1867,7 @@ impl BattleCatalog {
             let side = history.map(|record| record.side)
                 .or_else(|| purchased.map(|(side, _)| side))
                 .or_else(|| authored.map(|owner| owner.side))?;
+            if !playable_sides.contains(&side) { return None; }
             let squad = purchased.map(|(_, ship)| ship.saved_squad_id)
                 .or_else(|| authored.map(|owner| owner.current_saved_squad_id));
             let acquisition = if purchased.is_some() {
