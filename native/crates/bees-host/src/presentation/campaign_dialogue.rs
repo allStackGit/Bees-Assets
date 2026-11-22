@@ -30,7 +30,10 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
             ("Samuel", "Commander, more unidentified vessels are approaching."),
         ],
         CampaignCue::PlutoAnomalyVictory => &[
-            ("Samuel", "The unidentified vessel is down, commander."),
+            ("Tom", "Uh, Commander? Are you seeing this?"),
+            ("Samuel", "More unidentified vessels are approaching."),
+            ("Samuel", "Communications are down, sir. What should we do?"),
+            ("Samuel", "Understood. Preparing our fleet to deploy, sir."),
         ],
         CampaignCue::PlutoAnomalyDefeat => &[
             ("Samuel", "We've lost contact with our scouting force, commander."),
