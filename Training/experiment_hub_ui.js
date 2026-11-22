@@ -2294,44 +2294,38 @@ document.addEventListener('DOMContentLoaded', () => {
             ].filter(key=>availableKeys.has(key)&&!requested.includes(key));
             return requested.concat(fallback);
         });
-        const evaluationDefaults=[];
-        for(let index=0;evaluationDefaults.length<8;index++) {
-            let added=false;
-            for(const choices of evaluationChoices) {
-                if(evaluationDefaults.length>=8)break;
-                if(choices[index]) {
-                    evaluationDefaults.push(choices[index]);
-                    added=true;
-                }
-            }
-            if(!added)break;
-        }
-        const learningDefaults=[...evaluationDefaults,
-            ...['selection_candidate_survival_score',
+        const learningDefaults=[
+            'selection_candidate_survival_score',
             'selection_incumbent_survival_score','training_win_rate','training_score_rate',
             'training_mean_score','loss','entropy',
             'colony_window_deliveries','colony_window_feedings',
             'colony_window_births','colony_window_combat_deaths',
             'colony_mean_population',
             'ant_decisions_per_second'].map(name=>'metric:'+name)
-            .filter(key=>metricOptions.some(option=>option.key===key))];
+            .filter(key=>availableKeys.has(key));
         const override=comparisonMetricOverrides.get(project);
-        const matchingOverride=override?.filter(key=>
-            metricOptions.some(metric=>metric.key===key));
+        const matchingOverride=override?.filter(key=>availableKeys.has(key));
+        // New evaluation receipts must never displace already displayed
+        // trainer metrics. Retain the user's current automatic selection,
+        // restore training defaults if an earlier evaluation-only refresh
+        // hid them, then append just one score/success metric per new suite.
+        const initial=keep.length?keep:preferred.length?preferred:
+            learningDefaults.slice(0,5);
+        const trainingAvailable=[...new Set([...preferred,...learningDefaults])]
+            .filter(key=>!key.startsWith('metric:eval_'));
+        const automatic=[...initial];
+        if(!automatic.some(key=>!key.startsWith('metric:eval_')))
+            automatic.unshift(...trainingAvailable.slice(0,5));
+        for(const choices of evaluationChoices) {
+            if(choices.some(key=>automatic.includes(key)))continue;
+            const summary=choices.find(key=>key.endsWith('_score_rate'))||
+                choices.find(key=>key.endsWith('_survival_rate'))||
+                choices.find(key=>!key.includes('_count'))||choices[0];
+            if(summary)automatic.push(summary);
+        }
         const metricChoices=override?.length===0?[]:
             matchingOverride?.length?matchingOverride:
-                // Newly completed independent evaluations become visible
-                // even if Compare was opened before the first receipt.
-                // Only a deliberate viewer choice (override) suppresses
-                // them; an automatically retained training selection does not.
-                evaluationDefaults.length
-                    ?[...evaluationDefaults.slice(0,8),
-                        ...(keep.length?keep:preferred)
-                            .filter(key=>!evaluationDefaults.includes(key))
-                            .slice(0,Math.max(0,5-evaluationDefaults.length))]
-                    :keep.length?keep:preferred.length?preferred:
-                    learningDefaults.length?learningDefaults.slice(0,5):
-                        [metricOptions[0]?.key];
+                [...new Set(automatic)].filter(key=>availableKeys.has(key));
         for(const option of metricSelect.options)
             option.selected=metricChoices.includes(option.value);
         metricSelect.dataset.metricProject=project;
