@@ -1403,6 +1403,24 @@ impl NativeRemotePlay {
                     }
                     state["can_surrender"] = json!(false);
                     state["can_activate_retreat"] = json!(false);
+                    // Some campaign objective fields are intentionally
+                    // available only to the controlling commander, even
+                    // when a same-side observer is entitled to see the
+                    // physical friendly hulls through normal source fog.
+                    // Do not reuse the player's private objective overlay
+                    // for read-only seats.
+                    if let Some(objective) =
+                        state["campaign_objective"].as_object_mut()
+                    {
+                        for private in [
+                            "barge_ids", "barges_remaining",
+                            "scout_selected", "combat_released",
+                            "honeybee_spotted", "gunship_arrived",
+                            "gunship_briefed", "honeybee_destroyed",
+                        ] {
+                            objective.remove(private);
+                        }
+                    }
                     if let Some(squads) = state["squads"].as_array_mut() {
                         for squad in squads {
                             squad["controllable"] = json!(false);
