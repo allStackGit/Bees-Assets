@@ -527,6 +527,10 @@ struct PeerClient {
     briefing_rejected: Option<(u64,u64,u32)>,
     authenticated: bool,
     connected: bool,
+    /// The host proves this authority class in its signed-in welcome,
+    /// while separate observer credentials are never promoted to command
+    /// seats by locally selecting ships or changing a UI setting.
+    spectator: bool,
     /// UI-only control gate, computed from the authoritative story cue
     /// and terminal result; no independent battle simulation.
     input_suppressed: bool,
@@ -556,7 +560,8 @@ fn link_disconnected(error: &io::Error) -> bool {
 
 impl PeerClient {
     fn connect(address: &str, token: &str, side: i32,
-        resume_session_id: Option<&str>) -> Result<Self, Box<dyn Error>> {
+        resume_session_id: Option<&str>, spectator: bool,
+    ) -> Result<Self, Box<dyn Error>> {
         let mut connection = None;
         for candidate in address.to_socket_addrs()? {
             match TcpStream::connect_timeout(&candidate, Duration::from_secs(5)) {
@@ -567,7 +572,8 @@ impl PeerClient {
         let mut socket = connection.ok_or_else(|| invalid("native multiplayer server unreachable"))?;
         socket.set_nodelay(true)?;
         let mut hello = serde_json::to_vec(&json!({
-            "kind": "hello", "token": token, "resume_session_id": resume_session_id,
+            "kind": "hello", "token": token,
+            "resume_session_id": resume_session_id, "spectator": spectator,
         }))?;
         hello.push(b'\n');
         socket.write_all(&hello)?;
@@ -578,7 +584,8 @@ impl PeerClient {
             last_response_request: 0, pending_order_times: VecDeque::new(),
             briefing_pending: None, briefing_approved: None,
             briefing_rejected: None,
-            authenticated: false, connected: true, input_suppressed: false, side,
+            authenticated: false, connected: true,
+            input_suppressed: spectator, spectator, side,
             host_session_id: None,
             expected_host_session_id: resume_session_id.map(str::to_owned),
             state: None, visual: RemoteVisual::default(),
@@ -635,7 +642,8 @@ impl PeerClient {
                         return Err(invalid("native multiplayer socket reauthenticated after its session was established").into());
                     }
                     if message["protocol"].as_u64() != Some(1) ||
-                        message["side"].as_i64() != Some(i64::from(self.side)) {
+                        message["side"].as_i64() != Some(i64::from(self.side)) ||
+                        message["spectator"].as_bool() != Some(self.spectator) {
                         return Err(invalid("native host authenticated the wrong player side or protocol").into());
                     }
                     let host_id = message["host_session_id"].as_str()
@@ -656,7 +664,9 @@ impl PeerClient {
                     }
                     self.host_session_id = Some(host_id.to_owned());
                     self.authenticated = true;
-                    self.notice = if message["recovered_host"] == true {
+                    self.notice = if self.spectator {
+                        format!("Watching side {} (read only, source fog)", self.side)
+                    } else if message["recovered_host"] == true {
                         format!("Recovered original battle as player side {}. Unacknowledged commands were not resent.", self.side)
                     } else {
                         format!("Connected as player side {}", self.side)
@@ -936,6 +946,9 @@ impl PeerClient {
         if !self.authenticated || !self.connected {
             return Err(invalid("not connected to native host").into());
         }
+        if self.spectator {
+            return Err(invalid("native spectator seat has no gameplay command authority").into());
+        }
         // The local native window withholds player commands while its
         // authored campaign briefing is visible and after a terminal
         // outcome. The LAN window must obey the same presentation rule.
@@ -964,8 +977,8 @@ impl PeerClient {
     fn briefing_ready(&mut self, world:u64, revision:u64, sequence:u32)
         -> Result<(),Box<dyn Error>>
     {
-        if !self.authenticated || !self.connected {
-            return Err(invalid("cannot acknowledge briefing before authentication").into());
+        if !self.authenticated || !self.connected || self.spectator {
+            return Err(invalid("only an authenticated player can acknowledge a briefing").into());
         }
         let id=self.next_request;
         self.enqueue_request(json!({"kind":"briefing_ready",
@@ -2612,7 +2625,11 @@ pub fn connect_remote(
         }
     } else { None };
     let mut last_persisted_session = original.clone();
-    let mut peer=PeerClient::connect(address,token,expected_side,original.as_deref())?;
+    let spectator = std::env::var("BEES_NATIVE_REMOTE_SPECTATE")
+        .is_ok_and(|setting| setting == "1" || setting.eq_ignore_ascii_case("true"));
+    let mut peer=PeerClient::connect(
+        address, token, expected_side, original.as_deref(), spectator,
+    )?;
     let mut window=Window::new("Bees | Native Multiplayer",WIDTH,HEIGHT,
         WindowOptions::default())?;
     window.set_target_fps(30);
@@ -2779,7 +2796,9 @@ pub fn connect_remote(
             peer.metrics.reconnect_attempts+=1;
             let original = peer.host_session_id.as_deref()
                 .or(peer.expected_host_session_id.as_deref());
-            match PeerClient::connect(address,token,expected_side,original) {
+            match PeerClient::connect(
+                address, token, expected_side, original, spectator,
+            ) {
                 Ok(mut replacement) => {
                     replacement.metrics=std::mem::take(&mut peer.metrics);
                     replacement.metrics.reconnect_transports_opened+=1;
@@ -3047,7 +3066,7 @@ pub fn connect_remote(
         // A completed K/L dialogue is not an accepted host release until
         // its separate authenticated acknowledgment returns. This prevents
         // gameplay inputs racing the paused server's final briefing tick.
-        if ack_required&&!briefing&&!terminal {
+        if ack_required&&!briefing&&!terminal&&!peer.spectator {
             if let Some((world,revision,sequence))=story_briefing {
                 let pending=peer.briefing_pending.is_some_and(|(w,r,s,_)|
                     (w,r,s)==(world,revision,sequence));
@@ -3068,14 +3087,16 @@ pub fn connect_remote(
         let host_briefing_paused=peer.state.as_ref()
             .is_some_and(|state|state["briefing_paused"]==true);
         let surrender_owner = if !terminal && !briefing && !host_briefing_paused &&
-            !show_controls_help && !held_fire_active && peer.connected && peer.authenticated {
+            !peer.spectator && !show_controls_help && !held_fire_active &&
+            peer.connected && peer.authenticated {
             peer.state.as_ref().and_then(|state| {
                 if state["can_surrender"] != true { return None; }
                 Some((peer.host_session_id.clone()?, state["world_id"].as_u64()?,
                     state["episode_revision"].as_u64()?))
             })
         } else { None };
-        peer.input_suppressed=terminal||briefing||host_briefing_paused||show_controls_help;
+        peer.input_suppressed=peer.spectator||terminal||briefing||
+            host_briefing_paused||show_controls_help;
         if let Some(owner) = surrender_confirmation.as_ref() {
             if surrender_owner.as_ref() != Some(owner) ||
                 window.is_key_pressed(Key::N,KeyRepeat::No) {
@@ -3681,7 +3702,7 @@ pub fn connect_remote(
         }
         // Interest changes only with the selected live lifetimes, toggle,
         // or episode. It never enters the authoritative input trace.
-        if peer.connected && peer.authenticated {
+        if peer.connected && peer.authenticated && !peer.spectator {
             if let Some(state)=peer.state.as_ref() {
                 let request=(
                     state["world_id"].as_u64().unwrap_or(0),
