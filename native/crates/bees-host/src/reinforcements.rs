@@ -386,11 +386,83 @@ fn place_reinforcement_formation(
             }
         }
     }
-    let center = selected.ok_or(
-        "Reinforcement formation cannot fit in the authored Pathfinder map",
-    )?;
-    for (id, offset, _) in members {
-        positions.insert(id, center + offset);
+    if let Some(center) = selected {
+        for (id, offset, _) in members {
+            positions.insert(id, center + offset);
+        }
+        return Ok(());
+    }
+
+    // Source Squad.PlaceFormationSlotsIndividually is the final fallback
+    // when no translated formation fits. Search each ship's original slot
+    // in authored member order, respecting previously placed hull extents.
+    // These are staging coordinates only; movement and collision remain in
+    // the authoritative CombatWorld after admission.
+    let mut placed: Vec<(i64, Vec2, Vec2)> = Vec::with_capacity(members.len());
+    for &(id, offset, required) in &members {
+        let ship = ships[&id];
+        let size = metadata.ship_catalog.sprite_size(ship.ship_type)
+            .ok_or("Reinforcement fallback has no source sprite size")?;
+        if !size.is_finite() || size.x <= 0.0 || size.y <= 0.0 {
+            return Err("Reinforcement fallback ship dimensions are invalid");
+        }
+        let half = size * 0.5;
+        let requested = requested_center + offset;
+        let valid = |position: Vec2| {
+            position.is_finite() &&
+            position.x >= bounds.min.x && position.x <= bounds.max.x &&
+            position.y >= bounds.min.y && position.y <= bounds.max.y &&
+            clearance.can_occupy_cell(frame.world_to_level(position), required) &&
+            !placed.iter().any(|&(_, previous, previous_half)| {
+                (position.x - previous.x).abs() < half.x + previous_half.x &&
+                (position.y - previous.y).abs() < half.y + previous_half.y
+            })
+        };
+        let mut chosen = valid(requested).then_some(requested);
+        if chosen.is_none() {
+            let step = bees_sim::navigation::NAVIGATION_CELL_SCALE;
+            for ring in 1i32..=64 {
+                let mut best: Option<(Vec2, f32)> = None;
+                for x in -ring..=ring {
+                    for y in -ring..=ring {
+                        if x.abs().max(y.abs()) != ring { continue; }
+                        let candidate = requested +
+                            Vec2::new(x as f32 * step, y as f32 * step);
+                        if !valid(candidate) { continue; }
+                        let distance = (candidate - requested).length_squared();
+                        if best.is_none_or(|(_, previous)| distance < previous) {
+                            best = Some((candidate, distance));
+                        }
+                    }
+                }
+                if let Some((point, _)) = best {
+                    chosen = Some(point);
+                    break;
+                }
+            }
+        }
+        // The source nearest-destination fallback deliberately ignores
+        // previously placed hulls if every nearby nonoverlapping slot is
+        // blocked. It still requires a walkable Pathfinder destination.
+        if chosen.is_none() {
+            let bounded = Vec2::new(
+                requested.x.clamp(bounds.min.x, bounds.max.x),
+                requested.y.clamp(bounds.min.y, bounds.max.y),
+            );
+            chosen = clearance.nearest_walkable_destination(
+                frame.world_to_level(bounded), required,
+            ).map(|local| frame.level_to_world(local))
+                .filter(|point| point.x >= bounds.min.x &&
+                    point.x <= bounds.max.x && point.y >= bounds.min.y &&
+                    point.y <= bounds.max.y);
+        }
+        let point = chosen.ok_or(
+            "Reinforcement fallback has no walkable Pathfinder destination",
+        )?;
+        placed.push((id, point, half));
+    }
+    for (id, point, _) in placed {
+        positions.insert(id, point);
     }
     Ok(())
 }
