@@ -560,6 +560,13 @@ impl ShipBody {
         &self.collider.shape
     }
 
+    /// Source CheckClickCollision includes the real Beehive healing
+    /// child trigger. UI adapters may inspect its immutable local shape
+    /// without enlarging the combat collider or cloning the physics world.
+    pub fn input_healing_zone_shape(&self) -> Option<&ShipShape> {
+        self.healing_zone.as_ref().map(|zone| &zone.shape)
+    }
+
     pub(crate) fn matches_source_geometry(&self, source: &Self) -> bool {
         self.layer == source.layer &&
         self.collider.shape == source.collider.shape &&
