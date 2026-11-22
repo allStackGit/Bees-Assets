@@ -19,13 +19,15 @@ use crate::scene_builder::{NativeAuthoredEntity, NativeAuthoredLevel, NativeAuth
 use crate::ship_specials::NativeAuthoredShipSpecial;
 
 /// Exactly one source-owned admission gate for a deferred wave.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum NativeReinforcementActivation {
     AfterSeconds(f32),
     OnCampaignCue(NativeMissionCue),
     OnShipDestroyed(i64),
 }
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NativeReinforcementPlan {
     pub activation: NativeReinforcementActivation,
     pub squad_item_ids: Vec<i64>,
