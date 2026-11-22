@@ -430,6 +430,7 @@ async function main(argv=process.argv.slice(2)) {
     // false until the learner checkout and running coordinator generation
     // are both updated at an idle native-job boundary.
     let closing=false,releaseBusy=false;
+    let observedReleaseSignature=null;
     async function releaseCycle() {
         if(closing||releaseBusy)return;
         releaseBusy=true;
@@ -469,6 +470,22 @@ async function main(argv=process.argv.slice(2)) {
                     console.error('[hub-updates] Frontend activation: '+
                         String(error.message||error));
                 }
+            }
+            // An active development branch can receive many commits within
+            // minutes. Publish immutable archives and hot-swap frontend-only
+            // assets immediately, but only activate process-code changes
+            // after the requested release set has remained identical across
+            // two publisher polls. This coalesces back-to-back commits into
+            // one coordinated activation instead of repeated disconnects.
+            const signature=JSON.stringify({
+                worker:candidate||null,
+                components:Object.entries(releases.latest)
+                    .sort(([a],[b])=>a.localeCompare(b))
+                    .map(([name,entry])=>[name,entry.version]),
+            });
+            if(signature!==observedReleaseSignature) {
+                observedReleaseSignature=signature;
+                return;
             }
             const active=hub.state.jobs.some(job=>job.dispatch_id&&
                 !job.capacity_released_at&&
