@@ -5,7 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {request: resourceRequest,matchingLeaseBudget,placements: resourcePlacements,
-    startHeadroom,observedLoadPreference,approvedEndpointSubset} = require('./experiment_hub_resources');
+    placementAlternatives, startHeadroom,observedLoadPreference,approvedEndpointSubset} =
+    require('./experiment_hub_resources');
 const {validateProgress,selectChartMetrics,BottleneckEvidence}=require('./experiment_hub_progress');
 const {tinyBrainsProfiles,tinyBrainsImports,supportsTinyBrainsProfile,
     tinyBrainsDeviceForLease}=require('./experiment_hub_tinybrains_adapter');
@@ -1691,7 +1692,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
             (!snapshot||distributedRolloutHost(snapshot,selected,machine))&&
             (!preferred||preferred===machine.id)&&
             (!selected.continuation_machine_id||selected.continuation_machine_id===machine.id));
-        const fits=resourcePlacements(eligible,reservations,selected.resources)
+        const fits=placementAlternatives(eligible,reservations,selected.resources)
             .filter(p=>p.capacity_fits);
         const r=selected.resources;
         const cpuOnly=r.gpu_count===0&&!(r.gpus||[]).length;
@@ -1750,7 +1751,9 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
             observedLoadPreference(a,b,job.resources)||
             a.available.cpus-b.available.cpus||
             a.available.ram_mb-b.available.ram_mb||
-            a.machine_id.localeCompare(b.machine_id));
+            a.machine_id.localeCompare(b.machine_id)||
+            (a.suggested_gpus||[]).join(',').localeCompare(
+                (b.suggested_gpus||[]).join(',')));
     if(options.length<2||!following.length)return options[0]||null;
     // Preserve FIFO jobs while avoiding a placement that would block a
     // later job with exactly one capable host. This is advisory lookahead:
@@ -1772,18 +1775,21 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         const machine=machines.find(m=>m.id===option.machine_id);
         for(const later of soleOptions) {
             if(later.machine_id!==option.machine_id)continue;
-            if(!resourcePlacements([machine],shadow,later.job.resources)[0]
-                .capacity_fits)lost++;
+            if(!placementAlternatives([machine],shadow,later.job.resources)
+                .some(p=>p.capacity_fits))lost++;
         }
         return lost;
     };
+    // Two alternatives can be on the SAME host but different physical
+    // GPUs. A per-machine loss map silently erased their different effects
+    // on later jobs needing a specific pinned GPU.
     const loss=new Map(options.map(option=>[
-        option.machine_id,remainingOptionLoss(option),
+        option,remainingOptionLoss(option),
     ]));
     options.sort((a,b)=>
         Number(Boolean(a.observed_headroom_block))-
             Number(Boolean(b.observed_headroom_block))||
-        loss.get(a.machine_id)-loss.get(b.machine_id)||
+        loss.get(a)-loss.get(b)||
         (throughput?throughput.compare(job,a,b):0)||
         observedLoadPreference(a,b,job.resources));
     return options[0];
