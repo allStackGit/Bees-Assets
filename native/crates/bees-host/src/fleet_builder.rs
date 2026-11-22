@@ -1815,7 +1815,7 @@ pub(super) fn archive(
             .ok_or_else(|| invalid("native source archetypes are not a ship roster"))?;
         for side in 0..2 {
             if matches!(selected.mix[side], FleetMix::Queen) {
-                let mut authored = queen.clone();
+                let mut authored = (*queen).clone();
                 authored["side"] = json!(side as i32 + 1);
                 archetypes.push(authored);
             }
