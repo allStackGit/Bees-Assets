@@ -130,12 +130,19 @@ class RemoteBattleWindow:
         self.drag_box = None
         self.mouse_middle = None
         self.selected = []
+        self.weapon_overlay_on = tk.BooleanVar(value=False)
         self.last_feedback = ""
         self.dialogue_identity = None
         self.dialogue_line = 0
         self.view_width = 1
         self.view_height = 1
 
+        if not console.spectator:
+            ttk.Checkbutton(
+                self.toolbar_tactics, text="Weapon ranges / contacts",
+                variable=self.weapon_overlay_on,
+                command=self.update_weapon_interest,
+            ).pack(side="left", padx=4)
         for title in ("Move", "Attack", "Circle", "Right swipe", "Left swipe",
                       "In and out", "Guard", "Mine", "Heal", "Retreat", "Point fire",
                       "Patrol", "Held fire"):
@@ -263,6 +270,7 @@ class RemoteBattleWindow:
         self.dialogue_identity = None
         self.dialogue_line = 0
         self.selected = []
+        self.weapon_overlay_on.set(False)
         self.patrol_start = None
         self.held_drag = False
         self.mode = None
@@ -386,6 +394,7 @@ class RemoteBattleWindow:
                     key[1] != self.drawn_scope[1]
                 ):
                     self.selected = []
+                    self.weapon_overlay_on.set(False)
                     self.patrol_start = None
                     self.held_drag = False
                     self.mode = None
@@ -553,6 +562,17 @@ class RemoteBattleWindow:
                 closest, distance = ("obstacle", obj), d
         return closest if closest else (None, None)
 
+    def update_weapon_interest(self):
+        if self.console.spectator or not self.console.alive or self.state is None:
+            return
+        owners = self.selected_owners() if self.weapon_overlay_on.get() else []
+        try:
+            self.console.request_weapon_overlay(self.state, owners)
+        except (OSError, ValueError) as error:
+            self.weapon_overlay_on.set(False)
+            self.notice(f"Weapon overlay unavailable: {error}")
+        self.draw()
+
     def select(self, owner, additive):
         if not additive:
             self.selected.clear()
@@ -561,6 +581,8 @@ class RemoteBattleWindow:
                 self.selected.append(owner)
             elif additive:
                 self.selected.remove(owner)
+        if self.weapon_overlay_on.get():
+            self.update_weapon_interest()
         self.draw()
         self.update_sidebar()
 
@@ -572,6 +594,8 @@ class RemoteBattleWindow:
                 squad["owner"] for squad in self.state["squads"]
                 if squad["controllable"] and squad.get("source_root") is True
             ]
+            if self.weapon_overlay_on.get():
+                self.update_weapon_interest()
             self.draw()
             self.update_sidebar()
 
@@ -624,6 +648,8 @@ class RemoteBattleWindow:
             if index < len(self.sidebar_owners) and
             self.sidebar_owners[index]["controllable"]
         ]
+        if self.weapon_overlay_on.get():
+            self.update_weapon_interest()
         self.update_sidebar()
         self.draw()
 
@@ -902,6 +928,29 @@ class RemoteBattleWindow:
                           if objective.get("kind") == "target_ship" else None)
         for ship in state["ships"]:
             x, y = self.to_screen(ship["x"], ship["y"])
+            if self.weapon_overlay_on.get() and ship["id"] in selected_ship_ids:
+                for weapon in ship.get("weapons", []):
+                    ring = weapon.get("range")
+                    if ring is not None and ring[3]:
+                        center_x = ship["x"] + ring[0]
+                        center_y = ship["y"] + ring[1]
+                        cx, cy = self.to_screen(center_x, center_y)
+                        rx, _ = self.to_screen(center_x + ring[2], center_y)
+                        radius = abs(rx - cx)
+                        self.canvas.create_oval(
+                            cx-radius, cy-radius, cx+radius, cy+radius,
+                            outline="#648eae", dash=(3, 4),
+                        )
+                    origin = weapon.get("origin")
+                    if origin:
+                        ax, ay = self.to_screen(*origin)
+                        for contact in weapon.get("contacts", []):
+                            bx, by = self.to_screen(contact[0], contact[1])
+                            self.canvas.create_line(
+                                ax, ay, bx, by,
+                                fill=ENEMY if contact[2] else FRIENDLY,
+                                dash=(4, 3) if contact[2] else (),
+                            )
             # Rotation comes from the authoritative native ship motion.
             angle = math.radians(ship.get("rotation", 0.0))
             sn, cs = math.sin(angle), math.cos(angle)
