@@ -1571,6 +1571,14 @@ impl CombatWorld {
         self.reassign_carrier_children_after_death(index);
         self.game_strikers.remove(&victim_id);
         self.drone_carriers.remove(&victim_id);
+        // Queen.Kill cancels both the repeating timer and every active
+        // coroutine synchronously. Do not carry a dead Queen's pending
+        // waves through the next tick, an episode stop or a checkpoint.
+        self.game_queens.remove(&victim_id);
+        // FireBarge.Kill already emitted its explosion above, including
+        // the complete authored power. The ship's now-dead configuration
+        // must not accumulate through successive reinforcement waves.
+        self.fire_barge_bomb_powers.remove(&victim_id);
         self.game_barge_charges.remove(&victim_id);
         self.game_barge_player_config.remove(&victim_id);
         // Bomb.ReleaseTargetReservation is part of every authored bomber
@@ -2267,6 +2275,14 @@ impl CombatWorld {
             }.ok_or(CombatWorldError::InvalidRecoveryCheckpoint)?;
             game_queens.insert(queen_id, recovered);
         }
+        // Checkpoints written before immediate Queen retirement could
+        // still contain orphaned timer/coroutine state. Those old waves
+        // must not resume after an already-dead physical Queen is restored.
+        game_queens.retain(|&id, _| {
+            let index = ship_by_id[&id];
+            physics.ships()[index].active &&
+                !snapshot.ships[index].vitals.is_dead()
+        });
         if snapshot.queen_measurements.max_concurrent_waves <
             game_queens.values().map(|queen|
                 queen.active_wave_count()
@@ -2611,6 +2627,15 @@ impl CombatWorld {
         self.pending_game_warps = special.pending_warps;
         self.game_bomb_weapon_by_ship = special.bomb_weapon_by_ship;
         self.fire_barge_bomb_powers = special.fire_barge_powers;
+        // Old valid checkpoints may include a Fire Barge's historical
+        // damage configuration. Its explosion was already instantiated
+        // at the original death boundary; only live ship power is needed.
+        let slots = &self.ship_by_id;
+        let ships = &self.ships;
+        let bodies = self.physics.ships();
+        self.fire_barge_bomb_powers.retain(|&id, _|
+            slots.get(&id).is_some_and(|&index|
+                bodies[index].active && !ships[index].vitals.is_dead()));
         self.pending_game_fire_barges = special.pending_fire_barges;
         self.game_bomb_measurements = special.bomb_measurements;
         self.game_barge_measurements = special.barge_measurements;
