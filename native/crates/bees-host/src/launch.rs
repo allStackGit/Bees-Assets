@@ -7001,8 +7001,11 @@ fn run_battle(
                 });
             }
         }
-        if mission.is_some_and(|mission| mission.record_fleet_stats) {
-            source.fleet.enable_career_tracking();
+        if let Some(mission) = mission {
+            source.fleet.enable_campaign_score(mission.player_side);
+            if mission.record_fleet_stats {
+                source.fleet.enable_career_tracking();
+            }
         }
         source_levels.push(source);
         source_sides.push(sides);
@@ -9184,6 +9187,24 @@ fn run_battle(
         mission.is_some_and(|value| value.bank_player_minerals) {
         Some(banked_minerals)
     } else { None };
+    // Source CampaignScore gains the real Level's signed combat score;
+    // only the mining stages also credit their surviving ships' banked TSV.
+    // Read the SAME checkpointed Level ledger as the career/TSV outcome,
+    // never infer a score from career ship histories or training rewards.
+    let campaign_score_delta = if let Some(mission) = mission.filter(|_|
+        campaign_outcome.is_some()
+    ) {
+        let state = &host.simulation().world(0)
+            .ok_or_else(|| invalid("completed campaign score World is unavailable"))?.state;
+        let combat_score = state.metadata.fleet.campaign_player_score()
+            .ok_or_else(|| invalid("completed campaign lacks player score tracking"))?;
+        let minerals = if mission.bank_player_minerals {
+            i64::try_from(banked_minerals)
+                .map_err(|_| invalid("campaign mineral score exceeds supported signed range"))?
+        } else { 0 };
+        Some(combat_score.checked_add(minerals)
+            .ok_or_else(|| invalid("campaign score overflow"))?)
+    } else { None };
     // Include all current episode admissions as well as those from
     // previously recycled worlds. This covers independent multi-episode
     // training and fixed-seed evaluation without requiring hot-path logs.
@@ -9386,6 +9407,7 @@ fn run_battle(
         "campaign_fleet": campaign_fleet,
         "campaign_squads": campaign_squads,
         "campaign_banked_minerals": campaign_banked_minerals,
+        "campaign_score_delta": campaign_score_delta,
         "aborted_worlds": status.aborted_worlds,
         "failed_worlds": status.failed_worlds,
         "running_worlds": status.running_worlds,
