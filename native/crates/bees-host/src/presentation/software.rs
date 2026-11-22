@@ -2552,6 +2552,14 @@ impl NativeSoftwareRenderer {
                 seconds / 60, seconds % 60,
             );
             text::draw_centered(&mut self.pixels, self.width, 8, &label, 1, [239, 247, 255]);
+        } else if let Some(retreat_side) = view.combat.pending_player_retreat_side() {
+            let label = if view.player_authority.player_viewer_side() == Some(retreat_side) {
+                "Mine, defend, then press F3 to open your fleet retreat corridor"
+            } else {
+                "Stop the enemy fleet before it can open a retreat corridor"
+            };
+            text::draw_centered(&mut self.pixels, self.width, 8,
+                label, 1, [239, 247, 255]);
         } else if let Some((exiting_side, _, escort)) = view.combat.extraction_objective() {
             if !escort {
                 let withdrawing = view.combat.extraction_is_withdrawal();
