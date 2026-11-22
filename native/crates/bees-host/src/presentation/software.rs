@@ -3537,6 +3537,11 @@ impl NativeSoftwareRenderer {
     }
 
     #[cfg(feature = "client")]
+    pub(crate) fn draw_surrender_confirmation(&mut self) {
+        self.draw_campaign_dialogue("Surrender this battle?",
+            "All your deployed ships will be permanently destroyed. Y confirm, N or Esc cancel.");
+    }
+
     pub(crate) fn draw_campaign_dialogue(&mut self, speaker: &str, message: &str) {
         let panel_width = self.width.min(680);
         let max_text_width = panel_width.saturating_sub(32).max(1);

@@ -85,6 +85,9 @@ pub struct EpisodeTerminalMeasurements {
     /// Actual surviving-fleet withdrawal, not combat defeat or a draw.
     #[serde(default)]
     pub withdrawals_completed: u64,
+    /// Explicit player forfeits settled by the real physical death ledger.
+    #[serde(default)]
+    pub surrenders: u64,
 }
 
 /// Per-side RecordShipDeathAttribution from the Unity coordinator.
@@ -813,6 +816,23 @@ impl NativeEpisodeTerminal {
         };
         let bee_dead = world.living_mobile_ships_on_side(self.bee_side) == 0;
         let human_dead = world.living_mobile_ships_on_side(self.human_side) == 0;
+        if let Some(side) = world.surrendered_side() {
+            // Source campaign surrender invokes the authored defeat
+            // ending even when a future reinforcement or objective would
+            // otherwise keep the episode running.
+            let winner = if side == self.bee_side { self.human_side }
+                else { self.bee_side };
+            let outcome = EpisodeTerminalResult {
+                winner_side: winner, timed_out: false,
+                extraction_victory: false, duration_seconds: self.elapsed_seconds,
+                bee_side_eliminated: bee_dead,
+                human_side_eliminated: human_dead,
+            };
+            self.completed = Some(outcome);
+            self.measurements.surrenders += 1;
+            world.frozen_after_elimination = true;
+            return Ok(Some(outcome));
+        }
         if let Some(target) = self.target_ship {
             let attacking_side = target.attacking_side;
             let defender_side = if attacking_side == self.bee_side {

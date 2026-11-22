@@ -1496,6 +1496,7 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput)
                 NativePlayerInput::LockOn(_) => "Squad cannot change Lock On",
                 NativePlayerInput::Chase(_) => "Squad cannot change Chase",
                 NativePlayerInput::Select(_) => "Selection has no controllable squads",
+                NativePlayerInput::Surrender { .. } => "Surrender is not available",
             }}),
         Err(error) => return Err(format!("native player input: {error:?}")),
     };
@@ -1513,9 +1514,10 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput)
         Outcome::HeldFire(message) =>
             message != "No selected weapons accepted held fire",
         // Clearing a selection is also a valid non-command user input.
-        Outcome::Select(_) => true,
+        Outcome::Select(_) | Outcome::Surrender => true,
     };
     let feedback = match (action, outcome) {
+        (NativePlayerInput::Surrender { .. }, Outcome::Surrender) => "Surrender accepted",
         (NativePlayerInput::Select(_), Outcome::Select(count)) => {
             if count == 0 { "Squad selection cleared" }
             else { "Squad selection registered" }
@@ -1603,6 +1605,13 @@ fn remote_side_owns_input(host: &RolloutHost, action: &NativePlayerInput, side: 
     // This dispatcher remains the shared local/remote combat authority.
     // Only Begin supplies new squad lifetimes requiring individual checks.
     let owners = match action {
+        NativePlayerInput::Surrender { side: claimed, .. } => {
+            return *claimed == side && world.state.events.roster().active_lifetimes().any(|owner|
+                world.state.events.roster().get(owner).is_some_and(|squad| squad.side == side &&
+                    bees_gameplay::player_inputs::NativePlayerAuthority::player_permissions(
+                        &world.state.metadata, owner)
+                        .is_some_and(|p| p.user_controlled && p.can_accept_input)));
+        },
         NativePlayerInput::HeldFire(input) => {
             use bees_gameplay::player_inputs::NativeHeldFireAction;
             match &input.action {

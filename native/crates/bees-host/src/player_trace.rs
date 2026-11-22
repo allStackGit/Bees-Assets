@@ -29,6 +29,7 @@ pub enum NativePlayerInput {
     LockOn(NativePlayerSquadLockOn),
     Chase(NativePlayerSquadChase),
     Select(NativePlayerSquadSelection),
+    Surrender { world_id: WorldId, episode_revision: u64, side: i32 },
 }
 
 impl NativePlayerInput {
@@ -52,6 +53,7 @@ impl NativePlayerInput {
             Self::LockOn(v) => Some(&v.squads),
             Self::Chase(v) => Some(&v.squads),
             Self::Select(v) => Some(&v.squads),
+            Self::Surrender { .. } => None,
         }
     }
 
@@ -68,6 +70,7 @@ impl NativePlayerInput {
             Self::LockOn(input) => (input.world_id, input.episode_revision),
             Self::Chase(input) => (input.world_id, input.episode_revision),
             Self::Select(input) => (input.world_id, input.episode_revision),
+            Self::Surrender { world_id, episode_revision, .. } => (*world_id, *episode_revision),
         }
     }
 }

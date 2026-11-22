@@ -128,6 +128,7 @@ pub struct NativeClient {
     hotseat: Option<NativeHotseat>,
     paused: bool,
     show_controls_help: bool,
+    surrender_confirmation: Option<(WorldId, u64, i32)>,
     /// Read-only Fleet Codex modal. Reuses the existing help pause/input
     /// boundary rather than introducing an independent game clock.
     codex_open: bool,
@@ -243,7 +244,7 @@ impl NativeClient {
             music_locations: Vec::new(), bounds,
             selected_world: 0, selection_owner: None,
             submitted_selection: Vec::new(), hotseat: None,
-            paused: false, show_controls_help: false,
+            paused: false, show_controls_help: false, surrender_confirmation: None,
             codex_open: false,
             codex_selected: 18,
             last_title_update: None,
@@ -447,6 +448,38 @@ impl NativeClient {
         if !self.window.is_open() {
             return Ok(NativeClientAction::Quit);
         }
+        if let Some((world, revision, side)) = self.surrender_confirmation {
+            if (world, revision) != (view.world_id, view.episode_revision) ||
+                view.player_authority.player_viewer_side() != Some(side) ||
+                view.terminal_result.is_some() {
+                self.surrender_confirmation = None;
+            } else {
+                let (width, height) = self.window.get_size();
+                if width > 0 && height > 0 {
+                    self.renderer.resize(width, height)?;
+                    self.renderer.render(&view, bounds);
+                    self.renderer.draw_surrender_confirmation();
+                    self.window.update_with_buffer(self.renderer.pixels(), width, height)?;
+                } else { self.window.update(); }
+                self.next_step = Instant::now();
+                self.previous_frame = self.next_step;
+                if self.window.is_key_pressed(Key::Escape, KeyRepeat::No) ||
+                    self.window.is_key_pressed(Key::N, KeyRepeat::No) {
+                    self.surrender_confirmation = None;
+                } else if self.window.is_key_pressed(Key::Y, KeyRepeat::No) {
+                    self.surrender_confirmation = None;
+                    self.paused = false;
+                    self.pending_steps = 1;
+                    return Ok(NativeClientAction::Input {
+                        action: NativePlayerInput::Surrender {
+                            world_id: world, episode_revision: revision, side,
+                        },
+                        step: true,
+                    });
+                }
+                return Ok(NativeClientAction::Wait);
+            }
+        }
         // Esc dismisses the temporary strategy picker before affecting
         // the running battle. Use the press edge so a held key cannot
         // also quit on the following frame after closing the modal.
@@ -639,6 +672,28 @@ impl NativeClient {
                 view.campaign_dialogue.is_some_and(|(_, cue)| cue.is_briefing())
         };
         if view.terminal_result.is_some() { self.held_fire_target = None; }
+        if !self.playback && !self.show_controls_help && !briefing &&
+            self.held_fire_target.is_none() && view.terminal_result.is_none() &&
+            self.window.is_active() && self.window.is_key_pressed(Key::F5, KeyRepeat::No) {
+            if let Some(side) = view.player_authority.player_viewer_side() {
+                use bees_gameplay::campaign_dialogue::{CampaignCue, CampaignObjectiveKind};
+                let blocked = view.campaign_objective == Some(CampaignObjectiveKind::PlutoAnomaly) &&
+                    !view.campaign_dialogue.is_some_and(|(_, cue)| matches!(cue,
+                        CampaignCue::PlutoAnomalyGunshipBriefingComplete |
+                        CampaignCue::PlutoAnomalyHoneybeeDestroyed));
+                if !blocked {
+                    self.surrender_confirmation = Some((view.world_id, view.episode_revision, side));
+                    self.selection_drag = None;
+                    self.renderer.selection_box = None;
+                    self.right_press = None;
+                    self.hud_press = None;
+                    self.squad_tab_press = None;
+                    self.shooting_press = None;
+                    self.renderer.show_shooting_menu = false;
+                    return Ok(NativeClientAction::Wait);
+                }
+            }
+        }
         self.bounds = bounds;
         if !self.show_controls_help &&
             self.window.is_key_pressed(Key::Space, KeyRepeat::No)
@@ -1551,7 +1606,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} selected | {}{} | {} | Weapon contacts {} | F1 controls | Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} selected | {}{} | {} | Weapon contacts {} | F1 controls | F5 surrender | Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,

@@ -944,6 +944,8 @@ pub struct CombatWorldRecoveryOwnersCheckpoint {
     extraction: Option<extraction::ExtractionState>,
     shots_harmless: bool,
     frozen_after_elimination: bool,
+    #[serde(default)]
+    surrendered_side: Option<i32>,
     lethal_map_borders: bool,
     constrain_map_borders: bool,
     vision_live_enemy_sides: HashSet<i32>,
@@ -1231,6 +1233,7 @@ pub struct CombatWorld {
     pub shots_harmless: bool,
     /// Dedicated RL episodes cannot apply further hits after game over.
     pub frozen_after_elimination: bool,
+    surrendered_side: Option<i32>,
 }
 
 /// Read-only source identity needed by squad, command and event recovery.
@@ -1398,6 +1401,7 @@ impl CombatWorld {
             events: Vec::new(),
             shots_harmless: false,
             frozen_after_elimination: false,
+            surrendered_side: None,
         })
     }
 
@@ -1711,6 +1715,7 @@ impl CombatWorld {
             extraction: self.extraction,
             shots_harmless: self.shots_harmless,
             frozen_after_elimination: self.frozen_after_elimination,
+            surrendered_side: self.surrendered_side,
             lethal_map_borders: self.lethal_map_borders,
             constrain_map_borders: self.constrain_map_borders,
             vision_live_enemy_sides: self.vision_live_enemy_sides.clone(),
@@ -1819,7 +1824,8 @@ impl CombatWorld {
         if snapshot.schema_version != 18 {
             return Err(CombatWorldError::InvalidRecoveryCheckpoint);
         }
-        if snapshot.level_geometry != self.level_geometry ||
+        if snapshot.surrendered_side.is_some_and(|side| !(1..=2).contains(&side)) ||
+            snapshot.level_geometry != self.level_geometry ||
             snapshot.lethal_map_borders && snapshot.constrain_map_borders ||
             snapshot.extraction.as_ref().zip(self.extraction.as_ref())
                 .is_some_and(|(saved, authored)| !saved.valid_recovery(authored)) ||
@@ -2415,6 +2421,7 @@ impl CombatWorld {
         self.extraction = snapshot.extraction;
         self.shots_harmless = snapshot.shots_harmless;
         self.frozen_after_elimination = snapshot.frozen_after_elimination;
+        self.surrendered_side = snapshot.surrendered_side;
         self.lethal_map_borders = snapshot.lethal_map_borders;
         self.constrain_map_borders = snapshot.constrain_map_borders;
         self.vision_live_enemy_sides = snapshot.vision_live_enemy_sides;
@@ -2519,6 +2526,21 @@ impl CombatWorld {
     pub fn physics(&self) -> &KinematicPhysics { &self.physics }
     pub fn events(&self) -> &[CombatEvent] { &self.events }
     pub fn ships(&self) -> &[CombatShip] { &self.ships }
+
+    /// Queue an authenticated surrender for the next fixed boundary.
+    /// Never kill hulls in the input dispatcher: the following tick would
+    /// erase their events before the roster, rewards and career consumers.
+    pub fn request_player_surrender(&mut self, side: i32) -> bool {
+        if !(1..=2).contains(&side) || self.frozen_after_elimination ||
+            self.surrendered_side.is_some() {
+            return false;
+        }
+        self.surrendered_side = Some(side);
+        true
+    }
+
+    pub fn surrendered_side(&self) -> Option<i32> { self.surrendered_side }
+
     pub fn map_object(&self, entity_id: i64) -> Option<&CombatMapObject> {
         self.map_objects.get(&entity_id)
     }
@@ -5515,6 +5537,28 @@ impl CombatWorld {
         }
         self.events.clear();
         if self.frozen_after_elimination {
+            return Ok(StepCounts {
+                active_ships: self.live_ship_total as u32,
+                active_projectiles: self.total_active_projectiles() as u32,
+                ..StepCounts::default()
+            });
+        }
+        if let Some(side) = self.surrendered_side {
+            self.begin_weapon_rank_tick();
+            // Unity Surrender calls Ship.Kill, not EndKill. Preserve all
+            // physical death effects and permanent casualty attribution,
+            // including stationary hulls, carriers and healing cascades.
+            // The authored ship slots do not move when physics retires
+            // them, so no temporary roster allocation is necessary.
+            for index in 0..self.ships.len() {
+                if self.ships[index].side != side ||
+                    self.ships[index].vitals.is_dead() ||
+                    !self.physics.ships()[index].active { continue; }
+                let id = self.ships[index].entity_id;
+                self.ships[index].vitals.kill_without_hit();
+                self.reservations.target_health_changed(id, 0);
+                self.retire_dead_ship(index, 0, 0)?;
+            }
             return Ok(StepCounts {
                 active_ships: self.live_ship_total as u32,
                 active_projectiles: self.total_active_projectiles() as u32,

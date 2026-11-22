@@ -353,6 +353,12 @@ impl CampaignDialogue {
 
     pub fn current(&self) -> (u32, CampaignCue) { (self.sequence, self.cue) }
 
+    pub fn allows_surrender(&self) -> bool {
+        !matches!(self.objective_kind(), Some(CampaignObjectiveKind::PlutoAnomaly)) ||
+            matches!(self.cue, CampaignCue::PlutoAnomalyGunshipBriefingComplete |
+                CampaignCue::PlutoAnomalyHoneybeeDestroyed)
+    }
+
     pub fn checkpoint(&self) -> CampaignDialogueCheckpoint {
         CampaignDialogueCheckpoint {
             schema_version: 1,
