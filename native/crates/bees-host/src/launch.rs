@@ -1697,6 +1697,7 @@ struct CampaignMission<'a> {
     record_fleet_stats: bool,
     bank_player_minerals: bool,
     bank_on_finished: bool,
+    score_on_victory_only: bool,
     lost_fleet_ids: Option<&'a HashSet<i64>>,
     enemy_lost_fleet_ids: Option<&'a HashSet<i64>>,
     purchased_ships: Option<&'a [NativePurchasedShip]>,
@@ -1749,6 +1750,8 @@ struct CampaignReplaySetup {
     bank_player_minerals: bool,
     #[serde(default)]
     bank_on_finished: bool,
+    #[serde(default)]
+    score_on_victory_only: bool,
     lost_fleet_ids: Option<HashSet<i64>>,
     #[serde(default)]
     enemy_lost_fleet_ids: Option<HashSet<i64>>,
@@ -1796,6 +1799,7 @@ impl CampaignReplaySetup {
             record_fleet_stats: mission.record_fleet_stats,
             bank_player_minerals: mission.bank_player_minerals,
             bank_on_finished: mission.bank_on_finished,
+            score_on_victory_only: mission.score_on_victory_only,
             lost_fleet_ids: mission.lost_fleet_ids.cloned(),
             enemy_lost_fleet_ids: mission.enemy_lost_fleet_ids.cloned(),
             purchased_ships: mission.purchased_ships.map(|ships| ships.to_vec()),
@@ -1842,6 +1846,7 @@ impl CampaignReplaySetup {
             record_fleet_stats: self.record_fleet_stats,
             bank_player_minerals: self.bank_player_minerals,
             bank_on_finished: self.bank_on_finished,
+            score_on_victory_only: self.score_on_victory_only,
             lost_fleet_ids: self.lost_fleet_ids.as_ref(),
             enemy_lost_fleet_ids: self.enemy_lost_fleet_ids.as_ref(),
             purchased_ships: self.purchased_ships.as_deref(),
@@ -3254,6 +3259,7 @@ fn launch_catalog_battle(
             record_fleet_stats: mission.record_fleet_stats,
             bank_player_minerals: mission.bank_player_minerals,
             bank_on_finished: mission.bank_on_finished,
+            score_on_victory_only: mission.score_on_victory_only,
             lost_fleet_ids: lost.as_ref(),
             enemy_lost_fleet_ids: enemy_lost.as_ref(),
             purchased_ships: purchased.as_deref(),
@@ -6729,7 +6735,7 @@ fn run_battle(
             // not the publisher's immutable pre-purchase squad positions.
             let staged_started = Instant::now();
             let squad_count = source.stage_titania_ii_player_fleet(
-                player_side, assets,
+                player_side, &assets,
             ).map_err(|error| contextual("Titania II fleet staging", error))?;
             println!("{}", json!({
                 "kind": "native_titania_ii_fleet_staged",
@@ -9536,7 +9542,12 @@ fn run_battle(
     ) {
         let state = &host.simulation().world(0)
             .ok_or_else(|| invalid("completed campaign score World is unavailable"))?.state;
-        if let Some(combat_score) = state.metadata.fleet.campaign_player_score() {
+        if mission.score_on_victory_only &&
+            campaign_outcome.as_ref().is_some_and(|outcome| !outcome.mission_victory())
+        {
+            // Keep the real match score, but award no career score.
+            Some(0)
+        } else if let Some(combat_score) = state.metadata.fleet.campaign_player_score() {
             let minerals = if mission.bank_player_minerals {
                 i64::try_from(banked_minerals)
                     .map_err(|_| invalid("campaign mineral score exceeds supported signed range"))?

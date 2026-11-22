@@ -1128,11 +1128,15 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             zone = level.get("extraction")
             waves = level.get("reinforcements")
             objects = scene.get("map_objects")
+            # Native scenes own static geometry in layout.
+            layout = scene.get("layout") or {}
             obstacles = {
-                item.get("entity_id") for item in scene.get("obstacles", [])
+                item.get("entity_id")
+                for name in ("add_static_boxes", "add_static_polygons")
+                for item in layout.get(name, [])
                 if isinstance(item, dict) and
                 type(item.get("entity_id")) is int
-            }
+            } - set(layout.get("remove_static_ids", []))
             tanks = [item for item in objects
                      if isinstance(item, dict) and
                      item.get("kind") == "fire_tank"] if isinstance(objects, list) else []
@@ -1761,9 +1765,13 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         if mission_stories.get(index) in (
                 "pluto_pushback", "pluto_bluer_pastures", "neptune_pressing_forward",
                 "neptune_seize_means", "uranus_on_the_offensive",
-                "uranus_new_threat"):
+                "uranus_new_threat", "titania_minesweeper", "titania_beenoculars"):
             mission["bank_player_minerals"] = False
+        if mission_stories.get(index) == "titania_minesweeper":
+            # Both outcomes advance to the appropriate Beenoculars route.
+            mission["advance_on"] = "finished"
         if mission_stories.get(index) == "titania_beenoculars":
+            mission["score_on_victory_only"] = True
             # TitaniaRouteState carries the preceding real Minesweeper
             # result. The default battle is the 330s victory route; the
             # 480s defeat route must be a separately authored physical
@@ -1828,9 +1836,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         if mission_advances.get(index, "victory") == "finished":
             mission["advance_on"] = "finished"
         if mission_grants.get(index) == "finished":
-            if mission_advances.get(index, "victory") != "finished" and \
-                    mission_stories.get(index) not in (
-                        "pluto_bluer_pastures", "neptune_of_production"):
+            if mission.get("advance_on") != "finished":
                 raise ValueError(
                     f"mission {index} completion-based rewards require --mission-advance {index}:finished"
                 )

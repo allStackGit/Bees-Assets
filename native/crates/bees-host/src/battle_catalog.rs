@@ -127,6 +127,9 @@ pub struct Mission {
     /// Default banking remains victory-only for existing authored games.
     #[serde(default)]
     pub bank_on_finished: bool,
+    /// Source endings that add the physical match score on victory only.
+    #[serde(default)]
+    pub score_on_victory_only: bool,
     /// Opt-in historical FleetShip deaths on the next authored Level.
     /// Only ships belonging to the player side are removed at setup;
     /// opposing authored forces remain owned by their scenario.
