@@ -743,6 +743,10 @@ def author(args) -> tuple[dict, dict, dict]:
     hive_run = getattr(args, "hivemind_run", None)
     hive = None
     hive_opponent = getattr(args, "hivemind_opponent_id", None)
+    # The original Fish Tank has NO local commander. Both factions use
+    # different real server opponent identities in ONE HiveMind Game, not
+    # competing local scripted-AI controllers or an external simulator.
+    hive_second = getattr(args, "hivemind_second_opponent_id", None)
     hive_delay = getattr(args, "hivemind_initial_delay_seconds", None)
     if hive_run is not None:
         # Only import an existing source-command connection, never synthesize
@@ -772,14 +776,20 @@ def author(args) -> tuple[dict, dict, dict]:
                 hive.get("reconnect_game_id") is not None or
                 type(hive_opponent) is not int or
                 not 0 < hive_opponent < 1 << 64 or
+                (hive_second is not None and
+                 (type(hive_second) is not int or
+                  not 0 < hive_second < 1 << 64 or
+                  hive_second == hive_opponent)) or
                 type(hive_delay) is not int or not 0 <= hive_delay <= 3600 or
-                len(controlled) != 1 or
+                (len(controlled) != 1 if hive_second is None else
+                 bool(controlled) or host is not None) or
                 args.trainable or cue_commands or death_commands or damage_commands):
             raise ValueError(
                 "live HiveMind authoring needs an existing fresh source-command "
-                "run, one human-controlled side, explicit positive server "
-                "opponent ID and original command delay (0..3600 seconds); "
-                "it cannot combine scripted gates or policy training"
+                "run, either one human-controlled side and one server "
+                "opponent, or --control none with two distinct positive "
+                "server opponent IDs; original command delay must be "
+                "0..3600 seconds, without scripted gates or policy training"
             )
         if (hive.get("auth_ticket_env") is None and
                 hive.get("allow_insecure_loopback") is not True):
@@ -982,7 +992,8 @@ def author(args) -> tuple[dict, dict, dict]:
         # is no second scripted or Python-side command director.
         for squad in new_squads:
             squad["hivemind"] = {
-                "opponent_id": hive_opponent,
+                "opponent_id": (hive_second if hive_second is not None
+                                and squad["side"] == 2 else hive_opponent),
                 "hivemind_controlled": squad["side"] not in controlled,
                 "immobile": all(
                     ship_by_id[id]["base_speed"] <= 0
@@ -2150,6 +2161,8 @@ def battle_parser() -> argparse.ArgumentParser:
                         help="existing authenticated native run whose fresh, real HiveMind connection is reused for server-owned AI squads")
     parser.add_argument("--hivemind-opponent-id", type=int,
                         help="original server opponent identity (required with --hivemind-run)")
+    parser.add_argument("--hivemind-second-opponent-id", type=int,
+                        help="distinct Human faction server opponent when --control none and both sides belong to one authentic HiveMind Game")
     parser.add_argument("--hivemind-initial-delay-seconds", type=int,
                         help="source-authored HiveMind initial command delay (required with --hivemind-run)")
     parser.add_argument("--ai-tactics",
@@ -2308,8 +2321,9 @@ def main() -> None:
     args = parser.parse_args()
     if args.hivemind_run is None and (
             args.hivemind_opponent_id is not None or
+            args.hivemind_second_opponent_id is not None or
             args.hivemind_initial_delay_seconds is not None):
-        parser.error("HiveMind opponent and original command delay require --hivemind-run")
+        parser.error("HiveMind opponents and original command delay require --hivemind-run")
     if args.policy_reinforcements and not args.trainable:
         parser.error("--policy-reinforcements requires --trainable")
     if args.under_heavy_fire and args.campaign_dialogue != "titania-beenoculars":
