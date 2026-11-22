@@ -257,6 +257,30 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
     }
     if metrics["opponent_victories"]["value"] < 0:
         raise ValueError("Native evaluation faction results exceed completed trials.")
+    # These are actual completed native physics/accelerator observations.
+    # Never claim requested workers were active; report the observed peak.
+    metrics["peak_physics_workers"] = {
+        "value": receipt["peak_parallel_physics_workers"], "unit": "count",
+    }
+    metrics["parallel_physics_rounds"] = {
+        "value": receipt["parallel_physics_rounds"], "unit": "count",
+    }
+    latency = receipt.get("policy_forward_latency")
+    if latency is not None:
+        learner = latency["by_slot"].get(str(suite["learner_slot"]))
+        if learner is not None:
+            calls = learner["calls"]
+            metrics.update({
+                "learner_forward_calls": {"value": calls, "unit": "count"},
+                "learner_forward_ms": {
+                    "value": learner["total_nanoseconds"] / calls / 1_000_000,
+                    "unit": "scalar",
+                },
+                "learner_max_forward_ms": {
+                    "value": learner["max_nanoseconds"] / 1_000_000,
+                    "unit": "scalar",
+                },
+            })
     print(json.dumps({
         "kind": "native_bees_independent_evaluation_observation",
         "candidate_checkpoint_sha256": checkpoint_digest,
