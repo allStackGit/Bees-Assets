@@ -3700,6 +3700,29 @@ fn run_reassign_authored_ship(
     Ok(())
 }
 
+/// Rename one live FleetShip using the same exclusive career writer and
+/// immutable receipt mechanism as SavedSquad preferences. This changes
+/// neither deployed membership nor the original combat/statistics record.
+fn run_name_fleet_ship(
+    catalog_path: &Path, output_root: &Path,
+    side: i32, fleet_ship_id: i64, name: &str,
+) -> Result<(), Box<dyn Error>> {
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: battle_catalog::BattleCatalog =
+        serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
+    let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
+    let progress = catalog.load_progress(output_root)?;
+    catalog.name_fleet_ship(&progress, output_root, side, fleet_ship_id, name)?;
+    println!("{}", json!({
+        "kind": "native_campaign_fleet_ship_named",
+        "campaign_id": catalog.campaign_id,
+        "side": side, "fleet_ship_id": fleet_ship_id, "name": name,
+    }));
+    Ok(())
+}
+
 /// Rename one persistent squad from its actual authored player contract.
 /// This has no physical gameplay side effects; no separate scene compiler or
 /// tactical roster is necessary. Validate every route, then append one
@@ -5360,8 +5383,8 @@ fn run_campaign_game_menu(
     use bees_host::presentation::{
         BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
         NativeTransferMenuRow, NativeCreateSquadMenuRow,
-        NativeDeleteSquadMenuRow, NativeTacticsMenuRow, NativeNameMenuRow,
-        select_battle, select_library,
+        NativeDeleteSquadMenuRow, NativeTacticsMenuRow,
+        NativeNameMenuRow, NativeNameTarget, select_battle, select_library,
     };
 
     let catalog_path = catalog_path.canonicalize()?;
@@ -5651,13 +5674,24 @@ fn run_campaign_game_menu(
             tactic_defaults.sort_unstable_by_key(|row| (row.side, row.saved_squad_id));
             tactic_source_cache = Some((created_ids, selected_routes, tactic_defaults));
         }
-        let name_rows = editable_tactics.iter().filter_map(|&(side, id)| {
+        let mut name_rows = editable_tactics.iter().filter_map(|&(side, id)| {
             (!progress.is_retired_saved_squad(id)).then(|| NativeNameMenuRow {
                 title: format!("Side {}  {}", side, progress.squad_label(id)),
-                side, saved_squad_id: id,
+                side, target: NativeNameTarget::SavedSquad(id),
                 name: progress.squad_name(id).unwrap_or("").to_owned(),
             })
         }).collect::<Vec<_>>();
+        // Existing numbered FleetShips have one durable name regardless
+        // of their temporary squad assignment. The menu never fabricates
+        // a source FleetShip identity from a Stage hull or type number.
+        for (side, fleet_ship_id) in progress.nameable_fleet_ships() {
+            name_rows.push(NativeNameMenuRow {
+                title: format!("Side {side}  FleetShip #{fleet_ship_id}"),
+                side, target: NativeNameTarget::FleetShip(fleet_ship_id),
+                name: progress.fleet_ship_name(fleet_ship_id)
+                    .unwrap_or("").to_owned(),
+            });
+        }
         let tactics_rows = tactic_source_cache.as_ref()
             .expect("saved tactics source cache initialized").2
             .iter().copied()
@@ -5696,6 +5730,17 @@ fn run_campaign_game_menu(
                 launch_failed = result.is_err();
                 if let Err(error) = result {
                     eprintln!("Could not create SavedSquad from #{template_saved_squad_id}: {error}");
+                }
+                continue;
+            }
+            NativeBattleMenuAction::NameFleetShip { side, fleet_ship_id, name } => {
+                let result = run_name_fleet_ship(
+                    &catalog_path, output_root, side, fleet_ship_id, &name,
+                );
+                progress = catalog.load_progress(output_root)?;
+                launch_failed = result.is_err();
+                if let Err(error) = result {
+                    eprintln!("Could not rename FleetShip #{fleet_ship_id}: {error}");
                 }
                 continue;
             }
