@@ -275,7 +275,10 @@ class FrozenInferenceMicrobatcher:
             if stream is not None:
                 for tensor in item.inputs:
                     tensor.record_stream(stream)
-        keys = tuple(owners)
+        # Arrival order across unrelated collectors is not a different
+        # execution graph. Canonicalize cohort membership to reuse one
+        # set of GPU weights/streams/captures independent of submit order.
+        keys = tuple(sorted(owners))
         executor = self._executors.get(keys)
         if executor is None:
             executor = MeasuredGpuExecution(
@@ -294,7 +297,8 @@ class FrozenInferenceMicrobatcher:
             self._executors.move_to_end(keys)
         def grouped():
             inputs = []
-            for members in owners.values():
+            for key in keys:
+                members = owners[key]
                 inputs.append(tuple(
                     torch.cat([item.inputs[i] for item in members], dim=0)
                     if len(members)>1 else members[0].inputs[i]
