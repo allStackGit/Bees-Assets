@@ -9,6 +9,22 @@ const crypto=require('node:crypto');
 const {spawn}=require('node:child_process');
 const {pipeline}=require('node:stream/promises');
 const COMPONENTS=['worker','bees','tinybrains','courier'];
+// These browser-only assets never execute in the coordinator or an agent.
+// A change limited to these files is not a new worker runtime release.
+const FRONTEND_PATHS=new Set([
+    'Training/experiments.html',
+    'Training/experiment_hub_ui.js',
+    'Training/experiment_hub_local_services_ui.js',
+    'Training/experiment_hub_beaker.svg',
+]);
+async function workerChangedPaths(repo,base,head) {
+    if(!SHA.test(base||'')||!SHA.test(head||''))
+        throw Error('Expected pinned worker commit identities.');
+    if(base===head)return [];
+    const changed=await git(['diff','--name-only',base,head,'--','Training'],repo);
+    return changed?changed.split(/\r?\n/).filter(Boolean):[];
+}
+
 const SHA=/^[0-9a-f]{40}$/;
 const DIGEST=/^[0-9a-f]{64}$/;
 const MAX_BYTES=512*1024*1024;
@@ -161,6 +177,17 @@ class ReleaseStore {
         await git(['fetch','--quiet','--no-tags','origin',source.branch],repo);
         const sha=await git(['rev-parse','FETCH_HEAD'],repo);
         if(!SHA.test(sha))throw Error('Invalid Git commit from '+name);
+        if(name==='worker') {
+            // Latest trusted source can supply browser assets immediately.
+            // Do not create a worker release or restart remote agents for
+            // changes confined to the browser.
+            this.frontendSourceCommit=sha;
+            const prior=this.latest.worker;
+            if(prior&&prior.source_commit!==sha) {
+                const changes=await workerChangedPaths(repo,prior.source_commit,sha);
+                if(changes.every(file=>FRONTEND_PATHS.has(file)))return;
+            }
+        }
         // A Git commit and its vendored dependencies together identify a
         // TinyBrains runtime release; never change bytes under the old SHA.
         const version=name==='tinybrains'
@@ -278,4 +305,4 @@ class ReleaseStore {
         return {path:file,bytes:fs.statSync(file).size};
     }
 }
-module.exports={ReleaseStore,configuration,COMPONENTS};
+module.exports={ReleaseStore,configuration,COMPONENTS,FRONTEND_PATHS,workerChangedPaths};
