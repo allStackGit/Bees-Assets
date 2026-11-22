@@ -228,10 +228,11 @@ pub fn select_battle(
     tactics_rows: &[NativeTacticsMenuRow],
     delete_rows: &[NativeDeleteSquadMenuRow],
     name_rows: &[NativeNameMenuRow],
+    campaign_score: (i64, bool),
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     select_battle_inner(rows, selected, launch_failed, fleet_rows, squad_rows,
         shop_rows, banked_tsv, transfer_rows, create_rows, tactics_rows,
-        delete_rows, name_rows, false)
+        delete_rows, name_rows, Some(campaign_score), false)
 }
 
 /// The packaged-game launcher uses the same list renderer without exposing
@@ -240,7 +241,7 @@ pub fn select_library(
     rows: &[BattleMenuRow<'_>], selected: &mut usize, launch_failed: bool,
 ) -> Result<Option<usize>, minifb::Error> {
     match select_battle_inner(rows, selected, launch_failed,
-        &[], &[], &[], 0, &[], &[], &[], &[], &[], true)? {
+        &[], &[], &[], 0, &[], &[], &[], &[], &[], None, true)? {
         Some(NativeBattleMenuAction::Play(index)) => Ok(Some(index)),
         _ => Ok(None),
     }
@@ -255,6 +256,7 @@ fn select_battle_inner(
     tactics_rows: &[NativeTacticsMenuRow],
     delete_rows: &[NativeDeleteSquadMenuRow],
     name_rows: &[NativeNameMenuRow],
+    campaign_score: Option<(i64, bool)>,
     library_mode: bool,
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     if rows.is_empty() { return Ok(None); }
@@ -849,6 +851,12 @@ fn select_battle_inner(
         text::draw_centered(&mut pixels, WIDTH, 78,
             if library_mode { "Campaigns and quick battles" }
             else { "Choose a battle to play" }, 1, MUTED);
+        if let Some((score, complete)) = campaign_score {
+            text::draw_centered(&mut pixels, WIDTH, 96, &format!(
+                "Campaign score: {score}{}",
+                if complete { "" } else { " (partial older history)" },
+            ), 1, MUTED);
+        }
         for (row, title) in titles.iter().skip(first).take(PAGE_SIZE).enumerate() {
             let top = LIST_TOP + row * ROW_HEIGHT;
             let color = if first + row == *selected { 0x294a66 } else { 0x142235 };
