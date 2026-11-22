@@ -51,7 +51,10 @@ function observedMeasure(progress) {
 // processes are not inferred from host utilization.
 function gpuCohort(machineId,gpus,context,excludeJobId=null) {
     if(!context||!Array.isArray(context.jobs)||
-        !Array.isArray(context.reservations)||!Array.isArray(gpus))
+        !Array.isArray(context.reservations)||!Array.isArray(gpus)||
+        gpus.length===0)
+        // CPU-only evidence needs no GPU cohort and retains its previous
+        // persisted placement identity across this scheduler change.
         return null;
     const byId=new Map(context.jobs.map(j=>[j.id,j]));
     return JSON.stringify(gpus.map(gpu=>{
