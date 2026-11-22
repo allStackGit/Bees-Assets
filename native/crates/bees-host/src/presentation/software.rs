@@ -2456,10 +2456,8 @@ impl NativeSoftwareRenderer {
             self.draw_battle_result(view, result);
         } else if let Some(survival) = view.survival {
             let seconds = survival.seconds_remaining.ceil() as u64;
-            let evacuation = view.campaign_dialogue.is_some_and(|(_, cue)| matches!(cue,
-                bees_gameplay::campaign_dialogue::CampaignCue::PlutoEvacuationBriefing |
-                bees_gameplay::campaign_dialogue::CampaignCue::PlutoEvacuationComplete { .. }
-            ));
+            let evacuation = view.campaign_objective == Some(
+                bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoEvacuation);
             let titania = view.campaign_objective == Some(
                 bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaBeenoculars);
             let label = if titania {
@@ -2643,6 +2641,28 @@ impl NativeSoftwareRenderer {
             };
             text::draw_centered(&mut self.pixels, self.width, 8,
                 label, 1, [239, 247, 255]);
+        } else if view.campaign_objective == Some(
+            bees_gameplay::campaign_dialogue::CampaignObjectiveKind::NeptuneSeizeMeans,
+        ) {
+            let objective = if view.player_authority.player_viewer_side()
+                == view.campaign_dialogue_side {
+                "Seize Neptune's production facilities  |  Defeat the Bees"
+            } else {
+                "Defend Neptune's production facilities"
+            };
+            text::draw_centered(&mut self.pixels, self.width, 8,
+                objective, 1, [239, 247, 255]);
+        } else if view.campaign_objective == Some(
+            bees_gameplay::campaign_dialogue::CampaignObjectiveKind::NeptunePressingForward,
+        ) {
+            let objective = if view.player_authority.player_viewer_side()
+                == view.campaign_dialogue_side {
+                "Press forward  |  Defeat the Bee fleet"
+            } else {
+                "Repel the advancing human fleet"
+            };
+            text::draw_centered(&mut self.pixels, self.width, 8,
+                objective, 1, [239, 247, 255]);
         } else if view.campaign_objective == Some(
             bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusOffensive,
         ) {
