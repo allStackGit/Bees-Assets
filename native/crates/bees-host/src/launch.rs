@@ -9249,6 +9249,10 @@ fn run_battle(
         host.simulation().world(0)
             .and_then(|world| world.state.metadata.fleet.campaign_player_score())
     } else { None };
+    let player_match_counts = player_score.and_then(|_|
+        host.simulation().world(0)
+            .and_then(|world| world.state.metadata.fleet.player_match_counts())
+    );
     // Include all current episode admissions as well as those from
     // previously recycled worlds. This covers independent multi-episode
     // training and fixed-seed evaluation without requiring hot-path logs.
@@ -9453,6 +9457,7 @@ fn run_battle(
         "campaign_banked_minerals": campaign_banked_minerals,
         "campaign_score_delta": campaign_score_delta,
         "player_score": player_score,
+        "player_match_counts": player_match_counts,
         "aborted_worlds": status.aborted_worlds,
         "failed_worlds": status.failed_worlds,
         "running_worlds": status.running_worlds,
