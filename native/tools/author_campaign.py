@@ -772,6 +772,31 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                         for honeybee in honeybee_owners)
                     for order in queue.get("orders", []))
             ]
+            # The original first counterattack deploys one Honeybee,
+            # successive Hornet squads and two Wasp groups as the
+            # commander takes Gunship control, BEFORE the first Honeybee
+            # actually dies. Preserve genuine surviving source group
+            # choices rather than fabricating a nine-group replacement.
+            bee_side = 3 - args.player_side
+            bee_waves = [
+                wave for wave in waves if isinstance(wave, dict)
+                and wave.get("on_campaign_cue") == "pluto_gunship_briefing_complete"
+            ]
+            original_formation = [14, 15, 15, 15, 14, 15, 15, 21, 21]
+            homes = scene.get("starting_positions")
+            home = (homes[bee_side - 1] if isinstance(homes, list)
+                    and len(homes) == 2 else None)
+            if isinstance(home, dict):
+                home = [home.get("x"), home.get("y")]
+            bee_wave_authored = (len(bee_waves) == 1 and
+                source_types_in_order(
+                    source_wave_types(bee_waves[0], source_squads, source_ships, bee_side),
+                    original_formation) and
+                isinstance(home, list) and len(home) == 2 and
+                all(type(value) in (int, float) for value in home) and
+                same_point(bee_waves[0].get("spawn"), [home[0], home[1] + 50]) and
+                same_point(bee_waves[0].get("entry"), home)
+            )
             scout_owners = [
                 squad for squad in source_squads.values()
                 if squad.get("side") == args.player_side and
@@ -792,7 +817,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             if (scene.get("native_game_schema") != 1 or
                     scene.get("human_side") != args.player_side or
                     len(gunship_waves) != 1 or len(scout_departures) != 1 or
-                    len(gunship_attack) != 1 or gunship_id is None or
+                    len(gunship_attack) != 1 or not bee_wave_authored or
+                    gunship_id is None or
                     gunship_id in (scouts[0].get("entity_id") if scouts else None,
                                    honeybees[0].get("entity_id") if honeybees else None) or
                     len(scouts) != 1 or len(honeybees) != 1 or
@@ -810,8 +836,9 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 raise ValueError(
                     "Pluto Anomaly requires one source Scout/Honeybee, an "
                     "authored Scout withdrawal on pluto_honeybee_spotted, "
-                    "one real Gunship wave after the Scout report, and "
-                    "one source Gunship attack on pluto_gunship_briefing_complete"
+                    "one real Gunship wave after the Scout report, "
+                    "an original nine-slot Bee counterattack at Gunship handoff, "
+                    "and a source attack on pluto_gunship_briefing_complete"
                 )
             level["campaign_dialogue"] = {
                 "pluto_anomaly": {
