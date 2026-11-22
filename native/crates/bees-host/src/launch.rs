@@ -1659,6 +1659,8 @@ struct CampaignMission<'a> {
     campaign_id: &'a str,
     mission_id: &'a str,
     player_side: i32,
+    /// Source-authorized original Codex classes at this battle's start.
+    codex_known: Option<&'a [u8]>,
     record_fleet_stats: bool,
     bank_player_minerals: bool,
     bank_on_finished: bool,
@@ -1706,6 +1708,8 @@ struct CampaignReplaySetup {
     campaign_id: String,
     mission_id: String,
     player_side: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    codex_known: Option<Vec<u8>>,
     record_fleet_stats: bool,
     bank_player_minerals: bool,
     #[serde(default)]
@@ -1752,6 +1756,7 @@ impl CampaignReplaySetup {
             campaign_id: mission.campaign_id.to_owned(),
             mission_id: mission.mission_id.to_owned(),
             player_side: mission.player_side,
+            codex_known: mission.codex_known.map(<[u8]>::to_vec),
             record_fleet_stats: mission.record_fleet_stats,
             bank_player_minerals: mission.bank_player_minerals,
             bank_on_finished: mission.bank_on_finished,
@@ -1796,6 +1801,7 @@ impl CampaignReplaySetup {
             campaign_id: &self.campaign_id,
             mission_id: &self.mission_id,
             player_side: self.player_side,
+            codex_known: self.codex_known.as_deref(),
             record_fleet_stats: self.record_fleet_stats,
             bank_player_minerals: self.bank_player_minerals,
             bank_on_finished: self.bank_on_finished,
@@ -3201,9 +3207,11 @@ fn launch_catalog_battle(
             0, &grant_squads,
         )?;
     }
+    let codex_known = catalog.codex_known_types(&progress);
     let mission = catalog.campaign_id.as_deref().zip(entry.mission.as_ref())
         .map(|(campaign_id, mission)| CampaignMission {
             campaign_id, mission_id: &mission.id, player_side: mission.player_side,
+            codex_known: codex_known.as_deref(),
             record_fleet_stats: mission.record_fleet_stats,
             bank_player_minerals: mission.bank_player_minerals,
             bank_on_finished: mission.bank_on_finished,
@@ -7394,13 +7402,19 @@ fn run_battle(
     for (index, (source, level)) in source_levels.into_iter()
         .zip(&config.levels).enumerate()
     {
-        launches.push((
-            source,
-            make_setup(
-                &config, level, &assets, period,
-                Arc::clone(&next_id), level.episode_seed(0), 0, source_sides[index], &remapped_squads_by_level[index],
-            )?,
-        ));
+        let mut setup = make_setup(
+            &config, level, &assets, period,
+            Arc::clone(&next_id), level.episode_seed(0), 0,
+            source_sides[index], &remapped_squads_by_level[index],
+        )?;
+        if let Some(mission) = mission {
+            if let Some(known) = mission.codex_known {
+                let mut classes = [false; bees_sim::ship_assets::SHIP_TYPE_COUNT];
+                for &kind in known { classes[usize::from(kind)] = true; }
+                setup.campaign_codex = Some((mission.player_side, classes));
+            }
+        }
+        launches.push((source, setup));
     }
 
     // Interactive play includes windowed, headless LAN, and replayed
