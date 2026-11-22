@@ -3260,7 +3260,8 @@ class ExperimentHub {
                     reason:allocationBlockReason(machines,job,value.machine_id)});
                 continue;
             }
-            const lease=this.claimJobIn(next,job,chosen.machine_id);
+            const lease=this.claimJobIn(next,job,chosen.machine_id,undefined,
+                chosen.suggested_gpus);
             results.push({job_id:job.id,machine_id:lease.machine_id,
                 lease_id:lease.id,status:'claimed'});
         }
@@ -3268,7 +3269,7 @@ class ExperimentHub {
         return {results,executable:false,
             note:'Coordination only: no process started or hardware limits enforced.'};
     }
-    claimJobIn(next,job,machineId,machine) {
+    claimJobIn(next,job,machineId,machine,selectedGpus=null) {
         const host=machine||this.snapshot().machines.find(m=>m.id===machineId);
         if(!distributedRolloutHost({jobs:next.jobs,machines:this.snapshot().machines},job,host))
             throw Error('Remote collector must be placed on its learner-approved endpoint and distinct host.');
@@ -3276,8 +3277,21 @@ class ExperimentHub {
             !courierLineageHost({jobs:next.jobs,machines:this.snapshot().machines,
                 reservations:next.reservations},job,host))
             throw Error('Courier lineage must be placed on its learner-approved endpoint and PPO slot.');
+        const wanted=resourceRequest(job.resources);
+        // The scheduler selected a precise verified device set. Carry
+        // that choice into the atomic offer instead of recomputing the
+        // machine's default GPU. Explicitly pinned job IDs are immutable.
+        if(selectedGpus!==null) {
+            if(!Array.isArray(selectedGpus)||
+                selectedGpus.length!==wanted.gpu_count||
+                new Set(selectedGpus).size!==selectedGpus.length||
+                wanted.gpus.length&&
+                    wanted.gpus.some((id,i)=>id!==selectedGpus[i]))
+                throw Error('Selected GPU devices differ from the frozen job request.');
+            wanted.gpus=selectedGpus.slice();
+        }
         const lease=this.offerIn(next,job.project_id,machineId,
-            resourceRequest(job.resources),job.id,host);
+            wanted,job.id,host);
         job.lease_id=lease.id;
         job.assigned_machine_id=lease.machine_id;
         job.assigned_at=now();
