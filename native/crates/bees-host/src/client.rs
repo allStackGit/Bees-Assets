@@ -272,6 +272,16 @@ pub struct NativeClient {
 }
 
 impl NativeClient {
+    /// Shift and Ctrl both extend a selection in the native multiplayer
+    /// window. Keep the same UI-only gesture for local play; this does not
+    /// change authenticated squad authority or fixed-tick commands.
+    fn selection_additive(&self) -> bool {
+        self.window.is_key_down(Key::LeftCtrl) ||
+        self.window.is_key_down(Key::RightCtrl) ||
+        self.window.is_key_down(Key::LeftShift) ||
+        self.window.is_key_down(Key::RightShift)
+    }
+
     pub fn new(bounds: Aabb) -> Result<Self, Box<dyn std::error::Error>> {
         let renderer = NativeSoftwareRenderer::new(1100, 760, bounds)?;
         let mut window = Window::new("Bees native", 1100, 760,
@@ -1414,8 +1424,7 @@ impl NativeClient {
         } else { None };
         if let Some(owner) = clicked_tab {
             self.audio.click_ui();
-            let additive = self.window.is_key_down(Key::LeftCtrl) ||
-                self.window.is_key_down(Key::RightCtrl);
+            let additive = self.selection_additive();
             if self.renderer.selection.select_squad(&view, owner, additive) {
                 self.squad_tab_clicks += 1;
                 if !additive { self.focus_selected_squad(&view, owner); }
@@ -1797,8 +1806,7 @@ impl NativeClient {
                         self.last_left_press = None;
                         self.double_left_press = false;
                         if rectangle.min.x < rectangle.max.x && rectangle.min.y < rectangle.max.y {
-                            let additive = self.window.is_key_down(Key::LeftCtrl) ||
-                                self.window.is_key_down(Key::RightCtrl);
+                            let additive = self.selection_additive();
                             if self.renderer.selection.select_box(&view, rectangle, additive).is_err() {
                                 self.input_feedback = "Selection box is unavailable";
                             }
@@ -1808,8 +1816,7 @@ impl NativeClient {
                     } else {
                         self.renderer.selected_ship = self.renderer.pick_ship(&view, x, y);
                         if let Some(ship) = self.renderer.selected_ship {
-                            let additive = self.window.is_key_down(Key::LeftCtrl) ||
-                                self.window.is_key_down(Key::RightCtrl);
+                            let additive = self.selection_additive();
                             if !additive && self.double_left_press &&
                                 self.last_left_press.is_some_and(|pressed|
                                     now.duration_since(pressed) <= Duration::from_millis(250)) {
@@ -1819,7 +1826,7 @@ impl NativeClient {
                             } else {
                                 self.renderer.selection.select_ship(&view, ship, additive);
                                 if additive {
-                                    // Ctrl-click can remove the clicked squad.
+                                    // Ctrl/Shift-click can remove the clicked squad.
                                     // Do not keep its unselected ship highlighted.
                                     self.renderer.selected_ship = self.renderer.selection
                                         .representative_ships(&view).next();
@@ -1827,11 +1834,10 @@ impl NativeClient {
                             }
                         } else {
                             // Preserve the existing multi-selection when
-                            // Ctrl-clicking empty terrain, as the native
+                            // Ctrl/Shift-clicking empty terrain, as the native
                             // remote commander already does. A plain click
                             // still dismisses the selection.
-                            if !self.window.is_key_down(Key::LeftCtrl) &&
-                                !self.window.is_key_down(Key::RightCtrl) {
+                            if !self.selection_additive() {
                                 self.renderer.selection.clear();
                             }
                             self.renderer.selected_ship = self.renderer.selection

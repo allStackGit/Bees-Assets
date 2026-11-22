@@ -3783,7 +3783,7 @@ impl NativeSoftwareRenderer {
             "F1/Esc: close   F2: Fleet Codex   F5: editable hotkeys",
             "SELECTION",
             "Left click: select ship   Drag: box select   Double click: ship type",
-            "Ctrl+click: add/remove   Ctrl+A: all   1-0: numbered squads",
+            "Ctrl/Shift+click: add/remove   Ctrl+A: all   1-0: squads",
             "PgUp / PgDn: cycle squads   Tab: next world",
             "CAMERA / GAME",
             "Right: move / attack   Middle-drag or arrows: pan   Wheel: zoom",
