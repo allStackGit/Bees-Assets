@@ -31,6 +31,7 @@ from native_training_artifacts import (
     native_source_contract_sha256,
     verified_source_scene_cache, combined_source_scene_cache,
     native_manifest_model_dependencies, combined_rollout_lifecycle_metrics,
+    verified_physics_collision_work, combined_physics_collision_work,
     RolloutProcessSampler,
 )
 from native_distributed_collection import verify_bundle, aggregate_collection_metrics
@@ -343,6 +344,9 @@ def rollout_metrics(summary_path, config, manifest_sha):
                     for key in keys)):
             raise ValueError("native rollout contains inconsistent active body slot work")
         metrics["ship_slot_work"] = {key: ship_slots[key] for key in keys}
+    collision = verified_physics_collision_work(summary.get("physics_collision_work"))
+    if collision is not None:
+        metrics["physics_collision_work"] = collision
     # Preserve actual model-step CPU utilization reported by the native
     # simulator, not just the requested per-process thread limit. These
     # counters distinguish real parallel rounds from Stage-order fallbacks.
@@ -514,6 +518,9 @@ def combined_rollout_metrics(shards, wall_seconds):
         if all(projectile_key in shard["ship_slot_work"] for shard in shards):
             metrics["ship_slot_work"][projectile_key] = sum(
                 shard["ship_slot_work"][projectile_key] for shard in shards)
+    collisions = combined_physics_collision_work(shards)
+    if collisions is not None:
+        metrics["physics_collision_work"] = collisions
     # Mixed historical collector binaries may report only the older
     # parallel-physics totals. Preserve unknown dispatch provenance as
     # absent, never treat missing direct rounds as zero.
