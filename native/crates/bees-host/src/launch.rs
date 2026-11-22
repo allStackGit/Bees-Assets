@@ -2011,8 +2011,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         let progress = catalog.load_progress(&output_root)?;
         let root = catalog_path.parent()
             .ok_or_else(|| invalid("missing campaign catalog directory"))?;
+        let roster_probe_start = Instant::now();
         let (_, source_ships, source_squads, _, _) =
             authored_menu_fleet(&catalog, root, &progress);
+        let roster_probe_elapsed_ms =
+            roster_probe_start.elapsed().as_secs_f64() * 1000.0;
+        let observed_source_ship_count = source_ships.len();
         let mut status = catalog.status(&progress);
         let known = status["fleet_roster"].as_array()
             .expect("campaign roster projection must be an array")
@@ -2037,6 +2041,11 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         status["fleet_roster"].as_array_mut()
             .expect("campaign roster projection must be an array")
             .sort_unstable_by_key(|row| row["fleet_ship_id"].as_i64());
+        status["source_roster_probe"] = json!({
+            "elapsed_ms": roster_probe_elapsed_ms,
+            "source_ships": observed_source_ship_count,
+            "source_squads": source_squads.len(),
+        });
         status["available_source_squads"] = json!(source_squads.iter().map(|&(side, id)| json!({
             "side": side,
             "saved_squad_id": id,
