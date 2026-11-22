@@ -10044,6 +10044,8 @@ fn run_battle(
             // true asteroid hull and its proximity zone needed contacts.
             "obstacle_contact_queries_merged":
                 status.simulation.obstacle_contact_queries_merged,
+            "stationary_obstacle_hulls_reused":
+                status.simulation.stationary_obstacle_hulls_reused,
         },
         "ship_slot_work": {
             "integrated_bodies": status.simulation.integrated_bodies,
