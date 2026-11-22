@@ -3782,11 +3782,11 @@ pub fn connect_remote(
                     let target=hit(state,cam,x,y,&peer.visual,
                         peer.visual.fraction(),|_|true,|_|false);
                     spectator_follow=target.and_then(|(kind,ship)|
-                        (kind=="ship").then(||(
+                        (kind=="ship").then(||Some((
                             state["world_id"].as_u64()?,
                             state["episode_revision"].as_u64()?,
                             ship["id"].as_i64()?,
-                        )).flatten()
+                        ))).flatten()
                     );
                     peer.notice=if let Some((_,_,id))=spectator_follow {
                         format!("Following visible ship {id}; pan to release")
