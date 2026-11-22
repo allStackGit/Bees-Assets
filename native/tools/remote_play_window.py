@@ -183,37 +183,53 @@ class RemoteBattleWindow:
                 variable=self.weapon_overlay_on,
                 command=self.update_weapon_interest,
             ).pack(side="left", padx=4)
-        for title in ("Move", "Attack", "Circle", "Right swipe", "Left swipe",
-                      "In and out", "Guard", "Mine", "Heal", "Retreat", "Point fire",
-                      "Patrol", "Held fire"):
-            group = self.toolbar_main if title in (
-                "Move", "Attack", "Guard", "Mine", "Heal", "Retreat", "Point fire",
-                "Patrol", "Held fire",
-            ) else self.toolbar_tactics
-            ttk.Button(group, text=title,
-                       command=lambda t=title: self.set_mode(MODES[t])
+        # Keep time-critical targeting commands one click away, while
+        # keeping *all* source actions accessible at 720px window width.
+        # The old three fixed button rows overflowed narrow displays.
+        for title in ("Move", "Attack", "Guard", "Mine", "Heal",
+                      "Retreat", "Point fire", "Patrol", "Held fire"):
+            ttk.Button(
+                self.toolbar_main, text=title,
+                command=lambda t=title: self.set_mode(MODES[t]),
+            ).pack(side="left", padx=2)
+
+        def dropdown(parent, title, entries):
+            button = ttk.Menubutton(parent, text=title)
+            menu = tk.Menu(button, tearoff=False)
+            for caption, command in entries:
+                menu.add_command(label=caption, command=command)
+            button["menu"] = menu
+            button.pack(side="left", padx=3)
+            return button
+
+        dropdown(self.toolbar_tactics, "Attack patterns", [
+            (title, lambda t=title: self.set_mode(MODES[t]))
+            for title in ("Circle", "Right swipe", "Left swipe", "In and out")
+        ])
+        for title, kind, body in [
+            ("Stop fire", "fire", {"target": None}),
+            ("Cease", "cease_fire", {"cease_fire": True}),
+            ("Fire at will", "cease_fire", {"cease_fire": False}),
+            ("Hold", "support", {"action": "Hold"}),
+        ]:
+            ttk.Button(self.toolbar_tactics, text=title,
+                       command=lambda k=kind, v=body: self.send(k, v)
                        ).pack(side="left", padx=2)
-        for title, action in [
-            ("Stop fire", lambda: self.send("fire", {"target": None})),
-            ("Cease", lambda: self.send("cease_fire", {"cease_fire": True})),
-            ("Fire at will", lambda: self.send("cease_fire", {"cease_fire": False})),
+        dropdown(self.toolbar_special, "Squad tactics", [
             ("Chase on", lambda: self.send("chase", {"chasing": True})),
             ("Chase off", lambda: self.send("chase", {"chasing": False})),
             ("Match speed", lambda: self.send("match_speed", {"match_speed": True})),
             ("Own speed", lambda: self.send("match_speed", {"match_speed": False})),
-            ("Hold", lambda: self.send("support", {"action": "Hold"})),
             ("Lock on", lambda: self.send("lock_on", {"locked": True})),
             ("Unlock", lambda: self.send("lock_on", {"locked": False})),
+        ])
+        dropdown(self.toolbar_special, "Ship abilities", [
             ("Beacon", lambda: self.send("special", {"kind": "DropBeacon"})),
             ("Detonate", lambda: self.send("special", {"kind": "Detonate"})),
             ("Charge", lambda: self.send("special", {"kind": "Charge"})),
-            ("Fit", self.fit),
-        ]:
-            group = self.toolbar_special if title in (
-                "Beacon", "Detonate", "Charge", "Fit"
-            ) else self.toolbar_tactics
-            ttk.Button(group, text=title, command=action
-                       ).pack(side="left", padx=2)
+        ])
+        ttk.Button(self.toolbar_special, text="Fit map",
+                   command=self.fit).pack(side="left", padx=2)
 
         if console.spectator:
             # Hide command affordances altogether. The view still uses the
