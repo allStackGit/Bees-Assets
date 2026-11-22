@@ -12,7 +12,13 @@ OBJECTIVE_START = (
     8 * 7 + 64 * 12 + 48 * 11
 )
 OBJECTIVE_WIDTH = 16
+# Stable four one-hot feature buckets in v26's reserved scalars.
+# TargetShip intentionally shares the demolition (destroy-target) bucket,
+# as the canonical EpisodeMissionKind::index does. It is nevertheless a
+# distinct valid authored physical mission and must be counted as such at
+# collection admission. Do not silently change the learner's tensor ABI.
 MISSION_KEYS = ("survival", "demolition", "escort", "extraction")
+AUTHORED_GOAL_KEYS = (*MISSION_KEYS, "target_ship")
 COUNT_KEYS = (
     "rows_encoded", "native_mission_rows", "allies_encoded",
     "enemies_encoded", "map_objects_encoded",
@@ -29,7 +35,7 @@ COVERAGE_KEYS = (
 
 def level_has_goal(level):
     """A null/omitted optional objective is not an authored mission."""
-    return any(level.get(key) is not None for key in MISSION_KEYS)
+    return any(level.get(key) is not None for key in AUTHORED_GOAL_KEYS)
 
 
 def verified_policy_observations(work, *, require_goal=False):
