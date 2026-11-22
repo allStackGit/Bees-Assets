@@ -2371,6 +2371,10 @@ fn current_state(
                     Some(barges.iter().filter(|id| view.combat.ship(**id)
                         .is_some_and(|ship| !ship.vitals.is_dead())).count())
                 } else { None },
+                // The player's actual three rescue hull IDs are needed for
+                // mission highlighting, but never identify hidden targets
+                // to an opposing authenticated commander.
+                "barge_ids": if own { Some(barges) } else { None },
             }))
         } else if view.campaign_objective == Some(
             bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoReinforcements,
