@@ -9133,6 +9133,7 @@ fn run_battle(
             "culled_ship_draws": client.culled_ship_draws,
             "ship_sprite_draws": client.ship_sprite_draws,
             "carrier_deck_overlay_draws": client.carrier_deck_overlay_draws,
+            "barge_charge_effect_draws": client.barge_charge_effect_draws,
             "combat_impacts_observed": client.combat_impacts_observed,
             "combat_impact_visual_draws": client.combat_impact_visual_draws,
             "combat_impact_visuals_dropped": client.combat_impact_visuals_dropped,
