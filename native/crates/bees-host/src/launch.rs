@@ -5373,6 +5373,10 @@ fn run_campaign_game_menu(
     let mut selected = 0;
     let mut number = 0_u64;
     let mut launch_failed = false;
+    // Scenario cap values are immutable authored Level options. Cache the
+    // parsed cap once per route/config; progress can redirect a mission to
+    // a different physical Level after the preceding result.
+    let mut supply_caps = HashMap::<PathBuf, Option<SourceSupplyCapacity>>::new();
     // These defaults come from the active authored mission configurations.
     // A victory route can change those source squads without creating any
     // new SavedSquad. Keep the parsed menu cache until either the player's
@@ -5413,17 +5417,46 @@ fn run_campaign_game_menu(
             }
             continue;
         }
-        let rows = catalog.battles.iter().map(|entry| {
+        // Display the original SquadMaker capacity at the selection point,
+        // not only after the player discovers an over-capacity launch error.
+        // The actual deployed TSV is checked against the final saved roster
+        // by the common game-runner, after all purchases and transfers.
+        let row_states = catalog.battles.iter().map(|entry| {
             let unlocked = (!hosted || entry.mission.is_some()) &&
                 entry.mission.as_ref().is_none_or(|mission|
                     mission.unlocked(&progress));
-            let status = if hosted && entry.mission.is_none() { "  [No campaign mission]" }
-                else if !unlocked { "  [Locked]" }
-                else if entry.mission.as_ref().is_some_and(|mission| progress.completed(&mission.id)) {
-                    "  [Complete]"
-                } else { "" };
-            BattleMenuRow { title: entry.title.trim(), status, unlocked }
-        }).collect::<Vec<_>>();
+            let mut status = if hosted && entry.mission.is_none() {
+                "  [No campaign mission]".to_owned()
+            } else if !unlocked { "  [Locked]".to_owned() }
+            else if entry.mission.as_ref().is_some_and(|mission|
+                progress.completed(&mission.id))
+            {
+                "  [Complete]".to_owned()
+            } else { String::new() };
+            if unlocked {
+                if let Some(mission) = entry.mission.as_ref() {
+                    let path = resolve(root, entry.config_for(&progress));
+                    let cap = if let Some(cached) = supply_caps.get(&path) {
+                        *cached
+                    } else {
+                        let run: RunConfig = serde_json::from_slice(&fs::read(&path)?)?;
+                        let value = run.levels.iter()
+                            .filter_map(|level| level.supply_capacity)
+                            .find(|cap| cap.player_side == mission.player_side);
+                        supply_caps.insert(path, value);
+                        value
+                    };
+                    if let Some(cap) = cap {
+                        status.push_str(&format!("  [Supply {} TSV]", cap.max_tsv));
+                    }
+                }
+            }
+            Ok::<_, Box<dyn Error>>((unlocked, status))
+        }).collect::<Result<Vec<_>, _>>()?;
+        let rows = catalog.battles.iter().zip(&row_states)
+            .map(|(entry, (unlocked, status))| BattleMenuRow {
+                title: entry.title.trim(), status, unlocked: *unlocked,
+            }).collect::<Vec<_>>();
         let fleet_rows = progress.fleet_rows();
         let squad_rows = progress.squad_rows();
         let available = progress.unspent_minerals()?;
