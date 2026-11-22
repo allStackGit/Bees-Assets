@@ -4626,6 +4626,41 @@ pub fn connect_remote(
                 hover_started=now;
             }
         }
+        // Request one player-owned ship's genuine career counters only
+        // after a sustained hover. A remote World snapshot remains shared
+        // between cooperative commanders and does not copy the fleet ledger
+        // or reveal enemy career information.
+        if inspect && !peer.spectator &&
+            now.duration_since(hover_started)>=Duration::from_secs(1)
+        {
+            let target=peer.state.as_ref().and_then(|state| {
+                let id=hovered_ship?;
+                let owned=state["ships"].as_array()?.iter().any(|ship|
+                    ship["id"].as_i64()==Some(id) && ship["owned"]==true);
+                if !owned { return None; }
+                Some((state["world_id"].as_u64()?,
+                    state["episode_revision"].as_u64()?,id))
+            });
+            if let Some((world,revision,id))=target {
+                let already=peer.inspection_result.as_ref()
+                    .is_some_and(|value| (value.0,value.1,value.2)==(world,revision,id));
+                if !already && peer.inspection_pending.is_none() {
+                    let request=peer.next_request;
+                    let frame=json!({
+                        "kind":"inspect_ship","world_id":world,
+                        "episode_revision":revision,"ship_id":id,
+                    });
+                    let notice=peer.notice.clone();
+                    match peer.enqueue_request(frame,notice) {
+                        Ok(())=>{
+                            peer.inspection_pending=Some((world,revision,id,request));
+                            peer.metrics.inspection_requests_sent+=1;
+                        }
+                        Err(error)=>peer.notice=error.to_string(),
+                    }
+                }
+            }
+        }
         if inspect && now.duration_since(hover_started)>=Duration::from_secs(1) {
             if let Some(ship)=peer.state.as_ref().and_then(|state|
                 state["ships"].as_array()).into_iter().flatten().find(|ship|
@@ -4653,9 +4688,40 @@ pub fn connect_remote(
                 } else if ship["friendly"]==true {
                     "Orders: allied fleet"
                 } else { "Orders: hostile or neutral" };
+                let mut lines=vec![title,health,tsv,identity,status.to_owned()];
+                if ship["owned"]==true {
+                    if let Some((world,revision,id,Some(stats),minerals))=
+                        peer.inspection_result.as_ref()
+                    {
+                        let current=peer.state.as_ref().is_some_and(|state|
+                            state["world_id"].as_u64()==Some(*world) &&
+                            state["episode_revision"].as_u64()==Some(*revision));
+                        if current && ship["id"].as_i64()==Some(*id) {
+                            let kills=stats["source_kills"].as_u64()
+                                .map(|value|value.to_string())
+                                .unwrap_or_else(||"unavailable".to_owned());
+                            lines.push(format!(
+                                "This battle: {} shots | {kills} kills",
+                                stats["observed_turret_shots"].as_u64().unwrap_or(0),
+                            ));
+                            lines.push(format!(
+                                "Damage: {} dealt | {} received (TSV)",
+                                stats["enemy_tsv_damage_done"].as_u64().unwrap_or(0),
+                                stats["tsv_damage_received"].as_u64().unwrap_or(0),
+                            ));
+                            if matches!(ship["ship_type"].as_u64(),Some(4|9)) {
+                                if let Some(mined)=minerals {
+                                    lines.push(format!(
+                                        "Minerals mined this battle: {mined}",
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+                let text=lines.iter().map(String::as_str).collect::<Vec<_>>();
                 NativeSoftwareRenderer::draw_ship_inspection_panel(
-                    &mut pixels,WIDTH,HEIGHT,
-                    &[&title,&health,&tsv,&identity,status],
+                    &mut pixels,WIDTH,HEIGHT,&text,
                 );
                 inspection_frames+=1;
             }
