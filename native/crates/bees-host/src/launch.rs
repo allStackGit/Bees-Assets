@@ -5675,7 +5675,10 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         trained = trained_library::load(save_root)?;
         let mut completed_by_campaign = HashMap::<String, HashSet<String>>::new();
         let status = library.games.iter().zip(&games).map(|(item, config)| {
-            if item.kind != "campaign" {
+            // Challenge has the SAME durable career/mission model as
+            // Campaign, under a separate account root. Only ordinary
+            // quick battles use the summary-of-recordings presentation.
+            if item.kind == "battle" {
                 let history = archived_library_battle_history(save_root, &item.id)?;
                 return Ok(if history.played == 0 {
                     "  [Battle]".to_string()
