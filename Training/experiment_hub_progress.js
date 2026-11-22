@@ -1138,7 +1138,16 @@ class BottleneckEvidence {
                 // must never be summed as independent elapsed stages.
                 const simulation=seconds('worker_'+i+'_simulation_seconds');
                 const observation=seconds('worker_'+i+'_observation_seconds');
-                const fraction=collect/(collect+optimize);
+                const asyncWait=seconds('worker_'+i+'_async_wait_seconds');
+                const asyncOptimize=seconds('worker_'+i+'_async_optimizer_seconds');
+                // Independent lineages may collect another horizon while
+                // this one's PPO update runs. Raw collection wall is not
+                // exposed latency. Use only the collector join after SGD,
+                // measured on the same worker clock, to classify a stall.
+                const criticalCollect=asyncWait!==null?asyncWait:collect;
+                const criticalOptimize=asyncOptimize!==null?asyncOptimize:optimize;
+                const fraction=(criticalCollect+criticalOptimize)>0
+                    ?criticalCollect/(criticalCollect+criticalOptimize):0;
                 const simShare=(collect>0&&simulation!==null&&
                     simulation<=collect)?simulation/collect:null;
                 const obsShare=(simulation>0&&observation!==null&&
