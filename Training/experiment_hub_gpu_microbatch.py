@@ -18,7 +18,7 @@ from collections import OrderedDict, deque
 from concurrent.futures import Future
 from contextlib import nullcontext
 from dataclasses import dataclass
-from threading import Condition, Thread
+from threading import Condition, Thread, current_thread
 from time import perf_counter
 
 import torch
@@ -158,8 +158,30 @@ class FrozenInferenceMicrobatcher:
 
     def _serve(self):
         context = torch.cuda.device(self.device) if self.device.type == "cuda" else nullcontext()
-        with context:
-            while True:
+        group = []
+        try:
+            with context:
+                self._drain()
+                # close() is an ownership boundary: finish GPU submissions
+                # before the worker or its parent resource lease is released.
+                if self.device.type == "cuda":
+                    torch.cuda.synchronize(self.device)
+        except BaseException as error:
+            # An unexpected worker initialization/device failure must not
+            # strand pending Futures forever. Deliver exceptions without
+            # holding Condition, since callbacks may reenter this service.
+            with self._condition:
+                self._closed = True
+                stranded = list(self._pending)+group
+                self._pending.clear()
+                self._outstanding = 0
+                self._condition.notify_all()
+            for item in stranded:
+                if not item.future.done():
+                    item.future.set_exception(error)
+
+    def _drain(self):
+        while True:
                 with self._condition:
                     while not self._pending and not self._closed:
                         self._condition.wait()
@@ -321,15 +343,20 @@ class FrozenInferenceMicrobatcher:
                         calibrated_batch_shapes=len(self._admission))
 
     def close(self, *, cancel_pending=False):
+        cancelled = []
         with self._condition:
             self._closed = True
             if cancel_pending:
-                while self._pending:
-                    item = self._pending.popleft()
-                    item.future.set_exception(RuntimeError("Frozen batcher closed before execution"))
-                    self._outstanding -= 1
+                cancelled = list(self._pending)
+                self._pending.clear()
+                self._outstanding -= len(cancelled)
             self._condition.notify_all()
-        if self._worker is not __import__("threading").current_thread():
+        for item in cancelled:
+            # Future callbacks may query metrics or close the queue, so
+            # never call them under the service's condition lock.
+            item.future.set_exception(RuntimeError(
+                "Frozen batcher closed before execution"))
+        if self._worker is not current_thread():
             self._worker.join()
 
     def __enter__(self):
