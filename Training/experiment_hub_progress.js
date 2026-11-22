@@ -1317,11 +1317,22 @@ class BottleneckEvidence {
                 copied!==null&&count?.unit==='count'&&
                 Number.isSafeInteger(count.value)&&count.value>=1&&
                 count.value<=metrics.training_collector_workers.value);
-            const exposedShare=measured?exposed/wall:null;
-            const gapShare=gap!==null&&gap<=wall?gap/wall:null;
-            const wireShare=wireGap!==null&&wireGap<=wall?wireGap/wall:null;
-            const postwireShare=postwire!==null&&postwire<=collection
-                ?postwire/wall:null;
+            // Remote completion timing is about the full collection, but
+            // only time after the preceding optimizer is exposed by an
+            // async pipeline. Cap candidate stalls at that actual wait.
+            // This is an upper bound, not proof that a particular stage
+            // occupied the critical path during the overlapping interval.
+            const exposedLimit=pipelineActive?criticalCollection:wall;
+            const exposeStage=value=>value!==null&&
+                exposedLimit!==null&&value<=collection
+                ?Math.min(value,exposedLimit)/wall:null;
+            const exposedShare=measured?exposeStage(exposed):null;
+            const gapShare=exposeStage(gap);
+            const wireShare=exposeStage(wireGap);
+            const postwireShare=exposeStage(postwire);
+            if(stageMeasured)
+                add('training_shared_critical_wait_share',
+                    criticalCollection/wall);
             // A collector's GPU stream is a candidate only when that SAME
             // collector last delivered both bytes and decoded experience,
             // and its distinct wire-arrival gap extends the PPO round.
@@ -1350,7 +1361,8 @@ class BottleneckEvidence {
             // busy unpickling, even if bytes arrived first. Only confirmed
             // learner-clock last-wire gaps support a remote-completion tail.
             const slowReply=wireShare!==null&&wireShare>=0.25&&
-                wireGap>=0.25&&wireOwner===decodedOwner&&
+                wireGap>=0.25&&criticalCollection>=0.25&&
+                wireOwner===decodedOwner&&
                 (exposedShare===null||exposedShare<=0.10);
             // A stable last-wire owner identifies a limiting collector,
             // not a saturated CPU/GPU. A process ceiling above its current
