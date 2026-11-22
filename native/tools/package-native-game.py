@@ -828,6 +828,7 @@ def main() -> None:
             "--animation-output", str(assets / "ship-animations.rgba"),
             "--remains-output", str(assets / "ship-remains.rgba"),
             "--deck-output", str(assets / "carrier-decks.rgba"),
+            "--queen-output", str(assets / "queen-parts.rgba"),
         ], cwd=ROOT, check=True)
         for source, relative in audio:
             destination = staging / relative
