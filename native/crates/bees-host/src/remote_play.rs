@@ -1213,11 +1213,19 @@ impl NativeRemotePlay {
             self.measurements.fog_query_views_skipped_no_output += sides.len() as u64;
             return;
         }
+        let fog_enabled = view.player_authority.player_fog_of_war_enabled();
         let mut vision = HashMap::<i32, RemoteFogSources>::new();
         for &side in &sides {
-            let source = self.fog_by_side.get(&side)
-                .expect("authenticated side has live sight")
-                .sources(view, &mut self.measurements);
+            // A clear-sight game still uses the same audio and state
+            // projection, but never queries or transmits source fog circles.
+            // Avoid copying, sorting, and indexing them on every LAN frame.
+            let source = if fog_enabled {
+                self.fog_by_side.get(&side)
+                    .expect("authenticated side has live sight")
+                    .sources(view, &mut self.measurements)
+            } else {
+                RemoteFogSources::default()
+            };
             vision.insert(side, source);
         }
         // Carry short-lived sounds to the next presentation frame.
@@ -1540,6 +1548,7 @@ impl RemoteFogSight {
 /// direct scan for small fleets; X-sorted pruning for medium fleets; and a
 /// sparse 2D center grid for large fleets (including long vertical columns,
 /// where X pruning alone cannot help). No new visibility rule or physics.
+#[derive(Default)]
 struct RemoteFogSources {
     sources: Vec<(Vec2, f32)>,
     largest_radius: f32,
