@@ -3015,6 +3015,28 @@ impl NativePhysicalScene {
         }.map_err(NativePolicyOnlyLevelError::Snapshot)?;
         use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
         match setup.campaign_dialogue {
+            Some(CampaignDialogueSpec::PlutoAnomaly {
+                player_side, scout_id, honeybee_id,
+            }) if player_side != human_side || scout_id <= 0 ||
+                honeybee_id <= 0 || scout_id == honeybee_id ||
+                !self.entities.iter().any(|entity| matches!(
+                    entity, NativeAuthoredEntity::Ship(ship)
+                        if ship.entity_id == scout_id &&
+                        ship.side == player_side && ship.ship_type == 18 &&
+                        !ship.vitals.is_dead()
+                )) ||
+                !self.entities.iter().any(|entity| matches!(
+                    entity, NativeAuthoredEntity::Ship(ship)
+                        if ship.entity_id == honeybee_id &&
+                        ship.side == bee_side && ship.ship_type == 14 &&
+                        !ship.vitals.is_dead()
+                )) ||
+                // This encounter is an ordinary source combat Level, not
+                // a fabricated reward or independently simulated mission.
+                setup.groups.is_some() || setup.survival.is_some() ||
+                setup.demolition.is_some() || setup.escort.is_some() ||
+                setup.extraction.is_some() =>
+                return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::TitaniaBeenoculars { player_side, .. })
                 if !setup.survival.is_some_and(|objective| objective.defending_side == player_side) =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
