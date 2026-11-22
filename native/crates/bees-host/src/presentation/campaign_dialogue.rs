@@ -4,39 +4,59 @@ use bees_gameplay::campaign_dialogue::{CampaignCue, UploadMilestone};
 
 pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)] {
     match cue {
-        // Pluto I's first story beat follows the genuine Scout/Honeybee
-        // physical proximity event, not a staged timer or predicted sight.
+        // Original PlutoLines_Anomaly is split at physical Scout sighting,
+        // Tom's real Gunship arrival, and the first Honeybee kill. Only
+        // source non-speaking pause and audio staging lines are omitted;
+        // this one existing campaign cue machine owns all stage boundaries.
         CampaignCue::PlutoAnomalyBriefing => &[
-            ("Samuel", "Scout and explore around Pluto. Report any unidentified vessels."),
+            ("Samuel", "Good morning, Commander! I brought your coffee."),
+            ("Samuel", "I agree, it doesn't taste as good as Earth coffee. Or even Mars coffee… But hey, coffee is coffee! And we’ll both get off of Pluto soon enough."),
         ],
         CampaignCue::PlutoAnomalyHoneybeeSpotted => &[
-            ("Samuel", "A Scout is reporting an unidentified vessel approaching military airspace. What should we do?"),
+            ("Samuel", "Oh, that's odd. A Scout is reporting an unidentified vessel approaching military airspace. What should we do?"),
             ("Samuel", "Right away, sir. Contacting the vessel."),
-            ("Samuel", "It isn't responding, sir."),
-            ("Samuel", "Understood, sir. We'll send Lieutenant Tom out immediately."),
+            ("Samuel", "It isn’t responding, sir."),
+            ("Samuel", "Understood, sir. We’ll send Lieutenant Tom out immediately."),
         ],
-        // A non-speaking, gameplay-authenticated boundary. The original
-        // Scout report has finished; deferred real source reinforcements
-        // and scripted orders can now observe this one committed cue.
+        // The report's completion releases actual deferred Gunship squads.
         CampaignCue::PlutoAnomalyScoutReportComplete => &[],
         CampaignCue::PlutoAnomalyGunshipArrived => &[
-            ("Tom", "Lieutenant Tom here. Scout's report confirmed. My Gunship has arrived, Commander."),
-            ("Tom", "The unidentified vessel hasn't responded to our warnings."),
-            ("Samuel", "Commander, the new Gunship is ready for your orders."),
+            ("Tom", "This is Gunship P-4 reporting to command. I’m approaching the unidentified vessel now."),
+            ("Tom", "Unidentified vessel, you are in United Fleet airspace. Identify yourself immediately."),
+            ("Samuel", "Still nothing, even on local communications?"),
+            ("Tom", "Negative."),
+            ("Samuel", "Strange. It doesn’t seem hostile. What are your orders- oh, we’re getting a call from High Command."),
+            ("High Command", "Commander, we have received reports of an alien vessel in Pluto airspace. We cannot allow it to infiltrate our territory. Shoot it down."),
+            ("Samuel", "Shoot it down? We don’t even know what it is! Who even reported this?"),
+            ("High Command", "Those are your orders, Commander."),
+            ("Samuel", "But- oh, they disconnected. Looks like we have to attack, sir."),
+            ("Tom", "What are your orders, Commander?"),
+            ("Samuel", "In order to attack, he’ll need to be in range of his ship’s guns. Once in range, he can attack the ship."),
         ],
         CampaignCue::PlutoAnomalyGunshipBriefingComplete => &[],
         CampaignCue::PlutoAnomalyHoneybeeDestroyed => &[
+            ("Tom", "Well, that was hardly a fight."),
+            ("Samuel", "I hope it wasn’t an innocent civilian. Why would High Command even order that?"),
             ("Tom", "Uh, Commander? Are you seeing this?"),
-            ("Samuel", "Commander, more unidentified vessels are approaching."),
+            ("Samuel", "You need to get out of there, now!"),
         ],
         CampaignCue::PlutoAnomalyVictory => &[
-            ("Tom", "Uh, Commander? Are you seeing this?"),
-            ("Samuel", "More unidentified vessels are approaching."),
+            ("Samuel", "Their fleet is huge! We need to contact High Command immediately!"),
             ("Samuel", "Communications are down, sir. What should we do?"),
             ("Samuel", "Understood. Preparing our fleet to deploy, sir."),
         ],
+        CampaignCue::PlutoAnomalyDefeat => &[
+            ("Samuel", "We've lost contact with our scouting force, commander."),
+        ],
+        // Pluto II original five-line patrol combat briefing, followed by
+        // the native command interface tutorial at the actual Scout
+        // selection gate (a gameplay prerequisite, not cosmetic guessing).
         CampaignCue::PlutoReinforcementsBriefing => &[
-            ("Samuel", "We have two Scout squads and two Gunship squads ready, Commander."),
+            ("Samuel", "We’ve been caught off guard by the strange alien fleet cutting our communications. Only our patrol ships are ready for combat for the moment, but we have sent orders to the rest."),
+            ("Samuel", "Commander, you need to engage in this fight with the patrol ships and buy time for the rest of the fleet to mobilize."),
+            ("Samuel", "Okay, commander, it's up to you to lead us to victory."),
+            ("Samuel", "I recommend you try to find out where the enemy is with your scouts, then form a plan of attack. I’ll be working on restoring our local communications with the rest of the base."),
+            ("Samuel", " . . .Also, Marco wants me to remind you that we are… now at war, so all of our combat vessels are ordered to fire on sight by default."),
             ("Samuel", "Start with the first Scout. Select it to inspect its squad controls."),
         ],
         CampaignCue::PlutoReinforcementsScoutSelected => &[
@@ -46,13 +66,10 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
         ],
         CampaignCue::PlutoReinforcementsCombatReady => &[],
         CampaignCue::PlutoReinforcementsVictory => &[
-            ("Samuel", "Great work, commander. We've kept them at bay for now. Local communications are restored, and we have Pluto's full fleet online."),
+            ("Samuel", "Great work, commander. We’ve kept them at bay for now. Local communications are restored, and we have Pluto’s full fleet online. Let’s prepare for the next wave."),
         ],
         CampaignCue::PlutoReinforcementsDefeat => &[
-            ("Samuel", "Our forces could not stop the approaching enemy fleet. We must regroup."),
-        ],
-        CampaignCue::PlutoAnomalyDefeat => &[
-            ("Samuel", "We've lost contact with our scouting force, commander."),
+            ("Samuel", "Commander, we may not have won that fight but we've bought enough time for local communications to be restored and more of the fleet to be brought online. Let’s prepare for the next wave."),
         ],
         // Original Neptune_OfProduction sections (source dialogue IDs 2-17).
         CampaignCue::NeptuneProductionRetreatOpened => &[
@@ -83,21 +100,22 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
         CampaignCue::NeptuneProductionEnding { .. } => &[
             ("Samuel", "We've lost the last ships we sent out, commander. It’s time to regroup."),
         ],
-        // Exact original PlutoLines_Pushback sections: intro 1..13,
+        // Exact original PlutoLines_Pushback sections: intro 0..12,
         // victory 13..22, defeat 22..31. Source one-second pauses
         // remain empty, non-speaking dialogue lines.
         CampaignCue::PlutoPushbackBriefing { .. } => &[
+            ("Samuel", "With the full force of Pluto’s fleet and the cover of some floating space junk coming our way, we’re going to try and push back the assault from these aliens."),
             ("Samuel", "Alright, commander, we have all of our Lieutenants online. They’ll be giving orders for each of your vessels as you direct the entire fleet."),
-            ("Oviya", " I'm Oviya, your scout lieutenant. Use the scout to… well, scout the battlefield. They get around fast, so as long as you keep giving orders they probably won't get hit by enemy fire."),
-            ("Oviya", "They don’t have any guns, though, so please don’t leave them out to dry when they can’t fight back."),
-            ("Joey", "Alrighty, Commander, I'm commanding yer Frigates. They're yer explosives experts. They can't shoot far, but they sure pack a wallop."),
-            ("Joey", "Those rockets will do some serious damage, and they can even hit multiple targets inside the blast radius."),
+            ("Oviya", "I'm Oviya, your scout lieutenant. Use the scout to… well, scout the battlefield. They get around fast, so as long as you keep giving orders they probably won't get hit by enemy fire. They don’t have any guns, though, so please don’t leave them out to dry when they can’t fight back."),
+            ("Oviya", "Oh! Right, I almost forgot: Scouts also come loaded up with five beacons! You can drop them anywhere and they'll detect enemies that enter their field of vision."),
+            ("Joey", "Alrighty, Commander, I'm commanding yer frigates. They're yer explosives experts. They can't shoot far, but they sure pack a wallop."),
+            ("Joey", "Those rockets will do some serious damage, and they can even hit multiple targets inside their blast radius."),
             ("Joey", "Use ‘em against those ships that like to group up like moths to a flame and you’ll find them quite effective."),
-            ("Marco", "I'll be commanding your Gunships. They're fast-flying dogfighting specialists. Use their speed to your advantage if you can."),
-            ("Marco", "Even if they can't fly as well as me, they'll still be good at dodging fire. As long as you’re competent."),
-            ("Yoshiko", "And I’m Yoshiko, your Dreadnought lieutenant! These babies are made to brawl. They can take a lotta hits and dish it right back! Keep ‘em out front and watch ‘em tear it up!"),
+            ("Marco", "I'll be commanding your gunships. They're fast-flying, dogfighting specialists. Use their speed to your advantage when you can."),
+            ("Marco", "Even if these newer recruits can't fly as well as me, they'll still be good at dodging fire. As long as you’re competent."),
+            ("Yoshiko", "Alright! It's been a while since we've had a good fight. I'm your dreadnought lieutenant. These babies are made to brawl. They can take a lotta hits and dish it right back. Keep ‘em out front and watch ‘em tear it up!"),
             ("Samuel", "And that’s everyone. Use all of our fleet’s strengths to win this battle, commander."),
-            ("Samuel", " If you ever need a reminder on what any of our ships do or what we’ve discovered about the enemy’s fleet, you can always pause and view the United Fleet Codex."),
+            ("Samuel", "If you ever need a reminder on what any of our ships do or what we’ve discovered about the enemy’s fleet, you can always pause and view the United Fleet Codex."),
             ("Samuel", "I’ll be keeping it updated for you. I believe in you!"),
         ],
         CampaignCue::PlutoPushbackVictory => &[
