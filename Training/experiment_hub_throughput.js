@@ -49,31 +49,37 @@ function observedMeasure(progress) {
 // Associate each measured placement with the frozen identities of OTHER
 // Hub-owned native jobs actively sharing its GPUs. Unknown/external GPU
 // processes are not inferred from host utilization.
-function gpuCohort(machineId,gpus,context,excludeJobId=null) {
+function liveGpuPeers(machineId,gpus,context,excludeJobId=null) {
     if(!context||!Array.isArray(context.jobs)||
-        !Array.isArray(context.reservations)||!Array.isArray(gpus)||
-        gpus.length===0)
-        // CPU-only evidence needs no GPU cohort and retains its previous
-        // persisted placement identity across this scheduler change.
+        !Array.isArray(context.reservations)||!Array.isArray(gpus))
         return null;
-    const byId=new Map(context.jobs.map(j=>[j.id,j]));
-    return JSON.stringify(gpus.map(gpu=>{
-        const peers=[];
-        for(const lease of context.reservations) {
-            if(lease.machine_id!==machineId||lease.job_id===excludeJobId||
-                !['active','offered','acknowledged'].includes(lease.status)||
-                !Array.isArray(lease.resources?.gpus)||
-                !lease.resources.gpus.includes(gpu))continue;
-            const peer=byId.get(lease.job_id);
-            if(!peer||!['running','stop_requested'].includes(peer.status)||
-                peer.lease_id!==lease.id)continue;
-            const key=workloadKey(peer);
-            if(key)peers.push(crypto.createHash('sha256').update(key)
-                .digest('hex').slice(0,16));
-        }
-        return peers.sort();
-    }));
+    const byId=new Map(context.jobs.map(job=>[job.id,job]));
+    const peers=[];
+    for(const lease of context.reservations) {
+        if(lease.machine_id!==machineId||lease.job_id===excludeJobId||
+            !['active','offered','acknowledged'].includes(lease.status)||
+            !Array.isArray(lease.resources?.gpus)||
+            !lease.resources.gpus.some(id=>gpus.includes(id)))continue;
+        const peer=byId.get(lease.job_id);
+        if(peer&&['running','stop_requested'].includes(peer.status)&&
+            peer.lease_id===lease.id&&workloadKey(peer))
+            peers.push({job:peer,lease});
+    }
+    return peers;
 }
+function gpuCohort(machineId,gpus,context,excludeJobId=null) {
+    if(!Array.isArray(gpus)||!gpus.length)return null;
+    const peers=liveGpuPeers(machineId,gpus,context,excludeJobId);
+    if(!peers)return null;
+    return JSON.stringify(gpus.map(id=>peers
+        .filter(peer=>peer.lease.resources.gpus.includes(id))
+        .map(peer=>crypto.createHash('sha256').update(workloadKey(peer.job))
+            .digest('hex').slice(0,16)).sort()));
+}
+const usefulWorkMeasure=name=>
+    name==='training_total_useful_steps'||name==='useful_steps_completed'||
+    name==='ant_decisions_per_second'||
+    name.endsWith('_useful_steps_per_second');
 
 function rateEvidence(windows,now=Date.now()) {
     const fresh=windows.filter(w=>w.recorded_at<=now&&
@@ -221,19 +227,68 @@ class ThroughputHistory {
         }
         return rows;
     }
-    compare(job,a,b,context=null) {
+    evidence(job,machineId,gpus,context=null) {
         const key=workloadKey(job);
-        if(!key)return 0;
-        const score=placement=>{
-            const gpus=placement.suggested_gpus||[];
-            const devices=JSON.stringify(gpus);
-            const cohort=gpuCohort(placement.machine_id,gpus,context,job?.id);
-            const identity=cohort===null
-                ?[key,placement.machine_id,devices]
-                :[key,placement.machine_id,devices,cohort];
-            return rateEvidence(this.windows.get(JSON.stringify(identity))||[]);
+        if(!key)return null;
+        const cohort=gpuCohort(machineId,gpus,context,job.id);
+        const identity=cohort===null
+            ?[key,machineId,JSON.stringify(gpus)]
+            :[key,machineId,JSON.stringify(gpus),cohort];
+        return rateEvidence(this.windows.get(JSON.stringify(identity))||[]);
+    }
+    // Raw rates from unlike training projects are not additive. Compare
+    // an incoming cooperative GPU job and every affected peer in units of
+    // their own *solo useful-work rate*. Only fully observed current and
+    // prospective cohorts can rank co-location; unknown peers are neutral.
+    aggregateScore(job,placement,context) {
+        const machineId=placement.machine_id,gpus=placement.suggested_gpus||[];
+        const peers=liveGpuPeers(machineId,gpus,context,job.id);
+        if(!peers||job.resources?.gpu_mode!=='shared')return null;
+        const soloContext={jobs:[],reservations:[]};
+        const normalized=(source,deviceIds,cohort)=>{
+            const actual=this.evidence(source,machineId,deviceIds,cohort);
+            const alone=this.evidence(source,machineId,deviceIds,soloContext);
+            if(!actual||!alone||actual.measure!==alone.measure||
+                !usefulWorkMeasure(actual.measure)||!(alone.rate>0))
+                return null;
+            return actual.rate/alone.rate;
         };
-        const left=score(a),right=score(b);
+        let total=normalized(job,gpus,context);
+        if(total===null)return null;
+        if(!peers.length)return total;
+        const virtualId='__hub_candidate__';
+        const running={...job,status:'running',lease_id:virtualId};
+        const future={
+            jobs:context.jobs.filter(item=>item.id!==job.id).concat(running),
+            reservations:context.reservations.concat({
+                id:virtualId,job_id:job.id,machine_id,status:'acknowledged',
+                resources:{...job.resources,gpus},
+            }),
+        };
+        for(const peer of peers) {
+            const ids=peer.lease.resources.gpus;
+            const before=normalized(peer.job,ids,context);
+            const after=normalized(peer.job,ids,future);
+            if(before===null||after===null)return null;
+            total+=after-before;
+        }
+        return total;
+    }
+    compare(job,a,b,context=null) {
+        if(!workloadKey(job))return 0;
+        const leftPeers=liveGpuPeers(a.machine_id,a.suggested_gpus||[],context,job.id);
+        const rightPeers=liveGpuPeers(b.machine_id,b.suggested_gpus||[],context,job.id);
+        if(job.resources?.gpu_count>0&&
+            (leftPeers?.length||rightPeers?.length)) {
+            const left=this.aggregateScore(job,a,context);
+            const right=this.aggregateScore(job,b,context);
+            // Do not sacrifice an existing learner for the incoming
+            // workload on the basis of its own fast-but-incomplete sample.
+            if(left===null||right===null||Math.abs(right-left)<=0.05)return 0;
+            return right-left;
+        }
+        const left=this.evidence(job,a.machine_id,a.suggested_gpus||[],context);
+        const right=this.evidence(job,b.machine_id,b.suggested_gpus||[],context);
         // Missing or non-comparable measurements are neutral, not zero SPS.
         if(!left||!right||left.measure!==right.measure)return 0;
         if(Math.abs(right.rate-left.rate)<=0.05*Math.max(left.rate,right.rate))
