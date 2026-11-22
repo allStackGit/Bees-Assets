@@ -18,7 +18,9 @@ import tarfile
 import time
 from tempfile import TemporaryDirectory, NamedTemporaryFile
 
-from native_distributed_collection import verify_bundle, MAX_BUNDLE_RECEIPT_BYTES
+from native_distributed_collection import (
+    verify_bundle, read_bundle_receipt, MAX_BUNDLE_RECEIPT_BYTES,
+)
 from native_training_artifacts import file_sha256, sync_directory
 
 
@@ -86,7 +88,7 @@ def verify_bundle_files(receipt_path):
     if (root.is_symlink() or not root.is_dir() or
             receipt_path.is_symlink() or not receipt_path.is_file()):
         raise ValueError("native collector has no owned published receipt")
-    expected = artifact_paths(json.loads(receipt_path.read_text(encoding="utf-8")))
+    expected = artifact_paths(json.loads(read_bundle_receipt(receipt_path)))
     canonical = root.resolve(strict=True)
     for name, digest in expected.items():
         target = root
@@ -131,9 +133,7 @@ def export_bundle_archive(receipt_path, job, orders, archive_path):
     if not archive_parent.is_dir() or archive_path.exists() or archive_path.is_symlink():
         raise FileExistsError(f"archive output must be a new file in an existing directory: {archive_path}")
     verify_bundle(receipt_path, job, orders)
-    raw = receipt_path.read_bytes()
-    if len(raw) > MAX_RECEIPT_BYTES:
-        raise ValueError("rollout bundle receipt exceeds transfer limit")
+    raw = read_bundle_receipt(receipt_path)
     files = artifact_paths(json.loads(raw))
     temporary = None
     transferred = 0
@@ -191,9 +191,7 @@ def verified_existing_bundle_archive(receipt_path, job, orders, archive_path):
         raise ValueError("prior collector archive is not an owned regular file")
     source_receipt = Path(receipt_path).resolve(strict=True)
     verified = verify_bundle(source_receipt, job, orders)
-    raw = source_receipt.read_bytes()
-    if not 0 < len(raw) <= MAX_RECEIPT_BYTES:
-        raise ValueError("original collector receipt exceeds archive limit")
+    raw = read_bundle_receipt(source_receipt)
     expected = artifact_paths(json.loads(raw))
     seen = set()
     capture_bytes = 0
