@@ -2451,6 +2451,23 @@ impl NativeSoftwareRenderer {
             text::draw_centered(&mut self.pixels, self.width, 8,
                 &label, 1, [239, 247, 255]);
         } else if view.campaign_objective == Some(
+            bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoAnomaly,
+        ) {
+            let label = if view.player_authority.player_viewer_side()
+                != view.campaign_dialogue_side {
+                "Defend the unidentified vessel near Pluto"
+            } else if view.campaign_dialogue.is_some_and(|(_, cue)|
+                matches!(cue,
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeSpotted
+                ))
+            {
+                "Unidentified vessel located  |  Stand by for Lieutenant Tom"
+            } else {
+                "Scout and explore around Pluto"
+            };
+            text::draw_centered(&mut self.pixels, self.width, 8,
+                label, 1, [239, 247, 255]);
+        } else if view.campaign_objective == Some(
             bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoPushback,
         ) {
             let label = if view.player_authority.player_viewer_side()
