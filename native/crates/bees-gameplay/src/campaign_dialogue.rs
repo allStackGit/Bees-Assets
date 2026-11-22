@@ -246,6 +246,7 @@ pub enum CampaignObjectiveKind {
     PlutoPushback,
     NeptuneProduction,
     TitaniaMinesweeper,
+    TitaniaBeenoculars,
     UranusOffensive,
     UranusDefensive,
 }
@@ -263,6 +264,8 @@ impl CampaignDialogue {
                 Some(CampaignObjectiveKind::NeptuneProduction),
             DialogueMode::Minesweeper { .. } =>
                 Some(CampaignObjectiveKind::TitaniaMinesweeper),
+            DialogueMode::Beenoculars { .. } =>
+                Some(CampaignObjectiveKind::TitaniaBeenoculars),
             DialogueMode::UranusOffensive { .. } =>
                 Some(CampaignObjectiveKind::UranusOffensive),
             DialogueMode::UranusDefensive { .. } =>

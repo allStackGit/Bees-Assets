@@ -2100,7 +2100,25 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                         let cue = &state["campaign_dialogue"]["cue"];
                         let evacuation = cue.as_str() == Some("PlutoEvacuationBriefing") ||
                             cue.get("PlutoEvacuationComplete").is_some();
-                        if evacuation && defending {
+                        if objective["titania_defense"] == true {
+                            let shield = state["ships"].as_array().into_iter().flatten()
+                                .find(|ship| ship["id"].as_i64() == Some(protected));
+                            let health = if defending {
+                                shield.and_then(|ship| Some((
+                                    ship["health"].as_i64()?,
+                                    ship["max_health"].as_i64()?,
+                                ))).map(|(hp, max)|
+                                    format!("  Shield {hp}/{max} HP"))
+                                    .unwrap_or_default()
+                            } else { String::new() };
+                            if defending {
+                                format!("Defend Titania{health}  A.M.I. {:.0}%  {:02}:{:02}",
+                                    percent.floor(), seconds / 60, seconds % 60)
+                            } else {
+                                format!("Destroy Titania's defenses  {:02}:{:02}",
+                                    seconds / 60, seconds % 60)
+                            }
+                        } else if evacuation && defending {
                             let elapsed = objective.get("elapsed_seconds")
                                 .and_then(Value::as_f64)
                                 .filter(|value| value.is_finite() && *value >= 0.0)

@@ -2285,6 +2285,8 @@ fn current_state(
         "campaign_objective": if let Some(objective) = view.survival {
             Some(json!({
                 "kind": "survival",
+                "titania_defense": view.campaign_objective == Some(
+                    bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaBeenoculars),
                 "protected_ship_id": objective.protected_ship_id,
                 "defending_side": objective.defending_side,
                 "elapsed_seconds": objective.elapsed_seconds,

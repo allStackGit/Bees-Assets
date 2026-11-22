@@ -2365,7 +2365,26 @@ impl NativeSoftwareRenderer {
                 bees_gameplay::campaign_dialogue::CampaignCue::PlutoEvacuationBriefing |
                 bees_gameplay::campaign_dialogue::CampaignCue::PlutoEvacuationComplete { .. }
             ));
-            let label = if evacuation {
+            let titania = view.campaign_objective == Some(
+                bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaBeenoculars);
+            let label = if titania {
+                let defending = view.player_authority.player_viewer_side()
+                    == view.campaign_dialogue_side;
+                let percent = (100.0 * survival.elapsed_seconds /
+                    survival.duration_seconds).floor().clamp(0.0, 100.0) as u32;
+                if defending {
+                    let shield = view.combat.ship(survival.protected_ship_id);
+                    let status = shield.map_or_else(
+                        || "Base lost".to_owned(),
+                        |ship| format!("Shield {}/{} HP",
+                            ship.vitals.health(), ship.vitals.max_health()));
+                    format!("Defend Titania  |  {status}  |  A.M.I. {percent}%  |  {:02}:{:02}",
+                        seconds / 60, seconds % 60)
+                } else {
+                    format!("Destroy Titania's defenses  |  {:02}:{:02}",
+                        seconds / 60, seconds % 60)
+                }
+            } else if evacuation {
                 let saved = (survival.elapsed_seconds / 5.0).floor()
                     .clamp(0.0, 60.0) as u32;
                 let shield = view.combat.ship(survival.protected_ship_id);
