@@ -3137,6 +3137,19 @@ pub fn connect_remote(
                                     key!=Key::PageUp)).flatten());
                         if let Some(id)=next {
                             selected.clear();selected.push(id);
+                            // Numbered and Tab selection can target any
+                            // live squad, including those outside the first
+                            // twelve rows. Reveal its real roster row without
+                            // changing the authoritative selection ordering.
+                            if let Some(index)=state["squads"].as_array().into_iter()
+                                .flatten().filter(|s|s["owned"]==true)
+                                .position(|s|s["owner"]["squad_id"].as_i64()==Some(id)) {
+                                if index<squad_list_offset {
+                                    squad_list_offset=index;
+                                } else if index>=squad_list_offset+12 {
+                                    squad_list_offset=index+1-12;
+                                }
+                            }
                             if let Some(point)=focus_squad(state,id){cam.center=point;}
                             mode=None;patrol_start=None;drag_start=None;
                             peer.notice=format!("Selected source squad {id}");
@@ -3220,9 +3233,8 @@ pub fn connect_remote(
             if let Some((horizontal,vertical))=window.get_scroll_wheel() {
                 // Wheel over the roster scrolls actual squad rows instead
                 // of zooming the unrelated battlefield camera.
-                if let Some((x,y))=mouse.filter(|&(x,y)|
+                if mouse.is_some_and(|(x,y)|
                     x>=FIELD as f32 && x<WIDTH as f32 && y>=145.0 && y<412.0) {
-                    let _=(x,y);
                     if vertical>0.0 {
                         squad_list_offset=squad_list_offset
                             .saturating_sub(vertical.ceil() as usize);
