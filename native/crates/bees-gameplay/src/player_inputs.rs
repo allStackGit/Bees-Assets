@@ -17,6 +17,18 @@ pub struct NativePlayerPermissions {
 }
 
 /// Object-safe read-only authority, also borrowed by native presentation.
+/// Read-only presentation of one existing persistent FleetShip's observed
+/// combat activity. Its source remains the Level's authoritative career
+/// inventory; headless simulations without career tracking return None.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct NativeShipBattleStatistics {
+    pub observed_turret_shots: u64,
+    pub source_kills: Option<u64>,
+    pub enemy_tsv_damage_done: u64,
+    pub tsv_damage_received: u64,
+    pub minerals_mined_this_level: Option<i32>,
+}
+
 pub trait NativePlayerAuthority {
     /// Unity activates fog only for a Level with a user controller. Old
     /// snapshots lacking Level.ActivateFogOfWar remain unmasked.
@@ -28,6 +40,10 @@ pub trait NativePlayerAuthority {
     /// *diameter*, hence the visibility radius is Sight or MaxRange.
     /// This display-only value never replaces HiveMind perception.
     fn player_fog_vision_radius(&self, _ship_id: i64) -> Option<f32> { None }
+    /// Display-only history: no extra ship scan or gameplay mutation.
+    /// Never infer missing career records from a visible physical hull.
+    fn player_ship_battle_statistics(&self, _ship_id: i64)
+        -> Option<NativeShipBattleStatistics> { None }
     /// Actual Level.HasObstacles; None means range/line inspection is unavailable.
     fn weapon_obstacles_enabled(&self) -> Option<bool> { None }
     fn player_permissions(&self, owner: SquadLifetime) -> Option<NativePlayerPermissions>;
