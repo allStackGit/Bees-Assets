@@ -10,6 +10,7 @@ use std::io::{self, ErrorKind, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::time::{Duration, Instant};
+use std::sync::OnceLock;
 
 use bees_gameplay::campaign_dialogue::CampaignCue;
 use bees_sim::collision::{Aabb, Pose, circle_overlaps_polygon, circles_overlap, polygons_overlap};
@@ -2484,6 +2485,12 @@ pub fn connect_remote(
     let mut show_weapon_ranges=false;
     let mut show_diagnostics=false;
     let mut show_controls_help=false;
+    let mut show_codex=false;
+    let mut codex_seen=[false;bees_sim::ship_assets::SHIP_TYPE_COUNT];
+    let mut codex_selected=18_u8;
+    // One authenticated host/world/episode owns each discovery set.
+    let mut codex_owner:Option<(String,u64,u64)>=None;
+    let mut codex_last_tick:Option<u64>=None;
     let mut sent_weapon_overlay: Option<(u64,u64,Vec<Value>)>=None;
     let mut shooting_menu=false;
     let mut shooting_focus=1_u8;
@@ -2498,6 +2505,7 @@ pub fn connect_remote(
         let elapsed=now.duration_since(previous_frame).as_secs_f32().min(0.1);
         previous_frame=now;
         if window.is_key_pressed(Key::F1, KeyRepeat::No) && !held_fire_active {
+            show_codex=false;
             show_controls_help=!show_controls_help;
             if show_controls_help {
                 // A modal may not continue an old target gesture or turn
@@ -2509,6 +2517,31 @@ pub fn connect_remote(
             }
             last_left=window.get_mouse_down(MouseButton::Left);
             last_right=window.get_mouse_down(MouseButton::Right);
+        }
+        if window.is_key_pressed(Key::F2, KeyRepeat::No) && !held_fire_active {
+            show_codex=!show_codex;
+            show_controls_help=show_codex;
+            if show_codex {
+                shooting_menu=false;shooting_press=None;
+                mode=None;patrol_start=None;drag_start=None;right_press=None;
+                hud_press=None;squad_tab_press=None;minimap_dragging=false;
+                last_selection_press=None;double_left_press=false;
+            }
+            last_left=window.get_mouse_down(MouseButton::Left);
+            last_right=window.get_mouse_down(MouseButton::Right);
+        }
+        if show_codex {
+            let known=codex_seen.iter().enumerate().filter_map(|(kind, seen)|
+                (*seen && kind != usize::from(bees_sim::ship_assets::HUMAN_TARGET_TYPE))
+                    .then_some(kind as u8)).collect::<Vec<_>>();
+            if !known.is_empty() {
+                let focus=known.iter().position(|&kind|kind==codex_selected).unwrap_or(0);
+                if window.is_key_pressed(Key::Up,KeyRepeat::No) {
+                    codex_selected=known[(focus+known.len()-1)%known.len()];
+                } else if window.is_key_pressed(Key::Down,KeyRepeat::No) {
+                    codex_selected=known[(focus+1)%known.len()];
+                }
+            }
         }
         if !show_controls_help && window.is_key_pressed(Key::F6, KeyRepeat::No) {
             show_art=!show_art;
@@ -2556,6 +2589,7 @@ pub fn connect_remote(
         let escape = window.is_key_pressed(Key::Escape, KeyRepeat::No);
         if escape && show_controls_help {
             show_controls_help=false;
+            show_codex=false;
             last_left=window.get_mouse_down(MouseButton::Left);
             last_right=window.get_mouse_down(MouseButton::Right);
         } else if !show_controls_help && (cancel || escape) {
@@ -2606,6 +2640,38 @@ pub fn connect_remote(
             peer.metrics.network_poll_samples+=1;
             peer.metrics.network_poll_seconds+=seconds;
             peer.metrics.network_poll_max_seconds=peer.metrics.network_poll_max_seconds.max(seconds);
+        }
+        // Codex discovery uses only the already-authorized, fog-filtered
+        // network projection. No hidden enemy IDs/classes are requested
+        // from the host, and no separate discovery or game engine is run.
+        if peer.authenticated {
+            if let (Some(session),Some(state)) =
+                (peer.host_session_id.as_deref(),peer.state.as_ref())
+            {
+                if let (Some(world),Some(revision),Some(tick))=(
+                    state["world_id"].as_u64(),
+                    state["episode_revision"].as_u64(),
+                    state["tick"].as_u64(),
+                ) {
+                    if codex_owner.as_ref().is_none_or(|(previous,id,rev)|
+                        previous!=session || *id!=world || *rev!=revision
+                    ) {
+                        codex_owner=Some((session.to_owned(),world,revision));
+                        codex_seen.fill(false);
+                        codex_last_tick=None;
+                    }
+                    if codex_last_tick!=Some(tick) {
+                        codex_last_tick=Some(tick);
+                        for ship in state["ships"].as_array().into_iter().flatten() {
+                            if let Some(kind)=ship["ship_type"].as_u64()
+                                .and_then(|kind| usize::try_from(kind).ok())
+                                .filter(|&kind|kind<codex_seen.len()) {
+                                codex_seen[kind]=true;
+                            }
+                        }
+                    }
+                }
+            }
         }
         // A welcome is the first proof of a real authoritative session.
         // Persist its ID before the viewer can lose the process, so the
@@ -3433,10 +3499,49 @@ pub fn connect_remote(
             text::draw_at(&mut pixels, WIDTH, 10, HEIGHT-43,
                 text::fit(receipt, FIELD-20), 1, [255, 211, 130]);
         }
-        if show_controls_help {
+        if show_codex {
+            static SHIPS:OnceLock<bees_sim::ship_assets::ShipAssetCatalog>=OnceLock::new();
+            let catalog=SHIPS.get_or_init(||
+                bees_sim::ship_assets::ShipAssetCatalog::embedded()
+                    .expect("native ship catalog validated by game startup"));
+            let known=codex_seen.iter().enumerate()
+                .filter_map(|(kind,seen)| (*seen &&
+                    kind!=usize::from(bees_sim::ship_assets::HUMAN_TARGET_TYPE))
+                    .then_some(kind as u8)).collect::<Vec<_>>();
+            let focus=known.iter().position(|&kind|kind==codex_selected).unwrap_or(0);
+            let start=(focus/13)*13;
+            let mut lines=vec![
+                "UNITED FLEET CODEX".to_owned(),
+                "F2 / Esc close   Up / Down browse".to_owned(),
+                "Only source ship classes visible to this commander".to_owned(),
+                " ".to_owned(),
+            ];
+            for &kind in known.iter().skip(start).take(13) {
+                let name=catalog.by_type(kind).map(|asset|asset.name.as_str())
+                    .unwrap_or("Unknown ship");
+                lines.push(format!("{} {}",if kind==codex_selected {">"} else {" "},name));
+            }
+            if known.is_empty() {
+                lines.push("No enemy or friendly ship classes discovered".to_owned());
+            }
+            let sample=peer.state.as_ref().and_then(|state|
+                state["ships"].as_array()).and_then(|ships|ships.iter().find(|ship|
+                    ship["ship_type"].as_u64()==Some(u64::from(codex_selected))
+                )).map(|ship| {
+                format!("Live hull: {} / {} HP",
+                    ship["health"].as_i64().unwrap_or(0),
+                    ship["max_health"].as_i64().unwrap_or(0))
+            }).unwrap_or_else(||"No currently visible physical hull".to_owned());
+            lines.push(" ".to_owned());
+            lines.push(sample);
+            let refs=lines.iter().map(String::as_str).collect::<Vec<_>>();
+            NativeSoftwareRenderer::draw_help_panel(
+                &mut pixels,WIDTH,HEIGHT,&refs,&[1,3],
+            );
+        } else if show_controls_help {
             const LINES: &[&str] = &[
                 "BEES NATIVE / MULTIPLAYER CONTROLS",
-                "F1 or Esc: close help (remote battle continues)",
+                "F1 or Esc: close help   F2: United Fleet Codex",
                 "SELECTION",
                 "Left click: ship   Drag: box select   Double click: ship type",
                 "Ctrl+click: add/remove   Ctrl+A: all   1-0: numbered squads",
