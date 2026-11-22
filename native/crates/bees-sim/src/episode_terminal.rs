@@ -420,6 +420,7 @@ impl NativeEpisodeTerminal {
         let tick = (f64::from(seconds) / f64::from(fixed_dt_seconds)).floor() + 1.0;
         if self.delayed_elimination.is_some() || self.survival.is_some() ||
             self.demolition.is_some() || self.escort.is_some() ||
+            self.target_ship.is_some() ||
             self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&side) ||
             self.timeout_seconds.is_some_and(|timeout| seconds >= timeout) ||
@@ -444,7 +445,8 @@ impl NativeEpisodeTerminal {
         if self.timeout_seconds.is_some_and(|timeout|
             (ticks as f64) * (fixed_dt_seconds as f64) > timeout as f64
         ) || self.survival.is_some() || self.demolition.is_some() ||
-            self.escort.is_some() || self.delayed_elimination.is_some() ||
+            self.escort.is_some() || self.target_ship.is_some() ||
+            self.delayed_elimination.is_some() ||
             self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.defending_side) ||
             objective.protected_ship_id <= 0 ||
@@ -467,7 +469,8 @@ impl NativeEpisodeTerminal {
         if self.timeout_seconds.is_some_and(|timeout|
             (ticks as f64) * (fixed_dt_seconds as f64) > timeout as f64
         ) || self.survival.is_some() || self.demolition.is_some() ||
-            self.escort.is_some() || self.delayed_elimination.is_some() ||
+            self.escort.is_some() || self.target_ship.is_some() ||
+            self.delayed_elimination.is_some() ||
             self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.attacking_side) ||
             objective.target_map_object_id <= 0 ||
@@ -488,7 +491,8 @@ impl NativeEpisodeTerminal {
         if self.timeout_seconds.is_some_and(|timeout|
             (ticks as f64) * (fixed_dt_seconds as f64) > timeout as f64
         ) || self.survival.is_some() || self.demolition.is_some() ||
-            self.escort.is_some() || self.delayed_elimination.is_some() ||
+            self.escort.is_some() || self.target_ship.is_some() ||
+            self.delayed_elimination.is_some() ||
             self.measurements.ticks_observed != 0 ||
             ![self.bee_side, self.human_side].contains(&objective.escorting_side) ||
             objective.escorted_ship_id <= 0 ||
