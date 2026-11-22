@@ -661,11 +661,29 @@ impl PeerClient {
                         message["viewer_side"].as_i64() != Some(i64::from(self.side)) {
                         return Err(invalid("native host snapshot has the wrong player side").into());
                     }
+                    // World and episode identity are mandatory on the
+                    // authoritative wire. Missing values must not silently
+                    // reset UI state or release an active result gate.
+                    let world_id = message["world_id"].as_u64()
+                        .ok_or_else(|| invalid("native host snapshot has no world ID"))?;
+                    let revision = message["episode_revision"].as_u64()
+                        .ok_or_else(|| invalid("native host snapshot has no episode revision"))?;
+                    let tick = message["tick"].as_u64()
+                        .ok_or_else(|| invalid("native host snapshot has no tick"))?;
+                    if !message["fixed_step_seconds"].as_f64()
+                        .is_some_and(|dt| dt.is_finite() && dt > 0.0) {
+                        return Err(invalid("native host snapshot has an invalid fixed step").into());
+                    }
                     if let Some(previous) = &self.state {
-                        if previous["world_id"] == message["world_id"] &&
-                            previous["episode_revision"] == message["episode_revision"] &&
-                            message["tick"].as_u64() < previous["tick"].as_u64() {
-                            return Err(invalid("out-of-order authoritative world snapshot").into());
+                        if previous["world_id"].as_u64() == Some(world_id) {
+                            let old_revision = previous["episode_revision"].as_u64()
+                                .expect("accepted snapshots have an episode revision");
+                            if revision < old_revision ||
+                                (revision == old_revision &&
+                                    tick < previous["tick"].as_u64()
+                                        .expect("accepted snapshots have a tick")) {
+                                return Err(invalid("out-of-order authoritative world snapshot").into());
+                            }
                         }
                     }
                     // A completed battle's reliable receipt must not keep
