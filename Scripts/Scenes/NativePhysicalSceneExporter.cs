@@ -294,6 +294,8 @@ internal static class NativePhysicalSceneExporter
         public string stage_name;
         // Authored MapData.Location, used only by the client soundtrack.
         public string music_location;
+        // Authored Map prefab, independent of soundtrack/mission identity.
+        public string map_background;
         public float fixed_dt_seconds;
         // Actual Stage presentation speed, independent of physics fixed dt.
         public float time_scale;
@@ -372,6 +374,13 @@ internal static class NativePhysicalSceneExporter
             stage_name = level.Stage.gameObject.name,
             music_location = level.MapData != null
                 ? level.MapData.Location.ToString().ToLowerInvariant() : null,
+            // Map.Name is assigned from the actual selected prefab's
+            // authored catalog name by Map.Create, not inferred from
+            // the music location or the level's bounding rectangle.
+            map_background = level.Map.Name == "Pluto" ? "pluto"
+                : level.Map.Name == "Neptune" ? "neptune"
+                : level.Map.Name == "Titania" ? "titania"
+                : level.Map.Name == "Uranus" ? "uranus" : null,
             shots_harmless = level.Stage.MakeShotsHarmless,
             activate_collision_asteroids = level.ActivateCollisionAsteroids,
             activate_mining = level.ActivateMining,
