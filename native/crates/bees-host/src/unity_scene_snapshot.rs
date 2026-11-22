@@ -3257,14 +3257,18 @@ impl NativePhysicalScene {
                 (timed_story && matches!(wave.activation,
                     NativeReinforcementActivation::AfterSeconds(_)))) &&
             !matches!(wave.activation,
-                NativeReinforcementActivation::OnShipDestroyed(id)
+                NativeReinforcementActivation::OnShipDestroyed(id) |
+                NativeReinforcementActivation::OnShipExtracted(id) |
+                NativeReinforcementActivation::OnShipWarped(id)
                     if !live_ships.contains(&id))
         );
         let prior_commands = mission.scripted_queues.len();
         mission.scripted_queues.retain(|queue|
             active_squads.contains(&queue.squad_item_id) &&
             !matches!(queue.activation,
-                NativeScriptedActivation::OnShipDestroyed(id)
+                NativeScriptedActivation::OnShipDestroyed(id) |
+                NativeScriptedActivation::OnShipExtracted(id) |
+                NativeScriptedActivation::OnShipWarped(id)
                     if !live_ships.contains(&id))
         );
         (prior_waves - mission.reinforcements.len(),
