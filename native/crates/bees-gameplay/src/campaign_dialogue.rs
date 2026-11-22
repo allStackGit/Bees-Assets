@@ -203,6 +203,7 @@ pub struct CampaignDialogue {
 /// state machine. This is not another objective/lifecycle owner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CampaignObjectiveKind {
+    PlutoAnomaly,
     PlutoPushback,
     NeptuneProduction,
     UranusOffensive,
@@ -212,6 +213,8 @@ pub enum CampaignObjectiveKind {
 impl CampaignDialogue {
     pub fn objective_kind(&self) -> Option<CampaignObjectiveKind> {
         match self.mode {
+            DialogueMode::PlutoAnomaly { .. } =>
+                Some(CampaignObjectiveKind::PlutoAnomaly),
             DialogueMode::PlutoPushback { .. } =>
                 Some(CampaignObjectiveKind::PlutoPushback),
             DialogueMode::NeptuneProduction { .. } =>
@@ -513,6 +516,13 @@ impl CampaignDialogue {
     /// The three source FleetShip hulls are still owned by CombatWorld.
     /// The first source Pluto encounter remains active until the actual
     /// Scout ProximityCollider overlaps its specific Honeybee.
+    pub fn pluto_anomaly_spotted(&self) -> Option<bool> {
+        match self.mode {
+            DialogueMode::PlutoAnomaly { spotted, .. } => Some(spotted),
+            _ => None,
+        }
+    }
+
     pub fn pluto_anomaly_target(&self) -> Option<(i64, i64)> {
         match self.mode {
             DialogueMode::PlutoAnomaly { scout_id, honeybee_id, spotted: false } =>
