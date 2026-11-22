@@ -82,7 +82,7 @@ HELP = """Commands:
   in-and-out ID        In-and-out attack against visible enemy squad
   guard ID             Guard a visible friendly squad
   mine ID              Mine a visible mining asteroid
-  heal ID              Heal from a visible friendly Beehive
+  heal ID [ID...]      Heal using the named friendly Beehives in order
   retreat ID           Retreat through a visible friendly WarpGate
   patrol X1 Y1 X2 Y2   Patrol the requested rectangle
   hold                 Stop selected squad's active chase
@@ -1041,14 +1041,24 @@ class RemoteConsole:
                 raise ValueError("mining asteroid is not currently visible")
             self.send(("support", {"action": {"Mining": {"asteroid_id": object_id}}}),
                       state, owners)
-        elif cmd in ("heal", "retreat") and len(argv) == 1:
+        elif cmd == "heal" and argv:
+            hives = list(dict.fromkeys(int(value) for value in argv))
+            visible = {ship["id"] for ship in state["ships"]
+                       if ship["friendly"] and ship["ship_type"] == 2}
+            if any(ship_id not in visible for ship_id in hives):
+                raise ValueError("heal targets must be visible friendly Beehives")
+            # Native HealRun retains the supplied source order and handles
+            # real reservation slots, wounded hulls and target losses.
+            self.send(("support", {"action": {"Heal": {"beehive_ids": hives}}}),
+                      state, owners)
+        elif cmd == "retreat" and len(argv) == 1:
             ship_id = int(argv[0])
-            if not any(ship["id"] == ship_id and ship["friendly"]
-                       for ship in state["ships"]):
-                raise ValueError("friendly heal/retreat target is not currently visible")
-            action = ({"Heal": {"beehive_ids": [ship_id]}} if cmd == "heal"
-                      else {"FullRetreat": {"warp_gate_id": ship_id}})
-            self.send(("support", {"action": action}), state, owners)
+            if not any(ship["id"] == ship_id and ship["friendly"] and
+                       ship["ship_type"] == 20 for ship in state["ships"]):
+                raise ValueError("retreat target must be a visible friendly WarpGate")
+            self.send(("support", {"action": {
+                "FullRetreat": {"warp_gate_id": ship_id},
+            }}), state, owners)
         elif cmd == "patrol" and len(argv) == 4:
             x1, y1, x2, y2 = map(float, argv)
             self.send(("support", {"action": {
