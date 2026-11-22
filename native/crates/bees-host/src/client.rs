@@ -126,6 +126,11 @@ pub struct NativeClient {
     hotseat: Option<NativeHotseat>,
     paused: bool,
     show_controls_help: bool,
+    /// Read-only Fleet Codex modal. Reuses the existing help pause/input
+    /// boundary rather than introducing an independent game clock.
+    codex_open: bool,
+    codex_seen: [bool; bees_sim::ship_assets::SHIP_TYPE_COUNT],
+    codex_selected: u8,
     // Window titles are OS messages, not part of a physical simulation
     // step. Refresh their optional diagnostics at human-readable cadence.
     last_title_update: Option<Instant>,
@@ -237,6 +242,9 @@ impl NativeClient {
             music_locations: Vec::new(), bounds,
             selected_world: 0, selection_owner: None, hotseat: None,
             paused: false, show_controls_help: false,
+            codex_open: false,
+            codex_seen: [false; bees_sim::ship_assets::SHIP_TYPE_COUNT],
+            codex_selected: 18,
             last_title_update: None,
             performance: NativeLivePerformance::new(now),
             edge_scroll_enabled: false,
@@ -444,6 +452,7 @@ impl NativeClient {
         if self.window.is_key_pressed(Key::Escape, KeyRepeat::No) {
             if self.show_controls_help {
                 self.show_controls_help = false;
+                self.codex_open = false;
                 self.next_step = Instant::now();
             } else if self.renderer.show_shooting_menu {
                 self.renderer.show_shooting_menu = false;
@@ -455,6 +464,7 @@ impl NativeClient {
         if self.window.is_key_pressed(Key::F1, KeyRepeat::No) &&
             self.held_fire_target.is_none()
         {
+            self.codex_open = false;
             self.show_controls_help = !self.show_controls_help;
             // Help freezes the local simulation clock. On close, restart
             // the wall-clock pacing baseline rather than counting the time
@@ -522,11 +532,56 @@ impl NativeClient {
                 self.renderer.camera = NativeCamera::fit(bounds, width, height);
             }
             self.selection_owner = Some(owner);
+            // A different World or authentic player-side authority must
+            // not inherit the previous view's discovered enemy classes.
+            self.codex_open = false;
+            self.show_controls_help = false;
+            self.codex_seen.fill(false);
             self.dialogue_sequence = None;
             self.dialogue_pause_started = None;
             self.held_fire_target = None;
         }
         self.renderer.selection.synchronize(&view);
+        if self.window.is_key_pressed(Key::F2, KeyRepeat::No) &&
+            self.held_fire_target.is_none()
+        {
+            self.codex_open = !self.codex_open;
+            self.show_controls_help = self.codex_open;
+            self.next_step = Instant::now();
+            if self.codex_open {
+                for kind in self.renderer.codex_visible_ship_types(&view) {
+                    self.codex_seen[usize::from(kind)] = true;
+                }
+                if !self.codex_seen[usize::from(self.codex_selected)] {
+                    self.codex_selected = self.codex_seen.iter()
+                        .position(|seen| *seen).unwrap_or(18) as u8;
+                }
+                self.renderer.show_shooting_menu = false;
+                self.shooting_press = None;
+                self.selection_drag = None;
+                self.renderer.selection_box = None;
+                self.hud_press = None;
+                self.squad_tab_press = None;
+                self.minimap_dragging = false;
+                self.right_press = None;
+            }
+        }
+        if self.codex_open {
+            let known = self.codex_seen.iter().enumerate()
+                .filter_map(|(kind, known)| (*known &&
+                    kind != usize::from(bees_sim::ship_assets::HUMAN_TARGET_TYPE))
+                    .then_some(kind as u8))
+                .collect::<Vec<_>>();
+            if !known.is_empty() {
+                let focus = known.iter().position(|&kind| kind == self.codex_selected)
+                    .unwrap_or(0);
+                if self.window.is_key_pressed(Key::Up, KeyRepeat::No) {
+                    self.codex_selected = known[(focus + known.len() - 1) % known.len()];
+                } else if self.window.is_key_pressed(Key::Down, KeyRepeat::No) {
+                    self.codex_selected = known[(focus + 1) % known.len()];
+                }
+            }
+        }
         // Hot-seat changes only the local commander's view. A campaign's
         // authored story belongs to its source player side, not whichever
         // opposing commander is currently inspecting the shared World.
@@ -715,10 +770,12 @@ impl NativeClient {
         let speed = 500.0 * elapsed / self.renderer.camera.pixels_per_unit;
         let mut pan_x = 0.0;
         let mut pan_y = 0.0;
-        if self.window.is_key_down(Key::Left) { pan_x -= speed; }
-        if self.window.is_key_down(Key::Right) { pan_x += speed; }
-        if self.window.is_key_down(Key::Up) { pan_y += speed; }
-        if self.window.is_key_down(Key::Down) { pan_y -= speed; }
+        if !self.show_controls_help {
+            if self.window.is_key_down(Key::Left) { pan_x -= speed; }
+            if self.window.is_key_down(Key::Right) { pan_x += speed; }
+            if self.window.is_key_down(Key::Up) { pan_y += speed; }
+            if self.window.is_key_down(Key::Down) { pan_y -= speed; }
+        }
         let mouse = self.window.get_mouse_pos(MouseMode::Discard);
         if self.edge_scroll_enabled && self.window.is_active() &&
             !self.renderer.show_shooting_menu {
@@ -1447,7 +1504,11 @@ impl NativeClient {
         }
         // Help is a noninteractive presentation overlay. All underlying
         // authenticated player commands remain disabled until it closes.
-        if self.show_controls_help {
+        if self.codex_open {
+            self.renderer.draw_fleet_codex(
+                &view, &self.codex_seen, self.codex_selected,
+            );
+        } else if self.show_controls_help {
             self.renderer.draw_controls_help();
         }
         self.render_wall_seconds += render_started.elapsed().as_secs_f64();
