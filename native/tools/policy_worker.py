@@ -803,10 +803,17 @@ def collect_predictions(
                 raise ValueError("model selected masked weapon firing")
     elif np.any((discrete[:, :5] == 1) & ~fire):
         raise ValueError("model selected masked weapon firing")
-    row_indices = (output_buffers.indices(rows) if output_buffers is not None
-                   else np.arange(rows))
-    if np.any(~special[row_indices, discrete[:, 5]]):
-        raise ValueError("model selected unavailable special action")
+    if rows <= 3:
+        # The 1v1/2v2 path does not need an indexed temporary or a NumPy
+        # reduction merely to check two or three special-action masks.
+        if any(not special[index, int(discrete[index, 5])]
+               for index in range(rows)):
+            raise ValueError("model selected unavailable special action")
+    else:
+        row_indices = (output_buffers.indices(rows) if output_buffers is not None
+                       else np.arange(rows))
+        if np.any(~special[row_indices, discrete[:, 5]]):
+            raise ValueError("model selected unavailable special action")
     return continuous, discrete, behavior
 
 def main() -> None:
