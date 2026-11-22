@@ -6703,10 +6703,12 @@ fn run_battle(
                 }));
             }
         }
+        let mut restored_casualties = 0_usize;
         if let Some(dead_ids) = mission.and_then(|mission| mission.lost_fleet_ids) {
             let removed = source.omit_killed_fleet_ships(
                 mission.expect("campaign owner").player_side, dead_ids,
             ).map_err(|error| contextual("saved campaign fleet", error))?;
+            restored_casualties += removed;
             if removed != 0 {
                 println!("{}", json!({
                     "kind": "native_campaign_fleet_restored",
@@ -6720,6 +6722,7 @@ fn run_battle(
                 3 - mission.expect("native campaign enemy history").player_side,
                 enemy_lost,
             ).map_err(|error| contextual("persistent enemy campaign fleet", error))?;
+            restored_casualties += removed;
             if removed != 0 {
                 // The historical FleetShip is gone before this Level begins.
                 // Do not reserve an empty enemy squad's future wave or
@@ -6761,6 +6764,49 @@ fn run_battle(
                         waves_before - level.reinforcements.len(),
                     "empty_scripted_queues_omitted":
                         queues_before - level.scripted_queues.len(),
+                }));
+            }
+        }
+        if restored_casualties != 0 {
+            // A source event that would have destroyed an already retired
+            // FleetShip cannot be raised in this World. Retire its dependent
+            // wave and queue here rather than retaining a phantom reserved
+            // faction or failing the canonical known-ship admission gate.
+            // Apply to BOTH authored native scene missions and run-file
+            // plans; their physical target identities share the same roster.
+            let living = source.entities.iter().filter_map(|entity|
+                match entity {
+                    NativeAuthoredEntity::Ship(ship) if !ship.vitals.is_dead() =>
+                        Some(ship.entity_id),
+                    _ => None,
+                }
+            ).collect::<HashSet<_>>();
+            let old_waves = level.reinforcements.len();
+            level.reinforcements.retain(|wave|
+                !wave.on_ship_destroyed.is_some_and(|id| !living.contains(&id))
+            );
+            let old_queues = level.scripted_queues.len();
+            level.scripted_queues.retain(|queue|
+                !matches!(queue.activation,
+                    ScriptedActivationConfig::OnShipDestroyed { ship_id }
+                        if !living.contains(&ship_id))
+            );
+            let (authored_waves, authored_queues) =
+                source.reconcile_native_mission_after_casualties(
+                    level.campaign_dialogue,
+                );
+            if old_waves != level.reinforcements.len() ||
+                old_queues != level.scripted_queues.len() ||
+                authored_waves != 0 || authored_queues != 0
+            {
+                println!("{}", json!({
+                    "kind": "native_campaign_missing_death_triggers_reconciled",
+                    "level_id": level.level_id,
+                    "removed_source_hulls": restored_casualties,
+                    "run_waves_retired": old_waves - level.reinforcements.len(),
+                    "run_queues_retired": old_queues - level.scripted_queues.len(),
+                    "native_scene_waves_retired": authored_waves,
+                    "native_scene_queues_retired": authored_queues,
                 }));
             }
         }
