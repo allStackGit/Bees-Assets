@@ -3671,6 +3671,7 @@ fn original_fleet_source_squad(
     let has_upcoming = catalog.battles.iter().filter_map(|battle|
         battle.mission.as_ref()).any(|mission|
         mission.player_side == side && !progress.completed(&mission.id));
+    let mut source_identity = None::<(i64, u8)>;
     for battle in &catalog.battles {
         let Some(mission) = battle.mission.as_ref().filter(|mission|
             mission.player_side == side &&
@@ -3678,13 +3679,13 @@ fn original_fleet_source_squad(
         ) else { continue };
         let scene = load_native_fleet_edit_scene(
             &resolve(root, battle.config_for(progress)))?;
-        let Some(parent) = scene.entities.iter().find_map(|entity| match entity {
+        let Some((parent, kind)) = scene.entities.iter().find_map(|entity| match entity {
             NativeAuthoredEntity::Ship(ship) if ship.side == side &&
                 ship.fleet_ship_id == Some(fleet_ship_id) &&
                 !ship.vitals.is_dead() &&
                 scene.fleet.get(ship.entity_id)
                     .is_some_and(|value| value.has_persistent_fleet_value) =>
-                        Some(ship.entity_id),
+                        Some((ship.entity_id, ship.ship_type)),
             _ => None,
         }) else { continue };
         if require_reassignment && !scene.can_reassign_authored_ship(side, parent) {
@@ -3695,10 +3696,15 @@ fn original_fleet_source_squad(
             squad.player_permissions.user_controlled &&
             squad.members.contains(&parent)
         ) {
-            return Ok(squad.saved_squad_id);
+            if source_identity.is_some_and(|(_, recorded)| recorded != kind) {
+                return Err(invalid("original FleetShip class differs across active campaign scenes").into());
+            }
+            source_identity.get_or_insert((
+                squad.saved_squad_id.expect("source squad has identity"), kind,
+            ));
         }
     }
-    Ok(None)
+    Ok(source_identity.map(|(squad, _)| squad))
 }
 
 fn run_reassign_authored_ship(
@@ -4353,7 +4359,7 @@ fn authored_menu_fleet(
     let mut source_owned = Vec::new();
     let mut failed_scenes = 0_usize;
     let mut seen_fleet = HashSet::new();
-    let mut seen_source = HashSet::new();
+    let mut seen_source = HashMap::<(i32, i64), u8>::new();
     let mut common_destinations = HashMap::<i32, HashSet<i64>>::new();
     let mut common_templates = HashMap::<i32, HashSet<i64>>::new();
     let mut common_tactics = HashMap::<i32, HashSet<i64>>::new();
@@ -4409,8 +4415,13 @@ fn authored_menu_fleet(
                                     !scene.fleet.get(entity_id)
                                         .is_some_and(|row| row.has_persistent_fleet_value)
                                 { continue; }
-                                if seen_source.insert((side, fleet_id)) {
-                                    source_owned.push((side, fleet_id, saved_id, ship.ship_type));
+                                match seen_source.insert((side, fleet_id), ship.ship_type) {
+                                    None => source_owned.push((
+                                        side, fleet_id, saved_id, ship.ship_type,
+                                    )),
+                                    Some(previous) if previous != ship.ship_type =>
+                                        failed_scenes += 1,
+                                    _ => (),
                                 }
                                 if progress.original_fleet_is_editable(side, fleet_id) &&
                                     scene.can_reassign_authored_ship(side, entity_id) &&
