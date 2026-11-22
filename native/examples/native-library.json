@@ -32,6 +32,12 @@
       "config": "native-wave-defense.run.json"
     },
     {
+      "id": "beehive-under-fire",
+      "title": "Beehive Under Fire — Damage-Triggered Defense",
+      "kind": "battle",
+      "config": "native-beehive-under-fire.run.json"
+    },
+    {
       "id": "escort-convoy",
       "title": "Escort the Fleet Convoy",
       "kind": "battle",
