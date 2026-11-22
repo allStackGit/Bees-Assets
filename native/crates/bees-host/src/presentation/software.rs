@@ -2816,9 +2816,39 @@ impl NativeSoftwareRenderer {
             left + 10, top + 6, message, 1, [231, 237, 248]);
     }
 
-    /// In-game controls stay readable without submitting a huge title to
-    /// X11/Win32 every rendered frame. This panel is presentation-only:
-    /// all orders still flow through the existing authoritative input.
+    /// Source HUD and LAN clients share this pixel-only help presentation.
+    /// Caller provides the controls actually available for its authenticated
+    /// command surface; neither copy of the UI owns a gameplay command.
+    #[cfg(feature = "client")]
+    pub(super) fn draw_help_panel(
+        pixels: &mut [u32], width: usize, height: usize,
+        lines: &[&str], sections: &[usize],
+    ) {
+        if width < 490 || height < 400 || pixels.len() != width * height {
+            return;
+        }
+        let line_height = text::HEIGHT + 5;
+        let panel_height = (lines.len() * line_height + 28).min(height);
+        let panel_width = width.saturating_sub(40).min(875);
+        let left = (width - panel_width) / 2;
+        let top = (height - panel_height) / 2;
+        for y in top..top + panel_height {
+            pixels[y * width + left..y * width + left + panel_width]
+                .fill(if y < top + 3 { 0x5985aa } else { 0x101c2b });
+        }
+        for (index, line) in lines.iter().enumerate() {
+            let y = top + 12 + index * line_height;
+            if y + text::HEIGHT > top + panel_height { break; }
+            let color = if index == 0 { [239, 247, 255] }
+                else if sections.contains(&index) { [137, 195, 235] }
+                else { [209, 220, 233] };
+            let label = text::fit(line, panel_width.saturating_sub(32));
+            text::draw_at(pixels, width, left + 16, y, label, 1, color);
+        }
+    }
+
+    /// F1 help uses the same static source-control wording on every world,
+    /// without building a string or allocating a second framebuffer.
     #[cfg(feature = "client")]
     pub fn draw_controls_help(&mut self) {
         const LINES: &[&str] = &[
@@ -2843,27 +2873,8 @@ impl NativeSoftwareRenderer {
             "F7: mute   F10/F11: effect level   Shift+F10/F11: music",
             "F8: measured rendering and simulation throughput",
         ];
-        if self.width < 490 || self.height < 400 { return; }
-        let line_height = text::HEIGHT + 5;
-        let panel_height = (LINES.len() * line_height + 28).min(self.height);
-        let panel_width = self.width.saturating_sub(40).min(875);
-        let left = (self.width - panel_width) / 2;
-        let top = (self.height - panel_height) / 2;
-        for y in top..top + panel_height {
-            self.pixels[y * self.width + left
-                ..y * self.width + left + panel_width]
-                .fill(if y < top + 3 { 0x5985aa } else { 0x101c2b });
-        }
-        for (index, line) in LINES.iter().enumerate() {
-            let y = top + 12 + index * line_height;
-            if y + text::HEIGHT > top + panel_height { break; }
-            let color = if index == 0 { [239, 247, 255] }
-                else if matches!(index, 2 | 6 | 10 | 18) { [137, 195, 235] }
-                else { [209, 220, 233] };
-            let label = text::fit(line, panel_width.saturating_sub(32));
-            text::draw_at(&mut self.pixels, self.width,
-                left + 16, y, label, 1, color);
-        }
+        draw_help_panel(&mut self.pixels, self.width, self.height,
+            LINES, &[2, 6, 10, 17]);
     }
 
     /// F8 toggles measurements on the actual player window. Keep a small,
