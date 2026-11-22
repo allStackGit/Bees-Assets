@@ -35,6 +35,22 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
             ("Samuel", "Communications are down, sir. What should we do?"),
             ("Samuel", "Understood. Preparing our fleet to deploy, sir."),
         ],
+        CampaignCue::PlutoReinforcementsBriefing => &[
+            ("Samuel", "We have two Scout squads and two Gunship squads ready, Commander."),
+            ("Samuel", "Start with the first Scout. Select it to inspect its squad controls."),
+        ],
+        CampaignCue::PlutoReinforcementsScoutSelected => &[
+            ("Samuel", "Here are the different settings for your ship. Try the squad flight patterns and shooting strategies."),
+            ("Samuel", "Use the number hotkeys to select squads, or drag a box to select multiple squads."),
+            ("Samuel", "Hold R to see weapon ranges, and press F to fire manually."),
+        ],
+        CampaignCue::PlutoReinforcementsCombatReady => &[],
+        CampaignCue::PlutoReinforcementsVictory => &[
+            ("Samuel", "Great work, commander. We've kept them at bay for now. Local communications are restored, and we have Pluto's full fleet online."),
+        ],
+        CampaignCue::PlutoReinforcementsDefeat => &[
+            ("Samuel", "Our forces could not stop the approaching enemy fleet. We must regroup."),
+        ],
         CampaignCue::PlutoAnomalyDefeat => &[
             ("Samuel", "We've lost contact with our scouting force, commander."),
         ],
