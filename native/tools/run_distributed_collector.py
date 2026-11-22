@@ -7,6 +7,7 @@ central multi-round MA-POCA session, without sharing absolute file paths.
 
 import argparse
 import json
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -127,7 +128,7 @@ def reusable_collection(receipt_path, job, orders, leased_gpu_inference=False,
     try:
         receipt = verify_bundle(receipt_path, job, orders)
         raw = read_bundle_receipt(receipt_path)
-        if file_sha256(receipt_path) != receipt["sha256"]:
+        if hashlib.sha256(raw).hexdigest() != receipt["sha256"]:
             return None
         document = json.loads(raw)
         if bool(document.get("leased_gpu_inference", False)) != leased_gpu_inference:
