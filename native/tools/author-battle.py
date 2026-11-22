@@ -715,6 +715,37 @@ def author(args) -> tuple[dict, dict, dict]:
             "both factions need an initially deployed squad; "
             "do not defer an entire faction into reinforcement waves"
         )
+    # The original Challenge saves each enemy hull's exact world pose.
+    # Authoring with generic grid placement first can reject real source
+    # Queens, Beehives or 90-ship stages even though their actual authored
+    # locations are valid. This internal caller-supplied placement contract
+    # uses the SAME physical hull constructor and collision geometry.
+    # No public flag can bypass the normal safe-placement UI/CLI checks.
+    authored_positions = getattr(args, "authored_ship_positions", {})
+    if authored_positions:
+        if not isinstance(authored_positions, dict) or
+                any(type(side) is not int or side not in (1, 2)
+                    for side in authored_positions):
+            raise ValueError("source positions require one or both canonical faction IDs")
+        for side, grouped in authored_positions.items():
+            expected = dict(requested[side])
+            if not isinstance(grouped, dict) or set(grouped) != set(expected):
+                raise ValueError("source positions must cover every exact authored ship class")
+            for kind, count in expected.items():
+                positions = grouped[kind]
+                if not isinstance(positions, list) or len(positions) != count:
+                    raise ValueError("authored source ship counts differ from fleet contract")
+                for point in positions:
+                    if (not isinstance(point, list) or len(point) != 2 or
+                            any(type(v) not in (int, float) or
+                                not math.isfinite(v) or
+                                not scene["bounds"]["min"][axis] <= v <=
+                                    scene["bounds"]["max"][axis]
+                                for axis, v in enumerate(point))):
+                        raise ValueError("source ship position is outside the authenticated map")
+            if any(wave[1] == side for wave in waves):
+                raise ValueError("deferred ships cannot use immediate source deployment positions")
+
     for side, units in requested.items():
         missing = [ship_type for ship_type, _ in units
                    if (side, ship_type) not in blueprints]
@@ -724,8 +755,9 @@ def author(args) -> tuple[dict, dict, dict]:
                 f"no authoritative archetype on side {side} for {missing}; "
                 f"available native ship types: {available}"
             )
-        if any(blueprints[(side, ship_type)]["height"] > args.spacing * 0.8
-               for ship_type, _ in units):
+        if side not in authored_positions and any(
+                blueprints[(side, ship_type)]["height"] > args.spacing * 0.8
+                for ship_type, _ in units):
             raise ValueError(
                 f"side {side} includes a large authored hull that needs wider "
                 "initial placement spacing or a larger native map"
@@ -841,10 +873,13 @@ def author(args) -> tuple[dict, dict, dict]:
     for side, units in requested.items():
         ship_id = ship_base + (side - 1) * side_span
         weapon_id = weapon_base + (side - 1) * side_span
-        positions = placements(
-            scene["bounds"], scene["starting_positions"][side - 1],
-            side, sum(count for _, count in units), args.spacing,
-        )
+        positions = ([point for kind, _ in
+                      sorted(units, key=lambda unit: unit[0] in (8, 19))
+                      for point in authored_positions[side][kind]]
+                     if side in authored_positions else placements(
+                         scene["bounds"], scene["starting_positions"][side - 1],
+                         side, sum(count for _, count in units), args.spacing,
+                     ))
         pos_index = 0
         # Allocate ordinary persistent hulls first. Free child counts
         # can change independently without renumbering the career fleet,

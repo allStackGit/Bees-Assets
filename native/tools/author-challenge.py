@@ -201,6 +201,24 @@ def main():
             options.extend(["--archetype-scene", str(path)])
         battle_args = author.battle_parser().parse_args(options)
         battle_args.ship_identity_base = 1_000_000
+        # Native Challenge reuses the canonical source ship constructor.
+        # Feed its original per-type, per-hull physical positions at the
+        # authoring boundary rather than allocating a temporary generic
+        # grid that cannot fit Queen/large and densely clustered stages.
+        # The importer below still restores exact saved squad membership,
+        # original offsets, target priorities and source-side commands.
+        original_positions = defaultdict(list)
+        for squad in level["EnemySquads"]:
+            anchor = xy(squad.get("StartingPosition"), "Challenge source squad")
+            for ship in squad["Ships"]:
+                kind = KINDS.get(ship.get("ShipType"))
+                if kind is None:
+                    raise ValueError("unknown original Challenge physical ship type")
+                offset = xy(ship.get("Offset"), "Challenge source ship")
+                original_positions[kind].append([
+                    anchor[axis] + offset[axis] for axis in range(2)
+                ])
+        battle_args.authored_ship_positions = {1: dict(original_positions)}
         scene, run, library = author.author(battle_args)
         # This original Challenge stage selects its planet from MapIndex.
         # Map and soundtrack are separate native source properties, but
