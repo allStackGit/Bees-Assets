@@ -106,6 +106,20 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
                 genericRates++;
             }
         }
+        // Shared GPU execution is a project-neutral data plane: retain
+        // comparable coalescing and learner-concurrency evidence before
+        // optional backend-specific per-worker diagnostics fill 96 slots.
+        for(const name of [
+            'gpu_microbatch_submitted','gpu_microbatch_coalesced',
+            'gpu_microbatch_groups','gpu_microbatch_fallbacks',
+            'gpu_microbatch_admitted_groups','gpu_microbatch_rejected_groups',
+            'gpu_microbatch_qualification_seconds',
+            'gpu_execution_fused_calls','gpu_execution_stream_calls',
+            'gpu_execution_graph_calls','gpu_graph_replays',
+            'gpu_training_selected_parallel','gpu_training_parallel_batches',
+            'gpu_training_calibration_complete',
+            'gpu_training_last_qualified_work_per_second',
+        ])retain(name,reported[name]);
         for(const name of ['ppo_compiled_loss_active',
             'ppo_compile_calibration_complete','ppo_compile_fallbacks',
             'ppo_compiled_loss_qualified','ppo_compiled_loss_mismatches',
