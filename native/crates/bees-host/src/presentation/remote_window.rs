@@ -81,6 +81,13 @@ struct WireCounts {
     hud_max_seconds: f64,
     present_seconds: f64,
     present_max_seconds: f64,
+    /// Complete nonblocking socket polling and authoritative message processing.
+    network_poll_seconds: f64,
+    network_poll_max_seconds: f64,
+    network_poll_samples: u64,
+    /// Host snapshots accepted (bytes exclude the framing newline).
+    world_snapshot_bytes: u64,
+    world_snapshot_max_bytes: usize,
     campaign_receipts: u64,
     battle_result_receipts: u64,
     interrupted_battle_notices: u64,
@@ -644,6 +651,9 @@ impl PeerClient {
                     if self.visual.snapshot(self.state.as_ref(), &message) {
                         self.metrics.snapshot_pairs_interpolated += 1;
                     }
+                    let message_bytes=index-start+1;
+                    self.metrics.world_snapshot_bytes+=message_bytes as u64;
+                    self.metrics.world_snapshot_max_bytes=self.metrics.world_snapshot_max_bytes.max(message_bytes);
                     self.state = Some(message);
                     self.metrics.snapshots += 1;
                 }
@@ -2494,7 +2504,14 @@ pub fn connect_remote(
         // Reset the old view BEFORE reading the new connection's first
         // welcome/snapshot. Otherwise a fast host can deliver a valid first
         // state that is immediately discarded as stale by this reset.
-        if !rejoined { peer.poll()?; }
+        if !rejoined {
+            let polled_at=Instant::now();
+            peer.poll()?;
+            let seconds=polled_at.elapsed().as_secs_f64();
+            peer.metrics.network_poll_samples+=1;
+            peer.metrics.network_poll_seconds+=seconds;
+            peer.metrics.network_poll_max_seconds=peer.metrics.network_poll_max_seconds.max(seconds);
+        }
         // A welcome is the first proof of a real authoritative session.
         // Persist its ID before the viewer can lose the process, so the
         // same game (or its committed terminal receipt) remains reachable.
@@ -3327,6 +3344,14 @@ pub fn connect_remote(
         "side":expected_side,
         "session_wall_seconds":session_seconds,
         "bytes_received":peer.metrics.bytes_received,
+        "world_snapshot_bytes":peer.metrics.world_snapshot_bytes,
+        "world_snapshot_max_bytes":peer.metrics.world_snapshot_max_bytes,
+        "network_poll_samples":peer.metrics.network_poll_samples,
+        "network_poll_mean_milliseconds":if peer.metrics.network_poll_samples>0 {
+            Some(1000.0*peer.metrics.network_poll_seconds/
+                peer.metrics.network_poll_samples as f64)
+        } else {None},
+        "network_poll_max_milliseconds":peer.metrics.network_poll_max_seconds*1000.0,
         "snapshots_rendered":peer.metrics.snapshots,
         "frames_rendered":peer.metrics.frames_rendered,
         "rendered_fps":if session_seconds > 0.0 {
