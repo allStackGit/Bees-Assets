@@ -414,6 +414,18 @@ impl NativeGameAudio {
         }
     }
 
+    /// A remote TCP seat change retires all sounds belonging to the old
+    /// authoritative presentation, even when the new session uses the same
+    /// world ID or the map has no soundtrack location.
+    pub fn reset_remote_session(&mut self) {
+        self.reset_warp_gate_audio();
+        for sink in self.voices.drain(..) { sink.stop(); }
+        self.current_episode = None;
+        self.last_tick = None;
+        self.seen_projectiles.clear();
+        self.select_location(None);
+    }
+
     /// Authentic game UI click; completely separate from gameplay
     /// commands and the durable player-input trace.
     pub fn click_ui(&mut self) {
