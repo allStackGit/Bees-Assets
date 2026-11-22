@@ -2148,7 +2148,9 @@ pub(super) fn archive(
             "protected_ship_id": defenders_first_ship,
             "seconds": 90.0,
         });
-    } else if matches!(selected.objective, Objective::Extraction | Objective::Escort) {
+    } else if matches!(selected.objective,
+        Objective::Extraction | Objective::Withdrawal | Objective::Escort)
+    {
         let player = selected.objective_side.ok_or_else(||
             invalid("extraction and escort require a real objective faction"))?;
         run["levels"][0]["extraction"] = json!({
@@ -2158,6 +2160,12 @@ pub(super) fn archive(
             "activation_radius": 10.0,
             "layer": 19,
         });
+        if matches!(selected.objective, Objective::Withdrawal) {
+            // Source Uranus II withdrawal is a completed DEFEAT, never
+            // a fabricated extraction victory. Real surviving hulls
+            // and their already mined resources remain in the World.
+            run["levels"][0]["extraction"]["retreat_on_exit"] = json!(true);
+        }
         if matches!(selected.objective, Objective::Escort) {
             // The first commander is a real mobile, immediately deployed
             // hull in either faction. Delivery and death use the same
@@ -2288,6 +2296,7 @@ pub(super) fn archive(
             Objective::Elimination => "elimination",
             Objective::Survival => "survival",
             Objective::Extraction => "extraction",
+            Objective::Withdrawal => "withdrawal",
             Objective::Escort => "escort",
             Objective::Demolition => "demolition",
             Objective::TargetFlagship => "flagship-hunt",
@@ -2409,7 +2418,8 @@ pub(super) fn archive(
             let mission_owner = selected.objective_side == Some(side as i32 + 1);
             let orders = if supporting && mission_owner && side == 1 &&
                 !matches!(selected.mix[side], FleetMix::Queen) &&
-                matches!(selected.objective, Objective::Extraction)
+                matches!(selected.objective,
+                    Objective::Extraction | Objective::Withdrawal)
             {
                 // The original Carrier is a mobile source ship. It must
                 // physically reach extraction alongside its fighters;
@@ -2438,14 +2448,23 @@ pub(super) fn archive(
                 // sending it on Aggressive pursuit defeats the objective.
                 vec![json!({"kind": "hold"})]
             } else if mission_owner &&
-                matches!(selected.objective, Objective::Extraction)
+                matches!(selected.objective,
+                    Objective::Extraction | Objective::Withdrawal)
             {
-                // Every mobile unit must physically evacuate. Reuse the
-                // exact Level move command and extraction trigger, rather
-                // than awarding the benchmark an artificial win.
-                vec![json!({"kind": "move_to_point", "destination": [
+                // The original Uranus withdrawal awards the opponent a
+                // victory only after the final eligible ship physically
+                // exits the shared CombatWorld. Miner AI can collect real
+                // ore before returning; no model-only reward is invented.
+                let mut commands = Vec::new();
+                if matches!(selected.objective, Objective::Withdrawal) &&
+                    miner && selected.ore_count != 0
+                {
+                    commands.push(json!({"kind": "mining_nearest"}));
+                }
+                commands.push(json!({"kind": "move_to_point", "destination": [
                     if side == 0 { extraction_x } else { -extraction_x }, 0.0,
-                ]})]
+                ]}));
+                commands
             } else if mission_owner &&
                 matches!(selected.objective, Objective::Escort) &&
                 position == 0
@@ -2559,7 +2578,7 @@ pub(super) fn archive(
             // bombardment interceptors still need repeated live target
             // selection as opposing squads are killed.
             let one_shot_goal = mission_owner && match selected.objective {
-                Objective::Extraction => true,
+                Objective::Extraction | Objective::Withdrawal => true,
                 Objective::Escort | Objective::Survival => position == 0,
                 Objective::Demolition =>
                     !supporting && scout.is_none() && !miner && !bomber && !charger,
@@ -2594,7 +2613,8 @@ pub(super) fn archive(
             // retain their source bombing role; both use ordinary Level
             // commands, movement and weapon targeting.
             let extraction = selected.objective_side == Some(2) &&
-                matches!(selected.objective, Objective::Extraction);
+                matches!(selected.objective,
+                    Objective::Extraction | Objective::Withdrawal);
             let escort_guard = command == "aggressive_nearest" &&
                 selected.objective_side == Some(2) &&
                 matches!(selected.objective, Objective::Escort);
