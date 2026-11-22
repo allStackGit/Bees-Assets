@@ -2125,15 +2125,34 @@ impl NativePhysicalScene {
                     }
                 }
             }
-            // Unity falls back to the lower center lane when every ring
-            // is obstructed. Reject an actually blocked fallback rather
-            // than teleport a physical fleet into collision geometry.
-            let destination = placement.unwrap_or(
-                center + Vec2::new(0.0, -(22.0 + radius)),
-            );
-            if !clear(destination) {
-                return Err(invalid("Titania II has no physical central formation placement"));
+            // Source fallback prefers the lower center lane and then
+            // lets SetStartingPosition find nearby valid formation slots.
+            // Do the same against the authoritative physical obstacles
+            // rather than failing a dense but otherwise playable map.
+            if placement.is_none() {
+                let lower = center + Vec2::new(0.0, -(22.0 + radius));
+                if clear(lower) {
+                    placement = Some(lower);
+                } else {
+                    'fallback: for ring in 1_i32..=32 {
+                        for x in -ring..=ring {
+                            for y in -ring..=ring {
+                                if x.abs().max(y.abs()) != ring { continue; }
+                                let candidate = lower + Vec2::new(
+                                    x as f32 * 8.0, y as f32 * 8.0,
+                                );
+                                if clear(candidate) {
+                                    placement = Some(candidate);
+                                    break 'fallback;
+                                }
+                            }
+                        }
+                    }
+                }
             }
+            let destination = placement.ok_or(invalid(
+                "Titania II has no physically clear central formation placement",
+            ))?;
             let delta = destination - old_center;
             for index in group {
                 let NativeAuthoredEntity::Ship(ship) = &mut self.entities[index] else {
