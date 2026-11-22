@@ -855,6 +855,16 @@ def aggregate_collection_metrics(bundles):
                 key: sum(row["ship_slot_work"][key] for row in rows)
                 for key in obstacle_keys
             })
+        # A mixed fleet of old and new native binary revisions must
+        # preserve missing measurements as unavailable, not measured zero.
+        navigation_keys = ("navigation_lookups_skipped",
+                           "steering_lookups_skipped")
+        if all(all(key in row["ship_slot_work"] for key in navigation_keys)
+               for row in rows):
+            result["ship_slot_work"].update({
+                key: sum(row["ship_slot_work"][key] for row in rows)
+                for key in navigation_keys
+            })
         projectile_key = "inactive_projectile_slots_skipped"
         if all(projectile_key in row["ship_slot_work"] for row in rows):
             result["ship_slot_work"][projectile_key] = sum(
