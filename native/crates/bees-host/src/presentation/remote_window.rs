@@ -757,7 +757,10 @@ impl PeerClient {
                             format!(" | Score {value:+}")
                         }
                     }).unwrap_or_default();
-                    let text = format!("{label}{score}: {reason}");
+                    let mined = message["player_match_counts"]["player_minerals_mined"]
+                        .as_u64().filter(|&amount| amount != 0)
+                        .map_or(String::new(), |amount| format!("  Mined {amount} TSV"));
+                    let text = format!("{label}{score}{mined}: {reason}");
                     self.battle_result_receipt = Some(text.clone());
                     self.notice = text;
                     self.metrics.battle_result_receipts += 1;
@@ -1940,8 +1943,11 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                     format!("Score {score:+} K{kills} L{lost} R{returned}"),
                 _ => format!("Score {score:+}"),
             };
+            let mined = state["player_minerals_mined"].as_u64()
+                .filter(|&amount| amount != 0)
+                .map_or(String::new(), |amount| format!("  M{amount}"));
             text::draw_at(pixels, WIDTH, FIELD+14, 131,
-                text::fit(&label, WIDTH-FIELD-24), 1, [198,231,248]);
+                text::fit(&format!("{label}{mined}"), WIDTH-FIELD-24), 1, [198,231,248]);
         }
         for (index,squad) in state["squads"].as_array().into_iter().flatten()
             .filter(|s|s["owned"]==true).take(12).enumerate() {

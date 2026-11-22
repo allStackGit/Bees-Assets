@@ -2883,10 +2883,12 @@ fn archived_native_remote_receipts_from_root(
             player_score: summary["player_score"].as_i64(),
             player_match_counts,
             player_loss_types: archived_loss_types("player_match_counts"),
+            player_minerals_mined: summary["player_match_counts"]["player_minerals_mined"].as_u64(),
             opposing_scored_side,
             opposing_player_score: summary["opposing_player_score"].as_i64(),
             opposing_player_match_counts,
             opposing_loss_types: archived_loss_types("opposing_player_match_counts"),
+            opposing_minerals_mined: summary["opposing_player_match_counts"]["player_minerals_mined"].as_u64(),
         });
     }
     Ok(receipts)
