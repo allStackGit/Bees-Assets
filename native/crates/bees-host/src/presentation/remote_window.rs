@@ -3099,6 +3099,28 @@ pub fn connect_remote(
         } else { None };
         peer.input_suppressed=peer.spectator||terminal||briefing||
             host_briefing_paused||show_controls_help;
+        if !peer.input_suppressed && !held_fire_active &&
+            peer.connected && peer.authenticated && window.is_active() &&
+            window.is_key_pressed(Key::F3, KeyRepeat::No)
+        {
+            if let Some(state) = peer.state.as_ref() {
+                if state["can_activate_retreat"] == true {
+                    let action = json!({
+                        "kind": "activate_retreat",
+                        "input": {
+                            "world_id": state["world_id"],
+                            "episode_revision": state["episode_revision"],
+                            "side": expected_side,
+                        },
+                    });
+                    if let Err(error) = peer.send_action(
+                        action, "Retreat activation submitted".into(),
+                    ) {
+                        peer.notice = error.to_string();
+                    }
+                }
+            }
+        }
         if let Some(owner) = surrender_confirmation.as_ref() {
             if surrender_owner.as_ref() != Some(owner) ||
                 window.is_key_pressed(Key::N,KeyRepeat::No) {
