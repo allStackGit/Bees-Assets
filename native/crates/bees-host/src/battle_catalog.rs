@@ -142,6 +142,10 @@ pub struct Mission {
     /// including ships in reserve rather than deployed in the last Level.
     #[serde(default)]
     pub retire_on_defeat_types: Vec<u8>,
+    /// Derive the campaign's scientist-contact dialogue from an earlier
+    /// committed stage, rather than a static scene authoring assumption.
+    #[serde(default)]
+    pub met_scientists_after: Option<String>,
     #[serde(default)]
     pub requires: Vec<String>,
     /// Optional alternative source campaign routes. Each prerequisite is
@@ -953,6 +957,8 @@ impl BattleCatalog {
                         !classes.iter().any(|&(kind, _)| kind == grant.ship_type))
                 }) ||
                 earlier.contains(mission.id.as_str()) ||
+                mission.met_scientists_after.as_ref().is_some_and(|id|
+                    !earlier.contains(id.as_str())) ||
                 mission.requires.iter().any(|id| !earlier.contains(id.as_str())) ||
                 mission.unlock_if_any.len() > 40 ||
                 (!mission.retire_on_defeat_types.is_empty() &&

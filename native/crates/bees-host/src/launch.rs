@@ -1691,6 +1691,9 @@ struct CampaignMission<'a> {
     player_side: i32,
     /// Source-authorized original Codex classes at this battle's start.
     codex_known: Option<&'a [u8]>,
+    /// Frozen source character-contact state at battle start. None means
+    /// a stand-alone authored scene supplies its own initial dialogue.
+    met_scientists: Option<bool>,
     record_fleet_stats: bool,
     bank_player_minerals: bool,
     bank_on_finished: bool,
@@ -1740,6 +1743,8 @@ struct CampaignReplaySetup {
     player_side: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     codex_known: Option<Vec<u8>>,
+    #[serde(default)]
+    met_scientists: Option<bool>,
     record_fleet_stats: bool,
     bank_player_minerals: bool,
     #[serde(default)]
@@ -1787,6 +1792,7 @@ impl CampaignReplaySetup {
             mission_id: mission.mission_id.to_owned(),
             player_side: mission.player_side,
             codex_known: mission.codex_known.map(<[u8]>::to_vec),
+            met_scientists: mission.met_scientists,
             record_fleet_stats: mission.record_fleet_stats,
             bank_player_minerals: mission.bank_player_minerals,
             bank_on_finished: mission.bank_on_finished,
@@ -1832,6 +1838,7 @@ impl CampaignReplaySetup {
             mission_id: &self.mission_id,
             player_side: self.player_side,
             codex_known: self.codex_known.as_deref(),
+            met_scientists: self.met_scientists,
             record_fleet_stats: self.record_fleet_stats,
             bank_player_minerals: self.bank_player_minerals,
             bank_on_finished: self.bank_on_finished,
@@ -3242,6 +3249,8 @@ fn launch_catalog_battle(
         .map(|(campaign_id, mission)| CampaignMission {
             campaign_id, mission_id: &mission.id, player_side: mission.player_side,
             codex_known: codex_known.as_deref(),
+            met_scientists: mission.met_scientists_after.as_deref()
+                .map(|earlier| progress.completed(earlier)),
             record_fleet_stats: mission.record_fleet_stats,
             bank_player_minerals: mission.bank_player_minerals,
             bank_on_finished: mission.bank_on_finished,
@@ -6818,7 +6827,9 @@ fn run_battle(
                     }),
                 Some(CampaignDialogueSpec::UranusDefensive { met_scientists, .. }) =>
                     Some(CampaignDialogueSpec::UranusDefensive {
-                        player_side, has_cruiser, met_scientists,
+                        player_side, has_cruiser,
+                        met_scientists: mission.and_then(|owner| owner.met_scientists)
+                            .unwrap_or(met_scientists),
                     }),
                 other => other,
             };

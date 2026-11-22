@@ -1750,6 +1750,19 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             # regardless of the ordinary physical elimination result.
             mission["advance_on"] = "finished"
             mission["grant_on"] = "finished"
+        if mission_stories.get(index) == "uranus_on_the_defensive":
+            # Source HasMetAlejandraAndEmilia changes when the original
+            # Titania II outcome has actually committed (win OR defeat).
+            # The native launcher resolves that completion from the career
+            # ledger and freezes it into the battle/replay identity.
+            previous_titania = [
+                number for number, story in mission_stories.items()
+                if number < index and story == "titania_beenoculars"
+            ]
+            if previous_titania:
+                mission["met_scientists_after"] = (
+                    f"mission-{max(previous_titania):03d}"
+                )
         if mission_stories.get(index) == "uranus_new_threat":
             # Source Uranus3Ending finishes the campaign on either outcome;
             # it unlocks hulls/modes but does not mint mined TSV rewards.
