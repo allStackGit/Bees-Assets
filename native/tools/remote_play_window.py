@@ -565,8 +565,13 @@ class RemoteBattleWindow:
         self.update_sidebar()
 
     def select_all(self, _event=None):
-        if self.state:
-            self.selected = [squad["owner"] for squad in self.state["squads"] if squad["controllable"]]
+        if self.state and not self.console.spectator:
+            # Source Ctrl+A selects root player squads, not dependent
+            # Carrier/Queen children already represented by their parents.
+            self.selected = [
+                squad["owner"] for squad in self.state["squads"]
+                if squad["controllable"] and squad.get("source_root") is True
+            ]
             self.draw()
             self.update_sidebar()
 
