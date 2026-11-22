@@ -1748,6 +1748,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees transfer <catalog.json> --output-dir <battle-runs> --ship <fleet-id> --squad <saved-id>
        bees reassign <catalog.json> --output-dir <battle-runs> --side <n> --ship <fleet-id> --from <saved-id> --squad <saved-id>
        bees squad-create <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
+       bees squad-duplicate <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
        bees squad-delete <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id>
        bees squad-name <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --name <printable-name>
        bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false> [--match-speed <true|false>] [--color <inherit|clear|RRGGBB>] [--formation <source|line|box|rectangle|pyramid|hollow-pyramid>[:width]]
@@ -2213,6 +2214,25 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             .to_string_lossy().parse()?;
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
         return run_create_saved_squad(&catalog, &output, side, template);
+    }
+    if first == "squad-duplicate" {
+        let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--side") {
+            return Err(invalid(USAGE).into());
+        }
+        let side: i32 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--template") {
+            return Err(invalid(USAGE).into());
+        }
+        let template: i64 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_some() { return Err(invalid(USAGE).into()); }
+        return run_duplicate_saved_squad(&catalog, &output, side, template);
     }
     if first == "squad-delete" {
         let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
@@ -4082,6 +4102,169 @@ fn run_name_saved_squad(
         "campaign_id": catalog.campaign_id,
         "side": side, "saved_squad_id": saved_id,
         "name": name, "validated_configs": checked,
+    }));
+    Ok(())
+}
+
+/// Copy an actual SavedSquad and fill it from the owner's reserve, matching
+/// Unity SquadMaker.DuplicateCurrentSquad without creating extra FleetShips.
+/// The same campaign source builder and multi-route deployment validator
+/// preflight the *entire* projected edit before any durable receipt is written.
+fn run_duplicate_saved_squad(
+    catalog_path: &Path, output_root: &Path, side: i32, template_id: i64,
+) -> Result<(), Box<dyn Error>> {
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: battle_catalog::BattleCatalog =
+        serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
+    let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
+    let progress = catalog.load_progress(output_root)?;
+    if !matches!(side, 1 | 2) || template_id <= 0 ||
+        progress.is_retired_saved_squad(template_id) {
+        return Err(invalid("duplicate requires a live player SavedSquad").into());
+    }
+    let root = catalog_path.parent().ok_or_else(|| invalid("campaign root missing"))?;
+    let mut highest = progress.highest_saved_squad_id()
+        .max(catalog.reserved_saved_squad_id_ceiling());
+    let mut representative = None;
+    let mut fallback = None;
+    for battle in &catalog.battles {
+        let Some(mission) = battle.mission.as_ref().filter(|m| m.player_side == side)
+            else { continue };
+        fallback.get_or_insert(battle.config_for(&progress));
+        if !progress.completed(&mission.id) {
+            representative.get_or_insert(battle.config_for(&progress));
+        }
+        for config in battle.configurations() {
+            let source = load_native_fleet_edit_scene(
+                &resolve(root, config).canonicalize()?)?;
+            for squad in &source.source_squads {
+                if let Some(id) = squad.saved_squad_id {
+                    highest = highest.max(id);
+                }
+            }
+        }
+    }
+    let config = representative.or(fallback)
+        .ok_or_else(|| invalid("campaign has no player-owned source Level"))?;
+    let archetypes = load_native_fleet_edit_scene(
+        &resolve(root, config).canonicalize()?)?;
+    let new_id = highest.checked_add(1).filter(|&id| id < i64::MAX)
+        .ok_or_else(|| invalid("SavedSquad IDs exhausted"))?;
+    let created = NativeCreatedSquad {
+        side, saved_squad_id: new_id, template_saved_squad_id: template_id,
+    };
+    let mut scene = archetypes.clone();
+    let dead = progress.lost_player_fleet_ids(side)?;
+    let original = progress.authored_roster_for_side(side);
+    let purchases = progress.purchases_for_side(side);
+    let mission = catalog.battles.iter().filter_map(|battle|
+        battle.mission.as_ref().map(|mission| (battle, mission))
+    ).find(|(battle, _)| battle.config_for(&progress) == config)
+        .map(|(_, mission)| mission);
+    let empty = HashSet::new();
+    let casualties = if mission.is_some_and(|m| m.persist_fleet_losses) {
+        &dead
+    } else { &empty };
+    let original_deployed = original.iter().copied()
+        .filter(|(id, _, _)| !casualties.contains(id)).collect::<Vec<_>>();
+    let purchased_deployed = purchases.iter().copied()
+        .filter(|ship| ship.saved_squad_id > 0 &&
+            !casualties.contains(&ship.fleet_ship_id)).collect::<Vec<_>>();
+    scene.install_created_squads(side, &progress.created_squads_for_side(side))
+        .map_err(|e| contextual("original SavedSquad templates", e))?;
+    scene.apply_saved_squad_tactics(side, &progress.tactics_for_side(side))
+        .map_err(|e| contextual("original SavedSquad tactics", e))?;
+    scene.apply_authored_fleet_roster(&archetypes, side, &original_deployed, casualties)
+        .map_err(|e| contextual("original FleetShip owners", e))?;
+    scene.install_purchased_ships(&archetypes, side, &purchased_deployed, casualties)
+        .map_err(|e| contextual("purchased FleetShip owners", e))?;
+    scene.omit_killed_fleet_ships(side, casualties)
+        .map_err(|e| contextual("template fleet casualties", e))?;
+    let squad = scene.source_squads.iter().find(|squad|
+        squad.saved_squad_id == Some(template_id) && squad.side == side &&
+        squad.player_permissions.user_controlled
+    ).ok_or_else(|| invalid("template is unavailable to the campaign player"))?;
+    let mut kinds = Vec::new();
+    for &member_id in &squad.members {
+        if !scene.fleet.get(member_id)
+            .is_some_and(|v| v.has_persistent_fleet_value) { continue; }
+        let kind = scene.entities.iter().find_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) if ship.entity_id == member_id =>
+                Some(ship.ship_type),
+            _ => None,
+        }).ok_or_else(|| invalid("template has a missing physical FleetShip"))?;
+        kinds.push(kind);
+    }
+    // One unassigned FleetShip can be claimed only once; stable original
+    // FleetShip IDs select the same first-available candidate on every host.
+    let mut reserve: Vec<(i64, u8, bool)> = purchases.iter()
+        .filter(|ship| ship.saved_squad_id == 0 && !dead.contains(&ship.fleet_ship_id))
+        .map(|ship| (ship.fleet_ship_id, ship.ship_type, true)).collect();
+    for &(id, _, current) in &original {
+        if current != 0 || dead.contains(&id) { continue; }
+        let kind = match progress.known_fleet_ship_type(id) {
+            Some(kind) => Some(kind),
+            None => original_fleet_source_squad(
+                &catalog, &progress, root, side, id, false,
+            )?.map(|(_, kind)| kind),
+        };
+        if let Some(kind) = kind { reserve.push((id, kind, false)); }
+    }
+    reserve.sort_unstable_by_key(|&(id, _, _)| id);
+    let mut selected = Vec::with_capacity(kinds.len());
+    for kind in kinds {
+        let index = reserve.iter().position(|&(_, candidate, _)| candidate == kind)
+            .ok_or_else(|| invalid(
+                "insufficient matching, live reserve FleetShips to duplicate squad",
+            ))?;
+        selected.push(reserve.remove(index));
+    }
+    let mut projected_purchases = purchases;
+    let mut projected_authored = original;
+    for &(id, _, bought) in &selected {
+        if bought {
+            projected_purchases.iter_mut()
+                .find(|ship|ship.fleet_ship_id == id)
+                .ok_or_else(||invalid("reserve purchase disappeared"))?
+                .saved_squad_id = new_id;
+        } else {
+            projected_authored.iter_mut().find(|row|row.0 == id)
+                .ok_or_else(||invalid("reserve authored FleetShip disappeared"))?
+                .2 = new_id;
+        }
+    }
+    let tactics = progress.tactics_for_squad(side, template_id)
+        .map(|saved| NativeSavedSquadTactics { saved_squad_id: new_id, ..saved });
+    let copied_tactics = tactics.into_iter().collect::<Vec<_>>();
+    preflight_native_fleet_edit_with_squads_and_tactics(
+        &catalog, root, &progress, side, &projected_purchases,
+        &projected_authored, new_id, &[created], &copied_tactics,
+    )?;
+    // As with native squad deletion, each durable receipt is recoverable
+    // after interruption. A partial edit retains valid career ownership
+    // and can be finished from the ordinary FleetShip transfer editor.
+    catalog.create_saved_squad(&progress, output_root, side, template_id, new_id)?;
+    for &(id, kind, bought) in &selected {
+        let committed = catalog.load_progress(output_root)?;
+        if bought {
+            catalog.transfer_purchased_ship(&committed, output_root, id, new_id)?;
+        } else {
+            catalog.reassign_authored_ship(
+                &committed, output_root, side, id, 0, new_id, Some(kind),
+            )?;
+        }
+    }
+    for tactics in copied_tactics {
+        let committed = catalog.load_progress(output_root)?;
+        catalog.set_saved_squad_tactics(&committed, output_root, tactics)?;
+    }
+    println!("{}", json!({
+        "kind": "native_campaign_saved_squad_duplicated",
+        "campaign_id": catalog.campaign_id, "side": side,
+        "template_saved_squad_id": template_id, "saved_squad_id": new_id,
+        "assigned_reserve_ships": selected.len(), "cost_tsv": 0,
     }));
     Ok(())
 }
