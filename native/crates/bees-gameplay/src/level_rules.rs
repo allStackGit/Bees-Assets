@@ -559,6 +559,13 @@ pub trait NativeLevelCommandContext {
         &self, _world: &CombatWorld, _player_side: i32, _bumblebee_id: i64,
     ) -> bool { false }
 
+    /// Source Pluto I temporarily expands the first Scout's proximity
+    /// collider to 60 units. Only the genuine source Honeybee crossing
+    /// that physical collider may trigger its first story encounter.
+    fn pluto_anomaly_honeybee_spotted(
+        &self, _world: &CombatWorld, _scout_id: i64, _honeybee_id: i64,
+    ) -> bool { false }
+
     /// Share the same immutable ship catalog used to spawn native
     /// collision bodies; it also contains Unity's complete sprite-size
     /// table. The Level never needs a duplicate ship-ID -> size registry.
@@ -1519,7 +1526,14 @@ where
                 .is_some_and(|target| state.metadata.uranus_offensive_bumblebee_discovered(
                     &state.combat, dialogue.player_side(), target,
                 ));
-            if let Some(cue) = dialogue.observe_combat(&state.combat, bumblebee_spotted) {
+            let pluto_spotted = dialogue.pluto_anomaly_target()
+                .is_some_and(|(scout, honeybee)|
+                    state.metadata.pluto_anomaly_honeybee_spotted(
+                        &state.combat, scout, honeybee,
+                    ));
+            if let Some(cue) = dialogue.observe_combat(
+                &state.combat, bumblebee_spotted, pluto_spotted,
+            ) {
                 dialogue.set_cue(cue);
                 state.events.queue_campaign_dialogue(completed_tick, cue)?;
             }
