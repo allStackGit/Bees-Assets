@@ -2565,7 +2565,7 @@ pub fn connect_remote(
             // by world identity. A new network session cannot inherit even
             // those cosmetic frames from the previous authoritative host.
             artwork=RemoteArtwork::new()?;
-            audio.select_location(None);
+            audio.reset_remote_session();
             if !peer.connected && peer.battle_result_receipt.is_none() &&
                 peer.notice != "Host restarted: original battle cannot be resumed" {
                 peer.notice="Host disconnected; press F5 to reconnect".into();
