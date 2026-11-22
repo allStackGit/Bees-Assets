@@ -7,6 +7,7 @@ implemented here. The entire career is published through one directory
 rename, avoiding half-created menus or stale first-stage saves.
 """
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -47,6 +48,33 @@ def unique_keys(items, required, label):
     if assigned.keys() != required:
         raise ValueError(f"{label} missing required indices: {sorted(required - assigned.keys())}")
     return assigned
+
+
+def stable_player_identifiers(fleets):
+    """Keep each real player ship class/ordinal across all ten native Levels.
+
+    The canonical author-battle fleet parser defines legal types and counts.
+    A shared 2048-ID side-2 lane leaves all source Bee IDs and unrelated
+    Level object/weapon/command identities untouched.
+    """
+    source = TOOLS / "author-battle.py"
+    spec = importlib.util.spec_from_file_location("bees_challenge_battle_author", source)
+    if spec is None or spec.loader is None:
+        raise ValueError("missing canonical native battle author")
+    author = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(author)
+    maxima = {}
+    for value in fleets.values():
+        for kind, count in author.fleet(value):
+            maxima[kind] = max(maxima.get(kind, 0), count)
+    if sum(maxima.values()) > 2048:
+        raise ValueError("Challenge player career requires more than 2048 shared physical IDs")
+    next_identity = 1_000_000 + 2048
+    classes = {}
+    for kind in sorted(maxima):
+        classes[str(kind)] = list(range(next_identity, next_identity + maxima[kind]))
+        next_identity += maxima[kind]
+    return {"schema_version": 1, "side": 2, "types": classes}
 
 
 def run_stage(command):
@@ -200,8 +228,16 @@ def main():
                 not 1 <= args.stage_asteroid_minimum_rate <=
                     args.stage_asteroid_maximum_rate <= 3600):
                 raise ValueError("source asteroid spawn rates must satisfy 1 <= minimum <= maximum <= 3600")
+        # Source Challenge stages can use different fleet compositions,
+        # yet the same persistent FleetShip must never change class when
+        # the saved campaign moves between Levels.
+        player_identity = stable_player_identifiers(fleets)
         staging = Path(tempfile.mkdtemp(prefix=".bees-native-challenge-", dir=parent))
         try:
+            identity_path = staging / "challenge-player-identities.json"
+            identity_path.write_text(
+                json.dumps(player_identity, indent=2) + "\n", encoding="utf-8",
+            )
             for level in sorted(levels, key=lambda item: item["Id"]):
                 index = level["Id"]
                 map_index = level["MapIndex"]
@@ -210,6 +246,7 @@ def main():
                     str(staging / f"level-{index:02d}"),
                     "--level", str(index),
                     "--human-fleet", fleets[index],
+                    "--player-identity-map", str(identity_path),
                     "--source-scene", str(scenes[map_index]),
                     "--source-run", str(runs[map_index]),
                     "--seed", str(args.seed + index),
@@ -252,6 +289,8 @@ def main():
             "levels": 10,
             "source_maps": sorted(maps),
             "max_squad_ships": args.max_squad_size,
+            "stable_player_ship_ids": sum(
+                len(ids) for ids in player_identity["types"].values()),
             "library": str(output / "library.json"),
             "catalog": str(output / "challenge.catalog.json"),
             "installed_library": str(install_path) if install_path else None,
