@@ -75,7 +75,7 @@ enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Scouts, R
 
 #[derive(Clone, Copy)]
 enum AiTactics {
-    Aggressive, TargetNearest, RetreatNearest,
+    Aggressive, TargetNearest, RetreatNearest, WarpRetreat,
     Circle, RightSwipe, LeftSwipe, InAndOut, Mixed,
 }
 
@@ -85,6 +85,7 @@ impl AiTactics {
             Self::Aggressive => "aggressive",
             Self::TargetNearest => "target-nearest",
             Self::RetreatNearest => "defensive-retreat",
+            Self::WarpRetreat => "warp-withdrawal",
             Self::Circle => "circle",
             Self::RightSwipe => "right-swipe",
             Self::LeftSwipe => "left-swipe",
@@ -108,6 +109,7 @@ impl AiTactics {
             Self::Aggressive => "aggressive_nearest",
             Self::TargetNearest => "target_nearest_enemy",
             Self::RetreatNearest => "retreat_nearest",
+            Self::WarpRetreat => "full_retreat_nearest",
             Self::Circle => "circle_nearest",
             Self::RightSwipe => "right_swipe_nearest",
             Self::LeftSwipe => "left_swipe_nearest",
@@ -157,8 +159,10 @@ fn choose_reinforcements(
         .map(|index| patterns[index].0))
 }
 
-fn choose_ai_tactics(side: usize) -> Result<Option<AiTactics>, Box<dyn Error>> {
-    let options = [
+fn choose_ai_tactics(
+    side: usize, has_warp_gate: bool,
+) -> Result<Option<AiTactics>, Box<dyn Error>> {
+    let mut options = vec![
         ("Aggressive pursuit", "  [Source Aggressive command]"),
         ("Target the nearest squad", "  [Live source TargetEnemy command]"),
         ("Disengage from nearest opponent", "  [Source defensive Retreat command]"),
@@ -168,6 +172,10 @@ fn choose_ai_tactics(side: usize) -> Result<Option<AiTactics>, Box<dyn Error>> {
         ("Strike and withdraw", "  [Source InAndOut command]"),
         ("Mixed tactics", "  [Different tactics per squad]"),
     ];
+    if has_warp_gate {
+        options.push(("Withdraw through own WarpGate",
+            "  [Canonical FullRetreat with live gate/participant tracking]"));
+    }
     let faction = if side == 0 { "Bee" } else { "Human" };
     let titles = options.iter().map(|(label, _)|
         format!("{faction} AI: {label}")
@@ -187,7 +195,8 @@ fn choose_ai_tactics(side: usize) -> Result<Option<AiTactics>, Box<dyn Error>> {
         4 => AiTactics::RightSwipe,
         5 => AiTactics::LeftSwipe,
         6 => AiTactics::InAndOut,
-        _ => AiTactics::Mixed,
+        7 => AiTactics::Mixed,
+        _ => AiTactics::WarpRetreat,
     }))
 }
 
@@ -421,7 +430,9 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
         let scripted = mode == 3 ||
             (mode == 0 && side == 1) || (mode == 1 && side == 0);
         if scripted {
-            let Some(value) = choose_ai_tactics(side)? else { return Ok(None); };
+            let Some(value) = choose_ai_tactics(
+                side, side == 0 && matches!(mix[side], FleetMix::Gate),
+            )? else { return Ok(None); };
             ai_tactics[side] = value;
         }
     }
@@ -2459,7 +2470,9 @@ pub(super) fn archive(
                 _ => false,
             };
             let mut queue = json!({
-                "squad_item_id": owner, "repeat": !supporting && !one_shot_goal,
+                "squad_item_id": owner,
+                "repeat": !supporting && !one_shot_goal &&
+                    !matches!(selected.ai_tactics[side], AiTactics::WarpRetreat),
                 "orders": orders,
             });
             if deferred_squads.contains(&owner) {
