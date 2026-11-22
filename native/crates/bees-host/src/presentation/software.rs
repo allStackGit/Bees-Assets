@@ -882,6 +882,12 @@ fn fire_tank_debris_atlas() -> &'static SpriteAtlas {
 }
 
 impl NativeSoftwareRenderer {
+    fn source_ship_catalog() -> &'static bees_sim::ship_assets::ShipAssetCatalog {
+        static SHIPS: OnceLock<bees_sim::ship_assets::ShipAssetCatalog> = OnceLock::new();
+        SHIPS.get_or_init(|| bees_sim::ship_assets::ShipAssetCatalog::embedded()
+            .expect("native ship catalog is loaded by gameplay startup"))
+    }
+
     pub fn new(width: usize, height: usize, bounds: Aabb) -> io::Result<Self> {
         if width == 0 || height == 0 || width > 8192 || height > 8192 ||
             !bounds.min.is_finite() || !bounds.max.is_finite() ||
@@ -3383,9 +3389,7 @@ impl NativeSoftwareRenderer {
     pub fn draw_fleet_codex(
         &mut self, view: &NativeRenderWorldView<'_>, selected: u8,
     ) {
-        static SHIPS: OnceLock<bees_sim::ship_assets::ShipAssetCatalog> = OnceLock::new();
-        let catalog = SHIPS.get_or_init(|| bees_sim::ship_assets::ShipAssetCatalog::embedded()
-            .expect("native ship catalog is loaded by gameplay startup"));
+        let catalog = Self::source_ship_catalog();
         if self.width < 600 || self.height < 390 { return; }
         let panel_width = self.width.saturating_sub(36).min(860);
         let panel_height = self.height.saturating_sub(36).min(620);
@@ -3489,9 +3493,14 @@ impl NativeSoftwareRenderer {
         let loss_breakdown = view.player_authority.player_viewer_side()
             .and_then(|side| view.loss_types_for_side(side))
             .and_then(|losses| {
+                let catalog = Self::source_ship_catalog();
                 let parts = losses.iter().enumerate()
                     .filter(|(_, &amount)| amount != 0)
-                    .map(|(type_id, amount)| format!("{type_id}:{amount}"))
+                    .map(|(type_id, amount)| {
+                        let name = catalog.by_type(type_id as u8)
+                            .map_or("Unknown", |ship| ship.name.as_str());
+                        format!("{name}:{amount}")
+                    })
                     .collect::<Vec<_>>();
                 (!parts.is_empty()).then(|| format!("Lost by class: {}", parts.join("  ")))
             });
