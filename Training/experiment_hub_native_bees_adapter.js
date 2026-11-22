@@ -2387,7 +2387,7 @@ function createNativeBeesAdapter({
                 return verifiedOutput(round, output).checkpointDigest;
             },
             }),
-        }),
+        } : {}),
         readProgress(context) {
             if(distributedOptimizer?.role==='worker') {
                 const worker=completedWorker(context);
