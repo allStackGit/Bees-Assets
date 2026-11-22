@@ -6853,6 +6853,28 @@ fn show_new_campaign_debrief(
 }
 
 #[cfg(feature = "client")]
+fn show_original_challenge_completion(
+    catalog: &battle_catalog::BattleCatalog,
+    previously_completed: bool,
+    progress: &battle_catalog::CampaignProgress<'_>,
+    source_root: &Path,
+) -> Result<bool, Box<dyn Error>> {
+    if catalog.campaign_id.as_deref() != Some("original-human-challenge") ||
+        previously_completed || !progress.completed("challenge-09")
+    {
+        return Ok(false);
+    }
+    // The canonical career receipt already committed the final win,
+    // cumulative score and Queen reveal. Reuse the normal native dialogue
+    // window, not a second ending/simulation or mutable completion flag.
+    bees_host::presentation::show_campaign_intermission(
+        &[bees_host::presentation::NativeCampaignIntermission::ChallengeCompleted],
+        &default_native_user_save_root(source_root).join("audio-settings.json"),
+    )?;
+    Ok(true)
+}
+
+#[cfg(feature = "client")]
 fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error>> {
     run_campaign_game_menu(catalog_path, output_root, false)?;
     Ok(())
@@ -6921,6 +6943,7 @@ fn run_campaign_game_menu(
                 return Ok(Some((mission.id.clone(), mission.player_side)));
             }
             let prior_matches = progress.career_match_results().played;
+            let prior_challenge_complete = progress.completed("challenge-09");
             let result = launch_catalog_battle(
                 &catalog, entry, root, output_root, &mut number, true,
             );
@@ -6930,6 +6953,11 @@ fn run_campaign_game_menu(
                 show_new_campaign_debrief(
                     entry.title.trim(), &pending, prior_matches, &progress,
                 )?;
+                if show_original_challenge_completion(
+                    &catalog, prior_challenge_complete, &progress, root,
+                )? {
+                    return Ok(None);
+                }
             }
             if let Err(error) = result {
                 eprintln!("Could not resume {}: {error}", entry.title);
@@ -7463,6 +7491,7 @@ fn run_campaign_game_menu(
             return Ok(Some((mission.id.clone(), mission.player_side)));
         }
         let prior_matches = progress.career_match_results().played;
+        let prior_challenge_complete = progress.completed("challenge-09");
         let result = launch_catalog_battle(
             &catalog, entry, root, output_root, &mut number, true,
         );
@@ -7473,6 +7502,11 @@ fn run_campaign_game_menu(
                 show_new_campaign_debrief(
                     entry.title.trim(), &mission.id, prior_matches, &progress,
                 )?;
+                if show_original_challenge_completion(
+                    &catalog, prior_challenge_complete, &progress, root,
+                )? {
+                    return Ok(None);
+                }
             }
         }
         if let Err(error) = result {
