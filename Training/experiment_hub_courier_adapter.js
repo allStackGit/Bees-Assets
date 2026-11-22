@@ -77,6 +77,13 @@ const COURIER_METRIC_CATALOG={
         'generation','active_training_time','checkpoint_write_time',
         'selection_evaluation_round','selection_candidate_survival_score',
         'selection_incumbent_survival_score','selection_champion_promoted',
+        // Generic PyTorch GPU-stream fallback now runs through the same
+        // verified frozen-policy broker used by existing PPO lineages.
+        'training_broker_stream_batches',
+        'training_broker_pack_stream_admissions',
+        'training_broker_pack_stream_steps',
+        'training_broker_pack_stream_states',
+        'training_broker_pack_stream_sum_seconds',
         'training_shared_async_collector_overlap',
         'training_shared_async_next_started',
         'training_shared_async_buffers',
@@ -477,7 +484,7 @@ function courierMetrics(source) {
         // and wait exposure survive wide-population metric downselection.
         'broker_wait_seconds','broker_queue_seconds',
         'broker_gpu_service_seconds','broker_kernel_batches',
-        'broker_results',
+        'broker_stream_batches','broker_results',
     ];
     const workerColumns=[...columns].sort(([a],[b])=>{
         const ia=criticalWorkerFields.indexOf(a);
