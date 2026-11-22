@@ -3352,7 +3352,7 @@ pub fn connect_remote(
                     peer.pending_order_times.len()),
             ];
             for (index,line) in lines.iter().enumerate() {
-                text::draw_at(&mut pixels,WIDTH,12,14+index as i32*16,
+                text::draw_at(&mut pixels,WIDTH,12,14+index*16,
                     line,1,TEXT);
             }
         }
