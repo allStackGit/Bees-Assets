@@ -255,6 +255,26 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
         },
         "success_rate": {"value": successes / receipt["episodes"], "unit": "ratio"},
     }
+    # Timeouts and battle duration are physical EpisodeFinal observations,
+    # not PPO training scores. A better win rate obtained by stalling a
+    # mission must remain visible in the comparison data.
+    timed_out = sum(
+        scene["episodes_timed_out"]
+        for scene in receipt["by_scene_sha256"].values()
+    )
+    metrics["timed_out_episodes"] = {"value": timed_out, "unit": "count"}
+    metrics["timeout_rate"] = {
+        "value": timed_out / receipt["episodes"], "unit": "ratio",
+    }
+    metrics["draw_rate"] = {
+        "value": draws / receipt["episodes"], "unit": "ratio",
+    }
+    mean_duration = receipt.get("mean_episode_seconds")
+    if (type(mean_duration) in (int, float) and
+            0 <= mean_duration <= 1e12):
+        metrics["mean_episode_seconds"] = {
+            "value": mean_duration, "unit": "seconds",
+        }
     if metrics["opponent_victories"]["value"] < 0:
         raise ValueError("Native evaluation faction results exceed completed trials.")
     # These are actual completed native physics/accelerator observations.
