@@ -643,6 +643,28 @@ impl CampaignProgress<'_> {
         ids
     }
 
+    /// Present original player SavedSquads before any battle records their
+    /// combat career. Physical ownership comes from the common source-scene
+    /// probe; retired and created identities still come from the ledger.
+    pub fn squad_rows_with_source(&self, source: &[(i32, i64)]) -> Vec<String> {
+        let mut rows = self.squad_rows();
+        let mut seen = HashSet::new();
+        for &(side, id) in source {
+            if !seen.insert(id) || self.squads.contains_key(&id) ||
+                self.created_squads.iter().any(|squad|
+                    squad.saved_squad_id == id) ||
+                self.retired_squad_ids.contains(&id)
+            {
+                continue;
+            }
+            rows.push(format!(
+                "{} S{side} Original - no completed battles yet",
+                self.squad_label(id),
+            ));
+        }
+        rows
+    }
+
     pub fn squad_rows(&self) -> Vec<String> {
         let mut ids = self.squads.keys().copied().chain(
             self.created_squads.iter().map(|squad| squad.saved_squad_id)
