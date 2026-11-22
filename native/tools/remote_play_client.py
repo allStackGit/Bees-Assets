@@ -619,7 +619,9 @@ class RemoteConsole:
         # authorizes the gesture and owns the live weapon state.
         is_held = action[0] == "held_fire"
         is_side_action = action[0] in ("surrender", "activate_retreat")
-        if not owners and not is_side_action and (
+        # Native selection is an actual source Level input, including
+        # clearing all squads. Campaign tutorials observe its live result.
+        if not owners and not is_side_action and action[0] != "select" and (
                 not is_held or "Begin" in action[1]["action"]):
             raise ValueError("select at least one live friendly squad first")
         packet = {
@@ -657,6 +659,15 @@ class RemoteConsole:
         encoded = (json.dumps(packet, separators=(",", ":")) + "\n").encode("utf-8")
         self.socket.sendall(encoded)
         self.next_request += 1
+
+    def submit_selection(self, state, owners):
+        """Publish the selected real squad lifetimes to the source Level.
+
+        Local window highlighting is not sufficient: scripted missions
+        observe the same typed selection input as the native player window.
+        Empty selection is an authoritative clear, not a dummy command.
+        """
+        return self.send(("select", {}), state, owners)
 
     def surrender(self):
         if self.spectator:
@@ -922,6 +933,7 @@ class RemoteConsole:
             if owner is None:
                 print("No live original squad matches this shortcut")
                 return
+            self.submit_selection(state, [owner])
             with self.lock:
                 self.selected = [owner["squad_id"]]
                 self.selected_scope = (state["world_id"], state["episode_revision"])
@@ -942,6 +954,7 @@ class RemoteConsole:
                 owners = [self.locate_squad(state, value, owned=True) for value in argv]
             else:
                 raise ValueError("select requires squad IDs, all, or clear")
+            self.submit_selection(state, owners)
             with self.lock:
                 self.selected = [owner["squad_id"] for owner in owners]
                 self.selected_scope = (state["world_id"], state["episode_revision"])
