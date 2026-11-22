@@ -1368,28 +1368,33 @@ impl NativePhysicalScene {
     /// replacement with no playable reinforcement.
     fn pluto_anomaly_handoff_is_authored(
         &self, player_side: i32, scout_id: i64,
+        honeybee_id: i64, gunship_id: i64,
         waves: &[crate::reinforcements::NativeReinforcementPlan],
         queues: &[crate::policy_only_metadata::NativeScriptedQueuePlan],
     ) -> bool {
         use crate::policy_only_metadata::{NativeMissionCue,
             NativeScriptedActivation, NativeScriptedOrder};
         use crate::reinforcements::NativeReinforcementActivation;
-        let gunship_waves = waves.iter().filter(|wave| matches!(
+        let mut gunship_waves = waves.iter().filter(|wave| matches!(
             wave.activation,
             NativeReinforcementActivation::OnCampaignCue(
                 NativeMissionCue::PlutoScoutReportComplete)
-        )).collect::<Vec<_>>();
-        let gunship = gunship_waves.len() == 1 &&
-            gunship_waves[0].squad_item_ids.len() == 1 &&
-            self.source_squads.iter().any(|squad|
-                squad.item_id == gunship_waves[0].squad_item_ids[0] &&
-                squad.side == player_side && squad.members.len() == 1 &&
-                self.entities.iter().any(|entity| matches!(
-                    entity, NativeAuthoredEntity::Ship(ship)
-                        if ship.entity_id == squad.members[0] &&
-                        ship.side == player_side && ship.ship_type == 13 &&
-                        !ship.vitals.is_dead()
-                )));
+        ));
+        let Some(wave) = gunship_waves.next() else { return false };
+        if gunship_waves.next().is_some() || wave.squad_item_ids.len() != 1 {
+            return false;
+        }
+        let gunship_squad = self.source_squads.iter().find(|squad|
+            squad.item_id == wave.squad_item_ids[0] &&
+            squad.side == player_side && squad.members.as_slice() == [gunship_id]
+        );
+        let gunship = gunship_squad.is_some() && self.entities.iter()
+            .any(|entity| matches!(entity,
+                NativeAuthoredEntity::Ship(ship)
+                    if ship.entity_id == gunship_id &&
+                    ship.side == player_side && ship.ship_type == 13 &&
+                    !ship.vitals.is_dead()
+            ));
         let scout_squad = self.source_squads.iter().find(|squad|
             squad.side == player_side &&
             squad.members.contains(&scout_id)
@@ -1404,7 +1409,24 @@ impl NativePhysicalScene {
                     matches!(order, NativeScriptedOrder::MoveToPoint { .. }))
             ).count() == 1
         });
-        gunship && departure
+        let honeybee_squad = self.source_squads.iter().find(|squad|
+            squad.side == 3 - player_side &&
+            squad.members.contains(&honeybee_id)
+        );
+        let gunship_attack = gunship_squad.zip(honeybee_squad)
+            .is_some_and(|(gunship, enemy)| {
+                queues.iter().filter(|queue|
+                    queue.squad_item_id == gunship.item_id &&
+                    matches!(queue.activation,
+                        NativeScriptedActivation::OnCampaignCue(
+                            NativeMissionCue::PlutoGunshipBriefingComplete)) &&
+                    queue.orders.iter().any(|order|
+                        matches!(order, NativeScriptedOrder::Aggressive {
+                            enemy_squad_item_id,
+                        } if *enemy_squad_item_id == enemy.item_id))
+                ).count() == 1
+            });
+        gunship && departure && gunship_attack
     }
 
     /// Training sources remain frozen. A gameplay encounter may edit only
@@ -3062,9 +3084,11 @@ impl NativePhysicalScene {
         use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
         match setup.campaign_dialogue {
             Some(CampaignDialogueSpec::PlutoAnomaly {
-                player_side, scout_id, honeybee_id,
+                player_side, scout_id, honeybee_id, gunship_id,
             }) if player_side != human_side || scout_id <= 0 ||
-                honeybee_id <= 0 || scout_id == honeybee_id ||
+                honeybee_id <= 0 || gunship_id <= 0 ||
+                scout_id == honeybee_id || scout_id == gunship_id ||
+                honeybee_id == gunship_id ||
                 !self.entities.iter().any(|entity| matches!(
                     entity, NativeAuthoredEntity::Ship(ship)
                         if ship.entity_id == scout_id &&
@@ -3078,8 +3102,8 @@ impl NativePhysicalScene {
                         !ship.vitals.is_dead()
                 )) ||
                 !self.pluto_anomaly_handoff_is_authored(
-                    player_side, scout_id, &setup.reinforcements,
-                    &setup.scripted_queues,
+                    player_side, scout_id, honeybee_id, gunship_id,
+                    &setup.reinforcements, &setup.scripted_queues,
                 ) ||
                 // This encounter is an ordinary source combat Level, not
                 // a fabricated reward or independently simulated mission.
