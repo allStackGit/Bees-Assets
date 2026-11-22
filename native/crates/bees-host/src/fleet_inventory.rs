@@ -75,8 +75,8 @@ pub struct NativePlayerMatchCounts {
     pub ships_destroyed_by_player: u64,
     /// Original GameState.PlayerMineralsMined, including mineral cargo
     /// subsequently lost when a player-controlled miner dies.
-    #[serde(default)]
-    pub player_minerals_mined: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub player_minerals_mined: Option<u64>,
 }
 
 /// The owning native Level constructs this from its *real* FleetShip
@@ -263,11 +263,13 @@ impl NativeFleetInventory {
     pub fn enable_campaign_score(&mut self, player_side: i32) {
         assert!(matches!(player_side, 1 | 2));
         self.campaign_player_side = Some(player_side);
+        self.player_match_counts.player_minerals_mined.get_or_insert(0);
     }
 
     pub fn enable_opponent_match_score(&mut self) {
         assert!(self.campaign_player_side.is_some());
         self.score_opponent = true;
+        self.opponent_match_counts.player_minerals_mined.get_or_insert(0);
     }
 
     pub fn campaign_player_score(&self) -> Option<i64> {
@@ -381,16 +383,20 @@ impl NativeFleetInventory {
                     let amount = u64::try_from(*amount_mined)
                         .expect("positive physical mining yield fits u64");
                     if self.campaign_player_side == Some(*mining_side) {
-                        self.player_match_counts.player_minerals_mined =
-                            self.player_match_counts.player_minerals_mined
-                                .saturating_add(amount);
+                        if let Some(total) =
+                            self.player_match_counts.player_minerals_mined.as_mut()
+                        {
+                            *total = total.saturating_add(amount);
+                        }
                     }
                     if self.score_opponent && self.campaign_player_side
                         .is_some_and(|side| 3 - side == *mining_side)
                     {
-                        self.opponent_match_counts.player_minerals_mined =
-                            self.opponent_match_counts.player_minerals_mined
-                                .saturating_add(amount);
+                        if let Some(total) =
+                            self.opponent_match_counts.player_minerals_mined.as_mut()
+                        {
+                            *total = total.saturating_add(amount);
+                        }
                     }
                 }
             }
