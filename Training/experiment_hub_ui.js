@@ -2978,7 +2978,7 @@ document.addEventListener('DOMContentLoaded', () => {
             section.dataset.metric=key;
             section.dataset.project=project;
             const title=document.createElement('h3');
-            title.textContent=key.slice(7); // Replaced with suite-aware title below.
+            title.textContent=key.slice(7).replaceAll('_',' ');
             const header=document.createElement('div');
             header.className='hub-plot-header';
             const toggles=document.createElement('div');
@@ -3119,6 +3119,7 @@ document.addEventListener('DOMContentLoaded', () => {
         svg.onpointerleave=null;
         const axisLabel=comparisonAxisLabel(xKey);
         const genericKey=key.startsWith('metric:')?key.slice(7):null;
+        const displayIdentity=genericKey?hubEvaluationMetricPresentation(runs,genericKey):null;
         // Independent evaluations are discrete checkpoint observations,
         // not a continuous trainer measurement. Never draw an interpolated
         // strength curve through checkpoints that were never evaluated.
@@ -3495,8 +3496,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     line('No recorded metric samples for this run');
                     return item;
                 }
-                line((hubEvaluationMetricPresentation(runs,genericKey)?.metricName||
-                    genericKey)+': '+formattedValue(closest.value));
+                line((displayIdentity?.metricName||genericKey)+
+                    ': '+formattedValue(closest.value));
                 line(axisLabel+': '+format(closest.axis));
                 const timestamp=closest.point.source_modified_at;
                 line('Published: '+(timestamp&&!Number.isNaN(Date.parse(timestamp))
