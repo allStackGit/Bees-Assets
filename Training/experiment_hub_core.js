@@ -7494,7 +7494,10 @@ class ExperimentHub {
             }
         }
         if(jobs.some(j=>this.state.jobs.some(child=>child.status!=='cancelled'&&
-            (child.continuation_of_job_id===j.id||child.after_job_id===j.id))))
+            (child.continuation_of_job_id===j.id||child.after_job_id===j.id))&&
+            !(j.status==='finished'&&j.capacity_released_at&&
+              j.checkpoint_ready_verified===true&&
+              SHA256.test(String(j.checkpoint_model_sha256||'')))))
             throw Error('A candidate already has a queued successor.');
         const selected=this.state.configurations.find(c=>c.id===value.configuration_id&&
             c.revision===value.expected_revision&&c.project_id===jobs[0].project_id);
@@ -7714,7 +7717,14 @@ class ExperimentHub {
             if(!waitingPredecessor&&
                 (!checkpointContinuationComplete(parent)||!parent.capacity_released_at))
                 throw Error('Continuation requires a verified resumable checkpoint and released capacity (or an eligible active or prequeued predecessor).');
-            if(next.jobs.some(j=>
+            // A released, natively verified terminal checkpoint is immutable.
+            // Each fork gets its own job/artifact owner; prequeued and active
+            // stages retain the original single-successor safety contract.
+            const reusableCheckpoint=parent.status==='finished'&&
+                Boolean(parent.capacity_released_at)&&
+                parent.checkpoint_ready_verified===true&&
+                SHA256.test(String(parent.checkpoint_model_sha256||''));
+            if(!reusableCheckpoint&&next.jobs.some(j=>
                 (j.continuation_of_job_id===parent.id||
                  j.after_job_id===parent.id)&&occupiesSuccessorSlot(j,next.jobs)))
                 throw Error('This predecessor already has an active or unresolved successor.');
@@ -7779,6 +7789,9 @@ class ExperimentHub {
             project_id:project.id, adapter:project.adapter,
             continuation_of_job_id:parent?.id||null,
             ...(parent?{continuation_mode:continuationMode}:{}),
+            ...(parent?.checkpoint_ready_verified===true&&
+                SHA256.test(String(parent.checkpoint_model_sha256||''))
+                ?{expected_parent_model_sha256:parent.checkpoint_model_sha256}:{}),
             after_job_id:dependency?.id||null,
             predecessor_ready_at:dependencyReady?now():null,
             artifact_lineage_root_id:parent
@@ -7825,7 +7838,7 @@ class ExperimentHub {
                 (j.after_job_id===parent.id||
                  j.continuation_of_job_id===parent.id));
             if(children.length>1)
-                throw Error('Predecessor has conflicting successor branches; inspect registry.');
+                throw Error('Predecessor has several independent checkpoint branches; cancel each queued branch individually.');
             if(!children.length)break;
             const child=children[0];
             if(visited.has(child.id)||future.length>=1000)

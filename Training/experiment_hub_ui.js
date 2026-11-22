@@ -1042,10 +1042,19 @@ function sequenceRowsForJobs(jobs) {
             String(a.created_at||'')))
         .slice(0,20).map(root=>{
             const chain=[root],visited=new Set([root.id]);
-            let conflict=false;
+            let conflict=false,forkCount=0;
             while(true) {
-                const candidates=successor.get(chain[chain.length-1].id)||[];
-                if(candidates.length>1){conflict=true;break;}
+                const owner=chain[chain.length-1];
+                const candidates=successor.get(owner.id)||[];
+                if(candidates.length>1) {
+                    if(owner.status==='finished'&&owner.capacity_released_at&&
+                        owner.checkpoint_ready_verified===true&&
+                        /^[a-f0-9]{64}$/.test(String(owner.checkpoint_model_sha256||''))&&
+                        candidates.every(j=>j.continuation_of_job_id===owner.id)) {
+                        forkCount=candidates.length;
+                    }else conflict=true;
+                    break;
+                }
                 const child=candidates[0];
                 if(!child)break;
                 if(visited.has(child.id)){conflict=true;break;}
@@ -1063,9 +1072,11 @@ function sequenceRowsForJobs(jobs) {
             const current=chain.find((job,index)=>!completed(job,index))||
                 chain[chain.length-1];
             const blocked=chain.find(job=>job.status==='waiting_predecessor');
-            return {root,chain,current,canCancel:!conflict,
+            return {root,chain,current,canCancel:!conflict&&!forkCount,
                 completed:chain.filter(completed).length,
                 reason:conflict?'Conflicting or cyclic successor records; inspect the registry.'
+                    :forkCount?'Verified checkpoint has '+forkCount+
+                        ' independent continuation branches. Manage queued jobs individually.'
                     :blocked?.predecessor_wait?.reason||
                         current?.status_reason||'—'};
         });
@@ -5454,7 +5465,11 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .map(j=>j.continuation_of_job_id||j.after_job_id));
         const availableParents=(state.jobs||[]).filter(j=>
-            ['tinybrains','courier'].includes(project)&&j.project_id===project&&!successors.has(j.id)&&(
+            ['tinybrains','courier'].includes(project)&&j.project_id===project&&
+            (!successors.has(j.id)||(j.status==='finished'&&
+                Boolean(j.capacity_released_at)&&
+                j.checkpoint_ready_verified===true&&
+                /^[a-f0-9]{64}$/.test(String(j.checkpoint_model_sha256||''))))&&(
                 j.assigned_machine_id&&j.dispatch_id&&(
                     (j.status==='finished'&&
                         (j.checkpoint_ready_verified===true||
