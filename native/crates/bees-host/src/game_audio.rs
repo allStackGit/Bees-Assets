@@ -308,7 +308,7 @@ impl NativeGameAudio {
         let payload = serde_json::to_vec_pretty(&AudioPreferences {
             schema_version: 1, music_level: self.music_level,
             effects_level: self.effects_level, muted: self.muted,
-        })?;
+        }).map_err(io::Error::other)?;
         // A tiny write only on user interaction, never from the combat tick.
         // An exclusive temporary file avoids following an existing symlink;
         // rename publishes a complete JSON record on both Windows and Linux.
