@@ -653,6 +653,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     # unlocks Wasps, while Neptune I Factories require a victory.
     story_codex = {
         "pluto_anomaly": [(14, "finished")],
+        "pluto_reinforcements": [(7, "finished"), (12, "finished"),
+                                 (15, "finished")],
         "pluto_pushback": [(21, "finished")],
         "pluto_bluer_pastures": [(16, "finished"), (22, "finished")],
         "neptune_seize_means": [(4, "finished"), (9, "victory")],
@@ -855,6 +857,80 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             level["target_ship"] = {
                 "attacking_side": args.player_side,
                 "target_ship_id": honeybees[0]["entity_id"],
+            }
+        elif story == "pluto_reinforcements":
+            # Original Pluto II keeps four actual human squads but starts
+            # with first-Scout-only input. The real selection of that Scout
+            # is acknowledged by native gameplay, followed by player-paced
+            # controls dialogue and one physical Bee counterattack.
+            source_ships = {
+                ship["entity_id"]: ship for ship in scene.get("ships", [])
+                if isinstance(ship, dict) and type(ship.get("entity_id")) is int
+            }
+            source_squads = {
+                squad["item_id"]: squad for squad in scene.get("squads", [])
+                if isinstance(squad, dict) and type(squad.get("item_id")) is int
+            }
+            players = [squad for squad in source_squads.values()
+                       if squad.get("side") == args.player_side and
+                       squad.get("user_controlled") is True and
+                       squad_members(squad)]
+            composition = [[source_ships.get(member, {}).get("ship_type")
+                            for member in squad_members(squad)]
+                           for squad in players]
+            first = players[0] if players else None
+            first_id = (squad_members(first)[0] if first and
+                        len(squad_members(first)) == 1 else None)
+            wave_list = level.get("reinforcements") or []
+            combat = [wave for wave in wave_list if isinstance(wave, dict)
+                      and wave.get("on_campaign_cue") ==
+                          "pluto_reinforcements_combat_ready"]
+            ai_side = 3 - args.player_side
+            honeybees_and_hornets = (
+                len(combat) == 1 and
+                isinstance(combat[0].get("squad_item_ids"), list) and
+                len(combat[0]["squad_item_ids"]) == 3 and
+                [
+                    sorted([source_ships.get(ship_id, {}).get("ship_type")
+                            for ship_id in squad_members(
+                                source_squads.get(squad_id))])
+                    for squad_id in combat[0]["squad_item_ids"]
+                ] == [[14], [15, 15, 15], [15, 15, 15]]
+                and all(source_squads.get(squad_id, {}).get("side") == ai_side
+                        for squad_id in combat[0]["squad_item_ids"])
+            )
+            homes = scene.get("starting_positions")
+            home = (homes[ai_side - 1] if isinstance(homes, list)
+                    and len(homes) == 2 else None)
+            if isinstance(home, dict):
+                home = [home.get("x"), home.get("y")]
+            authored_entry = (
+                len(combat) == 1 and isinstance(home, list) and
+                same_point(combat[0].get("spawn"), [0, 316]) and
+                same_point(combat[0].get("entry"), home)
+            )
+            if (scene.get("human_side") != args.player_side or
+                    scene.get("activate_hivemind") is not False or
+                    not isinstance(run.get("hivemind"), dict) or
+                    run["hivemind"].get("issue_source_commands") is not True or
+                    first_id is None or composition != [
+                        [18], [18], [13, 13], [13, 13]] or
+                    any(source_ships.get(member, {}).get("side") != args.player_side
+                        for squad in players for member in squad_members(squad)) or
+                    not honeybees_and_hornets or not authored_entry or
+                    level.get("campaign_dialogue") is not None or
+                    any(level.get(name) is not None for name in
+                        ("survival", "demolition", "escort", "extraction",
+                         "groups", "target_ship"))):
+                raise ValueError(
+                    "Pluto Reinforcements requires four original player "
+                    "squads, inactive initial HiveMind, and the authentic "
+                    "Honeybee/Hornet wave after the Scout-selection tutorial"
+                )
+            level["campaign_dialogue"] = {
+                "pluto_reinforcements": {
+                    "player_side": args.player_side, "scout_id": first_id,
+                }
             }
         elif story == "pluto_pushback":
             # Pluto III's authentic five-squad opponent wave has already
@@ -1984,12 +2060,12 @@ def mission_advance(value: str) -> tuple[int, str]:
 
 def mission_story(value: str) -> tuple[int, str]:
     match = re.fullmatch(
-        r"(\d+):(pluto_anomaly|pluto_pushback|neptune_seize_means|neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_offensive|uranus_on_the_defensive|uranus_new_threat)",
+        r"(\d+):(pluto_anomaly|pluto_reinforcements|pluto_pushback|neptune_seize_means|neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_offensive|uranus_on_the_defensive|uranus_new_threat)",
         value,
     )
     if match is None or not 1 <= int(match.group(1)) <= 40:
         raise argparse.ArgumentTypeError(
-            "--mission-story needs MISSION:pluto_anomaly, pluto_pushback, neptune_seize_means, neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures, uranus_on_the_offensive, uranus_on_the_defensive or uranus_new_threat"
+            "--mission-story needs MISSION:pluto_anomaly, pluto_reinforcements, pluto_pushback, neptune_seize_means, neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures, uranus_on_the_offensive, uranus_on_the_defensive or uranus_new_threat"
         )
     return int(match.group(1)), match.group(2)
 
