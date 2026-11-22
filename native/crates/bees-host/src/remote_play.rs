@@ -2204,6 +2204,7 @@ fn current_state(
                 .map(|strategy| strategy.id) } else { None },
         }))
     }).collect();
+    let player_match = view.player_match_for_side(side);
     json!({
         "kind": "world_state", "protocol": 1,
         "world_id": view.world_id.0,
@@ -2211,6 +2212,16 @@ fn current_state(
         "tick": view.tick, "fixed_step_seconds": view.fixed_step_seconds,
         "music_location": music_location, "audio_events": audio_events,
         "viewer_side": viewer,
+        // Only the authenticated side's live scoreboard, projected with
+        // the same per-side privacy boundary as visible ships/commands.
+        // No separate client-side tally or full-World event replay.
+        "player_score": player_match.map(|(score, _)| score),
+        "player_match_counts": player_match.and_then(|(_, counts)| counts)
+            .map(|(lost, returned, kills)| json!({
+                "ships_lost": lost,
+                "ships_returned": returned,
+                "ships_destroyed_by_player": kills,
+            })),
         // Source-owned initial story pacing; never required for local
         // hosts or after this World has taken its first physical step.
         "briefing_requires_ack": requires_briefing_ack,

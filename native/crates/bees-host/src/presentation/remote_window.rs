@@ -1929,6 +1929,20 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         let friendly=state["squads"].as_array().into_iter().flatten().filter(|s|s["owned"]==true).count();
         text::draw_at(pixels, WIDTH, FIELD+14, 111,
             &format!("Squads {friendly}   Selected {}",selected.len()),1,MUTED);
+        if let Some(score) = state["player_score"].as_i64() {
+            let counts = &state["player_match_counts"];
+            let label = match (
+                counts["ships_destroyed_by_player"].as_u64(),
+                counts["ships_lost"].as_u64(),
+                counts["ships_returned"].as_u64(),
+            ) {
+                (Some(kills), Some(lost), Some(returned)) =>
+                    format!("Score {score:+} K{kills} L{lost} R{returned}"),
+                _ => format!("Score {score:+}"),
+            };
+            text::draw_at(pixels, WIDTH, FIELD+14, 131,
+                text::fit(&label, WIDTH-FIELD-24), 1, [198,231,248]);
+        }
         for (index,squad) in state["squads"].as_array().into_iter().flatten()
             .filter(|s|s["owned"]==true).take(12).enumerate() {
             let id=squad["owner"]["squad_id"].as_i64().unwrap_or(-1);
