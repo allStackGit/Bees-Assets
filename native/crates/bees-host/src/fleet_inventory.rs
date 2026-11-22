@@ -348,7 +348,9 @@ impl NativeFleetInventory {
         ship_id: i64,
         positive_amount: i32,
     ) -> Result<i32, NativeFleetInventoryError> {
-        if positive_amount <= 0 {
+        if positive_amount <= 0 || self.killed.contains(&ship_id) {
+            // Death retires this Level's mining credit permanently. A late
+            // settlement must not resurrect minerals on a destroyed FleetShip.
             return Err(NativeFleetInventoryError::InvalidMiningCredit);
         }
         let value = self.entries.get_mut(&ship_id)
