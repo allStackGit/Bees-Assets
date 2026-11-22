@@ -263,10 +263,12 @@ impl FleetMix {
     /// Keep a fleet composition's actual source archetypes in one place.
     /// Placement bounds and the authored physical scene must agree.
     fn support_type(self, side: usize) -> u8 {
-        if side == 0 {
-            if matches!(self, Self::Gate) { 20 } else { 2 }
-        } else if matches!(self, Self::Queen) {
+        if matches!(self, Self::Queen) {
+            // A Queen is a Bee factory regardless of which physical
+            // faction the original gameplay Level has assigned her.
             17
+        } else if side == 0 {
+            if matches!(self, Self::Gate) { 20 } else { 2 }
         } else {
             5
         }
@@ -926,6 +928,12 @@ fn choose_mix(fleet_sizes: [usize; 2], mining_field: bool, arena_size: Option<u3
                 "{} fighters, 1 WarpGate  |  Source FullRetreat evacuation",
                 total - 1,
             )));
+            if arena_size.is_some_and(|size| size >= 1024) {
+                options.push((FleetMix::Queen, format!(
+                    "{} fighters, 1 Bee Queen  |  Source Yellow Jacket waves",
+                    total - 1,
+                )));
+            }
         } else {
             let charges = FleetMix::Chargers.specialist_count(total);
             options.push((FleetMix::Chargers, format!(
@@ -1265,8 +1273,8 @@ fn mixed_fleet_offsets(
             // A large real Stage gives the Queen AND spawned minions enough
             // room without altering CombatWorld's source spawn rules.
             let half = arena_size.map_or(0.0, |size| size as f32 * 0.5);
-            let queen_x = 200.0_f32;
-            if side != 1 || queen_x + half_x + 16.0 >= half ||
+            let queen_x = if side == 0 { -200.0_f32 } else { 200.0_f32 };
+            if queen_x.abs() + half_x + 16.0 >= half ||
                 half_y + 16.0 >= half ||
                 occupied.iter().any(|&(x, y, half_other_x, half_other_y)|
                     (queen_x - x).abs() < half_x + half_other_x + 2.0 &&
@@ -1794,18 +1802,24 @@ pub(super) fn archive(
     // fleet metadata, visuals and colliders come from a known native game
     // scene, never from an approximate handcrafted stats table.
     let mut source_archetypes: Value = serde_json::from_str(SOURCE_ARCHETYPES)?;
-    if matches!(selected.mix[1], FleetMix::Queen) {
+    if selected.mix.iter().any(|mix| matches!(mix, FleetMix::Queen)) {
         let queen_source: Value = serde_json::from_str(SOURCE_QUEEN)?;
         let queen = queen_source["ships"].as_array()
             .and_then(|ships| ships.iter().find(|ship|
                 ship["side"] == 2 && ship["ship_type"] == 17))
-            .ok_or_else(|| invalid("native original Queen scene has no physical source hull"))?
-            .clone();
-        // Preserve the complete source Queen.Spawn minion template. The
-        // shared Level will materialize real Yellow Jackets on its clock.
-        source_archetypes["ships"].as_array_mut()
-            .ok_or_else(|| invalid("native source archetypes are not a ship roster"))?
-            .push(queen);
+            .ok_or_else(|| invalid("native original Queen scene has no physical source hull"))?;
+        // The source physical hull and its timed Yellow Jacket template
+        // are faction-independent. Gameplay assigns spawned minions the
+        // parent's true side. Never implement a separate Bee-side factory.
+        let archetypes = source_archetypes["ships"].as_array_mut()
+            .ok_or_else(|| invalid("native source archetypes are not a ship roster"))?;
+        for side in 0..2 {
+            if matches!(selected.mix[side], FleetMix::Queen) {
+                let mut authored = queen.clone();
+                authored["side"] = json!(side as i32 + 1);
+                archetypes.push(authored);
+            }
+        }
     }
     if support_count[1] > 0 && !matches!(selected.mix[1], FleetMix::Queen) {
         // The original Carrier carries both Drone and Striker combat
