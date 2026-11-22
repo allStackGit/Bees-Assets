@@ -2345,6 +2345,22 @@ fn current_state(
                     .map(|_| view.campaign_dialogue.is_some_and(|(_, cue)|
                         matches!(cue,
                             bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeSpotted |
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyScoutReportComplete |
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipArrived |
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipBriefingComplete |
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeDestroyed))),
+                "gunship_arrived": view.campaign_dialogue_side
+                    .filter(|owner| *owner == side)
+                    .map(|_| view.campaign_dialogue.is_some_and(|(_, cue)|
+                        matches!(cue,
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipArrived |
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipBriefingComplete |
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeDestroyed))),
+                "gunship_briefed": view.campaign_dialogue_side
+                    .filter(|owner| *owner == side)
+                    .map(|_| view.campaign_dialogue.is_some_and(|(_, cue)|
+                        matches!(cue,
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipBriefingComplete |
                             bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeDestroyed))),
                 "honeybee_destroyed": view.campaign_dialogue_side
                     .filter(|owner| *owner == side)
