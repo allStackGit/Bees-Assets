@@ -8397,11 +8397,13 @@ fn run_battle(
             std::thread::sleep(Duration::from_millis(1));
             continue 'battle;
         }
-        // Both graphical and dedicated LAN hosts must withhold orders
-        // until the original campaign briefing has finished. Only a
-        // dedicated host needs remote acknowledgments to advance time.
+        // Both graphical and dedicated LAN hosts withhold orders
+        // through original opening AND mid-mission dialogue breaks.
+        // The player's existing authenticated briefing acknowledgment
+        // authorizes the next fixed tick; physics never runs during the
+        // Scout report, even though the encounter occurs after tick zero.
         let remote_briefing = if remote.is_some() {
-            host.render_world(0).filter(|view|view.tick==0 &&
+            host.render_world(0).filter(|view|
                 view.terminal_result.is_none()).and_then(|view|
                 view.campaign_dialogue
                     .filter(|(_,cue)|cue.is_briefing())
