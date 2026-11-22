@@ -236,22 +236,45 @@ class ThroughputHistory {
             :[key,machineId,JSON.stringify(gpus),cohort];
         return rateEvidence(this.windows.get(JSON.stringify(identity))||[]);
     }
+    // A common measured solo reference across devices preserves real
+    // machine-speed differences. Normalizing each placement against its
+    // *own* solo rate would incorrectly make a slow GPU and a fast GPU
+    // both score 1.0, even for the same frozen network and CPU/RAM lease.
+    bestSoloRate(job,measure) {
+        const key=workloadKey(job);
+        if(!key||!usefulWorkMeasure(measure))return null;
+        let best=null;
+        for(const [identity,windows] of this.windows) {
+            let parts,devices,cohort;
+            try {
+                parts=JSON.parse(identity);
+                if(parts.length!==4||parts[0]!==key)continue;
+                devices=JSON.parse(parts[2]);
+                cohort=JSON.parse(parts[3]);
+            }catch{continue;}
+            if(!Array.isArray(devices)||!devices.length||
+                !Array.isArray(cohort)||cohort.length!==devices.length||
+                !cohort.every(group=>Array.isArray(group)&&group.length===0))
+                continue;
+            const evidence=rateEvidence(windows);
+            if(evidence?.measure===measure&&evidence.rate>0)
+                best=Math.max(best||0,evidence.rate);
+        }
+        return best;
+    }
     // Raw rates from unlike training projects are not additive. Compare
     // an incoming cooperative GPU job and every affected peer in units of
-    // their own *solo useful-work rate*. Only fully observed current and
-    // prospective cohorts can rank co-location; unknown peers are neutral.
+    // their own *best measured solo useful-work rate*. Only fully observed
+    // current and prospective cohorts can rank co-location.
     aggregateScore(job,placement,context) {
         const machineId=placement.machine_id,gpus=placement.suggested_gpus||[];
         const peers=liveGpuPeers(machineId,gpus,context,job.id);
         if(!peers||job.resources?.gpu_mode!=='shared')return null;
-        const soloContext={jobs:[],reservations:[]};
         const normalized=(source,deviceIds,cohort)=>{
             const actual=this.evidence(source,machineId,deviceIds,cohort);
-            const alone=this.evidence(source,machineId,deviceIds,soloContext);
-            if(!actual||!alone||actual.measure!==alone.measure||
-                !usefulWorkMeasure(actual.measure)||!(alone.rate>0))
-                return null;
-            return actual.rate/alone.rate;
+            if(!actual)return null;
+            const baseline=this.bestSoloRate(source,actual.measure);
+            return baseline>0?actual.rate/baseline:null;
         };
         let total=normalized(job,gpus,context);
         if(total===null)return null;
