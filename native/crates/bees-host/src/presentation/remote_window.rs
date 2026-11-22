@@ -2424,6 +2424,7 @@ pub fn connect_remote(
     let mut held_fire_target:Option<Vec2>=None;
     let mut show_art=true;
     let mut show_weapon_ranges=false;
+    let mut show_diagnostics=false;
     let mut sent_weapon_overlay: Option<(u64,u64,Vec<Value>)>=None;
     let mut shooting_menu=false;
     let mut shooting_focus=1_u8;
@@ -2450,6 +2451,9 @@ pub fn connect_remote(
             peer.notice=if show_weapon_ranges {
                 "Selected weapon ranges enabled".into()
             } else { "Selected weapon ranges hidden".into() };
+        }
+        if window.is_key_pressed(Key::F8, KeyRepeat::No) {
+            show_diagnostics=!show_diagnostics;
         }
         if window.is_key_pressed(Key::F7, KeyRepeat::No) {
             peer.notice=if audio.toggle_muted() {
@@ -3327,6 +3331,30 @@ pub fn connect_remote(
         if let Some(receipt) = peer.campaign_receipt.as_deref() {
             text::draw_at(&mut pixels, WIDTH, 10, HEIGHT-43,
                 text::fit(receipt, FIELD-20), 1, [255, 211, 130]);
+        }
+        if show_diagnostics {
+            let frames=peer.metrics.frames_rendered.max(1) as f64;
+            let polls=peer.metrics.network_poll_samples.max(1) as f64;
+            let uptime=started.elapsed().as_secs_f64().max(0.001);
+            let latency=if peer.metrics.order_ack_latency_samples>0 {
+                format!("{:.1}",peer.metrics.order_ack_latency_sum_seconds*1000.0/
+                    peer.metrics.order_ack_latency_samples as f64)
+            } else {"n/a".to_owned()};
+            let lines=[
+                format!("F8 metrics | {:.1} FPS | {:.1} KiB/s",frames/uptime,
+                    peer.metrics.bytes_received as f64/1024.0/uptime),
+                format!("Art {:.2} ms | HUD {:.2} ms | present {:.2} ms",
+                    peer.metrics.artwork_seconds*1000.0/frames,
+                    peer.metrics.hud_seconds*1000.0/frames,
+                    peer.metrics.present_seconds*1000.0/frames),
+                format!("Network poll {:.2} ms | order ack {} ms | pending {}",
+                    peer.metrics.network_poll_seconds*1000.0/polls,latency,
+                    peer.pending_order_times.len()),
+            ];
+            for (index,line) in lines.iter().enumerate() {
+                text::draw_at(&mut pixels,WIDTH,12,14+index as i32*16,
+                    line,1,TEXT);
+            }
         }
         let hud_seconds=hud_started.elapsed().as_secs_f64();
         peer.metrics.hud_seconds+=hud_seconds;
