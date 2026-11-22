@@ -149,6 +149,7 @@ class RemoteBattleWindow:
         self.drag_box = None
         self.mouse_middle = None
         self.selected = []
+        self.last_ship_click = None
         self.weapon_overlay_on = tk.BooleanVar(value=False)
         self.last_feedback = ""
         self.dialogue_identity = None
@@ -338,6 +339,7 @@ class RemoteBattleWindow:
         self.dialogue_identity = None
         self.dialogue_line = 0
         self.selected = []
+        self.last_ship_click = None
         self.weapon_overlay_on.set(False)
         self.patrol_start = None
         self.held_drag = False
@@ -462,6 +464,7 @@ class RemoteBattleWindow:
                     key[1] != self.drawn_scope[1]
                 ):
                     self.selected = []
+                    self.last_ship_click = None
                     self.weapon_overlay_on.set(False)
                     self.patrol_start = None
                     self.held_drag = False
@@ -1068,15 +1071,44 @@ class RemoteBattleWindow:
                         self.selected.append(owner)
             self.publish_selection()
             self.drag_box = None
+            self.last_ship_click = None
             self.draw()
             self.update_sidebar()
             return
         kind, target = self.hit(event.x, event.y)
         if kind == "ship" and target["owned"]:
             squad = self.squad_for_ship(target["id"], owned=True)
-            self.select(squad["owner"] if squad and squad["controllable"] else None, additive)
-        elif not additive:
-            self.select(None, False)
+            if squad is None or not squad["controllable"]:
+                return
+            now = time.monotonic()
+            double = (not additive and self.last_ship_click is not None and
+                      self.last_ship_click[0] == target["id"] and
+                      now - self.last_ship_click[1] <= 0.35)
+            if double:
+                # Match native SelectShipType: source-order selectable squads
+                # containing at least one *live* hull of this exact type.
+                # The host retains all actual mission selection authority.
+                kind = target["ship_type"]
+                visible_types = {ship["id"]: ship["ship_type"]
+                                 for ship in self.state["ships"] if ship["owned"]}
+                self.selected = [
+                    row["owner"] for row in self.state["squads"]
+                    if row["controllable"] and any(
+                        visible_types.get(ship_id) == kind for ship_id in row["members"])
+                ]
+                self.publish_selection()
+                if self.weapon_overlay_on.get():
+                    self.update_weapon_interest()
+                self.update_sidebar()
+                self.draw()
+                self.last_ship_click = None
+            else:
+                self.select(squad["owner"], additive)
+                self.last_ship_click = (target["id"], now)
+        else:
+            self.last_ship_click = None
+            if not additive:
+                self.select(None, False)
 
     def context_click(self, event):
         if self.console.spectator:
