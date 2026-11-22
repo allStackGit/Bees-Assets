@@ -2869,6 +2869,15 @@ impl NativeSoftwareRenderer {
             }
         }
 
+        // Mark only source-authored objectives that are actually visible
+        // through the same fog filter as ordinary ship markers. The three
+        // rescue Barge identities are private to the campaign commander.
+        let objective_ship = view.survival.map(|value| value.protected_ship_id)
+            .or_else(|| view.escort.map(|value| value.escorted_ship_id))
+            .or_else(|| view.target_ship.map(|value| value.target_ship_id));
+        let rescue_barges = view.rescue_barges.filter(|_|
+            view.player_authority.player_viewer_side().is_some() &&
+            view.player_authority.player_viewer_side() == view.campaign_dialogue_side);
         for (ship, body) in view.combat.render_ships() {
             let owner = view.roster.owning_squad(ship.entity_id);
             let controlled = owner.is_some_and(|id| view.is_local_player_squad(id));
@@ -2896,8 +2905,11 @@ impl NativeSoftwareRenderer {
                     self.selection.squads().contains(&owner)
                 }
             );
-            let color = if selected { 0xffffff } else { side_color(ship.side) };
-            let radius = if selected { 3 } else { 1 };
+            let objective = objective_ship == Some(ship.entity_id) ||
+                rescue_barges.is_some_and(|ids| ids.contains(&ship.entity_id));
+            let color = if objective { 0xffd57a }
+                else if selected { 0xffffff } else { side_color(ship.side) };
+            let radius = if objective { 4 } else if selected { 3 } else { 1 };
             for yy in (py - radius)..=(py + radius) {
                 for xx in (px - radius)..=(px + radius) {
                     if xx >= layout.plot_left.floor() as i32 &&
