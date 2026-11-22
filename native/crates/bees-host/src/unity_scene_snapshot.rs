@@ -25,7 +25,7 @@ use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::combat::{CombatError, ShipVitals};
 use bees_sim::geometry::Vec2;
-use bees_sim::box_obstacle_assets::{live_box_shape, BoxObstacleCatalog};
+use bees_sim::box_obstacle_assets::{live_box_shape, BoxObstacleAsset, BoxObstacleCatalog};
 use bees_sim::polygon_obstacle_assets::PolygonObstacleCatalog;
 use bees_sim::physics::{ObstacleBody, ShipShape};
 use bees_sim::map_object::CombatMapObject;
@@ -1152,6 +1152,59 @@ pub struct NativePlacedStaticBox {
     /// same validated geometry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_corners: Option<[[f32; 2]; 4]>,
+    /// Additional collider-local scaling of the verified source prefab.
+    /// Unity's StaticObstacle pool changes transform.localScale for
+    /// random and authored obstacle sizes. Scale is applied once at
+    /// scene construction, not in a duplicate physics path. Use
+    /// local_corners instead for a rotated or edited child collider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_scale: Option<[f32; 2]>,
+}
+
+impl NativePlacedStaticBox {
+    /// Resolve source prefab scaling to one authoritative live collider.
+    /// Both layout validation and installation use this exact method,
+    /// including the same original prefab BoxCollider2D offset.
+    fn resolved_corners(
+        &self, asset: &BoxObstacleAsset,
+    ) -> Result<Option<[Vec2; 4]>, NativeSnapshotError> {
+        let invalid = NativeSnapshotError::InvalidNativeLayout;
+        match (self.local_corners, self.local_scale) {
+            (Some(_), Some(_)) =>
+                Err(invalid("box placement cannot specify both local corners and scale")),
+            (Some(corners), None) => {
+                let points = corners.map(|p| Vec2::new(p[0], p[1]));
+                live_box_shape(points)
+                    .map_err(|_| invalid("authored box corners are invalid"))?;
+                Ok(Some(points))
+            }
+            (None, Some([sx, sy])) => {
+                if !sx.is_finite() || !sy.is_finite() ||
+                    sx.abs() < 1.0e-4 || sy.abs() < 1.0e-4 ||
+                    sx.abs() > 4096.0 || sy.abs() > 4096.0 {
+                    return Err(invalid("authored box scale must be finite and nonzero"));
+                }
+                let ShipShape::Box { offset, half_extents } = &asset.shape
+                    else { return Err(invalid("authored static prefab is not a box")) };
+                let low = Vec2::new(
+                    (offset.x - half_extents.x) * sx,
+                    (offset.y - half_extents.y) * sy,
+                );
+                let high = Vec2::new(
+                    (offset.x + half_extents.x) * sx,
+                    (offset.y + half_extents.y) * sy,
+                );
+                let points = [
+                    Vec2::new(low.x, low.y), Vec2::new(high.x, low.y),
+                    Vec2::new(high.x, high.y), Vec2::new(low.x, high.y),
+                ];
+                live_box_shape(points)
+                    .map_err(|_| invalid("scaled prefab box has invalid physical corners"))?;
+                Ok(Some(points))
+            }
+            (None, None) => Ok(None),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -3402,9 +3455,8 @@ impl NativePhysicalScene {
             if !position.is_finite() || !pose.rotation_degrees.is_finite() {
                 return Err(invalid("new obstacle has nonfinite authored placement"));
             }
-            let prepared = if let Some(corners) = placement.local_corners {
-                asset.prepare_spawn_live_box(placement.entity_id, pose,
-                    corners.map(|v| Vec2::new(v[0], v[1])))
+            let prepared = if let Some(corners) = placement.resolved_corners(asset)? {
+                asset.prepare_spawn_live_box(placement.entity_id, pose, corners)
             } else {
                 asset.prepare_spawn(placement.entity_id, Some(pose))
             };
@@ -3660,8 +3712,10 @@ impl NativePhysicalScene {
                     position: Vec2::new(placement.position[0], placement.position[1]),
                     rotation_degrees: placement.rotation_degrees,
                 }),
-                live_corners: placement.local_corners.map(|corners|
-                    corners.map(|v| Vec2::new(v[0], v[1]))),
+                live_corners: placement.resolved_corners(
+                    boxes.by_name(&placement.prefab_name)
+                        .expect("prevalidated immutable source box asset"),
+                )?,
             });
         }
         for placement in &layout.add_static_polygons {
