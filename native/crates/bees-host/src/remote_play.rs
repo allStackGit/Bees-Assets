@@ -688,7 +688,7 @@ impl NativeRemotePlay {
             saved.connected_peers > MAX_PEERS ||
             saved.held_fire.len() > saved.connected_peers ||
             saved.side_credentials_sha256 != credential_digest(&self.side_tokens) ||
-            saved.held_fire.len() > MAX_PEERS ||
+            saved.held_fire.len() > MAX_PLAYER_PEERS ||
             saved.pending_releases.len() > MAX_ORDERS_PER_POLL
         {
             return Err(invalid());
