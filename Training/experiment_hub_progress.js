@@ -1383,7 +1383,7 @@ class BottleneckEvidence {
             const measured=stageMeasured&&exposed!==null&&exposed<=collection&&
                 copied!==null&&count?.unit==='count'&&
                 Number.isSafeInteger(count.value)&&count.value>=1&&
-                count.value<=metrics.training_collector_workers.value);
+                count.value<=metrics.training_collector_workers.value;
             // Remote completion timing is about the full collection, but
             // only time after the preceding optimizer is exposed by an
             // async pipeline. Cap candidate stalls at that actual wait.
