@@ -191,6 +191,19 @@ function synchronizedOptimizerEvidence(metrics) {
         metrics.optimizer_torch_intraop_threads !== workers[0].torch_intraop_threads ||
         metrics.optimizer_torch_interop_threads !== workers[0].torch_interop_threads)
         throw Error('Native Bees synchronized optimizer totals disagree with individual GPU ranks.');
+    // New receipts report actual fused Adam on EACH rank. Historical runs
+    // may omit this optional evidence; never invent activation from a GPU
+    // busy percentage or assume that all accelerator ranks agree.
+    if (metrics.optimizer_fused_adam_rank_count !== undefined) {
+        const flags = workers.map(worker => worker.fused_adam_active);
+        if (flags.some(value => value !== 0 && value !== 1) ||
+            flags.reduce((total,value) => total + value,0) !==
+                metrics.optimizer_fused_adam_rank_count ||
+            (metrics.optimizer_fused_adam_active !== 0 &&
+             metrics.optimizer_fused_adam_active !== 1) ||
+            metrics.optimizer_fused_adam_active !== flags[0])
+            throw Error('Native Bees fused Adam activation differs from its GPU-rank receipts.');
+    }
     return {totalThreads,totalInteropThreads,perNode};
 }
 
