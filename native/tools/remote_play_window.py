@@ -239,7 +239,13 @@ class RemoteBattleWindow:
         if entries is None:
             self.notice("This native host does not expose named Codex entries")
             return
-        rows = [f"{entry['ship_type']:>2}  {entry['name']}" for entry in entries]
+        rows = []
+        for entry in entries:
+            live = entry.get("live")
+            status = (f" | HP {live['health']}/{live['max_health']}"
+                      f" | TSV {live['tsv']}/{live['max_tsv']}"
+                      if live is not None else "")
+            rows.append(f"{entry['ship_type']:>2}  {entry['name']}{status}")
         messagebox.showinfo(
             "Fleet Codex",
             f"{len(rows)} source ship classes " +
