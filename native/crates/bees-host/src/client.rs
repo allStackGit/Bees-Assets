@@ -1565,7 +1565,8 @@ impl NativeClient {
         // spiral when rendering, inference or the OS stalls for a long time.
         const MAX_STEPS_PER_FRAME: u32 = 4;
         let max_lag = fixed_dt.saturating_mul(MAX_STEPS_PER_FRAME - 1);
-        if !self.paused && after_frame.saturating_duration_since(self.next_step) > max_lag {
+        if !self.paused && !self.show_controls_help &&
+            after_frame.saturating_duration_since(self.next_step) > max_lag {
             self.next_step = after_frame.checked_sub(max_lag).unwrap_or(after_frame);
             self.pacing_lag_clamps += 1;
         }
