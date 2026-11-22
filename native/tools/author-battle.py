@@ -367,6 +367,23 @@ def static_box(value: str) -> dict:
     }
 
 
+def mining_placement(value: str) -> tuple[int, float, float]:
+    """Use an actual scene-authored mining asteroid as the physical source."""
+    parts = value.split(":")
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError(
+            "ore placement requires original_source_asteroid_id:X:Y"
+        )
+    try:
+        original_id = int(parts[0])
+        x, y = map(float, parts[1:])
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("ore source identity and coordinates are invalid") from error
+    if original_id <= 0 or not all(map(math.isfinite, (x, y))):
+        raise argparse.ArgumentTypeError("ore source ID must be positive and position finite")
+    return original_id, x, y
+
+
 def static_polygon(value: str) -> dict:
     """One source 208-vertex concave polygon at a scaled world transform."""
     source = static_box("Polygon Obstacle:" + value)
@@ -434,6 +451,15 @@ def resize_empty_arena(scene: dict, map_size: float) -> None:
 
 def author(args) -> tuple[dict, dict, dict]:
     scene = load_json(args.source_scene)
+    # Keep one immutable source resource archetype lookup before empty-map
+    # removes the playable copies. These are real collider/health imports,
+    # not generated resource shapes or training-only approximations.
+    source_mining = {
+        row["entity_id"]: copy.deepcopy(row)
+        for row in scene.get("mining_asteroids", [])
+    }
+    if len(source_mining) != len(scene.get("mining_asteroids", [])):
+        raise ValueError("original scene contains duplicate mining asteroid identities")
     run = load_json(args.source_run)
     if (scene.get("native_game_schema") != 1 or
             scene.get("policy_episode") is not None or
@@ -1173,6 +1199,33 @@ def author(args) -> tuple[dict, dict, dict]:
         scene["fleet_template_squads"] = reserve_squads
     else:
         scene.pop("fleet_template_squads", None)
+    if args.mining_asteroids:
+        used = [
+            *[ship["entity_id"] for ship in new_ships],
+            *[ship["entity_id"] for ship in reserve_templates],
+            *[resource["entity_id"] for key in ("mining_asteroids", "map_objects")
+              for resource in scene.get(key, [])],
+            *[obj["entity_id"] for key in (
+                "add_static_boxes", "add_static_polygons", "add_map_borders"
+            ) for obj in scene.get("layout", {}).get(key, [])],
+        ]
+        next_ore_id = max(used, default=0) + 1
+        if next_ore_id + len(args.mining_asteroids) >= (1 << 63):
+            raise ValueError("no source-compatible entity IDs remain for mining asteroids")
+        bounds = scene["bounds"]
+        for index, (original_id, x, y) in enumerate(args.mining_asteroids):
+            if original_id not in source_mining:
+                raise ValueError(f"unknown original mining asteroid source ID {original_id}")
+            if not all(bounds["min"][axis] <= coordinate <= bounds["max"][axis]
+                       for axis, coordinate in enumerate((x, y))):
+                raise ValueError("authored mining asteroid center must lie within the physical map")
+            entity = copy.deepcopy(source_mining[original_id])
+            entity["entity_id"] = next_ore_id + index
+            entity["position"] = [x, y]
+            # The same fixed authored durability and source collider are
+            # consumed by CombatWorld, the renderer and MA-POCA discovery.
+            scene.setdefault("mining_asteroids", []).append(entity)
+        scene["activate_mining"] = True
     if args.static_boxes or args.static_polygons:
         assets = Path(__file__).resolve().parents[1] / "assets"
         prefab_rows = load_json(assets / "box-obstacle-colliders.json")["obstacles"]
@@ -2117,6 +2170,10 @@ def battle_parser() -> argparse.ArgumentParser:
                         dest="static_polygons", default=[],
                         metavar="X:Y:SCALE_X:SCALE_Y[:DEGREES]",
                         help="place the verified concave Polygon Obstacle with nonuniform scaling; repeatable")
+    parser.add_argument("--mining-asteroid", action="append", type=mining_placement,
+                        dest="mining_asteroids", default=[],
+                        metavar="SOURCE_ID:X:Y",
+                        help="clone the real physical collider, layer and durability of a named source mining asteroid at a new map location")
     parser.add_argument("--lethal-borders", action="store_true",
                         help="with --arena-size: make physical border contact immediately damage/kill ships in both gameplay and training")
     parser.add_argument("--trainable", action="store_true",
