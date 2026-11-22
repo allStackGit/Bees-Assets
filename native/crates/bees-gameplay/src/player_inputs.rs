@@ -27,6 +27,13 @@ pub struct NativeShipBattleStatistics {
     pub enemy_tsv_damage_done: u64,
     pub tsv_damage_received: u64,
     pub minerals_mined_this_level: Option<i32>,
+    pub special_actions_recorded: bool,
+    pub striker_bombs_dropped: u64,
+    pub fire_barge_explosions: u64,
+    pub yellow_jacket_detonations: u64,
+    pub barge_charges_started: u64,
+    pub scout_beacons_deployed: u64,
+    pub queen_minions_spawned: u64,
 }
 
 pub trait NativePlayerAuthority {
