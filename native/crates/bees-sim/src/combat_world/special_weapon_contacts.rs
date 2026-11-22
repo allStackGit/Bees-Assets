@@ -61,6 +61,13 @@ impl SpecialWeaponContacts {
             self.proximity.contains(target_id)
     }
 
+    /// Trigger exits owned by an expiring physical weapon. Retiring its
+    /// cached membership now avoids a dead weapon's full contact refresh
+    /// on every later fixed tick (especially Queen-spawned bombers).
+    pub(super) fn active_trigger_count(&self) -> usize {
+        self.charge.ids().len() + self.proximity.ids().len()
+    }
+
     pub(super) fn matches_source(&self, source: &Self) -> bool {
         self.spec == source.spec
     }
@@ -240,9 +247,9 @@ impl CombatWorld {
             std::mem::swap(&mut contacts.body, &mut contacts.next_body);
         }
         // Unity invokes each ship's OnTriggerEnter2D as physical bodies
-        // are processed. The native special-weapon registry is a HashMap
-        // whose randomized iteration order must not decide which of two
-        // simultaneous contact bombers detonates first. Resolve callbacks
+        // are processed. The native special-weapon registry is ordered by
+        // ship ID, which may differ from original physical registration.
+        // Resolve simultaneous callbacks
         // in the original CombatWorld ship registration order, including
         // the target order within one bomber. This only sorts *new* entry
         // contacts; ordinary empty frames allocate and sort nothing.

@@ -1596,6 +1596,20 @@ impl CombatWorld {
         debug_assert!(self.live_ship_total > 0);
         self.live_ship_total = self.live_ship_total.saturating_sub(1);
         self.beacon_parent_by_id.remove(&victim_id);
+        // Source Ship.Kill deactivates its Bomb/Charge RangeCollider and
+        // ProximityCollider. Retain no dead trigger registries in the
+        // shared world: Queen minion deaths otherwise leave an ever-growing
+        // BTreeMap scanned at every subsequent physics step, including
+        // in headless training. The original source weapon ID and accrued
+        // measurements are already accounted for before this boundary.
+        if let Some(contacts) = self.special_weapons.remove(&victim_id) {
+            self.special_weapon_measurements.trigger_exits +=
+                contacts.active_trigger_count() as u64;
+        }
+        // Pending physical ENTER notifications for a now-dead body cannot
+        // be replayed as fresh contacts or serialized with a missing owner.
+        self.special_body_entries.retain(|&(owner, target)|
+            owner != victim_id && target != victim_id);
         self.scout_beacon_specs.remove(&victim_id);
         self.game_scout_runtime.remove(&victim_id);
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
@@ -2133,10 +2147,17 @@ impl CombatWorld {
         }
         // Bomb, Charge and proximity contact memory must continue from
         // the original authored weapon, not a newly generated range.
-        if self.special_weapons.iter().any(|(&ship_id, source)|
-            snapshot.special_weapons.get(&ship_id)
+        if self.special_weapons.iter().any(|(&ship_id, source)| {
+            // The destination scene still contains authored prefabs for
+            // ships that the checkpoint has already killed. Those dead
+            // owners correctly have no restored trigger cache. A live
+            // authored ship must still restore its exact source weapon.
+            let live = ship_by_id.get(&ship_id).is_some_and(|&index|
+                !snapshot.ships[index].vitals.is_dead() &&
+                physics.ships()[index].active);
+            live && snapshot.special_weapons.get(&ship_id)
                 .is_none_or(|restored| !restored.matches_source(source))
-        ) || snapshot.special_weapons.iter().any(|(&ship_id, contacts)| {
+        }) || snapshot.special_weapons.iter().any(|(&ship_id, contacts)| {
                 let Some(&index) = ship_by_id.get(&ship_id) else {
                     return true;
                 };
@@ -2490,6 +2511,14 @@ impl CombatWorld {
                 runtime.turrets.iter().any(Option::is_some).then_some(id))
             .collect();
         self.special_weapons = snapshot.special_weapons;
+        // Older compatible checkpoints may include historical dead
+        // special contacts. Prune them once during recovery instead of
+        // carrying them into every future simulation step.
+        let slots = &self.ship_by_id;
+        let bodies = self.physics.ships();
+        let ships = &self.ships;
+        self.special_weapons.retain(|&id, _| slots.get(&id).is_some_and(|&index|
+            bodies[index].active && !ships[index].vitals.is_dead()));
         self.level_geometry = snapshot.level_geometry;
         self.extraction = snapshot.extraction;
         self.shots_harmless = snapshot.shots_harmless;
@@ -2500,6 +2529,10 @@ impl CombatWorld {
         self.vision_live_enemy_sides = snapshot.vision_live_enemy_sides;
         self.vision_measurements = snapshot.vision_measurements;
         self.special_body_entries = snapshot.special_body_entries;
+        self.special_body_entries.retain(|&(owner, target)|
+            self.special_weapons.contains_key(&owner) &&
+            self.ship_by_id.get(&target).is_some_and(|&index|
+                self.physics.ships()[index].active && !self.ships[index].vitals.is_dead()));
         self.special_weapon_measurements = snapshot.special_weapon_measurements;
         self.pending_turret_shots = snapshot.pending_turret_shots;
         self.pending_weapon_range_exits = snapshot.pending_weapon_range_exits;
