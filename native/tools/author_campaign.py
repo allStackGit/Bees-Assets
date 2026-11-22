@@ -674,7 +674,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
     # defeat-skip paths later in the same campaign catalog.
     for index, story in mission_stories.items():
         if story in ("pluto_pushback", "pluto_bluer_pastures", "neptune_of_production",
-                     "uranus_on_the_defensive", "uranus_new_threat"):
+                     "uranus_on_the_defensive", "uranus_new_threat",
+                     "titania_minesweeper"):
             if mission_advances.get(index, "finished") != "finished":
                 raise ValueError(
                     f"mission {index} story always advances on finished, not victory"
@@ -946,6 +947,65 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 "pluto_reinforcements": {
                     "player_side": args.player_side, "scout_id": first_id,
                 }
+            }
+        elif story == "titania_minesweeper":
+            # Titania I exits through the real 40x40 Zone collider at the
+            # planet. It does not exist until a player hull approaches
+            # within 50 units; the shared CombatWorld already owns this
+            # activation and the final-ship EndKill/mission outcome.
+            zone = level.get("extraction")
+            waves = level.get("reinforcements")
+            objects = scene.get("map_objects")
+            obstacles = {
+                item.get("entity_id") for item in scene.get("obstacles", [])
+                if isinstance(item, dict) and
+                type(item.get("entity_id")) is int
+            }
+            tanks = [item for item in objects
+                     if isinstance(item, dict) and
+                     item.get("kind") == "fire_tank"] if isinstance(objects, list) else []
+            links = [item.get("linked_obstacle_id") for item in tanks]
+            source_squads = {
+                squad["item_id"]: squad for squad in scene.get("squads", [])
+                if isinstance(squad, dict) and type(squad.get("item_id")) is int
+            }
+            source_ships = {
+                ship["entity_id"]: ship for ship in scene.get("ships", [])
+                if isinstance(ship, dict) and type(ship.get("entity_id")) is int
+            }
+            wave = waves[0] if isinstance(waves, list) and len(waves) == 1 else None
+            valid_wave = (
+                isinstance(wave, dict) and
+                type(wave.get("after_seconds")) in (int, float) and
+                abs(wave["after_seconds"] - 90.0) <= 0.0001 and
+                same_point(wave.get("spawn"), [325, -225]) and
+                same_point(wave.get("entry"), [200, -225]) and
+                source_wave_types(wave, source_squads, source_ships,
+                                  3 - args.player_side) == [15, 21, 16]
+            )
+            if (scene.get("native_game_schema") != 1 or
+                    scene.get("human_side") != args.player_side or
+                    not isinstance(zone, dict) or
+                    zone.get("player_side") != args.player_side or
+                    zone.get("retreat_on_exit", False) is not False or
+                    not same_point(zone.get("center"), [-32, 55]) or
+                    not same_point(zone.get("half_extents"), [20, 20]) or
+                    zone.get("activation_radius") != 50 or
+                    zone.get("layer") != 20 or
+                    not tanks or len(set(links)) != len(links) or
+                    any(type(link) is not int or link not in obstacles
+                        for link in links) or
+                    not valid_wave or
+                    level.get("campaign_dialogue") is not None or
+                    any(level.get(name) is not None for name in
+                        ("survival", "demolition", "escort", "groups", "target_ship"))):
+                raise ValueError(
+                    "Titania Minesweeper requires the original proximity-"
+                    "activated center exit, linked physical Fire Tanks, "
+                    "and real 90-second Hornet/Wasp/Leafcutter wave"
+                )
+            level["campaign_dialogue"] = {
+                "titania_minesweeper": {"player_side": args.player_side}
             }
         elif story == "pluto_pushback":
             # Pluto III's authentic five-squad opponent wave has already
@@ -2097,12 +2157,12 @@ def mission_advance(value: str) -> tuple[int, str]:
 
 def mission_story(value: str) -> tuple[int, str]:
     match = re.fullmatch(
-        r"(\d+):(pluto_anomaly|pluto_reinforcements|pluto_pushback|neptune_seize_means|neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_offensive|uranus_on_the_defensive|uranus_new_threat)",
+        r"(\d+):(pluto_anomaly|pluto_reinforcements|pluto_pushback|titania_minesweeper|neptune_seize_means|neptune_pressing_forward|neptune_of_production|pluto_bluer_pastures|uranus_on_the_offensive|uranus_on_the_defensive|uranus_new_threat)",
         value,
     )
     if match is None or not 1 <= int(match.group(1)) <= 40:
         raise argparse.ArgumentTypeError(
-            "--mission-story needs MISSION:pluto_anomaly, pluto_reinforcements, pluto_pushback, neptune_seize_means, neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures, uranus_on_the_offensive, uranus_on_the_defensive or uranus_new_threat"
+            "--mission-story needs MISSION:pluto_anomaly, pluto_reinforcements, pluto_pushback, titania_minesweeper, neptune_seize_means, neptune_pressing_forward, neptune_of_production, pluto_bluer_pastures, uranus_on_the_offensive, uranus_on_the_defensive or uranus_new_threat"
         )
     return int(match.group(1)), match.group(2)
 

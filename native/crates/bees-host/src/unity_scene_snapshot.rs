@@ -3266,7 +3266,29 @@ impl NativePhysicalScene {
             Some(CampaignDialogueSpec::TitaniaBeenoculars { player_side, .. })
                 if !setup.survival.is_some_and(|objective| objective.defending_side == player_side) =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
-            Some(CampaignDialogueSpec::TitaniaMinesweeper { .. }) if setup.survival.is_some() =>
+            Some(CampaignDialogueSpec::TitaniaMinesweeper { player_side })
+                if player_side != human_side ||
+                    !setup.extraction.is_some_and(|zone|
+                        zone.player_side == player_side && !zone.retreat_on_exit &&
+                        zone.center.unity_equal(Vec2::new(-32.0, 55.0)) &&
+                        zone.half_extents.unity_equal(Vec2::new(20.0, 20.0)) &&
+                        (zone.activation_radius - 50.0).abs() <= 0.001 &&
+                        zone.layer == 20) ||
+                    !self.entities.iter().any(|entity| matches!(entity,
+                        NativeAuthoredEntity::MapObject { object, .. }
+                            if object.kind == bees_sim::map_object::MapObjectKind::FireTank &&
+                            object.fire_tank.is_some_and(|tank|
+                                tank.target_obstacle_id.is_some()))) ||
+                    setup.reinforcements.len() != 1 ||
+                    !setup.reinforcements.iter().all(|wave|
+                        matches!(wave.activation,
+                            crate::reinforcements::NativeReinforcementActivation::AfterSeconds(t)
+                                if (t - 90.0).abs() <= 0.001) &&
+                        wave.spawn.is_some_and(|at| at.unity_equal(Vec2::new(325.0, -225.0))) &&
+                        wave.entry.is_some_and(|at| at.unity_equal(Vec2::new(200.0, -225.0)))) ||
+                    setup.groups.is_some() || setup.survival.is_some() ||
+                    setup.demolition.is_some() || setup.escort.is_some() ||
+                    setup.target_ship.is_some() =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::NeptuneSeizeMeans { player_side })
                 if player_side != human_side ||
