@@ -3474,8 +3474,15 @@ impl NativePhysicalScene {
                 (kind == ObstacleKind::StaticObstacle && asset.authored_health <= 0) {
                 return Err(invalid("native box placement must match the source static/border kind"));
             }
-            if kind == ObstacleKind::MapBorder && placement.local_corners.is_none() {
-                return Err(invalid("authored map borders require exact live collider corners"));
+            // A source MapBorder can supply its exact four live corners or
+            // the explicit transform scale of the verified source prefab.
+            // Both resolve to identical canonical live-box physics; an
+            // unscaled default must not be guessed for a resized map.
+            if kind == ObstacleKind::MapBorder &&
+                placement.local_corners.is_none() &&
+                placement.local_scale.is_none()
+            {
+                return Err(invalid("authored map borders require exact live corners or an explicit prefab scale"));
             }
             let position = Vec2::new(placement.position[0], placement.position[1]);
             let pose = Pose {

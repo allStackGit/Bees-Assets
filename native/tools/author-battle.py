@@ -1290,15 +1290,22 @@ def author(args) -> tuple[dict, dict, dict]:
             # obstacle; no extra damage callback or second registry exists.
             scene.setdefault("map_objects", []).append(tank)
             statics.append(obstacle)
-    if args.static_boxes or args.static_polygons:
+    if args.static_boxes or args.static_polygons or args.map_borders:
         assets = Path(__file__).resolve().parents[1] / "assets"
         prefab_rows = load_json(assets / "box-obstacle-colliders.json")["obstacles"]
         source_boxes = {asset["name"] for asset in prefab_rows
                         if asset["obstacle_type"] == 0}
+        source_borders = {asset["name"] for asset in prefab_rows
+                          if asset["obstacle_type"] == 1}
         for box in args.static_boxes:
             if box["prefab_name"] not in source_boxes:
                 raise ValueError(
                     f"unknown source StaticObstacle prefab {box['prefab_name']!r}"
+                )
+        for border in args.map_borders:
+            if border["prefab_name"] not in source_borders:
+                raise ValueError(
+                    f"unknown source MapBorder prefab {border['prefab_name']!r}"
                 )
         # Source-authored entities, reserved Carrier families and previously
         # imported obstacles own their IDs. Assign custom obstacles only
@@ -1314,7 +1321,7 @@ def author(args) -> tuple[dict, dict, dict]:
             ) for obj in scene.get("layout", {}).get(key, [])],
         ]
         next_static_id = max(allocated_ids, default=0) + 1
-        requested_count = len(args.static_boxes) + len(args.static_polygons)
+        requested_count = len(args.static_boxes) + len(args.static_polygons) + len(args.map_borders)
         if next_static_id + requested_count >= (1 << 63):
             raise ValueError("no source-compatible entity IDs remain for static obstacles")
         layout = scene.setdefault("layout", {})
@@ -1325,6 +1332,10 @@ def author(args) -> tuple[dict, dict, dict]:
         next_polygon_id = next_static_id + len(args.static_boxes)
         for index, polygon in enumerate(args.static_polygons):
             polygons.append({**polygon, "entity_id": next_polygon_id + index})
+        custom_borders = layout.setdefault("add_map_borders", [])
+        next_border_id = next_polygon_id + len(args.static_polygons)
+        for index, border in enumerate(args.map_borders):
+            custom_borders.append({**border, "entity_id": next_border_id + index})
     if args.arena_size is not None:
         # Border IDs must be allocated AFTER all real battle ships and
         # reinforcements. The common native layout installer requires each
@@ -2234,6 +2245,10 @@ def battle_parser() -> argparse.ArgumentParser:
                         dest="static_polygons", default=[],
                         metavar="X:Y:SCALE_X:SCALE_Y[:DEGREES]",
                         help="place the verified concave Polygon Obstacle with nonuniform scaling; repeatable")
+    parser.add_argument("--map-border", action="append", type=static_box,
+                        dest="map_borders", default=[],
+                        metavar="PREFAB:X:Y:SCALE_X:SCALE_Y[:DEGREES]",
+                        help="place a verified original MapBorder with explicit collider scaling")
     parser.add_argument("--mining-asteroid", action="append", type=mining_placement,
                         dest="mining_asteroids", default=[],
                         metavar="SOURCE_ID:X:Y",
