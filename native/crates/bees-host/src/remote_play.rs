@@ -1358,7 +1358,9 @@ impl NativeRemotePlay {
         // currently requested, authorized squad lifetimes; no per-peer
         // collision pass and no retained gameplay state.
         let mut overlay_by_side = HashMap::<i32, HashSet<SquadLifetime>>::new();
-        for peer in self.peers.iter().filter(|peer| !peer.closed) {
+        for peer in self.peers.iter().filter(|peer|
+            !peer.closed && !peer.spectator
+        ) {
             let Some(side) = peer.side else { continue };
             let Some((world, revision, squads)) = &peer.weapon_overlay else { continue };
             if (*world, *revision) != episode { continue; }
@@ -1386,7 +1388,8 @@ impl NativeRemotePlay {
                     briefing_paused,
                     !spectator && requires_briefing_ack &&
                         view.campaign_dialogue_side==Some(side),
-                    overlay_by_side.get(&side), measurements,
+                    if spectator { None } else { overlay_by_side.get(&side) },
+                    measurements,
                 );
                 if spectator {
                     measurements.spectator_snapshots_encoded += 1;
