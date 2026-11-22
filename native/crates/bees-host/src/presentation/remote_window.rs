@@ -2147,7 +2147,7 @@ fn draw_campaign_dialogue(
         rest=rest[piece.len()..].trim_start();
     }
     text::draw_at(pixels,WIDTH,text_left,HEIGHT-72,
-        "L next   K skip   Backspace previous",1,MUTED);
+        "L reveal/next   K skip   Backspace previous",1,MUTED);
 }
 
 fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
@@ -3190,6 +3190,7 @@ pub fn connect_remote(
     let mut dialogue_pause_started:Option<((u64,u64,u64),usize,Instant)>=None;
     let mut dialogue_reveal_scope:Option<((u64,u64,u64),usize)>=None;
     let mut dialogue_reveal_started=Instant::now();
+    let mut dialogue_reveal_forced=false;
     let mut held_fire_active=false;
     let mut held_fire_target:Option<Vec2>=None;
     let mut show_art=true;
@@ -3658,7 +3659,7 @@ pub fn connect_remote(
             current_episode=(0,0);
             squad_list_offset=0;
             dialogue_key=None;dialogue_line=0;dialogue_pause_started=None;
-            dialogue_reveal_scope=None;
+            dialogue_reveal_scope=None;dialogue_reveal_forced=false;
             last_audio_snapshot=None;
             held_fire_active=false;held_fire_target=None;
             peer.held_fire_begin_request=None;
@@ -3695,6 +3696,13 @@ pub fn connect_remote(
             let count=state["campaign_dialogue"]["line_count"]
                 .as_u64().unwrap_or(0).min(100) as usize;
             if count>0 {
+                if let Some(key) = dialogue_key.filter(|_| dialogue_line < count) {
+                    if dialogue_reveal_scope != Some((key, dialogue_line)) {
+                        dialogue_reveal_scope = Some((key, dialogue_line));
+                        dialogue_reveal_started = now;
+                        dialogue_reveal_forced = false;
+                    }
+                }
                 // Source campaign dialogue uses K to skip and L to advance.
                 // A skip must not activate a Beacon in the same frame.
                 dialogue_skip_key=!show_controls_help&&dialogue_line<count &&
@@ -3704,7 +3712,20 @@ pub fn connect_remote(
                 } else if !show_controls_help &&
                     (window.is_key_pressed(Key::L,KeyRepeat::No) ||
                     window.is_key_pressed(Key::Enter,KeyRepeat::No)) {
-                    dialogue_line=(dialogue_line+1).min(count);
+                    let incomplete = !dialogue_reveal_forced &&
+                        serde_json::from_value::<CampaignCue>(
+                            state["campaign_dialogue"]["cue"].clone(),
+                        ).ok().and_then(|cue|
+                            super::campaign_dialogue::visible_line(cue,dialogue_line))
+                            .is_some_and(|(_,message)|
+                                now.saturating_duration_since(dialogue_reveal_started)
+                                    .as_secs_f32() * 50.0 <
+                                    message.chars().count() as f32);
+                    if incomplete {
+                        dialogue_reveal_forced = true;
+                    } else {
+                        dialogue_line=(dialogue_line+1).min(count);
+                    }
                 }
                 if !show_controls_help &&
                     window.is_key_pressed(Key::Backspace,KeyRepeat::No)
@@ -3740,9 +3761,11 @@ pub fn connect_remote(
                 if dialogue_reveal_scope != Some((key, dialogue_line)) {
                     dialogue_reveal_scope = Some((key, dialogue_line));
                     dialogue_reveal_started = now;
+                    dialogue_reveal_forced = false;
                 }
             } else {
                 dialogue_reveal_scope = None;
+                dialogue_reveal_forced = false;
             }
             let episode=(state["world_id"].as_u64().unwrap_or(0),
                          state["episode_revision"].as_u64().unwrap_or(0));
@@ -4649,7 +4672,9 @@ pub fn connect_remote(
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
             held_fire_active,shooting_menu,shooting_focus,
             &peer.visual,visual_fraction,
-            now.saturating_duration_since(dialogue_reveal_started).as_secs_f32(),
+            if dialogue_reveal_forced { 1_000_000.0 } else {
+                now.saturating_duration_since(dialogue_reveal_started).as_secs_f32()
+            },
             &artwork,show_art,range_overlay_active,
             show_minimap,
             &mut combat_hud_draws, &mut hulls, &mut map_object_health_bars,

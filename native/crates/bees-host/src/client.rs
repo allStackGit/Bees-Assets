@@ -194,6 +194,7 @@ pub struct NativeClient {
     dialogue_line: usize,
     dialogue_pause_started: Option<(u32, usize, Instant)>,
     dialogue_reveal: Option<(u32, usize, Instant)>,
+    dialogue_reveal_forced: bool,
     dialogue_visible: bool,
     held_fire_target: Option<Vec2>,
     /// User-pinned range display; the source combined gesture adds only a
@@ -324,7 +325,7 @@ impl NativeClient {
             dialogue_sequence: None,
             dialogue_line: 0,
             dialogue_pause_started: None, dialogue_reveal: None,
-            dialogue_visible: false,
+            dialogue_reveal_forced: false, dialogue_visible: false,
             held_fire_target: None,
             range_overlay_pinned: false,
             selection_drag: None, minimap_dragging: false,
@@ -976,11 +977,29 @@ impl NativeClient {
                 self.dialogue_pause_started = None;
             }
             let count = crate::presentation::campaign_dialogue::line_count(cue);
+            if self.dialogue_reveal.as_ref().is_none_or(|(prior, index, _)|
+                *prior != sequence || *index != self.dialogue_line)
+            {
+                self.dialogue_reveal = Some((sequence, self.dialogue_line, now));
+                self.dialogue_reveal_forced = false;
+            }
             if !self.show_controls_help && self.window.is_key_pressed(Key::K, KeyRepeat::No) {
                 self.dialogue_line = count;
             } else if !self.show_controls_help && self.dialogue_line < count &&
                 self.window.is_key_pressed(Key::L, KeyRepeat::No) {
-                self.dialogue_line += 1;
+                let incomplete = !self.dialogue_reveal_forced &&
+                    crate::presentation::campaign_dialogue::visible_line(
+                        cue, self.dialogue_line,
+                    ).is_some_and(|(_, message)| {
+                        let elapsed = self.dialogue_reveal.map_or(0.0,
+                            |(_, _, start)| now.saturating_duration_since(start).as_secs_f32());
+                        elapsed * 50.0 < message.chars().count() as f32
+                    });
+                if incomplete {
+                    self.dialogue_reveal_forced = true;
+                } else {
+                    self.dialogue_line += 1;
+                }
             }
             if let Some(seconds) =
                 crate::presentation::campaign_dialogue::pause_seconds(cue,self.dialogue_line)
@@ -1016,9 +1035,11 @@ impl NativeClient {
                 *prior != sequence || *index != self.dialogue_line)
             {
                 self.dialogue_reveal = Some((sequence, self.dialogue_line, now));
+                self.dialogue_reveal_forced = false;
             }
         } else {
             self.dialogue_reveal = None;
+            self.dialogue_reveal_forced = false;
         }
         self.dialogue_visible = dialogue.is_some();
         // Hiding the owner's story from the opposite hot-seat must not
@@ -2042,9 +2063,13 @@ impl NativeClient {
             self.renderer.draw_live_performance(&label);
         }
         if let Some((_, speaker, line)) = dialogue {
-            let elapsed = self.dialogue_reveal
-                .map_or(0.0, |(_, _, began)|
-                    now.saturating_duration_since(began).as_secs_f32());
+            let elapsed = if self.dialogue_reveal_forced {
+                1_000_000.0
+            } else {
+                self.dialogue_reveal
+                    .map_or(0.0, |(_, _, began)|
+                        now.saturating_duration_since(began).as_secs_f32())
+            };
             self.renderer.draw_campaign_dialogue(speaker, line, elapsed);
         }
         // Help is a noninteractive presentation overlay. All underlying

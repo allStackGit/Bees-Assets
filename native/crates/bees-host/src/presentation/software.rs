@@ -4661,7 +4661,7 @@ impl NativeSoftwareRenderer {
             y += text::HEIGHT;
         }
         text::draw_at(&mut self.pixels, self.width, text_left, y + 4,
-            "L continue  /  K dismiss", 1, [155, 178, 206]);
+            "L reveal/next  /  K dismiss", 1, [155, 178, 206]);
     }
 
     fn render_obstacle_debris(
