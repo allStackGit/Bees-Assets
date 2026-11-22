@@ -240,20 +240,24 @@ function placementAlternatives(machines,reservations,input) {
             if(option?.capacity_fits)alternatives.push(option);
         };
         add(selected);
-        // Replacing one assigned device finds local alternatives without
-        // enumerating exponential combinations on 32-GPU workers.
-        for(let index=0;index<count;index++) {
-            for(const id of candidates) {
-                if(selected.includes(id))continue;
+        // Bound scheduler work to 64 validated alternatives per host even
+        // on 32-GPU workers. Visit candidate devices first, then role
+        // positions, so an early GPU never monopolizes the search across
+        // every optimizer/collector ordinal.
+        const maxChoices=64;
+        for(const id of candidates) {
+            if(seen.size>=maxChoices)break;
+            if(selected.includes(id))continue;
+            for(let index=0;index<count&&seen.size<maxChoices;index++) {
                 const ids=selected.slice();
                 ids[index]=id;
                 add(ids);
             }
         }
-        // Also consider non-overlapping groups of the requested width.
-        // This surfaces very different device sets for measured scheduling
-        // while bounding work independently of choose(n,k).
-        for(let start=0;start+count<=candidates.length;start+=count)
+        // Consider distinct device cohorts as a separate opportunity for
+        // measured scheduling, within the same bounded planner budget.
+        for(let start=0;start+count<=candidates.length&&
+                seen.size<maxChoices;start+=count)
             add(candidates.slice(start,start+count));
     }
     return alternatives;
