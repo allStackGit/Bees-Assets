@@ -1780,10 +1780,10 @@ impl NativeRemotePlay {
                         !ship.vitals.is_dead() && ship.side == side) &&
                     view.roster.owning_squad(ship_id)
                         .is_some_and(|owner| owns_player_side(view, owner, side));
-                let stats = permitted.then(|| view.fleet.combat_stats(ship_id))
-                    .flatten();
-                let minerals = stats.and_then(|_| view.fleet.get(ship_id))
-                    .map(|entry| entry.minerals_mined_this_level);
+                let stats = permitted.then(||
+                    view.player_authority.player_ship_battle_statistics(ship_id)
+                ).flatten();
+                let minerals = stats.and_then(|item| item.minerals_mined_this_level);
                 let _ = peer.enqueue(&json!({
                     "kind": "ship_inspection_result",
                     "request_id": request_id,
