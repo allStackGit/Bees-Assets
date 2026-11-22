@@ -221,6 +221,20 @@ async function stage(base,env,root,name,entry) {
             !fs.existsSync(path.join(temporary,'Ants-MAPOCA','pyproject.toml')))
             throw Error('TinyBrains release has no simulation package.');
         if(name==='tinybrains') {
+            const heldout=path.join(temporary,'Ants-MAPOCA','evidence','heldout.json');
+            let observations;
+            try {
+                const size=fs.statSync(heldout).size;
+                if(size<1||size>8*1024*1024)
+                    throw Error('Held-out observations exceed the approved size.');
+                observations=JSON.parse(fs.readFileSync(heldout,'utf8')).observations;
+            }catch {
+                throw Error('TinyBrains release lacks valid held-out export observations.');
+            }
+            if(!Array.isArray(observations)||!observations.length)
+                throw Error('TinyBrains release has no representative observations for ONNX export parity.');
+        }
+        if(name==='tinybrains') {
             // The coordinator packages both exact upstream source commits and
             // the SHA-256-checked official 0.5.0 CLI for both platforms. No
             // worker-side Git clone, GitHub account or simulator install step.
