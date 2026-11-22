@@ -906,14 +906,16 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 len(combat) == 1 and
                 isinstance(combat[0].get("squad_item_ids"), list) and
                 len(combat[0]["squad_item_ids"]) == 3 and
-                [
-                    sorted([source_ships.get(ship_id, {}).get("ship_type")
-                            for ship_id in squad_members(
-                                source_squads.get(squad_id))])
+                all(squad_id in source_squads and
+                    source_squads[squad_id].get("side") == ai_side and
+                    all(ship_id in source_ships for ship_id in
+                        squad_members(source_squads[squad_id]))
+                    for squad_id in combat[0]["squad_item_ids"]) and
+                sorted(
+                    sorted(source_ships[ship_id]["ship_type"] for ship_id in
+                           squad_members(source_squads[squad_id]))
                     for squad_id in combat[0]["squad_item_ids"]
-                ] == [[14], [15, 15, 15], [15, 15, 15]]
-                and all(source_squads.get(squad_id, {}).get("side") == ai_side
-                        for squad_id in combat[0]["squad_item_ids"])
+                ) == [[14], [15, 15, 15], [15, 15, 15]]
             )
             homes = scene.get("starting_positions")
             home = (homes[ai_side - 1] if isinstance(homes, list)
@@ -1764,7 +1766,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             if (totals != {18: 1, 12: 3, 7: 3} or
                     len(grants) != 3 or len(squad_grants) != 3 or
                     mission.get("advance_on") == "finished" or
-                    mission.get("grant_on") == "finished"):
+                    mission.get("grants_on_finished") is True):
                 raise ValueError(
                     "Pluto Reinforcements awards Scout 1, Frigate 3, "
                     "Dreadnought 3 into three newly created SavedSquads "
