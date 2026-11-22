@@ -16,7 +16,16 @@ pub enum NativeMissionCue {
     PlutoScoutReportComplete,
     PlutoGunshipBriefingComplete,
     PlutoHoneybeeDestroyed,
+    PlutoGunshipArrived,
+    PlutoReinforcementsScoutSelected,
     PlutoReinforcementsCombatReady,
+    /// The actual wave arrival, not a guessed elapsed-time trigger.
+    /// Its selected narrative line remains unrelated to order scheduling.
+    NeptuneProductionWave { number: u32 },
+    UranusDefensiveWave { number: u8 },
+    UranusBumblebeeSpotted,
+    UranusBumblebeeHit,
+    UranusBumblebeeDestroyed,
     FireTankSpotted,
     FireTankDestroyed,
     UranusBargeLost,
@@ -31,12 +40,22 @@ pub enum NativeMissionCue {
 
 impl NativeMissionCue {
     pub(crate) fn matches(self, cue: CampaignCue) -> bool {
-        matches!((self, cue),
+        match (self, cue) {
+            (Self::NeptuneProductionWave { number: expected },
+                CampaignCue::NeptuneProductionWave { number, .. }) => expected == number,
+            (Self::UranusDefensiveWave { number: expected },
+                CampaignCue::UranusDefensiveWave { number, .. }) => expected == number,
+            pair => matches!(pair,
             (Self::PlutoHoneybeeSpotted, CampaignCue::PlutoAnomalyHoneybeeSpotted) |
             (Self::PlutoScoutReportComplete, CampaignCue::PlutoAnomalyScoutReportComplete) |
             (Self::PlutoGunshipBriefingComplete, CampaignCue::PlutoAnomalyGunshipBriefingComplete) |
             (Self::PlutoHoneybeeDestroyed, CampaignCue::PlutoAnomalyHoneybeeDestroyed) |
+            (Self::PlutoGunshipArrived, CampaignCue::PlutoAnomalyGunshipArrived) |
+            (Self::PlutoReinforcementsScoutSelected, CampaignCue::PlutoReinforcementsScoutSelected) |
             (Self::PlutoReinforcementsCombatReady, CampaignCue::PlutoReinforcementsCombatReady) |
+            (Self::UranusBumblebeeSpotted, CampaignCue::UranusOffensiveBumblebeeSpotted) |
+            (Self::UranusBumblebeeHit, CampaignCue::UranusOffensiveBumblebeeHit) |
+            (Self::UranusBumblebeeDestroyed, CampaignCue::UranusOffensiveBumblebeeDestroyed) |
             (Self::FireTankSpotted, CampaignCue::FireTankSpotted { .. }) |
             (Self::FireTankDestroyed, CampaignCue::FireTankDestroyed { .. }) |
             (Self::UranusBargeLost, CampaignCue::UranusNewThreatBargeLost) |
@@ -47,17 +66,26 @@ impl NativeMissionCue {
             (Self::UploadFifty, CampaignCue::BeenocularsUpload(UploadMilestone::Fifty)) |
             (Self::UploadSeventyFive, CampaignCue::BeenocularsUpload(UploadMilestone::SeventyFive)) |
             (Self::UploadNinety, CampaignCue::BeenocularsUpload(UploadMilestone::Ninety))
-        )
+            ),
+        }
     }
 
     pub(crate) fn valid_for(self, spec: Option<CampaignDialogueSpec>) -> bool {
         match spec {
             Some(CampaignDialogueSpec::PlutoAnomaly { .. }) =>
                 matches!(self, Self::PlutoHoneybeeSpotted |
-                    Self::PlutoScoutReportComplete | Self::PlutoGunshipBriefingComplete |
-                    Self::PlutoHoneybeeDestroyed),
+                    Self::PlutoScoutReportComplete | Self::PlutoGunshipArrived |
+                    Self::PlutoGunshipBriefingComplete | Self::PlutoHoneybeeDestroyed),
             Some(CampaignDialogueSpec::PlutoReinforcements { .. }) =>
-                matches!(self, Self::PlutoReinforcementsCombatReady),
+                matches!(self, Self::PlutoReinforcementsScoutSelected |
+                    Self::PlutoReinforcementsCombatReady),
+            Some(CampaignDialogueSpec::NeptuneProduction { .. }) =>
+                matches!(self, Self::NeptuneProductionWave { number } if number > 0),
+            Some(CampaignDialogueSpec::UranusDefensive { .. }) =>
+                matches!(self, Self::UranusDefensiveWave { number } if (1..=6).contains(&number)),
+            Some(CampaignDialogueSpec::UranusOffensive { .. }) =>
+                matches!(self, Self::UranusBumblebeeSpotted |
+                    Self::UranusBumblebeeHit | Self::UranusBumblebeeDestroyed),
             Some(CampaignDialogueSpec::TitaniaMinesweeper { .. }) =>
                 matches!(self, Self::FireTankSpotted | Self::FireTankDestroyed),
             Some(CampaignDialogueSpec::TitaniaBeenoculars { .. }) =>
@@ -67,12 +95,9 @@ impl NativeMissionCue {
                 matches!(self, Self::UranusBargeLost | Self::UranusBargeCharged |
                     Self::UranusReinforcements),
             Some(CampaignDialogueSpec::PlutoPushback { .. }) |
-            Some(CampaignDialogueSpec::NeptuneProduction { .. }) |
             Some(CampaignDialogueSpec::NeptuneSeizeMeans { .. }) |
             Some(CampaignDialogueSpec::NeptunePressingForward { .. }) |
-            Some(CampaignDialogueSpec::PlutoEvacuation { .. }) |
-            Some(CampaignDialogueSpec::UranusDefensive { .. }) |
-            Some(CampaignDialogueSpec::UranusOffensive { .. }) | None => false,
+            Some(CampaignDialogueSpec::PlutoEvacuation { .. }) | None => false,
         }
     }
 }
