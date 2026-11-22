@@ -134,6 +134,7 @@ class IndependentGpuTraining:
         self.last_qualified_work_rate = 0.0
         self.selected = None
         self._busy = Lock()
+        self._closed = False
 
     def _parallel(self, steps, inputs):
         caller = torch.cuda.current_stream(self.device)
@@ -175,9 +176,28 @@ class IndependentGpuTraining:
         if not self._busy.acquire(blocking=False):
             raise RuntimeError("Independent GPU optimizer executor is already in use")
         try:
+            if self._closed:
+                raise RuntimeError("Independent GPU optimizer executor was closed")
             return self._run(steps, inputs, work_units)
         finally:
             self._busy.release()
+
+    def close(self):
+        with self._busy:
+            if self._closed:
+                return
+            # Kernel submissions may still be asynchronous. The owner
+            # cannot release its optimizer state or OS GPU lease until
+            # all dependent stream work has finished.
+            torch.cuda.current_stream(self.device).synchronize()
+            self._closed = True
+            self.streams.clear()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
 
     def _run(self, steps, inputs, work_units):
         if (not isinstance(steps, (list, tuple)) or
