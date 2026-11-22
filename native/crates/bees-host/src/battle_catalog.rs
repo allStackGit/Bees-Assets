@@ -409,6 +409,7 @@ pub struct CampaignProgress<'a> {
     score_history_complete: bool,
     player_match_totals: NativePlayerMatchCounts,
     player_match_history_complete: bool,
+    loss_type_history_complete: bool,
     spent_minerals: u64,
     purchases: Vec<(i32, NativePurchasedShip)>,
     /// Awarded FleetShips share the ordinary deployment/transfer path
@@ -1272,6 +1273,7 @@ impl BattleCatalog {
             bank_history_complete: true,
             score_history_complete: true,
             player_match_history_complete: true,
+            loss_type_history_complete: true,
             ..CampaignProgress::default()
         };
         let Some(campaign) = &self.campaign_id else { return Ok(progress) };
@@ -1353,6 +1355,18 @@ impl BattleCatalog {
                     let totals = &mut progress.player_match_totals;
                     totals.ships_lost = totals.ships_lost.checked_add(counts.ships_lost)
                         .ok_or_else(|| invalid("campaign lost-ship counter overflow"))?;
+                    let mut typed_losses = 0_u64;
+                    for (total, &count) in totals.ships_lost_by_type.iter_mut()
+                        .zip(counts.ships_lost_by_type.iter())
+                    {
+                        *total = total.checked_add(count)
+                            .ok_or_else(|| invalid("campaign ship-type loss counter overflow"))?;
+                        typed_losses = typed_losses.checked_add(count)
+                            .ok_or_else(|| invalid("campaign ship-type loss sum overflow"))?;
+                    }
+                    if typed_losses != counts.ships_lost {
+                        progress.loss_type_history_complete = false;
+                    }
                     totals.ships_returned = totals.ships_returned.checked_add(counts.ships_returned)
                         .ok_or_else(|| invalid("campaign safe-return counter overflow"))?;
                     totals.ships_destroyed_by_player =
@@ -1360,6 +1374,7 @@ impl BattleCatalog {
                         .ok_or_else(|| invalid("campaign player-kill counter overflow"))?;
                 } else {
                     progress.player_match_history_complete = false;
+                    progress.loss_type_history_complete = false;
                 }
                 // Awarded hulls and SavedSquads are one atomic campaign
                 // outcome. They are reconstructed together from this
@@ -2132,6 +2147,7 @@ impl BattleCatalog {
             "campaign_score_history_complete": progress.score_history_complete,
             "player_match_totals": progress.player_match_totals,
             "player_match_history_complete": progress.player_match_history_complete,
+            "ship_type_loss_history_complete": progress.loss_type_history_complete,
             "spent_minerals": progress.spent_minerals,
             "available_minerals": progress.unspent_minerals().expect("validated account balance"),
             "bank_history_complete": progress.bank_history_complete,

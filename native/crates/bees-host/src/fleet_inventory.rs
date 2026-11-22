@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use bees_gameplay::level_rules::NativeLevelRewardMetadata;
 use bees_sim::rl_shaping::DamageRewardMetadata;
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
-use bees_sim::ship_assets::{BEACON_TYPE, HUMAN_TARGET_TYPE};
+use bees_sim::ship_assets::{BEACON_TYPE, HUMAN_TARGET_TYPE, SHIP_TYPE_COUNT};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,6 +67,10 @@ pub struct NativeFleetCombatStats {
 #[serde(deny_unknown_fields)]
 pub struct NativePlayerMatchCounts {
     pub ships_lost: u64,
+    /// Source GameState.PlayerShipsLostByType indexed by the original
+    /// ConfigData.ShipTypes. No per-death heap allocation.
+    #[serde(default)]
+    pub ships_lost_by_type: [u64; SHIP_TYPE_COUNT],
     pub ships_returned: u64,
     pub ships_destroyed_by_player: u64,
 }
@@ -335,6 +339,11 @@ impl NativeFleetInventory {
         if victim_type == BEACON_TYPE { return; }
         if victim_side == player_side && victim_type != HUMAN_TARGET_TYPE {
             counts.ships_lost = counts.ships_lost.saturating_add(1);
+            if let Some(count) = counts.ships_lost_by_type
+                .get_mut(usize::from(victim_type))
+            {
+                *count = count.saturating_add(1);
+            }
         }
         if killer_side == Some(player_side) {
             counts.ships_destroyed_by_player =
