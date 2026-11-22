@@ -20,8 +20,9 @@ class ThroughputHistory {
         this.last=new Map();
         this.windows=new Map();
     }
-    observe(job,machineId,progress) {
+    observe(job,machineId,progress,gpus=[]) {
         const key=workloadKey(job);
+        const deviceKey=JSON.stringify(Array.isArray(gpus)?gpus.slice().sort():[]);
         const steps=progress?.steps_completed;
         const time=Date.parse(progress?.source_modified_at);
         if(!key||typeof machineId!=='string'||!machineId||
@@ -29,16 +30,16 @@ class ThroughputHistory {
         const identity=String(job.id);
         const prior=this.last.get(identity);
         this.last.delete(identity);
-        this.last.set(identity,{key,machineId,steps,time});
+        this.last.set(identity,{key,machineId,deviceKey,steps,time});
         if(this.last.size>MAX_KEYS*4)this.last.delete(this.last.keys().next().value);
-        if(!prior||prior.key!==key||prior.machineId!==machineId||
+        if(!prior||prior.key!==key||prior.machineId!==machineId||prior.deviceKey!==deviceKey||
             steps<=prior.steps||time<=prior.time)return;
         const seconds=(time-prior.time)/1000;
         // Reject pathological clocks and stale sparse measurements.
         if(seconds<1||seconds>3600)return;
         const rate=(steps-prior.steps)/seconds;
         if(!Number.isFinite(rate)||rate<=0)return;
-        const id=JSON.stringify([key,machineId]);
+        const id=JSON.stringify([key,machineId,deviceKey]);
         let windows=this.windows.get(id)||[];
         windows.push({steps:steps-prior.steps,seconds});
         if(windows.length>MAX_WINDOWS)windows.shift();
@@ -49,14 +50,15 @@ class ThroughputHistory {
     compare(job,a,b) {
         const key=workloadKey(job);
         if(!key)return 0;
-        const score=machine=>{
-            const windows=this.windows.get(JSON.stringify([key,machine]));
+        const score=placement=>{
+            const devices=JSON.stringify((placement.suggested_gpus||[]).slice().sort());
+            const windows=this.windows.get(JSON.stringify([key,placement.machine_id,devices]));
             if(!windows||windows.length<MIN_WINDOWS)return null;
             const total=windows.reduce((v,w)=>v+w.steps,0);
             const seconds=windows.reduce((v,w)=>v+w.seconds,0);
             return total/seconds;
         };
-        const left=score(a.machine_id),right=score(b.machine_id);
+        const left=score(a),right=score(b);
         // Missing evidence is neutral. Only like-for-like workloads compete.
         return left===null||right===null?0:right-left;
     }
