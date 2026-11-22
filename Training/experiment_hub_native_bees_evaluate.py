@@ -93,9 +93,9 @@ def policy_runtime_sources_sha256(worker: Path) -> str:
         path = (root / label).resolve(strict=True)
         if not path.is_file():
             raise ValueError(f"Missing native policy runtime source: {label}")
-        digest.update(label.encode("utf-8") + b"\\0")
+        digest.update(label.encode("utf-8") + b"\0")
         digest.update(normalized_python_source_sha256(path).encode("ascii"))
-        digest.update(b"\\n")
+        digest.update(b"\n")
     return digest.hexdigest()
 
 
