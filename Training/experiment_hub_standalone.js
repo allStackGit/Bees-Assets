@@ -137,6 +137,8 @@ function renderPage(html,runtime={}) {
         'Stopping a timer does not stop training or interrupt a running evaluation.</p>'+
         '<div class="hub-controls">'+
         '<button type="button" id="hub-local-evaluator-setup" disabled>Set up TinyBrains Nano/Micro</button>'+
+        '<select id="hub-local-evaluator-mini-source" aria-label="Finished Batch 128 training run"></select>'+
+        '<button type="button" id="hub-local-evaluator-mini-setup" disabled>Freeze Batch 128 Mini opponent</button>'+
         '<button type="button" id="hub-local-courier-evaluator-setup" disabled>Set up / refresh Courier evaluation</button>'+
         '</div>'+
         '<div id="hub-local-evaluator-rows" class="hub-standalone"></div>'+

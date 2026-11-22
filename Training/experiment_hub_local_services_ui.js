@@ -15,6 +15,8 @@
     const tinyMessage=$('hub-local-tinybrains-message');
     const evaluatorRows=$('hub-local-evaluator-rows');
     const evaluatorSetup=$('hub-local-evaluator-setup');
+    const evaluatorMini=$('hub-local-evaluator-mini-setup');
+    const miniSource=$('hub-local-evaluator-mini-source');
     const courierSetup=$('hub-local-courier-evaluator-setup');
     const evaluatorMessage=$('hub-local-evaluator-message');
     const remoteRows=$('hub-remote-evaluator-rows');
@@ -40,6 +42,24 @@
         evaluatorSetup.disabled=busy||!info?.tinybrains_available||
             info.entries?.filter(item=>item.project==='tinybrains')
                 .every(item=>item.managed&&item.installed);
+        const candidates=info?.mini_candidates||[];
+        if(miniSource) {
+            const previous=miniSource.value;
+            miniSource.replaceChildren();
+            for(const entry of candidates) {
+                const option=document.createElement('option');
+                option.value=entry.id;
+                option.textContent='Batch 128 · '+entry.updates+
+                    ' updates · '+entry.id.slice(0,12);
+                miniSource.append(option);
+            }
+            if(candidates.some(entry=>entry.id===previous))
+                miniSource.value=previous;
+            miniSource.disabled=busy||!candidates.length;
+        }
+        if(evaluatorMini)evaluatorMini.disabled=busy||
+            !info?.tinybrains_available||!candidates.length||
+            info.entries?.some(item=>item.project==='tinybrains'&&item.id==='mini');
         // Setup also reapproves a new immutable suite when Courier's
         // environment or evaluator runtime changes; keep it available.
         if(courierSetup)courierSetup.disabled=busy||!info?.courier_available;
@@ -55,7 +75,8 @@
             title.textContent=item.project==='courier'?'Courier survival':
                 item.id==='nano'?'TinyBrains Nano (separate cadence)':
                     item.id==='micro'?'TinyBrains Micro (separate cadence)':
-                        'TinyBrains Nano + Micro (same checkpoint)';
+                        item.id==='mini'?'TinyBrains vs Frozen Mini (Batch 128)':
+                            'TinyBrains Nano + Micro (same checkpoint)';
             const status=document.createElement('span');
             status.textContent=!item.installed?(item.reason||'Not installed'):
                 !item.managed?'Not ready: '+(item.reason||'unmanaged service'):
@@ -258,7 +279,9 @@
     }
     async function manageEvaluator(action,id,project='tinybrains') {
         if(busy)return;
-        const message=action==='setup'
+        const message=action==='setup-mini'
+            ?'Freeze the selected finished Batch-128 PPO checkpoint as a new Mini-class evaluation opponent? Its exported weights and suite seeds remain immutable. This does not change training.'
+            :action==='setup'
             ?(project==='courier'
                 ?'Set up the approved Courier survival evaluator using the installed local environment? The suite is pinned to the current environment file. A local agent restart is needed to advertise it.'
                 :'Set up TinyBrains Nano/Micro evaluators? The Hub creates missing frozen initial suites from the trusted installed runtime, then starts separate fixed-budget evaluation timers. Existing suites remain unchanged. This does not start or stop training.')
@@ -273,13 +296,17 @@
         if(!confirm(message))return;
         busy=true;
         if(evaluatorSetup)evaluatorSetup.disabled=true;
+        if(evaluatorMini)evaluatorMini.disabled=true;
         if(courierSetup)courierSetup.disabled=true;
         try {
             const response=await fetch('/api/hub/local-services/evaluators',{
                 method:'POST',
                 headers:{'Content-Type':'application/json'},
                 body:JSON.stringify({
-                    action,project,...(id?{id}:{}),confirm_action:true,
+                    action,project,...(id?{id}:{}),
+                    ...(action==='setup-mini'&&miniSource
+                        ?{source_job_id:miniSource.value}:{}),
+                    confirm_action:true,
                 }),
             });
             const result=await response.json();
@@ -397,6 +424,7 @@
     }
     if(tinyConnect)tinyConnect.addEventListener('click',connectTinyBrains);
     if(evaluatorSetup)evaluatorSetup.addEventListener('click',()=>manageEvaluator('setup'));
+    if(evaluatorMini)evaluatorMini.addEventListener('click',()=>manageEvaluator('setup-mini'));
     if(courierSetup)courierSetup.addEventListener('click',()=>manageEvaluator('setup',undefined,'courier'));
     refresh.addEventListener('click',update);
     coordinator.addEventListener('click',()=>restart('coordinator'));

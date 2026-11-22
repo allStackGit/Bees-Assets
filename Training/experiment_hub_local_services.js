@@ -237,6 +237,7 @@ async function status(hub) {
         evaluators:{available:tinybrains.available||courier.available,
             tinybrains_available:tinybrains.available,
             tinybrains_reason:tinybrains.reason||null,
+            mini_candidates:tinybrains.mini_candidates||[],
             courier_available:courier.available,
             courier_reason:courier.reason||null,
             entries:[...tinybrains.entries.map(row=>({project:'tinybrains',...row})),
