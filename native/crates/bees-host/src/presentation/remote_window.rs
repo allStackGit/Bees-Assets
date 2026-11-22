@@ -743,7 +743,21 @@ impl PeerClient {
                     // Winnerless timeouts/draws are still real completed
                     // native battles; the source terminal receipt does not
                     // manufacture a winner merely to satisfy the client.
-                    let text = format!("{label}: {reason}");
+                    // The server attaches score only for its authenticated
+                    // owner. No display-side guess about the opposing side.
+                    let score = message["player_score"].as_i64().map(|value| {
+                        let counts = &message["player_match_counts"];
+                        if let (Some(lost), Some(returned), Some(kills)) = (
+                            counts["ships_lost"].as_u64(),
+                            counts["ships_returned"].as_u64(),
+                            counts["ships_destroyed_by_player"].as_u64(),
+                        ) {
+                            format!(" | Score {value:+}  Lost {lost} Returned {returned} Kills {kills}")
+                        } else {
+                            format!(" | Score {value:+}")
+                        }
+                    }).unwrap_or_default();
+                    let text = format!("{label}{score}: {reason}");
                     self.battle_result_receipt = Some(text.clone());
                     self.notice = text;
                     self.metrics.battle_result_receipts += 1;
