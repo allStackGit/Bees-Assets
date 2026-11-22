@@ -1866,6 +1866,10 @@ impl CampaignOutcome {
 struct CampaignFleetShipOutcome {
     fleet_ship_id: i64,
     side: i32,
+    /// Immutable class observed on the real completed CombatWorld hull.
+    /// Earlier committed receipts omit this; do not infer their class.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ship_type: Option<u8>,
     minerals_mined_this_level: i32,
     /// None only for summaries written before native loss persistence.
     /// A safe extraction or WarpGate return does not set this flag.
@@ -9001,6 +9005,7 @@ fn run_battle(
             if record_fleet_stats {
                 fleet.push(CampaignFleetShipOutcome {
                     fleet_ship_id, side: ship.side,
+                    ship_type: Some(ship.ship_type),
                     minerals_mined_this_level: value.minerals_mined_this_level,
                     is_dead: Some(killed),
                     combat: state.metadata.fleet.combat_stats(ship.entity_id),
