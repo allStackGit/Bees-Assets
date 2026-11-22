@@ -789,6 +789,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             if isinstance(home, dict):
                 home = [home.get("x"), home.get("y")]
             bee_wave_authored = (len(bee_waves) == 1 and
+                isinstance(bee_waves[0].get("squad_item_ids"), list) and
+                1 <= len(bee_waves[0]["squad_item_ids"]) <= 9 and
                 source_types_in_order(
                     source_wave_types(bee_waves[0], source_squads, source_ships, bee_side),
                     original_formation) and
