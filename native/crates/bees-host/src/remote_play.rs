@@ -1402,6 +1402,7 @@ impl NativeRemotePlay {
                         state[field] = Value::Null;
                     }
                     state["can_surrender"] = json!(false);
+                    state["can_activate_retreat"] = json!(false);
                     if let Some(squads) = state["squads"].as_array_mut() {
                         for squad in squads {
                             squad["controllable"] = json!(false);
@@ -2398,6 +2399,9 @@ fn current_state(
         // side sees only this pause flag, never the owner's private story.
         "briefing_paused": briefing_paused,
         "can_surrender": view.can_surrender(side),
+        "can_activate_retreat":
+            view.combat.retreat_activation_available(side) &&
+            view.player_authority.player_viewer_side() == Some(side),
         // Only authenticated side-owned vision and its authored fading
         // masks are sent. The remote window reuses the native pixel stencil
         // instead of revealing old sprites outside the current host sight.
