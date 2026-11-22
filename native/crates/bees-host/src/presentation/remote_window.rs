@@ -1471,13 +1471,13 @@ fn remote_tactical_hit(x: f32,y: f32) -> Option<HudAction> {
 // Side-panel squad rows are the same authoritative source-order projection
 // used to draw names and selection highlights. Noncontrollable squads stay
 // visible in the roster but cannot enter a player command through a tab.
-fn remote_squad_tab_hit(state: &Value,x: f32,y: f32) -> Option<i64> {
+fn remote_squad_tab_hit(state: &Value,x: f32,y: f32, offset: usize) -> Option<i64> {
     if !x.is_finite()||!y.is_finite()||
         x<(FIELD+14) as f32||x>=(WIDTH-14) as f32 {
         return None;
     }
     state["squads"].as_array()?.iter().filter(|s|s["owned"]==true)
-        .take(12).enumerate().find_map(|(index,squad)| {
+        .skip(offset).take(12).enumerate().find_map(|(index,squad)| {
             let top=150+index*22;
             (y>=top as f32-3.0&&y<top as f32+18.0&&
                 squad["controllable"]==true)
@@ -1706,7 +1706,7 @@ fn draw_campaign_dialogue(pixels: &mut [u32], state: &Value, line_index: usize) 
 }
 
 fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
-    selected: &[i64], notice: &str, side: i32, mode: Option<TargetMode>,
+    selected: &[i64], squad_list_offset: usize, notice: &str, side: i32, mode: Option<TargetMode>,
     patrol_start: Option<Vec2>, metrics: &WireCounts, dialogue_line: usize,
     held_fire_active: bool, shooting_menu: bool, shooting_focus: u8,
     visual: &RemoteVisual, fraction: f32,
@@ -1992,7 +1992,9 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             &format!("World {}  Tick {}",state["world_id"],state["tick"]),1,TEXT);
         let friendly=state["squads"].as_array().into_iter().flatten().filter(|s|s["owned"]==true).count();
         text::draw_at(pixels, WIDTH, FIELD+14, 111,
-            &format!("Squads {friendly}   Selected {}",selected.len()),1,MUTED);
+            &format!("Squads {friendly}   Selected {}  {}/{}",selected.len(),
+                if friendly==0 {0} else {squad_list_offset+1},
+                friendly),1,MUTED);
         if let Some(score) = state["player_score"].as_i64() {
             let counts = &state["player_match_counts"];
             let label = match (
@@ -2011,7 +2013,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 text::fit(&format!("{label}{mined}"), WIDTH-FIELD-24), 1, [198,231,248]);
         }
         for (index,squad) in state["squads"].as_array().into_iter().flatten()
-            .filter(|s|s["owned"]==true).take(12).enumerate() {
+            .filter(|s|s["owned"]==true).skip(squad_list_offset).take(12).enumerate() {
             let id=squad["owner"]["squad_id"].as_i64().unwrap_or(-1);
             let label=format!("{} ID {}: {} ships{}",if selected.contains(&id) {">"} else {" "},
                 id,squad["members"].as_array().map_or(0,Vec::len),
@@ -2626,6 +2628,9 @@ pub fn connect_remote(
     let mut shooting_focus=1_u8;
     let mut hud_press:Option<HudAction>=None;
     let mut squad_tab_press:Option<i64>=None;
+    // Presentation-only viewport into the authoritative ordered squad
+    // roster; no extra mutable copy of squad membership or commands.
+    let mut squad_list_offset=0_usize;
     let mut shooting_press:Option<u8>=None;
     let started=Instant::now();
     let mut previous_frame=started;
@@ -2857,6 +2862,7 @@ pub fn connect_remote(
             last_middle=None;minimap_dragging=false;
             camera=None;
             current_episode=(0,0);
+            squad_list_offset=0;
             dialogue_key=None;dialogue_line=0;dialogue_pause_started=None;
             last_audio_snapshot=None;
             held_fire_active=false;held_fire_target=None;
@@ -2941,6 +2947,7 @@ pub fn connect_remote(
                 if camera.is_none()||episode !=current_episode {
                     camera=Some(NativeCamera::fit(map,FIELD,HEIGHT));
                     current_episode=episode;
+                    squad_list_offset=0;
                     selected.clear();
                     submitted_selection=None;
                     mode=None;
@@ -2978,6 +2985,10 @@ pub fn connect_remote(
                 last_audio_snapshot=Some(key);
             }
         }
+        // Keep the roster viewport valid after physical squad losses.
+        let friendly_count=peer.state.as_ref().and_then(|state|state["squads"].as_array())
+            .map_or(0,|squads|squads.iter().filter(|s|s["owned"]==true).count());
+        squad_list_offset=squad_list_offset.min(friendly_count.saturating_sub(12));
         let terminal=peer.battle_result_receipt.is_some() ||
             peer.state.as_ref().is_some_and(|state|
                 state["terminal_outcome"].is_object());
@@ -3207,6 +3218,21 @@ pub fn connect_remote(
             // matching the local native camera. Unmodified wheel zooms
             // at the pointer or centers on the real host-derived minimap.
             if let Some((horizontal,vertical))=window.get_scroll_wheel() {
+                // Wheel over the roster scrolls actual squad rows instead
+                // of zooming the unrelated battlefield camera.
+                if let Some((x,y))=mouse.filter(|&(x,y)|
+                    x>=FIELD as f32 && x<WIDTH as f32 && y>=145.0 && y<412.0) {
+                    let _=(x,y);
+                    if vertical>0.0 {
+                        squad_list_offset=squad_list_offset
+                            .saturating_sub(vertical.ceil() as usize);
+                    } else if vertical<0.0 {
+                        squad_list_offset=squad_list_offset
+                            .saturating_add((-vertical).ceil() as usize)
+                            .min(friendly_count.saturating_sub(12));
+                    }
+                    squad_tab_press=None;
+                } else {
                 let wheel_pixels=120.0/cam.pixels_per_unit;
                 let mut wheel_pan=Vec2::new(
                     horizontal.clamp(-10.0,10.0)*wheel_pixels,0.0);
@@ -3227,6 +3253,7 @@ pub fn connect_remote(
                     }
                 }
                 cam.center+=wheel_pan;
+                }
             }
             if window.is_key_down(Key::Equal){cam.zoom_at(1.035,FIELD as f32/2.0,
                 HEIGHT as f32/2.0,FIELD,HEIGHT,None);}
@@ -3329,7 +3356,7 @@ pub fn connect_remote(
                 hud_press=mouse.and_then(|(x,y)|remote_tactical_hit(x,y));
                 squad_tab_press=if hud_press.is_none() {
                     peer.state.as_ref().and_then(|state|
-                        mouse.and_then(|(x,y)|remote_squad_tab_hit(state,x,y)))
+                        mouse.and_then(|(x,y)|remote_squad_tab_hit(state,x,y,squad_list_offset)))
                 }else{None};
                 minimap_dragging=battlefield_input&&mode.is_none()&&hud_press.is_none()&&
                     squad_tab_press.is_none()&&minimap_point.is_some();
@@ -3339,7 +3366,7 @@ pub fn connect_remote(
                     mouse.and_then(|(x,y)|remote_tactical_hit(x,y))==Some(action));
                 let clicked_tab=squad_tab_press.take().filter(|&id|
                     peer.state.as_ref().and_then(|state|
-                        mouse.and_then(|(x,y)|remote_squad_tab_hit(state,x,y)))
+                        mouse.and_then(|(x,y)|remote_squad_tab_hit(state,x,y,squad_list_offset)))
                         ==Some(id));
                 if let Some(id)=clicked_tab.filter(|_| battlefield_input) {
                     peer.metrics.squad_tab_clicks+=1;
@@ -3653,7 +3680,7 @@ pub fn connect_remote(
         let mut fog_masked = 0_u64;
         let mut combat_hud_draws = [0_u64; 7];
         let hud_started=Instant::now();
-        draw(&mut pixels,peer.state.as_ref(),camera,&selected,&peer.notice,
+        draw(&mut pixels,peer.state.as_ref(),camera,&selected,squad_list_offset,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
             held_fire_active,shooting_menu,shooting_focus,
             &peer.visual,visual_fraction,&artwork,show_art,show_weapon_ranges,
