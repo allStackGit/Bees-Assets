@@ -129,7 +129,6 @@ pub struct NativeClient {
     /// Read-only Fleet Codex modal. Reuses the existing help pause/input
     /// boundary rather than introducing an independent game clock.
     codex_open: bool,
-    codex_seen: [bool; bees_sim::ship_assets::SHIP_TYPE_COUNT],
     codex_selected: u8,
     // Window titles are OS messages, not part of a physical simulation
     // step. Refresh their optional diagnostics at human-readable cadence.
@@ -243,7 +242,6 @@ impl NativeClient {
             selected_world: 0, selection_owner: None, hotseat: None,
             paused: false, show_controls_help: false,
             codex_open: false,
-            codex_seen: [false; bees_sim::ship_assets::SHIP_TYPE_COUNT],
             codex_selected: 18,
             last_title_update: None,
             performance: NativeLivePerformance::new(now),
@@ -536,7 +534,6 @@ impl NativeClient {
             // not inherit the previous view's discovered enemy classes.
             self.codex_open = false;
             self.show_controls_help = false;
-            self.codex_seen.fill(false);
             self.dialogue_sequence = None;
             self.dialogue_pause_started = None;
             self.held_fire_target = None;
@@ -549,11 +546,9 @@ impl NativeClient {
             self.show_controls_help = self.codex_open;
             self.next_step = Instant::now();
             if self.codex_open {
-                for kind in self.renderer.codex_visible_ship_types(&view) {
-                    self.codex_seen[usize::from(kind)] = true;
-                }
-                if !self.codex_seen[usize::from(self.codex_selected)] {
-                    self.codex_selected = self.codex_seen.iter()
+                let known = self.renderer.codex_seen_types();
+                if !known[usize::from(self.codex_selected)] {
+                    self.codex_selected = known.iter()
                         .position(|seen| *seen).unwrap_or(18) as u8;
                 }
                 self.renderer.show_shooting_menu = false;
@@ -567,7 +562,7 @@ impl NativeClient {
             }
         }
         if self.codex_open {
-            let known = self.codex_seen.iter().enumerate()
+            let known = self.renderer.codex_seen_types().iter().enumerate()
                 .filter_map(|(kind, known)| (*known &&
                     kind != usize::from(bees_sim::ship_assets::HUMAN_TARGET_TYPE))
                     .then_some(kind as u8))
@@ -1506,7 +1501,7 @@ impl NativeClient {
         // authenticated player commands remain disabled until it closes.
         if self.codex_open {
             self.renderer.draw_fleet_codex(
-                &view, &self.codex_seen, self.codex_selected,
+                &view, self.renderer.codex_seen_types(), self.codex_selected,
             );
         } else if self.show_controls_help {
             self.renderer.draw_controls_help();
