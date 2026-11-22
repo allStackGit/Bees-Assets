@@ -1079,6 +1079,9 @@ pub struct CombatWorld {
     /// state for each bound ship; no secondary training-only movement world.
     // Stable ship-ID iteration is necessary for reproducible shot IDs.
     policy_ship_runtime: BTreeMap<i64, PolicyShipRuntime>,
+    // Exact number of live policy owners with either mining or healing.
+    // A sparse non-serialized work gauge: restored from canonical owners.
+    policy_capability_owner_count: usize,
     ship_weapons: BTreeMap<i64, ShipWeapons>,
     automatic_weapon_measurements: AutomaticWeaponMeasurements,
     automatic_rank_candidates: Vec<crate::targeting::NativeEnemyTargetStats>,
@@ -1318,6 +1321,7 @@ impl CombatWorld {
             ship_bounds_overrides: HashSet::new(),
             map_border_measurements: GameMapBorderMeasurements::default(),
             policy_ship_runtime: BTreeMap::new(),
+            policy_capability_owner_count: 0,
             ship_weapons: BTreeMap::new(),
             automatic_weapon_measurements: AutomaticWeaponMeasurements::default(),
             automatic_rank_candidates: Vec::new(), automatic_distance_keys: HashMap::new(),
@@ -1580,7 +1584,12 @@ impl CombatWorld {
             }
         }
         self.ship_target_front_offsets.remove(&victim_id);
-        let policy_binding_revision = self.policy_ship_runtime.remove(&victim_id)
+        let departed_policy = self.policy_ship_runtime.remove(&victim_id);
+        if departed_policy.as_ref().is_some_and(|owner|
+            owner.mining.is_some() || owner.healing.is_some()) {
+            self.policy_capability_owner_count -= 1;
+        }
+        let policy_binding_revision = departed_policy
             .map(|binding| binding.bind_revision);
         if policy_binding_revision.is_some() {
             self.bump_policy_roster_revision();
@@ -2433,6 +2442,9 @@ impl CombatWorld {
         let policy = snapshot.policy;
         self.policy_roster_revision = policy.roster_revision;
         self.policy_ship_runtime = policy.controllers;
+        self.policy_capability_owner_count = self.policy_ship_runtime.values()
+            .filter(|owner| owner.mining.is_some() || owner.healing.is_some())
+            .count();
         self.policy_decision_seen = policy.decision_seen;
         self.policy_pending_ship_specials = policy.pending_specials;
         self.policy_pending_mining = policy.pending_mining;
