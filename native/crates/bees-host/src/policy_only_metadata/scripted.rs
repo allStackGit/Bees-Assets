@@ -274,6 +274,7 @@ pub enum NativeScriptedActivation {
     /// A canonical CombatEvent::ShipDied from this world's authored
     /// squad roster. The trigger is a real event, not an absent-ship poll.
     OnShipDestroyed(i64),
+    OnMapObjectDestroyed(i64),
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -335,6 +336,7 @@ impl NativePolicyOnlyMetadata {
         deferred: &HashSet<i64>,
         with_entry_order: &HashSet<i64>,
         known_ships: &HashSet<i64>,
+        known_map_objects: &HashSet<i64>,
         vacant_squads: &HashMap<i64, i32>,
         demolition_target: Option<(i32, i64)>,
         authored_fire_tanks: &HashSet<i64>,
@@ -418,7 +420,8 @@ impl NativePolicyOnlyMetadata {
                     NativeScriptedActivation::OnDeployment |
                     NativeScriptedActivation::OnArrival |
                     NativeScriptedActivation::OnCampaignCue(_) |
-                    NativeScriptedActivation::OnShipDestroyed(_))) ||
+                    NativeScriptedActivation::OnShipDestroyed(_) |
+                    NativeScriptedActivation::OnMapObjectDestroyed(_))) ||
                 (!is_deferred && matches!(plan.activation,
                     NativeScriptedActivation::OnDeployment |
                     NativeScriptedActivation::OnArrival)) {
@@ -431,15 +434,25 @@ impl NativePolicyOnlyMetadata {
             let required_event = match plan.activation {
                 NativeScriptedActivation::OnCampaignCue(cue) => {
                     let event = NativeMissionEvent::CampaignCue(cue);
-                    if !event.valid_for(campaign, |_| false) {
+                    if !event.valid_for(campaign, |_| false, |_| false) {
                         return Err("scripted campaign cue is not available in this Level");
                     }
                     Some(event)
                 }
                 NativeScriptedActivation::OnShipDestroyed(ship_id) => {
                     let event = NativeMissionEvent::ShipDestroyed(ship_id);
-                    if !event.valid_for(campaign, |id| known_ships.contains(&id)) {
+                    if !event.valid_for(campaign,
+                        |id| known_ships.contains(&id), |_| false) {
                         return Err("scripted ship-death trigger needs an authored source ship");
+                    }
+                    Some(event)
+                }
+                NativeScriptedActivation::OnMapObjectDestroyed(object_id) => {
+                    let event = NativeMissionEvent::MapObjectDestroyed(object_id);
+                    if !event.valid_for(campaign, |_| false,
+                        |id| known_map_objects.contains(&id))
+                    {
+                        return Err("scripted MapObject trigger needs a live physical source object");
                     }
                     Some(event)
                 }
@@ -450,7 +463,8 @@ impl NativePolicyOnlyMetadata {
                 NativeScriptedActivation::OnDeployment |
                 NativeScriptedActivation::OnArrival |
                 NativeScriptedActivation::OnCampaignCue(_) |
-                NativeScriptedActivation::OnShipDestroyed(_) => 1,
+                NativeScriptedActivation::OnShipDestroyed(_) |
+                NativeScriptedActivation::OnMapObjectDestroyed(_) => 1,
                 NativeScriptedActivation::AfterSeconds(seconds) => {
                     let tick = (f64::from(seconds) / f64::from(dt_seconds)).floor() + 1.0;
                     if !seconds.is_finite() || seconds <= 0.0 ||
@@ -603,6 +617,8 @@ impl NativePolicyOnlyMetadata {
                         counts.waiting_for_campaign_cue += 1,
                     Some(NativeMissionEvent::ShipDestroyed(_)) =>
                         counts.waiting_for_ship_death += 1,
+                    Some(NativeMissionEvent::MapObjectDestroyed(_)) =>
+                        counts.waiting_for_map_object_destruction += 1,
                     None => unreachable!("ungated queue has no source event"),
                 }
             } else if roster.get(state.owner).is_none() {
