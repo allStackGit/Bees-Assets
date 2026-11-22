@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use bees_hivemind::session::SquadLifetime;
 use bees_gameplay::level_events::NativeLevelEventProcessor;
 use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
 use bees_gameplay::level_host::NativeLevelActivationContext;
