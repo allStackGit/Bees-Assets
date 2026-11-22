@@ -116,8 +116,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'gpu_microbatch_qualification_seconds',
             'gpu_execution_fused_calls','gpu_execution_stream_calls',
             'gpu_execution_graph_calls','gpu_graph_replays',
-            'gpu_training_selected_parallel','gpu_training_parallel_batches',
-            'gpu_training_calibration_complete',
+            'gpu_training_selected_parallel','gpu_training_selected_streams',
+            'gpu_training_parallel_batches','gpu_training_calibration_complete',
             'gpu_training_last_qualified_work_per_second',
         ])retain(name,reported[name]);
         for(const name of ['ppo_compiled_loss_active',
