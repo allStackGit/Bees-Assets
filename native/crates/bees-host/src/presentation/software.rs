@@ -3242,15 +3242,26 @@ impl NativeSoftwareRenderer {
                 let (lost, returned, kills) = counts.unwrap_or((0, 0, 0));
                 format!("Score {score:+}  |  Lost {lost}  Returned {returned}  Kills {kills}")
             });
+        let loss_breakdown = view.player_authority.player_viewer_side()
+            .and_then(|side| view.loss_types_for_side(side))
+            .and_then(|losses| {
+                let parts = losses.iter().enumerate()
+                    .filter(|(_, &amount)| amount != 0)
+                    .map(|(type_id, amount)| format!("{type_id}:{amount}"))
+                    .collect::<Vec<_>>();
+                (!parts.is_empty()).then(|| format!("Lost by class: {}", parts.join("  ")))
+            });
         let title_scale = if self.width >= 400 && self.height >= 176 { 2 } else { 1 };
         let top = if self.height >= 200 { 20 } else { 0 };
         let width = (text::width(&title, title_scale).max(text::width(&detail, 1))
             .max(text::width(&context, 1))
-            .max(player_summary.as_deref().map_or(0, |row| text::width(row, 1))) +
+            .max(player_summary.as_deref().map_or(0, |row| text::width(row, 1)))
+            .max(loss_breakdown.as_deref().map_or(0, |row| text::width(row, 1))) +
             40).min(self.width);
         let left = (self.width - width) / 2;
         let panel_height = (title_scale + 2) * text::HEIGHT + 20 +
-            usize::from(player_summary.is_some()) * (text::HEIGHT + 4);
+            usize::from(player_summary.is_some()) * (text::HEIGHT + 4) +
+            usize::from(loss_breakdown.is_some()) * (text::HEIGHT + 4);
         for y in top..(top + panel_height).min(self.height) {
             let start = y * self.width + left;
             self.pixels[start..start + width].fill(if y < top + 2 { 0xe1a34b } else { 0x152133 });
@@ -3264,6 +3275,12 @@ impl NativeSoftwareRenderer {
             text::draw_centered(&mut self.pixels, self.width,
                 title_top + (title_scale + 1) * text::HEIGHT + 4,
                 &summary, 1, [198, 231, 248]);
+        }
+        if let Some(breakdown) = loss_breakdown {
+            text::draw_centered(&mut self.pixels, self.width,
+                title_top + (title_scale + 2) * text::HEIGHT + 8,
+                &text::fit(&breakdown, width.saturating_sub(12)),
+                1, [198, 231, 248]);
         }
     }
 

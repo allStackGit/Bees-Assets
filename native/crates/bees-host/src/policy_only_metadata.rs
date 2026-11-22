@@ -1277,6 +1277,14 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             (row.ships_lost, row.ships_returned, row.ships_destroyed_by_player))
     }
 
+    fn player_loss_types(&self) -> Option<[u64; bees_sim::ship_assets::SHIP_TYPE_COUNT]> {
+        self.fleet.player_match_counts().map(|row| row.ships_lost_by_type)
+    }
+
+    fn opponent_loss_types(&self) -> Option<[u64; bees_sim::ship_assets::SHIP_TYPE_COUNT]> {
+        self.fleet.opponent_match_counts().map(|row| row.ships_lost_by_type)
+    }
+
     fn observe_fire_barge_chain_damage(&mut self, killer_ship_id: i64, tsv_loss: i32) {
         self.fleet.record_fire_barge_chain_damage(killer_ship_id, tsv_loss);
     }

@@ -1795,8 +1795,10 @@ where
             campaign_dialogue_side: world.state.campaign_dialogue.as_ref().map(|dialogue| dialogue.player_side()),
             campaign_score: world.state.metadata.campaign_score_snapshot(),
             player_match_counts: world.state.metadata.player_match_counts(),
+            player_loss_types: world.state.metadata.player_loss_types(),
             opponent_score: world.state.metadata.opponent_score_snapshot(),
             opponent_match_counts: world.state.metadata.opponent_match_counts(),
+            opponent_loss_types: world.state.metadata.opponent_loss_types(),
             campaign_objective: world.state.campaign_dialogue.as_ref()
                 .and_then(|dialogue| dialogue.objective_kind()),
             rescue_barges: world.state.campaign_dialogue.as_ref()
