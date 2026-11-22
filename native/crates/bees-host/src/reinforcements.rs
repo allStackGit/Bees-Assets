@@ -472,7 +472,8 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                     if !event.valid_for(self.campaign_dialogue, |id|
                         self.entities.iter().any(|entity| matches!(
                             entity,
-                            NativeAuthoredEntity::Ship(ship) if ship.entity_id == id
+                            NativeAuthoredEntity::Ship(ship)
+                                if ship.entity_id == id && !ship.vitals.is_dead()
                         )), |_| false, |_| false
                     ) {
                         return Err("Reinforcement ship-death trigger needs an authored source ship");
