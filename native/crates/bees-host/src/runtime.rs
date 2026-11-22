@@ -2004,7 +2004,6 @@ where
             last_reinforcement_tick:
                 world.state.events.last_reinforcement_tick(),
             combat: &world.state.combat,
-            fleet: &world.state.metadata.fleet,
             collision_matrix: &self.simulation.rules().collision_matrix,
             roster: world.state.events.roster(),
             commands: world.state.events.commands(),
