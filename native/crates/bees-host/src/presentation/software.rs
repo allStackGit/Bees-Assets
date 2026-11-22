@@ -1139,41 +1139,58 @@ impl NativeSoftwareRenderer {
         )
     }
 
-    /// Source BargeLoadingChargeAnimation / BargeChargeAnimation use the
-    /// exact authored clips and child transform. Their phase comes only
-    /// from the shared CombatWorld (or an authenticated LAN projection).
+    /// The source Barge prefab owns three independent presentation clips:
+    /// wind-up (0), active rush (1), and a charge-image trail (2). Phase
+    /// and elapsed time always come from the real CombatWorld. The trail
+    /// runs its authentic 0.8 second clip and 0.25 second downward shifts.
+    /// This is a post-pass on the ordinary (recolored) ship sprite.
     fn draw_barge_charge_effect(
         &mut self, phase: Option<(u8, f32)>, color: Option<[u8; 3]>,
         position: Vec2, radians: f32,
-    ) -> bool {
+    ) -> usize {
         let Some((phase, elapsed)) = phase.filter(|(phase, seconds)|
             matches!(phase, 1 | 2) && seconds.is_finite() && *seconds >= 0.0)
-        else { return false; };
-        let Some(atlas) = source_ship_animation_art() else { return false; };
-        let variant = usize::from(phase - 1);
-        let Some(clip) = atlas.clips[variant].as_ref() else { return false; };
-        let frame = ((elapsed * clip.frames_per_second).floor() as usize)
-            % clip.frames.len();
-        let art = &clip.frames[frame];
-        let recolored = color.filter(|_| art.recolor_mask.is_some()).map(|rgb| {
-            let key = (0, variant as u8, frame, rgb);
-            if !self.animated_ship_art.contains_key(&key) {
-                if self.animated_ship_art.len() >= 512 {
-                    self.animated_ship_art.clear();
-                }
-                self.animated_ship_art.insert(key, Arc::new(art.recolored(rgb)));
+        else { return 0; };
+        let Some(atlas) = source_ship_animation_art() else { return 0; };
+        let main_variant = usize::from(phase - 1);
+        let mut drawn = 0;
+        for variant in [main_variant, 2usize] {
+            if variant == 2 && (phase != 2 || elapsed >= 0.8) {
+                continue;
             }
-            Arc::clone(self.animated_ship_art.get(&key)
-                .expect("installed original Barge charge sprite"))
-        });
-        // Barge.prefab's loading sprite is at (0,0), while its active
-        // charge animation child is at local (0,-1.5), rotating with hull.
-        let offset = if phase == 2 { 1.5 } else { 0.0 };
-        let point = position + Vec2::new(offset * radians.sin(),
-            -offset * radians.cos());
-        let sprite = recolored.as_deref().unwrap_or(&art.sprite);
-        self.draw_sprite(sprite, point, radians,
-            self.camera.pixels_per_unit / art.pixels_per_unit, 1.0)
+            let Some(clip) = atlas.clips.get(variant).and_then(Option::as_ref) else {
+                continue;
+            };
+            let frame = ((elapsed * clip.frames_per_second).floor() as usize)
+                % clip.frames.len();
+            let art = &clip.frames[frame];
+            let recolored = color.filter(|_| art.recolor_mask.is_some()).map(|rgb| {
+                let key = (0, variant as u8, frame, rgb);
+                if !self.animated_ship_art.contains_key(&key) {
+                    if self.animated_ship_art.len() >= 512 {
+                        self.animated_ship_art.clear();
+                    }
+                    self.animated_ship_art.insert(key, Arc::new(art.recolored(rgb)));
+                }
+                Arc::clone(self.animated_ship_art.get(&key)
+                    .expect("installed source Barge animation recolor"))
+            });
+            // Original child transforms: loading (0,0), charge (0,-1.5),
+            // charge-image (0,-1.5) with -0.35 each 0.25 scaled seconds.
+            let offset = if phase == 1 { 0.0 }
+                else if variant == 2 {
+                    1.5 + 0.35 * (elapsed / 0.25).floor()
+                } else { 1.5 };
+            let point = position + Vec2::new(
+                offset * radians.sin(), -offset * radians.cos(),
+            );
+            let sprite = recolored.as_deref().unwrap_or(&art.sprite);
+            drawn += usize::from(self.draw_sprite(
+                sprite, point, radians,
+                self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
+            ));
+        }
+        drawn
     }
 
     #[cfg(feature = "client")]
@@ -1181,7 +1198,7 @@ impl NativeSoftwareRenderer {
         &mut self, ship_type: u8, point: Vec2, rotation_degrees: f32,
         color_rgb: Option<[u8; 3]>, animation: Option<(u8, f32)>,
         barge_charge: Option<(u8, f32)>,
-    ) -> Option<(bool, bool)> {
+    ) -> Option<(bool, usize)> {
         // Authenticated host packets select a presentation clip only for
         // already visible ships. Both local and remote use the *same*
         // native original-art decoder and exact source squad recolor mask.
@@ -1919,12 +1936,11 @@ impl NativeSoftwareRenderer {
                     ) {
                     counts.carrier_deck_overlay_draws += 1;
                 }
-                if ship.ship_type == 0 &&
-                    self.draw_barge_charge_effect(
+                if ship.ship_type == 0 {
+                    counts.barge_charge_effect_draws += self.draw_barge_charge_effect(
                         view.combat.barge_charge_visual_phase(ship.entity_id),
                         custom_rgb, pose.position, pose.rotation_degrees.to_radians(),
-                    ) {
-                    counts.barge_charge_effect_draws += 1;
+                    );
                 }
             } else {
                 counts.ship_fallback_hulls += 1;
