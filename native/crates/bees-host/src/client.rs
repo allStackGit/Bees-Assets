@@ -361,6 +361,12 @@ impl NativeClient {
         self.audio.measurements()
     }
 
+    /// Load user-local mixer preferences before attaching a Level soundtrack.
+    /// A bad settings file never prevents the campaign from starting.
+    pub fn set_audio_preferences(&mut self, path: std::path::PathBuf) {
+        self.audio.load_preferences(path);
+    }
+
     pub fn selected_world(&self) -> usize { self.selected_world }
 
     /// Used only with the source-authored two-local-player permission
