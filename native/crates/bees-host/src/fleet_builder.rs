@@ -74,12 +74,17 @@ impl ReinforcementPattern {
 enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Scouts, ReconMiners, Chargers, FireBarges, Siege, Gate, Detonators, Queen }
 
 #[derive(Clone, Copy)]
-enum AiTactics { Aggressive, Circle, RightSwipe, LeftSwipe, InAndOut, Mixed }
+enum AiTactics {
+    Aggressive, TargetNearest, RetreatNearest,
+    Circle, RightSwipe, LeftSwipe, InAndOut, Mixed,
+}
 
 impl AiTactics {
     fn label(self) -> &'static str {
         match self {
             Self::Aggressive => "aggressive",
+            Self::TargetNearest => "target-nearest",
+            Self::RetreatNearest => "defensive-retreat",
             Self::Circle => "circle",
             Self::RightSwipe => "right-swipe",
             Self::LeftSwipe => "left-swipe",
@@ -101,6 +106,8 @@ impl AiTactics {
         };
         match tactic {
             Self::Aggressive => "aggressive_nearest",
+            Self::TargetNearest => "target_nearest_enemy",
+            Self::RetreatNearest => "retreat_nearest",
             Self::Circle => "circle_nearest",
             Self::RightSwipe => "right_swipe_nearest",
             Self::LeftSwipe => "left_swipe_nearest",
@@ -153,6 +160,8 @@ fn choose_reinforcements(
 fn choose_ai_tactics(side: usize) -> Result<Option<AiTactics>, Box<dyn Error>> {
     let options = [
         ("Aggressive pursuit", "  [Source Aggressive command]"),
+        ("Target the nearest squad", "  [Live source TargetEnemy command]"),
+        ("Disengage from nearest opponent", "  [Source defensive Retreat command]"),
         ("Circle the target", "  [Source CircleSquad command]"),
         ("Right-side swipe", "  [Source RightSwipe command]"),
         ("Left-side swipe", "  [Source LeftSwipe command]"),
@@ -172,10 +181,12 @@ fn choose_ai_tactics(side: usize) -> Result<Option<AiTactics>, Box<dyn Error>> {
     };
     Ok(Some(match chosen {
         0 => AiTactics::Aggressive,
-        1 => AiTactics::Circle,
-        2 => AiTactics::RightSwipe,
-        3 => AiTactics::LeftSwipe,
-        4 => AiTactics::InAndOut,
+        1 => AiTactics::TargetNearest,
+        2 => AiTactics::RetreatNearest,
+        3 => AiTactics::Circle,
+        4 => AiTactics::RightSwipe,
+        5 => AiTactics::LeftSwipe,
+        6 => AiTactics::InAndOut,
         _ => AiTactics::Mixed,
     }))
 }
