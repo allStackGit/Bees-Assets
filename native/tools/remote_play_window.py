@@ -108,6 +108,12 @@ class RemoteBattleWindow:
         )
         if not console.spectator:
             self.retreat_button.pack(side="left", padx=10)
+        self.codex_button = ttk.Button(
+            self.footer, text="Fleet Codex", command=self.show_codex,
+            state="disabled",
+        )
+        if not console.spectator:
+            self.codex_button.pack(side="left", padx=10)
         self.info = tk.StringVar(value=(
             "Read-only faction view — wheel zoom, middle-drag pan"
             if console.spectator else
@@ -211,6 +217,24 @@ class RemoteBattleWindow:
     def notice(self, message):
         self.last_feedback = message
         self.status.set(message)
+
+    def show_codex(self):
+        state = self.state
+        if (self.console.spectator or state is None or
+                state.get("campaign_codex_gate") is not True):
+            self.notice("Campaign Codex unavailable to this player side")
+            return
+        entries = state.get("campaign_codex_entries")
+        if entries is None:
+            self.notice("This native host does not expose named Codex entries")
+            return
+        rows = [f"{entry['ship_type']:>2}  {entry['name']}" for entry in entries]
+        messagebox.showinfo(
+            "Fleet Codex",
+            f"{len(rows)} source ship classes unlocked\n\n" +
+            ("\n".join(rows) if rows else "No ship classes unlocked yet"),
+            parent=self.root,
+        )
 
     def activate_retreat(self):
         state = self.state
@@ -439,6 +463,14 @@ class RemoteBattleWindow:
         )
         self.retreat_button.state(
             ["!disabled"] if can_retreat else ["disabled"]
+        )
+        has_codex = (
+            not self.console.spectator and state is not None and
+            state.get("campaign_codex_gate") is True and
+            state.get("campaign_codex_entries") is not None
+        )
+        self.codex_button.state(
+            ["!disabled"] if has_codex else ["disabled"]
         )
         terminal = self.console.battle_receipt_snapshot()
         campaign_receipt = self.console.campaign_receipt_snapshot()
