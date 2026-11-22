@@ -1328,7 +1328,12 @@ fn draw_remote_minimap(
     }
     let target = &state["campaign_objective"];
     let objective_ship = target["protected_ship_id"].as_i64()
-        .or_else(|| target["escorted_ship_id"].as_i64());
+        .or_else(|| target["escorted_ship_id"].as_i64())
+        .or_else(|| target["target_ship_id"].as_i64());
+    // An opposing player never receives private rescue identities; a
+    // visible enemy target remains highlighted only if it appears in the
+    // host's normal side-filtered ship projection.
+    let rescue_barges = target["barge_ids"].as_array();
     let objective_object = target["target_map_object_id"].as_i64();
     let mut ship_markers = 0_u64;
     let mut objective_markers = 0_u64;
@@ -1336,7 +1341,9 @@ fn draw_remote_minimap(
         let Some(position) = visual.position(ship, 0, fraction) else { continue };
         let Some((x, y)) = layout.project(position) else { continue };
         let id = ship["id"].as_i64().unwrap_or(-1);
-        let objective = objective_ship == Some(id);
+        let objective = objective_ship == Some(id) ||
+            rescue_barges.is_some_and(|barges|
+                barges.iter().any(|barge| barge.as_i64() == Some(id)));
         let selected = highlighted.contains(&id);
         let center = (x.round() as i32, y.round() as i32);
         let color = if objective { GOLD }
