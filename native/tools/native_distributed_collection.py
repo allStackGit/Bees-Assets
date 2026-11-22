@@ -722,7 +722,9 @@ def wait_for_collections(inbox, orders, timeout_seconds, progress=None,
                         })
             if receipt.is_file():
                 verified = verify_bundle(receipt, job, orders)
-                verify_bundle_files(receipt)
+                verify_bundle_files(
+                    receipt, expected_receipt_sha256=verified["sha256"],
+                )
                 results[job["id"]] = verified
                 if progress is not None:
                     progress("native_distributed_collector_received", {
