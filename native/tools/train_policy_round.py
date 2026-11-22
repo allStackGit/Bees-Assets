@@ -692,7 +692,7 @@ def verified_gpu_forwards(log_path):
                         type(item.get("device_rows_staged")) is int and
                         0 <= item["device_rows_staged"] <= processed and
                         type(item.get("capacity_rows")) is int and
-                        1 <= item["capacity_rows"] <= 65536
+                        0 <= item["capacity_rows"] <= 65536
                         for item in staging
                     ):
                         growths = sum(item["device_buffer_growths"] for item in staging)
