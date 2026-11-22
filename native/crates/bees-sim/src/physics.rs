@@ -1020,6 +1020,9 @@ pub struct PhysicsStepCounts {
     /// Body-plus-proximity sources sharing one broadphase query this tick.
     #[serde(default)]
     pub obstacle_contact_queries_merged: u64,
+    /// Authored stationary obstacle hull updates avoided this fixed tick.
+    #[serde(default)]
+    pub stationary_obstacle_hulls_reused: u64,
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
     pub obstacle_trigger_enters: u64,
@@ -2338,13 +2341,27 @@ impl KinematicPhysics {
         let mut has_ship_contact_obstacles = false;
         let mut has_body_contact_obstacles = false;
         let mut has_ship_proximity_sources = false;
+        // A stationary authored polygon, border or map prop retains the
+        // exact previous rotated collider. Only a moving body or a body
+        // whose external mutable view invalidated cached geometry needs
+        // its expensive hull/proximity/clearance transformations repeated.
+        // The one dirty flag also covers source shape replacements.
+        let refresh_external_hulls = self.obstacle_hulls_dirty;
         for &index in &self.active_obstacle_indices {
             let obstacle = &mut self.obstacles[index];
             if !obstacle.active { continue; }
             active_obstacle_count += 1;
-            obstacle.pose.position += obstacle.linear_velocity * dt;
-            obstacle.pose.rotation_degrees += obstacle.angular_velocity_degrees * dt;
-            obstacle.update_hull();
+            let moving = obstacle.linear_velocity != Vec2::ZERO ||
+                obstacle.angular_velocity_degrees != 0.0;
+            if moving {
+                obstacle.pose.position += obstacle.linear_velocity * dt;
+                obstacle.pose.rotation_degrees += obstacle.angular_velocity_degrees * dt;
+            }
+            if moving || refresh_external_hulls {
+                obstacle.update_hull();
+            } else {
+                self.counts.stationary_obstacle_hulls_reused += 1;
+            }
             has_ship_contact_obstacles |= obstacle.tracks_ship_contacts &&
                 obstacle.collider.bounds.is_some();
             has_body_contact_obstacles |= obstacle.tracks_body_contacts;
