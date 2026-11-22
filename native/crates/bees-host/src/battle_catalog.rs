@@ -684,28 +684,34 @@ impl CampaignProgress<'_> {
         ids.into_iter().filter_map(|id| {
             let name = self.fleet_ship_name(id)
                 .map_or(String::new(), |name| format!(" ({name})"));
+            let purchase = self.purchased_ship(id);
+            let authored = self.authored_roster.get(&id);
+            let assignment = purchase.map(|(_, ship)| ship.saved_squad_id)
+                .or_else(|| authored.map(|owner| owner.current_saved_squad_id))
+                .map(|squad| if squad == 0 {
+                    " Reserve".to_owned()
+                } else {
+                    format!(" {}", self.squad_label(squad))
+                }).unwrap_or_default();
             if let Some(ship) = self.fleet.get(&id) {
                 return Some(format!(
-                    "#{id}{name} S{} W{}/{} M{} Hit{} Taken{} Kill{}{}",
+                    "#{id}{name} S{} W{}/{} M{} Hit{} Taken{} Kill{}{}{}",
                     ship.side, ship.battles_won, ship.battles_fought,
                     ship.minerals_mined, ship.combat.enemy_tsv_damage_done,
                     ship.combat.tsv_damage_received, ship.combat.attributed_enemy_kills,
-                    if ship.is_dead { " LOST" } else { "" },
+                    if ship.is_dead { " LOST" } else { "" }, assignment,
                 ));
             }
-            if let Some((side, purchase)) = self.purchases.iter().find(|(_, ship)|
-                ship.fleet_ship_id == id)
-            {
+            if let Some((side, purchase)) = purchase {
                 return Some(format!(
-                    "#{id}{name} S{side} Type {} Purchased - no completed battles",
+                    "#{id}{name} S{side} Type {} Purchased - no completed battles{assignment}",
                     purchase.ship_type,
                 ));
             }
-            self.authored_roster.get(&id).map(|owner|
-                format!(
-                    "#{id}{name} S{} Original - no completed battles",
-                    owner.side,
-                ))
+            authored.map(|owner| format!(
+                "#{id}{name} S{} Original - no completed battles{assignment}",
+                owner.side,
+            ))
         }).collect()
     }
 }
