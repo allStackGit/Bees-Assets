@@ -32,7 +32,9 @@ const COORDINATOR_ONLY=new Set([
     'experiment_hub_admin.js','experiment_hub_releases.js',
     'experiment_hub_local_services.js','experiment_hub_job_export.js',
     'experiment_hub_history.js','experiment_hub_evaluation_history.js',
-    'experiment_hub_observations.js',
+    'experiment_hub_observations.js','experiment_hub_throughput.js',
+    'experiment_hub_local_evaluators.js',
+    'experiment_hub_local_courier_evaluators.js',
     // Evaluation and Design helpers are also imported by native agent
     // adapters: updates must restart BOTH processes at an idle boundary.
 ]);
@@ -43,12 +45,20 @@ const AGENT_ONLY=new Set([
     'experiment_hub_remote_evaluator_control.js',
     'experiment_hub_gpu_inventory.js',
     'experiment_hub_worker_updater.js',
+    'experiment_hub_tinybrains_persistent_adapter.js',
 ]);
 function workerActivationImpact(changes) {
     const impact={coordinator:false,agent:false};
     for(const file of changes) {
         if(FRONTEND_PATHS.has(file)||/\.(?:md|meta)$/.test(file)||
             /(?:_test|_tests)\.(?:js|py)$/.test(file))continue;
+        // Python entrypoints are executed by native jobs and independent
+        // evaluators, not imported by the long-lived Node coordinator.
+        // Still ship them in worker releases for other enrolled machines.
+        if(file.startsWith('Training/')&&file.endsWith('.py')) {
+            impact.agent=true;
+            continue;
+        }
         const name=path.basename(file);
         if(!AGENT_ONLY.has(name))impact.coordinator=true;
         if(!COORDINATOR_ONLY.has(name))impact.agent=true;
