@@ -173,7 +173,8 @@ class FrozenInferenceMicrobatcher:
                               groups=0, coalesced=0, rejected=0, fallbacks=0,
                               max_queue_depth=0, admitted_profiles=0,
                               rejected_profiles=0, qualification_seconds=0.0,
-                              profile_refreshes=0, bucketed_groups=0)
+                              profile_refreshes=0, bucketed_groups=0,
+                              head_of_line_bypasses=0)
         self._worker = Thread(target=self._serve, name="hub-gpu-microbatch", daemon=True)
         self._worker.start()
 
@@ -274,20 +275,38 @@ class FrozenInferenceMicrobatcher:
                 group, layouts, rows, batch_bytes = [], {}, 0, 0
                 while len(group) < self.max_requests:
                     if self._pending:
-                        item = self._pending[0]
-                        shape = tuple((x.shape[1:], x.dtype) for x in item.inputs)
-                        if (rows+item.rows > self.max_batch_rows or
-                                batch_bytes+item.input_bytes>self.max_batch_bytes or
-                                item.model_id in layouts and
-                                layouts[item.model_id] != shape):
-                            break
-                        self._pending.popleft()
-                        self._active_group = group
-                        layouts[item.model_id] = shape
-                        group.append(item)
-                        rows += item.rows
-                        batch_bytes += item.input_bytes
-                        if rows >= self.max_batch_rows or batch_bytes >= self.max_batch_bytes:
+                        deferred, blocked = deque(), set()
+                        # Scanning a bounded prefix exposes other compatible
+                        # networks behind a shape/byte-budget mismatch.
+                        # Never overtake a deferred request for the SAME
+                        # frozen model: its collector may depend on order.
+                        inspected = 0
+                        while (self._pending and inspected < 64 and
+                               len(group) < self.max_requests):
+                            item = self._pending.popleft()
+                            inspected += 1
+                            shape = tuple((x.shape[1:], x.dtype)
+                                          for x in item.inputs)
+                            fits = (item.model_id not in blocked and
+                                    rows+item.rows <= self.max_batch_rows and
+                                    batch_bytes+item.input_bytes <= self.max_batch_bytes and
+                                    (item.model_id not in layouts or
+                                     layouts[item.model_id] == shape))
+                            if not fits:
+                                deferred.append(item)
+                                blocked.add(item.model_id)
+                                continue
+                            if deferred:
+                                self._counters["head_of_line_bypasses"] += 1
+                            self._active_group = group
+                            layouts[item.model_id] = shape
+                            group.append(item)
+                            rows += item.rows
+                            batch_bytes += item.input_bytes
+                        deferred.extend(self._pending)
+                        self._pending = deferred
+                        if (self._pending or rows >= self.max_batch_rows or
+                                batch_bytes >= self.max_batch_bytes):
                             break
                     else:
                         remaining = deadline-perf_counter()
@@ -463,7 +482,7 @@ class FrozenInferenceMicrobatcher:
             else:
                 self._admission.move_to_end(shape)
         if output is None:
-            if mode in ("exact","bucket") or not eligible:
+            if mode in ("exact","bucket"):
                 try:
                     output = grouped(bucket=mode=="bucket")
                 except (ValueError,TypeError,RuntimeError,
