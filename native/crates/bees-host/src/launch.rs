@@ -7042,18 +7042,23 @@ fn run_battle(
             if mission.record_fleet_stats {
                 source.fleet.enable_career_tracking();
             }
-        } else if (play || view ||
-            env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some()) &&
-            source.source_squads.iter().any(|squad|
-                squad.side == source.human_side &&
-                squad.player_permissions.user_controlled
-            )
+        } else if play || view ||
+            env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some()
         {
-            // The original GameState.PlayerScore also applies to free-play
-            // and challenge matches. The source's human faction is the
-            // authoritative owner; spectators have no score, and training
-            // collectors do not pay for an otherwise unused event counter.
-            source.fleet.enable_campaign_score(source.human_side);
+            // Native free-play can put the local player on EITHER source
+            // faction. The captured targeting owner, when present, wins
+            // over the older human-side default. Remote hot-seat commands
+            // do not rewrite the original single-player score owner.
+            let score_side = source.targeting_context
+                .filter(|context| context.has_player && matches!(context.user_side, 1 | 2))
+                .map(|context| context.user_side)
+                .unwrap_or(source.human_side);
+            if source.source_squads.iter().any(|squad|
+                squad.side == score_side &&
+                squad.player_permissions.user_controlled
+            ) {
+                source.fleet.enable_campaign_score(score_side);
+            }
         }
         source_levels.push(source);
         source_sides.push(sides);
