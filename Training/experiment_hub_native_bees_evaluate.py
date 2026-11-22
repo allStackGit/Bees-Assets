@@ -34,7 +34,10 @@ def read_suite(file: Path) -> dict:
         "learner_slot", "learner_side", "policy_seed", "trials",
     }
     if (not isinstance(suite, dict) or
-            set(suite) - {"success_metric", "inference_device"} != keys or
+            set(suite) - {"success_metric", "inference_device", "physics_workers"} != keys or
+            ("physics_workers" in suite and
+             (type(suite["physics_workers"]) is not int or
+              not 1 <= suite["physics_workers"] <= 128)) or
             (suite.get("inference_device", "cpu") not in ("cpu", "cuda:0")) or
             ("success_metric" in suite and suite["success_metric"] not in (
                 "physical_mission_success_or_interception", "learner_faction_victory")) or
@@ -213,7 +216,7 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
     receipt = evaluate_native_policy(
         run_file, frozen, work / "native-evaluation",
         suite["learner_side"], rollout_binary, suite["policy_seed"],
-        inference_device=device,
+        physics_workers=suite.get("physics_workers"), inference_device=device,
     )
     if (receipt.get("kind") != "native_policy_evaluation_complete" or
             receipt.get("episodes") != suite["trials"] or
@@ -285,6 +288,9 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
         raise ValueError("Native evaluation faction results exceed completed trials.")
     # These are actual completed native physics/accelerator observations.
     # Never claim requested workers were active; report the observed peak.
+    metrics["requested_physics_workers"] = {
+        "value": receipt["requested_physics_workers"], "unit": "count",
+    }
     metrics["peak_physics_workers"] = {
         "value": receipt["peak_parallel_physics_workers"], "unit": "count",
     }
@@ -336,6 +342,8 @@ def create_suite_main(arguments) -> int:
     parser.add_argument("--policy-seed", type=int, default=0)
     parser.add_argument("--inference-device", choices=("cpu", "cuda:0"),
                         help="pin CPU (default) or CUDA/ROCm for every evaluation of this suite")
+    parser.add_argument("--physics-workers", type=int,
+                        help="pin the evaluator's CPU physics allocation (1..128)")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(arguments)
     if not SUITE_ID.fullmatch(args.suite_id):
@@ -380,6 +388,8 @@ def create_suite_main(arguments) -> int:
         "policy_seed": args.policy_seed,
         **({"inference_device": args.inference_device}
            if args.inference_device is not None else {}),
+        **({"physics_workers": args.physics_workers}
+           if args.physics_workers is not None else {}),
         "trials": len(config["levels"]) * episodes,
         "success_metric": (
             "physical_mission_success_or_interception"
@@ -393,7 +403,9 @@ def create_suite_main(arguments) -> int:
     # Validate its ABI/side and physical source contract before publishing.
     if (not 0 <= args.learner_slot < (1 << 32) or
             args.learner_side not in (1, 2) or
-            not 0 <= args.policy_seed < (1 << 63)):
+            not 0 <= args.policy_seed < (1 << 63) or
+            (args.physics_workers is not None and
+             not 1 <= args.physics_workers <= 128)):
         parser.error("invalid learner slot, physical side or policy sampling seed")
     # Nothing is written until the candidate suite has passed its source
     # scene, team routing, worker and artifact hash contract.
