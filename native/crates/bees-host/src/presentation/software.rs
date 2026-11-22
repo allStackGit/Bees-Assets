@@ -3580,9 +3580,13 @@ impl NativeSoftwareRenderer {
         let context = format!("World {}  /  Episode {}", view.world_id.0, view.episode_revision + 1);
         let player_summary = view.player_authority.player_viewer_side()
             .and_then(|side| view.player_match_for_side(side))
-            .map(|(score, counts)| {
-                let (lost, returned, kills) = counts.unwrap_or((0, 0, 0));
-                format!("Score {score:+}  |  Lost {lost}  Returned {returned}  Kills {kills}")
+            .map(|(score, counts)| match counts {
+                Some((lost, returned, kills)) =>
+                    format!("Score {score:+}  |  Lost {lost}  Returned {returned}  Kills {kills}"),
+                // An older career checkpoint can contain a valid score
+                // without a complete per-match counter history. Missing
+                // counts are unknown, not measured zeros.
+                None => format!("Score {score:+}"),
             });
         let mined_total = view.player_authority.player_viewer_side()
             .and_then(|side| view.minerals_mined_for_side(side));
