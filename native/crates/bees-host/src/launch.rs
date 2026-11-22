@@ -2051,6 +2051,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             "failed_scene_probes": failed_scenes,
             "complete": failed_scenes == 0,
         });
+        let mut reserve_classes = reservable.into_iter().collect::<Vec<_>>();
+        reserve_classes.sort_unstable();
+        status["available_reserve_classes"] = json!(reserve_classes.iter()
+            .map(|&(side, ship_type)| json!({
+                "side": side,
+                "ship_type": ship_type,
+            })).collect::<Vec<_>>());
         status["available_source_squads"] = json!(source_squads.iter().map(|&(side, id)| json!({
             "side": side,
             "saved_squad_id": id,
