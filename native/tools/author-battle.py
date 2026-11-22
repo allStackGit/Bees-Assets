@@ -723,9 +723,9 @@ def author(args) -> tuple[dict, dict, dict]:
     # No public flag can bypass the normal safe-placement UI/CLI checks.
     authored_positions = getattr(args, "authored_ship_positions", {})
     if authored_positions:
-        if not isinstance(authored_positions, dict) or
+        if (not isinstance(authored_positions, dict) or
                 any(type(side) is not int or side not in (1, 2)
-                    for side in authored_positions):
+                    for side in authored_positions)):
             raise ValueError("source positions require one or both canonical faction IDs")
         for side, grouped in authored_positions.items():
             expected = dict(requested[side])
