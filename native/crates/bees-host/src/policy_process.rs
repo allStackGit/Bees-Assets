@@ -239,7 +239,7 @@ impl ResidentPolicyProcess {
         self.output.read_exact(&mut response)?;
         let has_behavior = &response[0..4] == BEHAVIOR_RESPONSE_MAGIC;
         if (!has_behavior && &response[0..4] != RESPONSE_MAGIC) ||
-            (!self.collect_behavior && has_behavior) ||
+            (self.collect_behavior != has_behavior) ||
             u32::from_le_bytes(response[4..8].try_into().unwrap())
                 != PROTOCOL_VERSION ||
             u64::from_le_bytes(response[8..16].try_into().unwrap()) != seq ||
