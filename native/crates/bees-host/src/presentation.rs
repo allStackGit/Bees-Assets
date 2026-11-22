@@ -32,7 +32,7 @@ pub use battle_menu::{
     BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
     NativeTransferMenuRow, NativeCreateSquadMenuRow, NativeDeleteSquadMenuRow,
     NativeTacticsMenuRow, NativeNameMenuRow, NativeNameTarget,
-    select_battle, select_library,
+    NativeCampaignMenuStats, select_battle, select_library,
 };
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
 pub use selection::{NativeSquadSelection, NativeSupportMode};
