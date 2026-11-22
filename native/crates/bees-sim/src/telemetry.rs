@@ -35,6 +35,10 @@ pub struct StepCounts {
     /// Count of existing empty weapon holders omitted from the two
     /// physical mounted-weapon ownership sweeps this fixed tick.
     pub unarmed_weapon_holders_skipped: u64,
+    /// True capability owners visited and unneeded policy controller
+    /// visits omitted by the shared game's sparse cooldown scheduler.
+    pub capability_cooldown_owners_advanced: u64,
+    pub capability_cooldown_owners_skipped: u64,
     /// Actual historical ship slots skipped on each successful step.
     pub inactive_ship_slots_skipped: u64,
     /// Inactive pooled projectile slots skipped during the actual physics tick.
@@ -111,6 +115,11 @@ pub struct Measurements {
     /// mounted weapon and range passes, not inferred CPU utilization.
     #[serde(default)]
     pub unarmed_weapon_holders_skipped: u64,
+    /// Actual policy controller visits from the sparse capability pass.
+    #[serde(default)]
+    pub capability_cooldown_owners_advanced: u64,
+    #[serde(default)]
+    pub capability_cooldown_owners_skipped: u64,
     /// Actual historical ship slots skipped on each successful step.
     pub inactive_ship_slots_skipped: u64,
     /// Inactive pooled projectile slots skipped during the actual physics tick.
@@ -199,6 +208,8 @@ impl Default for Measurements {
             navigation_lookups_skipped: 0,
             steering_lookups_skipped: 0,
             unarmed_weapon_holders_skipped: 0,
+            capability_cooldown_owners_advanced: 0,
+            capability_cooldown_owners_skipped: 0,
             inactive_ship_slots_skipped: 0,
             inactive_projectile_slots_skipped: 0,
             inactive_ship_grid_slots_skipped: 0,
@@ -287,6 +298,8 @@ impl Measurements {
         self.navigation_lookups_skipped += counts.navigation_lookups_skipped;
         self.steering_lookups_skipped += counts.steering_lookups_skipped;
         self.unarmed_weapon_holders_skipped += counts.unarmed_weapon_holders_skipped;
+        self.capability_cooldown_owners_advanced += counts.capability_cooldown_owners_advanced;
+        self.capability_cooldown_owners_skipped += counts.capability_cooldown_owners_skipped;
         self.inactive_ship_slots_skipped += counts.inactive_ship_slots_skipped;
         self.inactive_projectile_slots_skipped += counts.inactive_projectile_slots_skipped;
         self.inactive_ship_grid_slots_skipped += counts.inactive_ship_grid_slots_skipped;
@@ -370,6 +383,8 @@ impl Measurements {
         self.navigation_lookups_skipped += other.navigation_lookups_skipped;
         self.steering_lookups_skipped += other.steering_lookups_skipped;
         self.unarmed_weapon_holders_skipped += other.unarmed_weapon_holders_skipped;
+        self.capability_cooldown_owners_advanced += other.capability_cooldown_owners_advanced;
+        self.capability_cooldown_owners_skipped += other.capability_cooldown_owners_skipped;
         self.inactive_ship_slots_skipped += other.inactive_ship_slots_skipped;
         self.inactive_projectile_slots_skipped += other.inactive_projectile_slots_skipped;
         self.inactive_ship_grid_slots_skipped += other.inactive_ship_grid_slots_skipped;
