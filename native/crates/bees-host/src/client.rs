@@ -184,6 +184,7 @@ pub struct NativeClient {
     pub carrier_deck_overlay_draws: u64,
     pub barge_charge_effect_draws: u64,
     pub queen_part_sprite_draws: u64,
+    pub queen_explosion_layer_draws: u64,
     pub combat_impacts_observed: u64,
     pub combat_impact_visual_draws: u64,
     pub combat_impact_visuals_dropped: u64,
@@ -262,6 +263,7 @@ impl NativeClient {
             carrier_deck_overlay_draws: 0,
             barge_charge_effect_draws: 0,
             queen_part_sprite_draws: 0,
+            queen_explosion_layer_draws: 0,
             combat_impacts_observed: 0, combat_impact_visual_draws: 0,
             combat_impact_visuals_dropped: 0,
             custom_ship_color_draws: 0, ship_color_cache_misses: 0,
@@ -1517,6 +1519,8 @@ impl NativeClient {
             .saturating_add(counts.barge_charge_effect_draws as u64);
         self.queen_part_sprite_draws = self.queen_part_sprite_draws
             .saturating_add(counts.queen_part_sprite_draws as u64);
+        self.queen_explosion_layer_draws = self.queen_explosion_layer_draws
+            .saturating_add(counts.queen_explosion_layer_draws as u64);
         self.combat_impacts_observed = self.combat_impacts_observed
             .saturating_add(counts.combat_impacts_observed as u64);
         self.combat_impact_visual_draws = self.combat_impact_visual_draws
