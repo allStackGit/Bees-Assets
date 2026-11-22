@@ -267,11 +267,12 @@ impl CombatWorld {
     /// Avoid traversing the whole policy roster twice every physics tick,
     /// including large battles where these capabilities are uncommon.
     pub(super) fn advance_policy_capability_cooldowns(&mut self, dt: f32) {
-        // Most battle and training scenes have no mining or healing.
-        // Their policy agents still move, fire and decide every tick;
-        // avoid visiting each such controller just to find two Nones.
-        if self.policy_capability_owner_count == 0 { return; }
-        for runtime in self.policy_ship_runtime.values_mut() {
+        // Traverse only physically bound miners and healers. A training
+        // fleet may contain thousands of policy ships but one healer;
+        // sorted IDs preserve the source BTreeMap pass order exactly.
+        for &ship_id in &self.policy_capability_owners {
+            let runtime = self.policy_ship_runtime.get_mut(&ship_id)
+                .expect("cooldown owner has an existing policy controller");
             if let Some(mining) = runtime.mining.as_mut() {
                 mining.cooldown_remaining =
                     (mining.cooldown_remaining - dt).max(0.0);
