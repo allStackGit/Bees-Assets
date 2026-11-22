@@ -1195,6 +1195,7 @@ function approvedTinyBrainsProfiles(machines) {
     if(!status)return; // The production Bees page has no standalone version.
     const generation=status.dataset.generation||null;
     const commit=status.dataset.commit||null;
+    const frontendRevision=status.dataset.frontendRevision||null;
     const initial=status.textContent;
     async function checkVersion() {
         try {
@@ -1206,7 +1207,8 @@ function approvedTinyBrainsProfiles(machines) {
                 typeof data.generation!=='string'||!data.generation)
                 throw Error('Invalid version response');
             if(data.generation!==generation||
-                (data.source_commit||null)!==commit) {
+                (data.source_commit||null)!==commit||
+                (data.frontend_revision||null)!==frontendRevision) {
                 window.location.reload();
                 return;
             }
@@ -1218,8 +1220,10 @@ function approvedTinyBrainsProfiles(machines) {
                         ?' · Last updated: '+updated
                         :' · Source committed: '+updated
                     :' · Update time unavailable')+
+                (data.frontend_commit&&data.frontend_commit!==data.source_commit
+                    ?' · UI '+data.frontend_commit.slice(0,12):'')+
                 (data.pending_commit
-                    ?' · New version waiting to activate ('+
+                    ?' · Coordinator update waiting to activate ('+
                         data.pending_commit.slice(0,12)+')':'');
         }catch(error) {
             // Preserve the server-rendered running version, and surface the
