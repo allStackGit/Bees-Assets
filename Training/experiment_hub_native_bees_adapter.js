@@ -455,18 +455,20 @@ function learnerMeasurements(metrics) {
     const verifiedDecisions = metrics.native_mission_learner_decision_rows_validated;
     const missionMix = metrics.native_mission_learner_decisions_by_kind;
     if (missionDecisions != null || verifiedDecisions != null || missionMix != null) {
+        const oldKinds = ['demolition','escort','extraction','survival'];
+        const declaredKinds = Object.keys(missionMix || {}).sort();
         if (!Number.isSafeInteger(missionDecisions) || missionDecisions < 0 ||
             !Number.isSafeInteger(verifiedDecisions) ||
             verifiedDecisions !== missionDecisions ||
             !missionMix || typeof missionMix !== 'object' || Array.isArray(missionMix) ||
-            Object.keys(missionMix).sort().join(',') !==
-                ['demolition','escort','extraction','survival'].join(',') ||
+            (declaredKinds.join(',') !== oldKinds.join(',') &&
+             declaredKinds.join(',') !== [...oldKinds,'target_ship'].join(',')) ||
             Object.values(missionMix).some(n => !Number.isSafeInteger(n) || n < 0) ||
             Object.values(missionMix).reduce((a,b)=>a+b,0) !== missionDecisions)
             throw Error('Native Bees objective-bearing learner decisions disagree with real optimizer inputs.');
         add('native_mission_learner_decisions', 'count');
         add('native_mission_learner_decision_rows_validated', 'count');
-        for (const kind of ['survival','demolition','escort','extraction'])
+        for (const kind of declaredKinds)
             report['native_mission_learner_decisions_' + kind] = {
                 value: missionMix[kind], unit: 'count',
             };
@@ -492,9 +494,13 @@ function learnerMeasurements(metrics) {
             typeof completions !== 'object' || Array.isArray(attempts) ||
             Array.isArray(completions) ||
             [...Object.keys(attempts), ...Object.keys(completions)]
-                .some(kind => !['survival','demolition','escort','extraction'].includes(kind)))
+                .some(kind => !['survival','demolition','escort','extraction',
+                    'target_ship'].includes(kind)))
             throw Error('Invalid native Bees physical training mission categories.');
-        for (const kind of ['survival','demolition','escort','extraction']) {
+        const kinds = ['survival','demolition','escort','extraction'];
+        if (Object.hasOwn(attempts,'target_ship') ||
+            Object.hasOwn(completions,'target_ship')) kinds.push('target_ship');
+        for (const kind of kinds) {
             const total = attempts[kind] ?? 0;
             const successful = completions[kind] ?? 0;
             if (!Number.isSafeInteger(total) || !Number.isSafeInteger(successful) ||

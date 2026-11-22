@@ -415,6 +415,11 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 kinds = {
                     "survival": 1, "demolition": 2,
                     "escort": 3, "extraction": 4,
+                    # The physical target-ship mission uses the SAME
+                    # authored target-destruction channel as demolition.
+                    # The original v26 actor tensor and checkpoint remain
+                    # unchanged; only its actual terminal kind differs.
+                    "target_ship": 2,
                 }
                 if (not isinstance(mission, dict) or
                         mission.get("kind") not in kinds or
@@ -1959,7 +1964,8 @@ def main():
             capture_stats.get("native_mission_learner_decision_rows_validated", 0),
         "native_mission_learner_decisions_by_kind": {
             kind: verified_kinds.get(kind, 0)
-            for kind in ("survival", "demolition", "escort", "extraction")
+            for kind in ("survival", "demolition", "escort", "extraction",
+                         "target_ship")
         },
         "trajectory_processing_wall_seconds": processing_wall_seconds,
         "trajectory_processing_cpu_seconds": processing_cpu_seconds,
