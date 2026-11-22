@@ -1416,6 +1416,21 @@ impl NativePhysicalScene {
         if combat_waves.next().is_some() || wave.squad_item_ids.len() != 3 {
             return false;
         }
+        // The authored Pluto II enemy wave begins at the exact source
+        // upper approach (0,316), then travels into the Bee home. Do
+        // not accept a convenient nearby spawn which changes combat.
+        let Some(bee_home) = self.starting_positions
+            .as_ref().map(|homes| homes[(2 - player_side) as usize])
+        else { return false };
+        if !wave.spawn.is_some_and(|position|
+            (position.x - 0.0).abs() < 0.001 &&
+            (position.y - 316.0).abs() < 0.001
+        ) || !wave.entry.is_some_and(|position|
+            (position.x - bee_home.x).abs() < 0.001 &&
+            (position.y - bee_home.y).abs() < 0.001
+        ) {
+            return false;
+        }
         let mut bee_types = Vec::with_capacity(3);
         for squad_id in &wave.squad_item_ids {
             let Some(squad) = self.source_squads.iter().find(|squad|
