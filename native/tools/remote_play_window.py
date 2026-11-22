@@ -40,7 +40,8 @@ class RemoteBattleWindow:
         self.console = console
         self.connection = connection
         self.connect_recovered_host = reconnect
-        self.root.title("Bees — native cooperative battle")
+        self.root.title("Bees — native spectator" if console.spectator
+                        else "Bees — native cooperative battle")
         self.root.geometry("1140x760")
         self.root.minsize(720, 450)
         self.root.configure(bg=BACKGROUND)
@@ -72,8 +73,9 @@ class RemoteBattleWindow:
         self.squad_detail = tk.StringVar(value="Select a squad")
         ttk.Label(self.sidebar, textvariable=self.squad_detail, wraplength=200,
                   justify="left").pack(anchor="w", pady=(8, 0))
-        ttk.Label(self.sidebar, text="Shooting priority (1-40)").pack(
-            anchor="w", pady=(10, 0))
+        self.shooting_priority_label = ttk.Label(
+            self.sidebar, text="Shooting priority (1-40)")
+        self.shooting_priority_label.pack(anchor="w", pady=(10, 0))
         self.strategy = tk.StringVar(value="1")
         self.strategy_owner = None
         self.strategy_picker = ttk.Combobox(
@@ -81,8 +83,10 @@ class RemoteBattleWindow:
             values=[str(i) for i in range(1, 41)],
         )
         self.strategy_picker.pack(anchor="w")
-        ttk.Button(self.sidebar, text="Apply shooting priority",
-                   command=self.apply_shooting).pack(anchor="w", pady=(4, 0))
+        self.apply_shooting_button = ttk.Button(
+            self.sidebar, text="Apply shooting priority",
+            command=self.apply_shooting)
+        self.apply_shooting_button.pack(anchor="w", pady=(4, 0))
         self.footer = ttk.Frame(self.frame, padding=6)
         self.footer.pack(fill="x")
         self.status = tk.StringVar(value="Connecting to native host...")
@@ -92,7 +96,11 @@ class RemoteBattleWindow:
             state="disabled",
         )
         self.rejoin_button.pack(side="left", padx=10)
-        self.info = tk.StringVar(value="Left-click select, Ctrl/Shift+click toggle, right-click order")
+        self.info = tk.StringVar(value=(
+            "Read-only faction view — wheel zoom, middle-drag pan"
+            if console.spectator else
+            "Left-click select, Ctrl/Shift+click toggle, right-click order"
+        ))
         ttk.Label(self.footer, textvariable=self.info).pack(side="right")
 
         self.mode = None
@@ -147,6 +155,16 @@ class RemoteBattleWindow:
             ) else self.toolbar_tactics
             ttk.Button(group, text=title, command=action
                        ).pack(side="left", padx=2)
+
+        if console.spectator:
+            # Hide command affordances altogether. The view still uses the
+            # existing native fog-filtered snapshot, zoom and pan paths.
+            self.toolbar_main.pack_forget()
+            self.toolbar_tactics.pack_forget()
+            self.toolbar_special.pack_forget()
+            self.shooting_priority_label.pack_forget()
+            self.strategy_picker.pack_forget()
+            self.apply_shooting_button.pack_forget()
 
         self.canvas.bind("<ButtonPress-1>", self.left_down)
         self.canvas.bind("<B1-Motion>", self.left_drag)
@@ -207,6 +225,9 @@ class RemoteBattleWindow:
         self.root.after(50, self.poll)
 
     def set_mode(self, mode):
+        if self.console.spectator:
+            self.notice("Read-only spectator: commands unavailable")
+            return
         if self.held_drag:
             self.finish_held_fire()
         self.mode = mode
@@ -540,6 +561,9 @@ class RemoteBattleWindow:
         return self.selected
 
     def send(self, kind, body):
+        if self.console.spectator:
+            self.notice("Read-only spectator: commands unavailable")
+            return
         if not self.console.alive or self.state is None:
             self.notice("No connected native battle")
             return
@@ -609,6 +633,8 @@ class RemoteBattleWindow:
             self.notice(f"Held-fire release: {error}")
 
     def left_down(self, event):
+        if self.console.spectator:
+            return
         self.drag_origin = (event.x, event.y)
         self.drag_box = None
         if self.mode == "held-fire":
@@ -654,6 +680,8 @@ class RemoteBattleWindow:
             self.drag_origin = None
 
     def left_up(self, event):
+        if self.console.spectator:
+            return
         if self.drag_origin is None:
             return
         self.drag_origin = None
@@ -703,6 +731,8 @@ class RemoteBattleWindow:
             self.select(None, False)
 
     def context_click(self, event):
+        if self.console.spectator:
+            return
         if not self.selected_owners():
             return
         if self.mode:
@@ -887,10 +917,12 @@ def main():
     parser.add_argument("host")
     parser.add_argument("port", type=int)
     parser.add_argument("--side", type=int, choices=(1, 2),
-                        help="authenticated player side for multiplayer")
+                        help="authenticated faction for commanders or spectators")
+    parser.add_argument("--spectator", action="store_true",
+                        help="open a read-only faction-filtered native battle viewer")
     args = parser.parse_args()
     try:
-        token = remote_token(args.side)
+        token = remote_token(args.side, spectator=args.spectator)
     except ValueError as error:
         parser.error(str(error))
     def connect(expected_session_id=None):
@@ -902,9 +934,12 @@ def main():
             console = RemoteConsole(
                 connection, silent=True, expected_side=args.side,
                 expected_session_id=expected_session_id,
+                spectator=args.spectator,
             )
             connection.sendall(
-                (json.dumps({"kind": "hello", "token": token}) + "\n").encode("utf-8")
+                (json.dumps({"kind": "hello", "token": token,
+                             "spectator": args.spectator,
+                             "resume_session_id": expected_session_id}) + "\n").encode("utf-8")
             )
             threading.Thread(target=console.receive, daemon=True).start()
             return connection, console

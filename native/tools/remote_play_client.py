@@ -15,8 +15,19 @@ import socket
 import threading
 
 
-def remote_token(side):
-    """Resolve the caller's identity; a player needs only their own secret."""
+def remote_token(side, spectator=False):
+    """Resolve exactly one role-scoped source secret without escalation."""
+    if spectator:
+        if side not in (1, 2):
+            raise ValueError("read-only spectators require --side 1 or --side 2")
+        raw = os.environ.get("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS")
+        if not raw:
+            raise ValueError("set BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS for spectator access")
+        tokens = json.loads(raw)
+        token = tokens.get(str(side)) if isinstance(tokens, dict) else None
+        if not isinstance(token, str) or not 24 <= len(token) <= 256:
+            raise ValueError(f"no valid spectator credential for side {side}")
+        return token
     own = os.environ.get("BEES_NATIVE_REMOTE_TOKEN")
     if own:
         return own
@@ -83,10 +94,11 @@ ENEMY_MANEUVERS = {
 
 class RemoteConsole:
     def __init__(self, connection, *, silent=False, expected_side=None,
-                 expected_session_id=None):
+                 expected_session_id=None, spectator=False):
         self.socket = connection
         self.silent = silent
         self.expected_side = expected_side
+        self.spectator = spectator
         # One host_session_id belongs to the original authoritative World
         # across native checkpoint recovery. Rejoining an unrelated host
         # with the same tokens must never carry old player authority.
@@ -225,6 +237,11 @@ class RemoteConsole:
                                 any(ch not in "0123456789abcdef" for ch in session) or
                                 (self.expected_side is not None and
                                  side != self.expected_side) or
+                                message.get("spectator") is not self.spectator or
+                                message.get("mode") != (
+                                    "authenticated_spectator" if self.spectator
+                                    else "authenticated_player_side"
+                                ) or
                                 (self.expected_session_id is not None and
                                  session != self.expected_session_id)):
                             raise ValueError(
@@ -236,9 +253,10 @@ class RemoteConsole:
                         note = ("Rejoined recovered native host"
                                 if message.get("recovered_host") is True
                                 else "Connected to native host")
-                        self.notifications.put(f"{note}; player side {side} ready")
+                        role = "spectator" if self.spectator else "player"
+                        self.notifications.put(f"{note}; {role} side {side} ready")
                         if not self.silent:
-                            print(f"{note}; player side {side} ready")
+                            print(f"{note}; {role} side {side} ready")
                     elif kind == "held_fire_released":
                         self.held_scope = None
                         self.held_begin_request = None
@@ -292,6 +310,8 @@ class RemoteConsole:
         original cue sequence. This is not a gameplay input or local timer.
         A retry is possible if the host rejects an outdated request.
         """
+        if self.spectator:
+            raise ValueError("spectators cannot acknowledge player campaign briefings")
         state = self.snapshot()
         dialogue = state.get("campaign_dialogue") if state else None
         if not dialogue or state.get("briefing_requires_ack") is not True:
@@ -390,6 +410,8 @@ class RemoteConsole:
         return matches[0]["owner"]
 
     def send(self, action, state, owners):
+        if self.spectator:
+            raise ValueError("spectator seats cannot submit gameplay commands")
         # Aim and End belong to the authenticated peer's existing gesture.
         # Only Begin carries selected squad lifetimes; the native host
         # authorizes the gesture and owns the live weapon state.
@@ -412,6 +434,8 @@ class RemoteConsole:
 
     def held_fire(self, kind, target=None, *, owners=None):
         """Submit native Begin/Aim/End, retaining the original episode."""
+        if self.spectator:
+            raise ValueError("spectator seats cannot control weapons")
         state = self.snapshot()
         if state is None:
             raise ValueError("no authoritative world snapshot received yet")
@@ -467,7 +491,11 @@ class RemoteConsole:
         cmd, *argv = args
         cmd = cmd.lower()
         if cmd == "help":
-            print(HELP)
+            if self.spectator:
+                print("Read-only spectator commands: status, objective, ships, "
+                      "squads, obstacles, rejoin, help, quit")
+            else:
+                print(HELP)
             return
         if cmd == "quit":
             if self.held_scope is not None:
@@ -477,6 +505,10 @@ class RemoteConsole:
                     pass  # Socket disconnect also releases host-owned weapons.
             self.alive = False
             return
+        if self.spectator and cmd not in (
+            "status", "objective", "ships", "squads", "obstacles"
+        ):
+            raise ValueError("spectator seats are read-only")
         state = self.snapshot()
         if state is None:
             print("No authoritative world snapshot received yet")
@@ -617,10 +649,12 @@ def main():
     parser.add_argument("host", help="native host IP or DNS name")
     parser.add_argument("port", type=int)
     parser.add_argument("--side", type=int, choices=(1, 2),
-                        help="authenticated side for independent multiplayer")
+                        help="authenticated faction for commanders or spectators")
+    parser.add_argument("--spectator", action="store_true",
+                        help="join with a separate read-only faction spectator credential")
     args = parser.parse_args()
     try:
-        token = remote_token(args.side)
+        token = remote_token(args.side, spectator=args.spectator)
     except (ValueError, json.JSONDecodeError) as error:
         parser.error(str(error))
     def connect(expected_session_id=None):
@@ -630,9 +664,12 @@ def main():
             console = RemoteConsole(
                 connection, expected_side=args.side,
                 expected_session_id=expected_session_id,
+                spectator=args.spectator,
             )
             connection.sendall(
-                (json.dumps({"kind": "hello", "token": token}) + "\n").encode("utf-8")
+                (json.dumps({"kind": "hello", "token": token,
+                             "spectator": args.spectator,
+                             "resume_session_id": expected_session_id}) + "\n").encode("utf-8")
             )
             receiver = threading.Thread(target=console.receive, daemon=True)
             receiver.start()
@@ -642,7 +679,11 @@ def main():
             raise
 
     connection, console, receiver = connect()
-    print(HELP)
+    if args.spectator:
+        print("Read-only spectator commands: status, objective, ships, squads, "
+              "obstacles, rejoin, help, quit")
+    else:
+        print(HELP)
     try:
         while True:
             try:
