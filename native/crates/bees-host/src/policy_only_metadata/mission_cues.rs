@@ -16,6 +16,7 @@ pub enum NativeMissionCue {
     PlutoScoutReportComplete,
     PlutoGunshipBriefingComplete,
     PlutoHoneybeeDestroyed,
+    PlutoReinforcementsCombatReady,
     FireTankSpotted,
     FireTankDestroyed,
     UranusBargeLost,
@@ -35,6 +36,7 @@ impl NativeMissionCue {
             (Self::PlutoScoutReportComplete, CampaignCue::PlutoAnomalyScoutReportComplete) |
             (Self::PlutoGunshipBriefingComplete, CampaignCue::PlutoAnomalyGunshipBriefingComplete) |
             (Self::PlutoHoneybeeDestroyed, CampaignCue::PlutoAnomalyHoneybeeDestroyed) |
+            (Self::PlutoReinforcementsCombatReady, CampaignCue::PlutoReinforcementsCombatReady) |
             (Self::FireTankSpotted, CampaignCue::FireTankSpotted { .. }) |
             (Self::FireTankDestroyed, CampaignCue::FireTankDestroyed { .. }) |
             (Self::UranusBargeLost, CampaignCue::UranusNewThreatBargeLost) |
@@ -54,6 +56,8 @@ impl NativeMissionCue {
                 matches!(self, Self::PlutoHoneybeeSpotted |
                     Self::PlutoScoutReportComplete | Self::PlutoGunshipBriefingComplete |
                     Self::PlutoHoneybeeDestroyed),
+            Some(CampaignDialogueSpec::PlutoReinforcements { .. }) =>
+                matches!(self, Self::PlutoReinforcementsCombatReady),
             Some(CampaignDialogueSpec::TitaniaMinesweeper { .. }) =>
                 matches!(self, Self::FireTankSpotted | Self::FireTankDestroyed),
             Some(CampaignDialogueSpec::TitaniaBeenoculars { .. }) =>
