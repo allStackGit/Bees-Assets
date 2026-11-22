@@ -98,7 +98,7 @@ pub(crate) fn authored_obstacle_bodies(
     for entity in entities {
             let body = match entity {
                 NativeAuthoredEntity::BoxObstacle {
-                    entity_id, prefab_name, pose, live_corners,
+                    entity_id, prefab_name, pose, live_corners, ..
                 } => {
                     let asset = boxes
                         .by_name(prefab_name)
