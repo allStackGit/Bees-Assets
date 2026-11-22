@@ -55,6 +55,12 @@ class BatchFuture(Future):
         self.device = device
         self.done_event = None
 
+    def cancel(self):
+        # The service cannot safely retract a GPU kernel after admission.
+        # A consumer must close/cancel the queue, not cancel an individual
+        # Future and accidentally invalidate other members of its batch.
+        return False
+
     def result(self, timeout=None):
         output = super().result(timeout)
         if self.done_event is not None:
@@ -91,14 +97,16 @@ class FrozenInferenceMicrobatcher:
 
     def __init__(self, models: dict[str, nn.Module], versions: dict[str, object],
                  *, max_pending=256, max_requests=32, max_batch_rows=4096,
-                 wait_ms=0.25, max_cohorts=16, allow_graphs=True):
+                 wait_ms=0.25, max_cohorts=8, max_workspace_mb=512,
+                 allow_graphs=True):
         if (not isinstance(models, dict) or not models or
                 set(models) != set(versions) or
                 not 1 <= max_pending <= 65536 or
                 not 1 <= max_requests <= max_pending or
                 not 1 <= max_batch_rows <= 1048576 or
                 not 0 <= wait_ms <= 50 or
-                not 1 <= max_cohorts <= 256):
+                not 1 <= max_cohorts <= 256 or
+                not 16 <= max_workspace_mb <= 16384):
             raise ValueError("Invalid frozen inference batcher configuration")
         self.models = dict(models)
         self.versions = dict(versions)
@@ -115,6 +123,11 @@ class FrozenInferenceMicrobatcher:
         self.max_pending, self.max_requests = max_pending, max_requests
         self.max_batch_rows, self.wait_seconds = max_batch_rows, wait_ms/1000
         self.max_cohorts, self.allow_graphs = max_cohorts, allow_graphs
+        # Cap each retained model cohort's graph/state residency. Every
+        # cohort may retain eight independent shape profiles; reserve a
+        # ninth share for its stacked weights and helper buffers.
+        self.cohort_budget_bytes = int(
+            max_workspace_mb*1048576/(max_cohorts*9))
         self._pending, self._executors = deque(), OrderedDict()
         self._active_group = []
         self._admission = OrderedDict()
@@ -267,9 +280,15 @@ class FrozenInferenceMicrobatcher:
         if executor is None:
             executor = MeasuredGpuExecution(
                 [self.models[key] for key in keys],
-                allow_graphs=self.allow_graphs)
+                allow_graphs=self.allow_graphs,
+                max_stacked_bytes=self.cohort_budget_bytes)
             self._executors[keys] = executor
             if len(self._executors) > self.max_cohorts:
+                # Graphs and their static storage must outlive all pending
+                # kernels. Join only this worker's GPU stream before evicting
+                # the least recently used cohort (never the active one).
+                if stream is not None:
+                    stream.synchronize()
                 self._executors.popitem(last=False)
         else:
             self._executors.move_to_end(keys)
