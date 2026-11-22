@@ -4587,10 +4587,22 @@ class _PocaCpuMinibatchPreparer:
                 else None
             )
         )
-        logical_cpus = max(1, int(os.cpu_count() or 1))
+        # os.cpu_count() describes the machine, NOT the CPU quota
+        # granted to this learner. A Hub-controlled distributed update
+        # may launch several local GPU ranks under a small CPU lease.
+        # Respect Linux cpusets and the rank's explicit Torch thread
+        # allocation before spawning any background packing threads.
+        affinity = getattr(os, "sched_getaffinity", None)
+        cpu_count = (
+            len(affinity(0)) if affinity is not None
+            else (getattr(os, "process_cpu_count", os.cpu_count)() or 1)
+        )
+        self.effective_cpus = max(1, int(cpu_count))
+        self.torch_threads = max(1, int(torch.get_num_threads()))
+        self.cpu_budget = min(self.effective_cpus, self.torch_threads)
         self.workers = max(
             1,
-            logical_cpus - POCA_CPU_PREPARE_RESERVED_LOGICAL_CPUS,
+            self.cpu_budget - POCA_CPU_PREPARE_RESERVED_LOGICAL_CPUS,
         )
         factorized = bool(
             cache is not None
@@ -7099,6 +7111,9 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
                 f"prefetch={'on' if _POCA_OPTIMIZATIONS.minibatch_prefetch else 'off'} "
                 f"cpu_prepare={'on' if cpu_preparer is not None and cpu_preparer.enabled else 'off'} "
                 f"cpu_prepare_workers={cpu_preparer.workers if cpu_preparer is not None and cpu_preparer.enabled else 0} "
+                f"cpu_prepare_affinity_cpus={cpu_preparer.effective_cpus if cpu_preparer is not None and cpu_preparer.enabled else 0} "
+                f"cpu_prepare_torch_threads={cpu_preparer.torch_threads if cpu_preparer is not None and cpu_preparer.enabled else 0} "
+                f"cpu_prepare_budget={cpu_preparer.cpu_budget if cpu_preparer is not None and cpu_preparer.enabled else 0} "
                 f"cpu_prepare_mode={('full' if cpu_preparer.full_minibatch else 'group-only') if cpu_preparer is not None and cpu_preparer.enabled else 'off'} "
                 f"critic_baseline_overlap={'on' if _POCA_OPTIMIZATIONS.critic_baseline_overlap else 'off'} "
                 f"cuda_graphs={'on' if _POCA_OPTIMIZATIONS.cuda_graphs else 'off'} "
