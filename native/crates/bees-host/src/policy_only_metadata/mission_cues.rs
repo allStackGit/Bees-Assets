@@ -50,6 +50,7 @@ impl NativeMissionCue {
             Some(CampaignDialogueSpec::UranusNewThreat { .. }) =>
                 matches!(self, Self::UranusBargeLost | Self::UranusBargeCharged |
                     Self::UranusReinforcements),
+            Some(CampaignDialogueSpec::PlutoAnomaly { .. }) |
             Some(CampaignDialogueSpec::PlutoPushback { .. }) |
             Some(CampaignDialogueSpec::NeptuneProduction { .. }) |
             Some(CampaignDialogueSpec::NeptuneSeizeMeans { .. }) |
