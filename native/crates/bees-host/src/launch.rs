@@ -3722,6 +3722,9 @@ fn run_name_fleet_ship(
     let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
     ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
     let progress = catalog.load_progress(output_root)?;
+    if !battle_catalog::valid_saved_squad_name(name) {
+        return Err(invalid("FleetShip name must be 1..32 printable letters, numbers, spaces, hyphens or underscores").into());
+    }
     if !progress.nameable_fleet_ships().contains(&(side, fleet_ship_id)) {
         let root = catalog_path.parent()
             .ok_or_else(|| invalid("missing campaign catalog directory"))?;
@@ -5506,11 +5509,11 @@ fn run_campaign_game_menu(
             .map(|(entry, (unlocked, status))| BattleMenuRow {
                 title: entry.title.trim(), status, unlocked: *unlocked,
             }).collect::<Vec<_>>();
-        let fleet_rows = progress.fleet_rows();
         let squad_rows = progress.squad_rows();
         let available = progress.unspent_minerals()?;
         let (original_choices, authored_squads, squad_templates, editable_tactics) =
             authored_menu_fleet(&catalog, root, &progress);
+        let fleet_rows = progress.fleet_rows_with_source(&original_choices);
         // The same set of persistent player SavedSquads must exist in
         // every replayable physical mission configuration, not only the
         // currently selected mission or the career history.
