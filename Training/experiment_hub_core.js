@@ -1917,7 +1917,7 @@ class ExperimentHub {
         this.progressHistory = new ProgressHistory(path.join(root,'hub-chart-v1.json'));
         this.evaluationHistory = new EvaluationHistory(root);
         this.observations = new ObservationArchive(root);
-        this.throughputHistory = new ThroughputHistory();
+        this.throughputHistory = new ThroughputHistory(root);
         this.bottleneckEvidence = new BottleneckEvidence();
         this.executionOrderCursor = new Map();
         // Coordinated learner Starts are one-use durable approvals bound
