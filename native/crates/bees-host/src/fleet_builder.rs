@@ -15,6 +15,7 @@ use bees_host::unity_scene_snapshot::{
     NativeLevelLayout, NativePlacedStaticBox, NativeSquadClone, NativeSquadMerge,
     NativeSquadShortcut,
 };
+use bees_sim::asteroid_assets::CollisionAsteroidCatalog;
 use bees_sim::ship_assets::ShipAssetCatalog;
 use serde_json::{json, Value};
 
@@ -1943,6 +1944,19 @@ pub(super) fn archive(
         Terrain::AsteroidStorm => 48,
         _ => 0,
     };
+    if full_asteroids > 0 {
+        // Source two-player duels intentionally use one small prefab.
+        // Asteroid scenarios instead author the complete REAL collider
+        // palette. Each creation still draws its type and speed through
+        // the same World RNG/Stage pool; no generated substitute hulls or
+        // simplified collisions are introduced for the larger encounters.
+        let catalog = CollisionAsteroidCatalog::embedded().map_err(|_|
+            invalid("native moving asteroid terrain needs the source collider catalog")
+        )?;
+        let palette = catalog.asteroids().iter()
+            .map(|asset| asset.prefab_number).collect::<Vec<_>>();
+        run["native_stage"]["asteroid_prefab_numbers"] = json!(palette);
+    }
     scene["activate_collision_asteroids"] = json!(full_asteroids > 0);
     scene["initial_random_full_asteroids"] = json!(full_asteroids);
     scene["level_name"] = json!(format!(
