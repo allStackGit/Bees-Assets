@@ -6721,6 +6721,21 @@ fn run_battle(
                 level, template.as_ref(), &source, mission.player_side,
             )?;
         }
+        if let Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::TitaniaBeenoculars {
+            player_side, ..
+        }) = level.campaign_dialogue
+        {
+            // StageTitania2HumanFleetAtCenter uses the surviving fleet,
+            // not the publisher's immutable pre-purchase squad positions.
+            let squad_count = source.stage_titania_ii_player_fleet(
+                player_side, assets,
+            ).map_err(|error| contextual("Titania II fleet staging", error))?;
+            println!("{}", json!({
+                "kind": "native_titania_ii_fleet_staged",
+                "player_side": player_side,
+                "squads": squad_count,
+            }));
+        }
         use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
         if let Some(CampaignDialogueSpec::PlutoPushback { player_side, .. }) =
             level.campaign_dialogue

@@ -205,6 +205,9 @@ impl NativeSceneAssets {
     pub fn shared_ship_catalog(&self) -> Arc<ShipAssetCatalog> {
         Arc::clone(&self.ship_catalog)
     }
+    pub fn collision_asteroid_catalog(&self) -> &CollisionAsteroidCatalog {
+        &self.asteroid_stage.catalog
+    }
     pub fn box_catalog(&self) -> &BoxObstacleCatalog { &self.box_catalog }
     pub fn polygon_catalog(&self) -> &PolygonObstacleCatalog { &self.polygon_catalog }
 

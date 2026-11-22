@@ -1990,6 +1990,168 @@ impl NativePhysicalScene {
         Ok(updates.len() + formed)
     }
 
+    /// Source StageTitania2HumanFleetAtCenter: stage the FINAL living
+    /// player SavedSquads around Titania after purchases, losses, saved
+    /// formation changes and Carrier reconciliation. This only transforms
+    /// the ONE authored physical roster before the shared game/training
+    /// CombatWorld is constructed. Collision checks reuse the exact
+    /// immutable source obstacle bodies and the existing circle/polygon
+    /// physics test; no simplified level geometry is introduced.
+    pub fn stage_titania_ii_player_fleet(
+        &mut self, side: i32,
+        assets: &crate::scene_assets::NativeSceneAssets,
+    ) -> Result<usize, NativeSnapshotError> {
+        let invalid = NativeSnapshotError::InvalidNativeLayout;
+        if !matches!(side, 1 | 2) ||
+            !self.starting_positions.is_some() ||
+            self.source_policy_group.is_some() ||
+            self.source_episode.is_some()
+        {
+            return Err(invalid("Titania II needs a live player fleet and authored Stage home"));
+        }
+        let mut obstacles = Vec::<bees_sim::physics::ObstacleBody>::new();
+        for entity in &self.entities {
+            let body = match entity {
+                NativeAuthoredEntity::BoxObstacle {
+                    entity_id, prefab_name, pose, live_corners,
+                } => {
+                    let asset = assets.box_catalog().by_name(prefab_name)
+                        .ok_or(invalid("Titania II box obstacle prefab is absent"))?;
+                    if let Some(corners) = live_corners {
+                        let position = pose.unwrap_or(asset.default_pose);
+                        asset.prepare_spawn_live_box(
+                            *entity_id, position, *corners,
+                        ).map_err(|_| invalid("Titania II box collider is invalid"))?.1
+                    } else {
+                        asset.prepare_spawn(*entity_id, *pose)
+                            .map_err(|_| invalid("Titania II box collider is invalid"))?.1
+                    }
+                }
+                NativeAuthoredEntity::PolygonObstacle {
+                    entity_id, pose, live_vertices,
+                } => {
+                    let catalog = assets.polygon_catalog();
+                    if let Some(vertices) = live_vertices {
+                        let position = pose.ok_or(invalid(
+                            "Titania II polygon lacks its world transform",
+                        ))?;
+                        catalog.prepare_spawn_live_polygon(
+                            *entity_id, position, vertices.clone(),
+                        ).map_err(|_| invalid("Titania II polygon collider is invalid"))?.1
+                    } else {
+                        catalog.prepare_spawn(*entity_id, *pose)
+                            .map_err(|_| invalid("Titania II polygon collider is invalid"))?.1
+                    }
+                }
+                NativeAuthoredEntity::MiningAsteroid { body, .. } |
+                NativeAuthoredEntity::MapObject { body, .. } => body.clone(),
+                NativeAuthoredEntity::FullCollisionAsteroid {
+                    entity_id, profile, pose, velocity,
+                    angular_velocity_degrees, effective_max_health,
+                } => assets.collision_asteroid_catalog().prepare_spawn(
+                    profile.prefab_number, *entity_id, *pose, *velocity,
+                    *angular_velocity_degrees, Some(*effective_max_health),
+                ).map_err(|_| invalid("Titania II asteroid collider is invalid"))?.1,
+                NativeAuthoredEntity::Ship(_) => continue,
+            };
+            if body.active { obstacles.push(body); }
+        }
+
+        let ship_index = self.entities.iter().enumerate().filter_map(|(index, entity)|
+            match entity {
+                NativeAuthoredEntity::Ship(ship) if !ship.vitals.is_dead() =>
+                    Some((ship.entity_id, index)),
+                _ => None,
+            }
+        ).collect::<HashMap<_, _>>();
+        let user_squads = self.source_squads.iter()
+            .filter(|squad| squad.side == side && !squad.members.is_empty())
+            .map(|squad| squad.members.clone()).collect::<Vec<_>>();
+        let center = bees_gameplay::campaign_dialogue::TITANIA_II_CENTER;
+        let mut occupied = Vec::<(Vec2, f32)>::new();
+        let mut translated = 0;
+        for members in user_squads {
+            let mut group = Vec::new();
+            let (mut min_x, mut min_y) = (f32::INFINITY, f32::INFINITY);
+            let (mut max_x, mut max_y) = (f32::NEG_INFINITY, f32::NEG_INFINITY);
+            for id in members {
+                let Some(&index) = ship_index.get(&id) else { continue };
+                let NativeAuthoredEntity::Ship(ship) = &self.entities[index] else {
+                    return Err(invalid("Titania II Squad member lost physical ship identity"));
+                };
+                if ship.side != side {
+                    return Err(invalid("Titania II Squad member changed faction"));
+                }
+                let half_w = ship.game_movement.half_width.max(0.0);
+                let half_h = ship.game_movement.half_height.max(0.0);
+                let point = ship.motion.position;
+                min_x = min_x.min(point.x - half_w);
+                max_x = max_x.max(point.x + half_w);
+                min_y = min_y.min(point.y - half_h);
+                max_y = max_y.max(point.y + half_h);
+                group.push(index);
+            }
+            if group.is_empty() { continue; }
+            let old_center = Vec2::new((min_x + max_x) * 0.5, (min_y + max_y) * 0.5);
+            let radius = (max_x - min_x).max(max_y - min_y) * 0.5 + 8.0;
+            if !old_center.is_finite() || !radius.is_finite() {
+                return Err(invalid("Titania II has nonfinite squad extents"));
+            }
+            let clear = |candidate: Vec2| {
+                candidate.x - radius >= self.bounds.min.x &&
+                candidate.x + radius <= self.bounds.max.x &&
+                candidate.y - radius >= self.bounds.min.y &&
+                candidate.y + radius <= self.bounds.max.y &&
+                (candidate - center).length_squared() >= (22.0 + radius).powi(2) &&
+                !obstacles.iter().any(|body| body.primary_overlaps_circle(candidate, radius)) &&
+                !occupied.iter().any(|&(earlier, prior_radius)|
+                    (earlier - candidate).length_squared() < (prior_radius + radius).powi(2))
+            };
+            let mut placement = None;
+            'ring: for ring in 1_i32..=12 {
+                for x in -ring..=ring {
+                    for y in -ring..=ring {
+                        if x.abs().max(y.abs()) != ring { continue; }
+                        let candidate = center + Vec2::new(
+                            x as f32 * 24.0, y as f32 * 24.0,
+                        );
+                        if clear(candidate) {
+                            placement = Some(candidate);
+                            break 'ring;
+                        }
+                    }
+                }
+            }
+            // Unity falls back to the lower center lane when every ring
+            // is obstructed. Reject an actually blocked fallback rather
+            // than teleport a physical fleet into collision geometry.
+            let destination = placement.unwrap_or(
+                center + Vec2::new(0.0, -(22.0 + radius)),
+            );
+            if !clear(destination) {
+                return Err(invalid("Titania II has no physical central formation placement"));
+            }
+            let delta = destination - old_center;
+            for index in group {
+                let NativeAuthoredEntity::Ship(ship) = &mut self.entities[index] else {
+                    unreachable!("ship index derived from the source roster")
+                };
+                ship.motion.position += delta;
+                if let Some(bounds) = &mut ship.target_geometry {
+                    bounds.bounds_latched = false;
+                }
+            }
+            occupied.push((destination, radius));
+            translated += 1;
+        }
+        // Source Stage sets the playable human home after staging every
+        // real squad; HiveMind and camera read the same actual destination.
+        let home = self.starting_positions.as_mut()
+            .ok_or(invalid("Titania II Stage home disappeared"))?;
+        home[(side - 1) as usize] = center;
+        Ok(translated)
+    }
+
     /// Resolve a destination's current physical anchor, or its immutable
     /// route-specific source anchor if the SavedSquad has become vacant.
     /// Only a genuinely new squad falls back to the faction's Stage home.
