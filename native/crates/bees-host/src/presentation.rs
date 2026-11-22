@@ -40,7 +40,8 @@ pub use battle_menu::{
     BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
     NativeTransferMenuRow, NativeCreateSquadMenuRow, NativeDeleteSquadMenuRow,
     NativeTacticsMenuRow, NativeNameMenuRow, NativeNameTarget,
-    NativeCampaignMenuStats, select_battle, select_library, show_campaign_intermission,
+    NativeCampaignMenuStats, NativeCampaignDebrief, select_battle, select_library,
+    show_campaign_intermission, show_campaign_debrief,
 };
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
 pub use selection::{NativeSquadSelection, NativeSupportMode};

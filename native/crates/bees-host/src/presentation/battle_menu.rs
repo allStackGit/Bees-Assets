@@ -5,6 +5,7 @@ use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use super::{text, codex::{native_codex, codex_lines}};
 use crate::unity_scene_snapshot::{NativeSquadColorSetting, NativeSavedSquadFormation,
     NativeSavedShipPlacement};
+use crate::fleet_inventory::NativePlayerMatchCounts;
 
 /// The on-screen palette is a convenience; the CLI accepts any RGB.
 /// Presets affect artwork only, never ship ownership or physics.
@@ -236,6 +237,78 @@ pub enum NativeBattleMenuAction {
     Transfer { fleet_ship_id: i64, to_saved_squad_id: i64 },
     Reassign { side: i32, fleet_ship_id: i64,
         from_saved_squad_id: i64, to_saved_squad_id: i64 },
+}
+
+/// One read-only presentation of an immutable completed battle receipt.
+pub struct NativeCampaignDebrief<'a> {
+    pub title: &'a str,
+    pub victory: bool,
+    pub score_change: Option<i64>,
+    pub career_score: i64,
+    pub score_history_complete: bool,
+    pub match_counts: Option<NativePlayerMatchCounts>,
+    pub rewarded_ships: u32,
+    pub banked_minerals: Option<u64>,
+}
+
+/// Source LevelEndedDialogue shows the completed Level's summary before
+/// returning the player to fleet preparation. This native equivalent reads
+/// only committed career facts; it never steps or modifies CombatWorld.
+pub fn show_campaign_debrief(
+    result: NativeCampaignDebrief<'_>,
+) -> Result<(), minifb::Error> {
+    let mut window = Window::new("Bees | Mission result",
+        WIDTH, HEIGHT, WindowOptions::default())?;
+    window.set_target_fps(30);
+    let mut pixels = vec![0; WIDTH * HEIGHT];
+    let heading = if result.victory { "Mission victory" } else { "Mission ended" };
+    let score_change = result.score_change
+        .map_or("Unknown".to_owned(), |score| format!("{score:+}"));
+    let career_score = format!("Career score: {:+}{}",
+        result.career_score,
+        if result.score_history_complete { "" } else { " (partial history)" });
+    let received = format!("FleetShips received: {}", result.rewarded_ships);
+    let banked = format!("Minerals banked: {}",
+        result.banked_minerals.map_or("Not recorded".to_owned(), |n| n.to_string()));
+    while window.is_open() {
+        if window.is_key_pressed(Key::Escape, KeyRepeat::No) ||
+            window.is_key_pressed(Key::Enter, KeyRepeat::No) ||
+            window.is_key_pressed(Key::Space, KeyRepeat::No) ||
+            window.get_mouse_down(MouseButton::Left) {
+            break;
+        }
+        pixels.fill(0x080e19);
+        text::draw_centered(&mut pixels, WIDTH, 31, heading, 2,
+            if result.victory { [117, 219, 171] } else { [235, 120, 133] });
+        text::draw_centered(&mut pixels, WIDTH, 79,
+            text::fit(result.title, WIDTH - 90), 1, TEXT);
+        for y in 115..390 {
+            pixels[y * WIDTH + 75..y * WIDTH + WIDTH - 75].fill(0x142235);
+        }
+        text::draw_at(&mut pixels, WIDTH, 100, 137,
+            &format!("Mission score: {score_change}"), 1, TEXT);
+        text::draw_at(&mut pixels, WIDTH, 100, 173, &career_score, 1, TEXT);
+        if let Some(counts) = result.match_counts {
+            text::draw_at(&mut pixels, WIDTH, 100, 210,
+                &format!("Enemy ships destroyed: {}", counts.ships_destroyed_by_player), 1, TEXT);
+            text::draw_at(&mut pixels, WIDTH, 100, 244,
+                &format!("Player ships lost: {}   Returned: {}",
+                    counts.ships_lost, counts.ships_returned), 1, TEXT);
+            text::draw_at(&mut pixels, WIDTH, 100, 279,
+                &format!("Minerals mined during battle: {}",
+                    counts.player_minerals_mined
+                        .map_or("Unknown".to_owned(), |n| n.to_string())), 1, TEXT);
+        } else {
+            text::draw_at(&mut pixels, WIDTH, 100, 227,
+                "Per-match fleet statistics unavailable", 1, MUTED);
+        }
+        text::draw_at(&mut pixels, WIDTH, 100, 319, &received, 1, TEXT);
+        text::draw_at(&mut pixels, WIDTH, 100, 353, &banked, 1, TEXT);
+        text::draw_centered(&mut pixels, WIDTH, 443,
+            "Enter / Space / Click: return to fleet preparation", 1, MUTED);
+        window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
+    }
+    Ok(())
 }
 
 /// Returns a playable battle or purchase request, never applies

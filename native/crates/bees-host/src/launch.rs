@@ -6758,6 +6758,30 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
 }
 
 #[cfg(feature = "client")]
+#[cfg(feature = "client")]
+fn show_new_campaign_debrief(
+    title: &str, mission_id: &str, previous_matches: u64,
+    progress: &battle_catalog::CampaignProgress<'_>,
+) -> Result<(), Box<dyn Error>> {
+    if progress.career_match_results().played <= previous_matches {
+        return Ok(());
+    }
+    let (career_score, score_history_complete) = progress.campaign_score_summary();
+    let (rewarded_ships, banked_minerals) = progress.latest_mission_rewards(mission_id)
+        .unwrap_or((0, None));
+    bees_host::presentation::show_campaign_debrief(
+        bees_host::presentation::NativeCampaignDebrief {
+            title,
+            victory: progress.latest_victory(mission_id),
+            score_change: progress.latest_mission_score_delta(mission_id),
+            career_score, score_history_complete,
+            match_counts: progress.latest_mission_match_counts(mission_id),
+            rewarded_ships, banked_minerals,
+        },
+    )?;
+    Ok(())
+}
+
 fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error>> {
     run_campaign_game_menu(catalog_path, output_root, false)?;
     Ok(())
@@ -6825,11 +6849,17 @@ fn run_campaign_game_menu(
                     invalid("interrupted multiplayer campaign lacks its original mission"))?;
                 return Ok(Some((mission.id.clone(), mission.player_side)));
             }
+            let prior_matches = progress.career_match_results().played;
             let result = launch_catalog_battle(
                 &catalog, entry, root, output_root, &mut number, true,
             );
             progress = catalog.load_progress(output_root)?;
             launch_failed = result.is_err();
+            if result.is_ok() {
+                show_new_campaign_debrief(
+                    entry.title.trim(), &pending, prior_matches, &progress,
+                )?;
+            }
             if let Err(error) = result {
                 eprintln!("Could not resume {}: {error}", entry.title);
             }
@@ -7355,11 +7385,19 @@ fn run_campaign_game_menu(
                 invalid("multiplayer host selected a non-campaign battle"))?;
             return Ok(Some((mission.id.clone(), mission.player_side)));
         }
+        let prior_matches = progress.career_match_results().played;
         let result = launch_catalog_battle(
             &catalog, entry, root, output_root, &mut number, true,
         );
         if entry.mission.is_some() { progress = catalog.load_progress(output_root)?; }
         launch_failed = result.is_err();
+        if result.is_ok() {
+            if let Some(mission) = &entry.mission {
+                show_new_campaign_debrief(
+                    entry.title.trim(), &mission.id, prior_matches, &progress,
+                )?;
+            }
+        }
         if let Err(error) = result {
             eprintln!("Could not play {}: {error}", entry.title);
         }
