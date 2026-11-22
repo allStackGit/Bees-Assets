@@ -5624,6 +5624,11 @@ fn run_campaign_game_menu(
             {
                 "  [Complete]".to_owned()
             } else { String::new() };
+            if let Some(delta) = entry.mission.as_ref()
+                .and_then(|mission| progress.latest_mission_score_delta(&mission.id))
+            {
+                status.push_str(&format!("  [Score {delta:+}]"));
+            }
             if unlocked {
                 if let Some(mission) = entry.mission.as_ref() {
                     let path = resolve(root, entry.config_for(&progress));
@@ -5926,7 +5931,8 @@ fn run_campaign_game_menu(
         }).collect::<Vec<_>>();
         let Some(action) = select_battle(&rows, &mut selected, launch_failed,
             &fleet_rows, &squad_rows, &shop_rows, available, &transfer_rows,
-            &create_rows, &tactics_rows, &delete_rows, &name_rows)?
+            &create_rows, &tactics_rows, &delete_rows, &name_rows,
+            progress.campaign_score_summary())?
             else { break };
         let index = match action {
             NativeBattleMenuAction::Play(index) => index,
