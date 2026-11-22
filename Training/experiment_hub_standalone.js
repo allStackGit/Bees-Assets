@@ -440,7 +440,11 @@ async function main(argv=process.argv.slice(2)) {
                 ?await workerChangedPaths(releases.sources.worker.path,
                     runtime.source_commit,candidate):[]);
             frontend.backendPending=publishedImpact.coordinator;
-            frontend.agentPending=publishedImpact.agent;
+            const agentBase=releases.bootVersions.worker||runtime.source_commit;
+            frontend.agentPending=workerActivationImpact(candidate&&
+                candidate!==agentBase
+                ?await workerChangedPaths(releases.sources.worker.path,agentBase,candidate)
+                :[]).agent;
             const active=hub.state.jobs.some(job=>job.dispatch_id&&
                 !job.capacity_released_at&&
                 !['finished','failed','stopped','cancelled'].includes(job.status));
