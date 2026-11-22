@@ -408,6 +408,9 @@ pub struct Simulation<S, R> {
     /// persist across windows even when Rayon's physical thread changes.
     /// Model-batched inference retains its own separate action buffers.
     window_action_buffers: Vec<Vec<Decision>>,
+    // Temporary merge rows are reused across model-batched fixed ticks.
+    // Nothing from this aggregation belongs to a gameplay checkpoint.
+    physics_worker_aggregates: Vec<(Measurements, usize, Duration)>,
 }
 
 impl<S, R: GameRules<S>> Simulation<S, R> {
@@ -425,6 +428,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             measurements: Measurements::default(),
             physics_pool: None,
             window_action_buffers: Vec::new(),
+            physics_worker_aggregates: Vec::new(),
         })
     }
 
@@ -510,6 +514,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         // pre-restore actions or be mistaken for persisted game ownership.
         self.physics_pool = None;
         self.window_action_buffers.clear();
+        self.physics_worker_aggregates.clear();
         Ok(())
     }
 
@@ -787,9 +792,10 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         // Rayon's fold may split one physical worker into several tasks.
         // Merge by its actual pool thread index after all workers join so
         // measurements remain one entry per contributing CPU worker.
-        let mut per_worker = (0..pool.current_num_threads())
-            .map(|_| (Measurements::default(), 0_usize, Duration::ZERO))
-            .collect::<Vec<_>>();
+        let per_worker = &mut self.physics_worker_aggregates;
+        per_worker.clear();
+        per_worker.resize_with(pool.current_num_threads(),
+            || (Measurements::default(), 0_usize, Duration::ZERO));
         for (worker, measurements, arenas, mut failures, elapsed) in outcomes {
             if arenas == 0 { continue; }
             let (aggregate, assigned, duration) =
@@ -799,13 +805,13 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             *duration += elapsed;
             report.failed_worlds.append(&mut failures);
         }
-        for (measurements, arenas, elapsed) in per_worker {
-            if arenas == 0 { continue; }
+        for (measurements, arenas, elapsed) in per_worker.iter() {
+            if *arenas == 0 { continue; }
             report.worlds_stepped += measurements.ticks as usize;
             report.worker_loads.push(ParallelWorkerMeasurements::from_report(
-                arenas, &measurements, elapsed,
+                *arenas, measurements, *elapsed,
             ));
-            self.measurements.merge(&measurements);
+            self.measurements.merge(measurements);
         }
         report.failed_worlds.sort_unstable_by_key(|(index, _)| *index);
         Ok(report)
