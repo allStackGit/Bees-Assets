@@ -196,6 +196,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_lineage_async_lag_max_updates',
             'training_lineage_async_recalibrations',
             'training_lineage_async_discarded_steps',
+            'training_lineage_async_adopted_bytes',
             'training_shared_async_recalibrations',
             'training_shared_async_drift_windows',
             'training_shared_async_selected',
