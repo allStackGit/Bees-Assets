@@ -3972,17 +3972,16 @@ impl NativeSoftwareRenderer {
         // Hide private career information about enemy ships even when their
         // physical hull is currently visible through fog.
         if view.player_authority.player_viewer_side() == Some(ship.side) {
-            if let Some(stats) = view.fleet.combat_stats(ship_id) {
+            if let Some(stats) = view.player_authority.player_ship_battle_statistics(ship_id) {
                 let kills = stats.source_kills.map(|value| value.to_string())
                     .unwrap_or_else(|| "unavailable".to_owned());
                 lines.push(format!("This battle: {} shots | {kills} kills",
                     stats.observed_turret_shots));
                 lines.push(format!("Damage: {} dealt | {} received (TSV)",
                     stats.enemy_tsv_damage_done, stats.tsv_damage_received));
-                if let Some(entry) = view.fleet.get(ship_id) {
-                    if matches!(ship.ship_type, 4 | 9) {
-                        lines.push(format!("Minerals mined this battle: {}",
-                            entry.minerals_mined_this_level));
+                if matches!(ship.ship_type, 4 | 9) {
+                    if let Some(minerals) = stats.minerals_mined_this_level {
+                        lines.push(format!("Minerals mined this battle: {minerals}"));
                     }
                 }
             }
