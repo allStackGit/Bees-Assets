@@ -2130,10 +2130,20 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             if objective.get("kind").and_then(Value::as_str) == Some("campaign_elimination") {
                 let attacking = objective.get("attacking_side")
                     .and_then(Value::as_i64) == Some(i64::from(side));
-                let label = if attacking {
-                    "Find and destroy all the Bees"
-                } else {
-                    "Defend the Bee fleet from the human attackers"
+                // All campaign battles use the host's physical victory
+                // rules; their authored objective text is presentation
+                // only. Never infer mission identity from surviving hulls.
+                let label = match (state["campaign_mission"].as_str(), attacking) {
+                    (Some("neptune_seize_means"), true) =>
+                        "Seize Neptune's production facilities  |  Defeat the Bees",
+                    (Some("neptune_seize_means"), false) =>
+                        "Defend Neptune's production facilities",
+                    (Some("neptune_pressing_forward"), true) =>
+                        "Press forward  |  Defeat the Bee fleet",
+                    (Some("neptune_pressing_forward"), false) =>
+                        "Repel the advancing human fleet",
+                    (_, true) => "Find and destroy all the Bees",
+                    (_, false) => "Defend the Bee fleet from the human attackers",
                 };
                 text::draw_at(pixels,WIDTH,16,23,
                     text::fit(label,FIELD-32),1,[255,211,130]);
@@ -2175,9 +2185,10 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                             .and_then(Value::as_i64).unwrap_or(0);
                         let defending = objective.get("defending_side")
                             .and_then(Value::as_i64) == Some(i64::from(side));
-                        let cue = &state["campaign_dialogue"]["cue"];
-                        let evacuation = cue.as_str() == Some("PlutoEvacuationBriefing") ||
-                            cue.get("PlutoEvacuationComplete").is_some();
+                        // The mission identity is public to both sides.
+                        // Campaign dialogue is private and may be absent on
+                        // opposing peers or after an acknowledged briefing.
+                        let evacuation = objective["pluto_evacuation"] == true;
                         if objective["titania_defense"] == true {
                             let shield = state["ships"].as_array().into_iter().flatten()
                                 .find(|ship| ship["id"].as_i64() == Some(protected));
