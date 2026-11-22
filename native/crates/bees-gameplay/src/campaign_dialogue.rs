@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 /// Titania II's authored defended base, player deployment focus, and camera.
 pub const TITANIA_II_CENTER: Vec2 = Vec2::new(-32.0, 55.0);
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum CampaignDialogueSpec {
     /// Pluto I's real scout notices the authored Honeybee through the
