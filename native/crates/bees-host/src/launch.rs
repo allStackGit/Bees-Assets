@@ -2014,7 +2014,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             .expect("campaign roster projection must be an array")
             .iter().filter_map(|row| row["fleet_ship_id"].as_i64())
             .collect::<HashSet<_>>();
-        for (side, id, source_squad) in source_ships {
+        for (side, id, source_squad, ship_type) in source_ships {
             if known.contains(&id) { continue; }
             status["fleet_roster"].as_array_mut()
                 .expect("campaign roster projection must be an array")
@@ -2023,7 +2023,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                     "side": side,
                     "name": progress.fleet_ship_name(id),
                     "acquisition": "authored",
-                    "ship_type": null,
+                    "ship_type": ship_type,
                     "saved_squad_id": source_squad,
                     "in_reserve": false,
                     "has_recorded_battle": false,
@@ -4331,7 +4331,7 @@ fn run_campaign_mission(
 fn authored_menu_fleet(
     catalog: &battle_catalog::BattleCatalog, root: &Path,
     progress: &battle_catalog::CampaignProgress<'_>,
-) -> (Vec<(i32, i64, i64)>, Vec<(i32, i64)>, Vec<(i32, i64)>, Vec<(i32, i64)>) {
+) -> (Vec<(i32, i64, i64, u8)>, Vec<(i32, i64)>, Vec<(i32, i64)>, Vec<(i32, i64)>) {
     let mut listed = Vec::new();
     let mut seen_fleet = HashSet::new();
     let mut common_destinations = HashMap::<i32, HashSet<i64>>::new();
@@ -4383,7 +4383,7 @@ fn authored_menu_fleet(
                                     scene.can_reassign_authored_ship(side, entity_id) &&
                                     seen_fleet.insert((side, fleet_id))
                                 {
-                                    listed.push((side, fleet_id, saved_id));
+                                    listed.push((side, fleet_id, saved_id, ship.ship_type));
                                 }
                             }
                         }
@@ -5631,12 +5631,12 @@ fn run_campaign_game_menu(
                 }
             }
         }
-        for &(side, fleet_id, original_squad) in &original_choices {
+        for &(side, fleet_id, original_squad, ship_type) in &original_choices {
             let current_squad = progress.authored_current_squad(fleet_id)
                 .unwrap_or(original_squad);
             let label = match progress.fleet_ship_name(fleet_id) {
-                Some(name) => format!("Original Fleet #{fleet_id} ({name})"),
-                None => format!("Original Fleet #{fleet_id}"),
+                Some(name) => format!("Original Fleet #{fleet_id} ({name}, Type {ship_type})"),
+                None => format!("Original Fleet #{fleet_id} (Type {ship_type})"),
             };
             if current_squad != 0 {
                 transfer_rows.push(NativeTransferMenuRow {
@@ -5758,7 +5758,7 @@ fn run_campaign_game_menu(
         // of their temporary squad assignment. The menu never fabricates
         // a source FleetShip identity from a Stage hull or type number.
         let mut fleet_name_targets = progress.nameable_fleet_ships();
-        fleet_name_targets.extend(original_choices.iter().map(|&(side, id, _)|
+        fleet_name_targets.extend(original_choices.iter().map(|&(side, id, _, _)|
             (side, id)));
         fleet_name_targets.sort_unstable();
         fleet_name_targets.dedup();
