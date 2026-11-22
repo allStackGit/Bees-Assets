@@ -159,6 +159,7 @@ pub struct NativeCampaignMenuStats {
     pub ships_lost: u64,
     pub ships_returned: u64,
     pub credited_kills: u64,
+    pub total_mined_tsv: u64,
     pub match_history_complete: bool,
 }
 
@@ -864,9 +865,9 @@ fn select_battle_inner(
             else { "Choose a battle to play" }, 1, MUTED);
         if let Some(career) = &career_stats {
             text::draw_centered(&mut pixels, WIDTH, 96, &format!(
-                "Score {:+}  |  Lost {}  Returned {}  Kills {}{}",
+                "Score {:+} | Lost {} Returned {} Kills {} | Mined {} TSV{}",
                 career.score, career.ships_lost, career.ships_returned,
-                career.credited_kills,
+                career.credited_kills, career.total_mined_tsv,
                 if career.score_complete && career.match_history_complete {
                     ""
                 } else { " (partial older history)" },

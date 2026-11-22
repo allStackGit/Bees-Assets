@@ -90,6 +90,8 @@ pub trait NativeLevelRewardMetadata {
     fn opponent_match_counts(&self) -> Option<(u64, u64, u64)> { None }
     fn player_loss_types(&self) -> Option<[u64; bees_sim::ship_assets::SHIP_TYPE_COUNT]> { None }
     fn opponent_loss_types(&self) -> Option<[u64; bees_sim::ship_assets::SHIP_TYPE_COUNT]> { None }
+    fn player_minerals_mined(&self) -> Option<u64> { None }
+    fn opponent_minerals_mined(&self) -> Option<u64> { None }
 
     /// A death-triggered Fire Barge explosion can credit the original
     /// external killer for damage to its allies. Persistent FleetShip

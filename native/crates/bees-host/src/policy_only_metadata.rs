@@ -1285,6 +1285,14 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
         self.fleet.opponent_match_counts().map(|row| row.ships_lost_by_type)
     }
 
+    fn player_minerals_mined(&self) -> Option<u64> {
+        self.fleet.player_match_counts().map(|row| row.player_minerals_mined)
+    }
+
+    fn opponent_minerals_mined(&self) -> Option<u64> {
+        self.fleet.opponent_match_counts().map(|row| row.player_minerals_mined)
+    }
+
     fn observe_fire_barge_chain_damage(&mut self, killer_ship_id: i64, tsv_loss: i32) {
         self.fleet.record_fire_barge_chain_damage(killer_ship_id, tsv_loss);
     }

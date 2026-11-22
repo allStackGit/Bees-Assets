@@ -2514,7 +2514,11 @@ impl NativeSoftwareRenderer {
             if let Some((score, _)) = view.player_authority.player_viewer_side()
                 .and_then(|side| view.player_match_for_side(side))
             {
-                    let label = format!("Mission score {score:+}");
+                    let mined = view.player_authority.player_viewer_side()
+                        .and_then(|side| view.minerals_mined_for_side(side))
+                        .filter(|&mined| mined > 0)
+                        .map_or(String::new(), |mined| format!(" | Mined {mined} TSV"));
+                    let label = format!("Mission score {score:+}{mined}");
                     let y = if view.survival.is_some() || view.demolition.is_some() ||
                         view.escort.is_some() || view.combat.extraction_objective().is_some() ||
                         view.rescue_barges.is_some() || view.campaign_objective.is_some() ||
@@ -3242,6 +3246,8 @@ impl NativeSoftwareRenderer {
                 let (lost, returned, kills) = counts.unwrap_or((0, 0, 0));
                 format!("Score {score:+}  |  Lost {lost}  Returned {returned}  Kills {kills}")
             });
+        let mined_total = view.player_authority.player_viewer_side()
+            .and_then(|side| view.minerals_mined_for_side(side));
         let loss_breakdown = view.player_authority.player_viewer_side()
             .and_then(|side| view.loss_types_for_side(side))
             .and_then(|losses| {
@@ -3261,7 +3267,9 @@ impl NativeSoftwareRenderer {
         let left = (self.width - width) / 2;
         let panel_height = (title_scale + 2) * text::HEIGHT + 20 +
             usize::from(player_summary.is_some()) * (text::HEIGHT + 4) +
-            usize::from(loss_breakdown.is_some()) * (text::HEIGHT + 4);
+            usize::from(loss_breakdown.is_some()) * (text::HEIGHT + 4) +
+            usize::from(mined_total.is_some_and(|amount| amount > 0)) *
+                (text::HEIGHT + 4);
         for y in top..(top + panel_height).min(self.height) {
             let start = y * self.width + left;
             self.pixels[start..start + width].fill(if y < top + 2 { 0xe1a34b } else { 0x152133 });
@@ -3276,11 +3284,17 @@ impl NativeSoftwareRenderer {
                 title_top + (title_scale + 1) * text::HEIGHT + 4,
                 &summary, 1, [198, 231, 248]);
         }
-        if let Some(breakdown) = loss_breakdown {
+        if let Some(breakdown) = &loss_breakdown {
             text::draw_centered(&mut self.pixels, self.width,
                 title_top + (title_scale + 2) * text::HEIGHT + 8,
-                &text::fit(&breakdown, width.saturating_sub(12)),
+                &text::fit(breakdown, width.saturating_sub(12)),
                 1, [198, 231, 248]);
+        }
+        if let Some(mined) = mined_total.filter(|&value| value > 0) {
+            text::draw_centered(&mut self.pixels, self.width,
+                title_top + (title_scale + 2) * text::HEIGHT + 8 +
+                    usize::from(loss_breakdown.is_some()) * (text::HEIGHT + 4),
+                &format!("Mined by player: {mined} TSV"), 1, [198, 231, 248]);
         }
     }
 

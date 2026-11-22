@@ -171,11 +171,13 @@ pub struct NativeRenderWorldView<'a> {
     /// kills); owned by the same checkpoint as live physical combat.
     pub player_match_counts: Option<(u64, u64, u64)>,
     pub player_loss_types: Option<[u64; bees_sim::ship_assets::SHIP_TYPE_COUNT]>,
+    pub player_minerals_mined: Option<u64>,
     /// Independent score of the second genuinely player-controlled side,
     /// never an AI surrogate or a disclosure to the other player.
     pub opponent_score: Option<(i32, i64)>,
     pub opponent_match_counts: Option<(u64, u64, u64)>,
     pub opponent_loss_types: Option<[u64; bees_sim::ship_assets::SHIP_TYPE_COUNT]>,
+    pub opponent_minerals_mined: Option<u64>,
     pub campaign_objective: Option<bees_gameplay::campaign_dialogue::CampaignObjectiveKind>,
     /// Source Uranus III rescue identity; never a second ship lifecycle.
     pub rescue_barges: Option<[i64; 3]>,
@@ -211,6 +213,14 @@ impl<'a> NativeRenderWorldView<'a> {
         }
         self.opponent_score.filter(|(owner, _)| *owner == side)
             .map(|(_, score)| (score, self.opponent_match_counts))
+    }
+
+    pub fn minerals_mined_for_side(&self, side: i32) -> Option<u64> {
+        if self.campaign_score.is_some_and(|(owner, _)| owner == side) {
+            return self.player_minerals_mined;
+        }
+        self.opponent_score.filter(|(owner, _)| *owner == side)?;
+        self.opponent_minerals_mined
     }
 
     pub fn loss_types_for_side(&self, side: i32)

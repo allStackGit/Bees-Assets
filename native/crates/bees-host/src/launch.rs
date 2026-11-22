@@ -6016,6 +6016,7 @@ fn run_campaign_game_menu(
                     ships_lost: counts.ships_lost,
                     ships_returned: counts.ships_returned,
                     credited_kills: counts.ships_destroyed_by_player,
+                    total_mined_tsv: counts.player_minerals_mined,
                     match_history_complete,
                 }
             })?
