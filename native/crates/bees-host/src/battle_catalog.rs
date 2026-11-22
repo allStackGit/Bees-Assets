@@ -588,6 +588,9 @@ impl CampaignProgress<'_> {
                 (!self.fleet.get(&ship.fleet_ship_id)
                     .is_some_and(|entry| entry.is_dead))
                     .then_some((*side, ship.fleet_ship_id))))
+            .chain(self.authored_roster.iter().filter_map(|(&id, owner)|
+                (!self.fleet.get(&id).is_some_and(|entry| entry.is_dead))
+                    .then_some((owner.side, id))))
             .filter(|(side, id)| matches!(*side, 1 | 2) && *id > 0)
             .collect::<Vec<_>>();
         ids.sort_unstable();
@@ -669,19 +672,40 @@ impl CampaignProgress<'_> {
     }
 
     pub fn fleet_rows(&self) -> Vec<String> {
-        let mut ids = self.fleet.keys().copied().collect::<Vec<_>>();
+        // A FleetShip has an identity before its first completed campaign
+        // battle. Display owned purchases and original roster transfers
+        // alongside combat career history without fabricating battle stats.
+        let mut ids = self.fleet.keys().copied()
+            .chain(self.purchases.iter().map(|(_, ship)| ship.fleet_ship_id))
+            .chain(self.authored_roster.keys().copied())
+            .collect::<Vec<_>>();
         ids.sort_unstable();
-        ids.into_iter().map(|id| {
-            let ship = &self.fleet[&id];
+        ids.dedup();
+        ids.into_iter().filter_map(|id| {
             let name = self.fleet_ship_name(id)
                 .map_or(String::new(), |name| format!(" ({name})"));
-            format!(
-                "#{id}{name} S{} W{}/{} M{} Hit{} Taken{} Kill{}{}",
-                ship.side, ship.battles_won, ship.battles_fought,
-                ship.minerals_mined, ship.combat.enemy_tsv_damage_done,
-                ship.combat.tsv_damage_received, ship.combat.attributed_enemy_kills,
-                if ship.is_dead { " LOST" } else { "" },
-            )
+            if let Some(ship) = self.fleet.get(&id) {
+                return Some(format!(
+                    "#{id}{name} S{} W{}/{} M{} Hit{} Taken{} Kill{}{}",
+                    ship.side, ship.battles_won, ship.battles_fought,
+                    ship.minerals_mined, ship.combat.enemy_tsv_damage_done,
+                    ship.combat.tsv_damage_received, ship.combat.attributed_enemy_kills,
+                    if ship.is_dead { " LOST" } else { "" },
+                ));
+            }
+            if let Some((side, purchase)) = self.purchases.iter().find(|(_, ship)|
+                ship.fleet_ship_id == id)
+            {
+                return Some(format!(
+                    "#{id}{name} S{side} Type {} Purchased - no completed battles",
+                    purchase.ship_type,
+                ));
+            }
+            self.authored_roster.get(&id).map(|owner|
+                format!(
+                    "#{id}{name} S{} Original - no completed battles",
+                    owner.side,
+                ))
         }).collect()
     }
 }
@@ -1601,7 +1625,9 @@ impl BattleCatalog {
             let recorded_side = progress.fleet.get(&edit.fleet_ship_id)
                 .map(|entry| entry.side)
                 .or_else(|| progress.purchases.iter().find_map(|(side, ship)|
-                    (ship.fleet_ship_id == edit.fleet_ship_id).then_some(*side)));
+                    (ship.fleet_ship_id == edit.fleet_ship_id).then_some(*side)))
+                .or_else(|| progress.authored_roster.get(&edit.fleet_ship_id)
+                    .map(|owner| owner.side));
             if edit.campaign_id != *campaign ||
                 !matches!(edit.side, 1 | 2) || edit.fleet_ship_id <= 0 ||
                 recorded_side != Some(edit.side) ||
