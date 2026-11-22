@@ -13,7 +13,7 @@ import socket
 import threading
 import time
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 
 from remote_play_client import ENEMY_MANEUVERS, RemoteConsole, remote_token
 
@@ -96,6 +96,12 @@ class RemoteBattleWindow:
             state="disabled",
         )
         self.rejoin_button.pack(side="left", padx=10)
+        self.surrender_button = ttk.Button(
+            self.footer, text="Concede battle", command=self.surrender,
+            state="disabled",
+        )
+        if not console.spectator:
+            self.surrender_button.pack(side="left", padx=10)
         self.info = tk.StringVar(value=(
             "Read-only faction view — wheel zoom, middle-drag pan"
             if console.spectator else
@@ -189,6 +195,28 @@ class RemoteBattleWindow:
     def notice(self, message):
         self.last_feedback = message
         self.status.set(message)
+
+    def surrender(self):
+        if (self.console.spectator or not self.console.alive or
+                self.state is None or self.state.get("can_surrender") is not True or
+                self.state.get("briefing_paused") is True or
+                self.state.get("terminal_outcome") is not None or
+                self.held_drag):
+            self.notice("Surrender is unavailable in this battle state")
+            return
+        if not messagebox.askyesno(
+            "Concede battle",
+            "Surrender this battle? The host will commit the defeat and "
+            "campaign consequences. This cannot be undone.",
+            icon="warning", parent=self.root,
+        ):
+            return
+        try:
+            self.console.surrender()
+            self.notice("Surrender submitted; awaiting authoritative battle result")
+            self.surrender_button.state(["disabled"])
+        except (ValueError, OSError) as error:
+            self.notice(f"Surrender unavailable: {error}")
 
     def rejoin(self):
         # Explicit reconnection only: an old TCP peer and its held weapons
@@ -355,6 +383,15 @@ class RemoteBattleWindow:
                     self.draw()
                 if not self.last_feedback:
                     self.status.set(f"World {key[0]}, episode {key[1]}, tick {key[2]}")
+        can_surrender = (
+            not self.console.spectator and self.console.alive and
+            state is not None and state.get("can_surrender") is True and
+            state.get("briefing_paused") is not True and
+            state.get("terminal_outcome") is None and not self.held_drag
+        )
+        self.surrender_button.state(
+            ["!disabled"] if can_surrender else ["disabled"]
+        )
         terminal = self.console.battle_receipt_snapshot()
         if terminal != self.shown_terminal_receipt:
             self.shown_terminal_receipt = terminal

@@ -49,6 +49,7 @@ HELP = """Commands:
   status               Show the latest world and selected friendly squads
   objective            Show the authored mission and reinforcement status
   ready                Acknowledge the current hosted campaign briefing
+  surrender confirm    Concede the battle (irreversible after host commits)
   rejoin               Reconnect to the SAME recovered native host session
   ships                List currently visible ships and their positions
   squads               List friendly and visible target squads
@@ -423,7 +424,9 @@ class RemoteConsole:
         # Only Begin carries selected squad lifetimes; the native host
         # authorizes the gesture and owns the live weapon state.
         is_held = action[0] == "held_fire"
-        if not owners and (not is_held or "Begin" in action[1]["action"]):
+        is_surrender = action[0] == "surrender"
+        if not owners and not is_surrender and (
+                not is_held or "Begin" in action[1]["action"]):
             raise ValueError("select at least one live friendly squad first")
         packet = {
             "kind": "input", "request_id": self.next_request,
@@ -431,13 +434,25 @@ class RemoteConsole:
                 "kind": action[0], "input": {
                     "world_id": state["world_id"],
                     "episode_revision": state["episode_revision"],
-                    **({} if is_held else {"squads": owners}),
+                    **({} if is_held or is_surrender else {"squads": owners}),
                     **action[1],
                 },
             },
         }
         self.socket.sendall((json.dumps(packet, separators=(",", ":")) + "\n").encode("utf-8"))
         self.next_request += 1
+
+    def surrender(self):
+        if self.spectator:
+            raise ValueError("spectators cannot surrender another player's battle")
+        state = self.snapshot()
+        if (state is None or state.get("can_surrender") is not True or
+                state.get("terminal_outcome") is not None or
+                state.get("briefing_paused") is True or
+                self.battle_receipt_snapshot() is not None or
+                self.held_scope is not None):
+            raise ValueError("surrender unavailable during briefing, held fire, or after battle")
+        self.send(("surrender", {"side": state["viewer_side"]}), state, [])
 
     def held_fire(self, kind, target=None, *, owners=None):
         """Submit native Begin/Aim/End, retaining the original episode."""
@@ -540,6 +555,12 @@ class RemoteConsole:
             receipt = self.campaign_receipt_snapshot()
             if receipt is not None:
                 print(self.campaign_receipt_summary(receipt))
+            return
+        if cmd == "surrender":
+            if argv != ["confirm"]:
+                raise ValueError("surrender is irreversible; enter 'surrender confirm' to concede")
+            self.surrender()
+            print("Surrender submitted; awaiting the host's durable battle result")
             return
         if cmd == "ready":
             print("Briefing acknowledgment sent" if self.acknowledge_briefing()
