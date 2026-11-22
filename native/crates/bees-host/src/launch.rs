@@ -1509,7 +1509,8 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput)
         Outcome::Chase(counts) => counts.accepted_squads > 0,
         Outcome::HeldFire(message) =>
             message != "No selected weapons accepted held fire",
-        Outcome::Select(count) => count > 0,
+        // Clearing a selection is also a valid non-command user input.
+        Outcome::Select(_) => true,
     };
     let feedback = match (action, outcome) {
         (NativePlayerInput::Select(_), Outcome::Select(count)) => {
