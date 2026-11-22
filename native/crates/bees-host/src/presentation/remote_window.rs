@@ -543,6 +543,9 @@ struct PeerClient {
     held_fire_begin_request: Option<u64>,
     held_fire_rejected: bool,
     campaign_receipt: Option<String>,
+    // Immutable per-FleetShip awards and retirements from the side-owned,
+    // durably committed campaign receipt; never a client-side career ledger.
+    campaign_reward_details: Vec<String>,
     battle_result_receipt: Option<String>,
     battle_loss_breakdown: Vec<String>,
     metrics: WireCounts,
@@ -591,7 +594,8 @@ impl PeerClient {
             state: None, visual: RemoteVisual::default(),
             notice: "Authenticating with native host".to_owned(),
             held_fire_begin_request: None, held_fire_rejected: false,
-            campaign_receipt: None, battle_result_receipt: None,
+            campaign_receipt: None, campaign_reward_details: Vec::new(),
+            battle_result_receipt: None,
             battle_loss_breakdown: Vec::new(),
             metrics: WireCounts::default(),
         })
@@ -714,6 +718,7 @@ impl PeerClient {
                         self.battle_result_receipt = None;
                         self.battle_loss_breakdown.clear();
                         self.campaign_receipt = None;
+                        self.campaign_reward_details.clear();
                         self.notice = "New battle started".into();
                     }
                     if self.visual.snapshot(self.state.as_ref(), &message) {
@@ -759,6 +764,52 @@ impl PeerClient {
                         "Campaign saved: {mission} ({}{score}); {awarded_ships} ships, {awarded_squads} squads awarded{evacuated}{banked}",
                         if success { "victory" } else { "defeat" },
                     );
+                    let details=&mut self.campaign_reward_details;
+                    details.clear();
+                    details.push(format!(
+                        "{} — {}",mission,if success {"Mission succeeded"}
+                        else {"Mission failed"},
+                    ));
+                    if let Some(delta)=message["campaign_score_delta"].as_i64() {
+                        details.push(format!("Committed score change: {delta:+}"));
+                    }
+                    if let Some(minerals)=message["banked_minerals"].as_u64() {
+                        details.push(format!("Minerals banked: {minerals}"));
+                    }
+                    if let Some(people)=outcome["evacuated_personnel"].as_u64() {
+                        details.push(format!("Personnel evacuated: {people}"));
+                    }
+                    if let Some(ships)=outcome["awarded_ships"].as_array() {
+                        details.push(format!("FleetShips awarded: {}",ships.len()));
+                        let catalog=source_ship_catalog();
+                        for ship in ships {
+                            let kind=ship["ship_type"].as_u64()
+                                .and_then(|value|u8::try_from(value).ok());
+                            let name=kind.and_then(|kind|catalog.by_type(kind))
+                                .map_or("Unknown class",|asset|asset.name.as_str());
+                            let id=ship["fleet_ship_id"].as_i64().unwrap_or(0);
+                            let squad=ship["saved_squad_id"].as_i64().unwrap_or(0);
+                            details.push(format!("  FleetShip #{id}: {name}  Squad #{squad}"));
+                        }
+                    }
+                    if let Some(squads)=outcome["awarded_squads"].as_array() {
+                        details.push(format!("SavedSquads awarded: {}",squads.len()));
+                        for squad in squads {
+                            let id=squad["saved_squad_id"].as_i64().unwrap_or(0);
+                            let template=squad["template_saved_squad_id"].as_i64().unwrap_or(0);
+                            details.push(format!("  Squad #{id}  Template #{template}"));
+                        }
+                    }
+                    if let Some(retired)=outcome["retired_fleet_ids"].as_array() {
+                        if !retired.is_empty() {
+                            details.push(format!("Permanently retired: {} FleetShips",retired.len()));
+                            for ids in retired.chunks(8) {
+                                let labels=ids.iter().filter_map(Value::as_i64)
+                                    .map(|id|format!("#{id}")).collect::<Vec<_>>();
+                                details.push(format!("  {}",labels.join("  ")));
+                            }
+                        }
+                    }
                     self.campaign_receipt = Some(receipt.clone());
                     self.notice = receipt;
                     self.metrics.campaign_receipts += 1;
