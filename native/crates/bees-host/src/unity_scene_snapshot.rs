@@ -1489,9 +1489,18 @@ pub enum NativeSquadColorSetting {
     Custom([u8; 3]),
 }
 
+/// Stable FleetShip placement in a saved squad, not the transient source
+/// Stage/CombatWorld ship entity ID. Values are relative to squad center.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeSavedShipPlacement {
+    pub fleet_ship_id: i64,
+    pub offset: [i16; 2],
+}
+
 /// Saved player squad preferences between native campaign missions.
 /// The server shooting ID is distinct from HiveMind command IDs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeSavedSquadTactics {
     pub side: i32,
@@ -1509,8 +1518,24 @@ pub struct NativeSavedSquadTactics {
     /// fleet's purchases, reassignments and losses are resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub formation: Option<NativeSavedSquadFormation>,
+    /// One optional per-FleetShip layout, applied after source formation
+    /// and fleet transfers. None keeps the saved edits; Some([]) clears
+    /// them. A physical ship's source FleetShip identity is authoritative.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placements: Option<Vec<NativeSavedShipPlacement>>,
 }
 
+impl NativeSavedSquadTactics {
+    pub fn placements_valid(&self) -> bool {
+        let Some(placements) = &self.placements else { return true };
+        if placements.len() > 1024 { return false; }
+        let mut seen = HashSet::with_capacity(placements.len());
+        placements.iter().all(|place| place.fleet_ship_id > 0 &&
+            place.offset.iter().all(|&coord|
+                (-4096..=4096).contains(&i32::from(coord))) &&
+            seen.insert(place.fleet_ship_id))
+    }
+}
 
 /// Runtime source Squad.ItemId is allocated once per Squad.Setup by the
 /// Stage-wide monotonic Pool.ItemCount, even for reused pooled wrappers.
@@ -1915,6 +1940,7 @@ impl NativePhysicalScene {
         for entry in settings {
             if entry.side != player_side || entry.saved_squad_id <= 0 ||
                 !(1..=40).contains(&entry.shooting_strategy_id) ||
+                !entry.placements_valid() ||
                 !used.insert(entry.saved_squad_id) ||
                 self.source_squads.iter().filter(|squad|
                     squad.saved_squad_id == Some(entry.saved_squad_id) &&

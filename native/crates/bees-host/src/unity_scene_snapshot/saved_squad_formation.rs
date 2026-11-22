@@ -232,21 +232,27 @@ impl NativePhysicalScene {
         let mut offsets: HashMap<i64, Vec2> = HashMap::new();
         let mut changed_squads = 0;
         for entry in settings {
-            let Some(formation) = entry.formation else { continue };
-            if !formation.is_valid() || entry.side != side {
+            let formation = entry.formation.unwrap_or_else(NativeSavedSquadFormation::authored);
+            if !formation.is_valid() || !entry.placements_valid() || entry.side != side {
                 return Err(invalid("invalid native formation settings or player ownership"));
             }
             // Original authored squad geometry can also be translated
             // without choosing an automatic slot rearrangement.
             let authored = formation.kind == NativeSquadFormationKind::Authored;
-            if authored && formation.translation == [0, 0] { continue; }
+            let manually_placed = entry.placements.as_deref().unwrap_or(&[]);
+            if authored && formation.translation == [0, 0] && manually_placed.is_empty() {
+                continue;
+            }
             let squad = self.source_squads.iter().find(|squad|
                 squad.saved_squad_id == Some(entry.saved_squad_id) &&
                 squad.side == side && squad.player_permissions.user_controlled &&
                 !squad.hivemind.as_ref()
                     .is_some_and(|source| source.hivemind_controlled)
             ).ok_or(invalid("formation requires one authorized saved player squad"))?;
-            if squad.members.len() <= 1 && formation.translation == [0, 0] { continue; }
+            if squad.members.is_empty() || (squad.members.len() == 1 &&
+                formation.translation == [0, 0] && manually_placed.is_empty()) {
+                continue;
+            }
             let mut originals = Vec::with_capacity(squad.members.len());
             for &id in &squad.members {
                 let position = self.entities.iter().find_map(|entity| match entity {
@@ -269,6 +275,14 @@ impl NativePhysicalScene {
             let translation = Vec2::new(
                 f32::from(formation.translation[0]), f32::from(formation.translation[1]),
             );
+            // Current FleetShip IDs are the only durable position keys.
+            // Missing/dead/reserved/transferred identities stay in the
+            // career ledger without moving an unrelated physical ship.
+            let overrides = manually_placed.iter().map(|placement|
+                (placement.fleet_ship_id, Vec2::new(
+                    f32::from(placement.offset[0]),
+                    f32::from(placement.offset[1]),
+                ))).collect::<HashMap<_, _>>();
             let divisor = squad.members.len() as f32;
             let original_center = originals.iter().copied()
                 .fold(Vec2::ZERO, |sum, item| sum + item) * divisor.recip();
@@ -277,7 +291,14 @@ impl NativePhysicalScene {
             for ((&id, original), slot) in squad.members.iter()
                 .zip(originals.into_iter()).zip(slots)
             {
-                let offset = slot - slot_center;
+                let fleet_id = self.entities.iter().find_map(|entity| match entity {
+                    NativeAuthoredEntity::Ship(ship) if ship.entity_id == id => ship.fleet_ship_id,
+                    _ => None,
+                });
+                let custom = fleet_id.and_then(|key| overrides.get(&key)).copied();
+                // A manual assignment replaces one squad slot while all
+                // other ships retain source/automatic formation order.
+                let offset = custom.unwrap_or(slot - slot_center);
                 let destination = original_center + offset + translation;
                 let delta = destination - original;
                 let family = self.movable_authored_family(side, id)
@@ -292,7 +313,7 @@ impl NativePhysicalScene {
                         return Err(invalid("formation moves a physical ship through two owners"));
                     }
                 }
-                if !authored { offsets.insert(id, offset); }
+                if !authored || custom.is_some() { offsets.insert(id, offset); }
             }
             changed_squads += 1;
         }

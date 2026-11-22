@@ -758,14 +758,14 @@ impl CampaignProgress<'_> {
 
     /// One effective edit per SavedSquad, in stable source identity order.
     pub fn tactics_for_side(&self, side: i32) -> Vec<NativeSavedSquadTactics> {
-        let mut entries = self.tactics.iter().copied()
+        let mut entries = self.tactics.iter().cloned()
             .filter(|entry| entry.side == side).collect::<Vec<_>>();
         entries.sort_unstable_by_key(|entry| entry.saved_squad_id);
         entries
     }
 
     pub fn tactics_for_squad(&self, side: i32, id: i64) -> Option<NativeSavedSquadTactics> {
-        self.tactics.iter().copied().find(|entry|
+        self.tactics.iter().cloned().find(|entry|
             entry.side == side && entry.saved_squad_id == id)
     }
 
@@ -1332,7 +1332,8 @@ impl BattleCatalog {
             progress.is_retired_saved_squad(entry.saved_squad_id) ||
             !(1..=40).contains(&entry.shooting_strategy_id) ||
             entry.formation.is_some_and(|formation| !formation.is_valid()) ||
-            progress.tactics_for_squad(entry.side, entry.saved_squad_id) == Some(entry) ||
+            !entry.placements_valid() ||
+            progress.tactics_for_squad(entry.side, entry.saved_squad_id).as_ref() == Some(&entry) ||
             progress.squads.get(&entry.saved_squad_id)
                 .is_some_and(|squad| squad.side != entry.side) ||
             progress.created_squads.iter().any(|squad|
@@ -1897,7 +1898,8 @@ impl BattleCatalog {
                 !matches!(entry.side, 1 | 2) || entry.saved_squad_id <= 0 ||
                 !(1..=40).contains(&entry.shooting_strategy_id) ||
                 entry.formation.is_some_and(|formation| !formation.is_valid()) ||
-                progress.tactics_for_squad(entry.side, entry.saved_squad_id) == Some(entry) ||
+            !entry.placements_valid() ||
+                progress.tactics_for_squad(entry.side, entry.saved_squad_id).as_ref() == Some(&entry) ||
                 progress.squads.get(&entry.saved_squad_id)
                     .is_some_and(|squad| squad.side != entry.side) ||
                 progress.created_squads.iter().any(|squad|

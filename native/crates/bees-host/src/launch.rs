@@ -36,7 +36,7 @@ use bees_host::scene_assets::NativeSceneAssets;
 use bees_host::scene_builder::{NativeAuthoredEntity, NativeAuthoredGroups};
 use bees_host::unity_scene_snapshot::{
     NativeExportedPolicyLevelSetup, NativePhysicalScene, NativeLevelLayout,
-    NativePurchasedShip, NativeCreatedSquad, NativeSavedSquadTactics,
+    NativePurchasedShip, NativeCreatedSquad, NativeSavedSquadTactics, NativeSavedShipPlacement,
     NativeSquadColorSetting, NativeSavedSquadFormation, NativeSquadFormationKind,
 };
 use bees_sim::asteroid_fragments::FragmentSpawnSettings;
@@ -1757,7 +1757,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees squad-duplicate <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
        bees squad-delete <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id>
        bees squad-name <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --name <printable-name>
-       bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false> [--match-speed <true|false>] [--color <inherit|clear|RRGGBB>] [--formation <source|line|box|rectangle|pyramid|hollow-pyramid>[:width]]
+       bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false> [--match-speed <true|false>] [--color <inherit|clear|RRGGBB>] [--formation <kind[:width[:rotation[:mirror[:dx:dy]]]]>] [--place-ship <fleet-id:x:y>]... [--clear-placements]
   play  Open the native battle window (requires the client feature)
   serve  Host headless authenticated multiplayer with deterministic input recording
          (requires --output-dir, BEES_NATIVE_REMOTE_LISTEN and remote token)
@@ -2327,6 +2327,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         let mut match_speed = None;
         let mut color_setting = None;
         let mut formation = None;
+        let mut placements: Option<Vec<NativeSavedShipPlacement>> = None;
         while let Some(flag) = args.next() {
             if flag == "--match-speed" && match_speed.is_none() {
                 match_speed = Some(args.next().ok_or_else(|| invalid(USAGE))?
@@ -2341,13 +2342,32 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 formation = Some(parse_squad_formation_setting(
                     &value.to_string_lossy(),
                 )?);
+            } else if flag == "--place-ship" {
+                let token = args.next().ok_or_else(|| invalid(USAGE))?;
+                let token = token.to_string_lossy();
+                let mut parts = token.split(':');
+                let id = parts.next().unwrap_or("").parse::<i64>()?;
+                let x = parts.next().ok_or_else(|| invalid("ship placement needs fleet-id:x:y"))?
+                    .parse::<i16>()?;
+                let y = parts.next().ok_or_else(|| invalid("ship placement needs fleet-id:x:y"))?
+                    .parse::<i16>()?;
+                if parts.next().is_some() {
+                    return Err(invalid("ship placement needs fleet-id:x:y").into());
+                }
+                let list = placements.get_or_insert_with(Vec::new);
+                if list.iter().any(|place| place.fleet_ship_id == id) {
+                    return Err(invalid("duplicate FleetShip placement in one edit").into());
+                }
+                list.push(NativeSavedShipPlacement { fleet_ship_id: id, offset: [x, y] });
+            } else if flag == "--clear-placements" && placements.is_none() {
+                placements = Some(Vec::new());
             } else {
                 return Err(invalid(USAGE).into());
             }
         }
         return run_set_saved_squad_tactics(&catalog, &output, NativeSavedSquadTactics {
             side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
-            match_speed, color_setting, formation,
+            match_speed, color_setting, formation, placements,
         });
     }
     if first == "reassign" {
@@ -4340,6 +4360,7 @@ fn run_duplicate_saved_squad(
         }),
         formation: progress.tactics_for_squad(side, template_id)
             .and_then(|saved| saved.formation),
+        placements: None,
     }];
     preflight_native_fleet_edit_with_squads_and_tactics(
         &catalog, root, &progress, side, &projected_purchases,
@@ -4664,15 +4685,40 @@ fn run_set_saved_squad_tactics(
         entry.formation = progress.tactics_for_squad(entry.side, entry.saved_squad_id)
             .and_then(|saved| saved.formation);
     }
-    if entry.formation.is_some_and(|form| !form.is_valid()) {
-        return Err(invalid("invalid saved squad formation width").into());
+    if entry.formation.is_some_and(|form| !form.is_valid()) || !entry.placements_valid() {
+        return Err(invalid("invalid saved squad formation or FleetShip placements").into());
+    }
+    // Explicit incoming FleetShip edits update only those persistent IDs.
+    // Old commands and UI tactics changes retain the existing layout.
+    let prior = progress.tactics_for_squad(entry.side, entry.saved_squad_id)
+        .and_then(|saved| saved.placements).unwrap_or_default();
+    let merged = match entry.placements.take() {
+        None => prior,
+        Some(incoming) if incoming.is_empty() => Vec::new(),
+        Some(incoming) => {
+            let mut all = prior;
+            for placement in incoming {
+                if let Some(existing) = all.iter_mut()
+                    .find(|old| old.fleet_ship_id == placement.fleet_ship_id) {
+                    *existing = placement;
+                } else {
+                    all.push(placement);
+                }
+            }
+            all.sort_unstable_by_key(|p| p.fleet_ship_id);
+            all
+        }
+    };
+    entry.placements = Some(merged);
+    if !entry.placements_valid() {
+        return Err(invalid("invalid merged FleetShip placements").into());
     }
     let root = catalog_path.parent().ok_or_else(|| invalid("missing campaign directory"))?;
     // Qualify the entire authored campaign, including its alternate
     // victory route and newly created vacant squads, before publishing.
     let mut effective = progress.tactics_for_side(entry.side);
     effective.retain(|tactic| tactic.saved_squad_id != entry.saved_squad_id);
-    effective.push(entry);
+    effective.push(entry.clone());
     let mut checked = 0usize;
     let created = progress.created_squads_for_side(entry.side);
     let purchases = progress.purchases_for_side(entry.side);
@@ -7020,6 +7066,7 @@ fn run_campaign_game_menu(
                                     match_speed: Some(squad.matching_speed.is_some()),
                                     color_setting: None,
                                     formation: None,
+                                    placements: None,
                                 });
                         }
                     }
@@ -7166,6 +7213,7 @@ fn run_campaign_game_menu(
                         match_speed: Some(match_speed),
                         color_setting: Some(color_setting),
                         formation: Some(formation),
+                        placements: None,
                     },
                 );
                 progress = catalog.load_progress(output_root)?;
