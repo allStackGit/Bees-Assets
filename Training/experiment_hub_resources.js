@@ -199,16 +199,15 @@ function placements(machines,reservations,input) {
     });
 }
 
-// One GPU request can run on any verified free device, not just the
-// machine's first capacity-ranked GPU. Give the coordinator a bounded set
-// of *actual* individual GPU choices so measured end-to-end useful work
-// can select the fastest device, and scarcity lookahead can avoid reserving
-// the only GPU that a later pinned job can use. No additional job capacity,
-// isolation or reservation is created by listing these alternatives.
+// List bounded physical GPU alternatives for one fixed job request.
+// Without this the planner only considers the first free device set on
+// each machine, even when a historically faster set remains available.
+// Lease budgets, GPU count and ordered physical bindings stay unchanged.
 function placementAlternatives(machines,reservations,input) {
     const wanted=request(input);
     const defaults=placements(machines,reservations,wanted);
-    if(wanted.gpu_count!==1||wanted.gpus.length)return defaults;
+    if(!wanted.gpu_count||wanted.gpus.length||wanted.gpu_count>8)
+        return defaults;
     const byMachine=new Map(machines.map(machine=>[machine.id,machine]));
     const alternatives=[];
     for(const original of defaults) {
@@ -217,20 +216,45 @@ function placementAlternatives(machines,reservations,input) {
             continue;
         }
         const machine=byMachine.get(original.machine_id);
-        let added=0;
-        for(const candidate of original.available.gpu_capacity) {
-            if(candidate.exclusive)continue;
-            // The ordinary planner remains authoritative for all pinned
-            // VRAM, compute, CPU/RAM and observed headroom checks.
+        const selected=original.suggested_gpus;
+        const count=selected.length;
+        const candidates=original.available.gpu_capacity
+            .filter(g=>!g.exclusive&&
+                g.vram_mb>=wanted.min_gpu_vram_mb&&
+                (wanted.gpu_mode==='exclusive'
+                    ?g.available_vram_mb===g.vram_mb&&g.available_compute_pct===100
+                    :g.available_vram_mb>=wanted.gpu_vram_mb&&
+                        g.available_compute_pct>=wanted.gpu_compute_pct))
+            .map(g=>g.id);
+        const seen=new Set();
+        const add=ids=>{
+            if(ids.length!==count||new Set(ids).size!==count)return;
+            const key=ids.join(',');
+            if(seen.has(key))return;
+            seen.add(key);
+            // The original planner remains the authority for CPU/RAM
+            // constraints, exact GPU/VRAM/compute leases and headroom.
             const option=placements([machine],reservations,{
-                ...wanted,gpus:[candidate.id],
+                ...wanted,gpus:ids,
             })[0];
-            if(option?.capacity_fits) {
-                alternatives.push(option);
-                added++;
+            if(option?.capacity_fits)alternatives.push(option);
+        };
+        add(selected);
+        // Replacing one assigned device finds local alternatives without
+        // enumerating exponential combinations on 32-GPU workers.
+        for(let index=0;index<count;index++) {
+            for(const id of candidates) {
+                if(selected.includes(id))continue;
+                const ids=selected.slice();
+                ids[index]=id;
+                add(ids);
             }
         }
-        if(!added)alternatives.push(original);
+        // Also consider non-overlapping groups of the requested width.
+        // This surfaces very different device sets for measured scheduling
+        // while bounding work independently of choose(n,k).
+        for(let start=0;start+count<=candidates.length;start+=count)
+            add(candidates.slice(start,start+count));
     }
     return alternatives;
 }
