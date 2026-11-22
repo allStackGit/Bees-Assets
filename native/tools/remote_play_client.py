@@ -468,8 +468,54 @@ class RemoteConsole:
         squads = len(outcome.get("awarded_squads", []))
         minerals = message.get("banked_minerals")
         income = f", {minerals} minerals banked" if minerals is not None else ""
+        details = []
+        retired = outcome.get("retired_fleet_ids") or []
+        if retired:
+            details.append(f"{len(retired)} permanent fleet retirements")
+        if outcome.get("evacuated_personnel") is not None:
+            details.append(f"{outcome['evacuated_personnel']} personnel evacuated")
+        extra = ("; " + ", ".join(details)) if details else ""
         return (f"Campaign saved: {outcome['mission_id']} ({saved}); "
-                f"{ships} ships and {squads} squads awarded{income}")
+                f"{ships} ships and {squads} squads awarded{income}{extra}")
+
+    @staticmethod
+    def campaign_reward_details(message, known_classes=None):
+        """Format only immutable career effects from a committed receipt."""
+        outcome = message["campaign_outcome"]
+        names = known_classes or {}
+        lines = [f"Mission: {outcome['mission_id']}"]
+        lines.append("Success" if outcome.get(
+            "mission_success", outcome["winner_side"] == outcome["player_side"]
+        ) else "Defeat")
+        awarded = outcome.get("awarded_ships", [])
+        if awarded:
+            lines.append("FleetShips awarded:")
+            for ship in awarded:
+                kind = ship["ship_type"]
+                label = names.get(kind, f"Type {kind}")
+                lines.append(
+                    f"  FleetShip #{ship['fleet_ship_id']}: {label}, "
+                    f"SavedSquad #{ship['saved_squad_id']}"
+                )
+        squads = outcome.get("awarded_squads", [])
+        if squads:
+            lines.append("Saved squads awarded:")
+            for squad in squads:
+                lines.append(
+                    f"  SavedSquad #{squad['saved_squad_id']} "
+                    f"(template #{squad['template_saved_squad_id']})"
+                )
+        retired = outcome.get("retired_fleet_ids", [])
+        if retired:
+            lines.append("Permanently retired FleetShip IDs: " +
+                         ", ".join(str(value) for value in retired))
+        if outcome.get("evacuated_personnel") is not None:
+            lines.append(f"Personnel evacuated: {outcome['evacuated_personnel']}")
+        if message.get("banked_minerals") is not None:
+            lines.append(f"Banked minerals: {message['banked_minerals']}")
+        if message.get("campaign_score_delta") is not None:
+            lines.append(f"Score delta: {message['campaign_score_delta']:+d}")
+        return "\n".join(lines)
 
     @staticmethod
     def match_score_summary(state, final=None):
