@@ -7993,6 +7993,15 @@ fn run_battle(
         source_levels.iter().map(|source| source.fixed_dt_seconds).collect();
     // The remote headless host advances the *same* authored fixed step at
     // game time, rather than consuming the whole training rollout instantly.
+    let remote_original_game_speed = source_levels[0].time_scale;
+    let authored_remote_fixed_dt = std::time::Duration::try_from_secs_f32(
+        source_levels[0].fixed_dt_seconds,
+    ).map_err(|_| invalid("original multiplayer fixed tick is not a valid duration"))?;
+    let remote_speed_intervals = [
+        authored_remote_fixed_dt,
+        authored_remote_fixed_dt.mul_f64(2.0 / 3.0),
+        authored_remote_fixed_dt / 2,
+    ];
     let remote_step_interval = if env::var_os("BEES_NATIVE_REMOTE_LISTEN").is_some() {
         Some(std::time::Duration::try_from_secs_f32(
             source_levels[0].fixed_dt_seconds / source_levels[0].time_scale,
@@ -8475,6 +8484,9 @@ fn run_battle(
     let mut remote = bees_host::remote_play::NativeRemotePlay::from_environment(
         local_player_side, !view,
     )?;
+    if let Some(server) = remote.as_mut() {
+        server.set_source_game_speed(remote_original_game_speed)?;
+    }
     // Dedicated hosted campaigns have no local window to advance the
     // opening story. Their authenticated campaign owner must be able to
     // receive the briefing before the first physical tick is released.
@@ -9385,6 +9397,14 @@ fn run_battle(
         // remains unpaced and never constructs or polls this socket.
         if !view {
             if let Some(interval) = remote_step_interval {
+                // Unity's GameMenus.ChangeGameSpeed updates the host's
+                // wall-clock pacing, not the canonical CombatWorld dt.
+                // Every remote commander sees the same physical tick,
+                // independent of which authenticated seat changed speed.
+                let interval = remote.as_ref()
+                    .and_then(|server|server.game_speed_override())
+                    .and_then(|index|remote_speed_intervals.get(usize::from(index)))
+                    .copied().unwrap_or(interval);
                 remote_deadline += interval;
                 let now = Instant::now();
                 if remote_deadline > now {

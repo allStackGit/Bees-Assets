@@ -79,6 +79,10 @@ enum WireInput {
     /// owns a live pause; it has no alternative simulation or input path.
     Step { request_id: u64, world_id: u64,
         episode_revision: u64 },
+    /// Source GameMenus.ChangeGameSpeed cycles the common battle clock:
+    /// 1x -> 1.5x -> 2x -> 1x, without changing physical fixed dt.
+    CycleSpeed { request_id: u64, world_id: u64,
+        episode_revision: u64 },
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -351,6 +355,10 @@ pub struct RemotePlayMeasurements {
     pub commander_step_rejections: u64,
     #[serde(default)]
     pub commander_step_ticks: u64,
+    #[serde(default)]
+    pub commander_speed_changes: u64,
+    #[serde(default)]
+    pub commander_speed_rejections: u64,
     pub state_frames: u64,
     pub state_bytes: u64,
     pub states_superseded: u64,
@@ -525,6 +533,10 @@ pub struct NativeRemotePlay {
     /// At most one admitted step on the active authoritative World.
     /// The requesting pause owner must remain connected until execution.
     paused_step_owner: Option<u64>,
+    /// Original authored Stage.TimeScale is the initial host clock.
+    /// Player speed changes override only presentation pacing.
+    source_game_speed: f32,
+    game_speed_override: Option<u8>,
     measurements: RemotePlayMeasurements,
 }
 
@@ -628,12 +640,35 @@ impl NativeRemotePlay {
             briefing_ready: HashMap::new(),
             pause_episode: None, pause_peers: HashSet::new(),
             paused_step_owner: None,
+            source_game_speed: 1.0, game_speed_override: None,
             measurements: RemotePlayMeasurements::default(),
         }))
     }
 
     pub fn measurements(&self) -> &RemotePlayMeasurements {
         &self.measurements
+    }
+
+    /// Called from the same authored Stage metadata used by the launcher's
+    /// initial fixed-tick wall clock. No separate time-scale authority.
+    pub fn set_source_game_speed(&mut self, value: f32) -> io::Result<()> {
+        if !value.is_finite() || value <= 0.0 {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                "source Stage time scale must be finite and positive"));
+        }
+        self.source_game_speed = value;
+        Ok(())
+    }
+
+    pub fn game_speed_override(&self) -> Option<u8> {
+        self.game_speed_override
+    }
+
+    fn actual_game_speed(&self) -> f32 {
+        match self.game_speed_override {
+            Some(1) => 1.5, Some(2) => 2.0, Some(_) => 1.0,
+            None => self.source_game_speed,
+        }
     }
 
     /// Immutable identity persisted alongside an authoritative terminal
@@ -1205,6 +1240,45 @@ impl NativeRemotePlay {
                             },
                         }));
                     }
+                    Ok(WireInput::CycleSpeed {
+                        request_id, world_id: claimed_world,
+                        episode_revision: claimed_revision,
+                    }) if peer.side.is_some() => {
+                        if request_id <= peer.last_request_id {
+                            self.measurements.commander_speed_rejections += 1;
+                            peer.closed = true;
+                            break;
+                        }
+                        peer.last_request_id = request_id;
+                        peer_orders += 1;
+                        let accepted = !peer.spectator && !self.archive_only &&
+                            self.dedicated_briefing_gate &&
+                            claimed_world == world_id.0 &&
+                            claimed_revision == revision;
+                        if accepted {
+                            // Start from the actual source speed when it is
+                            // one of Unity's three menu selections.
+                            let current = self.game_speed_override
+                                .unwrap_or_else(||match self.source_game_speed {
+                                    1.5 => 1, 2.0 => 2, _ => 0,
+                                });
+                            self.game_speed_override = Some((current + 1) % 3);
+                            self.force_initial_state = true;
+                            self.measurements.commander_speed_changes += 1;
+                        } else {
+                            self.measurements.commander_speed_rejections += 1;
+                        }
+                        let scale = match self.game_speed_override {
+                            Some(1) => 1.5, Some(2) => 2.0, Some(_) => 1.0,
+                            None => self.source_game_speed,
+                        };
+                        let _ = peer.enqueue(&json!({
+                            "kind": "speed_result",
+                            "request_id": request_id,
+                            "processed": accepted,
+                            "speed": scale,
+                        }));
+                    }
                     Ok(WireInput::WeaponOverlay { request_id, world_id: claimed_world,
                         episode_revision: claimed_revision, squads }) if peer.side.is_some() => {
                         // A spectator has no player-owned squad or private
@@ -1601,6 +1675,7 @@ impl NativeRemotePlay {
         let camera_zoom = self.camera_zoom;
         let camera_edge_scrolling = self.camera_edge_scrolling;
         let commander_paused = !self.pause_peers.is_empty();
+        let game_speed = self.actual_game_speed();
         // The source's introductory and mid-mission briefings prevent
         // either side issuing physical orders. Local windows pace their
         // source dialogue; dedicated servers require authenticated ACKs
@@ -1658,6 +1733,7 @@ impl NativeRemotePlay {
                     spectator, measurements,
                 );
                 state["commander_paused"] = json!(commander_paused);
+                state["game_speed"] = json!(game_speed);
                 if spectator {
                     measurements.spectator_snapshots_encoded += 1;
                     // Objective-specific tactical story fields are still

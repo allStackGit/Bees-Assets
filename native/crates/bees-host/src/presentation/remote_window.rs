@@ -72,6 +72,8 @@ struct WireCounts {
     briefing_requests_sent: u64,
     briefing_receipts: u64,
     briefing_rejections: u64,
+    speed_requests_sent: u64,
+    speed_receipts: u64,
     orders_accepted: u64,
     orders_rejected: u64,
     /// Client wall time from submission through authoritative host receipt,
@@ -563,6 +565,7 @@ struct PeerClient {
     pause_owned: bool,
     pause_pending: Option<(u64,bool)>,
     step_pending: Option<u64>,
+    speed_pending: Option<u64>,
     pause_episode: Option<(u64,u64)>,
     authenticated: bool,
     connected: bool,
@@ -627,7 +630,7 @@ impl PeerClient {
             briefing_pending: None, briefing_approved: None,
             briefing_rejected: None,
             pause_owned: false, pause_pending: None, step_pending: None,
-            pause_episode: None,
+            speed_pending: None, pause_episode: None,
             authenticated: false, connected: true,
             input_suppressed: spectator, spectator, side,
             host_session_id: None,
@@ -1047,6 +1050,28 @@ impl PeerClient {
                         "Advanced one authoritative physical tick".into()
                     } else { feedback.to_owned() };
                 }
+                Some("speed_result") => {
+                    if !self.authenticated || self.spectator {
+                        return Err(invalid("unauthorized host speed receipt").into());
+                    }
+                    let request = message["request_id"].as_u64()
+                        .ok_or_else(|| invalid("host speed receipt lacks request ID"))?;
+                    let processed = message["processed"].as_bool()
+                        .ok_or_else(|| invalid("host speed receipt lacks acceptance"))?;
+                    let speed = message["speed"].as_f64()
+                        .filter(|scale| scale.is_finite() && *scale > 0.0)
+                        .ok_or_else(|| invalid("host speed receipt lacks valid scale"))?;
+                    if self.speed_pending != Some(request) {
+                        return Err(invalid("host speed receipt mismatches request").into());
+                    }
+                    self.speed_pending = None;
+                    self.metrics.speed_receipts += 1;
+                    self.notice = if processed {
+                        format!("Authoritative game speed {speed}x")
+                    } else {
+                        "Host rejected game speed request".into()
+                    };
+                }
                 Some("input_result") => {
                     if !self.authenticated {
                         return Err(invalid("native host acknowledged an unauthenticated order").into());
@@ -1195,6 +1220,23 @@ impl PeerClient {
             "kind":"step","world_id":world,"episode_revision":revision,
         }),"Advancing one physical tick".into())?;
         self.step_pending=Some(id);
+        Ok(())
+    }
+
+    fn request_cycle_speed(&mut self, world:u64, revision:u64)
+        -> Result<(), Box<dyn Error>>
+    {
+        if !self.authenticated || !self.connected || self.spectator ||
+            self.speed_pending.is_some() {
+            return Err(invalid("game-speed control requires an idle authenticated player seat").into());
+        }
+        let request=self.next_request;
+        self.enqueue_request(json!({
+            "kind":"cycle_speed","world_id":world,
+            "episode_revision":revision,
+        }),"Changing shared battle speed".into())?;
+        self.speed_pending=Some(request);
+        self.metrics.speed_requests_sent+=1;
         Ok(())
     }
 
@@ -3308,6 +3350,17 @@ pub fn connect_remote(
                 }
             }
         }
+        if !show_controls_help && !peer.spectator &&
+            window.is_key_pressed(Key::F12,KeyRepeat::No)
+        {
+            if let Some((world,revision))=peer.state.as_ref().and_then(|state|Some((
+                state["world_id"].as_u64()?,state["episode_revision"].as_u64()?,
+            ))) {
+                if let Err(error)=peer.request_cycle_speed(world,revision) {
+                    peer.notice=error.to_string();
+                }
+            }
+        }
         audio.set_paused(soundtrack_paused || peer.state.as_ref()
             .is_some_and(|state|state["commander_paused"]==true));
         // Backspace mirrors the local tactical client's cancellation
@@ -4560,6 +4613,12 @@ pub fn connect_remote(
                 &format!("Spectator camera following visible ship #{id}"),
                 1,[198,231,248]);
         }
+        if let Some(speed)=peer.state.as_ref()
+            .and_then(|state|state["game_speed"].as_f64())
+        {
+            text::draw_at(&mut pixels,WIDTH,12,20,
+                &format!("Host speed: {speed}x"),1,[198,231,248]);
+        }
         if peer.state.as_ref().is_some_and(|state|
             state["commander_paused"] == true)
         {
@@ -4596,7 +4655,7 @@ pub fn connect_remote(
                 "C or F2: inspect the Fleet Codex",
                 "S: request surrender (commander only; confirmation required)",
                 "Q: disconnect from the host and close this window",
-                "Space: pause / resume   N: single fixed-step while paused",
+                "Space: pause/resume   N: single step   F12: speed 1x/1.5x/2x",
             ];
             NativeSoftwareRenderer::draw_help_panel(
                 &mut pixels,WIDTH,HEIGHT,ROWS,&[0,6],
@@ -4671,7 +4730,7 @@ pub fn connect_remote(
                 "NETWORK / AUDIO",
                 "F4: surrender   F5: reconnect   F8: network measurements",
                 "F7: mute   F10/F11: effects   Shift+F10/F11: music",
-                "Space: shared battle pause   N: single tick while paused",
+                "Space: shared pause   N: single tick   F12: game speed 1x/1.5x/2x",
             ];
             if peer.spectator {
                 // The observer may navigate the native camera, artwork,
