@@ -467,9 +467,18 @@ class RemoteConsole:
         scope = (state["world_id"], state["episode_revision"])
         if self.surrender_requested_episode == scope:
             raise ValueError("surrender already submitted for this battle")
-        request_id = self.send(("surrender", {"side": state["viewer_side"]}), state, [])
+        # Reserve the request before sending: the receiver can process a
+        # fast host rejection before sendall returns on the sending thread.
+        request_id = self.next_request
         self.surrender_requested_episode = scope
         self.surrender_request_id = request_id
+        try:
+            self.send(("surrender", {"side": state["viewer_side"]}), state, [])
+        except (OSError, ValueError):
+            if self.surrender_request_id == request_id:
+                self.surrender_request_id = None
+                self.surrender_requested_episode = None
+            raise
 
     def held_fire(self, kind, target=None, *, owners=None):
         """Submit native Begin/Aim/End, retaining the original episode."""
