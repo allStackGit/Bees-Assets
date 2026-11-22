@@ -1053,6 +1053,15 @@ impl NativeRemotePlay {
                     }
                     Ok(WireInput::WeaponOverlay { request_id, world_id: claimed_world,
                         episode_revision: claimed_revision, squads }) if peer.side.is_some() => {
+                        // A spectator has no player-owned squad or private
+                        // turret-interest authority. Decline this optional
+                        // input before retaining an attacker-supplied list
+                        // of SquadLifetimes or scanning it on each snapshot.
+                        if peer.spectator {
+                            peer.closed = true;
+                            self.measurements.spectator_commands_rejected += 1;
+                            break;
+                        }
                         if request_id <= peer.last_request_id {
                             peer.closed = true;
                             break;
