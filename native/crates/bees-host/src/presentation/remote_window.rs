@@ -26,6 +26,12 @@ use bees_hivemind::protocol::SHOOTING_STRATEGIES;
 use crate::game_audio::NativeGameAudio;
 use crate::unity_scene_snapshot::NativeMusicLocation;
 
+fn source_ship_catalog() -> &'static bees_sim::ship_assets::ShipAssetCatalog {
+    static SHIPS: OnceLock<bees_sim::ship_assets::ShipAssetCatalog> = OnceLock::new();
+    SHIPS.get_or_init(|| bees_sim::ship_assets::ShipAssetCatalog::embedded()
+        .expect("native ship catalog validated by game startup"))
+}
+
 const WIDTH: usize = 1180;
 const HEIGHT: usize = 720;
 const FIELD: usize = 914;
@@ -2015,9 +2021,15 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         for (index,squad) in state["squads"].as_array().into_iter().flatten()
             .filter(|s|s["owned"]==true).skip(squad_list_offset).take(12).enumerate() {
             let id=squad["owner"]["squad_id"].as_i64().unwrap_or(-1);
-            let label=format!("{} ID {}: {} ships{}",if selected.contains(&id) {">"} else {" "},
-                id,squad["members"].as_array().map_or(0,Vec::len),
-                if squad["controllable"]==true {""} else {" (orders off)"});
+            let number=squad["source_number"].as_u64()
+                .map_or_else(||format!("ID {id}"),|number|format!("#{number}"));
+            let class=squad["lead_ship_type"].as_u64()
+                .and_then(|kind|u8::try_from(kind).ok())
+                .and_then(|kind|source_ship_catalog().by_type(kind))
+                .map_or("Unknown",|ship|ship.name.as_str());
+            let label=format!("{} {} {} ({}){}",if selected.contains(&id) {">"} else {" "},
+                number,class,squad["members"].as_array().map_or(0,Vec::len),
+                if squad["controllable"]==true {""} else {" [orders off]"});
             text::draw_at(pixels, WIDTH, FIELD+14, 150+index*22,
                 text::fit(&label,WIDTH-FIELD-24),1,
                 if selected.contains(&id){TEXT}else{MUTED});
@@ -3753,10 +3765,7 @@ pub fn connect_remote(
         if surrender_confirmation.is_some() {
             NativeSoftwareRenderer::draw_surrender_panel(&mut pixels,WIDTH,HEIGHT);
         } else if show_codex {
-            static SHIPS:OnceLock<bees_sim::ship_assets::ShipAssetCatalog>=OnceLock::new();
-            let catalog=SHIPS.get_or_init(||
-                bees_sim::ship_assets::ShipAssetCatalog::embedded()
-                    .expect("native ship catalog validated by game startup"));
+            let catalog=source_ship_catalog();
             let known=codex_seen.iter().enumerate()
                 .filter_map(|(kind,seen)| (*seen &&
                     kind!=usize::from(bees_sim::ship_assets::HUMAN_TARGET_TYPE))
