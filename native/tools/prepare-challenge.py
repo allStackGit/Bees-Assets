@@ -114,7 +114,7 @@ def publish_challenge_library(library_path, library, original_bytes, gate, chall
         ) as stream:
             temporary = Path(stream.name)
             json.dump(updated, stream, indent=2, ensure_ascii=False)
-            stream.write("\\n")
+            stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
         # The updated menu becomes visible atomically. The catalog and all
