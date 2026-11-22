@@ -42,7 +42,8 @@ function fieldsFor(config,project) {
             if(typeof value==='number'&&!Number.isFinite(value))continue;
             // Trainer identities, seed references and runtime device selection
             // are controlled by the approved adapter/profile, not this editor.
-            if(/(^|\.)(device|seed|update|updates|worker|workers|threads|checkpoint|version|id|port|path|hash|sha256)(_|\.|$)/i.test(joined))
+            if(/(^|\.)(device|seed|update|updates|worker|workers|threads|checkpoint|version|id|port|path|hash|sha256)(_|\.|$)/i.test(joined)&&
+                !(project==='tinybrains'&&joined==='training.checkpoint_every'))
                 continue;
             if(project==='tinybrains'&&!['training','environment','reward','self_play'].includes(path[0]))
                 continue;
@@ -58,6 +59,7 @@ function fieldsFor(config,project) {
                 'training.ppo_clip':[0.000000001,0.999999],
                 'training.learning_rate':[0.000000001,1],
                 'training.colony_batch_size':[1,65536],
+                'training.checkpoint_every':[1,1000000],
                 'training.max_grad_norm':[0.000000001,1000000],
                 'training.entropy_coefficient':[0,1000000],
                 'training.value_coefficient':[0,1000000],
@@ -83,7 +85,9 @@ function fieldsFor(config,project) {
             fields.push({key:joined,section:project==='tinybrains'
                     ?path[0]==='training'?'training':'environment'
                     :TRAINING.test(joined)?'training':'environment',
-                label:key.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()),
+                label:joined==='training.checkpoint_every'
+                    ?'Save training checkpoint every N PPO updates'
+                    :key.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()),
                 type:typeof value==='boolean'?'boolean':integer?'integer':'number',
                 default:value,...(typeof value==='number'?{min,max}:{})});
         }
