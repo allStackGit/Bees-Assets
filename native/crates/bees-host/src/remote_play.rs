@@ -2335,6 +2335,24 @@ fn current_state(
                 } else { None },
             }))
         } else if view.campaign_objective == Some(
+            bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoReinforcements,
+        ) {
+            // The tutorial selection is part of the human campaign, not
+            // an opponent's tactical input, and is shared only with the
+            // authenticated owner. The enemy wave remains physical.
+            let owner = view.campaign_dialogue_side == Some(side);
+            Some(json!({
+                "kind": "pluto_reinforcements",
+                "player_side": view.campaign_dialogue_side,
+                "scout_selected": owner.then(|| view.campaign_dialogue
+                    .is_some_and(|(_, cue)| matches!(cue,
+                        bees_gameplay::campaign_dialogue::CampaignCue::PlutoReinforcementsScoutSelected |
+                        bees_gameplay::campaign_dialogue::CampaignCue::PlutoReinforcementsCombatReady))),
+                "combat_released": owner.then(|| view.campaign_dialogue
+                    .is_some_and(|(_, cue)| matches!(cue,
+                        bees_gameplay::campaign_dialogue::CampaignCue::PlutoReinforcementsCombatReady))),
+            }))
+        } else if view.campaign_objective == Some(
             bees_gameplay::campaign_dialogue::CampaignObjectiveKind::PlutoAnomaly,
         ) {
             Some(json!({
