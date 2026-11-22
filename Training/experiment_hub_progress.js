@@ -94,6 +94,18 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         retain('ant_decisions_per_second',reported.ant_decisions_per_second);
         retain('simulation_match_steps_per_second',
             reported.simulation_match_steps_per_second);
+        // Any future trainer can publish useful work/sec in the existing
+        // project-neutral metric contract. Preserve its source-reported
+        // throughput in the default chart without requiring a bespoke
+        // project metric list or inferring it from GPU busy percentage.
+        let genericRates=0;
+        for(const [name,value] of Object.entries(reported)) {
+            if(genericRates>=12)break;
+            if(value?.unit==='rate'&&name.endsWith('_per_second')) {
+                retain(name,value);
+                genericRates++;
+            }
+        }
         for(const name of ['ppo_compiled_loss_active',
             'ppo_compile_calibration_complete','ppo_compile_fallbacks',
             'ppo_compile_compiled_samples','ppo_compile_eager_samples',
