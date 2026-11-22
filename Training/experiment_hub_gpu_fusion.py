@@ -449,3 +449,95 @@ class FrozenGpuStreams:
             gpu_stream_qualifications=self.qualifications,
             gpu_stream_profiles=len(self.profiles),
         )
+
+
+class MeasuredGpuExecution:
+    """Project-independent eager/fused/parallel-stream inference selector.
+
+    One immutable cohort is qualified against original per-model forwards.
+    The measured fastest safe GPU strategy is selected for each input shape,
+    subject to the same minimum speedup threshold. Future projects need only
+    pass their frozen eval networks and tensor batches; the coordinator does
+    not need to know the game's actor architecture or PPO configuration.
+    """
+
+    def __init__(self, models: Sequence[nn.Module], *, min_speedup=0.10,
+                 max_profiles=16, max_streams=4, max_padding_ratio=1.5,
+                 max_stacked_bytes=128*1048576, rtol=1e-5, atol=1e-6):
+        self.fusion = FrozenGpuFusion(
+            models, min_speedup=min_speedup, max_profiles=max_profiles,
+            max_padding_ratio=max_padding_ratio,
+            max_stacked_bytes=max_stacked_bytes, rtol=rtol, atol=atol)
+        self.streams = FrozenGpuStreams(
+            models, min_speedup=min_speedup, max_profiles=max_profiles,
+            max_streams=max_streams, rtol=rtol, atol=atol)
+        self.max_profiles = max_profiles
+        self.choices = OrderedDict()
+        self.calls = self.eager_calls = self.fused_calls = self.stream_calls = 0
+
+    @staticmethod
+    def _signature(batches):
+        return tuple(tuple((tuple(t.shape), t.dtype, t.device)
+                           for t in FrozenGpuFusion._args(batch))
+                     for batch in batches)
+
+    def run(self, batches):
+        if len(batches) != len(self.fusion.models):
+            raise ValueError("GPU inference cohort and input count differ")
+        signature = self._signature(batches)
+        self.calls += 1
+        choice = self.choices.get(signature)
+        if choice is None:
+            choice, best_seconds = "eager", float("inf")
+            # Only GPU jobs need the extra first-shape calibration. CPU and
+            # mixed-device cohorts stay on the original serial model calls.
+            if self.fusion.device is not None and self.fusion.device.type == "cuda":
+                args, rows, fused_shape = self.fusion._prepare(batches)
+                if self.fusion.compatible and fused_shape is not None:
+                    self.fusion.qualifications += 1
+                    decision = self.fusion._qualify(args, rows)
+                    self.fusion._profiles[fused_shape] = decision
+                    if decision.fused:
+                        choice, best_seconds = "fused", decision.fused_seconds
+                if self.streams.enabled:
+                    stream_args, stream_shape = self.streams._prepare(batches)
+                    self.streams.qualifications += 1
+                    decision = self.streams._qualify(stream_args)
+                    self.streams.profiles[stream_shape] = decision
+                    if decision.fused and decision.fused_seconds < best_seconds:
+                        choice, best_seconds = "streams", decision.fused_seconds
+            self.choices[signature] = choice
+            if len(self.choices) > self.max_profiles:
+                self.choices.popitem(last=False)
+        else:
+            self.choices.move_to_end(signature)
+        if choice == "fused":
+            self.fused_calls += 1
+            result = self.fusion.run(batches)
+            args, rows, fused_shape = self.fusion._prepare(batches)
+            if not self.fusion._profiles.get(
+                    fused_shape, FusionDecision(False, "unsupported")).fused:
+                self.choices[signature] = "eager"
+            return result
+        if choice == "streams":
+            self.stream_calls += 1
+            result = self.streams.run(batches)
+            _, stream_shape = self.streams._prepare(batches)
+            if not self.streams.profiles.get(
+                    stream_shape, FusionDecision(False, "unsupported")).fused:
+                self.choices[signature] = "eager"
+            return result
+        self.eager_calls += 1
+        return self.fusion._eager([
+            FrozenGpuFusion._args(batch) for batch in batches])
+
+    def metrics(self):
+        return dict(
+            gpu_execution_calls=self.calls,
+            gpu_execution_eager_calls=self.eager_calls,
+            gpu_execution_fused_calls=self.fused_calls,
+            gpu_execution_stream_calls=self.stream_calls,
+            gpu_execution_profiles=len(self.choices),
+            **self.fusion.metrics(),
+            **self.streams.metrics(),
+        )
