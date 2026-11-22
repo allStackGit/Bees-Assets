@@ -1568,6 +1568,20 @@ impl NativePhysicalScene {
         self.native_mission.as_ref()
     }
 
+    /// The career owner may replace source briefing parameters only with
+    /// its derived fleet/casualty progression before constructing a World.
+    /// No live dialogue is mutated, and the following Level builder still
+    /// verifies the same source cue and mission constraints.
+    pub fn set_native_campaign_dialogue(
+        &mut self, dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
+    ) {
+        if let Some(mission) = self.native_mission.as_mut() {
+            if mission.campaign_dialogue.is_some() {
+                mission.campaign_dialogue = dialogue;
+            }
+        }
+    }
+
     /// Independent native arenas share immutable physical templates, but
     /// their live SquadLifetime IDs are allocated from one Stage stream.
     /// A native scene's mission is part of that same source roster: rewrite
@@ -3683,7 +3697,8 @@ impl NativePhysicalScene {
                 (mission.demolition.is_some() && setup.demolition.is_some()) ||
                 (mission.escort.is_some() && setup.escort.is_some()) ||
                 (mission.target_ship.is_some() && setup.target_ship.is_some()) ||
-                (mission.campaign_dialogue.is_some() && setup.campaign_dialogue.is_some())
+                (mission.campaign_dialogue.is_some() && setup.campaign_dialogue.is_some() &&
+                    mission.campaign_dialogue != setup.campaign_dialogue)
             {
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue);
             }
