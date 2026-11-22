@@ -1500,9 +1500,7 @@ impl NativeClient {
         // Help is a noninteractive presentation overlay. All underlying
         // authenticated player commands remain disabled until it closes.
         if self.codex_open {
-            self.renderer.draw_fleet_codex(
-                &view, self.renderer.codex_seen_types(), self.codex_selected,
-            );
+            self.renderer.draw_fleet_codex(&view, self.codex_selected);
         } else if self.show_controls_help {
             self.renderer.draw_controls_help();
         }
