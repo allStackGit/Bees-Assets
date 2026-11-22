@@ -94,6 +94,12 @@ const TINYBRAINS_METRIC_CATALOG={
         'local_engine_count','local_engine_active_count',
         'local_engine_actions_per_second','local_engine_wall_seconds',
         'local_engine_critical_seconds',
+        'rollout_sparse_gather_direct_batches',
+        'rollout_sparse_gather_calibrations',
+        'rollout_opponent_input_bank_reuses',
+        'rollout_opponent_vmap_graph_replays',
+        'rollout_board_packed_bank_reuses',
+        'ppo_pinned_upload_reuses',
     ],
     remote_rollouts:[
         'remote_policy_snapshot_seconds','remote_opponent_snapshot_seconds',
@@ -166,6 +172,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_prep_background_cpu_seconds',
         'ppo_prep_background_wait_seconds',
         'ppo_prep_pin_seconds','ppo_prep_h2d_enqueue_seconds',
+        'rollout_sparse_gather_calibration_seconds',
+        'rollout_opponent_input_bank_probe_seconds',
+        'rollout_opponent_vmap_graph_setup_seconds',
+        'rollout_board_packed_pin_reuse_wait_seconds',
+        'rollout_legacy_critic_batch_seconds',
+        'optimizer_scalar_readback_wait_seconds',
         'ppo_gpu_stream_sync_seconds',
         'ppo_gpu_stream_interval_seconds'])
         add(name,row[name],'seconds');
@@ -250,6 +262,31 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_opponent_wide_forward_chunks',
         'rollout_opponent_oom_backoffs',
         'rollout_board_uploads_saved',
+        'rollout_sparse_gather_calibrations',
+        'rollout_sparse_gather_calibration_admissions',
+        'rollout_sparse_gather_direct_batches',
+        'rollout_sparse_gather_direct_ant_logits',
+        'rollout_sparse_gather_full_layout_elements_avoided',
+        'rollout_opponent_input_bank_attempts',
+        'rollout_opponent_input_bank_admissions',
+        'rollout_opponent_input_bank_rejections',
+        'rollout_opponent_input_bank_reuses',
+        'rollout_opponent_vmap_graph_attempts',
+        'rollout_opponent_vmap_graph_admissions',
+        'rollout_opponent_vmap_graph_rejections',
+        'rollout_opponent_vmap_graph_replays',
+        'rollout_board_packed_bank_reuses',
+        'rollout_board_packed_pin_reuse_waits',
+        'rollout_board_packed_fallbacks',
+        'rollout_legacy_critic_batched_readbacks',
+        'rollout_legacy_critic_batched_seats',
+        'rollout_legacy_action_readbacks_saved',
+        'ppo_pinned_upload_allocations',
+        'ppo_pinned_upload_reuses',
+        'ppo_pinned_upload_capability_denied',
+        'optimizer_scalar_readbacks',
+        'optimizer_scalar_values',
+        'optimizer_static_input_cache_records',
         'remote_collectors_pending_after_local',
         'remote_collector_co_limiting_count',
         'remote_collector_exposed_wait_owner',
@@ -318,7 +355,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             add('policy_stale_fraction',stale/row.ant_decisions,'ratio');
         }
     }
-    add('rollout_board_packed_bytes',row.rollout_board_packed_bytes,'bytes');
+    for(const name of [
+        'rollout_board_packed_bytes',
+        'rollout_board_packed_async_h2d_bytes',
+        'rollout_legacy_critic_batched_bytes',
+        'rollout_opponent_input_bank_bytes',
+        'ppo_pinned_upload_reserved_bytes',
+        'optimizer_static_input_cache_bytes'])
+        add(name,row[name],'bytes');
     // Bytes actually staged into one grouped frozen-opponent H2D input.
     // This is neither physical bus throughput nor device utilization.
     add('rollout_opponent_grouped_input_bytes',
