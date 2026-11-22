@@ -5685,6 +5685,11 @@ fn run_campaign_game_menu(
         // of their temporary squad assignment. The menu never fabricates
         // a source FleetShip identity from a Stage hull or type number.
         for (side, fleet_ship_id) in progress.nameable_fleet_ships() {
+            if !catalog.battles.iter().filter_map(|entry| entry.mission.as_ref())
+                .any(|mission| mission.player_side == side)
+            {
+                continue;
+            }
             name_rows.push(NativeNameMenuRow {
                 title: format!("Side {side}  FleetShip #{fleet_ship_id}"),
                 side, target: NativeNameTarget::FleetShip(fleet_ship_id),
