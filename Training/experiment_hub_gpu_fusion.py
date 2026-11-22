@@ -451,6 +451,201 @@ class FrozenGpuStreams:
         )
 
 
+class FrozenGpuGraphs:
+    """Shape-stable CUDA/HIP graph replay for multiple immutable small models.
+
+    One captured graph executes the *original* independent model forwards,
+    with no action sampling, reductions across policies, or optimizer work.
+    Input tensors have persistent device storage. Output tensors are cloned
+    after each replay: callers, recurrent state owners and IPC producers must
+    never observe storage that a subsequent graph invocation can overwrite.
+    PyTorch's existing allocator budget and a conservative extra-residency
+    ceiling govern graph admission; capture failure returns to eager models.
+
+    As with fused and stream inference, a trusted adapter must attest that
+    these modules are deterministic frozen eval forwards. One executor has
+    one caller thread and must not be invoked concurrently.
+    """
+
+    def __init__(self, models: Sequence[nn.Module], *, max_graphs=8,
+                 max_capture_bytes=128*1048576, min_speedup=0.10,
+                 rtol=1e-5, atol=1e-6):
+        if (not isinstance(models, (list, tuple)) or not models or
+                not 1 <= max_graphs <= 64 or
+                not 1 <= max_capture_bytes <= 2**40 or
+                not 0 <= min_speedup <= 0.5):
+            raise ValueError("Invalid bounded GPU graph cohort")
+        self.models = tuple(models)
+        self.max_graphs, self.max_capture_bytes = max_graphs, max_capture_bytes
+        self.min_speedup, self.rtol, self.atol = min_speedup, rtol, atol
+        locations = {t.device for m in self.models
+                     for t in (*m.parameters(), *m.buffers())}
+        self.device = next(iter(locations)) if len(locations) == 1 else None
+        self.enabled = (len(self.models) >= 1 and self.device is not None and
+                        self.device.type == "cuda" and
+                        all(not m.training for model in self.models
+                            for m in model.modules()) and
+                        all(not p.requires_grad for model in self.models
+                            for p in model.parameters()))
+        self.profiles = OrderedDict()
+        self.calls = self.replays = self.qualifications = self.rejections = 0
+        self.saved_launch_groups = 0
+        self.last_issue = None
+
+    def _inputs(self, batches):
+        if len(batches) != len(self.models):
+            raise ValueError("Graph cohort input/model count differs")
+        args = [FrozenGpuFusion._args(batch) for batch in batches]
+        if any(not row or any(not isinstance(t, torch.Tensor)
+                              for t in row) for row in args):
+            raise ValueError("Graph inputs must be tensors")
+        signature = tuple(tuple((tuple(t.shape), t.dtype, t.device)
+                                for t in row) for row in args)
+        return args, signature
+
+    def _eager(self, args):
+        with torch.inference_mode():
+            return [model(*row) for model, row in zip(self.models, args)]
+
+    @staticmethod
+    def _own(value):
+        if isinstance(value, torch.Tensor):
+            return value.detach().clone()
+        if isinstance(value, tuple):
+            parts = [FrozenGpuGraphs._own(t) for t in value]
+            return type(value)(*parts) if hasattr(value, "_fields") else tuple(parts)
+        if isinstance(value, list):
+            return [FrozenGpuGraphs._own(t) for t in value]
+        if isinstance(value, dict):
+            return {k: FrozenGpuGraphs._own(t) for k, t in value.items()}
+        raise TypeError("Frozen graph outputs must be tensors")
+
+    def _capture(self, args):
+        if not self.enabled or any(t.device != self.device
+                                   for row in args for t in row):
+            raise ValueError("CUDA/HIP graph inputs and models must use one device")
+        inputs = tuple(tuple(torch.empty_like(t) for t in row) for row in args)
+        static_bytes = sum(t.numel()*t.element_size()
+                           for row in inputs for t in row)
+        if static_bytes > self.max_capture_bytes // 2:
+            raise MemoryError("GPU graph inputs exceed the residency envelope")
+        for row, stable in zip(args, inputs):
+            for value, target in zip(row, stable):
+                target.copy_(value)
+        torch.cuda.synchronize(self.device)
+        initial_reserved = torch.cuda.memory_reserved(self.device)
+        initial_allocated = torch.cuda.memory_allocated(self.device)
+        warmup = torch.cuda.Stream(device=self.device)
+        warmup.wait_stream(torch.cuda.current_stream(self.device))
+        with torch.cuda.stream(warmup), torch.inference_mode():
+            # CUDA graphs require warmup outside capture; do not capture
+            # the first-time library allocator or lazy operator setup.
+            for _ in range(2):
+                self._eager(inputs)
+        warmup.synchronize()
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph, stream=warmup), torch.inference_mode():
+            output = self._eager(inputs)
+        warmup.synchronize()
+        extra = max(
+            torch.cuda.memory_reserved(self.device)-initial_reserved,
+            torch.cuda.memory_allocated(self.device)-initial_allocated)
+        if extra > self.max_capture_bytes:
+            raise MemoryError("Captured graph exceeds its residency envelope")
+        for result, row in zip(output, inputs):
+            # Each return must preserve a distinct leading observation
+            # dimension, but recurrent state tensors may be layer-major.
+            for tensor in _leaves(result):
+                if tensor.device != self.device:
+                    raise ValueError("Graph result moved outside the leased GPU")
+        return graph, inputs, output
+
+    @staticmethod
+    def _replay(profile, args):
+        graph, inputs, output = profile
+        for row, stable in zip(args, inputs):
+            for tensor, target in zip(row, stable):
+                target.copy_(tensor)
+        graph.replay()
+        return [FrozenGpuGraphs._own(value) for value in output]
+
+    def _elapsed(self, operation):
+        torch.cuda.synchronize(self.device)
+        start = perf_counter()
+        operation()
+        torch.cuda.synchronize(self.device)
+        return perf_counter()-start
+
+    def _qualify(self, args):
+        try:
+            original = self._eager(args)
+            profile = self._capture(args)
+            candidate = self._replay(profile, args)
+            if not all(_equivalent(a, b, self.rtol, self.atol)
+                       for a, b in zip(original, candidate)):
+                return None
+            # Replaying with different inputs is essential: capturing the
+            # current outputs as constants could otherwise pass one probe.
+            changed = [
+                tuple(x+torch.zeros_like(x) for x in row)
+                for row in args
+            ]
+            if not all(_equivalent(a, b, self.rtol, self.atol)
+                       for a, b in zip(original, self._replay(profile, changed))):
+                return None
+            eager_times, graph_times = [], []
+            for _ in range(3):
+                eager_times.append(self._elapsed(lambda: self._eager(args)))
+                graph_times.append(self._elapsed(lambda: self._replay(profile, args)))
+            eager, graph_time = median(eager_times), median(graph_times)
+            if graph_time < eager*(1-self.min_speedup):
+                return profile
+        except (RuntimeError, MemoryError, ValueError, TypeError,
+                NotImplementedError) as error:
+            self.last_issue = str(error)[:220]
+        return None
+
+    def run(self, batches):
+        args, signature = self._inputs(batches)
+        self.calls += 1
+        if not self.enabled:
+            return self._eager(args)
+        if signature not in self.profiles:
+            self.qualifications += 1
+            profile = self._qualify(args)
+            if profile is None:
+                self.rejections += 1
+            self.profiles[signature] = profile
+            if len(self.profiles) > self.max_graphs:
+                self.profiles.popitem(last=False)
+        else:
+            self.profiles.move_to_end(signature)
+        profile = self.profiles[signature]
+        if profile is not None:
+            try:
+                results = self._replay(profile, args)
+            except (RuntimeError, ValueError, TypeError,
+                    NotImplementedError) as error:
+                self.last_issue = str(error)[:220]
+                self.profiles[signature] = None
+                self.rejections += 1
+            else:
+                self.replays += 1
+                self.saved_launch_groups += len(self.models)
+                return results
+        return self._eager(args)
+
+    def metrics(self):
+        return dict(
+            gpu_graph_calls=self.calls,
+            gpu_graph_replays=self.replays,
+            gpu_graph_qualifications=self.qualifications,
+            gpu_graph_rejections=self.rejections,
+            gpu_graph_profiles=sum(x is not None for x in self.profiles.values()),
+            gpu_graph_saved_launch_groups=self.saved_launch_groups,
+        )
+
+
 class MeasuredGpuExecution:
     """Project-independent eager/fused/parallel-stream inference selector.
 
