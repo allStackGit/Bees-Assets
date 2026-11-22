@@ -59,6 +59,7 @@ pub enum NativePlayerInputOutcome {
     Shooting(bees_gameplay::player_inputs::NativePlayerCommandCounts),
     LockOn(bees_gameplay::player_inputs::NativePlayerCommandCounts),
     Chase(bees_gameplay::player_inputs::NativePlayerCommandCounts),
+    Select(usize),
 }
 
 #[derive(Debug)]
@@ -636,7 +637,54 @@ where
             Input::Shooting(value) => self.player_shooting_squads(value).map(Outcome::Shooting),
             Input::LockOn(value) => self.player_lock_on_squads(value).map(Outcome::LockOn),
             Input::Chase(value) => self.player_chase_squads(value).map(Outcome::Chase),
+            Input::Select(value) => self.player_select_squads(value).map(Outcome::Select),
         }
+    }
+
+    /// Record a real selection by one authenticated player. Selection
+    /// alone never issues a movement command or retires HiveMind actions;
+    /// original tutorial missions may advance their checkpointed story
+    /// after the selected source squad is proven live and controllable.
+    pub fn player_select_squads(
+        &mut self, input: &bees_gameplay::player_inputs::NativePlayerSquadSelection,
+    ) -> Result<usize, HostPlayerInputError>
+    where M: NativeLevelPlayerContext
+    {
+        let world = (0..self.simulation.world_count()).filter_map(|index|
+            self.simulation.world_mut(index)
+                .filter(|world| world.id == input.world_id)
+        ).next().ok_or(HostPlayerInputError::Gameplay(
+            NativePlayerInputError::StaleWorld
+        ))?;
+        if world.episode_revision() != input.episode_revision {
+            return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld));
+        }
+        if world.is_failed() || world.state.events.is_failed() ||
+            world.state.events.completed() || input.squads.len() > 1024
+        {
+            return Err(HostPlayerInputError::Gameplay(
+                NativePlayerInputError::InactiveWorld
+            ));
+        }
+        let mut seen = std::collections::HashSet::with_capacity(input.squads.len());
+        let mut selected_members = Vec::new();
+        for &owner in &input.squads {
+            if !seen.insert(owner) { continue; }
+            let squad = world.state.events.roster().get(owner)
+                .ok_or(HostPlayerInputError::Gameplay(
+                    NativePlayerInputError::MissingSquad
+                ))?;
+            if !world.state.metadata.player_owns_squad(owner, squad.side) {
+                return Err(HostPlayerInputError::Gameplay(
+                    NativePlayerInputError::NotControllable
+                ));
+            }
+            selected_members.extend_from_slice(&squad.members);
+        }
+        if let Some(dialogue) = world.state.campaign_dialogue.as_mut() {
+            dialogue.observe_player_selection(&selected_members);
+        }
+        Ok(seen.len())
     }
 
     pub fn player_move(&mut self, input: NativePlayerMove)
