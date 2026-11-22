@@ -301,7 +301,17 @@ impl CombatWorld {
             .expect("validated bound policy ship");
         let weapons = self.ship_weapons.get(&ship_id)
             .expect("bound policy ship owns mounted weapon state");
-        Ok(PolicyActionMask {
+        Ok(self.policy_mask_for_bound_ship(ship_id, runtime, weapons))
+    }
+
+    /// Both observation masking and decision admission use identical
+    /// capability truth. Preflight has already checked active hull and
+    /// controller identity; never repeat that O(agents) identity lookup
+    /// merely to obtain the same mask a second time.
+    fn policy_mask_for_bound_ship(
+        &self, ship_id: i64, runtime: &PolicyShipRuntime, weapons: &ShipWeapons,
+    ) -> PolicyActionMask {
+        PolicyActionMask {
             fire: std::array::from_fn(|slot| weapons.turrets[slot].is_some()),
             special: [
                 true,
@@ -314,11 +324,11 @@ impl CombatWorld {
                     Some(PolicyShipSpecial::Scout(scout)) =>
                         self.policy_scout_ready(ship_id, scout),
                 },
-                self.policy_mining_ready(ship_id),
-                self.policy_healing_ready(ship_id),
-                self.policy_warp_ready(ship_id),
+                runtime.mining.is_some() && self.policy_mining_ready(ship_id),
+                runtime.healing.is_some() && self.policy_healing_ready(ship_id),
+                runtime.warp_enabled && self.policy_warp_ready(ship_id),
             ],
-        })
+        }
     }
 
     /// Apply v26 movement, allied communication and configured base-turret
@@ -356,7 +366,13 @@ impl CombatWorld {
             // Validate against the same world-owned mask supplied to
             // inference. A slot is enabled only after real mount registration;
             // future subclasses must connect their actual firing path.
-            let mask = self.policy_action_mask(id)?;
+            let mask = self.policy_mask_for_bound_ship(
+                id,
+                self.policy_ship_runtime.get(&id)
+                    .expect("already validated policy controller"),
+                self.ship_weapons.get(&id)
+                    .expect("bound policy ship owns mounted weapons"),
+            );
             if decision.action.discrete[..5].iter().enumerate()
                 .any(|(slot, &choice)| choice == 1 && !mask.fire[slot]) ||
                 !mask.special[usize::from(decision.action.discrete[5])] {
