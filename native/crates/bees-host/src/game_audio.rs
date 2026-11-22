@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufReader, Cursor, Write};
+use std::io::{self, BufReader, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -277,7 +277,21 @@ impl NativeGameAudio {
     /// replay, network authorization and trainer checkpoints. Malformed or
     /// inaccessible preferences cannot prevent the physical game starting.
     pub fn load_preferences(&mut self, path: PathBuf) {
-        if let Ok(bytes) = fs::read(&path) {
+        // Preferences are user-controlled data, not an unbounded game
+        // asset. Read at most 4097 bytes even when a file changes size
+        // between metadata inspection and opening on disk.
+        let existing = fs::symlink_metadata(&path).ok();
+        let valid_file = existing.as_ref().is_some_and(|metadata|
+            metadata.is_file() && !metadata.file_type().is_symlink() &&
+            metadata.len() <= 4096
+        );
+        let bytes = valid_file.then(|| {
+            let mut bytes = Vec::new();
+            let file = File::open(&path).ok()?;
+            file.take(4097).read_to_end(&mut bytes).ok()?;
+            Some(bytes)
+        }).flatten();
+        if let Some(bytes) = bytes {
             let parsed = (bytes.len() <= 4096).then(|| {
                 serde_json::from_slice::<AudioPreferences>(&bytes).ok()
             }).flatten();
