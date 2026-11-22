@@ -1719,9 +1719,33 @@ fn squads_with_ship_type(state: &Value, ship_type: u64) -> Vec<i64> {
 fn focus_squad(state: &Value, squad_id: i64) -> Option<Vec2> {
     let squad=state["squads"].as_array()?.iter().find(|s|
         s["controllable"]==true && s["owner"]["squad_id"].as_i64()==Some(squad_id))?;
-    let ship_id=squad["members"].as_array()?.iter().find_map(Value::as_i64)?;
-    state["ships"].as_array()?.iter().find(|ship|
-        ship["id"].as_i64()==Some(ship_id)).and_then(position)
+    // Source focus tracks the whole live squad's physical collider
+    // envelope, not the first member's sprite centre. Construct this
+    // membership index only when a squad hotkey actually requests focus.
+    let members:HashSet<i64>=squad["members"].as_array()?.iter()
+        .filter_map(Value::as_i64).collect();
+    let mut extents:Option<Aabb>=None;
+    for ship in state["ships"].as_array().into_iter().flatten() {
+        if !ship["id"].as_i64().is_some_and(|id|members.contains(&id)) {continue;}
+        let Some(point)=position(ship) else {continue};
+        let hull=ship["collider_bounds"].as_array().filter(|bounds|bounds.len()==2)
+            .and_then(|bounds|Some((
+                point_from_wire(&bounds[0])?,
+                point_from_wire(&bounds[1])?,
+            )))
+            .filter(|(min,max)|min.x<=max.x && min.y<=max.y)
+            .map_or(Aabb{min:point,max:point},|(min,max)|Aabb{min,max});
+        extents=Some(match extents {
+            None=>hull,
+            Some(previous)=>Aabb {
+                min:Vec2::new(previous.min.x.min(hull.min.x),
+                    previous.min.y.min(hull.min.y)),
+                max:Vec2::new(previous.max.x.max(hull.max.x),
+                    previous.max.y.max(hull.max.y)),
+            },
+        });
+    }
+    extents.map(|bounds|(bounds.min+bounds.max)*0.5)
 }
 
 /// The remote window presents the host's authored dialogue, never a second
