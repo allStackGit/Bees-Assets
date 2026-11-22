@@ -126,17 +126,23 @@ class IndependentGpuTraining:
             raise ValueError("Concurrent optimizer steps require a CUDA/HIP device")
         self.device = device
         self.streams = []
-        self.serial_rates, self.concurrent_rates = [], []
+        ceiling = min(self.max_streams, len(self.models))
+        self.stream_candidates = sorted(set(
+            [ceiling]+[n for n in (2, 4, 8, 16) if n<=ceiling]))
+        self.probe_index = 0
+        self.serial_rates = []
+        self.parallel_rates = {n:[] for n in self.stream_candidates}
         self.phase = "serial_probe"
         self.calls = self.serial_calls = self.concurrent_calls = 0
         self.work_dispatched = 0.0
         self.last_qualified_seconds = 0.0
         self.last_qualified_work_rate = 0.0
         self.selected = None
+        self.selected_streams = 0
         self._busy = Lock()
         self._closed = False
 
-    def _parallel(self, steps, inputs):
+    def _parallel(self, steps, inputs, width):
         caller = torch.cuda.current_stream(self.device)
         if not self.streams:
             self.streams = [
@@ -145,7 +151,7 @@ class IndependentGpuTraining:
             ]
         result = []
         for index, (step, tensors) in enumerate(zip(steps, inputs)):
-            stream = self.streams[index % len(self.streams)]
+            stream = self.streams[index % width]
             stream.wait_stream(caller)
             with torch.cuda.stream(stream):
                 result.append(step())
@@ -154,7 +160,7 @@ class IndependentGpuTraining:
             # consuming it. Register that lifetime with the allocator.
             for tensor in tensors:
                 tensor.record_stream(stream)
-        for stream in self.streams:
+        for stream in self.streams[:width]:
             caller.wait_stream(stream)
         for value in result:
             for tensor in _tensor_outputs(value):
@@ -166,9 +172,18 @@ class IndependentGpuTraining:
         return [step() for step in steps]
 
     def _settle(self):
-        baseline = median(self.serial_rates)
-        parallel = median(self.concurrent_rates)
-        self.selected = "parallel" if parallel >= baseline*(1+self.min_speedup) else "serial"
+        best = median(self.serial_rates)
+        chosen = 0
+        for width in self.stream_candidates:
+            observed = median(self.parallel_rates[width])
+            # Require material improvement over the original optimizer
+            # schedule, then prefer fewer streams until adding more
+            # consistently improves useful work by another five percent.
+            margin = self.min_speedup if chosen==0 else 0.05
+            if observed >= best*(1+margin):
+                best, chosen = observed, width
+        self.selected_streams = chosen
+        self.selected = "parallel" if chosen else "serial"
         self.phase = "settled"
 
     def run(self, steps: Sequence[Callable[[], object]], *,
@@ -221,9 +236,11 @@ class IndependentGpuTraining:
             raise ValueError("Training work must be reported in positive fixed units")
         count = float(sum(work_units))
         if self.phase == "settled":
-            mode = self.selected
+            mode, width = self.selected, self.selected_streams
+        elif self.phase == "serial_probe":
+            mode, width = "serial", 0
         else:
-            mode = "serial" if self.phase == "serial_probe" else "parallel"
+            mode, width = "parallel", self.stream_candidates[self.probe_index]
         # Measure actual elapsed GPU service including CPU dispatch and
         # outstanding kernels, but synchronize ONLY during qualification.
         # Settled updates retain asynchronous caller-stream dependencies.
@@ -231,7 +248,8 @@ class IndependentGpuTraining:
         if measuring:
             torch.cuda.current_stream(self.device).synchronize()
         begun = perf_counter()
-        output = self._parallel(steps, inputs) if mode == "parallel" else self._serial(steps)
+        output = (self._parallel(steps, inputs, width)
+                  if mode == "parallel" else self._serial(steps))
         if measuring:
             torch.cuda.current_stream(self.device).synchronize()
         seconds = perf_counter()-begun
@@ -243,12 +261,14 @@ class IndependentGpuTraining:
             self.last_qualified_seconds = seconds
             self.last_qualified_work_rate = count/seconds
         if measuring and seconds>0:
-            rates = self.serial_rates if mode == "serial" else self.concurrent_rates
+            rates = self.serial_rates if mode == "serial" else self.parallel_rates[width]
             rates.append(count/seconds)
             if self.phase == "serial_probe" and len(self.serial_rates)>=self.sample_windows:
                 self.phase = "parallel_probe"
-            elif self.phase == "parallel_probe" and len(self.concurrent_rates)>=self.sample_windows:
-                self._settle()
+            elif self.phase == "parallel_probe" and len(rates)>=self.sample_windows:
+                self.probe_index += 1
+                if self.probe_index == len(self.stream_candidates):
+                    self._settle()
         return output
 
     def metrics(self):
@@ -258,8 +278,10 @@ class IndependentGpuTraining:
             gpu_training_parallel_batches=self.concurrent_calls,
             gpu_training_work_dispatched=self.work_dispatched,
             gpu_training_calibration_serial=len(self.serial_rates),
-            gpu_training_calibration_parallel=len(self.concurrent_rates),
+            gpu_training_calibration_parallel=sum(map(len,self.parallel_rates.values())),
             gpu_training_selected_parallel=int(self.selected == "parallel"),
+            gpu_training_selected_streams=self.selected_streams,
+            gpu_training_stream_candidates=len(self.stream_candidates),
             gpu_training_calibration_complete=int(self.phase == "settled"),
             gpu_training_last_qualified_seconds=self.last_qualified_seconds,
             gpu_training_last_qualified_work_per_second=self.last_qualified_work_rate,
