@@ -10068,6 +10068,10 @@ fn run_battle(
             "navigation_lookups_skipped": status.simulation.navigation_lookups_skipped,
             "steering_lookups_skipped": status.simulation.steering_lookups_skipped,
             "unarmed_weapon_holders_skipped": status.simulation.unarmed_weapon_holders_skipped,
+            "capability_cooldown_owners_advanced":
+                status.simulation.capability_cooldown_owners_advanced,
+            "capability_cooldown_owners_skipped":
+                status.simulation.capability_cooldown_owners_skipped,
             "inactive_ship_slots_skipped": status.simulation.inactive_ship_slots_skipped,
             "inactive_projectile_slots_skipped":
                 status.simulation.inactive_projectile_slots_skipped,
