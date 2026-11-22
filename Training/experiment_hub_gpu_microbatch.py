@@ -162,6 +162,7 @@ class FrozenInferenceMicrobatcher:
         self._pending, self._executors = deque(), OrderedDict()
         self._active_group = []
         self._admission = OrderedDict()
+        self._last_requal_group = 0
         self._condition = Condition()
         self._closed = False
         self._outstanding = 0
@@ -171,7 +172,8 @@ class FrozenInferenceMicrobatcher:
         self._counters = dict(submitted=0, dispatched=0, model_forwards=0,
                               groups=0, coalesced=0, rejected=0, fallbacks=0,
                               max_queue_depth=0, admitted_profiles=0,
-                              rejected_profiles=0, qualification_seconds=0.0)
+                              rejected_profiles=0, qualification_seconds=0.0,
+                              profile_refreshes=0, bucketed_groups=0)
         self._worker = Thread(target=self._serve, name="hub-gpu-microbatch", daemon=True)
         self._worker.start()
 
@@ -390,13 +392,12 @@ class FrozenInferenceMicrobatcher:
                     resolved[id(item)] = piece
             return [resolved[id(item)] for item in group]
 
-        mode = "grouped"
-        output = None
-        if len(group)>1:
-            # Grouped batch sizes fluctuate as asynchronous collectors
-            # finish. Use power-of-two row/request buckets, not the exact
-            # arrival pattern, or every slight variation induces expensive
-            # new numerical calibration and GPU-wide timing syncs.
+        mode, output = None, None
+        # Even a single small collector can reuse a stable captured GPU
+        # graph across changing rollout lengths. More than one collector
+        # can additionally share one batched model invocation.
+        eligible = len(group)>1 or self.allow_graphs
+        if eligible:
             shape = tuple(
                 (key, sum(item.rows for item in members).bit_length(),
                  len(members).bit_length(),
@@ -404,33 +405,57 @@ class FrozenInferenceMicrobatcher:
                        for t in members[0].inputs))
                 for key in keys for members in (owners[key],))
             mode = self._admission.get(shape)
+            if (mode is not None and
+                    self._counters["groups"]-self._last_requal_group>=256):
+                # Workload mix / co-tenants can change after an earlier
+                # decision. Reconsider one cached family per 256 completed
+                # groups, never restart or recapture on every request.
+                mode = None
+                self._last_requal_group = self._counters["groups"]
+                self._counters["profile_refreshes"] += 1
             if mode is None:
                 started = perf_counter()
                 try:
-                    candidate = grouped()
                     reference = self._individual(group)
+                    candidate = grouped()
                     if not all(_equivalent(a,b,1e-5,1e-6)
                                for a,b in zip(reference,candidate)):
-                        raise ValueError("Coalesced inference changed frozen model outputs")
-                    grouped_times, solo_times = [], []
+                        raise ValueError("Grouped inference changed frozen policy outputs")
+                    choices = {
+                        "individual":lambda:self._individual(group),
+                        "exact":lambda:grouped(),
+                    }
+                    if self.allow_graphs:
+                        try:
+                            padded = grouped(bucket=True)
+                            if all(_equivalent(a,b,1e-5,1e-6)
+                                   for a,b in zip(reference,padded)):
+                                choices["bucket"] = lambda:grouped(bucket=True)
+                        except (ValueError,TypeError,RuntimeError,
+                                torch.OutOfMemoryError):
+                            pass
+                    times = {name:[] for name in choices}
                     for _ in range(2):
-                        t,_ = self._time(grouped)
-                        grouped_times.append(t)
-                        t,_ = self._time(lambda:self._individual(group))
-                        solo_times.append(t)
-                    # Packing, splitting and GPU completion belong in
-                    # the actual service-cost comparison. A fast model
-                    # forward alone is not enough to admit coalescing.
-                    mode = ("grouped" if median(grouped_times) <
-                            median(solo_times)*0.95 else "individual")
-                    output = candidate if mode=="grouped" else reference
-                except (ValueError, TypeError, RuntimeError,
-                        torch.OutOfMemoryError) as error:
+                        # Interleaved timed trials reduce the chance of
+                        # choosing a GPU path merely because a different
+                        # job temporarily stopped competing for the device.
+                        for name,operation in choices.items():
+                            seconds,_ = self._time(operation)
+                            times[name].append(seconds)
+                    baseline = median(times["individual"])
+                    faster = sorted((median(v),name) for name,v in times.items()
+                                    if name!="individual" and
+                                    median(v)<baseline*0.95)
+                    mode = faster[0][1] if faster else "individual"
+                    output = {"individual":reference,"exact":candidate,
+                              "bucket":locals().get("padded")}.get(mode)
+                except (ValueError,TypeError,RuntimeError,
+                        torch.OutOfMemoryError):
                     mode = "individual"
                     output = self._individual(group)
                     self._counters["fallbacks"] += 1
                 self._counters["qualification_seconds"] += perf_counter()-started
-                self._counters["admitted_profiles" if mode=="grouped" else
+                self._counters["admitted_profiles" if mode!="individual" else
                                "rejected_profiles"] += 1
                 self._admission[shape] = mode
                 if len(self._admission)>self.max_cohorts*8:
@@ -438,26 +463,29 @@ class FrozenInferenceMicrobatcher:
             else:
                 self._admission.move_to_end(shape)
         if output is None:
-            if mode=="grouped":
+            if mode in ("exact","bucket") or not eligible:
                 try:
-                    output = grouped()
-                except (ValueError, TypeError, RuntimeError,
+                    output = grouped(bucket=mode=="bucket")
+                except (ValueError,TypeError,RuntimeError,
                         torch.OutOfMemoryError):
                     output = self._individual(group)
                     self._counters["fallbacks"] += 1
-                    if len(group)>1:
+                    if eligible:
                         self._admission[shape] = "individual"
                     mode = "individual"
             else:
                 output = self._individual(group)
+        if mode=="bucket":
+            self._counters["bucketed_groups"] += 1
+        if mode=="exact" or mode=="bucket":
+            self._counters["coalesced"] += len(group)-len(keys)
         resolved = {id(item):value for item,value in zip(group,output)}
         event = None
         if stream is not None:
             event = torch.cuda.Event()
             event.record(stream)
-        self._counters["model_forwards"] += len(keys) if mode=="grouped" else len(group)
-        if mode=="grouped":
-            self._counters["coalesced"] += len(group)-len(keys)
+        self._counters["model_forwards"] += (
+            len(keys) if mode in ("exact","bucket") else len(group))
         for item in group:
             item.future.done_event = event
             item.future.set_result(resolved[id(item)])
