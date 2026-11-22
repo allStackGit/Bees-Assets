@@ -22,7 +22,7 @@ use bees_sim::geometry::Vec2;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum NativeClientAction {
-    Wait, Step, Quit, Restart, WorldChanged, SideChanged,
+    Wait, Step, Quit, Restart, ChooseNewSquads, WorldChanged, SideChanged,
     SaveLevel { name: String },
     Input { action: NativePlayerInput, step: bool },
 }
@@ -163,6 +163,7 @@ pub struct NativeClient {
     allow_freeplay_fog: bool,
     allow_freeplay_restart: bool,
     allow_freeplay_save: bool,
+    allow_new_squads: bool,
     level_name_input: Option<String>,
     /// Source per-Level Map.MinZoom/MaxZoom. No gameplay-state copy.
     source_zoom_by_world: Vec<Option<(f32, f32)>>,
@@ -288,6 +289,7 @@ impl NativeClient {
             edge_scroll_enabled: false,
             allow_freeplay_fog: false,
             allow_freeplay_restart: false, allow_freeplay_save: false,
+            allow_new_squads: false,
             level_name_input: None,
             source_zoom_by_world: Vec::new(),
             next_step: now, pending_steps: 0, previous_frame: now, left_was_down: false,
@@ -509,6 +511,13 @@ impl NativeClient {
         self.allow_freeplay_save=allowed;
     }
 
+    /// Only the Fleet Builder's own saved games can return directly to
+    /// Squad Maker. Its host retains the exclusive save writer throughout
+    /// both the old battle's cleanup and the next custom Level authoring.
+    pub fn set_choose_new_squads_allowed(&mut self,allowed:bool) {
+        self.allow_new_squads=allowed;
+    }
+
     pub fn result_action(&self) -> Option<NativeResultAction> {
         if self.dialogue_visible { return None; }
         let controls = self.result_controls?;
@@ -681,7 +690,8 @@ impl NativeClient {
             let hover = self.window.get_mouse_pos(MouseMode::Discard)
                 .and_then(|(x, y)|
                     self.renderer.battle_menu_at(
-                        x,y,self.allow_freeplay_restart,self.allow_freeplay_save));
+                        x,y,self.allow_freeplay_restart,self.allow_freeplay_save,
+                        self.allow_new_squads));
             if left && !self.left_was_down {
                 self.battle_menu_press = hover;
             }
@@ -701,6 +711,8 @@ impl NativeClient {
                 self.window.is_key_pressed(Key::N,KeyRepeat::No) {Some(5)}
             else if self.allow_freeplay_save &&
                 self.window.is_key_pressed(Key::L,KeyRepeat::No) {Some(6)}
+            else if self.allow_new_squads &&
+                self.window.is_key_pressed(Key::B,KeyRepeat::No) {Some(7)}
             else { click };
             match choice {
                 Some(0 | 1 | 2) => {
@@ -740,6 +752,13 @@ impl NativeClient {
                     self.level_name_input=Some(String::new());
                     self.next_step=Instant::now();
                     return Ok(NativeClientAction::Wait);
+                },
+                Some(7) if self.allow_new_squads => {
+                    // The ordinary host finalizes this physical battle
+                    // before the source Squad Maker is opened again.
+                    self.battle_menu_open=false;
+                    self.battle_menu_press=None;
+                    return Ok(NativeClientAction::ChooseNewSquads);
                 },
                 _ => {},
             }
@@ -1917,6 +1936,7 @@ impl NativeClient {
             self.renderer.draw_battle_menu(
                 self.paused,can_surrender,
                 self.allow_freeplay_restart,self.allow_freeplay_save,
+                self.allow_new_squads,
             );
         } else if self.codex_open {
             self.renderer.draw_fleet_codex(&view, self.codex_selected);

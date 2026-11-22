@@ -3676,44 +3676,43 @@ impl NativeSoftwareRenderer {
     #[cfg(feature = "client")]
     pub fn draw_battle_menu(
         &mut self,was_paused:bool,can_surrender:bool,can_restart:bool,
-        can_save_level:bool,
+        can_save_level:bool,can_choose_squads:bool,
     ) {
         let surrender=if can_surrender {
             "S: surrender this battle (confirmation required)"
         } else {"S: surrender unavailable for this World"};
         let status=if was_paused {"Battle was already paused"}
             else {"Battle paused while menu is open"};
-        let lines:&[&str]=if can_restart && can_save_level {
-            &["BEES NATIVE  /  BATTLE MENU",
-              "Esc or R: resume the battle",
-              "H or F1: open controls and shortcuts",
-              "C or F2: inspect the Fleet Codex",
-              surrender,
-              "Q: exit battle (return to library when launched there)",
-              "N: restart this FreePlay battle (original fleet and map)",
-              "L: save this authored setup as a named FreePlay Level",
-              status]
-        } else if can_restart {
-            &["BEES NATIVE  /  BATTLE MENU",
-              "Esc or R: resume the battle",
-              "H or F1: open controls and shortcuts",
-              "C or F2: inspect the Fleet Codex",
-              surrender,
-              "Q: exit battle (return to library when launched there)",
-              "N: restart this FreePlay battle (original fleet and map)",
-              status]
-        } else {
-            &["BEES NATIVE  /  BATTLE MENU",
-              "Esc or R: resume the battle",
-              "H or F1: open controls and shortcuts",
-              "C or F2: inspect the Fleet Codex",
-              surrender,
-              "Q: exit battle (return to library when launched there)",
-              status]
-        };
+        // Keep the keyboard actions and clickable rows in one stable
+        // order. Only FreePlay's fleet-owned session adds the source
+        // "Choose New Squads" return to Squad Maker.
+        let mut lines=[
+            "BEES NATIVE  /  BATTLE MENU",
+            "Esc or R: resume the battle",
+            "H or F1: open controls and shortcuts",
+            "C or F2: inspect the Fleet Codex",
+            surrender,
+            "Q: exit battle (return to library when launched there)",
+            "", "", "", "",
+            "",
+        ];
+        let mut count=6;
+        if can_restart {
+            lines[count]="N: restart this FreePlay battle (original fleet and map)";
+            count+=1;
+        }
+        if can_save_level {
+            lines[count]="L: save this authored setup as a named FreePlay Level";
+            count+=1;
+        }
+        if can_choose_squads {
+            lines[count]="B: choose new squads in the original Fleet Builder";
+            count+=1;
+        }
+        lines[count]=status;
+        count+=1;
         Self::draw_help_panel(&mut self.pixels,self.width,self.height,
-            lines,if can_save_level {&[0,8]}
-                else if can_restart {&[0,7]} else {&[0,6]});
+            &lines[..count],&[0,count-1]);
     }
 
     /// Hit exactly the same centered action rows that the menu draws.
@@ -3721,10 +3720,12 @@ impl NativeSoftwareRenderer {
     #[cfg(feature = "client")]
     pub fn battle_menu_at(
         &self,x:f32,y:f32,can_restart:bool,can_save_level:bool,
+        can_choose_squads:bool,
     ) -> Option<usize> {
         Self::battle_menu_hit(
             self.width,self.height,x,y,
-            if can_save_level {7} else if can_restart {6} else {5},
+            5 + usize::from(can_restart) + usize::from(can_save_level) +
+                usize::from(can_choose_squads),
         )
     }
 

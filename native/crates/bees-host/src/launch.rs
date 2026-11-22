@@ -1769,6 +1769,9 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
 
 struct BattleRestart {
     replay_inputs: Option<PathBuf>,
+    /// The original FreePlay "Choose New Squads" returns to the actual
+    /// authored fleet builder after the current World is fully retired.
+    choose_new_squads: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -2608,9 +2611,10 @@ fn run_session(
     capture: Option<PathBuf>, mut replay_inputs: Option<PathBuf>,
     mission: Option<CampaignMission<'_>>,
 ) -> Result<(), Box<dyn Error>> {
-    let config_path = config_path.canonicalize()?;
+    let mut config_path = config_path.canonicalize()?;
     let mut replay_number = 0_u64;
-    let mut battle_output = output.clone();
+    let mut source_output = output.clone();
+    let mut battle_output = source_output.clone();
     let mut battle_capture = capture.clone();
     let mut grants_awarded = false;
     while let Some(restart) = run_battle(&config_path, play, view, battle_output.as_deref(), battle_capture.as_deref(),
@@ -2636,12 +2640,42 @@ fn run_session(
                         .as_array().is_some_and(|rows| !rows.is_empty()));
             }
         }
+        #[cfg(feature = "client")]
+        if restart.choose_new_squads {
+            // The current run_final, player trace and host teardown have
+            // completed. The fleet-skirmish game-library caller continues
+            // to hold its exclusive writer lease across this transition.
+            // Re-enter the *same* native authoring/simulation pipeline.
+            let save_root=native_library_save_root(battle_output.as_deref())
+                .ok_or_else(||invalid("squad maker requires a native game library"))?;
+            let Some(choice)=fleet_builder::choose(save_root)? else {
+                // Cancelling Squad Maker returns to the library rather
+                // than restoring the already-retired CombatWorld.
+                break;
+            };
+            let new_output=new_library_battle_output(
+                save_root,fleet_builder::GAME_ID,
+            )?;
+            let parent=new_output.parent().ok_or_else(||
+                invalid("new Fleet Builder battle has no source archive directory"))?;
+            let source=fleet_builder::archive(parent,choice)?;
+            let start=QuickBattleStart::capture(&source,false)?
+                .ok_or_else(||invalid("new Fleet Builder game has no recovery contract"))?;
+            save_native_quick_battle_start(&new_output,&start)?;
+            config_path=source;
+            source_output=Some(new_output.clone());
+            battle_output=Some(new_output);
+            battle_capture=None;
+            replay_number=0;
+            replay_inputs=None;
+            continue;
+        }
         replay_number = replay_number.checked_add(1).ok_or_else(|| invalid("replay count exhausted"))?;
         // Both post-match replay and an in-battle FreePlay restart use
         // the same complete World teardown and next-session construction.
         // An ordinary unsaved FreePlay has no output directory and must
         // remain restartable without inventing a persistent game receipt.
-        battle_output = output.as_ref().map(|root|
+        battle_output = source_output.as_ref().map(|root|
             root.join(format!("replay-{replay_number:04}")));
         battle_capture = capture.as_ref().map(|path| {
             battle_output.as_ref().map_or_else(|| {
@@ -5042,6 +5076,27 @@ fn valid_freeplay_level_name(name:&str)->bool {
     name.bytes().any(|ch|ch.is_ascii_alphanumeric()) &&
     name.bytes().all(|ch|ch.is_ascii_alphanumeric() ||
         matches!(ch,b' ' | b'-' | b'_'))
+}
+
+/// Only Fleet Builder sessions in the numbered, source-pinned game
+/// archive may transition straight back to Squad Maker. Their caller owns
+/// the existing fleet-skirmish writer lease across both sessions; direct
+/// CLI runs, campaigns, replays and LAN hosts do not.
+#[cfg(feature = "client")]
+fn can_choose_new_native_fleet(output:Option<&Path>)->bool {
+    let Some(output)=output else {return false;};
+    let Some(folder)=output.ancestors().find(|dir|
+        dir.file_name().and_then(|name|name.to_str())
+            .is_some_and(|name|name.starts_with("battle-") &&
+                name.len()>=13 &&
+                name[7..].bytes().all(|ch|ch.is_ascii_digit()))
+    ) else {return false;};
+    folder.parent().is_some_and(|game|game.file_name()
+        .is_some_and(|name|name==fleet_builder::GAME_ID) &&
+        game.parent().is_some_and(|library|library.file_name()
+            .is_some_and(|name|name=="battles"))) &&
+    folder.join("native-quick-battle-start.json")
+        .is_file()
 }
 
 #[cfg(feature = "client")]
@@ -8368,6 +8423,11 @@ fn run_battle(
             remote_step_interval.is_none() &&
             native_library_save_root(output).is_some(),
         );
+        client.set_choose_new_squads_allowed(
+            mission.is_none() && replay_inputs.is_none() &&
+            remote_step_interval.is_none() &&
+            can_choose_new_native_fleet(output),
+        );
         client.set_source_zoom_limits(client_zoom_limits);
         client.set_music_locations(
             source_levels.iter().map(|source| source.music_location).collect(),
@@ -8948,6 +9008,8 @@ fn run_battle(
     let mut user_closed = false;
     #[cfg(feature = "client")]
     let mut restart_requested = false;
+    #[cfg(feature = "client")]
+    let mut choose_new_squads = false;
     #[cfg(feature = "client")]
     let mut client_step_budget = 1_u32;
     #[cfg(not(feature = "client"))]
@@ -9636,6 +9698,12 @@ fn run_battle(
                         },
                     }
                     continue;
+                },
+                Ok(bees_host::client::NativeClientAction::ChooseNewSquads) => {
+                    user_closed=true;
+                    restart_requested=true;
+                    choose_new_squads=true;
+                    break;
                 },
                 Ok(bees_host::client::NativeClientAction::Restart) => {
                     // Abort the current play attempt through ordinary
@@ -11179,14 +11247,18 @@ fn run_battle(
                         NativeResultAction::PlayAgain => None,
                         NativeResultAction::WatchRecording => replay_inputs.map(Path::to_path_buf).or(recorded_inputs),
                     };
-                    return Ok(Some(BattleRestart { replay_inputs }));
+                    return Ok(Some(BattleRestart {
+                        replay_inputs,choose_new_squads:false,
+                    }));
                 }
             }
         }
     }
     #[cfg(feature = "client")]
     if restart_requested {
-        return Ok(Some(BattleRestart { replay_inputs: None }));
+        return Ok(Some(BattleRestart {
+            replay_inputs:None,choose_new_squads,
+        }));
     }
     Ok(None)
 }
