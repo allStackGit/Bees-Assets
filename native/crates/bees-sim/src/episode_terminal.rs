@@ -286,7 +286,10 @@ impl EpisodeMissionKind {
             Self::Demolition => 1,
             Self::Escort => 2,
             Self::Extraction => 3,
-            Self::TargetShip => 4,
+            // Ship and MapObject destruction share the original target-
+            // destruction objective channel; policy observation width and
+            // optimizer input shapes stay unchanged.
+            Self::TargetShip => 1,
         }
     }
 
