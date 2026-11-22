@@ -96,11 +96,18 @@ def import_enemy(scene, run, level):
             ship["formation_offset"] = offset
             members.append(ship["entity_id"])
             classes.append(kind)
-        if source.get("ChosenShootingStrategy") != "First Seen":
+        # Preserve the original server Game.shootingStratTypes IDs.
+        # Challenge VIII's six-Bumblebee squad uses Most Powerful (7),
+        # while the other original saved enemy squads use First Seen (1).
+        # Reject unknown source values instead of defaulting silently.
+        strategy = {"First Seen": 1, "Most Powerful": 7}.get(
+            source.get("ChosenShootingStrategy"),
+        )
+        if strategy is None:
             raise ValueError("unknown original Challenge shooting-priority contract")
         matching = bool(source.get("IsMatchingSpeed", False))
         group = {"item_id": first + ordinal, "side": 1,
-                 "members": members, "shooting_strategy_id": 1,
+                 "members": members, "shooting_strategy_id": strategy,
                  "user_controlled": False, "can_accept_input": False,
                  "cease_fire": bool(source.get("CeaseFire", False))}
         if matching:
