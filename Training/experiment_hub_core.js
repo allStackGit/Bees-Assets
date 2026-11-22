@@ -1747,7 +1747,9 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         .sort((a,b)=>
             Number(Boolean(a.observed_headroom_block))-
                 Number(Boolean(b.observed_headroom_block))||
-            (throughput?throughput.compare(job,a,b):0)||
+            (throughput?throughput.compare(job,a,b,snapshot&&{
+                jobs:snapshot.jobs,reservations,
+            }):0)||
             observedLoadPreference(a,b,job.resources)||
             a.available.cpus-b.available.cpus||
             a.available.ram_mb-b.available.ram_mb||
@@ -1790,7 +1792,9 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         Number(Boolean(a.observed_headroom_block))-
             Number(Boolean(b.observed_headroom_block))||
         loss.get(a)-loss.get(b)||
-        (throughput?throughput.compare(job,a,b):0)||
+        (throughput?throughput.compare(job,a,b,snapshot&&{
+            jobs:snapshot.jobs,reservations,
+        }):0)||
         observedLoadPreference(a,b,job.resources));
     return options[0];
 }
@@ -6011,7 +6015,10 @@ class ExperimentHub {
                     const lease=this.state.reservations.find(r=>r.id===job.lease_id);
                     if(lease&&lease.machine_id===machine.id)
                         this.throughputHistory.observe(job,lease.machine_id,chartProgress,
-                            lease.resources?.gpus||[]);
+                            lease.resources?.gpus||[],{
+                                jobs:this.state.jobs,
+                                reservations:this.state.reservations,
+                            });
                 }
                 // When a source update is unchanged or absent, keep the
                 // authenticated host observation with no invented trainer
