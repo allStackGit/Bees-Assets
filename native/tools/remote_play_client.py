@@ -101,6 +101,7 @@ class RemoteConsole:
         self.expected_side = expected_side
         self.spectator = spectator
         self.surrender_requested_episode = None
+        self.surrender_request_id = None
         # One host_session_id belongs to the original authoritative World
         # across native checkpoint recovery. Rejoining an unrelated host
         # with the same tokens must never carry old player authority.
@@ -267,6 +268,12 @@ class RemoteConsole:
                         if not self.silent:
                             print(note)
                     elif kind == "input_result":
+                        if message.get("request_id") == self.surrender_request_id:
+                            # A rejected order was never committed to the
+                            # authoritative Level, so permit a fresh request.
+                            if message.get("processed") is not True:
+                                self.surrender_requested_episode = None
+                            self.surrender_request_id = None
                         if message.get("request_id") == self.held_begin_request:
                             self.held_begin_request = None
                             if message.get("processed") is not True:
@@ -440,8 +447,12 @@ class RemoteConsole:
                 },
             },
         }
-        self.socket.sendall((json.dumps(packet, separators=(",", ":")) + "\n").encode("utf-8"))
+        # Physical input coordinates must be finite; Python's default
+        # encoder otherwise emits NaN/Infinity outside valid JSON.
+        encoded = (json.dumps(packet, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+        self.socket.sendall(encoded)
         self.next_request += 1
+        return packet["request_id"]
 
     def surrender(self):
         if self.spectator:
@@ -456,8 +467,9 @@ class RemoteConsole:
         scope = (state["world_id"], state["episode_revision"])
         if self.surrender_requested_episode == scope:
             raise ValueError("surrender already submitted for this battle")
-        self.send(("surrender", {"side": state["viewer_side"]}), state, [])
+        request_id = self.send(("surrender", {"side": state["viewer_side"]}), state, [])
         self.surrender_requested_episode = scope
+        self.surrender_request_id = request_id
 
     def held_fire(self, kind, target=None, *, owners=None):
         """Submit native Begin/Aim/End, retaining the original episode."""
