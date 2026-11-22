@@ -18,7 +18,7 @@ use crate::navigation::{NavigationError, NavigationGrid};
 use crate::navigation_clearance::NavigationSearchSnapshot;
 use crate::navigation_requests::{NavigationCompletion, NavigationRequest};
 use crate::navigation_runtime::{NavigationMapFrame, NavigationRuntime};
-use crate::navigation_search::{NavigationPath, NavigationSearch};
+use crate::navigation_search::{NavigationPath, NavigationSearch, NavigationSearchWork};
 
 const UNITY_SEARCH_TIME_LIMIT: Duration = Duration::from_secs(5);
 
@@ -51,6 +51,12 @@ pub struct NavigationSchedulerStep {
     pub busy_workers: usize,
     pub clearance_refreshed: bool,
     pub waiting_for_static_rebuild: bool,
+    /// Work and wall time of searches completed in this scheduler pump.
+    /// The latter measures worker time, not main-thread stall or elapsed
+    /// wall time across all parallel workers.
+    pub search_work: NavigationSearchWork,
+    pub search_elapsed: Duration,
+    pub longest_search: Duration,
 }
 
 struct Job {
@@ -73,6 +79,8 @@ struct Reply {
     worker_index: usize,
     request: NavigationRequest,
     outcome: Outcome,
+    work: NavigationSearchWork,
+    search_elapsed: Duration,
 }
 
 struct Worker {
@@ -123,17 +131,21 @@ impl NavigationScheduler {
                 .spawn(move || {
                     while let Ok(command) = receiver.recv() {
                         let Command::Search(job) = command else { break };
+                        let started = Instant::now();
                         let outcome = match catch_unwind(AssertUnwindSafe(|| {
                             solve_job(&mut search, &job)
                         })) {
                             Ok(result) => Outcome::Completed(result),
                             Err(_) => Outcome::Panicked,
                         };
+                        let search_elapsed = started.elapsed();
                         let panicked = matches!(&outcome, Outcome::Panicked);
+                        let work = if panicked { NavigationSearchWork::default() }
+                            else { search.last_work() };
                         if completed.send(Reply {
                             worker_index: index,
                             request: job.request,
-                            outcome,
+                            outcome, work, search_elapsed,
                         }).is_err() {
                             break;
                         }
@@ -173,6 +185,9 @@ impl NavigationScheduler {
             }
             worker.running = None;
             step.completed += 1;
+            step.search_work.merge(reply.work);
+            step.search_elapsed += reply.search_elapsed;
+            step.longest_search = step.longest_search.max(reply.search_elapsed);
             match reply.outcome {
                 Outcome::Completed(Ok(path)) => {
                     match world.complete_path_job(reply.request, path)? {

@@ -23,6 +23,28 @@ const NEIGHBORS: [(i32, i32); 8] = [
 ];
 const NO_PARENT: usize = usize::MAX;
 
+/// Actual work performed by one search, including static egress when used.
+/// Counts cover the same A* solver used by game clients and headless worlds.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NavigationSearchWork {
+    pub searches: u64,
+    pub direct_routes: u64,
+    pub expanded_nodes: u64,
+    pub decrease_keys: u64,
+    pub peak_frontier: usize,
+}
+
+impl NavigationSearchWork {
+    pub fn merge(&mut self, other: Self) {
+        self.searches = self.searches.saturating_add(other.searches);
+        self.direct_routes = self.direct_routes.saturating_add(other.direct_routes);
+        self.expanded_nodes = self.expanded_nodes.saturating_add(other.expanded_nodes);
+        self.decrease_keys = self.decrease_keys.saturating_add(other.decrease_keys);
+        self.peak_frontier = self.peak_frontier.max(other.peak_frontier);
+    }
+}
+
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct NavigationPath {
     pub start: (usize, usize),
@@ -50,6 +72,7 @@ pub struct NavigationSearch {
     // Direct cell-to-heap positions. A relaxation lowers an existing key
     // in place instead of appending another copy of the same cell.
     heap_position: Vec<usize>,
+    last_work: NavigationSearchWork,
 }
 
 impl NavigationSearch {
@@ -73,8 +96,11 @@ impl NavigationSearch {
             search_stamp: 0,
             heap: Vec::new(),
             heap_position: vec![NO_PARENT; n],
+            last_work: NavigationSearchWork::default(),
         })
     }
+
+    pub fn last_work(&self) -> NavigationSearchWork { self.last_work }
 
     /// Returns None for an unreachable route, including a blocked target or
     /// a start that cannot escape static geometry. The caller supplies the
@@ -100,11 +126,13 @@ impl NavigationSearch {
         ship_clearance: i32,
         deadline: Option<Instant>,
     ) -> Result<Option<NavigationPath>, NavigationError> {
+        self.last_work = NavigationSearchWork::default();
         if self.grid != layers.grid() ||
             start.0 >= self.grid.width || start.1 >= self.grid.height ||
             end.0 >= self.grid.width || end.1 >= self.grid.height {
             return Err(NavigationError::InvalidMap);
         }
+        self.last_work.searches = 1;
         let hard = ship_clearance.max(MINIMUM_CLEARANCE);
         let preferred = hard.saturating_add(PREFERRED_CLEARANCE_BUFFER);
         let original_start = self.to_index(start.0, start.1);
@@ -125,6 +153,7 @@ impl NavigationSearch {
             self.clear_grid_line(start_index, end_index, dynamic, preferred) &&
             deadline.is_none_or(|limit| Instant::now() < limit)
         {
+            self.last_work.direct_routes = 1;
             return Ok(Some(NavigationPath {
                 start, end, egress_point_count: 0,
                 points: if start == end { Vec::new() }
@@ -215,6 +244,7 @@ impl NavigationSearch {
                 return None;
             }
             if self.closed_stamp[current] == stamp { continue; }
+            self.last_work.expanded_nodes += 1;
             if current == end {
                 return self.reconstruct(start, end);
             }
@@ -274,6 +304,7 @@ impl NavigationSearch {
                 return None;
             }
             if self.closed_stamp[current] == stamp { continue; }
+            self.last_work.expanded_nodes += 1;
             if signed[current] >= hard && dynamic[current] >= hard {
                 return self.reconstruct(start, current);
             }
@@ -490,6 +521,9 @@ impl NavigationSearch {
         if index == NO_PARENT {
             index = self.heap.len();
             self.heap.push(node);
+            self.last_work.peak_frontier = self.last_work.peak_frontier.max(self.heap.len());
+        } else {
+            self.last_work.decrease_keys += 1;
         }
         while index > 0 {
             let parent = (index - 1) / 2;

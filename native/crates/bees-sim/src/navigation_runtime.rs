@@ -10,7 +10,7 @@ use crate::geometry::Vec2;
 use crate::navigation::{NavigationError, NavigationGrid, NavigationRasterCounts};
 use crate::navigation_clearance::NavigationClearance;
 use crate::navigation_requests::NavigationRequest;
-use crate::navigation_search::{NavigationPath, NavigationSearch};
+use crate::navigation_search::{NavigationPath, NavigationSearch, NavigationSearchWork};
 use crate::physics::ObstacleBody;
 
 /// The complete 2D affine portion of Level.Map.Transform.TransformPoint
@@ -128,6 +128,12 @@ impl NavigationRuntime {
 
     pub fn raster_measurements(&self) -> NavigationRasterMeasurements {
         self.raster_measurements
+    }
+
+    /// Last synchronous route's exact A* work. Does not reread geometry or
+    /// add per-cell instrumentation when no search is requested.
+    pub fn last_search_work(&self) -> NavigationSearchWork {
+        self.search.last_work()
     }
 
     /// The source Level restores its original cumulative navigation work,
