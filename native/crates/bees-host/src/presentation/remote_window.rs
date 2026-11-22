@@ -701,8 +701,11 @@ impl PeerClient {
                     let evacuated = outcome["evacuated_personnel"].as_u64()
                         .map(|count| format!("; {count}/60 evacuated"))
                         .unwrap_or_default();
+                    let score = message["campaign_score_delta"].as_i64()
+                        .map(|delta| format!("; score {delta:+}"))
+                        .unwrap_or_default();
                     let receipt = format!(
-                        "Campaign saved: {mission} ({}); {awarded_ships} ships, {awarded_squads} squads awarded{evacuated}{banked}",
+                        "Campaign saved: {mission} ({}{score}); {awarded_ships} ships, {awarded_squads} squads awarded{evacuated}{banked}",
                         if success { "victory" } else { "defeat" },
                     );
                     self.campaign_receipt = Some(receipt.clone());
