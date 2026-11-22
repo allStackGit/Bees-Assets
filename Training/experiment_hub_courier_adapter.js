@@ -403,7 +403,8 @@ function courierMetrics(source) {
     }
     const criticalWorkerFields=[
         'collect_steps_per_second','collection_seconds',
-        'optimization_seconds','simulation_seconds',
+        'optimization_seconds','async_wait_seconds',
+        'async_optimizer_seconds','simulation_seconds',
         'inference_seconds','gpu_policy_snapshot_seconds',
         'remote_roundtrip_seconds','sim_physical_processes',
         'sim_process_ceiling','gpu_fwd_stream_seconds',
