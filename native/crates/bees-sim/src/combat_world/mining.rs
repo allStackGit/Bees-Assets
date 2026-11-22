@@ -40,7 +40,11 @@ impl CombatWorld {
         if runtime.mining.is_some() {
             return Err(CombatWorldError::InvalidPolicyMining);
         }
+        // Count a ship once even when it also owns healing. This count
+        // gates the otherwise full policy-roster cooldown pass.
+        let first_capability = runtime.healing.is_none();
         runtime.mining = Some(PolicyMiningRuntime { cooldown_remaining: 0.0 });
+        self.policy_capability_owner_count += usize::from(first_capability);
         Ok(())
     }
 
