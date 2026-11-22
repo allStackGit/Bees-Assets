@@ -388,39 +388,55 @@ impl CampaignDialogue {
         }
         let valid = match (&mode, cue) {
             (DialogueMode::PlutoAnomaly {
-                scout_id, honeybee_id, spotted: false,
-                report_completed: false, honeybee_destroyed: false,
+                scout_id, honeybee_id, gunship_id,
+                spotted: false, report_completed: false,
+                gunship_arrived: false, gunship_briefed: false,
+                honeybee_destroyed: false,
             }, CampaignCue::PlutoAnomalyBriefing) =>
-                *scout_id > 0 && *honeybee_id > 0 &&
-                scout_id != honeybee_id && sequence == 0,
+                *scout_id > 0 && *honeybee_id > 0 && *gunship_id > 0 &&
+                scout_id != honeybee_id && scout_id != gunship_id &&
+                honeybee_id != gunship_id && sequence == 0,
             (DialogueMode::PlutoAnomaly {
-                scout_id, honeybee_id, spotted: true,
-                report_completed: false, honeybee_destroyed: false,
-            }, CampaignCue::PlutoAnomalyHoneybeeSpotted) =>
-                *scout_id > 0 && *honeybee_id > 0 &&
-                scout_id != honeybee_id && sequence == 1,
+                spotted: true, report_completed: false,
+                gunship_arrived: false, gunship_briefed: false,
+                honeybee_destroyed: false, ..
+            }, CampaignCue::PlutoAnomalyHoneybeeSpotted) => sequence == 1,
             (DialogueMode::PlutoAnomaly {
-                scout_id, honeybee_id, spotted: true,
-                report_completed: true, honeybee_destroyed: false,
-            }, CampaignCue::PlutoAnomalyScoutReportComplete) =>
-                *scout_id > 0 && *honeybee_id > 0 &&
-                scout_id != honeybee_id && sequence == 2,
+                spotted: true, report_completed: true,
+                gunship_arrived: false, gunship_briefed: false,
+                honeybee_destroyed: false, ..
+            }, CampaignCue::PlutoAnomalyScoutReportComplete) => sequence == 2,
             (DialogueMode::PlutoAnomaly {
-                scout_id, honeybee_id, spotted: true,
-                report_completed: true, honeybee_destroyed: true,
-            }, CampaignCue::PlutoAnomalyHoneybeeDestroyed) =>
-                *scout_id > 0 && *honeybee_id > 0 &&
-                scout_id != honeybee_id && sequence == 3,
+                spotted: true, report_completed: true,
+                gunship_arrived: true, gunship_briefed: false,
+                honeybee_destroyed: false, ..
+            }, CampaignCue::PlutoAnomalyGunshipArrived) => sequence == 3,
             (DialogueMode::PlutoAnomaly {
-                scout_id, honeybee_id, spotted, report_completed,
-                honeybee_destroyed,
+                spotted: true, report_completed: true,
+                gunship_arrived: true, gunship_briefed: true,
+                honeybee_destroyed: false, ..
+            }, CampaignCue::PlutoAnomalyGunshipBriefingComplete) => sequence == 4,
+            (DialogueMode::PlutoAnomaly {
+                spotted: true, report_completed: true,
+                gunship_arrived: true, gunship_briefed: true,
+                honeybee_destroyed: true, ..
+            }, CampaignCue::PlutoAnomalyHoneybeeDestroyed) => sequence == 5,
+            (DialogueMode::PlutoAnomaly {
+                scout_id, honeybee_id, gunship_id,
+                spotted, report_completed, gunship_arrived,
+                gunship_briefed, honeybee_destroyed,
             }, CampaignCue::PlutoAnomalyVictory | CampaignCue::PlutoAnomalyDefeat) =>
-                *scout_id > 0 && *honeybee_id > 0 &&
-                scout_id != honeybee_id &&
+                *scout_id > 0 && *honeybee_id > 0 && *gunship_id > 0 &&
+                scout_id != honeybee_id && scout_id != gunship_id &&
+                honeybee_id != gunship_id &&
                 (!*report_completed || *spotted) &&
-                (!*honeybee_destroyed || *report_completed) &&
+                (!*gunship_arrived || *report_completed) &&
+                (!*gunship_briefed || *gunship_arrived) &&
+                (!*honeybee_destroyed || *gunship_briefed) &&
                 sequence == 1 + u32::from(*spotted) +
                     u32::from(*report_completed) +
+                    u32::from(*gunship_arrived) +
+                    u32::from(*gunship_briefed) +
                     u32::from(*honeybee_destroyed),
             (DialogueMode::Minesweeper { tracked_tank: None },
                 CampaignCue::MinesweeperBriefing) => sequence == 0,
@@ -795,7 +811,8 @@ impl CampaignDialogue {
         source_pluto_honeybee_spotted: bool,
     ) -> Option<CampaignCue> {
         if let DialogueMode::PlutoAnomaly {
-            honeybee_id, spotted, report_completed, honeybee_destroyed, ..
+            honeybee_id, gunship_id, spotted, report_completed,
+            gunship_arrived, gunship_briefed, honeybee_destroyed, ..
         } = &mut self.mode {
             if !*spotted && source_pluto_honeybee_spotted {
                 *spotted = true;
@@ -810,7 +827,21 @@ impl CampaignDialogue {
                 *report_completed = true;
                 return Some(CampaignCue::PlutoAnomalyScoutReportComplete);
             }
-            if *spotted && !*honeybee_destroyed && world.ship(*honeybee_id)
+            if *report_completed && !*gunship_arrived &&
+                world.ship(*gunship_id)
+                    .is_some_and(|ship| !ship.vitals.is_dead())
+            {
+                *gunship_arrived = true;
+                return Some(CampaignCue::PlutoAnomalyGunshipArrived);
+            }
+            if *gunship_arrived && !*gunship_briefed {
+                // Same presentation/ACK boundary as the Scout report.
+                // The authored Gunship attack queue is event-gated until
+                // Lieutenant Tom's actual source briefing finishes.
+                *gunship_briefed = true;
+                return Some(CampaignCue::PlutoAnomalyGunshipBriefingComplete);
+            }
+            if *gunship_briefed && !*honeybee_destroyed && world.ship(*honeybee_id)
                 .is_some_and(|ship| ship.vitals.is_dead())
             {
                 *honeybee_destroyed = true;
