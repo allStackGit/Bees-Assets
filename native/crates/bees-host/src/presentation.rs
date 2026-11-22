@@ -9,6 +9,7 @@ use bees_gameplay::{squads::NativeSquadRoster,
     commands::NativeSquadCommandDirector,
     player_inputs::NativePlayerAuthority};
 use bees_sim::combat_world::CombatWorld;
+use crate::fleet_inventory::NativeFleetInventory;
 use bees_sim::simulation::WorldId;
 use bees_sim::geometry::Vec2;
 use bees_hivemind::session::SquadLifetime;
@@ -218,6 +219,9 @@ pub struct NativeRenderWorldView<'a> {
     /// the durable notification must not extinguish the gameplay banner.
     pub last_reinforcement_tick: Option<u64>,
     pub combat: &'a CombatWorld,
+    /// Optional campaign career observations belong to the same live Level
+    /// and are borrowed, never copied into a second presentation ledger.
+    pub fleet: &'a NativeFleetInventory,
     pub collision_matrix: &'a bees_sim::physics::CollisionMatrix,
     pub roster: &'a NativeSquadRoster,
     /// Same live director as combat weapon targeting and gameplay timers.
