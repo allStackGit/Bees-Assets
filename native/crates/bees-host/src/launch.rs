@@ -128,6 +128,11 @@ struct LevelConfig {
     /// assets remain shared with normal playback and headless simulation.
     #[serde(default)]
     native_layout: Option<NativeLevelLayout>,
+    /// Optional original LevelOptions.SupplyCapacity for a named player
+    /// faction. No arbitrary native default: the scene author must provide
+    /// the actual capacity from the original level or challenge.
+    #[serde(default)]
+    supply_capacity: Option<SourceSupplyCapacity>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -244,6 +249,62 @@ struct EscortConfig {
     escorting_side: i32,
     escorted_ship_id: i64,
     seconds: f32,
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SourceSupplyCapacity {
+    player_side: i32,
+    /// Sum of each deployed FleetShip's immutable class MaxTSV, not its
+    /// current damage-adjusted combat TSV or mined cargo.
+    max_tsv: u64,
+}
+
+/// Source SquadMaker.ConfirmStartLevel rejects squads whose living
+/// FleetShip base TSV exceeds LevelOptions.SupplyCapacity. Evaluate the
+/// final selected native roster AFTER saved squad transfers, purchases and
+/// combat casualties have been reconciled, before any physics starts.
+fn validate_source_supply_capacity(
+    source: &bees_host::unity_scene_snapshot::NativeSourceLevel,
+    capacity: SourceSupplyCapacity,
+) -> io::Result<u64> {
+    if !(1..=2).contains(&capacity.player_side) || capacity.max_tsv == 0 {
+        return Err(invalid("invalid original player side or supply capacity"));
+    }
+    let ships = source.entities.iter().filter_map(|entity| match entity {
+        NativeAuthoredEntity::Ship(ship) => Some((ship.entity_id, ship)),
+        _ => None,
+    }).collect::<HashMap<_, _>>();
+    let mut selected_fleet_ids = HashSet::new();
+    let mut used = 0_u64;
+    for squad in source.source_squads.iter().filter(|squad|
+        squad.side == capacity.player_side &&
+        squad.player_permissions.user_controlled &&
+        squad.saved_squad_id.is_some()
+    ) {
+        for &ship_id in &squad.members {
+            let ship = ships.get(&ship_id).ok_or_else(||
+                invalid("supply capacity squad contains an unknown physical ship"))?;
+            if ship.vitals.is_dead() { continue; }
+            // A selectable source SavedSquad is made of actual FleetShips.
+            // Generated policy minion / Carrier-child groups have no saved
+            // identity and are excluded above, not guessed to have zero cost.
+            let fleet_id = ship.fleet_ship_id.ok_or_else(||
+                invalid("player SavedSquad ship is missing its source FleetShip identity"))?;
+            if selected_fleet_ids.insert(fleet_id) {
+                used = used.checked_add(u64::try_from(ship.vitals.max_tsv())
+                    .map_err(|_| invalid("invalid source FleetShip maximum TSV"))?)
+                    .ok_or_else(|| invalid("source deployed supply overflow"))?;
+            }
+        }
+    }
+    if used > capacity.max_tsv {
+        return Err(invalid(format!(
+            "deployed player supply {used} exceeds authored cap {}; move excess FleetShips to Reserve in fleet transfer before launching",
+            capacity.max_tsv,
+        )));
+    }
+    Ok(used)
 }
 
 impl LevelConfig {
@@ -6390,6 +6451,21 @@ fn run_battle(
         if let Some(mission) = mission {
             source.validate_campaign_deployment(mission.player_side)
                 .map_err(|error| contextual("final campaign deployment", error))?;
+        }
+        if let Some(capacity) = level.supply_capacity {
+            if mission.is_some_and(|mission| mission.player_side != capacity.player_side) {
+                return Err(invalid(
+                    "authored campaign supply capacity must target the mission player side",
+                ).into());
+            }
+            let used = validate_source_supply_capacity(&source, capacity)?;
+            println!("{}", json!({
+                "kind": "native_player_supply_preflight",
+                "world_id": level.world_id,
+                "side": capacity.player_side,
+                "selected_base_tsv": used,
+                "authored_capacity_tsv": capacity.max_tsv,
+            }));
         }
         // A mission side needs real command authority in either runtime:
         // human player squads during ordinary play and authenticated group
