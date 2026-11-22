@@ -93,6 +93,7 @@ impl UploadMilestone {
 pub enum CampaignCue {
     PlutoAnomalyBriefing,
     PlutoAnomalyHoneybeeSpotted,
+    PlutoAnomalyHoneybeeDestroyed,
     PlutoAnomalyVictory,
     PlutoAnomalyDefeat,
     MinesweeperBriefing,
@@ -149,7 +150,10 @@ impl CampaignCue {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 enum DialogueMode {
-    PlutoAnomaly { scout_id: i64, honeybee_id: i64, spotted: bool },
+    PlutoAnomaly {
+        scout_id: i64, honeybee_id: i64,
+        spotted: bool, honeybee_destroyed: bool,
+    },
     Minesweeper { tracked_tank: Option<i64> },
     Beenoculars { under_heavy_fire: bool, next_milestone: usize },
     PlutoPushback { speaker_mask: u8 },
@@ -231,7 +235,8 @@ impl CampaignDialogue {
         let (mode, cue) = match spec {
             CampaignDialogueSpec::PlutoAnomaly { scout_id, honeybee_id, .. } => (
                 DialogueMode::PlutoAnomaly {
-                    scout_id, honeybee_id, spotted: false,
+                    scout_id, honeybee_id,
+                    spotted: false, honeybee_destroyed: false,
                 },
                 CampaignCue::PlutoAnomalyBriefing,
             ),
@@ -361,19 +366,29 @@ impl CampaignDialogue {
         let valid = match (&mode, cue) {
             (DialogueMode::PlutoAnomaly {
                 scout_id, honeybee_id, spotted: false,
+                honeybee_destroyed: false,
             }, CampaignCue::PlutoAnomalyBriefing) =>
                 *scout_id > 0 && *honeybee_id > 0 &&
                 scout_id != honeybee_id && sequence == 0,
             (DialogueMode::PlutoAnomaly {
                 scout_id, honeybee_id, spotted: true,
+                honeybee_destroyed: false,
             }, CampaignCue::PlutoAnomalyHoneybeeSpotted) =>
                 *scout_id > 0 && *honeybee_id > 0 &&
                 scout_id != honeybee_id && sequence == 1,
             (DialogueMode::PlutoAnomaly {
-                scout_id, honeybee_id, spotted,
+                scout_id, honeybee_id, spotted: true,
+                honeybee_destroyed: true,
+            }, CampaignCue::PlutoAnomalyHoneybeeDestroyed) =>
+                *scout_id > 0 && *honeybee_id > 0 &&
+                scout_id != honeybee_id && sequence == 2,
+            (DialogueMode::PlutoAnomaly {
+                scout_id, honeybee_id, spotted, honeybee_destroyed,
             }, CampaignCue::PlutoAnomalyVictory | CampaignCue::PlutoAnomalyDefeat) =>
                 *scout_id > 0 && *honeybee_id > 0 &&
-                scout_id != honeybee_id && sequence == 1 + u32::from(*spotted),
+                scout_id != honeybee_id && (!*honeybee_destroyed || *spotted) &&
+                sequence == 1 + u32::from(*spotted) +
+                    u32::from(*honeybee_destroyed),
             (DialogueMode::Minesweeper { tracked_tank: None },
                 CampaignCue::MinesweeperBriefing) => sequence == 0,
             (DialogueMode::Minesweeper { tracked_tank: None },
@@ -746,10 +761,18 @@ impl CampaignDialogue {
         &mut self, world: &CombatWorld, source_bumblebee_spotted: bool,
         source_pluto_honeybee_spotted: bool,
     ) -> Option<CampaignCue> {
-        if let DialogueMode::PlutoAnomaly { spotted, .. } = &mut self.mode {
+        if let DialogueMode::PlutoAnomaly {
+            honeybee_id, spotted, honeybee_destroyed, ..
+        } = &mut self.mode {
             if !*spotted && source_pluto_honeybee_spotted {
                 *spotted = true;
                 return Some(CampaignCue::PlutoAnomalyHoneybeeSpotted);
+            }
+            if *spotted && !*honeybee_destroyed && world.ship(*honeybee_id)
+                .is_some_and(|ship| ship.vitals.is_dead())
+            {
+                *honeybee_destroyed = true;
+                return Some(CampaignCue::PlutoAnomalyHoneybeeDestroyed);
             }
             return None;
         }
