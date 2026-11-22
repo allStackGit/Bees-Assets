@@ -1024,8 +1024,13 @@ impl CampaignDialogue {
                 .then_some(CampaignCue::FireTankDestroyed { object_id });
         }
         // Resolve simultaneous discovery by source object ID for deterministic playback.
-        let object_id = world.range_visible_map_object_ids().iter().copied().filter(|&id|
-            world.map_object(id).is_some_and(|object| object.kind == MapObjectKind::FireTank)).min()?;
+        // Unity's Titania I cue listens to State.PlayerVisibleMapObjects,
+        // not a union of Bee and human turret detections. Enemy-triggered
+        // map contacts must never reveal a Fire Tank to the commander.
+        let object_id = world.range_visible_map_objects_for_side(self.player_side)?
+            .iter().copied().filter(|&id|
+                world.map_object(id).is_some_and(|object|
+                    object.kind == MapObjectKind::FireTank)).min()?;
         *tracked_tank = Some(object_id);
         Some(CampaignCue::FireTankSpotted { object_id })
     }
