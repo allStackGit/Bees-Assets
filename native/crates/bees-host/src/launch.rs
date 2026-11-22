@@ -2368,7 +2368,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         return run_set_saved_squad_tactics(&catalog, &output, NativeSavedSquadTactics {
             side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
             match_speed, color_setting, formation, placements,
-        });
+        }, false);
     }
     if first == "reassign" {
         let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
@@ -4661,6 +4661,7 @@ fn parse_squad_formation_setting(value: &str) -> io::Result<NativeSavedSquadForm
 
 fn run_set_saved_squad_tactics(
     catalog_path: &Path, output_root: &Path, entry: NativeSavedSquadTactics,
+    replace_placements: bool,
 ) -> Result<(), Box<dyn Error>> {
     let catalog_path = catalog_path.canonicalize()?;
     let catalog: battle_catalog::BattleCatalog =
@@ -4694,6 +4695,7 @@ fn run_set_saved_squad_tactics(
         .and_then(|saved| saved.placements).unwrap_or_default();
     let merged = match entry.placements.take() {
         None => prior,
+        Some(incoming) if replace_placements => incoming,
         Some(incoming) if incoming.is_empty() => Vec::new(),
         Some(incoming) => {
             let mut all = prior;
@@ -7112,6 +7114,26 @@ fn run_campaign_game_menu(
             .map(|original| {
             let tactics = progress.tactics_for_squad(original.side, original.saved_squad_id)
                 .unwrap_or(original);
+            // Discover owned FleetShips from the current career and the
+            // original source roster. Never expose a transient Stage ID.
+            let mut fleet_ships = Vec::new();
+            if let Ok(lost) = progress.lost_player_fleet_ids(tactics.side) {
+                for &(owner, id, original_squad, _) in &source_owned {
+                    if owner == tactics.side && !lost.contains(&id) &&
+                        progress.authored_current_squad(id).unwrap_or(original_squad)
+                            == tactics.saved_squad_id {
+                        fleet_ships.push(id);
+                    }
+                }
+                for ship in progress.purchases_for_side(tactics.side) {
+                    if ship.saved_squad_id == tactics.saved_squad_id &&
+                        !lost.contains(&ship.fleet_ship_id) {
+                        fleet_ships.push(ship.fleet_ship_id);
+                    }
+                }
+                fleet_ships.sort_unstable();
+                fleet_ships.dedup();
+            }
             NativeTacticsMenuRow {
                 title: format!("Side {} {}", tactics.side,
                     progress.squad_label(tactics.saved_squad_id)),
@@ -7126,6 +7148,8 @@ fn run_campaign_game_menu(
                     .unwrap_or(NativeSquadColorSetting::Inherit),
                 formation: tactics.formation
                     .unwrap_or(NativeSavedSquadFormation::authored()),
+                fleet_ships,
+                placements: tactics.placements.unwrap_or_default(),
             }
         }).collect::<Vec<_>>();
         let codex_known = catalog.codex_known_types(&progress);
@@ -7205,7 +7229,7 @@ fn run_campaign_game_menu(
             }
             NativeBattleMenuAction::Tactics {
                 side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
-                match_speed, color_setting, formation,
+                match_speed, color_setting, formation, placements,
             } => {
                 let result = run_set_saved_squad_tactics(
                     &catalog_path, output_root, NativeSavedSquadTactics {
@@ -7213,8 +7237,8 @@ fn run_campaign_game_menu(
                         match_speed: Some(match_speed),
                         color_setting: Some(color_setting),
                         formation: Some(formation),
-                        placements: None,
-                    },
+                        placements: Some(placements),
+                    }, true,
                 );
                 progress = catalog.load_progress(output_root)?;
                 launch_failed = result.is_err();

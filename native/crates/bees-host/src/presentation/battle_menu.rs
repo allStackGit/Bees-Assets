@@ -3,7 +3,8 @@
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 
 use super::{text, codex::{native_codex, codex_lines}};
-use crate::unity_scene_snapshot::{NativeSquadColorSetting, NativeSavedSquadFormation};
+use crate::unity_scene_snapshot::{NativeSquadColorSetting, NativeSavedSquadFormation,
+    NativeSavedShipPlacement};
 
 /// The on-screen palette is a convenience; the CLI accepts any RGB.
 /// Presets affect artwork only, never ship ownership or physics.
@@ -215,6 +216,8 @@ pub struct NativeTacticsMenuRow {
     pub match_speed: bool,
     pub color_setting: NativeSquadColorSetting,
     pub formation: NativeSavedSquadFormation,
+    pub fleet_ships: Vec<i64>,
+    pub placements: Vec<NativeSavedShipPlacement>,
 }
 
 pub enum NativeBattleMenuAction {
@@ -227,7 +230,8 @@ pub enum NativeBattleMenuAction {
     Tactics { side: i32, saved_squad_id: i64,
         shooting_strategy_id: u8, should_chase: bool, cease_fire: bool,
         match_speed: bool, color_setting: NativeSquadColorSetting,
-        formation: NativeSavedSquadFormation },
+        formation: NativeSavedSquadFormation,
+        placements: Vec<NativeSavedShipPlacement> },
     Buy { side: i32, ship_type: u8, saved_squad_id: i64 },
     Transfer { fleet_ship_id: i64, to_saved_squad_id: i64 },
     Reassign { side: i32, fleet_ship_id: i64,
@@ -390,6 +394,9 @@ fn select_battle_inner(
     let mut tactic_formation = NativeSavedSquadFormation::authored();
     let mut preview_formation = None::<NativeSavedSquadFormation>;
     let mut preview_slots = Vec::new();
+    let mut tactic_placements = Vec::<NativeSavedShipPlacement>::new();
+    let mut tactic_ship_index = 0_usize;
+    let mut placing_ship = false;
     let mut show_names = false;
     let mut name_selected = 0_usize;
     let mut name_first = 0_usize;
@@ -766,7 +773,8 @@ fn select_battle_inner(
             let choose = |index: usize, edit_index: Option<usize>,
                           strategy: u8, chase: bool, cease_fire: bool,
                           match_speed: bool, color_setting: NativeSquadColorSetting,
-                          formation: NativeSavedSquadFormation| {
+                          formation: NativeSavedSquadFormation,
+                          placements: &[NativeSavedShipPlacement]| {
                 if show_transfer {
                     transfer_rows.get(index).map(|row| match row.authored_from {
                         Some((side, from_saved_squad_id)) => NativeBattleMenuAction::Reassign {
@@ -811,6 +819,9 @@ fn select_battle_inner(
                         formation: if edit_index == Some(index) {
                             formation
                         } else { row.formation },
+                        placements: if edit_index == Some(index) {
+                            placements.to_vec()
+                        } else { row.placements.clone() },
                     })
                 } else {
                     shop_rows.get(index).filter(|row| row.unlocked)
@@ -821,7 +832,9 @@ fn select_battle_inner(
                         })
                 }
             };
-            navigate_rows(&window, &mut shop_selected, &mut shop_first, count);
+            if !show_tactics || !placing_ship {
+                navigate_rows(&window, &mut shop_selected, &mut shop_first, count);
+            }
             if show_tactics {
                 if let Some(row) = tactics_rows.get(shop_selected) {
                     if tactic_edit_index != Some(shop_selected) {
@@ -832,10 +845,53 @@ fn select_battle_inner(
                         tactic_match_speed = row.match_speed;
                         tactic_color = row.color_setting;
                         tactic_formation = row.formation;
+                        tactic_placements = row.placements.clone();
+                        tactic_ship_index = 0;
+                        placing_ship = false;
+                    }
+                    if window.is_key_pressed(Key::J, KeyRepeat::No) &&
+                        !row.fleet_ships.is_empty() {
+                        placing_ship = !placing_ship;
+                    }
+                    if placing_ship && !row.fleet_ships.is_empty() {
+                        tactic_ship_index = tactic_ship_index.min(row.fleet_ships.len() - 1);
+                        if window.is_key_pressed(Key::PageUp, KeyRepeat::No) {
+                            tactic_ship_index = (tactic_ship_index + row.fleet_ships.len() - 1)
+                                % row.fleet_ships.len();
+                        } else if window.is_key_pressed(Key::PageDown, KeyRepeat::No) {
+                            tactic_ship_index = (tactic_ship_index + 1) % row.fleet_ships.len();
+                        }
+                        let id = row.fleet_ships[tactic_ship_index];
+                        if window.is_key_pressed(Key::Delete, KeyRepeat::No) {
+                            tactic_placements.retain(|place| place.fleet_ship_id != id);
+                        }
+                        let dx = if window.is_key_pressed(Key::Left, KeyRepeat::Yes) { -8_i16 }
+                            else if window.is_key_pressed(Key::Right, KeyRepeat::Yes) { 8 }
+                            else { 0 };
+                        let dy = if window.is_key_pressed(Key::Up, KeyRepeat::Yes) { 8_i16 }
+                            else if window.is_key_pressed(Key::Down, KeyRepeat::Yes) { -8 }
+                            else { 0 };
+                        if dx != 0 || dy != 0 {
+                            let place = if let Some(index) = tactic_placements.iter()
+                                .position(|place| place.fleet_ship_id == id) {
+                                &mut tactic_placements[index]
+                            } else {
+                                tactic_placements.push(NativeSavedShipPlacement {
+                                    fleet_ship_id: id, offset: [0, 0],
+                                });
+                                tactic_placements.last_mut().expect("position appended")
+                            };
+                            place.offset[0] = place.offset[0]
+                                .saturating_add(dx).clamp(-4096, 4096);
+                            place.offset[1] = place.offset[1]
+                                .saturating_add(dy).clamp(-4096, 4096);
+                        }
                     }
                     let shift = window.is_key_down(Key::LeftShift) ||
                         window.is_key_down(Key::RightShift);
-                    if shift {
+                    if placing_ship {
+                        // Arrows edit this FleetShip, never the whole squad.
+                    } else if shift {
                         // Original formation editing moves the full squad;
                         // this changes no live battle or persistent account
                         // until the existing Tactics transaction is saved.
@@ -863,35 +919,35 @@ fn select_battle_inner(
                                 else { tactic_strategy + 1 };
                         }
                     }
-                    if window.is_key_pressed(Key::C, KeyRepeat::No) {
+                    if !placing_ship && window.is_key_pressed(Key::C, KeyRepeat::No) {
                         tactic_chase = !tactic_chase;
                     }
-                    if window.is_key_pressed(Key::V, KeyRepeat::No) {
+                    if !placing_ship && window.is_key_pressed(Key::V, KeyRepeat::No) {
                         tactic_cease_fire = !tactic_cease_fire;
                     }
-                    if window.is_key_pressed(Key::M, KeyRepeat::No) {
+                    if !placing_ship && window.is_key_pressed(Key::M, KeyRepeat::No) {
                         tactic_match_speed = !tactic_match_speed;
                     }
-                    if window.is_key_pressed(Key::R, KeyRepeat::No) {
+                    if !placing_ship && window.is_key_pressed(Key::R, KeyRepeat::No) {
                         tactic_color = cycle_squad_color(tactic_color);
                     }
-                    if window.is_key_pressed(Key::H, KeyRepeat::No) {
+                    if !placing_ship && window.is_key_pressed(Key::H, KeyRepeat::No) {
                         hex_color_input = Some(match tactic_color {
                             NativeSquadColorSetting::Custom(rgb) =>
                                 format!("{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]),
                             _ => String::new(),
                         });
                     }
-                    if window.is_key_pressed(Key::F, KeyRepeat::No) {
+                    if !placing_ship && window.is_key_pressed(Key::F, KeyRepeat::No) {
                         tactic_formation = tactic_formation.cycle_kind();
                     }
-                    if window.is_key_pressed(Key::O, KeyRepeat::No) {
+                    if !placing_ship && window.is_key_pressed(Key::O, KeyRepeat::No) {
                         tactic_formation = tactic_formation.rotate_clockwise();
                     }
-                    if window.is_key_pressed(Key::X, KeyRepeat::No) {
+                    if !placing_ship && window.is_key_pressed(Key::X, KeyRepeat::No) {
                         tactic_formation = tactic_formation.mirror();
                     }
-                    if window.is_key_pressed(Key::W, KeyRepeat::No) {
+                    if !placing_ship && window.is_key_pressed(Key::W, KeyRepeat::No) {
                         tactic_formation.max_width = if tactic_formation.max_width >= 16 {
                             1
                         } else { tactic_formation.max_width + 1 };
@@ -909,7 +965,8 @@ fn select_battle_inner(
             if window.is_key_pressed(Key::Enter, KeyRepeat::No) {
                 if let Some(action) = choose(shop_selected, tactic_edit_index,
                         tactic_strategy, tactic_chase, tactic_cease_fire,
-                        tactic_match_speed, tactic_color, tactic_formation) {
+                        tactic_match_speed, tactic_color, tactic_formation,
+                        &tactic_placements) {
                     return Ok(Some(action));
                 }
             }
@@ -931,7 +988,8 @@ fn select_battle_inner(
                                     if show_tactics { tactic_edit_index = None; }
                                 } else if let Some(action) = choose(index, tactic_edit_index,
                                     tactic_strategy, tactic_chase, tactic_cease_fire,
-                                    tactic_match_speed, tactic_color, tactic_formation)
+                                    tactic_match_speed, tactic_color, tactic_formation,
+                                    &tactic_placements)
                                 {
                                     return Ok(Some(action));
                                 }
@@ -949,8 +1007,17 @@ fn select_battle_inner(
                 else if show_tactics { "Saved squad tactics" }
                 else { "Build fleet" }, 2, TEXT);
             if show_tactics {
+                let position_label = if placing_ship {
+                    tactics_rows.get(shop_selected).and_then(|row|
+                        row.fleet_ships.get(tactic_ship_index)).map(|&id| {
+                        match tactic_placements.iter().find(|p| p.fleet_ship_id == id) {
+                            Some(p) => format!("FleetShip #{id} offset {},{}", p.offset[0], p.offset[1]),
+                            None => format!("FleetShip #{id} - original slot"),
+                        }
+                    }).unwrap_or_else(|| "Select a deployed FleetShip".to_owned())
+                } else { "Formation and saved ship tactics".to_owned() };
                 text::draw_at(&mut pixels, WIDTH, 72, 72,
-                    "Formation and saved ship tactics", 1, MUTED);
+                    &position_label, 1, MUTED);
                 // Compute an illustrative eight-ship preview only when a
                 // formation setting changes. The real campaign preflight
                 // remains responsible for the actual fleet size and hulls.
@@ -1066,7 +1133,11 @@ fn select_battle_inner(
             }
             text::draw_centered(&mut pixels, WIDTH, 441,
                 if show_tactics {
-                    "Up/Down rows Left/Right strategy | Shift+arrows move | F form W width O rotate X mirror"
+                    if placing_ship {
+                        "Ship: arrows move 8 | PgUp/PgDn choose | Del clear | J done | Enter save"
+                    } else {
+                        "Arrows strategy | Shift+arrows move squad | J ship | F form W width O turn X mirror"
+                    }
                 } else if show_delete {
                     "Up/Down select   Enter delete   D close   Esc back"
                 } else if show_shop {
@@ -1076,7 +1147,7 @@ fn select_battle_inner(
                 }, 1, MUTED);
             if show_tactics {
                 text::draw_centered(&mut pixels, WIDTH, 464,
-                    "C chase V fire M speed | R swatch H RGB | Enter commits placement", 1, MUTED);
+                    "C chase V fire M speed | R color H RGB | Enter saves the entire layout", 1, MUTED);
             }
             window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
             continue;
