@@ -1235,11 +1235,10 @@ impl RemotePrimaryHull {
     }
 }
 
-fn remote_primary_hull(item: &Value, center: Vec2,
+fn remote_collider_hull(collider: &Value, center: Vec2,
     rotation_degrees: f32) -> Option<RemotePrimaryHull>
 {
     let pose = Pose { position: center, rotation_degrees };
-    let collider = &item["collider"];
     match collider["kind"].as_str() {
         Some("circle") => {
             let offset = point_from_wire(&collider["offset"])?;
@@ -1274,6 +1273,15 @@ fn remote_primary_hull(item: &Value, center: Vec2,
             });
         }
         _ => {}
+    }
+    None
+}
+
+fn remote_primary_hull(item: &Value, center: Vec2,
+    rotation_degrees: f32) -> Option<RemotePrimaryHull>
+{
+    if let Some(hull) = remote_collider_hull(&item["collider"], center, rotation_degrees) {
+        return Some(hull);
     }
     // The authoritative primary AABB is the existing fallback for imported
     // polygon hulls too large to transmit. It is never an invented radius.
@@ -1454,10 +1462,16 @@ fn hit<'a>(state: &'a Value, camera: NativeCamera, x: i32, y: i32,
         let Some(point)=visual.position(ship,0,fraction) else {continue};
         let (sx,sy)=screen(camera,point);
         let distance=(sx-x).pow(2)+(sy-y).pow(2);
-        if remote_primary_hull(
-            ship,point,visual.heading_for(ship,0,fraction),
-        ).is_some_and(|hull|hull.overlaps_cursor(cursor,ship_pick_radius))
-            &&distance<best_ship {
+        let heading=visual.heading_for(ship,0,fraction);
+        let body_hit=remote_primary_hull(ship,point,heading)
+            .is_some_and(|hull|hull.overlaps_cursor(cursor,ship_pick_radius));
+        // Unity CheckClickCollision admits the Beehive's authored child
+        // HealCollider as a click target. This read-only geometry comes
+        // from the SAME host ShipBody, not an enlarged combat collider.
+        let healing_hit=remote_collider_hull(
+            &ship["input_healing_zone"],point,heading,
+        ).is_some_and(|hull|hull.overlaps_cursor(cursor,ship_pick_radius));
+        if (body_hit||healing_hit) &&distance<best_ship {
             best_ship=distance;
             ship_hit=Some(("ship",ship));
         }
