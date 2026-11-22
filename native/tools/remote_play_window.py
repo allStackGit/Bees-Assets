@@ -155,6 +155,10 @@ class RemoteBattleWindow:
         self.dialogue_line = 0
         self.view_width = 1
         self.view_height = 1
+        self.performance_enabled = False
+        self.performance_started_ns = time.perf_counter_ns()
+        self.performance_counts = [0] * 7
+        self.performance_label = ""
 
         if not console.spectator:
             ttk.Checkbutton(
@@ -223,6 +227,7 @@ class RemoteBattleWindow:
         self.root.bind("<KeyPress-l>", self.advance_dialogue)
         self.root.bind("<KeyPress-k>", self.skip_dialogue)
         self.root.bind("<KeyPress>", self.squad_shortcut, add="+")
+        self.root.bind("<F8>", self.toggle_performance)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.after(50, self.poll)
 
@@ -1033,11 +1038,23 @@ class RemoteBattleWindow:
         wx, wy = self.to_world(event.x, event.y)
         self.send("move", {"destination": {"x": wx, "y": wy}})
 
+    def toggle_performance(self, _event=None):
+        self.performance_enabled = not self.performance_enabled
+        self.performance_started_ns = time.perf_counter_ns()
+        self.performance_counts = [0] * 7
+        self.performance_label = ""
+        self.draw()
+
     def draw(self):
         self.canvas.delete("all")
         state = self.state
         if state is None or self.map_bounds is None:
             return
+        # Measure only requested presentation frames. Never insert timing
+        # calls into the game tick or infer CPU/GPU utilization from redraws.
+        measuring = self.performance_enabled
+        began_ns = time.perf_counter_ns() if measuring else None
+        ships_drawn = ships_culled = obstacles_drawn = obstacles_culled = shots_drawn = 0
         self.view_width = self.canvas.winfo_width()
         self.view_height = self.canvas.winfo_height()
         (x0, y0), (x1, y1) = self.map_bounds
@@ -1067,7 +1084,11 @@ class RemoteBattleWindow:
                              if objective.get("kind") == "demolition" else None)
         for obj in state.get("obstacles", []):
             if not self.collider_on_screen(obj):
+                if measuring:
+                    obstacles_culled += 1
                 continue
+            if measuring:
+                obstacles_drawn += 1
             shape, points = self.obstacle_screen_shape(obj)
             color = MINERAL if obj["mining"] else NEUTRAL
             if shape == "polygon":
@@ -1108,6 +1129,8 @@ class RemoteBattleWindow:
         for shot in state.get("projectiles", []):
             x, y = self.to_screen(shot["x"], shot["y"])
             if -4 <= x <= self.view_width+4 and -4 <= y <= self.view_height+4:
+                if measuring:
+                    shots_drawn += 1
                 self.canvas.create_oval(x-2, y-2, x+2, y+2,
                                         fill="#ffe4a2", outline="")
         selected = self.selected_owners()
@@ -1152,7 +1175,11 @@ class RemoteBattleWindow:
         ) else set()
         for ship in state["ships"]:
             if not self.collider_on_screen(ship):
+                if measuring:
+                    ships_culled += 1
                 continue
+            if measuring:
+                ships_drawn += 1
             x, y = self.to_screen(ship["x"], ship["y"])
             if self.weapon_overlay_on.get() and ship["id"] in selected_ship_ids:
                 for weapon in ship.get("weapons", []):
@@ -1327,6 +1354,32 @@ class RemoteBattleWindow:
                                     font=("TkDefaultFont", 11))
             self.canvas.create_text(24, height - 26, text="L next line  |  K dismiss",
                                     anchor="nw", fill=NEUTRAL)
+        if began_ns is not None:
+            elapsed_ns = time.perf_counter_ns() - began_ns
+            stats = self.performance_counts
+            for index, addition in enumerate((
+                1, elapsed_ns, ships_drawn, ships_culled,
+                obstacles_drawn, obstacles_culled, shots_drawn,
+            )):
+                stats[index] += addition
+            sampled_ns = time.perf_counter_ns() - self.performance_started_ns
+            if sampled_ns >= 1_000_000_000:
+                frames = stats[0]
+                self.performance_label = (
+                    f"Map {frames * 1_000_000_000 / sampled_ns:.1f} redraws/s"
+                    f"  |  build {stats[1] / frames / 1_000_000:.2f} ms\n"
+                    f"Ships {stats[2] / frames:.0f} drawn / {stats[3] / frames:.0f} culled"
+                    f"  |  objects {stats[4] / frames:.0f} drawn / {stats[5] / frames:.0f} culled"
+                    f"  |  shots {stats[6] / frames:.0f}"
+                )
+                self.performance_started_ns = time.perf_counter_ns()
+                self.performance_counts = [0] * 7
+            if self.performance_label:
+                self.canvas.create_text(
+                    self.view_width-14, 14, text=self.performance_label,
+                    anchor="ne", justify="right", fill="#d3e5ff",
+                    font=("TkDefaultFont", 9, "bold"),
+                )
 
     def close(self):
         if self.held_drag:
