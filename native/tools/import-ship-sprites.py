@@ -44,6 +44,11 @@ SHIP_ANIMATIONS = (
     (20, 1, "warpgate_loop.png", "Warp Gate Loop.anim"),
 )
 
+# Queen.prefab draws its original Crown (0) and Queen Eye (1) child
+# sprites above the massive source Queen hull. Their authored transforms
+# are reconstructed in the common native local/LAN presentation path.
+QUEEN_PART_IMAGES = ("queen_crown.png", "queen_eye.png")
+
 # Original ShipRemains and Beehive Shrinking sheets. The tuple is keyed
 # directly by ConfigData.ShipTypes; None denotes source classes without
 # authored wreck art. The 20-slice clips hold their final frame until the
@@ -350,6 +355,8 @@ def main():
                         default=ROOT / "native/assets/ship-remains.rgba")
     parser.add_argument("--deck-output", type=Path,
                         default=ROOT / "native/assets/carrier-decks.rgba")
+    parser.add_argument("--queen-output", type=Path,
+                        default=ROOT / "native/assets/queen-parts.rgba")
     args = parser.parse_args()
     palettes = source_ship_color_palettes()
     ships, ship_count = pack(
@@ -359,6 +366,9 @@ def main():
     animations, animation_count = pack_ship_animations(palettes)
     remains, remains_count = pack_ship_remains(palettes)
     decks = pack_carrier_decks()
+    queen_parts, queen_part_count = pack(
+        QUEEN_PART_IMAGES, ROOT / "Sprites/Ships/Parts", b"BSS1", False,
+    )
     projectiles, projectile_count = pack(
         PROJECTILE_IMAGES, ROOT / "Sprites/Projectiles", b"BPS1", True,
     )
@@ -371,6 +381,8 @@ def main():
     animations_path = write_atomic(args.animation_output, animations)
     remains_path = write_atomic(args.remains_output, remains)
     decks_path = write_atomic(args.deck_output, decks)
+    queen_path = write_atomic(args.queen_output, queen_parts)
+    print(f"Queen prefab parts: {queen_part_count} sprites, {len(queen_parts)} bytes at {queen_path}")
     print(f"Carrier deck overlays: 13 variants, {len(decks)} bytes at {decks_path}")
     print(f"Ship remains: {remains_count} classes, "
           f"{len(remains)} bytes at {remains_path}")
