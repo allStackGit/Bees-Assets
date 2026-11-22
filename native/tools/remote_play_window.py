@@ -1241,19 +1241,34 @@ class RemoteBattleWindow:
                 self.canvas.create_rectangle(px-4, py-4, px+4, py+4,
                                              outline=ENEMY, width=2)
 
-        # The host has already fog-culled its ships and mining objects.
+        # The host has already fog-culled all static physical objects.
+        # Show cover, solid terrain and minerals; the local native minimap
+        # must not imply a clear route through an undisclosed obstacle.
         # Deduplicate subpixel markers to keep crowded battles cheap.
         cells = set()
         for obj in state.get("obstacles", []):
-            if not obj.get("mining"):
-                continue
             px, py = point(obj["x"], obj["y"])
+            if not left <= px <= right or not top <= py <= bottom:
+                continue
+            color = MINERAL if obj.get("mining") else NEUTRAL
+            bounds = obj.get("collider_bounds")
+            if bounds is not None:
+                (a, b), (c, d) = bounds
+                ax, ay = point(a, d)
+                bx, by = point(c, b)
+                ax, bx = max(left, ax), min(right, bx)
+                ay, by = max(top, ay), min(bottom, by)
+                if bx-ax > 4 and by-ay > 4:
+                    self.canvas.create_rectangle(
+                        ax, ay, bx, by, outline=color,
+                    )
+                    continue
             cell = (int(px), int(py), 0)
-            if cell in cells or not left <= px <= right or not top <= py <= bottom:
+            if cell in cells:
                 continue
             cells.add(cell)
             self.canvas.create_rectangle(px-1, py-1, px+1, py+1,
-                                         fill=MINERAL, outline="")
+                                         fill=color, outline="")
         for ship in state["ships"]:
             px, py = point(ship["x"], ship["y"])
             if not left <= px <= right or not top <= py <= bottom:
