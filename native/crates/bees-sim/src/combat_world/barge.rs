@@ -199,6 +199,28 @@ impl CombatWorld {
             .map(|state| state.phase == 4)
     }
 
+    /// Read-only source Barge animation clock. This exposes the actual
+    /// CombatWorld charge phase to optional local/LAN presentation; the
+    /// renderer does not own a parallel charge timer or invent visual
+    /// state from elapsed wall time. 1=wind-up, 2=active rush. Cooldown,
+    /// ready, finished and dead ships display no charge overlay.
+    pub fn barge_charge_visual_phase(&self, ship_id: i64) -> Option<(u8, f32)> {
+        if !self.ship(ship_id).is_some_and(|ship|
+            ship.ship_type == 0 && !ship.vitals.is_dead()) {
+            return None;
+        }
+        if let Some(state) = self.game_barge_charges.get(&ship_id) {
+            return matches!(state.phase, 1 | 2)
+                .then_some((state.phase, state.elapsed.max(0.0)));
+        }
+        let runtime = self.policy_ship_runtime.get(&ship_id)?;
+        let PolicyShipSpecial::Barge(state) = runtime.special? else {
+            return None;
+        };
+        matches!(state.phase, 1 | 2)
+            .then_some((state.phase, state.elapsed.max(0.0)))
+    }
+
     /// Charge.SetFinalize cancels wind-up/charge/cooldown and resets its
     /// movement lock. All in-flight game charges have one owner, the
     /// authoritative Barge ship; no orphan timer can fire after reset.
