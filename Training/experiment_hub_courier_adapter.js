@@ -80,10 +80,10 @@ const COURIER_METRIC_CATALOG={
         'training_shared_async_collector_overlap',
         'training_shared_async_next_started',
         'training_shared_policy_lag_updates',
-        'training_shared_async_collection_overlap_seconds',
-        'training_shared_async_collection_wait_seconds',
-        'training_shared_async_collection_exposed_fraction',
-        'training_shared_async_collection_overlap_fraction',
+        'training_shared_overlap_seconds',
+        'training_shared_collect_wait_seconds',
+        'training_shared_exposed_fraction',
+        'training_shared_overlap_fraction',
         'training_async_ppo_overlap_seconds',
         'training_async_exposed_wait_seconds',
         'training_async_collection_wall_seconds',
@@ -391,6 +391,12 @@ function courierMetrics(source) {
     // Shorten only the few broker measurements exceeding the Hub's
     // unchanged 39-character metric wire key limit.
     const brokerAliases=new Map([
+        // Native history retains the descriptive metric names; bounded Hub
+        // keys have an existing 40-character wire contract.
+        ['training_shared_async_collection_overlap_seconds','training_shared_overlap_seconds'],
+        ['training_shared_async_collection_wait_seconds','training_shared_collect_wait_seconds'],
+        ['training_shared_async_collection_exposed_fraction','training_shared_exposed_fraction'],
+        ['training_shared_async_collection_overlap_fraction','training_shared_overlap_fraction'],
         ['training_broker_request_pack_max_seconds','training_broker_req_pack_max_seconds'],
         ['training_broker_crit_client_wait_samples','training_broker_crit_cl_wait_samples'],
         ['training_broker_crit_client_copy_samples','training_broker_crit_cl_copy_samples'],
