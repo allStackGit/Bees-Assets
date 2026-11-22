@@ -1296,11 +1296,14 @@ class BottleneckEvidence {
             const wireOwner=metrics.training_shared_last_wire_worker?.value;
             const decodedOwner=metrics.training_shared_last_reply_worker?.value;
             const count=metrics.training_ingestion_peak_parallel_copies;
-            const measured=(collection!==null&&optimization!==null&&
+            const stageMeasured=(collection!==null&&optimization!==null&&
                 criticalCollection!==null&&criticalCollection<=wall*1.02&&
                 optimization<=wall*1.02&&
-                (!pipelineActive||overlap!==null&&overlap<=collection)&&
-                exposed!==null&&exposed<=collection&&
+                (!pipelineActive||overlap!==null&&overlap<=collection));
+            // Transport-copy attribution needs additional copy timings, but
+            // stage dominance only needs the measured critical-path clocks.
+            // A new trainer may expose the latter without the former.
+            const measured=stageMeasured&&exposed!==null&&exposed<=collection&&
                 copied!==null&&count?.unit==='count'&&
                 Number.isSafeInteger(count.value)&&count.value>=1&&
                 count.value<=metrics.training_collector_workers.value);
@@ -1370,9 +1373,9 @@ class BottleneckEvidence {
             const imbalance=spread!==null&&spread>=0.25&&
                 criticalCollection!==null&&criticalCollection>=0.50*wall&&
                 criticalCollection>=0.50;
-            const collectionDominant=measured&&criticalCollection>=0.70*wall&&
+            const collectionDominant=stageMeasured&&criticalCollection>=0.70*wall&&
                 optimization<=0.30*wall;
-            const optimizationDominant=measured&&optimization>=0.70*wall&&
+            const optimizationDominant=stageMeasured&&optimization>=0.70*wall&&
                 criticalCollection<=0.30*wall;
             const {at,prior}=history();
             if(Number.isFinite(at)&&at>prior.lastAt) {
