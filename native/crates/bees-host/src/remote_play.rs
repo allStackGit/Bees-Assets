@@ -248,6 +248,9 @@ pub struct NativeArchivedBattleReceipt {
     pub battle_result: Value,
     pub campaign_outcome: Option<Value>,
     pub banked_minerals: Option<u64>,
+    /// Observed original campaign-score delta from the committed World.
+    /// Older runs omit it; never estimate score from survivor counts.
+    pub campaign_score_delta: Option<i64>,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -847,6 +850,7 @@ impl NativeRemotePlay {
                                         "kind": "campaign_receipt",
                                         "campaign_outcome": outcome,
                                         "banked_minerals": receipt.banked_minerals,
+                                        "campaign_score_delta": receipt.campaign_score_delta,
                                     }));
                                     self.measurements.archived_campaign_receipts_sent += 1;
                                 }
@@ -1270,11 +1274,13 @@ impl NativeRemotePlay {
     /// multiplayer side cannot inspect the player's career rewards.
     pub fn publish_campaign_receipt(
         &mut self, player_side: i32, outcome: &Value, banked_minerals: Option<u64>,
+        campaign_score_delta: Option<i64>,
     ) {
         let receipt = json!({
             "kind": "campaign_receipt",
             "campaign_outcome": outcome,
             "banked_minerals": banked_minerals,
+            "campaign_score_delta": campaign_score_delta,
         });
         for peer in self.peers.iter_mut().filter(|peer|
             !peer.closed && peer.side == Some(player_side)
