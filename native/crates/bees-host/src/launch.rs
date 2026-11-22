@@ -2007,7 +2007,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         let progress = catalog.load_progress(&output_root)?;
         let root = catalog_path.parent()
             .ok_or_else(|| invalid("missing campaign catalog directory"))?;
-        let (source_ships, source_squads, _, _) =
+        let (_, source_ships, source_squads, _, _) =
             authored_menu_fleet(&catalog, root, &progress);
         let mut status = catalog.status(&progress);
         let known = status["fleet_roster"].as_array()
@@ -4331,9 +4331,11 @@ fn run_campaign_mission(
 fn authored_menu_fleet(
     catalog: &battle_catalog::BattleCatalog, root: &Path,
     progress: &battle_catalog::CampaignProgress<'_>,
-) -> (Vec<(i32, i64, i64, u8)>, Vec<(i32, i64)>, Vec<(i32, i64)>, Vec<(i32, i64)>) {
+) -> (Vec<(i32, i64, i64, u8)>, Vec<(i32, i64, i64, u8)>, Vec<(i32, i64)>, Vec<(i32, i64)>, Vec<(i32, i64)>) {
     let mut listed = Vec::new();
+    let mut source_owned = Vec::new();
     let mut seen_fleet = HashSet::new();
+    let mut seen_source = HashSet::new();
     let mut common_destinations = HashMap::<i32, HashSet<i64>>::new();
     let mut common_templates = HashMap::<i32, HashSet<i64>>::new();
     let mut common_tactics = HashMap::<i32, HashSet<i64>>::new();
@@ -4379,6 +4381,12 @@ fn authored_menu_fleet(
                                     _ => None,
                                 }) else { continue };
                                 let Some(fleet_id) = ship.fleet_ship_id else { continue };
+                                if fleet_id <= 0 || !scene.fleet.get(entity_id)
+                                    .is_some_and(|row| row.has_persistent_fleet_value)
+                                { continue; }
+                                if seen_source.insert((side, fleet_id)) {
+                                    source_owned.push((side, fleet_id, saved_id, ship.ship_type));
+                                }
                                 if progress.original_fleet_is_editable(side, fleet_id) &&
                                     scene.can_reassign_authored_ship(side, entity_id) &&
                                     seen_fleet.insert((side, fleet_id))
@@ -4404,6 +4412,7 @@ fn authored_menu_fleet(
         }
     }
     listed.sort_unstable();
+    source_owned.sort_unstable();
     let mut destinations = common_destinations.into_iter()
         .flat_map(|(side, ids)| ids.into_iter().map(move |id| (side, id)))
         .collect::<Vec<_>>();
@@ -4416,7 +4425,7 @@ fn authored_menu_fleet(
         .flat_map(|(side, ids)| ids.into_iter().map(move |id| (side, id)))
         .collect::<Vec<_>>();
     tactics.sort_unstable();
-    (listed, destinations, templates, tactics)
+    (listed, source_owned, destinations, templates, tactics)
 }
 
 #[cfg(feature = "client")]
@@ -5548,9 +5557,9 @@ fn run_campaign_game_menu(
                 title: entry.title.trim(), status, unlocked: *unlocked,
             }).collect::<Vec<_>>();
         let available = progress.unspent_minerals()?;
-        let (original_choices, authored_squads, squad_templates, editable_tactics) =
+        let (original_choices, source_owned, authored_squads, squad_templates, editable_tactics) =
             authored_menu_fleet(&catalog, root, &progress);
-        let fleet_rows = progress.fleet_rows_with_source(&original_choices);
+        let fleet_rows = progress.fleet_rows_with_source(&source_owned);
         let squad_rows = progress.squad_rows_with_source(&authored_squads);
         // The same set of persistent player SavedSquads must exist in
         // every replayable physical mission configuration, not only the
