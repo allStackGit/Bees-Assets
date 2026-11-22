@@ -170,17 +170,38 @@ impl CombatWorld {
     pub(super) fn apply_pending_player_barge_charges(
         &mut self,
     ) -> Result<(), CombatWorldError> {
+        // Player input is prepared before the fixed-step command handoff.
+        // A HiveMind or scripted order can acquire a movement lock during
+        // that interval; it must not be silently superseded by a queued
+        // local ChargeForward. Keep the accepted input in the same bounded
+        // one-click queue until ordinary game movement can resume.
+        let mut deferred = Vec::new();
         for index in 0..self.pending_player_barge_charges.len() {
             let ship_id = self.pending_player_barge_charges[index];
-            // Exclude this request from its own readiness check; distinct
-            // players cannot queue the same ship twice in a fixed tick.
             let Some(&(power, can_override_bounds)) =
                 self.game_barge_player_config.get(&ship_id) else { continue };
             let Some(&ship_index) = self.ship_by_id.get(&ship_id) else { continue };
+            let body = &self.physics.ships()[ship_index];
             if self.frozen_after_elimination ||
                 self.ships[ship_index].vitals.is_dead() ||
-                !self.physics.ships()[ship_index].active ||
-                self.game_barge_charges.contains_key(&ship_id) {
+                !body.active || body.motion.is_policy_controlled ||
+                !self.game_ship_steering.contains_key(&ship_id) {
+                continue;
+            }
+            if let Some(charge) = self.game_barge_charges.get_mut(&ship_id) {
+                if charge.phase == 4 {
+                    // The command director still owns the completion
+                    // receipt. Recheck only after finalization releases it.
+                    deferred.push(ship_id);
+                } else {
+                    // A charge started after input admission. Its source
+                    // WaitingForNewCharge latch owns this click now.
+                    charge.waiting_for_new_charge = true;
+                }
+                continue;
+            }
+            if body.motion.cannot_change_movement_orders {
+                deferred.push(ship_id);
                 continue;
             }
             let map_bounds = self.level_geometry.as_ref()
@@ -190,7 +211,7 @@ impl CombatWorld {
             self.begin_game_barge_charge(ship_index, None, map_bounds,
                 can_override_bounds, power, None)?;
         }
-        self.pending_player_barge_charges.clear();
+        self.pending_player_barge_charges = deferred;
         Ok(())
     }
 
