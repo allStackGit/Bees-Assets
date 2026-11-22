@@ -7106,7 +7106,7 @@ fn run_campaign_game_menu(
         }
         let tactics_rows = tactic_source_cache.as_ref()
             .expect("saved tactics source cache initialized").2
-            .iter().copied()
+            .iter().cloned()
             .filter(|original| editable_tactics.binary_search(
                 &(original.side, original.saved_squad_id)).is_ok())
             .map(|original| {
