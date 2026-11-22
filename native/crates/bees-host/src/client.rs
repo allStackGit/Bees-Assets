@@ -125,6 +125,10 @@ pub struct NativeClient {
     selection_owner: Option<(WorldId, u64)>,
     hotseat: Option<NativeHotseat>,
     paused: bool,
+    show_controls_help: bool,
+    // Window titles are OS messages, not part of a physical simulation
+    // step. Refresh their optional diagnostics at human-readable cadence.
+    last_title_update: Option<Instant>,
     performance: NativeLivePerformance,
     /// The Unity game exposes mouse-edge scrolling as a user preference.
     /// F6 toggles it locally without adding a gameplay or persisted setting.
@@ -228,7 +232,9 @@ impl NativeClient {
         Ok(Self { window, renderer, audio: NativeGameAudio::new(),
             music_locations: Vec::new(), bounds,
             selected_world: 0, selection_owner: None, hotseat: None,
-            paused: false, performance: NativeLivePerformance::new(now),
+            paused: false, show_controls_help: false,
+            last_title_update: None,
+            performance: NativeLivePerformance::new(now),
             edge_scroll_enabled: false,
             source_zoom_by_world: Vec::new(),
             next_step: now, pending_steps: 0, previous_frame: now, left_was_down: false,
@@ -422,11 +428,26 @@ impl NativeClient {
         // the running battle. Use the press edge so a held key cannot
         // also quit on the following frame after closing the modal.
         if self.window.is_key_pressed(Key::Escape, KeyRepeat::No) {
-            if self.renderer.show_shooting_menu {
+            if self.show_controls_help {
+                self.show_controls_help = false;
+            } else if self.renderer.show_shooting_menu {
                 self.renderer.show_shooting_menu = false;
                 self.shooting_press = None;
             } else {
                 return Ok(NativeClientAction::Quit);
+            }
+        }
+        if self.window.is_key_pressed(Key::F1, KeyRepeat::No) {
+            self.show_controls_help = !self.show_controls_help;
+            if self.show_controls_help {
+                self.renderer.show_shooting_menu = false;
+                self.shooting_press = None;
+                self.selection_drag = None;
+                self.renderer.selection_box = None;
+                self.hud_press = None;
+                self.squad_tab_press = None;
+                self.minimap_dragging = false;
+                self.right_press = None;
             }
         }
         let (window_width, window_height) = self.window.get_size();
@@ -500,9 +521,10 @@ impl NativeClient {
                 self.dialogue_pause_started = None;
             }
             let count = crate::presentation::campaign_dialogue::line_count(cue);
-            if self.window.is_key_pressed(Key::K, KeyRepeat::No) {
+            if !self.show_controls_help && self.window.is_key_pressed(Key::K, KeyRepeat::No) {
                 self.dialogue_line = count;
-            } else if self.dialogue_line < count && self.window.is_key_pressed(Key::L, KeyRepeat::No) {
+            } else if !self.show_controls_help && self.dialogue_line < count &&
+                self.window.is_key_pressed(Key::L, KeyRepeat::No) {
                 self.dialogue_line += 1;
             }
             if let Some(seconds) =
@@ -727,7 +749,8 @@ impl NativeClient {
                 self.camera_wheel_pans += 1;
             }
         }
-        let allows_input = !briefing && !self.playback && view.terminal_result.is_none();
+        let allows_input = !self.show_controls_help && !briefing &&
+            !self.playback && view.terminal_result.is_none();
         let pointer_active = self.window.is_active();
         let left_down = self.window.get_mouse_down(MouseButton::Left);
         // The strategy picker is purely presentational. It never changes
@@ -1396,8 +1419,16 @@ impl NativeClient {
         if let Some((_, speaker, line)) = dialogue {
             self.renderer.draw_campaign_dialogue(speaker, line);
         }
+        // Help is a noninteractive presentation overlay. All underlying
+        // authenticated player commands remain disabled until it closes.
+        if self.show_controls_help {
+            self.renderer.draw_controls_help();
+        }
         self.render_wall_seconds += render_started.elapsed().as_secs_f64();
         let ui_started = Instant::now();
+        if self.last_title_update.is_none_or(|last|
+            now.duration_since(last) >= Duration::from_millis(250))
+        {
         let selected = self.renderer.selected_ship.and_then(|id| view.combat.ship(id))
             .filter(|ship| !ship.vitals.is_dead())
             .map(|ship| {
@@ -1436,7 +1467,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack (also on map) | C stop chase, V cease fire, A attack on sight, Ctrl+A all squads, K beacon, D detonate, Q charge, Y match, U unmatch, S targets, O lock, E chase, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, F7 mute, F8 metrics, F9 side, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} selected | {}{} | {} | Weapon contacts {} | F1 controls | Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
@@ -1447,6 +1478,8 @@ impl NativeClient {
             else { "off".to_owned() },
         ) };
         self.window.set_title(&title);
+            self.last_title_update = Some(now);
+        }
         self.ui_wall_seconds += ui_started.elapsed().as_secs_f64();
         self.rendered_frames += 1;
         self.rendered_pixels = self.rendered_pixels.saturating_add(
