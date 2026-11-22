@@ -180,6 +180,62 @@ def death_order(value: str) -> tuple[int, int, int, int]:
     return source_side, source_type, side, kind
 
 
+# Physical mission events are emitted by the canonical CombatWorld,
+# never by a parallel Python gameplay clock or inferred casualty counter.
+PHYSICAL_EVENT_SOURCES = {
+    "map_object_destroyed": ("map_objects", "on_map_object_destroyed"),
+    "mining_asteroid_depleted": ("mining_asteroids", "on_mining_asteroid_depleted"),
+}
+
+
+def physical_event_wave(value: str) -> tuple[str, int, int, int, int]:
+    """EVENT:SOURCE_ENTITY_ID:ARRIVING_SIDE:ARRIVING_TYPE:COUNT."""
+    parts = value.split(":")
+    if len(parts) != 5 or parts[0] not in PHYSICAL_EVENT_SOURCES:
+        raise argparse.ArgumentTypeError(
+            "physical-event wave needs "
+            "map_object_destroyed|mining_asteroid_depleted:ENTITY_ID:SIDE:TYPE:COUNT"
+        )
+    try:
+        source, side, kind, count = map(int, parts[1:])
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("physical-event wave requires integer IDs") from error
+    if source <= 0 or side not in (1, 2) or not 0 <= kind < 24 or not 1 <= count <= 1024:
+        raise argparse.ArgumentTypeError("invalid native physical-event wave identity")
+    return parts[0], source, side, kind, count
+
+
+def physical_event_order(value: str) -> tuple[str, int, int, int]:
+    """EVENT:SOURCE_ENTITY_ID:COMMAND_SIDE:COMMAND_TYPE."""
+    parts = value.split(":")
+    if len(parts) != 4 or parts[0] not in PHYSICAL_EVENT_SOURCES:
+        raise argparse.ArgumentTypeError(
+            "physical-event command needs EVENT:ENTITY_ID:SIDE:TYPE"
+        )
+    try:
+        source, side, kind = map(int, parts[1:])
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("physical-event command requires integer IDs") from error
+    if source <= 0 or side not in (1, 2) or not 0 <= kind < 24:
+        raise argparse.ArgumentTypeError("invalid native physical-event command source")
+    return parts[0], source, side, kind
+
+
+def physical_event_gate(scene: dict, event: str, source_id: int) -> dict:
+    group, field = PHYSICAL_EVENT_SOURCES[event]
+    matches = [item for item in scene.get(group, ())
+               if item.get("entity_id") == source_id]
+    if len(matches) != 1 or not isinstance(matches[0], dict):
+        raise ValueError(
+            f"{event} requires one real authored {group} source entity {source_id}"
+        )
+    object_state = matches[0]
+    health = object_state.get("health", object_state.get("max_health"))
+    if type(health) is not int or health <= 0:
+        raise ValueError(f"{event} source {source_id} cannot be destroyed in this Level")
+    return {field: source_id}
+
+
 def load_json(path: Path) -> dict:
     content = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(content, dict):
@@ -434,6 +490,10 @@ def author(args) -> tuple[dict, dict, dict]:
     dialogue = getattr(args, "campaign_dialogue", None)
     cue_commands = getattr(args, "cue_commands", ())
     death_commands = getattr(args, "death_commands", ())
+    physical_waves = getattr(args, "physical_reinforcements", ())
+    physical_commands = getattr(args, "physical_commands", ())
+    for event, source_id, *_ in [*physical_waves, *physical_commands]:
+        physical_event_gate(scene, event, source_id)
     if (cue_waves or cue_commands) and dialogue is None:
         raise ValueError("campaign cue triggers need an authored dialogue")
     if (any(cue not in CAMPAIGN_CUES.get(dialogue, ())
@@ -443,7 +503,8 @@ def author(args) -> tuple[dict, dict, dict]:
         raise ValueError("script or reinforcement cue does not belong to the authored campaign dialogue")
     activation_targets = (
         [(side, kind) for _, side, kind in cue_commands] +
-        [(side, kind) for _, _, side, kind in death_commands]
+        [(side, kind) for _, _, side, kind in death_commands] +
+        [(side, kind) for _, _, side, kind in physical_commands]
     )
     if len(set(activation_targets)) != len(activation_targets):
         raise ValueError("one scripted fleet type cannot have multiple conflicting start conditions")
@@ -457,6 +518,9 @@ def author(args) -> tuple[dict, dict, dict]:
     ] + [
         (None, side, kind, count, ("cue", cue), None)
         for cue, side, kind, count in cue_waves
+    ] + [
+        (None, side, kind, count, ("physical", event, source_id), None)
+        for event, source_id, side, kind, count in physical_waves
     ]
     deferred_counts: dict[tuple[int, int], int] = {}
     prior_time = 0.0
@@ -886,6 +950,12 @@ def author(args) -> tuple[dict, dict, dict]:
             side, kind,
             {"kind": "on_ship_destroyed", "ship_id": eligible[0]},
         ))
+    activations.extend(
+        (side, kind, {"kind": "on_" + event, "object_id": source_id}
+            if event == "map_object_destroyed" else
+            {"kind": "on_mining_asteroid_depleted", "asteroid_id": source_id})
+        for event, source_id, side, kind in physical_commands
+    )
     for side, kind, activation in activations:
         if side in controlled:
             raise ValueError("player squads cannot be controlled by scripted event activations")
@@ -1030,6 +1100,9 @@ def author(args) -> tuple[dict, dict, dict]:
                 activation = {"after_seconds": when}
             elif trigger[0] == "cue":
                 activation = {"on_campaign_cue": trigger[1]}
+            elif trigger[0] == "physical":
+                _, event, source_id = trigger
+                activation = physical_event_gate(scene, event, source_id)
             else:
                 _, trigger_side, trigger_kind = trigger
                 eligible = [
@@ -1062,7 +1135,8 @@ def author(args) -> tuple[dict, dict, dict]:
             if (deployments and last_wave_side == side and
                     all(deployments[-1].get(key) == activation.get(key)
                         for key in ("after_seconds", "on_campaign_cue",
-                                    "on_ship_destroyed", "spawn", "entry"))):
+                                    "on_ship_destroyed", "on_map_object_destroyed",
+                                    "on_mining_asteroid_depleted", "spawn", "entry"))):
                 deployments[-1]["squad_item_ids"].extend(arriving)
             else:
                 deployments.append({**activation, "squad_item_ids": arriving})
@@ -1768,6 +1842,16 @@ def main() -> None:
                         type=cue_reinforcement, dest="cue_reinforcements",
                         metavar="CUE:SIDE:TYPE:COUNT",
                         help="deploy when the authored Level emits an actual Titania mission cue")
+    parser.add_argument("--reinforcement-on-physical-event",
+                        action="append", default=[],
+                        type=physical_event_wave, dest="physical_reinforcements",
+                        metavar="EVENT:ENTITY_ID:SIDE:TYPE:COUNT",
+                        help="deploy physical squads when a real MapObject is destroyed or an ore body depleted")
+    parser.add_argument("--activate-on-physical-event",
+                        action="append", default=[],
+                        type=physical_event_order, dest="physical_commands",
+                        metavar="EVENT:ENTITY_ID:SIDE:TYPE",
+                        help="arm existing AI orders on a real authored object's destruction/depletion")
     parser.add_argument("--activate-on-cue", action="append", default=[],
                         type=cue_order, dest="cue_commands",
                         metavar="CUE:SIDE:TYPE",
@@ -1894,6 +1978,8 @@ def main() -> None:
         "cue_reinforcements": len(args.cue_reinforcements),
         "cue_command_activations": len(args.cue_commands),
         "death_command_activations": len(args.death_commands),
+        "physical_event_reinforcements": len(args.physical_reinforcements),
+        "physical_event_command_activations": len(args.physical_commands),
         "reserve_fleet_templates": [
             {"side": ship["side"], "ship_type": ship["ship_type"]}
             for ship in scene.get("fleet_templates", [])
@@ -1904,7 +1990,8 @@ def main() -> None:
         "reinforcement_ships": (
             sum(wave[3] for wave in args.reinforcements) +
             sum(wave[4] for wave in args.death_reinforcements) +
-            sum(wave[3] for wave in args.cue_reinforcements)
+            sum(wave[3] for wave in args.cue_reinforcements) +
+            sum(wave[4] for wave in args.physical_reinforcements)
         ),
         "native_policy_run": (str(output / "battle.policy.run.json")
                               if args.trainable else None),
