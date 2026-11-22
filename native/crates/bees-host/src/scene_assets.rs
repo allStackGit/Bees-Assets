@@ -235,11 +235,16 @@ impl NativeSceneAssets {
             stage.settings.map_bounds = bounds;
             stage.settings.half_map_extents = half_extents;
         }
-        world.configure_full_asteroid_stage(stage.clone())?;
-        world.configure_asteroid_fragments(AsteroidFragmentationConfig {
+        // Both configurations use the same map-local Stage settings.
+        // Extract the fragment inputs before moving the owned Stage into
+        // the world; avoid duplicating its authored prefab roster for every
+        // parallel physical Level.
+        let fragments = AsteroidFragmentationConfig {
             catalog: Arc::clone(&stage.catalog),
             palette: self.fragment_palette.clone(),
             settings: stage.settings,
-        })
+        };
+        world.configure_full_asteroid_stage(stage)?;
+        world.configure_asteroid_fragments(fragments)
     }
 }
