@@ -2305,6 +2305,11 @@ fn current_state(
                     displayed_lines(cue).collect::<Vec<_>>(),
             }))
         } else { None },
+        // The authored story state machine supplies a stable mission ID
+        // independently of the physical win-condition kind below. Remote
+        // clients can identify all twelve campaigns, including those with
+        // extraction, survival, or rescue objectives, without private cues.
+        "campaign_mission": view.campaign_objective,
         // Mission rules and target IDs are public to both authenticated
         // sides just as in local play. Positions, health and visibility
         // still come ONLY from the host's fog-filtered ship/obstacle list.
@@ -2431,19 +2436,11 @@ fn current_state(
                  bees_gameplay::campaign_dialogue::CampaignObjectiveKind::NeptunePressingForward |
                  bees_gameplay::campaign_dialogue::CampaignObjectiveKind::UranusOffensive)
         ) {
-            // Reuse the established elimination objective on remote clients.
-            // Only the public authored mission identity varies. No private
-            // campaign dialogue, undiscovered enemy or fleet data is sent.
-            let mission = match view.campaign_objective {
-                Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::NeptuneSeizeMeans) =>
-                    "neptune_seize_means",
-                Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::NeptunePressingForward) =>
-                    "neptune_pressing_forward",
-                _ => "uranus_offensive",
-            };
+            // All three campaigns use the same physical elimination rule.
+            // Their public story identity is carried separately above;
+            // do not duplicate its mapping in transport-specific code.
             Some(json!({
                 "kind": "campaign_elimination",
-                "mission": mission,
                 "attacking_side": view.campaign_dialogue_side,
             }))
         } else if let Some(target) = view.target_ship {
