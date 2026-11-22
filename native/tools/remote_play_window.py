@@ -526,6 +526,15 @@ class RemoteBattleWindow:
         return self.collider_screen_shape(obj)
 
     @staticmethod
+    def collider_screen_bounds(shape, points):
+        if shape in ("oval", "bounds"):
+            return points
+        if shape == "polygon":
+            return min(points[::2]), min(points[1::2]), max(points[::2]), max(points[1::2])
+        x, y = points
+        return x-4, y-4, x+4, y+4
+
+    @staticmethod
     def obstacle_distance(shape, points, x, y):
         """Screen-space distance to a collider, zero when inside its hull."""
         if shape == "point":
@@ -968,6 +977,7 @@ class RemoteBattleWindow:
             # substitute a generic triangle for a huge or irregular hull.
             shape, points = self.collider_screen_shape(ship)
             outline = OUTLINE if ship["owned"] else color
+            left, top, right, bottom = self.collider_screen_bounds(shape, points)
             if shape == "polygon":
                 self.canvas.create_polygon(*points, fill=color, outline=outline)
             elif shape == "oval":
@@ -989,23 +999,31 @@ class RemoteBattleWindow:
                     self.canvas.create_oval(x-8, y-8, x+8, y+8,
                                             outline="#ffffff", width=2)
             if ship["id"] == protected_id:
-                self.canvas.create_oval(x-19, y-19, x+19, y+19,
-                                        outline=MINERAL, dash=(4, 3), width=2)
+                self.canvas.create_rectangle(left-5, top-5, right+5, bottom+5,
+                                             outline=MINERAL, dash=(4, 3), width=2)
             if ship["id"] == target_ship_id:
-                # Draw the same actual, already fog-visible physical hull
-                # selected by the Level's named-ship terminal. The target
-                # position never comes from the mission's public ID.
-                self.canvas.create_oval(x-20, y-20, x+20, y+20,
-                                        outline=ENEMY if not ship["friendly"]
-                                        else FRIENDLY, dash=(5, 3), width=2)
+                # Objective markers follow the true hull, not an arbitrary
+                # circle that can disappear inside a large flagship.
+                self.canvas.create_rectangle(
+                    left-7, top-7, right+7, bottom+7,
+                    outline=ENEMY if not ship["friendly"] else FRIENDLY,
+                    dash=(5, 3), width=2)
             health = max(0.0, min(1.0, ship["health"] / max(1, ship["max_health"])))
             if ship["id"] in selected_ship_ids and ship.get("destination"):
                 tx, ty = self.to_screen(*ship["destination"])
                 self.canvas.create_line(x, y, tx, ty, fill="#748aaf", dash=(3, 4))
                 self.canvas.create_line(tx-5, ty, tx+5, ty, fill="#d3e5ff")
                 self.canvas.create_line(tx, ty-5, tx, ty+5, fill="#d3e5ff")
-            self.canvas.create_rectangle(x-10, y+15, x+10, y+18, fill="#422d3b", outline="")
-            self.canvas.create_rectangle(x-10, y+15, x-10+20*health, y+18, fill="#75d79c", outline="")
+            # Place the status meter outside the real collider, with a
+            # bounded display width so giant hulls do not fill the screen.
+            meter_width = max(20.0, min(70.0, right-left))
+            mx, my = (left+right)*0.5, bottom+5
+            self.canvas.create_rectangle(mx-meter_width/2, my,
+                                         mx+meter_width/2, my+3,
+                                         fill="#422d3b", outline="")
+            self.canvas.create_rectangle(mx-meter_width/2, my,
+                                         mx-meter_width/2+meter_width*health, my+3,
+                                         fill="#75d79c", outline="")
         if self.drag_box:
             self.canvas.create_rectangle(*self.drag_box, outline="#bce4ff", dash=(5,3))
         if self.patrol_start is not None:
