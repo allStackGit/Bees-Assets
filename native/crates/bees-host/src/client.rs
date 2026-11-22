@@ -979,6 +979,8 @@ impl NativeClient {
             if !self.renderer.show_minimap { self.minimap_dragging = false; }
         }
         let single_step = self.paused && !self.show_controls_help &&
+            !self.window.is_key_down(Key::LeftShift) &&
+            !self.window.is_key_down(Key::RightShift) &&
             self.window.is_key_pressed(Key::N, KeyRepeat::No);
         if !self.show_controls_help && self.window.is_key_pressed(Key::Tab, KeyRepeat::No) &&
             world_count > 1 && self.held_fire_target.is_none() {
@@ -1179,7 +1181,16 @@ impl NativeClient {
             self.renderer.show_shooting_menu = false;
             self.shooting_press = None;
         }
-        let shooting_input = clicked_shooting.map(|strategy_id| {
+        // Unity UserSettingsData's Shift+A..16 direct priorities are
+        // separate from the 40-way picker. They submit the exact same
+        // authoritative shooting action, with no client-owned aiming.
+        let direct_shooting = if !menu_was_open && allows_input &&
+            pointer_active && self.held_fire_target.is_none() &&
+            !self.renderer.selection.squads().is_empty()
+        {
+            self.controls.shooting_pressed(&self.window)
+        } else { None };
+        let shooting_input = clicked_shooting.or(direct_shooting).map(|strategy_id| {
             self.shooting_priority_requests_submitted += 1;
             NativePlayerSquadShooting {
                 world_id: view.world_id, episode_revision: view.episode_revision,

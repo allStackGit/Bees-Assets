@@ -3363,6 +3363,8 @@ pub fn connect_remote(
             }
         }
         if !show_controls_help && !peer.spectator &&
+            !window.is_key_down(Key::LeftShift) &&
+            !window.is_key_down(Key::RightShift) &&
             window.is_key_pressed(Key::N, KeyRepeat::No)
         {
             if let Some((world,revision))=peer.state.as_ref()
@@ -3855,6 +3857,22 @@ pub fn connect_remote(
                     }
                     continue;
                 }
+                // Original Shift shooting priorities 1..16 go directly
+                // through the same authenticated "shooting" command as
+                // the visible 40-entry picker. This takes priority over
+                // earlier native-only Shift+N InAndOut (still on the HUD).
+                if !control && !dialogue_skip_key &&
+                    !peer.input_suppressed && !selected.is_empty()
+                {
+                    if let Some(strategy_id)=controls.shooting_for_key(key,shift) {
+                        match peer.order(&selected,"shooting",
+                            json!({"strategy_id":strategy_id})) {
+                            Ok(())=>peer.metrics.shooting_strategy_choices+=1,
+                            Err(error)=>peer.notice=error.to_string(),
+                        }
+                        continue;
+                    }
+                }
                 // The unmodified I key is a display toggle, not a squad
                 // command; Shift+I remains the Circle tactical shortcut.
                 if key==controls.key("Mini Map") && !shift { continue; }
@@ -3898,7 +3916,7 @@ pub fn connect_remote(
                 }
                 // Keyboard and on-screen buttons share one typed command
                 // dispatcher. Source local controls retain their meanings.
-                if key==controls.key("Fit Camera") {
+                if key==controls.key("Fit Camera") && !shift {
                     if let Some(map)=peer.state.as_ref().and_then(bounds) {
                         cam=NativeCamera::fit(map,FIELD,HEIGHT);
                         cam.constrain_source_zoom(authored_zoom,HEIGHT);
@@ -4767,7 +4785,7 @@ pub fn connect_remote(
                 "COMMANDS",
                 "C: hold   A: attack on sight   V: cease fire   E: chase",
                 "G: guard   P: patrol   M: mine   H: heal   R: retreat",
-                "S: shooting priority   O: lock   Y: match   U: free speed",
+                "S: priority picker   Shift+letter: direct source priorities 1-16",
                 "K: beacon   D: detonate   Q: charge",
                 "T: point fire   Hold J: manual fire   X: stop fire",
                 "Backspace: cancel target   Shift+T: attack ship",

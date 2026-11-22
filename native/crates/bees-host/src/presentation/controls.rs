@@ -35,6 +35,28 @@ const DEFAULTS: &[(&str, Key)] = &[
     ("Stop Fire", Key::X),
     ("Match Speed", Key::Y),
 ];
+// Unity UserSettingsData.DefaultHotKeys supplies the 16 source shooting
+// priorities directly. Their IDs are the FIRST 16 entries of the existing
+// BeesServer SHOOTING_STRATEGIES registry; Type A-X stay in the full picker.
+const SHIFTED: &[(&str, Key)] = &[
+    ("Shooting: First Seen", Key::A),
+    ("Shooting: Random", Key::S),
+    ("Shooting: Revenge", Key::D),
+    ("Shooting: Most Dangerous", Key::F),
+    ("Shooting: Most Health", Key::G),
+    ("Shooting: Least Health", Key::H),
+    ("Shooting: Most Powerful", Key::J),
+    ("Shooting: Least Powerful", Key::K),
+    ("Shooting: Closest", Key::Z),
+    ("Shooting: Furthest", Key::X),
+    ("Shooting: Most Range", Key::C),
+    ("Shooting: Least Range", Key::V),
+    ("Shooting: Fastest", Key::B),
+    ("Shooting: Slowest", Key::N),
+    ("Shooting: Most Valuable", Key::M),
+    ("Shooting: Least Valuable", Key::Comma),
+];
+
 const LETTERS: &[Key] = &[
     Key::A, Key::B, Key::C, Key::D, Key::E, Key::F, Key::G,
     Key::H, Key::I, Key::J, Key::K, Key::L, Key::M, Key::N,
@@ -71,7 +93,8 @@ impl NativeControls {
                     "no XDG_CONFIG_HOME, APPDATA or HOME for native controls"))?;
             root.join("bees-native").join("controls.json")
         };
-        let mut keys = DEFAULTS.iter().map(|&(_, key)| key).collect::<Vec<_>>();
+        let mut keys=DEFAULTS.iter().chain(SHIFTED.iter())
+            .map(|&(_,key)|key).collect::<Vec<_>>();
         match fs::symlink_metadata(&path) {
             Ok(metadata) if !metadata.file_type().is_file() =>
                 return Err(io::Error::new(io::ErrorKind::InvalidData,
@@ -84,11 +107,15 @@ impl NativeControls {
                         "unsupported native control settings schema"));
                 }
                 for (action, letter) in stored.bindings {
-                    let Some(index) = DEFAULTS.iter().position(|&(name,_)| name==action)
-                    else { return Err(io::Error::new(io::ErrorKind::InvalidData,
-                        format!("unknown native hotkey action: {action}"))) };
+                    let index=DEFAULTS.iter().chain(SHIFTED.iter())
+                        .position(|&(name,_)|name==action)
+                        .ok_or_else(||io::Error::new(io::ErrorKind::InvalidData,
+                            format!("unknown native hotkey action: {action}")))?;
                     let Some(key) = LETTERS.iter().copied()
-                        .find(|key|format!("{key:?}")==letter)
+                        .chain(std::iter::once(Key::Comma))
+                        .find(|key|
+                            (index>=DEFAULTS.len() || *key!=Key::Comma) &&
+                            format!("{key:?}")==letter)
                     else { return Err(io::Error::new(io::ErrorKind::InvalidData,
                         format!("invalid native hotkey for {action}: {letter}"))) };
                     keys[index]=key;
@@ -97,7 +124,8 @@ impl NativeControls {
             Err(err) if err.kind()==io::ErrorKind::NotFound => {},
             Err(err) => return Err(err),
         }
-        if keys.iter().copied().collect::<HashSet<_>>().len()!=keys.len() {
+        if keys.iter().enumerate().map(|(index,&key)|
+            (index>=DEFAULTS.len(),key)).collect::<HashSet<_>>().len()!=keys.len() {
             return Err(io::Error::new(io::ErrorKind::InvalidData,
                 "native gameplay hotkeys must be unique"));
         }
@@ -113,19 +141,59 @@ impl NativeControls {
         self.keys[index]
     }
 
+    fn shift_held(window: &Window) -> bool {
+        window.is_key_down(Key::LeftShift) ||
+            window.is_key_down(Key::RightShift)
+    }
+
     pub(crate) fn pressed(
         &self, window: &Window, action: &str, repeat: KeyRepeat,
     ) -> bool {
-        window.is_key_pressed(self.key(action),repeat)
+        !Self::shift_held(window) &&
+            window.is_key_pressed(self.key(action),repeat)
     }
 
     pub(crate) fn down(&self, window: &Window, action: &str) -> bool {
-        window.is_key_down(self.key(action))
+        !Self::shift_held(window) && window.is_key_down(self.key(action))
+    }
+
+    /// Accept the original source direct priority in IDs 1..16. This
+    /// output is still sent through NativePlayerSquadShooting and validated
+    /// by the one native Level, not applied to any client-owned weapon.
+    pub(crate) fn shooting_for_key(&self,key:Key,shift:bool) -> Option<u8> {
+        if !shift {return None;}
+        self.keys[DEFAULTS.len()..].iter()
+            .position(|&binding|binding==key)
+            .map(|index|(index+1) as u8)
+    }
+
+    pub(crate) fn shooting_pressed(&self,window:&Window) -> Option<u8> {
+        if !Self::shift_held(window) ||
+            window.is_key_down(Key::LeftCtrl) ||
+            window.is_key_down(Key::RightCtrl) {
+            return None;
+        }
+        self.keys[DEFAULTS.len()..].iter().enumerate().find_map(|(index,&key)|
+            window.is_key_pressed(key,KeyRepeat::No)
+                .then_some((index+1) as u8))
+    }
+
+    fn is_shifted(index:usize)->bool {index>=DEFAULTS.len()}
+
+    fn name(index:usize)->&'static str {
+        DEFAULTS.iter().chain(SHIFTED.iter()).nth(index)
+            .expect("settings selection must be within the authored list").0
+    }
+
+    fn display_key(index:usize,key:Key)->String {
+        if Self::is_shifted(index) {format!("Shift+{key:?}")}
+        else {format!("{key:?}")}
     }
 
     fn save(&self) -> io::Result<()> {
         let mut bindings=BTreeMap::new();
-        for ((name,_), key) in DEFAULTS.iter().zip(&self.keys) {
+        for ((name,_), key) in DEFAULTS.iter().chain(SHIFTED.iter())
+            .zip(&self.keys) {
             bindings.insert((*name).to_string(),format!("{key:?}"));
         }
         let record=StoredBindings {schema_version:1,bindings};
@@ -149,19 +217,24 @@ impl NativeControls {
                 return;
             }
             for key in window.get_keys_pressed(KeyRepeat::No) {
-                if !LETTERS.contains(&key) {continue;}
+                if !LETTERS.contains(&key) &&
+                    !(key==Key::Comma && Self::is_shifted(self.selected)) {
+                    continue;
+                }
                 // Preserve one-to-one bindings. A new key already held
                 // by another action swaps the old assignment atomically,
                 // so users need no temporary spare key to customize.
                 let old=self.keys[self.selected];
                 let swap=self.keys.iter().enumerate().find_map(|(i,&used)|
-                    (i!=self.selected && used==key).then_some(i));
+                    (i!=self.selected && used==key &&
+                        Self::is_shifted(i)==Self::is_shifted(self.selected))
+                        .then_some(i));
                 if let Some(other)=swap { self.keys[other]=old; }
                 self.keys[self.selected]=key;
                 match self.save() {
                     Ok(())=> self.notice=format!(
                         "{} mapped to {key:?}{}",
-                        DEFAULTS[self.selected].0,
+                        Self::name(self.selected),
                         if swap.is_some() {" (previous action swapped)"} else {""}),
                     Err(error)=>{
                         self.keys[self.selected]=old;
@@ -178,7 +251,10 @@ impl NativeControls {
             self.selected=(self.selected+1).min(self.keys.len()-1);
         } else if window.is_key_pressed(Key::Enter,KeyRepeat::No) {
             self.editing=true;
-            self.notice=format!("Press the new letter for {}",DEFAULTS[self.selected].0);
+            self.notice=format!("Choose a letter for {}{}",
+                Self::name(self.selected),
+                if Self::is_shifted(self.selected) {" (Shift is automatic)"}
+                else {""});
         }
     }
 
@@ -192,13 +268,13 @@ impl NativeControls {
             " ".to_owned(),
         ];
         for i in start..(start+ROWS).min(self.keys.len()) {
-            lines.push(format!("{} {:<23} : {:?}",
+            lines.push(format!("{} {:<23} : {}",
                 if i==self.selected {">"} else {" "},
-                DEFAULTS[i].0,self.keys[i]));
+                Self::name(i),Self::display_key(i,self.keys[i])));
         }
         lines.push(" ".to_owned());
         lines.push(format!("{}",
-            if self.editing {"Waiting for a letter..."}
+            if self.editing {"Waiting for a letter (or comma for shooting)..."}
             else {&self.notice}));
         let borrowed=lines.iter().map(String::as_str).collect::<Vec<_>>();
         NativeSoftwareRenderer::draw_help_panel(

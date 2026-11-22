@@ -3732,7 +3732,7 @@ impl NativeSoftwareRenderer {
             "Backspace: cancel target   F9: change local commander",
             "AUDIO / PERFORMANCE",
             "F7: mute   F10/F11: effect level   Shift+F10/F11: music",
-            "F8: measured rendering and simulation throughput",
+            "F8: performance   Shift+letter: direct shooting 1-16",
         ];
         Self::draw_help_panel(&mut self.pixels, self.width, self.height,
             LINES, &[2, 6, 10, 17]);
