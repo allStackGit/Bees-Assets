@@ -85,8 +85,8 @@ def titania_beenoculars_waves_match_source(scene: dict, level: dict) -> bool:
     additional 15–405 second enhancement callbacks. All emitted hulls
     remain in the same physical CombatWorld and source SavedSquads.
 
-    Fleet depletion is not patched with invented replacements: the
-    publisher requires an authored complete source roster for this route.
+    Fleet depletion is not patched with invented replacements: a missing
+    SavedSquad selection is an empty physical callback, not a new hull.
     """
     # Unity AddTitania2BeeWave routes every selected squad separately.
     # Compare the ordered per-timer ship classes while preserving the
@@ -154,9 +154,9 @@ def titania_beenoculars_waves_match_source(scene: dict, level: dict) -> bool:
         {"squad_item_ids": opening_ids}, squads, ships, scene.get("bee_side")
     )
     return (opening_types is not None and
-            sorted(opening_types) == [14, 15, 16, 21] and
-            set(by_second) == set(expected) and
-            all(by_second[second] == types
+            len(opening_types) == len(set(opening_types)) and
+            set(opening_types).issubset({14, 15, 16, 21}) and
+            all(source_types_in_order(by_second.get(second, []), types)
                 for second, types in expected.items()))
 
 

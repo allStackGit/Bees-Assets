@@ -260,7 +260,7 @@ fn titania_beenoculars_waves_match_source(
         NativeAuthoredEntity::Ship(ship) => Some((ship.entity_id, ship)),
         _ => None,
     }).collect();
-    let mut by_time = std::collections::BTreeMap::<i32, Vec<u8>>::new();
+    let mut by_time = std::collections::BTreeMap::<i32, Vec<Option<u8>>>::new();
     let mut claimed = HashSet::new();
     for wave in waves {
         let AfterSeconds(seconds) = wave.activation else { return false };
@@ -278,14 +278,14 @@ fn titania_beenoculars_waves_match_source(
         let Some(types) = authored_reinforcement_types(
             wave, bee_side, &by_squad, &by_ship,
         ) else { return false };
-        for kind in types {
-            let Some(kind) = kind else { return false };
-            by_time.entry(due).or_default().push(kind);
-        }
+        by_time.entry(due).or_default().extend(types);
     }
-    if by_time.len() != EXPECTED.len() ||
-        !EXPECTED.iter().all(|(due, types)|
-            by_time.get(due).is_some_and(|actual| actual.as_slice() == *types))
+    // Source GetSquadByComposition may be empty after prior casualties.
+    // Every surviving selected squad must still follow the original
+    // per-callback type order; missing waves need no dummy simulation.
+    if !EXPECTED.iter().all(|(due, types)|
+        by_time.get(due).is_none_or(|actual|
+            authored_type_sequence_matches(actual, types, false)))
     {
         return false;
     }
@@ -310,7 +310,8 @@ fn titania_beenoculars_waves_match_source(
         opening.push(kind.expect("nonempty source squad"));
     }
     opening.sort_unstable();
-    opening == [14, 15, 16, 21]
+    opening.iter().all(|kind| matches!(kind, 14 | 15 | 16 | 21)) &&
+        opening.windows(2).all(|pair| pair[0] != pair[1])
 }
 
 /// Neptune II's original 120/240/360/480-second waves and growing
