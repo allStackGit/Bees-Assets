@@ -232,6 +232,71 @@ pub enum NativeBattleMenuAction {
 
 /// Returns a playable battle or purchase request, never applies
 /// gameplay/economic changes inside the presentation layer.
+pub fn show_campaign_intermission(
+    intermission: super::campaign_dialogue::NativeCampaignIntermission,
+) -> Result<bool, minifb::Error> {
+    // A travel intermission owns presentation only: no physical World,
+    // mission receipt, or fleet changes are created until battle launch.
+    let lines = intermission.lines().collect::<Vec<_>>();
+    if lines.is_empty() { return Ok(true); }
+    let mut window = Window::new("Bees | Campaign intermission",
+        WIDTH, HEIGHT, WindowOptions::default())?;
+    window.set_target_fps(30);
+    let mut pixels = vec![0; WIDTH * HEIGHT];
+    let mut page = 0_usize;
+    let mut mouse_down = false;
+    while window.is_open() {
+        if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
+            return Ok(false);
+        }
+        if window.is_key_pressed(Key::S, KeyRepeat::No) {
+            return Ok(true);
+        }
+        if window.is_key_pressed(Key::Left, KeyRepeat::No) {
+            page = page.saturating_sub(1);
+        }
+        let click = window.get_mouse_down(MouseButton::Left);
+        let next = window.is_key_pressed(Key::Space, KeyRepeat::No) ||
+            window.is_key_pressed(Key::Enter, KeyRepeat::No) ||
+            window.is_key_pressed(Key::Right, KeyRepeat::No) ||
+            (click && !mouse_down && window.get_mouse_pos(MouseMode::Discard)
+                .is_some_and(|(_, y)| y >= 400.0));
+        mouse_down = click;
+        if next {
+            page += 1;
+            if page == lines.len() { return Ok(true); }
+        }
+        let (speaker, message) = lines[page];
+        pixels.fill(0x080e19);
+        text::draw_centered(&mut pixels, WIDTH, 35,
+            intermission.title(), 2, TEXT);
+        text::draw_centered(&mut pixels, WIDTH, 90,
+            &format!("Transmission {} / {}", page + 1, lines.len()), 1, MUTED);
+        for y in 130..380 {
+            pixels[y * WIDTH + 40..y * WIDTH + WIDTH - 40].fill(0x111e2e);
+        }
+        text::draw_at(&mut pixels, WIDTH, 64, 150, speaker, 2, [117, 219, 171]);
+        let mut rest = message;
+        let mut y = 205;
+        while !rest.is_empty() {
+            let prefix = text::fit(rest, WIDTH - 128);
+            if prefix.is_empty() { break; }
+            let length = if prefix.len() == rest.len() { prefix.len() }
+                else { prefix.rfind(' ').filter(|&i| i != 0).unwrap_or(prefix.len()) };
+            text::draw_at(&mut pixels, WIDTH, 64, y, &rest[..length], 1, TEXT);
+            y += text::HEIGHT + 8;
+            rest = rest[length..].trim_start();
+        }
+        text::draw_centered(&mut pixels, WIDTH, 415,
+            if page + 1 == lines.len() { "Continue to fleet preparation" }
+                else { "Continue dialogue" }, 2, TEXT);
+        text::draw_centered(&mut pixels, WIDTH, 458,
+            "Space / Enter / Click next   Left previous   S skip   Esc back", 1, MUTED);
+        window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
+    }
+    Ok(false)
+}
+
 pub fn select_battle(
     rows: &[BattleMenuRow<'_>], selected: &mut usize, launch_failed: bool,
     fleet_rows: &[String], squad_rows: &[String],

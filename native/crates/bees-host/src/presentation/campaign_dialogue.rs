@@ -495,3 +495,133 @@ pub(crate) fn pause_seconds(cue: CampaignCue, visible_index: usize) -> Option<f3
         CampaignCue::PlutoPushbackVictory | CampaignCue::PlutoPushbackDefeat
     ) && visible_index == 7).then_some(1.0)
 }
+
+// Original LevelIntro travel dialogue, separate from in-battle cues.
+// The authored Titania-to-Uranus middle exchange exists only if A.M.I.
+// survived the committed Beenoculars outcome.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeCampaignIntermission {
+    PlutoToNeptune,
+    NeptuneToTitania,
+    TitaniaToUranus { ami_survived: bool },
+}
+
+const PLUTO_TO_NEPTUNE: &[(&str, &str)] = &[
+    ("Samuel", "What do we do now? Those... bees outnumber us."),
+    ("Marco", "Heavily."),
+    ("Yoshiko", "That doesn't mean we lose!"),
+    ("Joey", "But it's a heck of a lot harder."),
+    ("Marco", "And I'm not going into a fight like that unless I absolutely have to."),
+    ("Oviya", "What we need is allies."),
+    ("Samuel", "Just because interplanetary comms are cut off doesn't mean others aren't still out there... right?"),
+    ("Yoshiko", "They couldn't have destroyed all the United Fleet. It's the finest military presence in the solar system!"),
+    ("Marco", "The only military presence in the solar system. Until now. And we don't know how many more bees there are."),
+    ("Samuel", "There's no way they could take Mars... or even Earth."),
+    ("Marco", "No way to know."),
+    ("Oviya", "The next closest human settlement is Neptune. Commander, I recommend we go there."),
+    ("Samuel", "There might be survivors!"),
+    ("Joey", "It's just a Jensen mining facility, so we won't find any more United Fleet help. But we can help anyone that's sticking it out."),
+    ("Samuel", "And they could have a way to make more ships for our fleet!"),
+    ("Joey", "If there's still anything left there."),
+    ("Oviya", "It's our best option right now. If Neptune is wiped out, then we move on."),
+    ("Joey", "And if it's not, we have to deal with Wesley..."),
+];
+
+const NEPTUNE_TO_TITANIA: &[(&str, &str)] = &[
+    ("Samuel", "Commander, I've been reviewing the colonies and bases throughout the solar system. While there is a small UF outpost on Uranus proper, there's also a research and engineering base on one of its moons, Titania. We should be able to find allies here."),
+    ("Marco", "If there's anyone left."),
+    ("Samuel", "If- yeah, if... I'm just trying to think through our options."),
+    ("Oviya", "Titania is en route to Uranus. I'll have some scouts look ahead and see if there's anything worth stopping for."),
+    ("Yoshiko", "You think the nerds on Titania might have cool new weapons we can use?"),
+    ("Samuel", "Nerds?"),
+    ("Yoshiko", "Yeah, you said it's a research and... whatever base. I love those nerds."),
+    ("Joey", "Ha! We could probably use some more nerds on our side. Even one other person who understands how explosives work."),
+    ("Yoshiko", "Just cuz I blew up one frigate-"),
+    ("Marco", "Can we focus, please?"),
+    ("Oviya", "Scouts are reporting Titania base looks evacuated. No damage, but no signals either. And lots of bee patrols."),
+    ("Samuel", "Wait a minute, we're getting a request right now! Let me put them on..."),
+    ("Alejandra", "Hello? Do you read me?"),
+    ("Samuel", "Loud and clear, ma'am."),
+    ("Alejandra", "Ah, good. This is Alejandra Vasquez, research and engineering wing, regional commander and research lead for United Fleet Titania."),
+    ("Emilia", "Ohhhh, who are they?"),
+    ("Alejandra", "Emilia, please. We saw other United Fleet vessels around our base. I presume those belong to your contingent?"),
+    ("Oviya", "Yes, that was my scout team. We thought your base was abandoned, though."),
+    ("Emilia", "We need help!"),
+    ("Alejandra", "I was getting there, Emilia."),
+    ("Emilia", "We can't get off the base right now!"),
+    ("Alejandra", "That is correct. The initial assault of these unidentified aliens targeted the surface of Uranus, primarily. They were swiftly dismantled. We sent a signal on the emergency frequency, as is protocol, but they detected us. Their attack was more than we could handle, and we had no response from the fleet. We're only alive because of Emilia's father."),
+    ("Samuel", "What did he do?"),
+    ("Alejandra", "I... don't wish to discuss it in current company."),
+    ("Emilia", "He blew up the weapons bay to surround the base in junk and experimental explosives."),
+    ("Samuel", "What's so bad about saying that?"),
+    ("Alejandra", "Philip is... No longer with us."),
+    ("Samuel", "Oh- oh, I'm so sorry...."),
+    ("Emilia", "It's fine... he's... he saved us."),
+    ("Alejandra", "Precisely. His selfless act is the only reason we're alive. If it weren't for that, the bee patrols around us would have decimated us days ago. But ironically, it is now the reason we are stuck."),
+    ("Emilia", "You can help us! You have fighting ships! And we have a carrier to help too!"),
+    ("Yoshiko", "Oh, what's a carrier?"),
+    ("Emilia", "It's this awesome ship my dad designed. It has a bunch of little robot controlled ships. We call 'em drones and strikers, and they can-"),
+    ("Alejandra", "Please, Emilia, I'd love to discuss the details of Philip's designs, but we don't have the time right now. To abbreviate this conversation, would your fleet be able to assist in our attempt to extricate our staff and their families from this moon? The prototypal carrier is our only military vessel at the moment."),
+    ("Emilia", "Right! We're running out of food and batteries!"),
+    ("Samuel", "Of course we can help. We're already pretty experienced bee fighters."),
+    ("Alejandra", "Bees?"),
+    ("Samuel", "Erm... yes, that's what we're calling the aliens."),
+    ("Alejandra", "Yes, I do suppose they bear some resemblance to the endangered species. Fascinating observation."),
+    ("Emilia", "I like that name! Stupid bees! Yeah, it feels good to say."),
+    ("Marco", "Quit wasting time."),
+    ("Samuel", "Right. Commander, what are your orders?"),
+];
+
+const TITANIA_TO_URANUS_START: &[(&str, &str)] = &[
+    ("Alejandra", "Commander, my thanks again for your assistance in our predicament. I hope we can prove our value to your fleet shortly."),
+    ("Emilia", "We've got a carrier!"),
+];
+
+const TITANIA_TO_URANUS_AMI: &[(&str, &str)] = &[
+    ("AMI", "And you will have whatever assistance I can offer in your upcoming battles."),
+    ("Yoshiko", "Oh, hey red lady. What, uh.. Exactly is your assistance?"),
+    ("AMI", "I can make improvements to your codex with strategy suggestions based on our observations and battles with the various bee vessels. Additionally, my predictive routines should assist in knowing what enemy vessels to expect in your battles as you are preparing."),
+    ("Yoshiko", "That's... insanely cool!"),
+    ("AMI", "Why thank you. If I could blush, I assure you I would be."),
+    ("Emilia", "My dad and Alejandra both worked a lot on her. I think she's awesome!"),
+    ("Joey", "She's impressive. Looks like we've got ourselves a mighty fine pair of Bee-noculars."),
+    ("AMI", "Ha! That is quite clever."),
+    ("Emilia", "Wow, Marco, I didn't know eyes could roll that far."),
+    ("Marco", "I've got lots of practice..."),
+];
+
+const TITANIA_TO_URANUS_END: &[(&str, &str)] = &[
+    ("Alejandra", "Furthermore, if you have the means of production, we also have the blueprints for the carrier. Producing more should help alleviate the pressures on your manpower."),
+    ("Emilia", "Yeah, it's all robots driving the little ships!"),
+    ("Alejandra", "And perhaps I can help some with organizing your efforts, as well. I've noticed a distinct lack of organization amongst you. For example, your command ship isn't even in proper formation with the rest-"),
+    ("Marco", "That's not what we need help with. Maybe use your smarts for some battle tactics and weapons."),
+    ("Emilia", "Yeah! Let's take those stupid bees down! Uranus is under new management! Er- well, I guess old management. We're taking the new management down. Yeah!"),
+    ("Samuel", "The first way sounds cooler, though."),
+    ("Emilia", "Yeah!"),
+    ("Marco", "Are we sure this is an improvement?"),
+    ("Oviya", "Commander, we need to keep moving. My scouts are reporting there may be some United Fleet stragglers around Uranus that need our help."),
+    ("Samuel", "Let's go, then!"),
+];
+
+impl NativeCampaignIntermission {
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::PlutoToNeptune => "Pluto to Neptune",
+            Self::NeptuneToTitania => "Neptune to Titania",
+            Self::TitaniaToUranus { .. } => "Titania to Uranus",
+        }
+    }
+
+    pub(crate) fn lines(self) -> impl Iterator<Item = (&'static str, &'static str)> {
+        let (first, middle, last) = match self {
+            Self::PlutoToNeptune => (PLUTO_TO_NEPTUNE, &[][..], &[][..]),
+            Self::NeptuneToTitania => (NEPTUNE_TO_TITANIA, &[][..], &[][..]),
+            Self::TitaniaToUranus { ami_survived } => (
+                TITANIA_TO_URANUS_START,
+                if ami_survived { TITANIA_TO_URANUS_AMI } else { &[][..] },
+                TITANIA_TO_URANUS_END,
+            ),
+        };
+        first.iter().chain(middle).chain(last).copied()
+    }
+}

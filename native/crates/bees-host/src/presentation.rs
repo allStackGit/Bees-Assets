@@ -21,6 +21,7 @@ mod text;
 // Authored mission dialogue also belongs to the headless remote host;
 // it contains no window or audio dependency.
 pub(crate) mod campaign_dialogue;
+pub use campaign_dialogue::NativeCampaignIntermission;
 #[cfg(feature = "client")]
 mod battle_menu;
 #[cfg(feature = "client")]
@@ -32,7 +33,7 @@ pub use battle_menu::{
     BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
     NativeTransferMenuRow, NativeCreateSquadMenuRow, NativeDeleteSquadMenuRow,
     NativeTacticsMenuRow, NativeNameMenuRow, NativeNameTarget,
-    NativeCampaignMenuStats, select_battle, select_library,
+    NativeCampaignMenuStats, select_battle, select_library, show_campaign_intermission,
 };
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
 pub use selection::{NativeSquadSelection, NativeSupportMode};

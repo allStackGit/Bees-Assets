@@ -5805,7 +5805,7 @@ fn run_campaign_game_menu(
         NativeTransferMenuRow, NativeCreateSquadMenuRow,
         NativeDeleteSquadMenuRow, NativeTacticsMenuRow,
         NativeNameMenuRow, NativeNameTarget, NativeCampaignMenuStats,
-        select_battle, select_library,
+        select_battle, select_library, show_campaign_intermission,
     };
 
     let catalog_path = catalog_path.canonicalize()?;
@@ -5814,6 +5814,7 @@ fn run_campaign_game_menu(
     let root = catalog_path.parent().ok_or_else(|| invalid("missing catalog directory"))?;
     fs::create_dir_all(output_root)?;
     let mut progress = catalog.load_progress(output_root)?;
+    let mut seen_intermission = HashSet::<String>::new();
     let mut selected = 0;
     let mut number = 0_u64;
     let mut launch_failed = false;
@@ -6321,6 +6322,21 @@ fn run_campaign_game_menu(
             }
         };
         let entry = &catalog.battles[index];
+        if let Some(mission) = &entry.mission {
+            if !progress.attempted(&mission.id) &&
+                !seen_intermission.contains(&mission.id)
+            {
+                if let Some(intermission) = &mission.intermission {
+                    if show_campaign_intermission(intermission.resolve(&progress))? {
+                        seen_intermission.insert(mission.id.clone());
+                    }
+                    // The original LevelIntro leads into fleet preparation.
+                    // Let the commander build/reassign before choosing Play
+                    // again; do not create a mission on closing the dialogue.
+                    continue;
+                }
+            }
+        }
         if hosted {
             let mission = entry.mission.as_ref().ok_or_else(||
                 invalid("multiplayer host selected a non-campaign battle"))?;

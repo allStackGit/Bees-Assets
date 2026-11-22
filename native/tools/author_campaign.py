@@ -1768,6 +1768,22 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 "neptune_seize_means", "uranus_on_the_offensive",
                 "uranus_new_threat", "titania_minesweeper", "titania_beenoculars"):
             mission["bank_player_minerals"] = False
+        # Original LevelIntro interplanetary transmissions. The conditional
+        # Titania II outcome is resolved by the native career ledger.
+        story = mission_stories.get(index)
+        if story == "neptune_seize_means":
+            mission["intermission"] = {"kind": "pluto_to_neptune"}
+        elif story == "titania_minesweeper":
+            mission["intermission"] = {"kind": "neptune_to_titania"}
+        elif story == "uranus_on_the_offensive":
+            previous = [n for n, name in mission_stories.items()
+                        if n < index and name == "titania_beenoculars"]
+            mission["intermission"] = {
+                "kind": "titania_to_uranus",
+                "prior_titania_mission": (
+                    f"mission-{max(previous):03d}" if previous else None
+                ),
+            }
         if mission_stories.get(index) == "titania_minesweeper":
             # Both outcomes advance to the appropriate Beenoculars route.
             mission["advance_on"] = "finished"

@@ -103,6 +103,33 @@ impl BattleEntry {
     }
 }
 
+/// The original pre-level travel dialogues reference only committed
+/// career outcomes. No parallel story or save ledger is needed.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CampaignIntermission {
+    PlutoToNeptune,
+    NeptuneToTitania,
+    TitaniaToUranus { prior_titania_mission: Option<String> },
+}
+
+impl CampaignIntermission {
+    pub fn resolve(&self, progress: &CampaignProgress<'_>)
+        -> bees_host::presentation::NativeCampaignIntermission
+    {
+        use bees_host::presentation::NativeCampaignIntermission as Native;
+        match self {
+            Self::PlutoToNeptune => Native::PlutoToNeptune,
+            Self::NeptuneToTitania => Native::NeptuneToTitania,
+            Self::TitaniaToUranus { prior_titania_mission } =>
+                Native::TitaniaToUranus {
+                    ami_survived: prior_titania_mission.as_deref()
+                        .is_some_and(|id| progress.latest_victory(id)),
+                },
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Mission {
@@ -130,6 +157,8 @@ pub struct Mission {
     /// Source endings that add the physical match score on victory only.
     #[serde(default)]
     pub score_on_victory_only: bool,
+    #[serde(default)]
+    pub intermission: Option<CampaignIntermission>,
     /// Opt-in historical FleetShip deaths on the next authored Level.
     /// Only ships belonging to the player side are removed at setup;
     /// opposing authored forces remain owned by their scenario.
@@ -494,12 +523,16 @@ impl CampaignProgress<'_> {
         self.missions.get(id).is_some_and(|mission| mission.completed)
     }
 
-    fn latest_victory(&self, id: &str) -> bool {
+    pub(super) fn latest_victory(&self, id: &str) -> bool {
         self.missions.get(id).is_some_and(|mission| mission.attempted && mission.latest_victory)
     }
 
-    fn latest_defeat(&self, id: &str) -> bool {
+    pub(super) fn latest_defeat(&self, id: &str) -> bool {
         self.missions.get(id).is_some_and(|mission| mission.attempted && !mission.latest_victory)
+    }
+
+    pub fn attempted(&self, id: &str) -> bool {
+        self.missions.get(id).is_some_and(|mission| mission.attempted)
     }
 
     pub fn grants_claimed(&self, id: &str) -> bool {
@@ -960,6 +993,10 @@ impl BattleCatalog {
                         !classes.iter().any(|&(kind, _)| kind == grant.ship_type))
                 }) ||
                 earlier.contains(mission.id.as_str()) ||
+                matches!(&mission.intermission,
+                    Some(CampaignIntermission::TitaniaToUranus {
+                        prior_titania_mission: Some(id),
+                    }) if !earlier.contains(id.as_str())) ||
                 mission.met_scientists_after.as_ref().is_some_and(|id|
                     !earlier.contains(id.as_str())) ||
                 mission.requires.iter().any(|id| !earlier.contains(id.as_str())) ||
