@@ -312,8 +312,14 @@ class RemoteConsole:
                                 type(stats.get(key)) is not int or stats[key] < 0
                                 for key in ("observed_turret_shots",
                                             "enemy_tsv_damage_done",
-                                            "tsv_damage_received")
-                            ):
+                                            "tsv_damage_received",
+                                            "striker_bombs_dropped",
+                                            "fire_barge_explosions",
+                                            "yellow_jacket_detonations",
+                                            "barge_charges_started",
+                                            "scout_beacons_deployed",
+                                            "queen_minions_spawned")
+                            ) or type(stats.get("special_actions_recorded")) is not bool:
                                 raise ValueError("invalid authoritative FleetShip counters")
                             kills = stats.get("source_kills")
                             if kills is not None and (type(kills) is not int or kills < 0):
@@ -327,8 +333,21 @@ class RemoteConsole:
                                 f"{stats['tsv_damage_received']} TSV received"
                             )
                             mined = message.get("minerals_mined_this_level")
-                            if type(mined) is int and mined >= 0:
+                            if type(mined) is int and mined > 0:
                                 note += f", {mined} minerals mined"
+                            if stats["special_actions_recorded"]:
+                                special = (
+                                    ("barge_charges_started", "charges"),
+                                    ("fire_barge_explosions", "explosions"),
+                                    ("yellow_jacket_detonations", "detonations"),
+                                    ("striker_bombs_dropped", "bombs"),
+                                    ("scout_beacons_deployed", "beacons"),
+                                    ("queen_minions_spawned", "minions"),
+                                )
+                                note += "".join(
+                                    f", {stats[key]} {name}"
+                                    for key, name in special if stats[key] > 0
+                                )
                         self.notifications.put(note)
                         if not self.silent:
                             print(note)
