@@ -2711,6 +2711,12 @@ fn current_state(
             "id": ship.entity_id,
             "side": ship.side, "ship_type": ship.ship_type,
             "weapons": weapons,
+            // The original Beacon sprite reflects a genuine physical
+            // enemy trigger. Only its command-authorized local owner can
+            // receive the warning; it never discloses hidden ship IDs.
+            "beacon_alert": if owned && ship.ship_type == bees_sim::ship_assets::BEACON_TYPE {
+                Some(view.beacon_has_nearby_enemy(ship.entity_id))
+            } else { None },
             "striker_bomb_ready": if ship.ship_type == 19 {
                 view.combat.game_striker_bomb_ready(ship.entity_id)
                     .or_else(|| view.combat.policy_striker_bomb_ready(ship.entity_id))

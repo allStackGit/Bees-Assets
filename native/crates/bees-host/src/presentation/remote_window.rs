@@ -367,6 +367,7 @@ impl RemoteArtwork {
             if let Some((deck, barge, queen)) = self.raster.remote_ship_art(
                 kind, point, visual.heading(ship, fraction), color_rgb,
                 animation, barge_charge,
+                ship["beacon_alert"].as_bool().unwrap_or(false),
             ) {
                 self.ships.insert(id);
                 stats.ship_sprite_draws += 1;

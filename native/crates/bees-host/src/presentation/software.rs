@@ -1024,6 +1024,15 @@ pub(super) fn draw_dialogue_portrait(
     true
 }
 
+fn source_beacon_enemy_art() -> Option<&'static SourceShipAtlas> {
+    // Single source variant, including the same editable-color mask as
+    // Beacon Standard. Entirely optional in a headless game installation.
+    static ATLAS: OnceLock<Option<SourceShipAtlas>> = OnceLock::new();
+    ATLAS.get_or_init(|| load_source_art(
+        "beacon-enemy.rgba", SourceShipAtlas::decode,
+    )).as_ref()
+}
+
 fn source_ship_art() -> Option<&'static SourceShipAtlas> {
     static ATLAS: OnceLock<Option<SourceShipAtlas>> = OnceLock::new();
     ATLAS.get_or_init(|| load_source_art(
@@ -1869,7 +1878,7 @@ impl NativeSoftwareRenderer {
     pub(super) fn remote_ship_art(
         &mut self, ship_type: u8, point: Vec2, rotation_degrees: f32,
         color_rgb: Option<[u8; 3]>, animation: Option<(u8, f32)>,
-        barge_charge: Option<(u8, f32)>,
+        barge_charge: Option<(u8, f32)>, beacon_alert: bool,
     ) -> Option<(bool, usize, usize)> {
         // Authenticated host packets select a presentation clip only for
         // already visible ships. Both local and remote use the *same*
@@ -1887,6 +1896,11 @@ impl NativeSoftwareRenderer {
         });
         let Some(art) = animated
             .map(|(clip, _, frame)| &clip.frames[frame])
+            .or_else(|| (ship_type == bees_sim::ship_assets::BEACON_TYPE && beacon_alert)
+                .then(source_beacon_enemy_art)
+                .flatten()
+                .and_then(|atlas| atlas.sprites.first())
+                .and_then(Option::as_ref))
             .or_else(|| source_ship_art()
                 .and_then(|atlas| atlas.sprites.get(usize::from(ship_type)))
                 .and_then(Option::as_ref))
@@ -1906,7 +1920,7 @@ impl NativeSoftwareRenderer {
                     Arc::clone(self.animated_ship_art.get(&key)
                         .expect("installed animated native squad recolor"))
                 } else {
-                    let key = (ship_type, rgb);
+                    let key = (ship_type + if beacon_alert { 64 } else { 0 }, rgb);
                     if !self.custom_ship_art.contains_key(&key) {
                         if self.custom_ship_art.len() >= 96 {
                             self.custom_ship_art.clear();
@@ -2793,8 +2807,15 @@ impl NativeSoftwareRenderer {
                 };
                 Some((clip, variant, index))
             });
+            let beacon_alert = ship.ship_type == bees_sim::ship_assets::BEACON_TYPE &&
+                owner.is_some_and(|squad| view.is_local_player_squad(squad)) &&
+                view.beacon_has_nearby_enemy(ship.entity_id);
             let art = animated
                 .map(|(clip, _, frame)| &clip.frames[frame])
+                .or_else(|| beacon_alert.then(source_beacon_enemy_art)
+                    .flatten()
+                    .and_then(|atlas| atlas.sprites.first())
+                    .and_then(Option::as_ref))
                 .or_else(|| ship_art
                     .and_then(|atlas| atlas.sprites.get(usize::from(ship.ship_type)))
                     .and_then(Option::as_ref));
@@ -2819,7 +2840,10 @@ impl NativeSoftwareRenderer {
                         Arc::clone(self.animated_ship_art.get(&key)
                             .expect("just inserted animated source recolor"))
                     } else {
-                        let key = (ship.ship_type, rgb);
+                        // The active warning sprite is not the ordinary
+                        // Beacon base; its recolored pixels need a distinct
+                        // cache key while still sharing the source palette.
+                        let key = (ship.ship_type + if beacon_alert { 64 } else { 0 }, rgb);
                         if !self.custom_ship_art.contains_key(&key) {
                             if self.custom_ship_art.len() >= 96 {
                                 self.custom_ship_art.clear();

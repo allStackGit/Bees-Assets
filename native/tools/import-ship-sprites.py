@@ -49,6 +49,10 @@ SHIP_ANIMATIONS = (
 # are reconstructed in the common native local/LAN presentation path.
 QUEEN_PART_IMAGES = ("queen_crown.png", "queen_eye.png")
 
+# Beacon.SetBeaconStatus switches to this original alternate sprite
+# whenever its authored sight collider overlaps a living enemy ship.
+BEACON_ENEMY_IMAGES = ("Beacon Enemy.png",)
+
 # Immutable prefab sprites shared by local and authenticated LAN effects.
 # The original Beehive Healing Cross uses a 50x50 sprite at 8 pixels/unit.
 SHIP_EFFECT_IMAGES = ("healing.png",)
@@ -447,6 +451,8 @@ def main():
                         default=ROOT / "native/assets/dialogue-portraits.rgba")
     parser.add_argument("--ship-output", type=Path,
                         default=ROOT / "native/assets/ship-sprites.rgba")
+    parser.add_argument("--beacon-output", type=Path,
+                        default=ROOT / "native/assets/beacon-enemy.rgba")
     parser.add_argument("--projectile-output", type=Path,
                         default=ROOT / "native/assets/projectile-sprites.rgba")
     parser.add_argument("--asteroid-output", type=Path,
@@ -468,6 +474,10 @@ def main():
     ships, ship_count = pack(
         SHIP_IMAGES, ROOT / "Sprites/Ships", b"BSS2", False,
         palettes,
+    )
+    beacon_enemy, beacon_enemy_count = pack(
+        BEACON_ENEMY_IMAGES, ROOT / "Sprites/Ships", b"BSS2",
+        False, (palettes[1],),
     )
     backgrounds, background_count = pack(
         MAP_BACKGROUND_IMAGES, ROOT / "Sprites/Backgrounds", b"BSS1",
@@ -498,6 +508,7 @@ def main():
     fog_path = write_atomic(args.map_fog_output, fog)
     portrait_path = write_atomic(args.portrait_output, portrait_art)
     ships_path = write_atomic(args.ship_output, ships)
+    beacon_path = write_atomic(args.beacon_output, beacon_enemy)
     projectiles_path = write_atomic(args.projectile_output, projectiles)
     asteroids_path = write_atomic(args.asteroid_output, asteroids)
     animations_path = write_atomic(args.animation_output, animations)
@@ -509,6 +520,8 @@ def main():
     print(f"Queen explosion: 4 original animated layers, {len(queen_explosion)} bytes at {queen_explosion_path}")
     print(f"Queen prefab parts: {queen_part_count} sprites, {len(queen_parts)} bytes at {queen_path}")
     print(f"Source visual effects: {effect_count} sprites, {len(effects)} bytes at {effects_path}")
+    print(f"Beacon warning artwork: {beacon_enemy_count} source sprites, "
+          f"{len(beacon_enemy)} bytes at {beacon_path}")
     print(f"Carrier deck overlays: 13 variants, {len(decks)} bytes at {decks_path}")
     print(f"Ship remains: {remains_count} classes, "
           f"{len(remains)} bytes at {remains_path}")

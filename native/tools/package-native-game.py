@@ -930,6 +930,7 @@ def main() -> None:
         subprocess.run([
             sys.executable, str(CONVERTER),
             "--ship-output", str(assets / "ship-sprites.rgba"),
+            "--beacon-output", str(assets / "beacon-enemy.rgba"),
             "--map-background-output", str(assets / "map-backgrounds.rgba"),
             "--map-fog-output", str(assets / "map-fog.rgba"),
             "--portrait-output", str(assets / "dialogue-portraits.rgba"),

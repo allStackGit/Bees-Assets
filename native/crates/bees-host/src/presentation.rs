@@ -227,6 +227,35 @@ pub struct NativeRenderWorldView<'a> {
 }
 
 impl<'a> NativeRenderWorldView<'a> {
+    /// Source Beacon.SetBeaconStatus reads ProximityCollider.NearbyEnemyShips.
+    /// The trigger is a circle of radius Sight (MaxRange if Sight == 0),
+    /// identical to this Level's authored fog vision radius. Check it
+    /// against actual current primary hulls, never a separate unit map
+    /// or the viewer's possibly hidden ship projection.
+    pub fn beacon_has_nearby_enemy(&self, beacon_id: i64) -> bool {
+        let Some(beacon) = self.combat.ship(beacon_id) else { return false };
+        if beacon.ship_type != bees_sim::ship_assets::BEACON_TYPE ||
+            beacon.vitals.is_dead() {
+            return false;
+        }
+        let Some(origin) = self.combat.ship_body(beacon_id)
+            .filter(|body| body.active).map(|body| body.motion.position)
+        else { return false };
+        let Some(radius) = self.player_authority.player_fog_vision_radius(beacon_id)
+            .filter(|radius| radius.is_finite() && *radius > 0.0)
+        else { return false };
+        let radius_squared = radius * radius;
+        self.combat.render_ships().any(|(ship, body)| {
+            if ship.side == beacon.side { return false; }
+            // Cheap broadphase first; only a nearby original hull gets a
+            // closest-point polygon query. No extra physics allocations.
+            let bound = radius + body.hull_radius_bound;
+            (body.motion.position - origin).length_squared() <= bound * bound &&
+                (body.primary_closest_point_readonly(origin) - origin)
+                    .length_squared() <= radius_squared
+        })
+    }
+
     /// Read only the scoreboard authorized for the requested faction.
     /// Live LAN result receipts call this per authenticated peer.
     pub fn player_match_for_side(&self, side: i32)
