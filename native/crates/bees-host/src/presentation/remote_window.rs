@@ -1291,9 +1291,9 @@ fn remote_primary_hull(item: &Value, center: Vec2,
 
 /// Draws the same collider the cursor can select. A cheap authoritative AABB
 /// cull avoids rasterizing large hulls outside the player's screen.
-fn draw_remote_primary_hull(
+fn draw_remote_primary_hull_colored(
     pixels: &mut [u32], item: &Value, camera: NativeCamera,
-    center: Vec2, rotation_degrees: f32,
+    center: Vec2, rotation_degrees: f32, color: u32,
 ) -> Option<bool> {
     let bounds = item["collider_bounds"].as_array()
         .filter(|points| points.len() == 2)
@@ -1310,9 +1310,18 @@ fn draw_remote_primary_hull(
         }
     }
     let hull = remote_primary_hull(item, center, rotation_degrees)?;
-    let color = if item["mining"] == true { GOLD } else { 0x7d92aa };
     hull.draw(pixels, camera, color);
     Some(true)
+}
+
+fn draw_remote_primary_hull(
+    pixels: &mut [u32], item: &Value, camera: NativeCamera,
+    center: Vec2, rotation_degrees: f32,
+) -> Option<bool> {
+    let color = if item["mining"] == true { GOLD } else { 0x7d92aa };
+    draw_remote_primary_hull_colored(
+        pixels, item, camera, center, rotation_degrees, color,
+    )
 }
 
 /// The authenticated world_state is already filtered by the host's
@@ -1821,7 +1830,16 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         for shot in state["projectiles"].as_array().into_iter().flatten() {
             if !artwork.projectiles.contains(&shot["id"].as_i64().unwrap_or(-1)) {
                 if let Some(point)=visual.position(shot, 1, fraction) {
-                    circle(pixels,screen(camera,point),2,0xf8d798);
+                    // Preserve the canonical, mutable projectile shape:
+                    // real beams extend, rockets rotate and explosions
+                    // grow. Only truly shapeless projectiles get a dot.
+                    // Host fog has already removed undisclosed shots.
+                    if draw_remote_primary_hull_colored(
+                        pixels, shot, camera, point,
+                        visual.heading_for(shot, 1, fraction), 0xf8d798,
+                    ).is_none() {
+                        circle(pixels,screen(camera,point),2,0xf8d798);
+                    }
                 }
             }
         }
