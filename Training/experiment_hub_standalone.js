@@ -254,6 +254,23 @@ async function readJson(req) {
     return JSON.parse(raw||'{}');
 }
 
+// Independent evaluators are owned by their systemd units rather than Hub
+// training jobs. Never replace their mapped source or restart the coordinator
+// while one of these one-shot services is still executing.
+function independentEvaluatorActive() {
+    if(process.platform!=='linux')return false;
+    const result=spawnSync('systemctl',[
+        '--user','list-units','--all','--type=service',
+        '--state=active,activating','--no-legend','--no-pager','--plain',
+        'bees-experiment-hub-*-evaluator-*.service',
+    ],{encoding:'utf8',timeout:5000,maxBuffer:16384,windowsHide:true});
+    if(result.error||result.status!==0) {
+        console.error('[hub-updates] Cannot inspect independent evaluator services; deferring software activation.');
+        return true;
+    }
+    return result.stdout.split(/\r?\n/).some(line=>
+        /^\s*bees-experiment-hub-\S+-evaluator-\S+\.service\s/.test(line));
+}
 function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null,
     localOperations={active:0,activating:false}}={}) {
     const exporter=new JobExporter(dataRoot,hub);
@@ -497,6 +514,7 @@ async function main(argv=process.argv.slice(2)) {
             // restart re-arm authorization. An explicit mid-job software
             // override may pause automation, never stop native workloads.
             if(!override&&hub.automation.enabled&&!hub.state.automation_restart)return;
+            if(independentEvaluatorActive())return;
             // Refreshing archives is safe during setup, but changing the live
             // checkout or restarting services is not. Serialise activation
             // with every local evaluator administration request.
