@@ -336,8 +336,25 @@ impl Objective {
 struct NativeHiveMindFleet {
     network: Value,
     opponent_id: u64,
+    /// A distinct original BeesServer opponent for the second spectator
+    /// faction. Both share the ONE authenticated Game and command socket.
+    second_opponent_id: Option<u64>,
     initial_delay_seconds: i32,
     controlled_side: i32,
+}
+
+impl NativeHiveMindFleet {
+    fn controls(&self, side: i32) -> bool {
+        self.controlled_side == 0 || self.controlled_side == side
+    }
+
+    fn opponent_for_side(&self, side: i32) -> u64 {
+        if self.controlled_side == 0 && side == 2 {
+            self.second_opponent_id.expect("two-faction HiveMind profile was validated")
+        } else {
+            self.opponent_id
+        }
+    }
 }
 
 fn has_hivemind_profile(save_root: &Path) -> bool {
@@ -367,6 +384,11 @@ fn configured_hivemind_fleet(save_root: &Path)
     let opponent_id = config["opponent_id"].as_u64()
         .filter(|id| *id > 0)
         .ok_or_else(|| invalid("HiveMind fleet needs a source opponent_id"))?;
+    let second_opponent_id = config.get("second_opponent_id")
+        .map(|value| value.as_u64().filter(|&id|
+            id > 0 && id != opponent_id
+        ).ok_or_else(|| invalid("second HiveMind opponent must be positive and distinct")))
+        .transpose()?;
     let initial_delay_seconds = config.get("initial_command_delay_seconds")
         .map(|value| value.as_i64().and_then(|n| i32::try_from(n).ok()))
         .unwrap_or(Some(0))
@@ -376,7 +398,8 @@ fn configured_hivemind_fleet(save_root: &Path)
         .ok_or_else(|| invalid("HiveMind fleet config needs an existing HiveMind run configuration"))?;
     if !config.as_object().is_some_and(|obj|
             obj.keys().all(|key| matches!(key.as_str(),
-                "hivemind" | "opponent_id" | "initial_command_delay_seconds")))
+                "hivemind" | "opponent_id" | "second_opponent_id" |
+                "initial_command_delay_seconds")))
     {
         return Err(invalid("HiveMind fleet has unknown configuration fields").into());
     }
@@ -391,7 +414,8 @@ fn configured_hivemind_fleet(save_root: &Path)
         return Err(invalid("new HiveMind fleet needs a valid endpoint, user and fresh server Game").into());
     }
     Ok(Some(NativeHiveMindFleet {
-        network, opponent_id, initial_delay_seconds, controlled_side: 0,
+        network, opponent_id, second_opponent_id,
+        initial_delay_seconds, controlled_side: 0,
     }))
 }
 
@@ -463,6 +487,7 @@ pub(super) fn choose_for_preferred_side(
         choices.extend([
             ("Bees commander vs Human HiveMind", "  [Live network command AI]"),
             ("Humans commander vs Bee HiveMind", "  [Live network command AI]"),
+            ("Watch HiveMind vs HiveMind", "  [Two distinct server opponents; one physical game]"),
         ]);
     }
     let rows = choices.iter().map(|(title, status)| BattleMenuRow {
@@ -487,7 +512,7 @@ pub(super) fn choose_for_preferred_side(
     // A single local window cannot present two opposing, independently
     // fog-filtered viewpoints. LAN commanders have separate viewers and
     // may enable authentic fog independently.
-    let fog_of_war = if matches!(mode, 2 | 3) { false } else {
+    let fog_of_war = if matches!(mode, 2 | 3 | 6) { false } else {
         let Some(enabled) = choose_visibility()? else { return Ok(None); };
         enabled
     };
@@ -502,7 +527,7 @@ pub(super) fn choose_for_preferred_side(
             ai_tactics[side] = value;
         }
     }
-    let spectator_episodes = if mode == 3 {
+    let spectator_episodes = if matches!(mode, 3 | 6) {
         let Some(count) = choose_resource(
             "AI-vs-AI battles in this spectator session", &[1, 4, 16, 64],
         )? else { return Ok(None); };
@@ -520,6 +545,16 @@ pub(super) fn choose_for_preferred_side(
             ..configured_hivemind_fleet(save_root)?
                 .ok_or_else(|| invalid("selected HiveMind profile vanished"))?
         }),
+        6 => {
+            let configured = configured_hivemind_fleet(save_root)?
+                .ok_or_else(|| invalid("two-faction HiveMind profile vanished"))?;
+            if configured.second_opponent_id.is_none() {
+                return Err(invalid(
+                    "HiveMind-vs-HiveMind requires a distinct second_opponent_id in hivemind-fleet.json",
+                ).into());
+            }
+            Some(NativeHiveMindFleet { controlled_side: 0, ..configured })
+        }
         _ => None,
     };
     let objective_side = match objective {
@@ -551,7 +586,7 @@ pub(super) fn choose_for_preferred_side(
     };
     Ok(Some(FleetChoice {
         player_side, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
-        ai_both: mode == 3, benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
+        ai_both: matches!(mode, 3 | 6), benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
 }
@@ -2261,8 +2296,10 @@ pub(super) fn archive(
                 .ok_or_else(|| invalid("HiveMind squad references an unknown physical hull"))?
                 .into_iter().any(|mobile| mobile);
             squad["hivemind"] = json!({
-                "opponent_id": hivemind.opponent_id,
-                "hivemind_controlled": side == i64::from(hivemind.controlled_side),
+                "opponent_id": hivemind.opponent_for_side(
+                    i32::try_from(side).expect("validated Bee or Human side")),
+                "hivemind_controlled": hivemind.controls(
+                    i32::try_from(side).expect("validated Bee or Human side")),
                 "immobile": !mobile,
             });
         }
@@ -2541,7 +2578,7 @@ pub(super) fn archive(
             let human_owner = !selected.ai_both && !selected.benchmark &&
                 selected.player_side.is_none_or(|side| side == player) &&
                 !selected.hivemind.as_ref().is_some_and(|network|
-                    network.controlled_side == player);
+                    network.controls(player));
             if human_owner {
                 run["levels"][0]["extraction"]["requires_player_activation"] =
                     json!(true);
@@ -2759,7 +2796,12 @@ pub(super) fn archive(
     if let Some(hivemind) = &selected.hivemind {
         let id = run["run_id"].as_str()
             .ok_or_else(|| invalid("HiveMind battle is missing its run identity"))?;
-        run["run_id"] = json!(format!("{id}-hivemind-side{}", hivemind.controlled_side));
+        run["run_id"] = json!(if let Some(second) =
+            hivemind.second_opponent_id.filter(|_| hivemind.controlled_side == 0) {
+            format!("{id}-hivemind-both-{}v{second}", hivemind.opponent_id)
+        } else {
+            format!("{id}-hivemind-side{}", hivemind.controlled_side)
+        });
     }
     // Different arrival patterns must have different immutable source IDs,
     // especially when saved battles later become separate PPO experiments.
@@ -2804,10 +2846,10 @@ pub(super) fn archive(
     // targets as individual ships die; local-human squads own no script.
     let mut queues = Vec::new();
     for side in 0..2_usize {
-        if !selected.ai_both &&
-            (selected.player_side.is_none_or(|player| player == side as i32 + 1) ||
-             selected.hivemind.as_ref().is_some_and(|hivemind|
-                 hivemind.controlled_side == side as i32 + 1))
+        if selected.hivemind.as_ref().is_some_and(|hivemind|
+                hivemind.controls(side as i32 + 1)) ||
+            (!selected.ai_both &&
+             selected.player_side.is_none_or(|player| player == side as i32 + 1))
         {
             continue;
         }
@@ -3015,7 +3057,7 @@ pub(super) fn archive(
     ] {
         for (child_squad, player_controlled) in children {
             if player_controlled || selected.hivemind.as_ref()
-                .is_some_and(|hivemind| hivemind.controlled_side == 2)
+                .is_some_and(|hivemind| hivemind.controls(2))
             { continue; }
             // Carrier Drones defend the real escorted command squad rather
             // than chasing distant enemies away from the convoy. Strikers
