@@ -2012,7 +2012,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         let root = catalog_path.parent()
             .ok_or_else(|| invalid("missing campaign catalog directory"))?;
         let roster_probe_start = Instant::now();
-        let (_, source_ships, source_squads, _, _) =
+        let (_, source_ships, source_squads, _, _, failed_scenes) =
             authored_menu_fleet(&catalog, root, &progress);
         let roster_probe_elapsed_ms =
             roster_probe_start.elapsed().as_secs_f64() * 1000.0;
@@ -2045,6 +2045,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             "elapsed_ms": roster_probe_elapsed_ms,
             "source_ships": observed_source_ship_count,
             "source_squads": source_squads.len(),
+            "failed_scene_probes": failed_scenes,
+            "complete": failed_scenes == 0,
         });
         status["available_source_squads"] = json!(source_squads.iter().map(|&(side, id)| json!({
             "side": side,
@@ -4345,9 +4347,10 @@ fn run_campaign_mission(
 fn authored_menu_fleet(
     catalog: &battle_catalog::BattleCatalog, root: &Path,
     progress: &battle_catalog::CampaignProgress<'_>,
-) -> (Vec<(i32, i64, i64, u8)>, Vec<(i32, i64, i64, u8)>, Vec<(i32, i64)>, Vec<(i32, i64)>, Vec<(i32, i64)>) {
+) -> (Vec<(i32, i64, i64, u8)>, Vec<(i32, i64, i64, u8)>, Vec<(i32, i64)>, Vec<(i32, i64)>, Vec<(i32, i64)>, usize) {
     let mut listed = Vec::new();
     let mut source_owned = Vec::new();
+    let mut failed_scenes = 0_usize;
     let mut seen_fleet = HashSet::new();
     let mut seen_source = HashSet::new();
     let mut common_destinations = HashMap::<i32, HashSet<i64>>::new();
@@ -4415,9 +4418,9 @@ fn authored_menu_fleet(
                                 }
                             }
                         }
-                    }
-                }
-            }
+                    } else { failed_scenes += 1; }
+                } else { failed_scenes += 1; }
+            } else { failed_scenes += 1; }
             // Intersection, not union: edits are durable across completed
             // missions and both possible on-victory physical layouts.
             common_destinations.entry(side)
@@ -4445,7 +4448,7 @@ fn authored_menu_fleet(
         .flat_map(|(side, ids)| ids.into_iter().map(move |id| (side, id)))
         .collect::<Vec<_>>();
     tactics.sort_unstable();
-    (listed, source_owned, destinations, templates, tactics)
+    (listed, source_owned, destinations, templates, tactics, failed_scenes)
 }
 
 #[cfg(feature = "client")]
@@ -5577,7 +5580,7 @@ fn run_campaign_game_menu(
                 title: entry.title.trim(), status, unlocked: *unlocked,
             }).collect::<Vec<_>>();
         let available = progress.unspent_minerals()?;
-        let (original_choices, source_owned, authored_squads, squad_templates, editable_tactics) =
+        let (original_choices, source_owned, authored_squads, squad_templates, editable_tactics, _) =
             authored_menu_fleet(&catalog, root, &progress);
         let fleet_rows = progress.fleet_rows_with_source(&source_owned);
         let squad_rows = progress.squad_rows_with_source(&authored_squads);
