@@ -46,6 +46,7 @@ const WRITE_BYTES_PER_FLUSH: usize = 256 * 1024;
 const MAX_ORDERS_PER_POLL: usize = 64;
 const MAX_PENDING_INPUT_REPLIES: usize = 256;
 const STATE_EVERY_TICKS: u64 = 5;
+const SPECTATOR_IDLE_STATE_EVERY_TICKS: u64 = STATE_EVERY_TICKS * 2;
 const MAX_PENDING_AUDIO_EVENTS: usize = 32;
 
 #[derive(Deserialize)]
@@ -287,6 +288,10 @@ pub struct RemotePlayMeasurements {
     pub spectator_commands_rejected: u64,
     #[serde(default)]
     pub spectator_snapshots_encoded: u64,
+    /// Spectator frames omitted without dropping a source sound or
+    /// starving an initial/terminal result.
+    #[serde(default)]
+    pub spectator_idle_frames_deferred: u64,
     pub rejected_connections: u64,
     #[serde(default)]
     pub rejected_spectator_seats: u64,
@@ -1352,9 +1357,10 @@ impl NativeRemotePlay {
             );
         }
         let has_events = !view.combat.events().is_empty();
-        let publish_frame = self.last_state != Some(episode) ||
-            view.tick % STATE_EVERY_TICKS == 0 ||
+        let force_view = self.last_state != Some(episode) ||
             view.terminal_result.is_some() || self.force_initial_state;
+        let publish_frame = force_view ||
+            view.tick % STATE_EVERY_TICKS == 0;
         if !has_events && !publish_frame {
             self.measurements.fog_query_views_skipped_no_output += sides.len() as u64;
             return;
@@ -1427,6 +1433,17 @@ impl NativeRemotePlay {
         for peer in &mut self.peers {
             let Some(side) = peer.side else { continue };
             let spectator = peer.spectator;
+            if spectator && !force_view &&
+                view.tick % SPECTATOR_IDLE_STATE_EVERY_TICKS != 0 &&
+                pending_audio.get(&side).is_none_or(|sounds| sounds.is_empty())
+            {
+                // A spectator cannot issue orders, and an unchanged view
+                // need not be encoded every commander's presentation tick.
+                // Audio-bearing and terminal frames retain normal delivery
+                // so watching never silently erases game events.
+                measurements.spectator_idle_frames_deferred += 1;
+                continue;
+            }
             let encoded = snapshots.entry((side, spectator)).or_insert_with(|| {
                 let started = Instant::now();
                 let cues = pending_audio.get(&side).map(Vec::as_slice).unwrap_or(&[]);
