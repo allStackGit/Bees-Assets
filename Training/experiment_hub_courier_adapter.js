@@ -93,6 +93,7 @@ const COURIER_METRIC_CATALOG={
         'training_lineage_async_calibrated',
         'training_lineage_async_overlap_seconds',
         'training_lineage_async_wait_max_seconds',
+        'training_lineage_async_exposed_seconds',
         'training_lineage_async_lag_max_updates',
         'training_lineage_async_recalibrations',
         'training_lineage_async_discarded_steps',
@@ -405,7 +406,7 @@ function courierMetrics(source) {
     const criticalWorkerFields=[
         'collect_steps_per_second','collection_seconds',
         'optimization_seconds','async_wait_seconds',
-        'async_optimizer_seconds','simulation_seconds',
+        'async_exposed_seconds','async_optimizer_seconds','simulation_seconds',
         'inference_seconds','gpu_policy_snapshot_seconds',
         'remote_roundtrip_seconds','sim_physical_processes',
         'sim_process_ceiling','gpu_fwd_stream_seconds',
