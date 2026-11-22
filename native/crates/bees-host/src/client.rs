@@ -430,6 +430,7 @@ impl NativeClient {
         if self.window.is_key_pressed(Key::Escape, KeyRepeat::No) {
             if self.show_controls_help {
                 self.show_controls_help = false;
+                self.next_step = Instant::now();
             } else if self.renderer.show_shooting_menu {
                 self.renderer.show_shooting_menu = false;
                 self.shooting_press = None;
@@ -437,8 +438,14 @@ impl NativeClient {
                 return Ok(NativeClientAction::Quit);
             }
         }
-        if self.window.is_key_pressed(Key::F1, KeyRepeat::No) {
+        if self.window.is_key_pressed(Key::F1, KeyRepeat::No) &&
+            self.held_fire_target.is_none()
+        {
             self.show_controls_help = !self.show_controls_help;
+            // Help freezes the local simulation clock. On close, restart
+            // the wall-clock pacing baseline rather than counting the time
+            // spent reading help as a backlog of physics ticks.
+            self.next_step = Instant::now();
             if self.show_controls_help {
                 self.renderer.show_shooting_menu = false;
                 self.shooting_press = None;
@@ -565,11 +572,13 @@ impl NativeClient {
         };
         if view.terminal_result.is_some() { self.held_fire_target = None; }
         self.bounds = bounds;
-        if self.window.is_key_pressed(Key::Space, KeyRepeat::No) {
+        if !self.show_controls_help &&
+            self.window.is_key_pressed(Key::Space, KeyRepeat::No)
+        {
             self.paused = !self.paused;
             self.next_step = now;
         }
-        self.audio.set_paused(self.paused);
+        self.audio.set_paused(self.paused || self.show_controls_help);
         if self.window.is_active() && self.window.is_key_pressed(Key::F7, KeyRepeat::No) {
             self.input_feedback = if self.audio.toggle_muted() {
                 "Audio muted"
@@ -606,7 +615,8 @@ impl NativeClient {
             self.performance.present_at_start = self.window_update_wall_seconds;
             self.performance.clamps_at_start = self.pacing_lag_clamps;
         }
-        if self.window.is_active() && self.window.is_key_pressed(Key::F9, KeyRepeat::No) &&
+        if !self.show_controls_help && self.window.is_active() &&
+            self.window.is_key_pressed(Key::F9, KeyRepeat::No) &&
             self.held_fire_target.is_none()
         {
             if let Some(hotseat) = &mut self.hotseat {
@@ -647,8 +657,10 @@ impl NativeClient {
             self.renderer.show_minimap = !self.renderer.show_minimap;
             if !self.renderer.show_minimap { self.minimap_dragging = false; }
         }
-        let single_step = self.paused && self.window.is_key_pressed(Key::N, KeyRepeat::No);
-        if self.window.is_key_pressed(Key::Tab, KeyRepeat::No) && world_count > 1 && self.held_fire_target.is_none() {
+        let single_step = self.paused && !self.show_controls_help &&
+            self.window.is_key_pressed(Key::N, KeyRepeat::No);
+        if !self.show_controls_help && self.window.is_key_pressed(Key::Tab, KeyRepeat::No) &&
+            world_count > 1 && self.held_fire_target.is_none() {
             self.selected_world = (self.selected_world + 1) % world_count;
             self.audio.select_location(
                 self.music_locations.get(self.selected_world).copied().flatten(),
@@ -1557,7 +1569,8 @@ impl NativeClient {
             self.next_step = after_frame.checked_sub(max_lag).unwrap_or(after_frame);
             self.pacing_lag_clamps += 1;
         }
-        let due = if briefing { 0 } else if single_step { 1 }
+        let due = if briefing || self.show_controls_help { 0 }
+            else if single_step { 1 }
             else if !self.paused && after_frame >= self.next_step {
                 (1 + after_frame.duration_since(self.next_step).as_nanos()
                     / fixed_dt.as_nanos().max(1))
