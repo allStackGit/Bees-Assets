@@ -435,11 +435,24 @@ async function main(argv=process.argv.slice(2)) {
         releaseBusy=true;
         try {
             await releases.refresh();
-            // Update browser assets independently even when all native jobs
-            // are running. Git show reads the fetched object without changing
-            // the checkout used by the coordinator or native adapters.
+            const candidate=releases.workerSourceCommit||
+                releases.latest.worker?.source_commit;
+            const publishedImpact=workerActivationImpact(candidate&&
+                candidate!==runtime.source_commit
+                ?await workerChangedPaths(releases.sources.worker.path,
+                    runtime.source_commit,candidate):[]);
+            frontend.backendPending=publishedImpact.coordinator;
+            const agentBase=releases.bootVersions.worker||runtime.source_commit;
+            frontend.agentPending=workerActivationImpact(candidate&&
+                candidate!==agentBase
+                ?await workerChangedPaths(releases.sources.worker.path,agentBase,candidate)
+                :[]).agent;
+            // Browser-only assets are safe to hot-swap. Keep old compatible
+            // pages while a matching backend or agent generation is pending;
+            // exposing newer controls against old APIs breaks evaluation UI.
             const newest=releases.frontendSourceCommit;
-            if(newest&&newest!==frontend.checkedSource) {
+            if(newest&&!frontend.backendPending&&!frontend.agentPending&&
+                newest!==frontend.checkedSource) {
                 try {
                     const next=frontendSnapshot(runtime,newest,releases.sources.worker.path);
                     frontend.checkedSource=newest;
@@ -457,18 +470,6 @@ async function main(argv=process.argv.slice(2)) {
                         String(error.message||error));
                 }
             }
-            const candidate=releases.workerSourceCommit||
-                releases.latest.worker?.source_commit;
-            const publishedImpact=workerActivationImpact(candidate&&
-                candidate!==runtime.source_commit
-                ?await workerChangedPaths(releases.sources.worker.path,
-                    runtime.source_commit,candidate):[]);
-            frontend.backendPending=publishedImpact.coordinator;
-            const agentBase=releases.bootVersions.worker||runtime.source_commit;
-            frontend.agentPending=workerActivationImpact(candidate&&
-                candidate!==agentBase
-                ?await workerChangedPaths(releases.sources.worker.path,agentBase,candidate)
-                :[]).agent;
             const active=hub.state.jobs.some(job=>job.dispatch_id&&
                 !job.capacity_released_at&&
                 !['finished','failed','stopped','cancelled'].includes(job.status));
