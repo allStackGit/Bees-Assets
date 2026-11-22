@@ -47,20 +47,27 @@ enum ReinforcementPattern {
     AllAtStart,
     BeesTimed, HumansTimed, BothTimed,
     BeesOnDeath, HumansOnDeath, BothOnDeath,
+    BeesPursueExtraction, HumansPursueExtraction,
 }
 
 impl ReinforcementPattern {
     fn includes(self, side: usize) -> bool {
         match self {
             Self::AllAtStart => false,
-            Self::BeesTimed | Self::BeesOnDeath => side == 0,
-            Self::HumansTimed | Self::HumansOnDeath => side == 1,
+            Self::BeesTimed | Self::BeesOnDeath |
+            Self::BeesPursueExtraction => side == 0,
+            Self::HumansTimed | Self::HumansOnDeath |
+            Self::HumansPursueExtraction => side == 1,
             Self::BothTimed | Self::BothOnDeath => true,
         }
     }
 
     fn on_command_ship_death(self) -> bool {
         matches!(self, Self::BeesOnDeath | Self::HumansOnDeath | Self::BothOnDeath)
+    }
+
+    fn on_opposing_extraction(self) -> bool {
+        matches!(self, Self::BeesPursueExtraction | Self::HumansPursueExtraction)
     }
 
     fn label(self) -> &'static str {
@@ -72,6 +79,8 @@ impl ReinforcementPattern {
             Self::BeesOnDeath => "bee-death-reserves",
             Self::HumansOnDeath => "human-death-reserves",
             Self::BothOnDeath => "both-death-reserves",
+            Self::BeesPursueExtraction => "bee-exit-pursuit",
+            Self::HumansPursueExtraction => "human-exit-pursuit",
         }
     }
 }
@@ -131,6 +140,7 @@ impl AiTactics {
 fn choose_reinforcements(
     fleet_sizes: [usize; 2],
     no_reserves_side: Option<usize>,
+    escaping_side: Option<usize>,
 ) -> Result<Option<ReinforcementPattern>, Box<dyn Error>> {
     let mut patterns = vec![
         (ReinforcementPattern::AllAtStart,
@@ -154,6 +164,24 @@ fn choose_reinforcements(
         patterns.push((ReinforcementPattern::BothOnDeath,
             "Both factions have loss-triggered reserves",
             "  [Each side reinforces when its command ship dies]"));
+    }
+    // Real source fleet extraction can release an enemy pursuit force
+    // only AFTER the named escaping command hull crosses the actual exit.
+    // On ordinary elimination missions this event can never happen, so
+    // it is not an available menu choice.
+    if let Some(escaper) = escaping_side {
+        let pursuer = 1 - escaper;
+        if fleet_sizes[pursuer] > 1 && no_reserves_side != Some(pursuer) {
+            patterns.push(if pursuer == 0 {
+                (ReinforcementPattern::BeesPursueExtraction,
+                    "Bee pursuit after enemy extraction",
+                    "  [Reserves enter after human flagship exits]")
+            } else {
+                (ReinforcementPattern::HumansPursueExtraction,
+                    "Human pursuit after enemy extraction",
+                    "  [Reserves enter after Bee flagship exits]")
+            });
+        }
     }
     if patterns.len() == 1 {
         return Ok(Some(ReinforcementPattern::AllAtStart));
@@ -482,7 +510,12 @@ pub(super) fn choose(save_root: &Path) -> Result<Option<FleetChoice>, Box<dyn Er
         let reserved_side = objective_side
             .filter(|_| matches!(objective, Objective::Withdrawal))
             .map(|side| (side - 1) as usize);
-        let Some(pattern) = choose_reinforcements(fleet_sizes, reserved_side)? else {
+        let escaping_side = objective_side
+            .filter(|_| matches!(objective, Objective::Extraction | Objective::Withdrawal))
+            .map(|side| (side - 1) as usize);
+        let Some(pattern) = choose_reinforcements(
+            fleet_sizes, reserved_side, escaping_side,
+        )? else {
             return Ok(None);
         };
         pattern
@@ -549,7 +582,12 @@ pub(super) fn choose_multiplayer(
         let reserved_side = objective_side
             .filter(|_| matches!(objective, Objective::Withdrawal))
             .map(|side| (side - 1) as usize);
-        let Some(pattern) = choose_reinforcements(fleet_sizes, reserved_side)? else {
+        let escaping_side = objective_side
+            .filter(|_| matches!(objective, Objective::Extraction | Objective::Withdrawal))
+            .map(|side| (side - 1) as usize);
+        let Some(pattern) = choose_reinforcements(
+            fleet_sizes, reserved_side, escaping_side,
+        )? else {
             return Ok(None);
         };
         pattern
@@ -600,7 +638,12 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
         let reserved_side = objective_side
             .filter(|_| matches!(objective, Objective::Withdrawal))
             .map(|side| (side - 1) as usize);
-        let Some(pattern) = choose_reinforcements(fleet_sizes, reserved_side)? else {
+        let escaping_side = objective_side
+            .filter(|_| matches!(objective, Objective::Extraction | Objective::Withdrawal))
+            .map(|side| (side - 1) as usize);
+        let Some(pattern) = choose_reinforcements(
+            fleet_sizes, reserved_side, escaping_side,
+        )? else {
             return Ok(None);
         };
         pattern
@@ -2243,7 +2286,8 @@ pub(super) fn archive(
         if !defer_side(side) { continue; }
         let late = &squad_ids[side][1..];
         for (index, &squad) in late.iter().enumerate() {
-            let seconds = if selected.reinforcements.on_command_ship_death() &&
+            let seconds = if (selected.reinforcements.on_command_ship_death() ||
+                selected.reinforcements.on_opposing_extraction()) &&
                 !matches!(selected.objective, Objective::Survival)
             {
                 // Events are ordered with other authored wave triggers
@@ -2275,14 +2319,21 @@ pub(super) fn archive(
                     group.extend(children.iter().copied());
                 }
                 if seconds == 0 {
-                    // The first source ship (11 Bees / 12 Humans) remains
-                    // deployed initially even when its faction has reserves.
-                    // The Level's death event, not a timer or UI condition,
-                    // is the sole activation source.
-                    json!({
-                        "on_ship_destroyed": if side == 0 { 11 } else { 12 },
-                        "squad_item_ids": group,
-                    })
+                    // The pursuit gate waits on the opposing physical
+                    // command ship's actual ShipExtracted event. Ordinary
+                    // death reserves still use their own faction's real
+                    // ShipDied callback. No UI flag or simulated exit.
+                    if selected.reinforcements.on_opposing_extraction() {
+                        json!({
+                            "on_ship_extracted": if side == 0 { 12 } else { 11 },
+                            "squad_item_ids": group,
+                        })
+                    } else {
+                        json!({
+                            "on_ship_destroyed": if side == 0 { 11 } else { 12 },
+                            "squad_item_ids": group,
+                        })
+                    }
                 } else {
                     json!({
                         "after_seconds": seconds as f32,
