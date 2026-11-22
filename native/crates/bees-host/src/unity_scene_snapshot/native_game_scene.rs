@@ -26,6 +26,11 @@ struct GameScene {
     #[serde(default)]
     local_player_side: Option<i32>,
     command_settings: GameCommandSettings,
+    /// Native-owned mission rules. The shared Level validates and installs
+    /// these alongside the same physical scene used by game and training;
+    /// scene files never need to serialize a shadow scripted game engine.
+    #[serde(default)]
+    mission: Option<NativeSceneMission>,
     ships: Vec<GameShip>,
     /// Complete, inert native hull definitions for future campaign FleetShips.
     /// They are parsed and validated identically to physical ships, then
@@ -1546,6 +1551,7 @@ impl NativePhysicalScene {
             has_obstacles: false,
             command_settings: settings,
             entities,
+            native_mission: raw.mission,
             fleet_templates,
             fleet_template_squads,
             // Apply explicitly authored initial static layout before
