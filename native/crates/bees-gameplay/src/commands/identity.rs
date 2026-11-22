@@ -41,6 +41,9 @@ pub enum NativeLocalCommandAction<'a> {
     /// and reserve actual free healing slots.
     HealAvailable,
     FullRetreat { warp_gate_id: i64 },
+    /// Use the source FullRetreat command's nearest friendly live WarpGate
+    /// selection when the scripted Level has no fixed gate identity.
+    FullRetreatNearest,
 }
 
 impl NativeLocalCommandAction<'_> {
@@ -63,7 +66,8 @@ impl NativeLocalCommandAction<'_> {
             Self::Patrol { .. } => LocalCommandKind::Patrol,
             Self::Mining { .. } | Self::MiningNearest => LocalCommandKind::Mining,
             Self::Heal { .. } | Self::HealAvailable => LocalCommandKind::Heal,
-            Self::FullRetreat { .. } => LocalCommandKind::FullRetreat,
+            Self::FullRetreat { .. } | Self::FullRetreatNearest =>
+                LocalCommandKind::FullRetreat,
         }
     }
 }
