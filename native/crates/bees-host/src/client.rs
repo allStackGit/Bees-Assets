@@ -136,6 +136,13 @@ pub struct NativeClient {
     /// boundary rather than introducing an independent game clock.
     codex_open: bool,
     codex_selected: u8,
+    /// Unity Ship.ShowShipStats appears only after a stationary one-second
+    /// hover. The cursor query samples at a bounded UI cadence, never on a
+    /// physics tick and never through a new mutable gameplay subsystem.
+    hovered_ship: Option<i64>,
+    hover_started: Instant,
+    hover_sampled: Instant,
+    ship_inspection_frames: u64,
     // Window titles are OS messages, not part of a physical simulation
     // step. Refresh their optional diagnostics at human-readable cadence.
     last_title_update: Option<Instant>,
@@ -252,6 +259,8 @@ impl NativeClient {
             surrender_confirmation: None,
             codex_open: false,
             codex_selected: 18,
+            hovered_ship: None, hover_started: now, hover_sampled: now,
+            ship_inspection_frames: 0,
             last_title_update: None,
             performance: NativeLivePerformance::new(now),
             edge_scroll_enabled: false,
@@ -629,6 +638,9 @@ impl NativeClient {
         let owner = (view.world_id, view.episode_revision);
         if self.selection_owner != Some(owner) {
             self.renderer.selected_ship = None;
+            self.hovered_ship = None;
+            self.hover_started = now;
+            self.hover_sampled = now;
             self.selection_drag = None;
             self.minimap_dragging = false;
             self.hud_press = None;
@@ -993,6 +1005,32 @@ impl NativeClient {
         }
         let allows_input = !self.show_controls_help && !briefing &&
             !self.playback && view.terminal_result.is_none();
+        // Stop inspecting when a UI modal, drag, minimap or command gesture
+        // owns the pointer. The source popup is purely observational, so
+        // neither pause nor input admission depends on its dwell timer.
+        let inspecting = self.window.is_active() && allows_input &&
+            !self.renderer.show_shooting_menu && !self.window.get_mouse_down(MouseButton::Left) &&
+            !self.window.get_mouse_down(MouseButton::Right) &&
+            self.held_fire_target.is_none() && self.selection_drag.is_none();
+        if !inspecting {
+            self.hovered_ship = None;
+            self.hover_started = now;
+        } else if now.duration_since(self.hover_sampled) >= Duration::from_millis(100) {
+            self.hover_sampled = now;
+            let picked = mouse.and_then(|(x, y)| {
+                if self.renderer.minimap_world_at(bounds, x, y).is_some() ||
+                    self.renderer.tactical_action_at(x, y).is_some() ||
+                    self.renderer.squad_tab_at(&view, x, y).is_some() {
+                    None
+                } else {
+                    self.renderer.pick_ship(&view, x, y)
+                }
+            });
+            if picked != self.hovered_ship {
+                self.hovered_ship = picked;
+                self.hover_started = now;
+            }
+        }
         let pointer_active = self.window.is_active();
         let left_down = self.window.get_mouse_down(MouseButton::Left);
         // The strategy picker is purely presentational. It never changes
@@ -1646,6 +1684,13 @@ impl NativeClient {
         });
         if accepts_orders {
             self.renderer.draw_tactical_feedback(self.input_feedback);
+        }
+        if inspecting && now.duration_since(self.hover_started) >= Duration::from_secs(1) {
+            if let Some(ship_id) = self.hovered_ship {
+                if self.renderer.draw_ship_inspection(&view, ship_id) {
+                    self.ship_inspection_frames += 1;
+                }
+            }
         }
         if self.performance.enabled {
             let label = if self.performance.sampled {

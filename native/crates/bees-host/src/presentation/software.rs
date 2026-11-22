@@ -3842,6 +3842,63 @@ impl NativeSoftwareRenderer {
                 focus + 1, entries.len()), 1, [155, 178, 206]);
     }
 
+    /// Original Ship.ShowShipStats reads an existing physical hull after
+    /// a one-second hover. The live HUD presents the same authoritative
+    /// health/TSV and faction, without adding a second ship data model.
+    /// Enemy fog is checked AGAIN at draw time so a stale hover cannot
+    /// reveal an obscured or destroyed hull.
+    #[cfg(feature = "client")]
+    pub fn draw_ship_inspection(
+        &mut self, view: &NativeRenderWorldView<'_>, ship_id: i64,
+    ) -> bool {
+        if self.width < 440 || self.height < 300 { return false; }
+        let Some(ship) = view.combat.ship(ship_id)
+            .filter(|ship| !ship.vitals.is_dead()) else { return false };
+        let Some(body) = view.combat.ship_body(ship_id)
+            .filter(|body| body.active && self.fog_visible_at(view, body.motion.position))
+            else { return false };
+        let name = Self::source_ship_catalog().by_type(ship.ship_type)
+            .map(|class| class.name.as_str()).unwrap_or("Unknown ship");
+        let banner = format!("{name}  |  {}",
+            if ship.side == 1 { "Bees" } else if ship.side == 2 {
+                "Humans"
+            } else { "Neutral" });
+        let life = format!("Health: {} / {}", ship.vitals.health(),
+            ship.vitals.max_health());
+        let resources = format!("TSV: {} / {}", ship.vitals.tsv(),
+            ship.vitals.max_tsv());
+        let state = view.combat.ship_cease_fire(ship_id)
+            .map(|stopped| if stopped { "Weapons: Cease fire" }
+                else { "Weapons: Attack on sight" })
+            .unwrap_or("Weapons: Current orders unavailable");
+        let carrier = view.combat.game_striker_carrier(ship_id)
+            .or_else(|| view.combat.policy_striker_carrier(ship_id))
+            .or_else(|| view.combat.drone_carrier(ship_id));
+        let formation = match carrier {
+            Some(Some(parent)) => format!("Carrier: {parent}"),
+            Some(None) => "Carrier: Unassigned".to_owned(),
+            None => format!("Physical ship: {ship_id}"),
+        };
+        let lines = [&banner, &life, &resources, &formation];
+        let panel_width = (lines.iter().map(|line| text::width(line, 1))
+            .max().unwrap_or(0) + 26).max(text::width(state, 1) + 26)
+            .min(self.width.saturating_sub(28));
+        let left = 14;
+        let top = 65;
+        let bottom = (top + 5 * (text::HEIGHT + 7) + 18).min(self.height);
+        for y in top..bottom {
+            self.pixels[y * self.width + left..y * self.width + left + panel_width]
+                .fill(if y < top + 3 { 0x5985aa } else { 0x101c2b });
+        }
+        for (index, line) in lines.into_iter().chain(std::iter::once(&state)).enumerate() {
+            let label = text::fit(line, panel_width.saturating_sub(20));
+            text::draw_at(&mut self.pixels, self.width,
+                left + 10, top + 11 + index * (text::HEIGHT + 7), label,
+                1, if index == 0 { [237, 245, 254] } else { [203, 223, 237] });
+        }
+        true
+    }
+
     /// F8 toggles measurements on the actual player window. Keep a small,
     /// fixed top-right readout separate from the authoritative combat world,
     /// its simulation RNG and recorded player actions. The HUD consumes only
