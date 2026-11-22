@@ -705,36 +705,16 @@ impl CampaignProgress<'_> {
         }).collect()
     }
 
-    /// Merge source-owned player ships with existing career rows for the
-    /// native menu. A real source identity needs no fabricated battle
-    /// receipt just to appear in the player's pre-battle fleet history.
+    /// One career projection for both durable-only and source-backed
+    /// native menus. Scene identity provides class/initial assignment;
+    /// only committed career receipts supply battle and loss statistics.
     pub fn fleet_rows_with_source(&self, source: &[(i32, i64, i64, u8)]) -> Vec<String> {
-        let mut rows = self.fleet_rows();
-        let mut seen = HashSet::new();
-        for &(side, id, source_squad, ship_type) in source {
-            if !seen.insert(id) || self.fleet.contains_key(&id) ||
-                self.purchased_ship(id).is_some() ||
-                self.authored_roster.contains_key(&id)
-            {
-                continue;
-            }
-            let name = self.fleet_ship_name(id)
-                .map_or(String::new(), |value| format!(" ({value})"));
-            rows.push(format!(
-                "#{id}{name} S{side} Type {ship_type} Original - no completed battles {}",
-                self.squad_label(source_squad),
-            ));
-        }
-        rows
-    }
-
-    pub fn fleet_rows(&self) -> Vec<String> {
-        // A FleetShip has an identity before its first completed campaign
-        // battle. Display owned purchases and original roster transfers
-        // alongside combat career history without fabricating battle stats.
+        let source_by_id = source.iter().map(|&(side, id, squad, kind)|
+            (id, (side, squad, kind))).collect::<HashMap<_, _>>();
         let mut ids = self.fleet.keys().copied()
             .chain(self.purchases.iter().map(|(_, ship)| ship.fleet_ship_id))
             .chain(self.authored_roster.keys().copied())
+            .chain(source_by_id.keys().copied())
             .collect::<Vec<_>>();
         ids.sort_unstable();
         ids.dedup();
@@ -743,16 +723,21 @@ impl CampaignProgress<'_> {
                 .map_or(String::new(), |name| format!(" ({name})"));
             let purchase = self.purchased_ship(id);
             let authored = self.authored_roster.get(&id);
+            let scene = source_by_id.get(&id).copied();
             let assignment = purchase.map(|(_, ship)| ship.saved_squad_id)
                 .or_else(|| authored.map(|owner| owner.current_saved_squad_id))
+                .or_else(|| scene.map(|(_, squad, _)| squad))
                 .map(|squad| if squad == 0 {
                     " Reserve".to_owned()
                 } else {
                     format!(" {}", self.squad_label(squad))
                 }).unwrap_or_default();
+            let original_type = if purchase.is_none() {
+                scene.map_or(String::new(), |(_, _, kind)| format!(" Type {kind}"))
+            } else { String::new() };
             if let Some(ship) = self.fleet.get(&id) {
                 return Some(format!(
-                    "#{id}{name} S{} W{}/{} M{} Hit{} Taken{} Kill{}{}{}",
+                    "#{id}{name} S{}{original_type} W{}/{} M{} Hit{} Taken{} Kill{}{}{}",
                     ship.side, ship.battles_won, ship.battles_fought,
                     ship.minerals_mined, ship.combat.enemy_tsv_damage_done,
                     ship.combat.tsv_damage_received, ship.combat.attributed_enemy_kills,
@@ -765,12 +750,22 @@ impl CampaignProgress<'_> {
                     purchase.ship_type,
                 ));
             }
-            authored.map(|owner| format!(
-                "#{id}{name} S{} Original - no completed battles{assignment}",
-                owner.side,
+            if let Some(owner) = authored {
+                return Some(format!(
+                    "#{id}{name} S{}{original_type} Original - no completed battles{assignment}",
+                    owner.side,
+                ));
+            }
+            scene.map(|(side, _, _)| format!(
+                "#{id}{name} S{side}{original_type} Original - no completed battles{assignment}",
             ))
         }).collect()
     }
+
+    pub fn fleet_rows(&self) -> Vec<String> {
+        self.fleet_rows_with_source(&[])
+    }
+
 }
 
 impl BattleCatalog {
