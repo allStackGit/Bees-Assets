@@ -254,6 +254,9 @@ pub struct NativeArchivedBattleReceipt {
     pub scored_player_side: Option<i32>,
     pub player_score: Option<i64>,
     pub player_match_counts: Option<(u64, u64, u64)>,
+    pub opposing_scored_side: Option<i32>,
+    pub opposing_player_score: Option<i64>,
+    pub opposing_player_match_counts: Option<(u64, u64, u64)>,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -859,10 +862,17 @@ impl NativeRemotePlay {
                                 }
                                 let mut result = receipt.battle_result.clone();
                                 result["viewer_side"] = json!(side);
+                                let (score, counts) = if receipt.scored_player_side ==
+                                    Some(side)
+                                {
+                                    (receipt.scored_player_side.zip(receipt.player_score),
+                                     receipt.player_match_counts)
+                                } else {
+                                    (receipt.opposing_scored_side.zip(receipt.opposing_player_score),
+                                     receipt.opposing_player_match_counts)
+                                };
                                 Self::attach_authorized_match_score(
-                                    &mut result, side,
-                                    receipt.scored_player_side.zip(receipt.player_score),
-                                    receipt.player_match_counts,
+                                    &mut result, side, score, counts,
                                 );
                                 let _ = peer.enqueue(&result);
                                 self.measurements.archived_terminal_receipts_sent += 1;
@@ -1347,10 +1357,12 @@ impl NativeRemotePlay {
             // previously decorated receipt for a different recipient.
             let mut receipt = base_receipt.clone();
             receipt["viewer_side"] = json!(peer.side);
+            let owner = peer.side.expect("authenticated terminal recipient");
+            let player_match = view.player_match_for_side(owner);
             Self::attach_authorized_match_score(
-                &mut receipt,
-                peer.side.expect("authenticated terminal recipient"),
-                view.campaign_score, view.player_match_counts,
+                &mut receipt, owner,
+                player_match.map(|(score, _)| (owner, score)),
+                player_match.and_then(|(_, counts)| counts),
             );
             let _ = peer.enqueue(&receipt);
             if !peer.closed {

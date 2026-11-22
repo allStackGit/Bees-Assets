@@ -2849,6 +2849,15 @@ fn archived_native_remote_receipts_from_root(
                 row.get("ships_destroyed_by_player")?.as_u64()?,
             ))
         );
+        let opposing_scored_side = summary["opposing_scored_side"].as_i64()
+            .and_then(|side| i32::try_from(side).ok())
+            .filter(|side| matches!(side, 1 | 2));
+        let opposing_player_match_counts = summary.get("opposing_player_match_counts")
+            .and_then(|row| Some((
+                row.get("ships_lost")?.as_u64()?,
+                row.get("ships_returned")?.as_u64()?,
+                row.get("ships_destroyed_by_player")?.as_u64()?,
+            )));
         receipts.push(bees_host::remote_play::NativeArchivedBattleReceipt {
             session_id: id.to_owned(),
             authorized_sides: sides,
@@ -2860,6 +2869,9 @@ fn archived_native_remote_receipts_from_root(
             scored_player_side,
             player_score: summary["player_score"].as_i64(),
             player_match_counts,
+            opposing_scored_side,
+            opposing_player_score: summary["opposing_player_score"].as_i64(),
+            opposing_player_match_counts,
         });
     }
     Ok(receipts)

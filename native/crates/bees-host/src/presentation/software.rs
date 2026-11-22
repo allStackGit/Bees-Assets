@@ -2511,8 +2511,9 @@ impl NativeSoftwareRenderer {
         // without waiting for the terminal summary. A LAN opponent or
         // spectator cannot inherit the campaign owner's private HUD.
         if view.terminal_result.is_none() {
-            if let Some((score_side, score)) = view.campaign_score {
-                if view.player_authority.player_viewer_side() == Some(score_side) {
+            if let Some((score, _)) = view.player_authority.player_viewer_side()
+                .and_then(|side| view.player_match_for_side(side))
+            {
                     let label = format!("Mission score {score:+}");
                     let y = if view.survival.is_some() || view.demolition.is_some() ||
                         view.escort.is_some() || view.combat.extraction_objective().is_some() ||
@@ -2521,7 +2522,6 @@ impl NativeSoftwareRenderer {
                     { 8 + 2 * (text::HEIGHT + 4) } else { 8 };
                     text::draw_centered(&mut self.pixels, self.width, y,
                         &label, 1, [198, 231, 248]);
-                }
             }
         }
         if self.show_minimap {
@@ -3236,11 +3236,10 @@ impl NativeSoftwareRenderer {
         let reason = battle_outcome_reason(view, result);
         let detail = format!("{reason}  /  {:.2} s", result.duration_seconds);
         let context = format!("World {}  /  Episode {}", view.world_id.0, view.episode_revision + 1);
-        let player_summary = view.campaign_score
-            .filter(|(side, _)| view.player_authority.player_viewer_side() == Some(*side))
-            .map(|(_, score)| {
-                let (lost, returned, kills) = view.player_match_counts
-                    .unwrap_or((0, 0, 0));
+        let player_summary = view.player_authority.player_viewer_side()
+            .and_then(|side| view.player_match_for_side(side))
+            .map(|(score, counts)| {
+                let (lost, returned, kills) = counts.unwrap_or((0, 0, 0));
                 format!("Score {score:+}  |  Lost {lost}  Returned {returned}  Kills {kills}")
             });
         let title_scale = if self.width >= 400 && self.height >= 176 { 2 } else { 1 };
