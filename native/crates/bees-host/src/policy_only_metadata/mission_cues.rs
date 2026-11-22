@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 pub enum NativeMissionCue {
     PlutoHoneybeeSpotted,
     PlutoScoutReportComplete,
+    PlutoGunshipBriefingComplete,
     PlutoHoneybeeDestroyed,
     FireTankSpotted,
     FireTankDestroyed,
@@ -32,6 +33,7 @@ impl NativeMissionCue {
         matches!((self, cue),
             (Self::PlutoHoneybeeSpotted, CampaignCue::PlutoAnomalyHoneybeeSpotted) |
             (Self::PlutoScoutReportComplete, CampaignCue::PlutoAnomalyScoutReportComplete) |
+            (Self::PlutoGunshipBriefingComplete, CampaignCue::PlutoAnomalyGunshipBriefingComplete) |
             (Self::PlutoHoneybeeDestroyed, CampaignCue::PlutoAnomalyHoneybeeDestroyed) |
             (Self::FireTankSpotted, CampaignCue::FireTankSpotted { .. }) |
             (Self::FireTankDestroyed, CampaignCue::FireTankDestroyed { .. }) |
@@ -50,7 +52,8 @@ impl NativeMissionCue {
         match spec {
             Some(CampaignDialogueSpec::PlutoAnomaly { .. }) =>
                 matches!(self, Self::PlutoHoneybeeSpotted |
-                    Self::PlutoScoutReportComplete | Self::PlutoHoneybeeDestroyed),
+                    Self::PlutoScoutReportComplete | Self::PlutoGunshipBriefingComplete |
+                    Self::PlutoHoneybeeDestroyed),
             Some(CampaignDialogueSpec::TitaniaMinesweeper { .. }) =>
                 matches!(self, Self::FireTankSpotted | Self::FireTankDestroyed),
             Some(CampaignDialogueSpec::TitaniaBeenoculars { .. }) =>
