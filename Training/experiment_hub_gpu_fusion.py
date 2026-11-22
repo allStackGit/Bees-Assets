@@ -584,15 +584,23 @@ class FrozenGpuGraphs:
             if not all(_equivalent(a, b, self.rtol, self.atol)
                        for a, b in zip(original, candidate)):
                 return None
-            # Replaying with different inputs is essential: capturing the
-            # current outputs as constants could otherwise pass one probe.
+            # Verify *changed* observations too, not the same input
+            # copied to a fresh buffer. This detects graphs that captured
+            # input-dependent preprocessing as constants. Preserve reset
+            # masks and recurrent states; perturb only floating observations.
             changed = [
-                tuple(x+torch.zeros_like(x) for x in row)
+                (row[0] + 0.125, *row[1:])
+                if row[0].is_floating_point() else row
                 for row in args
             ]
+            changed_expected = self._eager(changed)
+            changed_actual = self._replay(profile, changed)
             if not all(_equivalent(a, b, self.rtol, self.atol)
-                       for a, b in zip(original, self._replay(profile, changed))):
+                       for a, b in zip(changed_expected, changed_actual)):
                 return None
+            if not all(_equivalent(a, b, self.rtol, self.atol)
+                       for a, b in zip(original, candidate)):
+                raise ValueError("Graph replay reused or overwrote a prior output")
             eager_times, graph_times = [], []
             for _ in range(3):
                 eager_times.append(self._elapsed(lambda: self._eager(args)))
