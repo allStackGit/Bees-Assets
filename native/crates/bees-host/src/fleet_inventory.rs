@@ -60,6 +60,17 @@ pub struct NativeFleetCombatStats {
     pub queen_minions_spawned: u64,
 }
 
+/// Original GameState's per-match player death and departure counters.
+/// Unlike FleetShip careers these include transient ships from actual
+/// combat, with no invented permanent identity or per-frame ship scan.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativePlayerMatchCounts {
+    pub ships_lost: u64,
+    pub ships_returned: u64,
+    pub ships_destroyed_by_player: u64,
+}
+
 /// The owning native Level constructs this from its *real* FleetShip
 /// registry, including temporary/minion ships with persistent=false.
 /// A killed ship's record stays available for deferred damage/economics
@@ -80,6 +91,8 @@ pub struct NativeFleetInventory {
     campaign_player_side: Option<i32>,
     #[serde(default)]
     campaign_score: i64,
+    #[serde(default)]
+    player_match_counts: NativePlayerMatchCounts,
 }
 
 /// Durable FleetShip career/mining credit, distinct from physical hull TSV.
@@ -176,6 +189,7 @@ impl NativeFleetInventory {
             entries, killed: HashSet::new(), combat: HashMap::new(),
             career_tracking: false,
             campaign_player_side: None, campaign_score: 0,
+            player_match_counts: NativePlayerMatchCounts::default(),
         })
     }
 
@@ -208,6 +222,10 @@ impl NativeFleetInventory {
 
     pub fn campaign_score_snapshot(&self) -> Option<(i32, i64)> {
         self.campaign_player_side.map(|side| (side, self.campaign_score))
+    }
+
+    pub fn player_match_counts(&self) -> Option<NativePlayerMatchCounts> {
+        self.campaign_player_side.map(|_| self.player_match_counts)
     }
 
     pub fn combat_stats(&self, ship_id: i64) -> Option<NativeFleetCombatStats> {
@@ -251,16 +269,32 @@ impl NativeFleetInventory {
             // Do not spend career-stat HashMap lookups in missions which
             // only request campaign score and not individual histories.
             if let (Some(side), CombatEvent::ShipDied {
-                victim_id, end_kill: false, ..
+                victim_id, killer_id, end_kill, ..
             }) = (self.campaign_player_side, event) {
                 if let Some(victim) = world.ship(*victim_id) {
-                    if victim.ship_type != BEACON_TYPE &&
-                        !(victim.side == side && victim.ship_type == HUMAN_TARGET_TYPE)
-                    {
-                        let tsv = i64::from(victim.vitals.max_tsv());
-                        self.campaign_score = self.campaign_score.saturating_add(
-                            if victim.side == side { -tsv } else { tsv }
-                        );
+                    if *end_kill {
+                        if victim.side == side {
+                            self.player_match_counts.ships_returned = self.player_match_counts
+                                .ships_returned.saturating_add(1);
+                        }
+                    } else if victim.ship_type != BEACON_TYPE {
+                        if victim.side == side && victim.ship_type != HUMAN_TARGET_TYPE {
+                            self.player_match_counts.ships_lost = self.player_match_counts
+                                .ships_lost.saturating_add(1);
+                        }
+                        if *killer_id > 0 && world.ship(*killer_id)
+                            .is_some_and(|killer| killer.side == side)
+                        {
+                            self.player_match_counts.ships_destroyed_by_player =
+                                self.player_match_counts.ships_destroyed_by_player
+                                    .saturating_add(1);
+                        }
+                        if victim.side != side || victim.ship_type != HUMAN_TARGET_TYPE {
+                            let tsv = i64::from(victim.vitals.max_tsv());
+                            self.campaign_score = self.campaign_score.saturating_add(
+                                if victim.side == side { -tsv } else { tsv }
+                            );
+                        }
                     }
                 }
             }
