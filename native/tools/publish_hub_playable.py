@@ -12,7 +12,7 @@ from pathlib import Path
 from native_game_registration import register_playable
 from native_session_selection import _playable_run
 from native_training_artifacts import (
-    atomic_json, check_learner, file_sha256,
+    atomic_json, check_learner, file_sha256, native_source_contract_sha256,
 )
 
 
@@ -46,6 +46,27 @@ def publish(
     # a playable scene that was not the environment actually trained.
     if result.get("source_run_config_sha256") != source_sha256:
         raise ValueError("Hub playable scene differs from the verified physical training source")
+    if result.get("collection_orders_sha256") is not None:
+        # Verify both source bytes and the portable physical Level contract.
+        # The latter pins source scene/Stage content across the independent
+        # Windows/Linux collector installations; matching run JSON alone
+        # would not prove the training and playable arenas are identical.
+        orders_path = Path(result["collection_orders"]).resolve(strict=True)
+        if file_sha256(orders_path) != result["collection_orders_sha256"]:
+            raise ValueError("Hub distributed collector work order changed after training")
+        orders = read_json(orders_path)
+        version = orders.get("source_run_contract_version")
+        if (orders.get("kind") != "native_distributed_collection_orders" or
+                orders.get("source_run_config_sha256") != source_sha256 or
+                version not in (None, 2)):
+            raise ValueError("Distributed playable source does not match its issued collectors")
+        expected = orders.get("source_run_contract_sha256")
+        if expected is not None:
+            actual = native_source_contract_sha256(
+                run_path, include_allocation=version != 2,
+            )
+            if actual != expected:
+                raise ValueError("Playable native scene/Stage content differs from the collector contract")
     checkpoint = round_directory / "learner/checkpoint.pt"
     manifest = round_directory / "learner/manifest.json"
     checkpoint_sha = file_sha256(checkpoint)
