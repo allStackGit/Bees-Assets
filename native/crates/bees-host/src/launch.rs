@@ -10063,6 +10063,10 @@ fn run_battle(
         },
         "ship_slot_work": {
             "integrated_bodies": status.simulation.integrated_bodies,
+            // Actual per-tick hash probes avoided when authoritative
+            // gameplay navigation maps are empty during policy simulation.
+            "navigation_lookups_skipped": status.simulation.navigation_lookups_skipped,
+            "steering_lookups_skipped": status.simulation.steering_lookups_skipped,
             "inactive_ship_slots_skipped": status.simulation.inactive_ship_slots_skipped,
             "inactive_projectile_slots_skipped":
                 status.simulation.inactive_projectile_slots_skipped,
