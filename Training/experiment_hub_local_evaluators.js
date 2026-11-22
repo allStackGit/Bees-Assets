@@ -456,7 +456,7 @@ function miniCandidates(hub,o) {
     const candidates=[];
     for(const job of hub.snapshot().jobs||[]) {
         if(job.project_id!=='tinybrains'||job.status!=='finished'||
-            !UUID.test(job.id)||!SHA256.test(job.final_checkpoint_sha256||''))
+            !UUID.test(job.id)||!SHA256.test(job.checkpoint_model_sha256||''))
             continue;
         const dir=path.join(o.artifacts,job.id);
         try {
@@ -470,7 +470,7 @@ function miniCandidates(hub,o) {
                 !Number.isSafeInteger(status.ppo_updates)||status.ppo_updates<1)
                 continue;
             candidates.push({id:job.id,updates:status.ppo_updates,
-                checkpoint,sha256:job.final_checkpoint_sha256,
+                checkpoint,sha256:job.checkpoint_model_sha256,
                 modified:stat.mtimeMs});
         }catch { /* A missing/partial job is not a frozen source. */ }
     }
