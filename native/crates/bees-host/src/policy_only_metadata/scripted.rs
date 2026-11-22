@@ -257,7 +257,7 @@ fn nearest_scripted_enemy(
 /// recycled hotkey number. The initial order starts on the first completed
 /// fixed step; delayed/cutscene-triggered orders require their actual Level
 /// trigger to enqueue this plan at that boundary.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum NativeScriptedActivation {
     /// Source Squad.RunCommandQueue called at Level start.
     Immediate,
@@ -276,6 +276,8 @@ pub enum NativeScriptedActivation {
     OnShipDestroyed(i64),
 }
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NativeScriptedQueuePlan {
     pub squad_item_id: i64,
     pub repeat: bool,
