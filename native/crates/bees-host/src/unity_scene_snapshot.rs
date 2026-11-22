@@ -4606,10 +4606,11 @@ impl NativePhysicalScene {
             if scene.entities.iter().any(|entity|
                 matches!(entity, NativeAuthoredEntity::FullCollisionAsteroid {
                     profile, ..
-                } if !assets.has_stage_asteroid_prefab(profile.prefab_number))
+                } if !assets.has_stage_asteroid_prefab(profile.prefab_number) ||
+                    !assets.has_stage_asteroid_speed(profile.speed))
             ) {
                 return Err(NativeSnapshotError::InvalidNativeLayout(
-                    "native full asteroid prefab is not present in the authored Stage pool",
+                    "native full asteroid prefab or Create-time speed is not in the authored Stage pool",
                 ));
             }
             Ok(scene)
