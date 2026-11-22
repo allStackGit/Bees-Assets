@@ -127,9 +127,16 @@ impl CombatWorld {
     /// Authoritative and side-scoped; a second button press cannot reset
     /// an active retreat or add another physical collider to the World.
     pub fn retreat_activation_available(&self, side: i32) -> bool {
-        self.extraction.as_ref().is_some_and(|state|
+        self.pending_player_retreat_side() == Some(side)
+    }
+
+    /// Public source mission state, without revealing an uncreated exit
+    /// collider's geometry or changing its physical activation.
+    pub fn pending_player_retreat_side(&self) -> Option<i32> {
+        self.extraction.as_ref().filter(|state|
             state.zone.retreat_on_exit && state.zone.requires_player_activation &&
-            !state.active && state.zone.player_side == side)
+            !state.active
+        ).map(|state| state.zone.player_side)
     }
 
     /// The original retreat action opens an exit zone; it does not kill,
