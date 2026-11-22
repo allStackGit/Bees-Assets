@@ -5597,6 +5597,11 @@ impl CombatWorld {
         self.apply_pending_game_fire_barges()?;
         self.apply_pending_player_scout_beacons()?;
         self.apply_pending_player_barge_charges()?;
+        // Sample at the exact cooldown boundary, before real combat can
+        // retire or add capability-owning ships later in this fixed tick.
+        let capability_cooldown_owners_advanced = self.policy_capability_owners.len() as u64;
+        let capability_cooldown_owners_skipped = (self.policy_ship_runtime.len() -
+            self.policy_capability_owners.len()) as u64;
         self.advance_policy_capability_cooldowns(dt);
         self.apply_pending_policy_mining()?;
         self.apply_pending_policy_ship_specials(collision_matrix)?;
@@ -5815,6 +5820,8 @@ impl CombatWorld {
             // Both weapon advancement and range refresh bypass these IDs.
             unarmed_weapon_holders_skipped: (self.ship_weapons.len() -
                 self.armed_weapon_ships.len()) as u64,
+            capability_cooldown_owners_advanced,
+            capability_cooldown_owners_skipped,
             inactive_ship_slots_skipped: physics_counts.inactive_ship_slots_skipped,
             inactive_projectile_slots_skipped: physics_counts.inactive_projectile_slots_skipped,
             inactive_ship_grid_slots_skipped: physics_counts.inactive_ship_grid_slots_skipped,
