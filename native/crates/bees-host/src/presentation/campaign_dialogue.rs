@@ -356,6 +356,16 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
             ("Samuel", "This is a full emergency order, so personnel have to be on space-ready vessels within 5 minutes."),
             ("Marco", "Destroy enemy ships where we can safely. That's the only way we'll get through this."),
         ],
+        // Original PlutoLines_BluerPastures[14..18]. Each is released
+        // only by its corresponding live physical weapon/contact event.
+        CampaignCue::PlutoEvacuationSplitterShot => &[
+            ("Joey", "That ship's blasts are splitting up on impact. Don't group yer ships up near it."),
+        ],
+        CampaignCue::PlutoEvacuationYellowJacketHit => &[
+            ("Yoshiko", "So those are suicide ships! Don't let them near any of our ships."),
+            ("Samuel", "I hope they aren't manned…"),
+            ("Marco", "This is a war, boy, worry about it later."),
+        ],
         CampaignCue::PlutoEvacuationComplete { shield_health: 0, .. } => &[
             ("Samuel", "Comms with the surface went down, commander."),
             ("Marco", "They're a lost cause. Get out of here, now."),
