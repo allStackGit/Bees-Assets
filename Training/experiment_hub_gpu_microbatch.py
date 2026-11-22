@@ -327,9 +327,14 @@ class FrozenInferenceMicrobatcher:
         mode = "grouped"
         output = None
         if len(group)>1:
-            shape = tuple((item.model_id,item.rows,
-                           tuple((tuple(t.shape[1:]),t.dtype)
-                                 for t in item.inputs)) for item in group)
+            # Same shape/job multiset has the same GPU execution cost
+            # regardless of which concurrent collector arrived first.
+            # Stringify dtypes so heterogeneous layout keys are sortable.
+            shape = tuple(sorted(
+                (item.model_id,item.rows,
+                 tuple((tuple(t.shape[1:]),str(t.dtype))
+                       for t in item.inputs))
+                for item in group))
             mode = self._admission.get(shape)
             if mode is None:
                 started = perf_counter()
