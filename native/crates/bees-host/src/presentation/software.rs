@@ -2478,16 +2478,26 @@ impl NativeSoftwareRenderer {
                         seconds / 60, seconds % 60)
                 }
             } else if evacuation {
-                let saved = (survival.elapsed_seconds / 5.0).floor()
-                    .clamp(0.0, 60.0) as u32;
-                let shield = view.combat.ship(survival.protected_ship_id);
-                let lost = shield.map_or(15, |target|
-                    (target.vitals.max_health() - target.vitals.health())
-                        .max(0) / 200);
-                format!(
-                    "Evacuated {saved}/60  |  Lost {lost}/15  |  Defend {:02}:{:02}",
-                    seconds / 60, seconds % 60,
-                )
+                // Civilian evacuation progress and casualties belong to the
+                // campaign commander, never to a hotseat opponent viewing
+                // the same physical World with different permissions.
+                if view.player_authority.player_viewer_side() ==
+                    view.campaign_dialogue_side
+                {
+                    let saved = (survival.elapsed_seconds / 5.0).floor()
+                        .clamp(0.0, 60.0) as u32;
+                    let shield = view.combat.ship(survival.protected_ship_id);
+                    let lost = shield.map_or(15, |target|
+                        (target.vitals.max_health() - target.vitals.health())
+                            .max(0) / 200);
+                    format!(
+                        "Evacuated {saved}/60  |  Lost {lost}/15  |  Defend {:02}:{:02}",
+                        seconds / 60, seconds % 60,
+                    )
+                } else {
+                    format!("Stop the evacuation  |  {:02}:{:02}",
+                        seconds / 60, seconds % 60)
+                }
             } else {
                 match view.combat.ship(survival.protected_ship_id) {
                     Some(target) => format!(
