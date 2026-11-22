@@ -7,7 +7,7 @@ use bees_sim::collision::Aabb;
 use bees_sim::simulation::WorldId;
 use bees_hivemind::session::SquadLifetime;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
-use crate::presentation::{HudAction, NativeCamera, NativeControls,
+use crate::presentation::{squad_name_key, HudAction, NativeCamera, NativeControls,
     NativeRenderWorldView, NativeSoftwareRenderer, NativeSupportMode};
 use crate::game_audio::{NativeGameAudio, NativeAudioMeasurements};
 use crate::unity_scene_snapshot::NativeMusicLocation;
@@ -23,6 +23,7 @@ use bees_sim::geometry::Vec2;
 #[derive(Clone, Debug, PartialEq)]
 pub enum NativeClientAction {
     Wait, Step, Quit, Restart, WorldChanged, SideChanged,
+    SaveLevel { name: String },
     Input { action: NativePlayerInput, step: bool },
 }
 
@@ -161,6 +162,8 @@ pub struct NativeClient {
     /// campaign and Challenge visibility cannot be overridden.
     allow_freeplay_fog: bool,
     allow_freeplay_restart: bool,
+    allow_freeplay_save: bool,
+    level_name_input: Option<String>,
     /// Source per-Level Map.MinZoom/MaxZoom. No gameplay-state copy.
     source_zoom_by_world: Vec<Option<(f32, f32)>>,
     next_step: Instant,
@@ -284,7 +287,8 @@ impl NativeClient {
             performance: NativeLivePerformance::new(now),
             edge_scroll_enabled: false,
             allow_freeplay_fog: false,
-            allow_freeplay_restart: false,
+            allow_freeplay_restart: false, allow_freeplay_save: false,
+            level_name_input: None,
             source_zoom_by_world: Vec::new(),
             next_step: now, pending_steps: 0, previous_frame: now, left_was_down: false,
             right_was_down: false, right_press: None, last_left_press: None, double_left_press: false,
@@ -499,6 +503,12 @@ impl NativeClient {
         self.allow_freeplay_restart=allowed;
     }
 
+    /// Only the host can commit a named Level to the caller's user library.
+    /// The local client edits a name but never saves a World or model.
+    pub fn set_freeplay_save_allowed(&mut self,allowed:bool) {
+        self.allow_freeplay_save=allowed;
+    }
+
     pub fn result_action(&self) -> Option<NativeResultAction> {
         if self.dialogue_visible { return None; }
         let controls = self.result_controls?;
@@ -553,6 +563,46 @@ impl NativeClient {
                 }
                 return Ok(NativeClientAction::Wait);
             }
+        }
+        if let Some(name)=self.level_name_input.as_mut() {
+            for key in self.window.get_keys_pressed(KeyRepeat::No) {
+                match key {
+                    Key::Escape=>{
+                        self.level_name_input=None;
+                        self.show_controls_help=false;
+                        self.next_step=Instant::now();
+                        return Ok(NativeClientAction::Wait);
+                    },
+                    Key::Enter=>{
+                        let title=name.trim().to_owned();
+                        if !title.is_empty() && title.len()<=80 {
+                            self.level_name_input=None;
+                            self.show_controls_help=false;
+                            self.next_step=Instant::now();
+                            return Ok(NativeClientAction::SaveLevel {name:title});
+                        }
+                    },
+                    Key::Backspace=>{name.pop();},
+                    key=>{
+                        let shift=self.window.is_key_down(Key::LeftShift) ||
+                            self.window.is_key_down(Key::RightShift);
+                        if let Some(ch)=squad_name_key(key,shift) {
+                            if name.len()<80 {name.push(ch);}
+                        }
+                    }
+                }
+            }
+            let (width,height)=self.window.get_size();
+            if width>0 && height>0 {
+                self.renderer.resize(width,height)?;
+                self.renderer.render(&view,bounds);
+                self.renderer.draw_save_level_name(name);
+                self.window.update_with_buffer(self.renderer.pixels(),width,height)?;
+            } else {self.window.update();}
+            self.audio.set_paused(true);
+            self.next_step=Instant::now();
+            self.previous_frame=self.next_step;
+            return Ok(NativeClientAction::Wait);
         }
         // Escape returns to the game menu rather than silently abandoning
         // an active campaign. Keep playback/terminal close semantics intact.
@@ -630,7 +680,8 @@ impl NativeClient {
             let left = self.window.get_mouse_down(MouseButton::Left);
             let hover = self.window.get_mouse_pos(MouseMode::Discard)
                 .and_then(|(x, y)|
-                    self.renderer.battle_menu_at(x,y,self.allow_freeplay_restart));
+                    self.renderer.battle_menu_at(
+                        x,y,self.allow_freeplay_restart,self.allow_freeplay_save));
             if left && !self.left_was_down {
                 self.battle_menu_press = hover;
             }
@@ -648,6 +699,8 @@ impl NativeClient {
             else if self.window.is_key_pressed(Key::Q, KeyRepeat::No) { Some(4) }
             else if self.allow_freeplay_restart &&
                 self.window.is_key_pressed(Key::N,KeyRepeat::No) {Some(5)}
+            else if self.allow_freeplay_save &&
+                self.window.is_key_pressed(Key::L,KeyRepeat::No) {Some(6)}
             else { click };
             match choice {
                 Some(0 | 1 | 2) => {
@@ -679,6 +732,14 @@ impl NativeClient {
                     self.battle_menu_open=false;
                     self.battle_menu_press=None;
                     return Ok(NativeClientAction::Restart);
+                },
+                Some(6) if self.allow_freeplay_save => {
+                    self.battle_menu_open=false;
+                    self.battle_menu_press=None;
+                    self.show_controls_help=true;
+                    self.level_name_input=Some(String::new());
+                    self.next_step=Instant::now();
+                    return Ok(NativeClientAction::Wait);
                 },
                 _ => {},
             }
@@ -1854,7 +1915,8 @@ impl NativeClient {
             let can_surrender = view.player_authority.player_viewer_side()
                 .is_some_and(|side| view.can_surrender(side));
             self.renderer.draw_battle_menu(
-                self.paused, can_surrender,self.allow_freeplay_restart,
+                self.paused,can_surrender,
+                self.allow_freeplay_restart,self.allow_freeplay_save,
             );
         } else if self.codex_open {
             self.renderer.draw_fleet_codex(&view, self.codex_selected);

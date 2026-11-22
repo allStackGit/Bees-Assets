@@ -5020,6 +5020,135 @@ struct NativeSavedHost {
     tokens_file: PathBuf,
 }
 
+/// Source GameMenus.SaveLevel stores a LevelOptions name and the same
+/// physical setup that played the battle. Native FreePlay saves the actual
+/// authored run's cryptographic identity instead of snapshotting mutable
+/// combat, making its next launch another normal shared CombatWorld.
+#[cfg(feature = "client")]
+#[derive(Serialize,Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SavedFreeplayLevel {
+    schema_version:u32,
+    name:String,
+    source_config:PathBuf,
+    source_sha256:String,
+    assets_sha256:BTreeMap<String,String>,
+}
+
+#[cfg(feature = "client")]
+fn valid_freeplay_level_name(name:&str)->bool {
+    (1..=80).contains(&name.len()) &&
+    name.trim()==name &&
+    name.bytes().any(|ch|ch.is_ascii_alphanumeric()) &&
+    name.bytes().all(|ch|ch.is_ascii_alphanumeric() ||
+        matches!(ch,b' ' | b'-' | b'_'))
+}
+
+#[cfg(feature = "client")]
+fn native_library_save_root(output:Option<&Path>)->Option<&Path> {
+    output?.ancestors().find(|ancestor|
+        ancestor.file_name().is_some_and(|name|name=="battles"))
+        .and_then(Path::parent)
+}
+
+#[cfg(feature = "client")]
+fn save_freeplay_level(
+    save_root:&Path,source:&Path,name:&str,
+) -> Result<PathBuf,Box<dyn Error>> {
+    if !valid_freeplay_level_name(name) {
+        return Err(invalid("FreePlay level name must contain 1-80 safe characters").into());
+    }
+    let source=source.canonicalize()?;
+    let bytes=fs::read(&source)?;
+    let run:RunConfig=serde_json::from_slice(&bytes)?;
+    let record=SavedFreeplayLevel {
+        schema_version:1,
+        name:name.to_owned(),
+        source_sha256:format!("{:x}",Sha256::digest(&bytes)),
+        assets_sha256:native_start_asset_digests(&source,&run)?,
+        source_config:source,
+    };
+    let directory=save_root.join("saved-levels");
+    fs::create_dir_all(&directory)?;
+    let mut number=0_u64;
+    loop {
+        number=number.checked_add(1).ok_or_else(||
+            invalid("FreePlay saved-level count exhausted"))?;
+        let path=directory.join(format!("level-{number:06}.json"));
+        match persist_new_json(&path,&record) {
+            Ok(())=>return Ok(path),
+            Err(bees_host::checkpoint_file::CheckpointFileError::Io(error))
+                if error.kind()==ErrorKind::AlreadyExists=>continue,
+            Err(error)=>return Err(invalid(format!(
+                "FreePlay level save could not commit: {error:?}"
+            )).into()),
+        }
+    }
+}
+
+#[cfg(feature = "client")]
+fn list_saved_freeplay_levels(save_root:&Path)
+    -> Result<Vec<SavedFreeplayLevel>,Box<dyn Error>>
+{
+    let directory=save_root.join("saved-levels");
+    let entries=match fs::read_dir(&directory) {
+        Ok(entries)=>entries,
+        Err(error) if error.kind()==ErrorKind::NotFound=>return Ok(Vec::new()),
+        Err(error)=>return Err(error.into()),
+    };
+    let mut files=Vec::new();
+    for entry in entries {
+        let entry=entry?;
+        let name=entry.file_name();
+        let Some(name)=name.to_str() else {continue};
+        let Some(number)=name.strip_prefix("level-")
+            .and_then(|name|name.strip_suffix(".json"))
+            .filter(|digits|digits.len()>=6 &&
+                digits.bytes().all(|byte|byte.is_ascii_digit()))
+            .and_then(|digits|digits.parse::<u64>().ok())
+        else {continue};
+        let metadata=entry.metadata()?;
+        if !entry.file_type()?.is_file() || metadata.len()>65536 {continue;}
+        files.push((number,entry.path()));
+    }
+    files.sort_unstable_by(|a,b|b.0.cmp(&a.0));
+    let mut levels=Vec::new();
+    for (_,path) in files.into_iter().take(256) {
+        let source=fs::read(&path)?;
+        let Ok(level):Result<SavedFreeplayLevel,_>=serde_json::from_slice(&source)
+        else {continue};
+        if level.schema_version !=1 ||
+            !valid_freeplay_level_name(&level.name) ||
+            !level.source_config.is_absolute() ||
+            level.source_sha256.len()!=64 ||
+            !level.source_sha256.bytes().all(|c|
+                c.is_ascii_digit() || (b'a'..=b'f').contains(&c)) ||
+            level.assets_sha256.is_empty()
+        {continue;}
+        levels.push(level);
+    }
+    Ok(levels)
+}
+
+#[cfg(feature = "client")]
+fn verify_saved_freeplay_level(level:&SavedFreeplayLevel)
+    -> Result<PathBuf,Box<dyn Error>>
+{
+    let source=level.source_config.canonicalize()?;
+    if source != level.source_config {
+        return Err(invalid("saved FreePlay Level source path changed").into());
+    }
+    let bytes=fs::read(&source)?;
+    if format!("{:x}",Sha256::digest(&bytes)) != level.source_sha256 {
+        return Err(invalid("saved FreePlay Level source bytes have changed").into());
+    }
+    let run:RunConfig=serde_json::from_slice(&bytes)?;
+    if native_start_asset_digests(&source,&run)? != level.assets_sha256 {
+        return Err(invalid("saved FreePlay Level physical assets or models have changed").into());
+    }
+    Ok(source)
+}
+
 #[cfg(feature = "client")]
 fn new_library_battle_output(save_root: &Path, game_id: &str)
     -> Result<PathBuf, Box<dyn Error>> {
@@ -5858,6 +5987,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         // An archived quick battle is reusable only if its original start
         // identity was durably saved; old traces without source proof may
         // still be WATCHED, but cannot become a newly played game.
+        let named_freeplay_levels=list_saved_freeplay_levels(save_root)?;
         let saved_level_sources = recordings.iter().filter(|recording|
             recording.game_id != fleet_builder::GAME_ID &&
             matches!(&recording.source,recorded_library::RecordedSource::QuickBattle(_)) &&
@@ -5868,12 +5998,12 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let saved_level_index = rows.len();
         rows.push(BattleMenuRow {
             title: "Play Saved Level Again",
-            status: if saved_level_sources.is_empty() {
-                "  [No saved source-verified FreePlay levels]"
+            status: if named_freeplay_levels.is_empty() && saved_level_sources.is_empty() {
+                "  [No named or source-verified FreePlay levels]"
             } else {
-                "  [New physical battle from archived level setup]"
+                "  [New battle from original authored setup]"
             },
-            unlocked: !saved_level_sources.is_empty(),
+            unlocked: !named_freeplay_levels.is_empty() || !saved_level_sources.is_empty(),
         });
         let fleet_train_index = rows.len();
         let training_available = fleet_training::training_available();
@@ -6019,17 +6149,33 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             })()
         } else if reusing_level {
             (|| {
-                let choices = saved_level_sources.iter().map(|recording|
+                let choices=named_freeplay_levels.iter().map(|level|
                     BattleMenuRow {
-                        title: &recording.title,
-                        status: "  [Reopen original physical setup]",
-                        unlocked: true,
+                        title:&level.name,
+                        status:"  [Saved by player; physical assets pinned]",
+                        unlocked:true,
                     }
-                ).collect::<Vec<_>>();
+                ).chain(saved_level_sources.iter().map(|recording|
+                    BattleMenuRow {
+                        title:&recording.title,
+                        status:"  [Reopen source-verified recorded setup]",
+                        unlocked:true,
+                    }
+                )).collect::<Vec<_>>();
                 let mut selected = 0_usize;
                 let Some(index) = select_library(&choices,&mut selected,false)?
                 else {return Ok::<(), Box<dyn Error>>(());};
-                let recording = saved_level_sources[index];
+                if index<named_freeplay_levels.len() {
+                    let level=&named_freeplay_levels[index];
+                    let source=verify_saved_freeplay_level(level)?;
+                    // The selected user Level starts an ordinary fresh
+                    // FreePlay match, never a copy of the old World, plus
+                    // all existing writer leases and recovery guarantees.
+                    return run_library_quick_battle(
+                        save_root,"saved-freeplay-level",&source,
+                    );
+                }
+                let recording=saved_level_sources[index-named_freeplay_levels.len()];
                 let recorded_library::RecordedSource::QuickBattle(source) =
                     &recording.source else {
                         return Err(invalid("saved FreePlay Level has no authored source").into());
@@ -8137,6 +8283,11 @@ fn run_battle(
             mission.is_none() && replay_inputs.is_none() &&
             remote_step_interval.is_none(),
         );
+        client.set_freeplay_save_allowed(
+            mission.is_none() && replay_inputs.is_none() &&
+            remote_step_interval.is_none() &&
+            native_library_save_root(output).is_some(),
+        );
         client.set_source_zoom_limits(client_zoom_limits);
         client.set_music_locations(
             source_levels.iter().map(|source| source.music_location).collect(),
@@ -9379,6 +9530,32 @@ fn run_battle(
                     }
                     if !step { continue; }
                     client_step_budget = client.pending_steps();
+                },
+                Ok(bees_host::client::NativeClientAction::SaveLevel {name}) => {
+                    // Save source setup only: no mutable CombatWorld,
+                    // live FleetShip, RNG cursor or policy checkpoint is
+                    // serialized by the client. The host is the single
+                    // library writer; the battle itself keeps running.
+                    let result=native_library_save_root(output).ok_or_else(||
+                        invalid("in-battle Save Level needs a user-owned library"))
+                        .and_then(|root| save_freeplay_level(root,config_path,&name)
+                            .map_err(|error|invalid(format!(
+                                "could not save native FreePlay level: {error}"
+                            ))));
+                    match result {
+                        Ok(path)=>{
+                            client.report_move("Named Level saved to FreePlay library");
+                            println!("{}",json!({
+                                "kind":"native_freeplay_level_saved",
+                                "name":name,"manifest":path,
+                            }));
+                        },
+                        Err(error)=>{
+                            client.report_move("FreePlay level could not be saved");
+                            eprintln!("FreePlay Save Level: {error}");
+                        },
+                    }
+                    continue;
                 },
                 Ok(bees_host::client::NativeClientAction::Restart) => {
                     // Abort the current play attempt through ordinary

@@ -12,7 +12,7 @@ const SQUAD_COLORS: [[u8; 3]; 6] = [
     [0xc2, 0x9b, 0xe8], [0xeb, 0x78, 0x85], [0xed, 0xe1, 0x94],
 ];
 
-fn squad_name_key(key: Key, shift: bool) -> Option<char> {
+pub(crate) fn squad_name_key(key: Key, shift: bool) -> Option<char> {
     let letters = [
         Key::A, Key::B, Key::C, Key::D, Key::E, Key::F, Key::G,
         Key::H, Key::I, Key::J, Key::K, Key::L, Key::M, Key::N,

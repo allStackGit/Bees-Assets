@@ -35,6 +35,7 @@ mod remote_window;
 #[cfg(feature = "client")]
 pub use remote_window::connect_remote;
 #[cfg(feature = "client")]
+pub(crate) use battle_menu::squad_name_key;
 pub use battle_menu::{
     BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
     NativeTransferMenuRow, NativeCreateSquadMenuRow, NativeDeleteSquadMenuRow,

@@ -3676,13 +3676,24 @@ impl NativeSoftwareRenderer {
     #[cfg(feature = "client")]
     pub fn draw_battle_menu(
         &mut self,was_paused:bool,can_surrender:bool,can_restart:bool,
+        can_save_level:bool,
     ) {
         let surrender=if can_surrender {
             "S: surrender this battle (confirmation required)"
         } else {"S: surrender unavailable for this World"};
         let status=if was_paused {"Battle was already paused"}
             else {"Battle paused while menu is open"};
-        let lines:&[&str]=if can_restart {
+        let lines:&[&str]=if can_restart && can_save_level {
+            &["BEES NATIVE  /  BATTLE MENU",
+              "Esc or R: resume the battle",
+              "H or F1: open controls and shortcuts",
+              "C or F2: inspect the Fleet Codex",
+              surrender,
+              "Q: exit battle (return to library when launched there)",
+              "N: restart this FreePlay battle (original fleet and map)",
+              "L: save this authored setup as a named FreePlay Level",
+              status]
+        } else if can_restart {
             &["BEES NATIVE  /  BATTLE MENU",
               "Esc or R: resume the battle",
               "H or F1: open controls and shortcuts",
@@ -3701,17 +3712,19 @@ impl NativeSoftwareRenderer {
               status]
         };
         Self::draw_help_panel(&mut self.pixels,self.width,self.height,
-            lines,if can_restart {&[0,7]} else {&[0,6]});
+            lines,if can_save_level {&[0,8]}
+                else if can_restart {&[0,7]} else {&[0,6]});
     }
 
     /// Hit exactly the same centered action rows that the menu draws.
-    /// Resume, Help, Codex, Surrender, Exit and (FreePlay only) Restart.
+    /// Resume, Help, Codex, Surrender, Exit, FreePlay Restart and Save.
     #[cfg(feature = "client")]
     pub fn battle_menu_at(
-        &self,x:f32,y:f32,can_restart:bool,
+        &self,x:f32,y:f32,can_restart:bool,can_save_level:bool,
     ) -> Option<usize> {
         Self::battle_menu_hit(
-            self.width,self.height,x,y,if can_restart {6} else {5},
+            self.width,self.height,x,y,
+            if can_save_level {7} else if can_restart {6} else {5},
         )
     }
 
@@ -3739,6 +3752,20 @@ impl NativeSoftwareRenderer {
         let row = ((y - (top + 12) as f32) /
             row_height as f32) as usize;
         (1..=actions).contains(&row).then_some(row - 1)
+    }
+
+    /// Name an original authored FreePlay setup without stepping the World.
+    /// The resulting manifest is committed by the host, not the renderer.
+    #[cfg(feature = "client")]
+    pub fn draw_save_level_name(&mut self,name:&str) {
+        Self::draw_help_panel(&mut self.pixels,self.width,self.height,
+            &["SAVE FREEPLAY LEVEL",
+              "Name the original map, factions and physical obstacle setup",
+              "Enter: save   Esc: cancel   Backspace: erase",
+              name,
+              "1-80 letters, digits, spaces, underscores or hyphens"],
+            &[0,2,3],
+        );
     }
 
     pub fn draw_controls_help(&mut self) {
