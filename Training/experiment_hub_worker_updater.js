@@ -736,8 +736,15 @@ async function main(argv=process.argv.slice(2)) {
                     active[name]={version:entry.version,sha256:entry.sha256,
                         activated_at:new Date().toISOString()};
                     baselineSaved=true;
-                    await status(base,env,entry,'active','Initial installed version recognized.');
                 }
+                // Software activation and acknowledgement are separate
+                // operations. If the one-time acknowledgement was lost
+                // during agent replacement, the Hub may still persist
+                // "activating" and block every new lease indefinitely.
+                // Reaffirm locally verified active versions on each
+                // scheduled updater cycle. Reporting is idempotent.
+                await status(base,env,entry,'active',
+                    'Installed release verified by local updater.');
                 continue;
             }
             const directory=await stage(base,env,root,name,entry);
@@ -777,22 +784,24 @@ async function main(argv=process.argv.slice(2)) {
         }
         for(const item of Object.values(plan))
             await status(base,env,item.entry,'activating');
-        // A new dispatch may have been authorized after the original GET.
-        // Recheck before changing native service paths.
-        const fresh=await request(base,env,'GET','');
-        if((fresh.pending_native_jobs||[]).length>0&&!liveOverride) {
-            for(const item of Object.values(plan))
-                await status(base,env,item.entry,'waiting','A native job was dispatched during staging.');
-            return;
-        }
-        if(!liveOverride&&journalActive(root)) {
-            for(const item of Object.values(plan))
-                await status(base,env,item.entry,'waiting','A native owner became active during staging.');
-            return;
-        }
-        const changes=Object.fromEntries(Object.entries(plan)
-            .map(([key,value])=>[key,value.directory]));
         try {
+            // A new dispatch may have been authorized after the original
+            // GET. Failures here must also close the activating episode.
+            const fresh=await request(base,env,'GET','');
+            if((fresh.pending_native_jobs||[]).length>0&&!liveOverride) {
+                for(const item of Object.values(plan))
+                    await status(base,env,item.entry,'waiting',
+                        'A native job was dispatched during staging.');
+                return;
+            }
+            if(!liveOverride&&journalActive(root)) {
+                for(const item of Object.values(plan))
+                    await status(base,env,item.entry,'waiting',
+                        'A native owner became active during staging.');
+                return;
+            }
+            const changes=Object.fromEntries(Object.entries(plan)
+                .map(([key,value])=>[key,value.directory]));
             const rolloutKeys={};
             for(const name of ['tinybrains','courier']) {
                 if(!changes[name])continue;
