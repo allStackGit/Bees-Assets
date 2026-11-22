@@ -94,7 +94,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         retain('ant_decisions_per_second',reported.ant_decisions_per_second);
         retain('simulation_match_steps_per_second',
             reported.simulation_match_steps_per_second);
-        for(const name of ['ppo_compiled_forward_active',
+        for(const name of ['ppo_compiled_loss_active',
             'ppo_compile_calibration_complete','ppo_compile_fallbacks',
             'ppo_compile_restored','ppo_gradient_foreach_batches',
             'ppo_gpu_batch_target_pixels',
