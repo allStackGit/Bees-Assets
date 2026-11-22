@@ -116,6 +116,7 @@ class FrozenInferenceMicrobatcher:
         self.max_batch_rows, self.wait_seconds = max_batch_rows, wait_ms/1000
         self.max_cohorts, self.allow_graphs = max_cohorts, allow_graphs
         self._pending, self._executors = deque(), OrderedDict()
+        self._active_group = []
         self._admission = OrderedDict()
         self._condition = Condition()
         self._closed = False
@@ -158,7 +159,6 @@ class FrozenInferenceMicrobatcher:
 
     def _serve(self):
         context = torch.cuda.device(self.device) if self.device.type == "cuda" else nullcontext()
-        group = []
         try:
             with context:
                 self._drain()
@@ -172,7 +172,7 @@ class FrozenInferenceMicrobatcher:
             # holding Condition, since callbacks may reenter this service.
             with self._condition:
                 self._closed = True
-                stranded = list(self._pending)+group
+                stranded = list(self._pending)+self._active_group
                 self._pending.clear()
                 self._outstanding = 0
                 self._condition.notify_all()
@@ -182,43 +182,45 @@ class FrozenInferenceMicrobatcher:
 
     def _drain(self):
         while True:
+            with self._condition:
+                while not self._pending and not self._closed:
+                    self._condition.wait()
+                if not self._pending:
+                    return
+                deadline = perf_counter()+self.wait_seconds
+                group, layouts, rows = [], {}, 0
+                while len(group) < self.max_requests:
+                    if self._pending:
+                        item = self._pending[0]
+                        shape = tuple((x.shape[1:], x.dtype) for x in item.inputs)
+                        if (rows+item.rows > self.max_batch_rows or
+                                item.model_id in layouts and
+                                layouts[item.model_id] != shape):
+                            break
+                        self._pending.popleft()
+                        self._active_group = group
+                        layouts[item.model_id] = shape
+                        group.append(item)
+                        rows += item.rows
+                        if rows >= self.max_batch_rows:
+                            break
+                    else:
+                        remaining = deadline-perf_counter()
+                        if remaining <= 0 or self._closed:
+                            break
+                        self._condition.wait(remaining)
+            try:
+                self._dispatch(group)
+            except BaseException as error:
+                for item in group:
+                    if not item.future.done():
+                        item.future.set_exception(error)
+            finally:
                 with self._condition:
-                    while not self._pending and not self._closed:
-                        self._condition.wait()
-                    if not self._pending:
-                        return
-                    deadline = perf_counter()+self.wait_seconds
-                    group, layouts, rows = [], {}, 0
-                    while len(group) < self.max_requests:
-                        if self._pending:
-                            item = self._pending[0]
-                            shape = tuple((x.shape[1:], x.dtype) for x in item.inputs)
-                            if (rows+item.rows > self.max_batch_rows or
-                                    item.model_id in layouts and
-                                    layouts[item.model_id] != shape):
-                                break
-                            self._pending.popleft()
-                            layouts[item.model_id] = shape
-                            group.append(item)
-                            rows += item.rows
-                            if rows >= self.max_batch_rows:
-                                break
-                        else:
-                            remaining = deadline-perf_counter()
-                            if remaining <= 0 or self._closed:
-                                break
-                            self._condition.wait(remaining)
-                try:
-                    self._dispatch(group)
-                except BaseException as error:
-                    for item in group:
-                        if not item.future.done():
-                            item.future.set_exception(error)
-                finally:
-                    with self._condition:
-                        self._outstanding -= len(group)
-                        self._counters["dispatched"] += len(group)
-                        self._counters["groups"] += 1
+                    self._outstanding -= len(group)
+                    self._active_group = []
+                    self._counters["dispatched"] += len(group)
+                    self._counters["groups"] += 1
 
     def _time(self, action):
         if self.device.type == "cuda":
