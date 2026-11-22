@@ -4300,8 +4300,13 @@ impl NativePhysicalScene {
                 !position.unity_equal(Vec2::ZERO)))
             .flat_map(|wave| wave.squad_item_ids.iter().copied())
             .collect::<std::collections::HashSet<_>>();
+        // A ship already dead in the imported initial scene cannot emit
+        // a future damage, combat-death, extraction or warp event. Reject
+        // those authored gates before a mission is launched rather than
+        // letting a dependent squad wait forever.
         let known_ships = authored.entities.iter().filter_map(|entity| match entity {
-            NativeAuthoredEntity::Ship(ship) => Some(ship.entity_id),
+            NativeAuthoredEntity::Ship(ship) if !ship.vitals.is_dead() =>
+                Some(ship.entity_id),
             _ => None,
         }).collect::<std::collections::HashSet<_>>();
         let known_map_objects = authored.entities.iter().filter_map(|entity|
