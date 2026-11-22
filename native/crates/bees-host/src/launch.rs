@@ -7084,7 +7084,62 @@ fn run_battle(
         for squad in &source.source_squads {
             highest_squad_item_id = highest_squad_item_id.max(squad.item_id);
         }
+        // Standalone native scenes may author their own mission, using the
+        // identical objective and command types installed in the canonical
+        // Level. The launcher must preflight that gameplay too: checking
+        // only run-file objectives would skip authorization, round budgets
+        // and campaign progression requirements for native scene missions.
+        // All projections below are read-only and setup-only.
+        let embedded = source.native_mission().cloned();
+        let authored = embedded.as_ref();
+        let effective_extraction = level.extraction.as_ref().map(|zone|
+            bees_sim::combat_world::ExtractionZone {
+                player_side: zone.player_side,
+                center: vec2(zone.center),
+                half_extents: vec2(zone.half_extents),
+                activation_radius: zone.activation_radius, layer: zone.layer,
+                activation_from_center: zone.activation_from_center,
+                retreat_on_exit: zone.retreat_on_exit,
+            }
+        ).or_else(|| authored.and_then(|m| m.extraction));
+        let effective_survival = level.survival.map(|o|
+            bees_sim::episode_terminal::SurvivalObjective {
+                defending_side: o.defending_side, protected_ship_id: o.protected_ship_id,
+                seconds: o.seconds,
+            }
+        ).or_else(|| authored.and_then(|m| m.survival));
+        let effective_demolition = level.demolition.map(|o|
+            bees_sim::episode_terminal::DemolitionObjective {
+                attacking_side: o.attacking_side,
+                target_map_object_id: o.target_map_object_id, seconds: o.seconds,
+            }
+        ).or_else(|| authored.and_then(|m| m.demolition));
+        let effective_escort = level.escort.map(|o|
+            bees_sim::episode_terminal::EscortObjective {
+                escorting_side: o.escorting_side,
+                escorted_ship_id: o.escorted_ship_id, seconds: o.seconds,
+            }
+        ).or_else(|| authored.and_then(|m| m.escort));
+        let effective_dialogue = level.campaign_dialogue
+            .or_else(|| authored.and_then(|m| m.campaign_dialogue));
+        if let Some(m) = authored {
+            if (m.extraction.is_some() && level.extraction.is_some()) ||
+                (m.survival.is_some() && level.survival.is_some()) ||
+                (m.demolition.is_some() && level.demolition.is_some()) ||
+                (m.escort.is_some() && level.escort.is_some()) ||
+                (m.target_ship.is_some() && level.target_ship.is_some()) ||
+                (m.campaign_dialogue.is_some() && level.campaign_dialogue.is_some()) ||
+                (!m.reinforcements.is_empty() && !level.reinforcements.is_empty()) ||
+                (!m.scripted_queues.is_empty() && !level.scripted_queues.is_empty())
+            {
+                return Err(invalid(
+                    "native scene and run config cannot both own a mission field",
+                ).into());
+            }
+        }
         if level.reinforcements.iter().flat_map(|wave| &wave.squad_item_ids)
+            .chain(authored.into_iter().flat_map(|m|
+                m.reinforcements.iter().flat_map(|wave| &wave.squad_item_ids)))
             .any(|id| !source.source_squads.iter().any(|squad| squad.item_id == *id))
         {
             return Err(invalid("Reinforcements reference an unknown source squad item ID").into());
@@ -7118,7 +7173,11 @@ fn run_battle(
         // Persisted campaign missions still require human control and never
         // gain policy authority implicitly.
         let deferred_squads: HashSet<i64> = level.reinforcements.iter()
-            .flat_map(|wave| wave.squad_item_ids.iter().copied()).collect();
+            .flat_map(|wave| wave.squad_item_ids.iter().copied())
+            .chain(authored.into_iter().flat_map(|m|
+                m.reinforcements.iter().flat_map(|wave|
+                    wave.squad_item_ids.iter().copied())))
+            .collect();
         let objective_has_controller = |side| source.source_squads.iter().any(|squad|
             squad.side == side && !squad.members.is_empty() &&
             (squad.player_permissions.user_controlled ||
@@ -7131,19 +7190,25 @@ fn run_battle(
                       .is_some_and(|network| network.issue_source_commands) &&
                   squad.hivemind.is_some_and(|owner| owner.hivemind_controlled)) ||
                  (!deferred_squads.contains(&squad.item_id) &&
-                  level.scripted_queues.iter().any(|queue|
+                  (level.scripted_queues.iter().any(|queue|
                      queue.squad_item_id == squad.item_id &&
                      !queue.orders.is_empty() &&
-                     matches!(queue.activation, ScriptedActivationConfig::Immediate)))
+                     matches!(queue.activation, ScriptedActivationConfig::Immediate)) ||
+                   authored.is_some_and(|mission|
+                     mission.scripted_queues.iter().any(|queue|
+                         queue.squad_item_id == squad.item_id &&
+                         !queue.orders.is_empty() &&
+                         matches!(queue.activation,
+                            bees_host::policy_only_metadata::NativeScriptedActivation::Immediate)))))
              )))
         );
-        if let Some(zone) = &level.extraction {
+        if let Some(zone) = &effective_extraction {
             // The original Uranus II retreat is a completed defeat, not an
             // extraction victory. Do not enable this route in PPO episodes
             // or a campaign that advances only on military victory.
             if zone.retreat_on_exit && (level.groups.is_some() ||
-                level.survival.is_some() || level.demolition.is_some() ||
-                level.escort.is_some() ||
+                effective_survival.is_some() || effective_demolition.is_some() ||
+                effective_escort.is_some() ||
                 mission.is_some_and(|mission| !mission.advances_on_finished()))
             {
                 return Err(invalid("Campaign withdrawal requires a finish-advancing non-policy extraction mission").into());
@@ -7156,7 +7221,7 @@ fn run_battle(
             }
         }
         if mission.is_some_and(|mission| mission.evacuation_rewards) {
-            let required = level.survival.as_ref();
+            let required = effective_survival.as_ref();
             if !single_level || !required.is_some_and(|objective|
                     objective.defending_side == mission.expect("evacuation mission").player_side &&
                     (objective.seconds - 300.49).abs() <= 0.01 &&
@@ -7166,15 +7231,15 @@ fn run_battle(
                             ship.ship_type == bees_sim::ship_assets::HUMAN_TARGET_TYPE &&
                             ship.side == objective.defending_side && !ship.vitals.is_dead()
                     ))) ||
-                level.demolition.is_some() || level.extraction.is_some() ||
-                level.escort.is_some()
+                effective_demolition.is_some() || effective_extraction.is_some() ||
+                effective_escort.is_some()
             {
                 return Err(invalid(
                     "Pluto evacuation requires the original 300.49-second HumanTarget survival World",
                 ).into());
             }
         }
-        if let Some(objective) = &level.survival {
+        if let Some(objective) = &effective_survival {
             if mission.is_some_and(|mission| mission.player_side != objective.defending_side) ||
                 !objective_has_controller(objective.defending_side)
             {
@@ -7197,8 +7262,8 @@ fn run_battle(
                 }
             }
         }
-        if let Some(objective) = level.demolition {
-            if level.survival.is_some() || level.extraction.is_some() ||
+        if let Some(objective) = effective_demolition {
+            if effective_survival.is_some() || effective_extraction.is_some() ||
                 !sides.contains(&objective.attacking_side) ||
                 mission.is_some_and(|mission| mission.player_side != objective.attacking_side) ||
                 !objective_has_controller(objective.attacking_side) ||
@@ -7224,12 +7289,12 @@ fn run_battle(
                 }
             }
         }
-        if let Some(objective) = level.escort {
+        if let Some(objective) = effective_escort {
             let target_squad = source.source_squads.iter().find(|squad|
                 squad.members.contains(&objective.escorted_ship_id)
             );
-            if level.survival.is_some() || level.demolition.is_some() ||
-                !level.extraction.as_ref().is_some_and(|zone|
+            if effective_survival.is_some() || effective_demolition.is_some() ||
+                !effective_extraction.as_ref().is_some_and(|zone|
                     zone.player_side == objective.escorting_side) ||
                 mission.is_some_and(|mission|
                     mission.player_side != objective.escorting_side) ||
@@ -7260,7 +7325,7 @@ fn run_battle(
                 }
             }
         }
-        if let Some(dialogue) = level.campaign_dialogue {
+        if let Some(dialogue) = effective_dialogue {
             let player_side = dialogue.player_side();
             // Uranus II does not install its Bee-elimination victory
             // trigger until the 600-second sixth wave has fired. Its
