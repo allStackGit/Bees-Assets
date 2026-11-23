@@ -6781,8 +6781,12 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     match &recording.source {
                         recorded_library::RecordedSource::QuickBattle(config) |
                         recorded_library::RecordedSource::TrainedBattle(config) =>
-                            run_session(config, true, true, Some(output),
-                                None, Some(recording.trace.clone()), None)?,
+                            run_session_with_queen_access(
+                                config, true, true, Some(output),
+                                None, Some(recording.trace.clone()), None,
+                                original_queen.as_ref(), original_factory.as_ref(),
+                                &original_fighters,
+                            )?,
                         recorded_library::RecordedSource::CampaignSetup(path) => {
                             let setup = CampaignReplaySetup::load(path)?;
                             // Watching a prior campaign is not a new career
@@ -6840,8 +6844,11 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                         "kind": "native_generated_battle_recovered",
                         "source": source, "run": output, "remote_host": false,
                     }));
-                    return run_session(&source, true, true,
-                        Some(output), None, None, None);
+                    return run_session_with_queen_access(
+                        &source, true, true, Some(output), None, None, None,
+                        original_queen.as_ref(), original_factory.as_ref(),
+                        &original_fighters,
+                    );
                 }
                 let choices = [
                     BattleMenuRow {
@@ -6906,7 +6913,11 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     "source_level_id": levels[level_index].1,
                     "archived_run": source,
                 }));
-                run_session(&source, true, true, Some(output), None, None, None)
+                run_session_with_queen_access(
+                    &source, true, true, Some(output), None, None, None,
+                    original_queen.as_ref(), original_factory.as_ref(),
+                    &original_fighters,
+                )
             })()
         } else if matches!(game_kind, "campaign" | "challenge") {
             run_menu(&games[index], &save_root.join(
