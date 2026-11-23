@@ -647,7 +647,7 @@ def main():
     parser.add_argument("--policy-seed", type=int, default=0)
     parser.add_argument("--rollout-binary", type=Path)
     parser.add_argument("--physics-workers", type=int)
-    parser.add_argument("--inference-device", choices=("cpu", "cuda:0"))
+    parser.add_argument("--inference-device", choices=("cpu", "cuda:0", "cuda:1", "cuda:2", "cuda:3"))
     parser.add_argument("--resume", action="store_true",
                         help="continue unfinished scenarios from an unchanged pinned suite request")
     parser.add_argument("--parallel-scenarios", type=int, default=1,
