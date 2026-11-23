@@ -95,15 +95,13 @@ def configured_plan(plan: dict, collection: dict) -> list[dict]:
         ) or not integer(item.get("seed"), 0, U64 - 1):
             raise ValueError("original training plan has invalid or repeated mission/seed identity")
         selected.add(item["mission_index"])
-        chosen = (
-            selectors(item, "policy_ship_ids", 1, (1 << 63) - 1) or
-            selectors(item, "policy_squad_ids", 1, (1 << 63) - 1) or
-            selectors(item, "policy_sides", 1, 2)
-        )
-        if not chosen:
-            raise ValueError("each original policy Level needs explicit ship, squad or side ownership")
-        if set(item.get("policy_sides", [])) - {1, 2}:
-            raise ValueError("original policy sides must be 1 or 2")
+        ships = selectors(item, "policy_ship_ids", 1, (1 << 63) - 1)
+        squads = selectors(item, "policy_squad_ids", 1, (1 << 63) - 1)
+        sides = selectors(item, "policy_sides", 1, 2)
+        if not (ships or squads or sides):
+            raise ValueError(
+                "each original policy Level needs explicit ship, squad or side ownership"
+            )
     return plan["missions"]
 
 

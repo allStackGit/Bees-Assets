@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 import shutil
 import signal
 import subprocess
+import sys
 from tempfile import TemporaryDirectory, NamedTemporaryFile
 import time
 import traceback
@@ -82,7 +83,12 @@ def source_config(path: Path, manifest: Path, output: Path) -> dict:
     if not isinstance(interpreter, str) or not interpreter:
         raise ValueError("run configuration requires its native policy Python interpreter")
     if interpreter == "auto":
-        config["python"] = "python" if os.name == "nt" else "python3"
+        # A multi-map native source may be authored on another platform
+        # and intentionally omit a machine-local interpreter path. Run
+        # its resident policy worker under the exact approved venv that
+        # launched this PPO collection, never whichever system Python
+        # happens to be first on PATH.
+        config["python"] = os.path.abspath(sys.executable)
     elif Path(interpreter).is_absolute() or len(Path(interpreter).parts) > 1:
         # Keep venv/bin/python as the executable, not its resolved system
         # target. Asset and model inputs still use canonical source paths.

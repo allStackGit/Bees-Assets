@@ -29,9 +29,14 @@ def _source(path):
     return document
 
 
-def _python_command(run, value):
+def _python_command(run, value, session_python):
     if not isinstance(value, str) or not value.strip():
         raise ValueError("curriculum source must specify Python")
+    # Portable original-fleet Stage runs deliberately say "auto".
+    # They execute under the SAME pinned Python as the session, rather
+    # than accidentally launching system Python without MA-POCA/ROCm.
+    if value == "auto":
+        return session_python
     python = Path(value)
     if python.is_absolute() or len(python.parts) > 1:
         return str((Path(run["path"]).parent / python).resolve())
@@ -69,7 +74,7 @@ def load_curriculum(path, base_run, total_rounds, round_python, learner_slot, se
         source = _source(run["path"])
         worker = source.get("policy_worker")
         if (not isinstance(worker, str) or not worker or
-                _python_command(run, source.get("python")) != round_python or
+                _python_command(run, source.get("python"), round_python) != round_python or
                 (Path(run["path"]).parent / worker).resolve(strict=True) != base_worker):
             raise ValueError("curriculum cannot change the session Python or policy worker")
         routed = [set(level.get("model_slots", {}).values())
