@@ -508,8 +508,8 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     model_store = env.get("BEES_NATIVE_MODEL_STORE")
     model_dependencies = native_manifest_model_dependencies(manifest, model_store)
     if inference_device is not None:
-        if inference_device not in ("cpu", "cuda:0"):
-            raise ValueError("native evaluation inference device must be cpu or cuda:0")
+        if inference_device not in ("cpu", "cuda:0", "cuda:1", "cuda:2", "cuda:3"):
+            raise ValueError("native evaluation inference device must be cpu or cuda:0..cuda:3")
         # An ONNX execution-provider manifest cannot be relocated through
         # PyTorch's device selector. Never report a CPU evaluation while an
         # ONNX opponent still requires a CUDA/ROCm execution provider.
@@ -525,12 +525,14 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
                 providers = entry.get("providers", ["CPUExecutionProvider"])
                 if (not isinstance(providers, list) or not providers or
                         (inference_device == "cpu" and
+                         providers[0] != "CPUExecutionProvider") or
+                        (inference_device != "cpu" and inference_device != "cuda:0" and
                          providers[0] != "CPUExecutionProvider")):
-                    raise ValueError("native ONNX provider cannot satisfy requested CPU evaluation")
+                    raise ValueError("native ONNX provider cannot safely relocate to requested inference device")
                 gpu_capable |= providers[0] != "CPUExecutionProvider"
             else:
                 gpu_capable = True
-        if inference_device == "cuda:0" and not gpu_capable:
+        if inference_device != "cpu" and not gpu_capable:
             raise ValueError("GPU evaluation cannot accelerate CPU-only ONNX models")
     config, expected = setup_config(source_path, manifest, output, physics_workers)
     if (candidate_slot is None) != (reference_slot is None):
@@ -766,7 +768,7 @@ def main():
                         help="manifest slot that owns the selected training weights")
     parser.add_argument("--selected-training-round", type=int,
                         help="original completed training round for comparison")
-    parser.add_argument("--inference-device", choices=("cpu", "cuda:0"),
+    parser.add_argument("--inference-device", choices=("cpu", "cuda:0", "cuda:1", "cuda:2", "cuda:3"),
                         help="override PyTorch model placement without changing checkpoint or manifest")
     args = parser.parse_args()
     if args.learner_side not in (1, 2):
