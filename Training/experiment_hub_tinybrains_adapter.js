@@ -85,7 +85,9 @@ function supportsTinyBrainsProfile(machine,job) {
         p&&Object.keys(p).every(key=>
             ['profile','profile_sha256','updates','threads','device','remote_rollouts','import_checkpoint',
                 'import_checkpoint_sha256','rollout_action_weights','rollout_endpoints',
-                'design_overrides','design_source_sha256'].includes(key))&&
+                'design_overrides','design_source_sha256','training_stage'].includes(key))&&
+        (p.training_stage===undefined||
+            machine.tinybrains_curriculum_stages?.includes(p.training_stage)===true)&&
         (p.rollout_endpoints===undefined||
             remote&&machine.tinybrains_rollout_subset===true&&endpoints!==null)&&
         (p.rollout_action_weights===undefined||
