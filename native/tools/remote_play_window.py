@@ -137,6 +137,10 @@ class RemoteBattleWindow:
             self.footer_clock, text="Cycle speed", command=lambda:
             self.request_host_clock("speed"), state="disabled",
         )
+        self.lobby_button = ttk.Button(
+            self.footer_clock, text="Ready to play", command=self.ready_lobby,
+            state="disabled",
+        )
         if not console.spectator:
             self.footer_clock.pack(fill="x", pady=(3, 0))
             for button in (self.pause_button, self.step_button, self.speed_button):
@@ -384,6 +388,13 @@ class RemoteBattleWindow:
         except (ValueError, OSError) as error:
             self.notice(f"Surrender unavailable: {error}")
 
+    def ready_lobby(self):
+        try:
+            if self.console.acknowledge_lobby():
+                self.notice("Waiting for the native host to confirm readiness")
+        except (OSError, ValueError) as error:
+            self.notice(f"Could not join the native match: {error}")
+
     def request_host_clock(self, command):
         if not self.console.time_controls_available:
             self.notice("Dedicated native host clock controls are unavailable")
@@ -618,7 +629,11 @@ class RemoteBattleWindow:
                 self._reconnect_attempts = 0
                 self._disconnection_reported = False
             key = (state["world_id"], state["episode_revision"], state["tick"])
-            if key != self.drawn_scope:
+            # A paused or not-yet-started host may publish new authorized
+            # lobby, time-control or briefing state without advancing a
+            # physical tick. Object identity detects a fresh wire snapshot
+            # without comparing hundreds of ships or allocating a diff.
+            if key != self.drawn_scope or state is not self.state:
                 if self.drawn_scope is not None and (
                     key[0] != self.drawn_scope[0] or
                     key[1] != self.drawn_scope[1]
@@ -682,6 +697,30 @@ class RemoteBattleWindow:
                     self.status.set(
                         f"World {key[0]}, episode {key[1]}, tick {key[2]}{latency}"
                     )
+        lobby = state.get("lobby") if state else None
+        lobby_waiting = isinstance(lobby, dict) and lobby.get("waiting") is True
+        if not self.console.spectator and lobby_waiting:
+            if not self.lobby_button.winfo_manager():
+                self.lobby_button.pack(side="left", padx=7)
+            already_ready = (self.console.lobby_ready_owned or
+                             self.console.lobby_ready_request is not None)
+            self.lobby_button.state(
+                ["disabled"] if already_ready or not self.console.alive
+                else ["!disabled"]
+            )
+            self.lobby_button.configure(
+                text="Ready confirmed" if self.console.lobby_ready_owned
+                else "Awaiting ready ACK" if self.console.lobby_ready_request
+                else "Ready to play"
+            )
+            if not self.last_feedback:
+                self.status.set(
+                    f"Waiting for both players — sides ready: "
+                    f"{lobby.get('ready_sides', [])} / "
+                    f"{lobby.get('required_sides', [])}"
+                )
+        elif self.lobby_button.winfo_manager():
+            self.lobby_button.pack_forget()
         can_host_clock = (
             not self.console.spectator and self.console.alive and
             self.console.time_controls_available and state is not None and
