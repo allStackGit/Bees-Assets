@@ -280,7 +280,7 @@ Merge the following `worker` entry into the existing
 environment:
 
 ```text
-EXPERIMENT_HUB_RELEASE_SOURCES={"worker":{"path":"/home/halifax/ai/projects/experiment-hub/Assets","branch":"feat/halifax-unity-workers-20261123"}}
+EXPERIMENT_HUB_RELEASE_SOURCES='{"worker":{"path":"/home/halifax/ai/projects/experiment-hub/Assets","branch":"feat/halifax-unity-workers-20261123"}}'
 ```
 
 Adjust the path to the actual Hub source checkout. **Preserve** any existing
