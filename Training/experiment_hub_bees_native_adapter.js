@@ -57,7 +57,7 @@ function jobPath(artifacts,context) {
 function normalize(parameters,context,approved) {
     const allowed=new Set([
         'max_steps','envs','device','seed','hyperparameters','environment_args',
-        'worker_sha256','trainer_sha256','evaluation_profile','evaluation_matches',
+        'worker_sha256','trainer_sha256','evaluation_profile','evaluation_matches','batch_inference',
     ]);
     if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
         Object.keys(parameters).some(key=>!allowed.has(key)))
@@ -95,12 +95,15 @@ function normalize(parameters,context,approved) {
         (overrides.buffer_size<overrides.batch_size||
         overrides.buffer_size%overrides.batch_size!==0))
         throw Error('Bees native PPO buffer size must be a multiple of batch size.');
+    const batching=parameters.batch_inference??true;
+    if(typeof batching!=='boolean')
+        throw Error('Bees batched cross-worker inference must be a boolean.');
     const profile=parameters.evaluation_profile??'off';
     const matches=parameters.evaluation_matches??8;
     if(!['off','scripted-maps-v1'].includes(profile)||
         !Number.isSafeInteger(matches)||matches<1||matches>100)
         throw Error('Bees evaluation profile must be off or scripted-maps-v1 with 1–100 matches per scenario.');
-    return {maxSteps,envs,seed,device,profile,matches,
+    return {maxSteps,envs,seed,device,profile,matches,batching,
         environmentArgs:envArgs.slice(),hyperparameters:{...overrides}};
 }
 
@@ -127,6 +130,8 @@ const DESIGN_FIELDS=Object.freeze([
         type:'number',default:0.99,min:0.7,max:1},
     {key:'hyperparameters.num_epoch',label:'PPO epochs',section:'training',
         type:'integer',default:3,min:1,max:32},
+    {key:'batch_inference',label:'Batch policy inference across Unity environments',
+        section:'training',type:'boolean',default:true},
     {key:'evaluation_profile',label:'Post-training evaluation profile',section:'training',
         type:'enum',default:'off',options:['off','scripted-maps-v1']},
     {key:'evaluation_matches',label:'Matches per evaluation scenario',section:'training',
@@ -257,6 +262,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 expected_gpu_pci:context.gpu_pci_address??null,
                 evaluation_profile:frozen.profile,
                 evaluation_matches:frozen.matches,
+                batch_inference:frozen.batching,
                 evaluator_script:evaluator,evaluator_sha256:approved.evaluator_sha256,
                 evaluator_core:evaluatorCore,
                 evaluator_core_sha256:approved.evaluator_core_sha256,
