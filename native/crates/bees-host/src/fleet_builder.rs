@@ -31,6 +31,78 @@ const SOURCE_RUN: &str = include_str!("../../../examples/native-two-player.run.j
 const SOURCE_ARCHETYPES: &str = include_str!("../../../examples/native-skirmish.scene.json");
 const SOURCE_QUEEN: &str = include_str!("../../../examples/native-queen.scene.json");
 const FLEET_SIZES: [usize; 8] = [1, 2, 4, 8, 16, 32, 64, 128];
+
+/// A native example's Queen is a small synthetic training fixture (4000 HP,
+/// 4000 TSV), not the original 7000 HP / 770 TSV boss. Only a complete
+/// source-authored Challenge may provide the original FreePlay Queen.
+pub(super) fn original_challenge_queen(
+    catalog_path: &Path,
+) -> Result<Value, Box<dyn Error>> {
+    let catalog_path = catalog_path.canonicalize()?;
+    let root = catalog_path.parent()
+        .ok_or_else(|| invalid("original Challenge catalog has no directory"))?;
+    let catalog: Value = serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    if catalog["campaign_id"] != "original-human-challenge" {
+        return Err(invalid("Queen unlock requires the original Challenge career").into());
+    }
+    let stages = catalog["battles"].as_array()
+        .ok_or_else(|| invalid("original Challenge catalog has no stages"))?;
+    if stages.len() != 10 {
+        return Err(invalid("Queen requires all ten authored Challenge stages").into());
+    }
+    let final_stage = stages.iter().find(|stage|
+        stage["mission"]["id"] == "challenge-09")
+        .ok_or_else(|| invalid("original Challenge has no final Queen mission"))?;
+    let run_name = final_stage["config"].as_str()
+        .ok_or_else(|| invalid("original Queen stage has no native run"))?;
+    let run_path = root.join(run_name).canonicalize()?;
+    if !run_path.starts_with(root) || !run_path.is_file() {
+        return Err(invalid("original Queen run must belong to its Challenge career").into());
+    }
+    let run: Value = serde_json::from_slice(&fs::read(&run_path)?)?;
+    let levels = run["levels"].as_array()
+        .filter(|levels| levels.len() == 1)
+        .ok_or_else(|| invalid("original Queen stage has no single physical Level"))?;
+    let scene_name = levels[0]["scene"].as_str()
+        .ok_or_else(|| invalid("original Queen stage has no physical scene"))?;
+    let scene_path = run_path.parent()
+        .ok_or_else(|| invalid("original Queen run has no directory"))?
+        .join(scene_name).canonicalize()?;
+    if !scene_path.starts_with(root) || !scene_path.is_file() {
+        return Err(invalid("original Queen scene must belong to its Challenge career").into());
+    }
+    let scene: Value = serde_json::from_slice(&fs::read(&scene_path)?)?;
+    let queens = scene["ships"].as_array()
+        .ok_or_else(|| invalid("original Challenge scene has no physical ships"))?
+        .iter().filter(|ship|
+            ship["ship_type"] == 17 && ship["side"] == 1 &&
+            ship["special"]["kind"] == "queen"
+        ).collect::<Vec<_>>();
+    if queens.len() != 1 {
+        return Err(invalid("original Queen mission must have one authentic boss hull").into());
+    }
+    let queen = queens[0];
+    let codex: Value = serde_json::from_str(include_str!(
+        "../../../assets/ship-codex.json"
+    ))?;
+    let expected = &codex["ships"][17];
+    if (expected["ship_type"] != 17 ||
+        queen["health"] != expected["health"] ||
+        queen["max_health"] != expected["health"] ||
+        queen["original_health"] != expected["health"] ||
+        queen["max_tsv"] != expected["tsv"] ||
+        queen["base_speed"] != expected["speed"] ||
+        queen["sight"]["source_sight"] != expected["sight"] ||
+        !queen["special"]["spawn"].is_object() ||
+        !queen["turrets"].as_array().is_some_and(|turrets| turrets.len() == 5)
+    ) {
+        return Err(invalid(
+            "Challenge Queen does not match the original ship stats and physical weapon family",
+        ).into());
+    }
+    Ok(queen.clone())
+}
+
 pub(super) const GAME_ID: &str = "fleet-skirmish";
 
 #[derive(Clone, Copy)]
@@ -429,6 +501,9 @@ pub(super) struct FleetChoice {
     squad_sizes: [usize; 2],
     specialist_squad_sizes: [usize; 2],
     mix: [FleetMix; 2],
+    /// Authenticated original Challenge hull, copied into a new FreePlay
+    /// scene before the battle's immutable source checkpoint is committed.
+    queen_archetype: Option<Value>,
     carrier_deck: usize,
     terrain: Terrain,
     map_background: NativeMapBackdrop,
@@ -466,9 +541,9 @@ fn invalid(message: &'static str) -> io::Error {
 }
 
 pub(super) fn choose(
-    save_root: &Path, bee_queen_unlocked: bool,
+    save_root: &Path, queen_archetype: Option<&Value>,
 ) -> Result<Option<FleetChoice>, Box<dyn Error>> {
-    choose_for_preferred_side(save_root, None, bee_queen_unlocked)
+    choose_for_preferred_side(save_root, None, queen_archetype)
 }
 
 /// Original FreePlay SwitchSides leaves the active Level and opens Squad
@@ -476,7 +551,7 @@ pub(super) fn choose(
 /// world is never re-owned while it is running.
 pub(super) fn choose_for_preferred_side(
     save_root: &Path, preferred_side: Option<i32>,
-    bee_queen_unlocked: bool,
+    queen_archetype: Option<&Value>,
 ) -> Result<Option<FleetChoice>,Box<dyn Error>> {
     if preferred_side.is_some_and(|side|!matches!(side,1|2)) {
         return Err(invalid("preferred Fleet Builder side must be Bee or Human").into());
@@ -509,7 +584,7 @@ pub(super) fn choose_for_preferred_side(
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(
-        fleet_sizes, ore_count > 0, arena_size, bee_queen_unlocked,
+        fleet_sizes, ore_count > 0, arena_size, queen_archetype.is_some(),
     )? else { return Ok(None); };
     let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
@@ -592,7 +667,7 @@ pub(super) fn choose_for_preferred_side(
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
+        player_side, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, queen_archetype: queen_archetype.cloned(), carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: matches!(mode, 3 | 6), benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
@@ -602,6 +677,7 @@ pub(super) fn choose_for_preferred_side(
 /// per side; no new network controller, simulation or permission model.
 pub(super) fn choose_multiplayer(
     authenticated_side: Option<i32>, save_root: &Path,
+    queen_archetype: Option<&Value>,
 ) -> Result<Option<FleetChoice>, Box<dyn Error>> {
     // The existing LAN host's token map is authoritative. A HiveMind
     // opponent is selectable only when exactly one real remote commander
@@ -635,7 +711,7 @@ pub(super) fn choose_multiplayer(
     let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
-    let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size, true)? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size, queen_archetype.is_some())? else { return Ok(None); };
     let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
@@ -668,7 +744,7 @@ pub(super) fn choose_multiplayer(
     };
     Ok(Some(FleetChoice {
         player_side: if use_hivemind { authenticated_side } else { None },
-        fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
+        fleet_sizes, squad_sizes, specialist_squad_sizes, mix, queen_archetype: queen_archetype.cloned(), carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: false,
         benchmark: false,
         spectator_episodes: 1,
@@ -680,14 +756,16 @@ pub(super) fn choose_multiplayer(
 
 /// The actual headless native runner measures steps/s and wall time with
 /// exactly the same collision, command and ship code used in windowed play.
-pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> {
+pub(super) fn choose_benchmark(
+    queen_archetype: Option<&Value>,
+) -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain(fleet_sizes)? else { return Ok(None); };
     let Some(map_background) = choose_planet()? else { return Ok(None); };
     let Some((arena_size, lethal_borders)) = choose_arena_size(terrain)? else { return Ok(None); };
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
-    let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size, true)? else { return Ok(None); };
+    let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size, queen_archetype.is_some())? else { return Ok(None); };
     let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
@@ -737,7 +815,7 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let Some(threads) = choose_resource("CPU physics workers", &workers)?
         else { return Ok(None); };
     Ok(Some(FleetChoice {
-        player_side: None, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
+        player_side: None, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, queen_archetype: queen_archetype.cloned(), carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: true,
         benchmark: true,
         spectator_episodes: 1,
@@ -1810,11 +1888,8 @@ pub(super) fn archive(
     // scene, never from an approximate handcrafted stats table.
     let mut source_archetypes: Value = serde_json::from_str(SOURCE_ARCHETYPES)?;
     if selected.mix.iter().any(|mix| matches!(mix, FleetMix::Queen)) {
-        let queen_source: Value = serde_json::from_str(SOURCE_QUEEN)?;
-        let queen = queen_source["ships"].as_array()
-            .and_then(|ships| ships.iter().find(|ship|
-                ship["side"] == 2 && ship["ship_type"] == 17))
-            .ok_or_else(|| invalid("native original Queen scene has no physical source hull"))?;
+        let queen = selected.queen_archetype.as_ref()
+            .ok_or_else(|| invalid("original Queen FreePlay requires an authenticated Challenge boss"))?;
         // The source physical hull and its timed Yellow Jacket template
         // are faction-independent. Gameplay assigns spawned minions the
         // parent's true side. Never implement a separate Bee-side factory.
