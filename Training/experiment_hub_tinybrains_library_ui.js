@@ -31,10 +31,10 @@
         '<button id="hub-mixed-archive" type="button" disabled>Archive unused evaluation versions</button>',
         '<p class="muted">Archived versions free evaluator service slots. Only definitions with no saved Design, default policy or job reference qualify; prior evidence and opponent models are preserved.</p>',
         '<h4>Add a frozen network as an opponent</h4>',
-        '<div class="formgrid"><label>Verified finished checkpoint<select id="hub-mixed-checkpoint"></select></label>',
+        '<div class="formgrid"><label>Retained checkpoint from a verified finished Hub job<select id="hub-mixed-checkpoint"></select></label>',
         '<label>Opponent name<input id="hub-mixed-opponent-name" maxlength="80" placeholder="Batch 128 — 9570 updates"></label></div>',
         '<button id="hub-mixed-freeze" type="button">Freeze and add named opponent</button>',
-        '<p class="muted">Nano and Micro are already available. Freezing a finished checkpoint creates a new immutable SHA-pinned model; no training is started.</p>'
+        '<p class="muted">Nano and Micro are already available. Freezing a selected saved update checkpoint publishes only a verified, named opponent model. It does not start training or create another evaluator timer.</p>'
     ].join('');
     existing.parentElement.insertBefore(panel,existing.nextSibling);
     let library=null,editing=null,busy=false,chosen=new Set();
@@ -251,8 +251,8 @@
         if(!id||!name.trim())return notice('Select a checkpoint and enter a name.');
         if(!confirm('Freeze the selected checkpoint as "'+name+
             '"? This publishes one immutable, fingerprinted opponent.'))return;
-        const result=await send({action:'freeze-history',source_job_id:id,
-            opponent_name:name});
+        const result=await send({action:'freeze-checkpoint-opponent',
+            source_checkpoint_id:id,opponent_name:name});
         if(result)$('hub-mixed-opponent-name').value='';
     }
     $('hub-mixed-save').addEventListener('click',save);
@@ -271,7 +271,7 @@
     document.addEventListener('hub-local-services-status',event=>{
         const info=event.detail?.evaluators;
         if(info?.custom_library)render({...info.custom_library,
-            checkpoint_candidates:info.historical_candidates||[]});
+            checkpoint_candidates:info.checkpoint_candidates||[]});
         else if(info?.custom_library_issue)
             notice('Saved evaluation library unavailable: '+info.custom_library_issue);
     });
