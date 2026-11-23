@@ -328,12 +328,21 @@ def author_policy(source: dict, game: dict, ids: set[int], slots: dict[str, int]
     level["scripted_queues"].extend(commands)
     config["decision_period"] = period
     config["episodes_per_world"] = episodes
-    # At least the requested duration in exact physical fixed steps,
-    # with room for terminal bookkeeping and asynchronous inference.
+    # Native RunConfig.max_rounds is a RUN-WIDE tick limit, shared by
+    # all episodes of every World. The old one-episode budget terminated
+    # multi-episode source captures early, producing incomplete PPO inputs.
+    # Reserve the requested full duration plus terminal bookkeeping for
+    # EACH requested episode, without changing its simulation timestep.
     dt = scene["fixed_dt_seconds"]
     if type(dt) not in (float, int) or not math.isfinite(dt) or dt <= 0:
         raise ValueError("source Level fixed dt is invalid")
-    config["max_rounds"] = max(config["max_rounds"], math.ceil(timeout / dt) + 16)
+    per_episode_rounds = math.ceil(timeout / dt) + 16
+    budget = per_episode_rounds * episodes
+    if budget >= (1 << 64) or type(config.get("max_rounds")) is not int or (
+        config["max_rounds"] < 1 or config["max_rounds"] >= (1 << 64)
+    ):
+        raise ValueError("native multi-episode physical round budget is invalid")
+    config["max_rounds"] = max(config["max_rounds"], budget)
     receipt = {
         "selected_policy_ship_ids": sorted(ids),
         "selected_policy_squad_ids": sorted(policy_squads),
