@@ -240,8 +240,20 @@ function sharedGpuAdmission(records, gpuPlan, requested, knownVramMb) {
     // starting another systemd unit. Old/unknown native GPU records are
     // exclusive: an absent explicit shared budget cannot authorize overlap.
     const requestedPcis=new Set(gpuPlan?.selected?.map(g=>g.pci_address)||[]);
-    const coTenants=records.filter(record=>
-        !['finished','stopped','failed'].includes(record.state)&&
+    const active=records.filter(record=>
+        !['finished','stopped','failed'].includes(record.state));
+    // An old or malformed durable GPU record may still own hardware even
+    // when its exact PCI cannot be recovered. Never share around such an
+    // ambiguous native owner merely because its mapping is missing.
+    if(active.some(record=>{
+        const ids=record.gpu_pci_addresses||
+            (record.gpu_pci_address?[record.gpu_pci_address]:[]);
+        return (!Array.isArray(ids)||new Set(ids).size!==ids.length||
+            ids.some(id=>!PCI.test(String(id)))||
+            (record.gpu_mode&&ids.length===0));
+    }))
+        throw Error('Unverified native GPU owner identity blocks new GPU admission.');
+    const coTenants=active.filter(record=>
         (record.gpu_pci_addresses||(
             record.gpu_pci_address?[record.gpu_pci_address]:[]))
             .some(pci=>requestedPcis.has(pci)));
