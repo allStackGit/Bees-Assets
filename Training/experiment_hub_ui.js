@@ -1576,6 +1576,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         throw Error('Every WAN actor requires a distinct machine, separate from the learner.');
                     machines.add(machine_id);
                     const gpu=row.querySelector('.hub-bees-wan-gpus').value;
+                    const host=state?.machines?.find(m=>m.id===machine_id);
+                    if(gpu==='1'&&host?.agent_platform==='win32'&&
+                        host.design_catalog?.bees_rollout?.cuda_enabled!==true)
+                        throw Error('Selected Windows Bees actor has not enrolled a CUDA-enabled runtime.');
                     return {
                         machine_id,
                         resources:budget(row.querySelector('.hub-bees-wan-cpus').value,
@@ -1620,6 +1624,13 @@ document.addEventListener('DOMContentLoaded', () => {
             '<label>GPU <select class="hub-bees-wan-gpus"><option value="0">CPU</option>'+
             '<option value="1">1 exclusive GPU</option></select></label>'+
             '<button type="button" class="hub-bees-wan-remove">Remove</button>';
+        row.querySelector('.hub-bees-wan-machine').addEventListener('change',()=>{
+            const target=row.querySelector('.hub-bees-wan-machine').value;
+            const host=state?.machines?.find(m=>m.id===target);
+            if(host?.agent_platform==='win32'&&
+                host.design_catalog?.bees_rollout?.cuda_enabled!==true)
+                row.querySelector('.hub-bees-wan-gpus').value='0';
+        });
         row.querySelector('.hub-bees-wan-remove').addEventListener('click',()=>{
             row.remove();renderBeesWanGroup();
         });
@@ -1664,7 +1675,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const value=input.value;
             refreshSelectOptions(input,actors.map(machine=>
                 new Option(machine.name+' ('+machine.id+' · '+
-                    (machine.agent_platform==='win32'?'Windows CPU':'Linux')+' · '+
+                    (machine.agent_platform==='win32'
+                        ?machine.design_catalog.bees_rollout.cuda_enabled
+                            ?'Windows CUDA ready':'Windows CPU only'
+                        :'Linux')+' · '+
                     (machine.design_catalog.bees_rollout.wan_forward_managed
                         ?'managed SSH':'manual forward')+')',machine.id)));
             if(actors.some(machine=>machine.id===value))input.value=value;
