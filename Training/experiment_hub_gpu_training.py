@@ -379,9 +379,12 @@ class PinnedGpuStaging:
         self._copy_stream = None
         self._pending = deque()
         self._pending_bytes = 0
+        self._free_pinned = []
+        self._pinned_total_bytes = 0
         self._known_banks = set()
         self._closed = False
         self.async_bytes = self.direct_bytes = self.async_copies = 0
+        self.pinned_reuses = self.pinned_allocations = 0
 
     def _make_stream(self):
         if self._copy_stream is not None:
@@ -392,11 +395,53 @@ class PinnedGpuStaging:
             return False
         return True
 
-    def _reap(self, required):
-        while self._pending and self._pending_bytes+required > self.max_pinned_bytes:
+    def _reap_completed(self):
+        # GPU completion determines when a pinned host bank may be written
+        # again. Querying an event does not synchronize CPU or GPU work.
+        while self._pending:
+            pinned,event,size = self._pending[0]
+            try:
+                completed = event.query()
+            except (RuntimeError,NotImplementedError):
+                completed = False
+            if not completed:
+                break
+            self._pending.popleft()
+            self._pending_bytes -= size
+            self._free_pinned.append(pinned)
+
+    def _checkout(self, source):
+        self._reap_completed()
+        for index,buffer in enumerate(self._free_pinned):
+            if buffer.dtype==source.dtype and buffer.shape==source.shape:
+                self.pinned_reuses += 1
+                return self._free_pinned.pop(index)
+        nbytes = source.numel()*source.element_size()
+        while self._pinned_total_bytes+nbytes > self.max_pinned_bytes:
+            if self._free_pinned:
+                old = self._free_pinned.pop()
+                self._pinned_total_bytes -= old.numel()*old.element_size()
+                continue
+            if not self._pending:
+                return None
+            # All submitted DMA reads use one stream. Waiting for the
+            # oldest outstanding transfer releases an exact reusable
+            # pinned bank without racing an in-flight host read.
             pinned,event,size = self._pending.popleft()
             event.synchronize()
             self._pending_bytes -= size
+            if pinned.shape==source.shape and pinned.dtype==source.dtype:
+                self.pinned_reuses += 1
+                return pinned
+            self._pinned_total_bytes -= size
+        try:
+            pinned = torch.empty(
+                source.shape,dtype=source.dtype,device='cpu',pin_memory=True)
+        except (RuntimeError,NotImplementedError,MemoryError):
+            return None
+        self._pinned_total_bytes += nbytes
+        self.pinned_allocations += 1
+        return pinned
 
     def copy_(self, destination, source):
         if (self._closed or not isinstance(destination,torch.Tensor) or
@@ -414,10 +459,15 @@ class PinnedGpuStaging:
             destination.copy_(source)
             self.direct_bytes += nbytes
             return destination
-        self._reap(nbytes)
+        pinned = self._checkout(source)
+        if pinned is None:
+            destination.copy_(source)
+            self.direct_bytes += nbytes
+            return destination
         try:
-            pinned = source.pin_memory()
-        except (RuntimeError,NotImplementedError,MemoryError):
+            pinned.copy_(source)
+        except (RuntimeError,NotImplementedError):
+            self._free_pinned.append(pinned)
             destination.copy_(source)
             self.direct_bytes += nbytes
             return destination
@@ -438,6 +488,7 @@ class PinnedGpuStaging:
             # A partially submitted DMA must finish before its host
             # staging buffer is released or rewritten by another request.
             self._copy_stream.synchronize()
+            self._free_pinned.append(pinned)
             destination.copy_(source)
             self.direct_bytes += nbytes
             return destination
@@ -455,6 +506,8 @@ class PinnedGpuStaging:
             self._copy_stream.synchronize()
         self._pending.clear()
         self._pending_bytes = 0
+        self._free_pinned.clear()
+        self._pinned_total_bytes = 0
         self._known_banks.clear()
         self._copy_stream = None
 
