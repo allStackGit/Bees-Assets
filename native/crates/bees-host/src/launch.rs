@@ -7837,6 +7837,7 @@ fn run_campaign_game_menu(
                         fleet_ship_id: purchased.fleet_ship_id,
                         to_saved_squad_id: 0,
                         authored_from: None,
+                        batch: None,
                     });
                 }
                 for &destination in squads {
@@ -7855,8 +7856,39 @@ fn run_campaign_game_menu(
                         fleet_ship_id: purchased.fleet_ship_id,
                         to_saved_squad_id: destination,
                         authored_from: None,
+                        batch: None,
                     });
                 }
+            }
+        }
+        // The source game's fleet editor also needs a practical way to
+        // move a whole purchased squad in one gesture. One preflight and
+        // one career receipt cover all living purchased hulls, rather than
+        // publishing a partially relocated fleet if the game closes.
+        for side in [1, 2] {
+            let Ok(lost) = progress.lost_player_fleet_ids(side) else { continue };
+            let mut squads = HashMap::<i64, Vec<i64>>::new();
+            for ship in progress.purchases_for_side(side) {
+                if ship.saved_squad_id > 0 && !lost.contains(&ship.fleet_ship_id) {
+                    squads.entry(ship.saved_squad_id).or_default()
+                        .push(ship.fleet_ship_id);
+                }
+            }
+            let mut groups = squads.into_iter().collect::<Vec<_>>();
+            groups.sort_unstable_by_key(|(id, _)| *id);
+            for (source, mut ids) in groups {
+                if ids.len() < 2 { continue; }
+                ids.sort_unstable();
+                transfer_rows.push(NativeTransferMenuRow {
+                    title: format!(
+                        "All {} purchased ships: {} -> Reserve (atomic)",
+                        ids.len(), progress.squad_label(source),
+                    ),
+                    fleet_ship_id: 0,
+                    to_saved_squad_id: 0,
+                    authored_from: None,
+                    batch: Some((side, ids)),
+                });
             }
         }
         for &(side, fleet_id, original_squad, ship_type) in &original_choices {
@@ -7875,6 +7907,7 @@ fn run_campaign_game_menu(
                     fleet_ship_id: fleet_id,
                     to_saved_squad_id: 0,
                     authored_from: Some((side, current_squad)),
+                    batch: None,
                 });
             }
             for &destination in squad_destinations.get(&side)
@@ -7895,6 +7928,7 @@ fn run_campaign_game_menu(
                     fleet_ship_id: fleet_id,
                     to_saved_squad_id: destination,
                     authored_from: Some((side, current_squad)),
+                    batch: None,
                 });
             }
         }
@@ -8174,6 +8208,21 @@ fn run_campaign_game_menu(
                 launch_failed = result.is_err();
                 if let Err(error) = result {
                     eprintln!("Could not build ship type {ship_type}: {error}");
+                }
+                continue;
+            }
+            NativeBattleMenuAction::TransferBatch {
+                side, fleet_ship_ids, to_saved_squad_id,
+            } => {
+                let result = run_transfer_ships(
+                    &catalog_path, output_root, side,
+                    &fleet_ship_ids, to_saved_squad_id,
+                );
+                progress = catalog.load_progress(output_root)?;
+                launch_failed = result.is_err();
+                feedback = result.is_ok().then_some(NativeUiFeedback::Saved);
+                if let Err(error) = result {
+                    eprintln!("Could not transfer purchased squad fleet: {error}");
                 }
                 continue;
             }
