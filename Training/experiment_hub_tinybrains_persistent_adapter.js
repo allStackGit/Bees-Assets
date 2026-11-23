@@ -1260,7 +1260,9 @@ function createTinyBrainsPersistentDockerAdapter({
     // Reuse the exact source-run map inventory. Stages are explicit,
     // frozen job inputs and never inferred from training reward or evaluation
     // chart data. Legacy runs without a stage retain their existing maps.
-    function approvedStage(name,turnOverride=undefined) {
+    const sourceMapId=map=>map==='basic-tiny-2p'?map:
+        path.posix.basename(map.replace(/\\/g,'/'),'.json');
+    function approvedStage(name,turnOverride=undefined,mapIds=undefined) {
         if(name===undefined)return null;
         const maps=originalSpec.model_config?.environment?.maps;
         const sourceTurns=originalSpec.model_config?.environment?.max_turns;
@@ -1288,7 +1290,18 @@ function createTinyBrainsPersistentDockerAdapter({
         };
         if(!Object.hasOwn(filters,name))
             throw Error('Unknown trusted TinyBrains curriculum stage.');
-        const selected=maps.filter(filters[name]);
+        let selected=maps.filter(filters[name]);
+        if(mapIds!==undefined) {
+            if(!Array.isArray(mapIds)||mapIds.length<1||mapIds.length>128||
+                new Set(mapIds).size!==mapIds.length||
+                mapIds.some(id=>typeof id!=='string'||
+                    !/^[a-z0-9_-]{1,80}$/.test(id)))
+                throw Error('Training map selection must contain distinct approved board IDs.');
+            const wanted=new Set(mapIds);
+            selected=selected.filter(map=>wanted.has(sourceMapId(map)));
+            if(selected.length!==wanted.size)
+                throw Error('A selected training board is not in this approved map stage.');
+        }
         if(!selected.length||name==='basic_tiny'&&selected.length!==1)
             throw Error('The approved TinyBrains curriculum stage has no matching maps.');
         const limit={
@@ -1343,6 +1356,16 @@ function createTinyBrainsPersistentDockerAdapter({
     }):[];
     const designEnabled=installedLearningPath
         .includes('HUB_DESIGN_OVERRIDES_VERSION = 1');
+    const mapCatalogue=stageSupport
+        ?approvedStage('full_multiplayer').maps.map(map=>{
+            const id=sourceMapId(map);
+            const seats=/-([246])p(?:-|$)/.exec(id);
+            if(!/^[a-z0-9_-]{1,80}$/.test(id)||!seats)
+                throw Error('Trusted training map inventory has an invalid board identity.');
+            return {id,players:Number(seats[1])};
+        }):[];
+    if(new Set(mapCatalogue.map(map=>map.id)).size!==mapCatalogue.length)
+        throw Error('Trusted training map inventory contains duplicate board IDs.');
     const designFields=described(originalSpec,'tinybrains');
     const designSourceSha256=crypto.createHash('sha256').update(frozen).digest('hex');
     function approvedDesign(overrides) {
@@ -1366,7 +1389,7 @@ function createTinyBrainsPersistentDockerAdapter({
             throw Error('TinyBrains checkpoint Design differs from its frozen job.');
     }
 
-    function checkpointStage(out,expectedName=undefined) {
+    function checkpointStage(out,expectedName=undefined,expectedMapIds=undefined) {
         const file=path.join(out,'hub-curriculum-stage.json');
         if(!fs.existsSync(file)) {
             if(typeof expectedName==='string')
@@ -1381,8 +1404,10 @@ function createTinyBrainsPersistentDockerAdapter({
         const designFile=path.join(out,'hub-design-overrides.json');
         const design=fs.existsSync(designFile)
             ?JSON.parse(fs.readFileSync(designFile,'utf8')):{};
-        const effective=approvedStage(value?.name,design['environment.max_turns']);
-        const legacy=approvedStage(value?.name);
+        const mapIds=expectedMapIds===undefined&&Array.isArray(value?.maps)
+            ?value.maps.map(sourceMapId):expectedMapIds;
+        const effective=approvedStage(value?.name,design['environment.max_turns'],mapIds);
+        const legacy=approvedStage(value?.name,undefined,mapIds);
         // Old jobs are immutable: preserve their historical source-derived
         // turn limit even if they had a Design override that the older stage
         // implementation did not honor. Newly staged jobs use the override.
@@ -1755,7 +1780,8 @@ function createTinyBrainsPersistentDockerAdapter({
         },
         gpu_execution:'cuda',
         ...(designEnabled?{design_catalog:{tinybrains:{...designFields,source_sha256:designSourceSha256,
-            metric_catalog:TINYBRAINS_METRIC_CATALOG,profiles:
+            metric_catalog:TINYBRAINS_METRIC_CATALOG,
+            map_catalog:mapCatalogue,profiles:
             Object.fromEntries([...approved].map(([id,item])=>[
                 id,{profile_sha256:item.sha256},
             ]))}}}:{}),
@@ -1808,12 +1834,13 @@ function createTinyBrainsPersistentDockerAdapter({
         args(parameters,context) {
             const {profile,profile_sha256,updates,threads,device,remote_rollouts,
                 rollout_action_weights,rollout_endpoints,import_checkpoint,import_checkpoint_sha256,
-                design_overrides,design_source_sha256,training_stage}=parameters;
+                design_overrides,design_source_sha256,training_stage,
+                training_map_ids}=parameters;
             approvedDesign(design_overrides);
             if(training_stage!==undefined&&!stageSupport)
                 throw Error('Install the approved TinyBrains curriculum-capable runtime before selecting a map stage.');
             const stage=approvedStage(training_stage,
-                design_overrides?.['environment.max_turns']);
+                design_overrides?.['environment.max_turns'],training_map_ids);
             verifyStageMaps(stage);
             const item=approved.get(profile);
             const endpoints=approvedEndpointSubset(remote?.endpoints,rollout_endpoints);
@@ -1823,7 +1850,8 @@ function createTinyBrainsPersistentDockerAdapter({
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
                     'threads','device','remote_rollouts','rollout_action_weights',
                     'import_checkpoint','import_checkpoint_sha256','rollout_endpoints',
-                    'design_overrides','design_source_sha256','training_stage'].includes(k))||
+                    'design_overrides','design_source_sha256','training_stage',
+                    'training_map_ids'].includes(k))||
                 (design_overrides===undefined
                     ?design_source_sha256!==undefined
                     :design_source_sha256!==designSourceSha256)||
@@ -1911,7 +1939,7 @@ function createTinyBrainsPersistentDockerAdapter({
                     !frozenEvidenceIntact(out))
                     throw Error('Previously launched or changed Hub training output cannot be re-used.');
                 checkpointDesign(out,design_overrides,true);
-                checkpointStage(out,training_stage??null);
+                checkpointStage(out,training_stage??null,training_map_ids);
                 // Existing staged-but-unlaunched jobs may predate the initial
                 // benchmark opponent copy. Repair only this verified seed.
                 const initial=path.join(out,'self-play/opponents/initial.pt');
@@ -1998,7 +2026,8 @@ function createTinyBrainsPersistentDockerAdapter({
                 throw Error('Unknown approved checkpoint profile.');
             checkpointReady(targetFor(context),item.text,context.frozen_parameters?.design_overrides,true);
             checkpointStage(targetFor(context),
-                context.frozen_parameters?.training_stage??null);
+                context.frozen_parameters?.training_stage??null,
+                context.frozen_parameters?.training_map_ids);
             return true;
         },
         model_checkpoint_sha256(context){
