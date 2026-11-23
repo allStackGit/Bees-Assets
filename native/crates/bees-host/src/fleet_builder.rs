@@ -104,6 +104,82 @@ pub(super) fn original_campaign_factory(
     Ok(None)
 }
 
+/// Reuse the physically authored class contracts present in the original
+/// campaign instead of replacing Wasp/Gunship with approximate ship stats.
+/// Every selected ship still enters the same CombatWorld and squad clones.
+pub(super) fn original_campaign_fighters(
+    catalog_path: &Path,
+) -> Result<[Vec<Value>; 2], Box<dyn Error>> {
+    let catalog_path = catalog_path.canonicalize()?;
+    let root = catalog_path.parent()
+        .ok_or_else(|| invalid("original campaign catalog is missing its root"))?;
+    let catalog: Value = serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    let stages = catalog["battles"].as_array()
+        .ok_or_else(|| invalid("original campaign has no playable stages"))?;
+    let codex: Value = serde_json::from_str(include_str!(
+        "../../../assets/ship-codex.json"
+    ))?;
+    // These are original ordinary combat vessels. Parent-child ships,
+    // spawners, special weapons and economy buildings have dedicated
+    // gameplay lifecycles and are never cloned as regular fighters.
+    const ORDINARY: [&[u8]; 2] = [
+        &[3, 14, 15, 16, 21],
+        &[6, 7, 11, 12, 13],
+    ];
+    let mut result: [Vec<Value>; 2] = [Vec::new(), Vec::new()];
+    for stage in stages {
+        let mut configs = Vec::new();
+        if let Some(path) = stage["config"].as_str() {
+            configs.push(path);
+        }
+        for outcome in ("on_victory", "on_defeat") {
+            if let Some(path) = stage["mission"][outcome]["config"].as_str() {
+                configs.push(path);
+            }
+        }
+        for run in configs {
+            let scene = original_battle_scene(root, run)?;
+            for ship in scene["ships"].as_array().into_iter().flatten()
+                .chain(scene["fleet_templates"].as_array().into_iter().flatten())
+            {
+                let Some(side) = ship["side"].as_u64() else { continue };
+                let Some(kind) = ship["ship_type"].as_u64() else { continue };
+                if !(1..=2).contains(&side) ||
+                    !ORDINARY[(side - 1) as usize].contains(&(kind as u8)) ||
+                    result[(side - 1) as usize].iter().any(|existing|
+                        existing["ship_type"] == kind)
+                {
+                    continue;
+                }
+                let expected = &codex["ships"][kind as usize];
+                if expected["ship_type"] != kind ||
+                    ship["max_health"] != expected["health"] ||
+                    ship["original_health"] != expected["health"] ||
+                    ship["max_tsv"] != expected["tsv"] ||
+                    ship["base_speed"].as_f64() != expected["speed"].as_f64() ||
+                    ship["sight"]["source_sight"].as_f64() != expected["sight"].as_f64() ||
+                    ship["policy"].is_object() || ship["special"].is_object() ||
+                    ship["special_weapon"].is_object() ||
+                    ship["drone_carrier_id"].is_number() ||
+                    !ship["turrets"].is_array() || !ship["persistent_fleet"].is_boolean()
+                {
+                    // A source example is not a canonical original class
+                    // merely because it has a familiar ship_type number.
+                    continue;
+                }
+                let mut full_health = ship.clone();
+                full_health["health"] = expected["health"].clone();
+                full_health["user_controlled"] = json!(true);
+                result[(side - 1) as usize].push(full_health);
+            }
+        }
+    }
+    for classes in &mut result {
+        classes.sort_unstable_by_key(|ship| ship["ship_type"].as_u64().unwrap_or(255));
+    }
+    Ok(result)
+}
+
 /// A native example's Queen is a small synthetic training fixture (4000 HP,
 /// 4000 TSV), not the original 7000 HP / 770 TSV boss. Only a complete
 /// source-authored Challenge may provide the original FreePlay Queen.
