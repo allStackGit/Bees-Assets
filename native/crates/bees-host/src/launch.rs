@@ -1837,6 +1837,8 @@ struct CampaignReplaySetup {
     kind: String,
     source_config: PathBuf,
     source_config_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    archived_physics: Option<bool>,
     /// Frozen scene, Stage and policy-loader identity for a restart before
     /// the first durable World checkpoint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1901,6 +1903,7 @@ impl CampaignReplaySetup {
             schema_version: 5,
             kind: "native_campaign_replay_setup".to_owned(),
             source_config_sha256: format!("{:x}", Sha256::digest(&bytes)),
+            archived_physics: None,
             assets_sha256: Some(native_start_asset_digests(&source, &config)?),
             source_config: source,
             career_sha256: None,
@@ -1931,8 +1934,8 @@ impl CampaignReplaySetup {
         })
     }
 
-    fn load(path: &Path) -> Result<Self, Box<dyn Error>> {
-        let setup: Self = serde_json::from_slice(&fs::read(path)?)?;
+    fn load(path: &Path, replay: bool) -> Result<Self, Box<dyn Error>> {
+        let mut setup: Self = serde_json::from_slice(&fs::read(path)?)?;
         if !(1..=5).contains(&setup.schema_version) ||
             (setup.schema_version >= 5 && setup.assets_sha256.as_ref()
                 .is_none_or(|assets| assets.is_empty())) ||
@@ -1943,9 +1946,26 @@ impl CampaignReplaySetup {
         {
             return Err(invalid("invalid recorded campaign battle configuration").into());
         }
-        let source = setup.source_config.canonicalize()?;
-        if format!("{:x}", Sha256::digest(fs::read(&source)?)) != setup.source_config_sha256 {
+        let use_archive = replay && setup.archived_physics == Some(true);
+        let source = if use_archive {
+            let candidate = path.with_file_name("replay-source-run.json");
+            if !fs::symlink_metadata(&candidate)?.file_type().is_file() {
+                return Err(invalid("recorded campaign archive is not a regular file").into());
+            }
+            candidate.canonicalize()?
+        } else {
+            setup.source_config.canonicalize()?
+        };
+        let bytes = fs::read(&source)?;
+        if format!("{:x}", Sha256::digest(&bytes)) != setup.source_config_sha256 {
             return Err(invalid("recorded campaign source configuration changed").into());
+        }
+        if use_archive {
+            let config: RunConfig = serde_json::from_slice(&bytes)?;
+            if setup.assets_sha256.as_ref() != Some(&native_start_asset_digests(&source, &config)?) {
+                return Err(invalid("recorded campaign physical archive changed").into());
+            }
+            setup.source_config = source;
         }
         Ok(setup)
     }
@@ -2477,7 +2497,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         // outcome back to the active campaign ledger. The same replay
         // reader checks the original config/model identities and both
         // physical and gameplay signatures for each recorded boundary.
-        let setup = CampaignReplaySetup::load(&setup_path)?;
+        let setup = CampaignReplaySetup::load(&setup_path, true)?;
         return run_session(&setup.source_config, false, false,
             Some(output), None, Some(input_trace), Some(setup.mission()));
     }
@@ -3249,7 +3269,7 @@ fn interrupted_campaign_world(
             // identities. Its first World checkpoint and commitment marker
             // must precede player input, physical ticks or Game setup.
         }
-        let frozen = CampaignReplaySetup::load(&saved)?;
+        let frozen = CampaignReplaySetup::load(&saved, false)?;
         if pending.replace((run, frozen)).is_some() {
             return Err(invalid(
                 "multiple interrupted Worlds claim the same native campaign",
@@ -3550,7 +3570,10 @@ fn launch_catalog_battle(
     if let Some(start) = &quick_start {
         save_native_quick_battle_start(&output, start)?;
     }
-    if let Some(setup) = setup {
+    if let Some(mut setup) = setup {
+        if archive_battle_physics(&config, &output)? {
+            setup.archived_physics = Some(true);
+        }
         let path = output.parent().expect("created campaign battle directory")
             .join("campaign-replay-setup.json");
         let file = fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
@@ -5621,13 +5644,12 @@ fn select_library_quick_battle_output(
 /// Archive the exact one-Level RunConfig and its sibling physical files
 /// before the first tick. Byte copies preserve the trace identities.
 /// External model or HiveMind games keep their original pinned paths.
-#[cfg(feature = "client")]
-fn archive_quick_battle_replay_source(
+fn archive_battle_physics(
     config:&Path,output:&Path,
-) -> Result<(),Box<dyn Error>> {
+) -> Result<bool, Box<dyn Error>> {
     let run_meta=fs::symlink_metadata(config)?;
     if !run_meta.file_type().is_file() || run_meta.len()>1024*1024 {
-        return Ok(());
+        return Ok(false);
     }
     let run_bytes=fs::read(config)?;
     let run:RunConfig=serde_json::from_slice(&run_bytes)?;
@@ -5640,7 +5662,7 @@ fn archive_quick_battle_replay_source(
         run.hivemind.is_some() || run.python.is_some() || run.policy_worker.is_some() ||
         !run.recover_notifications.is_empty() || !run.recover_outcome_journals.is_empty()
     {
-        return Ok(());
+        return Ok(false);
     }
     let parent = config.parent().ok_or_else(||
         invalid("recorded game source has no physical asset directory"))?;
@@ -5653,12 +5675,12 @@ fn archive_quick_battle_replay_source(
         if name.components().count() != 1 || name.file_name().is_none_or(|name|
             name == "replay-source-run.json")
         {
-            return Ok(());
+            return Ok(false);
         }
         let source = parent.join(name);
         let metadata = fs::symlink_metadata(&source)?;
         if !metadata.file_type().is_file() || metadata.len() > 4 * 1024 * 1024 {
-            return Ok(());
+            return Ok(false);
         }
         assets.push((name, fs::read(source)?));
     }
@@ -5687,7 +5709,7 @@ fn archive_quick_battle_replay_source(
         persist(&saved.join(name), &bytes)?;
     }
     persist(&saved.join("replay-source-run.json"),&run_bytes)?;
-    Ok(())
+    Ok(true)
 }
 
 #[cfg(feature = "client")]
@@ -5703,7 +5725,7 @@ fn run_library_quick_battle(
         Some(battle_catalog::CampaignWriterLease::acquire(&root)?)
     } else { None };
     let output = select_library_quick_battle_output(save_root, game_id, config, false)?;
-    archive_quick_battle_replay_source(config,&output)?;
+    archive_battle_physics(config,&output)?;
     run_session_with_queen_access(
         config, true, true, Some(output), None, None, None,
         original_queen, original_factory, sources,
@@ -6276,7 +6298,7 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
             let output = select_library_quick_battle_output(
                 save_root, &settings.game_id, &source, true,
             )?;
-            archive_quick_battle_replay_source(&source, &output)?;
+            archive_battle_physics(&source, &output)?;
             (source, output)
         };
         // The library's LAN host is a dedicated authoritative server.
@@ -6953,7 +6975,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                                 &original_fighters,
                             )?,
                         recorded_library::RecordedSource::CampaignSetup(path) => {
-                            let setup = CampaignReplaySetup::load(path)?;
+                            let setup = CampaignReplaySetup::load(path, true)?;
                             // Watching a prior campaign is not a new career
                             // outcome. run_battle filters receipts whenever
                             // replay_inputs is supplied; this saved setup
