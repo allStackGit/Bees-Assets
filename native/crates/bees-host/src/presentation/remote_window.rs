@@ -107,6 +107,10 @@ struct WireCounts {
     interrupted_battle_notices: u64,
     reconnect_attempts: u64,
     reconnect_transports_opened: u64,
+    heartbeat_pings_sent: u64,
+    heartbeat_pongs_received: u64,
+    heartbeat_timeouts: u64,
+    handshake_timeouts: u64,
     /// Render-only smoothing; no simulation or network side-effects.
     snapshot_pairs_interpolated: u64,
     interpolated_draw_frames: u64,
@@ -559,6 +563,10 @@ struct PeerClient {
     queued_bytes: usize,
     next_request: u64,
     last_response_request: u64,
+    connected_at: Instant,
+    last_heartbeat_sent: Instant,
+    next_heartbeat_nonce: u64,
+    heartbeat_pending: Option<(u64, Instant)>,
     /// Only pending INPUT order IDs are timed. A FIFO permits amortized
     /// constant-time reconciliation with host's ordered response sequence.
     pending_order_times: VecDeque<(u64, Instant)>,
@@ -639,7 +647,11 @@ impl PeerClient {
         Ok(Self {
             socket, incoming: Vec::new(), queued: VecDeque::new(),
             written: 0, queued_bytes: 0, next_request: 1,
-            last_response_request: 0, pending_order_times: VecDeque::new(),
+            last_response_request: 0,
+            connected_at: Instant::now(),
+            last_heartbeat_sent: Instant::now(),
+            next_heartbeat_nonce: 0, heartbeat_pending: None,
+            pending_order_times: VecDeque::new(),
             briefing_pending: None, briefing_approved: None,
             briefing_rejected: None,
             pause_owned: false, pause_pending: None, step_pending: None,
@@ -733,6 +745,16 @@ impl PeerClient {
                     } else {
                         format!("Connected as player side {}", self.side)
                     };
+                }
+                Some("pong") => {
+                    if !self.authenticated ||
+                        message["nonce"].as_u64() !=
+                            self.heartbeat_pending.map(|(nonce,_)|nonce)
+                    {
+                        return Err(invalid("unexpected native host heartbeat").into());
+                    }
+                    self.heartbeat_pending=None;
+                    self.metrics.heartbeat_pongs_received+=1;
                 }
                 Some("world_state") => {
                     if !self.authenticated || message["protocol"].as_u64() != Some(1) ||
@@ -1204,6 +1226,58 @@ impl PeerClient {
             if link_disconnected(&error) {
                 self.connected = false;
                 self.notice = "Host disconnected".into();
+            } else { return Err(error.into()); }
+        }
+        Ok(())
+    }
+
+    /// Detect half-open TCP connections without relying on a World snapshot:
+    /// during source dialogue or a multiplayer pause the real simulation
+    /// clock deliberately does not advance. Heartbeats are transport-only,
+    /// bounded, and never acquire gameplay request IDs or player authority.
+    fn poll_heartbeat(&mut self) -> Result<(), Box<dyn Error>> {
+        if !self.connected { return Ok(()); }
+        let now=Instant::now();
+        if !self.authenticated {
+            if now.duration_since(self.connected_at)>=Duration::from_secs(15) {
+                self.connected=false;
+                self.metrics.handshake_timeouts+=1;
+                self.notice="Native host handshake timed out".into();
+                let _=self.socket.shutdown(std::net::Shutdown::Both);
+            }
+            return Ok(());
+        }
+        if let Some((_,sent_at))=self.heartbeat_pending {
+            if now.duration_since(sent_at)>=Duration::from_secs(30) {
+                self.connected=false;
+                self.metrics.heartbeat_timeouts+=1;
+                self.notice="Native host stopped responding".into();
+                let _=self.socket.shutdown(std::net::Shutdown::Both);
+            }
+            return Ok(());
+        }
+        if now.duration_since(self.last_heartbeat_sent)<Duration::from_secs(5) {
+            return Ok(());
+        }
+        let nonce=self.next_heartbeat_nonce.checked_add(1)
+            .ok_or_else(||invalid("native heartbeat nonce exhausted"))?;
+        let mut packet=serde_json::to_vec(&json!({"kind":"ping","nonce":nonce}))?;
+        packet.push(b'\n');
+        if self.queued_bytes+packet.len()>MAX_OUTGOING {
+            // An already congested socket cannot safely accept more data.
+            // The next render poll can retry without growing its queue.
+            return Ok(());
+        }
+        self.queued_bytes+=packet.len();
+        self.queued.push_back(packet);
+        self.next_heartbeat_nonce=nonce;
+        self.last_heartbeat_sent=now;
+        self.heartbeat_pending=Some((nonce,now));
+        self.metrics.heartbeat_pings_sent+=1;
+        if let Err(error)=self.flush() {
+            if link_disconnected(&error) {
+                self.connected=false;
+                self.notice="Host disconnected".into();
             } else { return Err(error.into()); }
         }
         Ok(())
@@ -3604,6 +3678,7 @@ pub fn connect_remote(
         if !rejoined {
             let polled_at=Instant::now();
             peer.poll()?;
+            peer.poll_heartbeat()?;
             let seconds=polled_at.elapsed().as_secs_f64();
             peer.metrics.network_poll_samples+=1;
             peer.metrics.network_poll_seconds+=seconds;
@@ -5260,6 +5335,10 @@ pub fn connect_remote(
         "interrupted_battle_notices":peer.metrics.interrupted_battle_notices,
         "reconnect_attempts":peer.metrics.reconnect_attempts,
         "reconnect_transports_opened":peer.metrics.reconnect_transports_opened,
+        "heartbeat_pings_sent":peer.metrics.heartbeat_pings_sent,
+        "heartbeat_pongs_received":peer.metrics.heartbeat_pongs_received,
+        "heartbeat_timeouts":peer.metrics.heartbeat_timeouts,
+        "handshake_timeouts":peer.metrics.handshake_timeouts,
         "connection_closed":!peer.connected,
     }));
     Ok(())
