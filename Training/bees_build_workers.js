@@ -17,6 +17,7 @@ const {
     resolveUnityEditor,
     runSync,
 } = require('./operator/common');
+const {unityWorkerTreeSha256}=require('./experiment_hub_bees_worker_identity');
 const {
     assertUnityProjectAvailableForBatchBuild,
     invokeUnityBuild,
@@ -158,6 +159,7 @@ async function build(argv = process.argv.slice(2)) {
             entrypoint: target.entrypoint,
             archive_sha256: await sha256(archive),
             archive_bytes: stat.size,
+            player_tree_sha256: unityWorkerTreeSha256(path.join(folder,target.entrypoint)),
         });
     }
 
