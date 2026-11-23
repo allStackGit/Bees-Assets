@@ -741,8 +741,8 @@ def write_launchers(output: Path, binary_name: str,
                 "#!/bin/sh\n"
                 "set -eu\n"
                 'cd "$(dirname "$0")"\n'
-                ': "\${BEES_NATIVE_REMOTE_LISTEN:?Set native LAN listen address}"\n'
-                'if [ -z "\${BEES_NATIVE_REMOTE_SIDE_TOKENS:-}" ] && [ -z "\${BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE:-}" ]; then\n'
+                ': "${BEES_NATIVE_REMOTE_LISTEN:?Set native LAN listen address}"\n'
+                'if [ -z "${BEES_NATIVE_REMOTE_SIDE_TOKENS:-}" ] && [ -z "${BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE:-}" ]; then\n'
                 '  echo "Set native commander credential JSON or private token file" >&2\n'
                 '  exit 2\n'
                 'fi\n'
@@ -751,9 +751,9 @@ def write_launchers(output: Path, binary_name: str,
                 '  exit 2\n'
                 'fi\n'
                 'catalog="$1"; mission="$2"\n'
-                'save="\${XDG_DATA_HOME:-$HOME/.local/share}/bees-native"\n'
+                'save="${XDG_DATA_HOME:-$HOME/.local/share}/bees-native"\n'
                 'default="$save/campaigns/$(basename "$catalog" .json)"\n'
-                'run="\${BEES_NATIVE_SERVER_OUTPUT_DIR:-$default}"\n'
+                'run="${BEES_NATIVE_SERVER_OUTPUT_DIR:-$default}"\n'
                 'mkdir -p "$run"\n'
                 f'exec "./{server_binary}" campaign "$catalog" ' +
                 '--output-dir "$run" --mission "$mission" --serve\n',
