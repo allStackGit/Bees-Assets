@@ -86,11 +86,13 @@ def export_project(root: Path, output: Path) -> None:
         raise ValueError("Metadata archive must be stored outside the metadata folders")
     entries = []
     total = 0
+    archive_created = False
     try:
         with zipfile.ZipFile(
             output, "x", compression=zipfile.ZIP_DEFLATED,
             compresslevel=6, allowZip64=True,
         ) as bundle:
+            archive_created = True
             for relative, source in files:
                 size = source.stat().st_size
                 if size > MAX_FILE or total + size > MAX_TOTAL:
@@ -116,7 +118,8 @@ def export_project(root: Path, output: Path) -> None:
                 MANIFEST, json.dumps(manifest, sort_keys=True, separators=(",", ":")),
             )
     except BaseException:
-        output.unlink(missing_ok=True)
+        if archive_created:
+            output.unlink(missing_ok=True)
         raise
     print(f"Exported {len(entries)} metadata files ({total} bytes): {output}")
 
