@@ -5624,6 +5624,25 @@ pub fn connect_remote_with_trust(
             text::draw_at(&mut pixels,WIDTH,12,37,
                 &format!("Fish Tank battle {episode} / {total}"),1,[198,231,248]);
         }
+        if let Some((completed, bees, humans, draws, total)) =
+            peer.state.as_ref().and_then(|state| {
+                let series = &state["fish_tank_series"];
+                Some((
+                    series["completed"].as_u64()?,
+                    series["bees_wins"].as_u64()?,
+                    series["human_wins"].as_u64()?,
+                    series["draws"].as_u64()?,
+                    series["total"].as_u64()?,
+                ))
+            })
+        {
+            // Source episode outcomes, not policy rewards. A long Fish
+            // Tank retains this authenticated score across every native
+            // World revision and across a recovered dedicated host.
+            text::draw_at(&mut pixels,WIDTH,12,71,
+                &format!("Finished {completed}/{total}  Bees {bees}  Humans {humans}  Draws {draws}"),
+                1,[198,231,248]);
+        }
         if let Some(speed)=peer.state.as_ref()
             .and_then(|state|state["game_speed"].as_f64())
         {
