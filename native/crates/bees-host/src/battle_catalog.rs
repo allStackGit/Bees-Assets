@@ -2058,15 +2058,16 @@ impl BattleCatalog {
                     return Err(invalid("invalid native fleet batch assignment"));
                 }
                 let mut ids = HashSet::with_capacity(transfers.len());
+                let current = progress.purchases.iter()
+                    .map(|(owner, ship)| (ship.fleet_ship_id, (*owner, ship.saved_squad_id)))
+                    .collect::<HashMap<_, _>>();
                 // First validate the complete edit against the current
                 // folded career. No partial assignment is ever exposed.
                 for &(id, from, to) in &transfers {
                     if id <= 0 || from < 0 || to < 0 || from == to ||
                         !ids.insert(id) ||
                         progress.is_retired_saved_squad(to) ||
-                        !progress.purchases.iter().any(|(owner, ship)|
-                            *owner == side && ship.fleet_ship_id == id &&
-                            ship.saved_squad_id == from) ||
+                        current.get(&id) != Some(&(side, from)) ||
                         progress.fleet.get(&id).is_some_and(|fleet|
                             fleet.side != side) ||
                         (to > 0 && (
