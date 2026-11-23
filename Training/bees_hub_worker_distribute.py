@@ -216,7 +216,11 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
         if (source_runtime.stat().st_size != runtime["archive_bytes"] or
             sha256_file(source_runtime) != runtime["archive_sha256"]):
             raise ValueError("Frozen Bees Python training runtime changed after packaging.")
+    # Validate every selected target and every required local archive before
+    # changing any machine. A missing Windows ZIP must not leave Linux machines
+    # on a newly activated, only partially distributed release.
     plan = []
+    prepared = []
     for machine in machine_rows:
         if selected and machine["machine_id"] not in selected:
             continue
@@ -233,19 +237,23 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
             raise ValueError("Built Unity archive changed before distribution: " +
                              archive_name)
         staging = machine["install_root"] + "/incoming/" + digest
+        prepared.append((machine, staging, archive, match))
         plan.append({
             "machine_id": machine["machine_id"],
             "platform": machine["platform"],
             "tailnet_ip": machine["tailnet_ip"],
             "release_sha256": digest,
             "archive": archive_name,
-            "transfer_bytes": archive.stat().st_size +
-                (runtime["archive_bytes"] if runtime else 0),
+            "transfer_bytes": (archive.stat().st_size +
+                               (runtime["archive_bytes"] if runtime else 0) +
+                               manifest.stat().st_size +
+                               sum(script.stat().st_size for script in scripts)),
             "activate": activate,
             "agent_restart_required": activate,
         })
-        if not apply:
-            continue
+    if not apply:
+        return plan
+    for index, (machine, staging, archive, match) in enumerate(prepared):
         stage_remote(machine, staging)
         scp(machine, [*scripts, manifest, archive] +
             ([source_runtime] if runtime else []), staging + "/")
@@ -270,7 +278,7 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
                          remote.get("runtime_version") != runtime["runtime_version"]) or
             activate and remote.get("activated") is not True):
             raise RuntimeError("Remote Bees Unity installation receipt does not match built release.")
-        plan[-1]["staging_cleaned"] = remote.get("staging_cleaned") is True
+        plan[index]["staging_cleaned"] = remote.get("staging_cleaned") is True
     return plan
 
 
