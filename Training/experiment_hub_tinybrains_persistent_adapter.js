@@ -1260,10 +1260,13 @@ function createTinyBrainsPersistentDockerAdapter({
     // Reuse the exact source-run map inventory. Stages are explicit,
     // frozen job inputs and never inferred from training reward or evaluation
     // chart data. Legacy runs without a stage retain their existing maps.
-    function approvedStage(name) {
+    function approvedStage(name,turnOverride=undefined) {
         if(name===undefined)return null;
         const maps=originalSpec.model_config?.environment?.maps;
         const sourceTurns=originalSpec.model_config?.environment?.max_turns;
+        if(turnOverride!==undefined&&
+            (!Number.isSafeInteger(turnOverride)||turnOverride<1||turnOverride>1000))
+            throw Error('Training environment max turns must be 1–1000.');
         if(!Array.isArray(maps)||!maps.length||maps.length>128||
             maps.some(map=>typeof map!=='string'||!map||map.length>512)||
             new Set(maps).size!==maps.length||
@@ -1290,9 +1293,9 @@ function createTinyBrainsPersistentDockerAdapter({
             throw Error('The approved TinyBrains curriculum stage has no matching maps.');
         const limit={
             basic_tiny:300,tiny_two_player:300,small_two_player:500,
-            all_two_player:750,full_multiplayer:sourceTurns,
+            all_two_player:750,full_multiplayer:1000,
         }[name];
-        return {name,maps:selected,max_turns:Math.min(sourceTurns,limit)};
+        return {name,maps:selected,max_turns:Math.min(turnOverride??sourceTurns,limit)};
     }
     // Map inventories can be inherited from a Windows-authored source run.
     // Check their actual installed files and seat counts BEFORE creating a
@@ -1375,8 +1378,17 @@ function createTinyBrainsPersistentDockerAdapter({
             fs.realpathSync(file)!==file||stat.size<1||stat.size>16384)
             throw Error('Invalid TinyBrains frozen curriculum manifest.');
         const value=JSON.parse(fs.readFileSync(file,'utf8'));
-        if(!value||typeof value!=='object'||Array.isArray(value)||
-            JSON.stringify(value)!==JSON.stringify(approvedStage(value.name))||
+        const designFile=path.join(out,'hub-design-overrides.json');
+        const design=fs.existsSync(designFile)
+            ?JSON.parse(fs.readFileSync(designFile,'utf8')):{};
+        const effective=approvedStage(value?.name,design['environment.max_turns']);
+        const legacy=approvedStage(value?.name);
+        // Old jobs are immutable: preserve their historical source-derived
+        // turn limit even if they had a Design override that the older stage
+        // implementation did not honor. Newly staged jobs use the override.
+        const matches=[effective,legacy].some(stage=>
+            JSON.stringify(value)===JSON.stringify(stage));
+        if(!value||typeof value!=='object'||Array.isArray(value)||!matches||
             expectedName===null||typeof expectedName==='string'&&
                 expectedName!==value.name)
             throw Error('TinyBrains frozen curriculum stage differs from approved inputs.');
@@ -1800,7 +1812,8 @@ function createTinyBrainsPersistentDockerAdapter({
             approvedDesign(design_overrides);
             if(training_stage!==undefined&&!stageSupport)
                 throw Error('Install the approved TinyBrains curriculum-capable runtime before selecting a map stage.');
-            const stage=approvedStage(training_stage);
+            const stage=approvedStage(training_stage,
+                design_overrides?.['environment.max_turns']);
             verifyStageMaps(stage);
             const item=approved.get(profile);
             const endpoints=approvedEndpointSubset(remote?.endpoints,rollout_endpoints);
