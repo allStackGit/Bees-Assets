@@ -1111,6 +1111,9 @@ function beesWanGroupBlock(snapshot,job) {
             item.issued_by==='experiment-hub');
         if(!host||host.status!=='connected'||host.local_executor_enabled!==true||
             host.native_preflight_passed!==true||
+            (host.design_catalog?.bees_rollout?.wan_forward_managed===true&&
+                host.design_catalog.bees_rollout.wan_target_machine_id!==
+                    learner.assigned_machine_id)||
             !supportsJobRuntime(host,actor)||!lease||
             nativeResourceBlock(actor,lease)||gpuStartBlock(actor,lease,host))
             return 'Every Bees remote actor needs its original live owner, exact Unity source and acknowledged resource/GPU proof.';
@@ -6597,7 +6600,9 @@ class ExperimentHub {
                 machine.design_catalog.bees_rollout.wan_key_fingerprint!==key||
                 ['worker_sha256','worker_payload_sha256','trainer_sha256',
                     'runtime_version'].some(field=>
-                    machine.design_catalog.bees_rollout[field]!==configRow.parameters[field]))
+                    machine.design_catalog.bees_rollout[field]!==configRow.parameters[field])||
+                machine.design_catalog.bees_rollout.wan_forward_managed===true&&
+                    machine.design_catalog.bees_rollout.wan_target_machine_id!==owner.id)
                 throw Error('Bees WAN actor '+actor.machine_id+
                     ' does not approve the learner Unity, PPO runtime or private broker key.');
         }
