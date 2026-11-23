@@ -10536,6 +10536,10 @@ fn run_battle(
                         "kind": "player_input", "round": rounds,
                         "tick": tick, "action": &order.action,
                         "remote_side": order.side,
+                        // Explicitly distinguish the SERVER-adjudicated
+                        // absence claim from a normal player's resignation.
+                        // Replay still applies the same typed surrender.
+                        "host_forfeit": order.host_forfeit,
                     }));
                     let committed = if committed.is_ok() {
                         let started = Instant::now();
