@@ -920,7 +920,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "model": model,
         "game_id": game_id,
     }));
-    reap_training_process(process, stderr_path);
+    reap_native_process(process, stderr_path, "training");
     println!("Native fleet training started. Progress is recorded in the training job logs; completed verified checkpoints will appear in the game library.");
     Ok(())
 }
@@ -928,7 +928,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
 
 
 
-fn reap_training_process(mut child: Child, stderr_path: PathBuf) {
+fn reap_native_process(mut child: Child, stderr_path: PathBuf, purpose: &'static str) {
     // Command::spawn is intentionally nonblocking for the game. Child::drop
     // does NOT reap a terminated child on Unix, so one lightweight waiter
     // owns each actual process until it finishes. The learner still owns
@@ -939,13 +939,13 @@ fn reap_training_process(mut child: Child, stderr_path: PathBuf) {
         let outcome = child.wait();
         let record = match outcome {
             Ok(status) => json!({
-                "kind": "native_fleet_training_process_exit",
+                "kind": format!("native_fleet_{purpose}_process_exit"),
                 "pid": pid,
                 "success": status.success(),
                 "exit_code": status.code(),
             }),
             Err(error) => json!({
-                "kind": "native_fleet_training_process_wait_error",
+                "kind": format!("native_fleet_{purpose}_process_wait_error"),
                 "pid": pid,
                 "error": error.to_string(),
             }),
@@ -1459,7 +1459,7 @@ fn evaluate_training_checkpoint(job: &Path, best: bool) -> Result<(), Box<dyn Er
         "log": log_path,
         "pid": child.id(),
     }));
-    reap_training_process(child, log_path);
+    reap_native_process(child, log_path, "evaluation");
     Ok(())
 }
 
@@ -1625,7 +1625,7 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
         "rounds": rounds, "worlds": recipe["worlds"],
         "hub_worlds": recipe["hub_worlds"],
     }));
-    reap_training_process(child, stderr_path);
+    reap_native_process(child, stderr_path, "training");
     println!("Existing native fleet training lineage resumed; the learner validates its original bootstrap, receipts and source before proceeding.");
     Ok(())
 }
