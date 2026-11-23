@@ -243,7 +243,8 @@ fn append_training_arguments(
     if ![1, 2, 4, 8, 16].contains(&episodes) {
         return Err(invalid("invalid native episodes-per-arena count").into());
     }
-    command.arg("--episodes-per-world").arg(episodes.to_string())
+    command.arg("--operator-stop-file").arg(job.join("stop.request"))
+        .arg("--episodes-per-world").arg(episodes.to_string())
         .arg("--train-rounds").arg(rounds.to_string())
         .arg("--learner-slot").arg(slot.to_string());
     if !recipe["self_play_refresh_every"].is_null() {
