@@ -7879,16 +7879,57 @@ fn run_campaign_game_menu(
             for (source, mut ids) in groups {
                 if ids.len() < 2 { continue; }
                 ids.sort_unstable();
-                transfer_rows.push(NativeTransferMenuRow {
-                    title: format!(
-                        "All {} purchased ships: {} -> Reserve (atomic)",
-                        ids.len(), progress.squad_label(source),
-                    ),
-                    fleet_ship_id: 0,
-                    to_saved_squad_id: 0,
-                    authored_from: None,
-                    batch: Some((side, ids)),
-                });
+                // Moving a complete squad into reserve or another saved
+                // squad uses the same atomic transaction. The shared
+                // physical preflight decides whether the destination has
+                // enough capacity in every authored mission variant.
+                let destinations = std::iter::once(0).chain(
+                    squad_destinations.get(&side).into_iter().flatten().copied(),
+                );
+                for destination in destinations {
+                    if source == destination { continue; }
+                    let target = if destination == 0 {
+                        "Reserve".to_string()
+                    } else { progress.squad_label(destination) };
+                    transfer_rows.push(NativeTransferMenuRow {
+                        title: format!(
+                            "All {} purchased ships: {} -> {} (atomic)",
+                            ids.len(), progress.squad_label(source), target,
+                        ),
+                        fleet_ship_id: 0,
+                        to_saved_squad_id: destination,
+                        authored_from: None,
+                        batch: Some((side, ids.clone())),
+                    });
+                }
+            }
+            // Reserve ships are a persistent fleet, not an unordered pool
+            // of fresh hulls. Let the player move multiple matching owned
+            // classes into an existing squad without one save per hull.
+            let mut reserve_classes = HashMap::<u8, Vec<i64>>::new();
+            for ship in progress.purchases_for_side(side) {
+                if ship.saved_squad_id == 0 && !lost.contains(&ship.fleet_ship_id) {
+                    reserve_classes.entry(ship.ship_type).or_default()
+                        .push(ship.fleet_ship_id);
+                }
+            }
+            let mut classes = reserve_classes.into_iter().collect::<Vec<_>>();
+            classes.sort_unstable_by_key(|(kind, _)| *kind);
+            for (kind, mut ids) in classes {
+                if ids.len() < 2 { continue; }
+                ids.sort_unstable();
+                for &destination in squad_destinations.get(&side).into_iter().flatten() {
+                    transfer_rows.push(NativeTransferMenuRow {
+                        title: format!(
+                            "{} reserve Type {} ships -> {} (atomic)",
+                            ids.len(), kind, progress.squad_label(destination),
+                        ),
+                        fleet_ship_id: 0,
+                        to_saved_squad_id: destination,
+                        authored_from: None,
+                        batch: Some((side, ids.clone())),
+                    });
+                }
             }
         }
         for &(side, fleet_id, original_squad, ship_type) in &original_choices {
