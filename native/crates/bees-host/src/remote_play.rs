@@ -13,7 +13,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::Path;
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
+use std::sync::Arc;
+use rustls::ServerConfig;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -32,6 +34,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::player_trace::NativePlayerInput;
+use crate::remote_tls::{server_tls_from_environment, RemoteSocket};
 use crate::presentation::{NativeFogFade, NativeRenderWorldView};
 use crate::unity_scene_snapshot::{NativeMusicLocation, NativeMapBackdrop};
 
@@ -155,7 +158,7 @@ impl HeldFireLease {
 
 struct Peer {
     id: u64,
-    socket: TcpStream,
+    socket: RemoteSocket,
     side: Option<i32>,
     // Spectators authenticate with independent view-only secrets for
     // their authorized faction. A side's commander token is never a
@@ -579,6 +582,9 @@ fn read_private_remote_tokens(path: &Path, label: &str)
 
 pub struct NativeRemotePlay {
     listener: TcpListener,
+    /// Transport encryption does not alter authenticated player authority,
+    /// owned World commands, or the durable host recovery checkpoint.
+    tls: Option<Arc<ServerConfig>>,
     // Identifies this one authoritative host session across TCP reconnects.
     // A restarted process cannot silently claim to resume a different
     // physical World just because it uses the same player-side tokens.
@@ -724,6 +730,7 @@ impl NativeRemotePlay {
                 format!("native multiplayer host session entropy unavailable: {error}")))?;
         let host_session_id = session_nonce.iter()
             .map(|byte| format!("{byte:02x}")).collect::<String>();
+        let tls = server_tls_from_environment()?;
         let listener = TcpListener::bind(&address)?;
         listener.set_nonblocking(true)?;
         let mut configured_sides = side_tokens.keys().copied().collect::<Vec<_>>();
@@ -741,6 +748,7 @@ impl NativeRemotePlay {
             "max_pending_authentications": MAX_UNAUTHENTICATED_PEERS,
             "mode": if side_tokens.len() > 1 { "independent_player_sides" }
                     else { "shared_player_authority" },
+            "transport": if tls.is_some() { "tls_1_2_or_later" } else { "private_network_tcp" },
             "configured_sides": configured_sides,
             "spectator_sides": {
                 let mut sides = spectator_tokens.keys().copied().collect::<Vec<_>>();
@@ -749,7 +757,7 @@ impl NativeRemotePlay {
             },
         }));
         Ok(Some(Self {
-            listener, host_session_id, recovered_session: false,
+            listener, tls, host_session_id, recovered_session: false,
             archive_only: false, dedicated_briefing_gate: dedicated,
             side_tokens, spectator_tokens,
             archived_receipts: HashMap::new(), peers: Vec::new(),
@@ -1071,6 +1079,17 @@ impl NativeRemotePlay {
                 }
                 continue;
             }
+            let socket = if let Some(tls) = &self.tls {
+                match RemoteSocket::server(socket, Arc::clone(tls)) {
+                    Ok(connection) => connection,
+                    Err(_) => {
+                        self.measurements.rejected_connections += 1;
+                        continue;
+                    }
+                }
+            } else {
+                RemoteSocket::plain(socket)
+            };
             let id = self.next_peer;
             self.next_peer += 1;
             self.measurements.connections_accepted += 1;
