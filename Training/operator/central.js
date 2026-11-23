@@ -78,7 +78,7 @@ function buildCentralLearnerArgv(config, learnerPython, unity, runtimeRoot) {
         '--unity-project-root', paths.beesRoot,
         '--generation-steps', String(config.generationSteps),
         '--num-envs', String(config.numLocalEnvs),
-        '--platform', 'WindowsPlayer',
+        '--platform', process.platform === 'linux' ? 'LinuxPlayer' : 'WindowsPlayer',
     ];
     if (config.learnerDevice) {
         argv.push('--learner-device', String(config.learnerDevice));
