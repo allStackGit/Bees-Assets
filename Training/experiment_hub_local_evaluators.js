@@ -23,6 +23,19 @@ const BATCH_ID='nano-micro';
 const MINI_ID='mini';
 const MINI_SUITE='tinybrains_mini_batch128_v1';
 const SCHEDULED_IDS=[...Object.keys(SUITES),BATCH_ID];
+const HISTORICAL_SUITE=/^tinybrains_mini_([a-f0-9]{20})$/;
+function historicalSuites(options) {
+    if(!fs.existsSync(options.suites))return {};
+    const names=fs.readdirSync(options.suites)
+        .filter(file=>file.endsWith('.json')&&
+            HISTORICAL_SUITE.test(file.slice(0,-5)));
+    if(names.length>32)
+        throw Error('The approved TinyBrains historical suite population exceeds 32.');
+    return Object.fromEntries(names.map(file=>{
+        const name=file.slice(0,-5);
+        return ['history-'+HISTORICAL_SUITE.exec(name)[1],name];
+    }));
+}
 // Full-season suites preserve the fast two-seat benchmarks. All 76 enabled
 // season boards are evaluated with each board's actual 2/4/6 player count.
 const SEASON_SUITES=Object.freeze({
@@ -40,6 +53,7 @@ function suiteNames(options) {
             ?{mini:MINI_SUITE}:{}),
         ...Object.fromEntries(Object.entries(SEASON_SUITES).filter(([,name])=>
             fs.existsSync(path.join(options.suites,name+'.json')))),
+        ...historicalSuites(options),
     };
     const stat=fs.lstatSync(marker);
     if(!stat.isFile()||stat.isSymbolicLink()||
@@ -66,6 +80,7 @@ function suiteNames(options) {
             ?{mini:MINI_SUITE}:{}),
         ...Object.fromEntries(Object.entries(SEASON_SUITES).filter(([,name])=>
             fs.existsSync(path.join(options.suites,name+'.json')))),
+        ...historicalSuites(options),
     };
 }
 function scheduledIds(options) {
@@ -73,7 +88,8 @@ function scheduledIds(options) {
         ...(fs.existsSync(path.join(options.suites,MINI_SUITE+'.json'))?[MINI_ID]:[]),
         'nano-season','micro-season',
         ...(fs.existsSync(path.join(options.suites,MINI_SUITE+'.json'))
-            ?['mini-season']:[])];
+            ?['mini-season']:[]),
+        ...Object.keys(historicalSuites(options))];
 }
 const SAFE_PATH=/^\/[A-Za-z0-9._/@:+-]+$/;
 const MACHINE=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -195,11 +211,7 @@ function prepareInstall(o) {
     for(const dir of [o.suites,o.scratch,o.receipts,o.bin])
         privateDirectory(dir,true);
 }
-async function createSeasonSuites(o) {
-    const missing=Object.entries(SEASON_SUITES).filter(([id,name])=>
-        (id!=='mini-season'||fs.existsSync(path.join(o.suites,MINI_SUITE+'.json')))&&
-        !fs.existsSync(path.join(o.suites,name+'.json')));
-    if(!missing.length)return;
+function seasonBoards(o) {
     const boards=presentDirectory(path.join(o.project,'maps/hive-minds/boards'));
     const filenames=fs.readdirSync(boards).filter(name=>name.endsWith('.json')).sort();
     if(filenames.length!==76)
@@ -221,6 +233,14 @@ async function createSeasonSuites(o) {
     }
     if(counts[2]!==30||counts[4]!==34||counts[6]!==12)
         throw Error('The trusted season map distribution has changed; an explicitly versioned suite is required.');
+    return ids;
+}
+async function createSeasonSuites(o) {
+    const missing=Object.entries(SEASON_SUITES).filter(([id,name])=>
+        (id!=='mini-season'||fs.existsSync(path.join(o.suites,MINI_SUITE+'.json')))&&
+        !fs.existsSync(path.join(o.suites,name+'.json')));
+    if(!missing.length)return;
+    const ids=seasonBoards(o);
     const {stdout}=await run(presentFile(o.launcher),[
         '-B',path.join(o.hubRoot,'Training/experiment_hub_evaluation_runtime.py'),
         '--project','tinybrains','--engine-path',o.engine,
@@ -342,8 +362,10 @@ function definitions(options,overrides={}) {
             // bounded to 180 seconds. The timer waits until the service
             // finishes; permit the full bounded sweep instead of truncating
             // it at the next six-hour cadence.
-            interval:Object.hasOwn(SEASON_SUITES,id)?'21600':'180',
-            timeout:Object.hasOwn(SEASON_SUITES,id)?'57600':'7200',
+            interval:(Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-'))
+                ?'21600':'180',
+            timeout:(Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-'))
+                ?'57600':'7200',
             unitId:id,
         }),
     ]));
@@ -426,7 +448,9 @@ async function status(hub) {
             active,running,last_result:lastResult,last_error:lastError,reason});
     }
     return {available:true,machine:options.machine,entries,
-        mini_candidates:miniCandidates(hub,options).map(({id,updates})=>({id,updates}))};
+        mini_candidates:miniCandidates(hub,options).map(({id,updates})=>({id,updates})),
+        historical_candidates:historicalCandidates(hub,options)
+            .map(({id,updates,batch_size})=>({id,updates,batch_size}))};
 }
 async function setup(hub) {
     const o=localOptions(hub);
@@ -457,7 +481,7 @@ async function setup(hub) {
         // Full-season sweeps are expensive. Install their units without
         // taking CPU from an ongoing learner unless the operator explicitly
         // starts each schedule or invokes Run now.
-        if(!Object.hasOwn(SEASON_SUITES,id))
+        if(!Object.hasOwn(SEASON_SUITES,id)&&!id.startsWith('history-'))
             await systemctl(['start',unitFiles(o,id).timer]);
     }
     return {message:'Fast TinyBrains evaluation timers started. Full-season 2/4/6-player suites installed; use Start or Run now for each expensive sweep.'};
@@ -562,7 +586,7 @@ async function refreshSuite(hub,id) {
     }
     return {message:name+' approved and scheduled. Restart the local agent from this panel to advertise the new suite.'};
 }
-function miniCandidates(hub,o) {
+function historicalCandidates(hub,o) {
     const candidates=[];
     for(const job of hub.snapshot().jobs||[]) {
         if(job.project_id!=='tinybrains'||job.status!=='finished'||
@@ -570,9 +594,9 @@ function miniCandidates(hub,o) {
             continue;
         const dir=path.join(o.artifacts,job.id);
         try {
-            const overrides=JSON.parse(fs.readFileSync(
-                path.join(dir,'hub-design-overrides.json'),'utf8'));
-            if(overrides['training.colony_batch_size']!==128)continue;
+            const overrideFile=path.join(dir,'hub-design-overrides.json');
+            const overrides=fs.existsSync(overrideFile)
+                ?JSON.parse(fs.readFileSync(overrideFile,'utf8')):{};
             const status=JSON.parse(fs.readFileSync(path.join(dir,'status.json'),'utf8'));
             const checkpoint=path.join(dir,'self-play/latest.pt');
             const stat=fs.lstatSync(checkpoint);
@@ -580,12 +604,16 @@ function miniCandidates(hub,o) {
                 !Number.isSafeInteger(status.ppo_updates)||status.ppo_updates<1)
                 continue;
             candidates.push({id:job.id,updates:status.ppo_updates,
+                batch_size:overrides['training.colony_batch_size']??null,
                 checkpoint,sha256:job.checkpoint_model_sha256,
                 modified:stat.mtimeMs});
         }catch { /* A missing/partial job is not a frozen source. */ }
     }
     candidates.sort((a,b)=>b.updates-a.updates||b.modified-a.modified);
     return candidates;
+}
+function miniCandidates(hub,o) {
+    return historicalCandidates(hub,o).filter(source=>source.batch_size===128);
 }
 
 function verifyFrozenMini(options,source,suite) {
