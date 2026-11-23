@@ -85,6 +85,23 @@ def planned_physical_coverage(scene: dict) -> dict:
     }
 
 
+def planned_coverage_summary(missions: list[dict], stage_count: int) -> dict:
+    coverage = [row["planned_physical_coverage"] for row in missions]
+    return {
+        "source_missions": len(missions),
+        "unique_physical_stage_contracts": stage_count,
+        "source_map_indices": sorted({
+            item["source_level_map_index"] for item in coverage
+        }),
+        "total_source_policy_agents": sum(
+            item["policy_agents"] for item in coverage
+        ),
+        "total_source_physical_ships": sum(
+            item["physical_ships"] for item in coverage
+        ),
+    }
+
+
 def configured_plan(plan: dict, collection: dict) -> list[dict]:
     required = {"schema_version", "missions", "model_slots", "timeout_seconds",
                 "decision_period", "episodes_per_world", "rotation_rounds_per_stage"}
@@ -339,22 +356,9 @@ def author_collection(original_collection: Path, source_plan: Path,
             "episodes_per_world": config["episodes_per_world"],
             "stages": stages,
             "authored_missions": prepared,
-            "planned_original_source_coverage": {
-                "source_missions": len(prepared),
-                "unique_physical_stage_contracts": len(stages),
-                "source_map_indices": sorted({
-                    row["planned_physical_coverage"]["source_level_map_index"]
-                    for row in prepared
-                }),
-                "total_source_policy_agents": sum(
-                    row["planned_physical_coverage"]["policy_agents"]
-                    for row in prepared
-                ),
-                "total_source_physical_ships": sum(
-                    row["planned_physical_coverage"]["physical_ships"]
-                    for row in prepared
-                ),
-            },
+            "planned_original_source_coverage": planned_coverage_summary(
+                prepared, len(stages),
+            ),
             "bootstrap_run": stages[0]["run"],
             "bootstrap_scene": stages[0]["bootstrap_scene"],
             **({
@@ -480,6 +484,10 @@ def verified_training_collection(directory: Path) -> tuple[dict, Path]:
             raise ValueError("authored original FleetShip policy scene changed")
         if planned_physical_coverage(read(policy_scene)) != row.get("planned_physical_coverage"):
             raise ValueError("planned original map/fleet coverage differs from physical actors")
+    if receipt.get("planned_original_source_coverage") != planned_coverage_summary(
+        receipt["authored_missions"], len(stages),
+    ):
+        raise ValueError("native training collection's reported map/fleet coverage changed")
     if len(stages) > 1:
         rotation = pinned(
             receipt.get("curriculum_plan"),
