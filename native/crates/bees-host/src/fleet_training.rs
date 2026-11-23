@@ -882,6 +882,54 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "Holdout CPU physics workers", &holdout_worker_options,
     )? else { return Ok(()); };
 
+    // Rotated source curricula may include independently authored fixed
+    // holdout maps. The session validates each original source and its
+    // exact seed plan; the game only chooses local physical GPU allocation.
+    let monitor_count = if let Some(plan) = &curriculum_plan {
+        let source: Value = serde_json::from_slice(&fs::read(plan)?)?;
+        source["rotation"]["monitor_run_configs"].as_array()
+            .map_or(0, Vec::len)
+    } else { 0 };
+    let monitor_evaluation_gpus: Option<Vec<String>> =
+        if monitor_count >= 2 && rollout_binary.is_some() {
+            let choices = [(0usize, "Serial fixed-source monitoring"),
+                (2, "Two exclusive GPU monitoring lanes"),
+                (3, "Three exclusive GPU monitoring lanes"),
+                (4, "Four exclusive GPU monitoring lanes")];
+            let eligible = choices.iter().filter(|(count, _)|
+                *count <= monitor_count
+            ).collect::<Vec<_>>();
+            let rows = eligible.iter().map(|(_, title)| BattleMenuRow {
+                title, status: "  [Separate native evaluation processes]",
+                unlocked: true,
+            }).collect::<Vec<_>>();
+            let mut selected = 0;
+            let Some(index) = select_library(&rows, &mut selected, false)?
+                else { return Ok(()); };
+            let count = eligible[index].0;
+            if count == 0 { None } else {
+                let options = ["cuda:0", "cuda:1", "cuda:2", "cuda:3"];
+                let mut gpus: Vec<String> = Vec::with_capacity(count);
+                for lane in 0..count {
+                    let remaining = options.iter().copied().filter(|name|
+                        !gpus.iter().any(|selected| selected == name)
+                    ).collect::<Vec<_>>();
+                    let labels = remaining.iter().map(|name|
+                        format!("Monitoring lane {}: {}", lane + 1, name)
+                    ).collect::<Vec<_>>();
+                    let rows = labels.iter().map(|title| BattleMenuRow {
+                        title, status: "  [Dedicated CUDA/ROCm GPU]",
+                        unlocked: true,
+                    }).collect::<Vec<_>>();
+                    let mut choice = 0;
+                    let Some(index) = select_library(&rows, &mut choice, false)?
+                        else { return Ok(()); };
+                    gpus.push(remaining[index].to_owned());
+                }
+                Some(gpus)
+            }
+        } else { None };
+
     // Resolve and validate before allocating a permanent job name. GPU
     // availability and the Python environment are validated by the existing
     // bootstrap and learner, not guessed from operating-system strings.
@@ -917,6 +965,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         // collector's leased CPU capacity is never presumed available here.
         "evaluation_physics_workers": evaluation_physics_workers,
         "evaluation_inference_device": evaluation_inference_device,
+        "monitor_evaluation_gpus": monitor_evaluation_gpus,
         "trainer_config": trainer_config,
         "trainer_config_sha256": trainer_config_sha256,
         "curriculum_plan": curriculum_plan,
