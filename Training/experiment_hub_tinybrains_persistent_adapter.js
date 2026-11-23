@@ -1394,15 +1394,18 @@ function createTinyBrainsPersistentDockerAdapter({
                 if(!UUID.test(String(job||''))||
                     !/^(?:latest|update-[0-9]{6,8})\.pt$/.test(sourceFile))
                     continue;
-                const candidate=path.join(artifacts,job,'self-play',sourceFile);
-                try {
+                const permanent=path.join(opponent.model_dir,'checkpoint.pt');
+                const original=path.join(artifacts,job,'self-play',sourceFile);
+                for(const candidate of [permanent,original])try {
                     const stat=fs.lstatSync(candidate);
-                    if(!stat.isFile()||stat.isSymbolicLink()||
-                        fs.realpathSync(candidate)!==candidate||
-                        modelFileSha256(candidate)!==opponent.checkpoint_sha256)
-                        continue;
-                    checkpoint=candidate;
-                }catch {continue;}
+                    if(stat.isFile()&&!stat.isSymbolicLink()&&
+                        fs.realpathSync(candidate)===candidate&&
+                        modelFileSha256(candidate)===opponent.checkpoint_sha256) {
+                        checkpoint=candidate;
+                        break;
+                    }
+                }catch { /* Probe the next approved frozen source. */ }
+                if(!checkpoint)continue;
             }
             const pin={id:opponent.id,label:opponent.label,
                 model_sha256:opponent.model_sha256,
