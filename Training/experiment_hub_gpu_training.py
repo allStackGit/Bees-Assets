@@ -173,6 +173,141 @@ def allocate_gpu_work_rows(rows, pixel_area, device_pixel_budgets):
     return tuple(result) if remaining == 0 and len(result) > 1 else None
 
 
+class MeasuredIndependentTrainForwards:
+    """Qualify overlapping GPU forwards without replaying optimizer updates.
+
+    For two deterministic, independent differentiable functions on one CUDA/
+    HIP device. They may consume the same immutable observation tensor, but
+    must not share trainable parameters, mutate buffers or sample randomness.
+    A training adapter owns this object across PPO updates; no weights,
+    optimizer moments, actions or RNG state are stored here.
+
+    Qualification compares extra no-grad forwards on real board shapes.
+    Training forwards execute exactly once with autograd enabled, and CUDA's
+    stream dependency rules retain the original gradients and reductions.
+    Never assume parallel streams win for small neural networks: a measured
+    10% sustained forward improvement is required per shape.
+    """
+
+    def __init__(self, first, second, device, *,
+                 max_profiles=16, min_speedup=0.10,
+                 qualified_independent=False):
+        from collections import OrderedDict
+        if (not qualified_independent or not callable(first) or
+                not callable(second) or not isinstance(device,torch.device) or
+                device.type!="cuda" or not 1<=max_profiles<=128 or
+                not 0<=min_speedup<=0.5):
+            raise ValueError("GPU training forward overlap needs trusted independent functions")
+        self.first,self.second,self.device = first,second,device
+        self.min_speedup,self.max_profiles = min_speedup,max_profiles
+        self.profiles,self.visits = OrderedDict(),OrderedDict()
+        self.streams = None
+        self.remaining_qualifications = 0
+        self.calls = self.parallel_calls = self.qualifications = 0
+        self.fallbacks = self.available = 0
+        try:
+            self.streams = (torch.cuda.Stream(device=device),
+                            torch.cuda.Stream(device=device))
+            self.available = 1
+        except (RuntimeError,NotImplementedError,AttributeError):
+            self.streams = None
+
+    def begin_update(self, *, calibrations=1):
+        if type(calibrations) is not int or not 0<=calibrations<=8:
+            raise ValueError("GPU training forward qualification budget is invalid")
+        self.remaining_qualifications = calibrations
+
+    def _serial(self, first_input, second_input):
+        return self.first(first_input),self.second(second_input)
+
+    def _parallel(self, first_input, second_input):
+        caller = torch.cuda.current_stream(self.device)
+        left,right = self.streams
+        left.wait_stream(caller)
+        right.wait_stream(caller)
+        with torch.cuda.stream(left):
+            result_a = self.first(first_input)
+            first_input.record_stream(left)
+        with torch.cuda.stream(right):
+            result_b = self.second(second_input)
+            second_input.record_stream(right)
+        caller.wait_stream(left)
+        caller.wait_stream(right)
+        for result in (result_a,result_b):
+            for tensor in _tensor_outputs(result):
+                tensor.record_stream(caller)
+        return result_a,result_b
+
+    def _time(self, action):
+        caller = torch.cuda.current_stream(self.device)
+        caller.synchronize()
+        began = perf_counter()
+        action()
+        action()
+        caller.synchronize()
+        return (perf_counter()-began)/2
+
+    def run(self, first_input, second_input):
+        self.calls += 1
+        if (not self.available or
+                not isinstance(first_input,torch.Tensor) or
+                not isinstance(second_input,torch.Tensor) or
+                first_input.device!=self.device or
+                second_input.device!=self.device):
+            return self._serial(first_input,second_input)
+        signature = ((tuple(first_input.shape),first_input.dtype),
+                     (tuple(second_input.shape),second_input.dtype))
+        selected = self.profiles.get(signature)
+        if selected is None:
+            visits = self.visits.pop(signature,0)+1
+            if visits < 4 or self.remaining_qualifications == 0:
+                self.visits[signature] = min(visits,4)
+                if len(self.visits)>self.max_profiles*4:
+                    self.visits.popitem(last=False)
+                return self._serial(first_input,second_input)
+            self.remaining_qualifications -= 1
+            self.qualifications += 1
+            selected = False
+            try:
+                with torch.no_grad():
+                    reference = self._serial(first_input,second_input)
+                    candidate = self._parallel(first_input,second_input)
+                    if all(torch.allclose(a,b,rtol=1e-5,atol=1e-6)
+                           for a,b in zip(reference,candidate)):
+                        serial = [self._time(lambda:self._serial(
+                            first_input,second_input)) for _ in range(2)]
+                        concurrent = [self._time(lambda:self._parallel(
+                            first_input,second_input)) for _ in range(2)]
+                        selected = median(concurrent)<median(serial)*(1-self.min_speedup)
+            except (RuntimeError,ValueError,TypeError,NotImplementedError,
+                    MemoryError,torch.OutOfMemoryError):
+                self.fallbacks += 1
+            self.profiles[signature] = selected
+            if len(self.profiles)>self.max_profiles:
+                self.profiles.popitem(last=False)
+        else:
+            self.profiles.move_to_end(signature)
+        if selected:
+            try:
+                result = self._parallel(first_input,second_input)
+            except (RuntimeError,ValueError,TypeError,NotImplementedError,
+                    torch.OutOfMemoryError):
+                self.profiles[signature] = False
+                self.fallbacks += 1
+            else:
+                self.parallel_calls += 1
+                return result
+        return self._serial(first_input,second_input)
+
+    def metrics(self):
+        return dict(
+            ppo_shared_train_forward_calls=self.calls,
+            ppo_shared_train_forward_parallel_calls=self.parallel_calls,
+            ppo_shared_train_forward_qualifications=self.qualifications,
+            ppo_shared_train_forward_fallbacks=self.fallbacks,
+            ppo_shared_train_forward_profiles=len(self.profiles))
+
+
 class IndependentGpuTraining:
     """Measure-and-select execution for genuinely independent GPU learners.
 
