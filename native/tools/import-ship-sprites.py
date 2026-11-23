@@ -149,57 +149,52 @@ def source_frames(path: Path, animation: bool, *, large_static: bool = False):
     if mode is None:
         raise ValueError(f"Missing supported Unity sprite import mode: {path}")
     with Image.open(path) as image:
-        rgba = image.convert("RGBA")
-    if mode[1] == "1":
-        # Unity imports the whole current texture in Single mode. The
-        # legacy sprite table can still describe a pre-resize PNG.
-        rects = [(0, 0, rgba.width, rgba.height)]
-    else:
-        rects = re.findall(
-            r"^      rect:\n        serializedVersion: 2\n"
-            r"        x: (\d+)\n        y: (\d+)\n"
-            r"        width: (\d+)\n        height: (\d+)$",
-            metadata, re.MULTILINE,
-        )
-        if not 1 <= len(rects) <= (64 if animation else 1):
-            raise ValueError(f"Invalid Unity sprite slice count: {path}")
-    frames = []
-    for x, y, width, height in rects:
-        x, y, width, height = map(int, (x, y, width, height))
-        top = rgba.height - y - height
-        if x < 0 or top < 0 or width <= 0 or height <= 0 or (
-            x + width > rgba.width or top + height > rgba.height
-        ) or width > (8192 if large_static else 2048) or (
-            height > (8192 if large_static else 2048)
-        ):
-            raise ValueError(f"Out-of-range source sprite rect: {path}")
-        frames.append(rgba.crop((x, top, x + width, top + height)))
-    # Very large authored explosion sheets use 1024px frames. Preserve
-    # world-space size exactly while avoiding 170MB of decoded frames on
-    # older machines: reduce texture resolution and its PPU together.
-    ppu = int(source_ppu[1])
-    largest = max(max(frame.size) for frame in frames)
-    divisor = 1
-    if animation:
-        while largest // divisor > 256 and ppu % (2 * divisor) == 0:
-            divisor *= 2
-    elif large_static:
-        # The original Queen is a 6400x5120 single static sprite at PPU 8.
-        # Downsample both pixels and PPU together to fit native atlas bounds
-        # while retaining exact authored world dimensions and pivot.
-        while largest // divisor > 2048 and ppu % (2 * divisor) == 0:
-            divisor *= 2
-        if largest // divisor > 2048:
-            raise ValueError(f"Source sprite cannot fit the native atlas: {path}")
-    if divisor > 1:
-        frames = [
-            frame.resize((max(1, frame.width // divisor),
-                          max(1, frame.height // divisor)),
-                         Image.Resampling.BOX)
-            for frame in frames
-        ]
-        ppu //= divisor
-    return ppu, frames
+        if mode[1] == "1":
+            # Unity imports the whole current texture in Single mode. The
+            # legacy sprite table can still describe a pre-resize PNG.
+            rects = [(0, 0, image.width, image.height)]
+        else:
+            rects = re.findall(
+                r"^      rect:\n        serializedVersion: 2\n"
+                r"        x: (\d+)\n        y: (\d+)\n"
+                r"        width: (\d+)\n        height: (\d+)$",
+                metadata, re.MULTILINE,
+            )
+            if not 1 <= len(rects) <= (64 if animation else 1):
+                raise ValueError(f"Invalid Unity sprite slice count: {path}")
+        boxes = []
+        largest = 0
+        limit = 8192 if large_static else 2048
+        for rect in rects:
+            x, y, width, height = map(int, rect)
+            top = image.height - y - height
+            if (x < 0 or top < 0 or not 1 <= width <= limit or
+                    not 1 <= height <= limit or x + width > image.width or
+                    top + height > image.height):
+                raise ValueError(f"Out-of-range source sprite rect: {path}")
+            boxes.append((x, top, x + width, top + height))
+            largest = max(largest, width, height)
+        # Resample each frame before retaining it. Large sheets need only
+        # one decoded PNG plus the bounded output frames, even for explosions.
+        ppu = int(source_ppu[1])
+        divisor = 1
+        if animation or large_static:
+            target = 256 if animation else 2048
+            while largest // divisor > target and ppu % (2 * divisor) == 0:
+                divisor *= 2
+            if large_static and not animation and largest // divisor > target:
+                raise ValueError(f"Source sprite cannot fit the native atlas: {path}")
+        frames = []
+        for box in boxes:
+            frame = image.crop(box)
+            if frame.mode != "RGBA":
+                frame = frame.convert("RGBA")
+            if divisor > 1:
+                frame = frame.resize((max(1, frame.width // divisor),
+                                      max(1, frame.height // divisor)),
+                                     Image.Resampling.BOX)
+            frames.append(frame)
+    return ppu // divisor, frames
 
 
 def packed_pixels(data: bytearray, frame):
