@@ -42,12 +42,13 @@ pub fn choose_multiplayer_join(
         Some(initial) => (
             [initial.address, initial.token_file.to_string_lossy().into_owned(),
                 initial.trusted_ca_file.as_ref().map(|path|
-                    path.to_string_lossy().into_owned()).unwrap_or_default()],
+                    path.to_string_lossy().into_owned()).unwrap_or_default(),
+                String::new()],
             usize::from(initial.side == 2) + 2 * usize::from(initial.spectator),
         ),
-        None => ([String::new(), String::new(), String::new()], 0),
+        None => ([String::new(), String::new(), String::new(), String::new()], 0),
     };
-    Ok(connection_form(fields, Some(role))?.map(|([address, file, ca], role, remember)| {
+    Ok(connection_form(fields, Some(role))?.map(|([address, file, ca, _], role, remember)| {
         let role = role.expect("join form has a role");
         (MultiplayerJoin {
             address,
@@ -61,29 +62,39 @@ pub fn choose_multiplayer_join(
 
 pub fn choose_multiplayer_host(
     listen: String, tokens_file: &std::path::Path,
-) -> Result<Option<(String, PathBuf, bool)>, minifb::Error> {
-    let fields = [listen, tokens_file.to_string_lossy().into_owned(), String::new()];
-    Ok(connection_form(fields, None)?
-        .map(|([listen, file, _], _, remember)| (listen, PathBuf::from(file), remember)))
+    certificate: Option<&std::path::Path>, private_key: Option<&std::path::Path>,
+) -> Result<Option<(String, PathBuf, Option<PathBuf>, Option<PathBuf>, bool)>, minifb::Error> {
+    let fields = [
+        listen, tokens_file.to_string_lossy().into_owned(),
+        certificate.map(|path| path.to_string_lossy().into_owned()).unwrap_or_default(),
+        private_key.map(|path| path.to_string_lossy().into_owned()).unwrap_or_default(),
+    ];
+    Ok(connection_form(fields, None)?.map(|([listen, file, cert, key], _, remember)| (
+        listen, PathBuf::from(file),
+        (!cert.trim().is_empty()).then(|| PathBuf::from(cert.trim())),
+        (!key.trim().is_empty()).then(|| PathBuf::from(key.trim())),
+        remember,
+    )))
 }
 
 fn connection_form(
-    mut fields: [String; 3], mut role: Option<usize>,
-) -> Result<Option<([String; 3], Option<usize>, bool)>, minifb::Error> {
+    mut fields: [String; 4], mut role: Option<usize>,
+) -> Result<Option<([String; 4], Option<usize>, bool)>, minifb::Error> {
     let joining = role.is_some();
     let (title, hint, labels, action) = if joining {
         ("Join Multiplayer", "Use host:port or tls://host:port with a private player token.",
             ["Server address", "Private token file", "Trusted CA (DER file, TLS only)", "Join as"], "Connect")
     } else {
-        ("Host Multiplayer", "Use an address on your private network or VPN.",
-            ["Listen address", "Token map file (leave blank to create invitations)", "", ""], "Continue")
+        ("Host Multiplayer", "Set an optional TLS certificate and private key, or use the host environment.",
+            ["Listen address", "Token map file (blank creates invitations)",
+             "TLS server certificate (DER, optional)", "TLS private key (PKCS8 DER, optional)"], "Continue")
     };
-    let remember_row = if joining { 4 } else { 2 };
-    let button = remember_row + 1;
-    let field_count = if joining { 3 } else { 2 };
-    let row_tops = &ROW_TOPS[..remember_row];
-    let action_top = if joining { 382 } else { 310 };
-    let footer_top = if joining { 444 } else { 375 };
+    let remember_row = 4;
+    let button = 5;
+    let field_count = if joining { 3 } else { 4 };
+    let row_tops = &ROW_TOPS;
+    let action_top = 382;
+    let footer_top = 444;
     let mut window = Window::new(&format!("Bees | {title}"), WIDTH, HEIGHT, WindowOptions {
         resize: true,
         scale_mode: ScaleMode::AspectRatioStretch,
@@ -168,7 +179,8 @@ fn connection_form(
             let tls = address.starts_with("tls://");
             if valid_endpoint && address.len() <= 255 && !address.contains(char::is_whitespace) &&
                 (!joining || !file.trim().is_empty()) &&
-                (!joining || tls || ca.is_empty())
+                (!joining || tls || ca.is_empty()) &&
+                (joining || fields[2].trim().is_empty() == fields[3].trim().is_empty())
             {
                 fields[0] = address.to_owned();
                 return Ok(Some((fields, role, remember)));
@@ -211,7 +223,7 @@ fn connection_form(
         let footer = if show_error && joining {
             "Enter host:port, token file, and CA only for TLS."
         } else if show_error {
-            "Enter a listen address with a port."
+            "Enter host:port and either both TLS server files or neither."
         } else if joining {
             "Tab move   Left / Right change role   Space toggle   Enter connect   Esc return"
         } else {
