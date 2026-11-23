@@ -255,7 +255,12 @@ function saveEvaluation(o,hub,value) {
     const file=path.join(o.suites,suiteId+'.json');
     // First publish immutable suite bytes; a failed catalog update leaves
     // an unreferenced immutable file, never a partly rewritten suite.
-    fs.writeFileSync(file,raw,{flag:'wx',mode:0o600});
+    const descriptor=fs.openSync(file,fs.constants.O_WRONLY|
+        fs.constants.O_CREAT|fs.constants.O_EXCL,0o600);
+    try {
+        fs.writeFileSync(descriptor,raw,'utf8');
+        fs.fsyncSync(descriptor);
+    }finally{fs.closeSync(descriptor);}
     const record={id,revision,name,suite_id:suiteId,
         configuration_id:config.id,configuration_revision:config.revision,
         map_mode:value.map_mode,
