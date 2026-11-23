@@ -319,11 +319,10 @@ def export(spec: dict, output: Path) -> dict:
     created: list[Path] = []
     archive = None
     archive_file: Path | None = None
-    consumed = 0
     part_entries: list[dict] = []
 
     def start_part() -> None:
-        nonlocal archive, archive_file, consumed, part_entries
+        nonlocal archive, archive_file, part_entries
         archive_file = output.with_name(
             f"{output.stem}-part-{len(parts) + 1:04d}.zip"
         )
@@ -332,7 +331,6 @@ def export(spec: dict, output: Path) -> dict:
             compresslevel=1, allowZip64=True
         )
         created.append(archive_file)
-        consumed = 0
         part_entries = []
 
     def end_part() -> None:
@@ -354,10 +352,14 @@ def export(spec: dict, output: Path) -> dict:
         parts.append({"name": archive_file.name, "bytes": size})
 
     def write_chunk(name: str, data: bytes, source_bytes: int, index: int) -> None:
-        nonlocal consumed, entry_count
+        nonlocal entry_count
         if archive is None:
             start_part()
-        if consumed + len(data) + 5_000_000 > TARGET_BYTES:
+        # Split by physical ZIP bytes, not original JSON/JSONL bytes. The
+        # 24-MB input chunks bound worst-case growth of each new entry; the
+        # 50-MB gap to PART_LIMIT reserves space for ZIP metadata, the part
+        # manifest, and the final directory even for thousands of files.
+        if archive.fp.tell() + len(data) + 5_000_000 > TARGET_BYTES:
             end_part()
             start_part()
         # Large input files are independently segmented, with their position
@@ -372,7 +374,6 @@ def export(spec: dict, output: Path) -> dict:
         }
         part_entries.append(item)
         entry_count += 1
-        consumed += len(data) + len(target) + 1024
 
     def add_bytes(name: str, body: bytes) -> None:
         if not body:
