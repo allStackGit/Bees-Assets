@@ -3676,6 +3676,19 @@ pub(super) fn archive(
         // World with new episode seeds and native source AI commands. No
         // second game, training policy, or headless benchmark is involved.
         // Terminal fleets are reset by the ordinary Level lifecycle.
+        if !matches!(selected.spectator_episodes, 1 | 4 | 16 | 64) {
+            return Err(invalid("Fish Tank series must contain 1, 4, 16, or 64 battles").into());
+        }
+        // The source budget is per physical battle. A long spectator
+        // series must not silently time out after the original first
+        // match's 12,000 simulation rounds. Recycle through the existing
+        // Level lifecycle, with one immutable run budget across episodes.
+        let single_battle_budget = run["max_rounds"].as_u64()
+            .ok_or_else(|| invalid("Fish Tank source has no physical round budget"))?;
+        let series_budget = single_battle_budget
+            .checked_mul(selected.spectator_episodes as u64)
+            .ok_or_else(|| invalid("Fish Tank series round budget overflows"))?;
+        run["max_rounds"] = json!(series_budget);
         run["episodes_per_world"] = json!(selected.spectator_episodes);
         run["status_every_rounds"] = json!(2_000);
     }
