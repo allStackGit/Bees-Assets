@@ -72,8 +72,7 @@ def original_timer(source: dict) -> dict | None:
         raise ValueError("Source collision asteroid timer lacks physical Level ownership")
     minimum, maximum = timer.get("minimum_seconds"), timer.get("maximum_seconds")
     if (type(minimum) not in (int, float) or type(maximum) not in (int, float) or
-            not math.isfinite(minimum) or not math.isfinite(maximum) or
-            not minimum.is_integer() if isinstance(minimum, float) else False):
+            not math.isfinite(minimum) or not math.isfinite(maximum)):
         raise ValueError("Source collision asteroid timer is invalid")
     # The source may use a fractional training bootstrap timer; do not
     # round it into a different asteroid field or silently disable spawns.
