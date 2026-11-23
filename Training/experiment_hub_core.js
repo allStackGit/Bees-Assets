@@ -1063,6 +1063,56 @@ function distributedVersionBlock(snapshot,job) {
     }
     return null;
 }
+function beesWanGroupBlock(snapshot,job) {
+    if(job?.project_id!=='bees_rollout'&&
+        !(job?.project_id==='bees_native'&&
+            job.frozen_parameters?.wan_actors>0))return null;
+    const learner=job.project_id==='bees_native'?job:
+        snapshot.jobs.find(item=>item.id===job.frozen_parameters?.learner_job_id);
+    const bundle=learner?.resource_bundle;
+    const actors=learner?.frozen_parameters?.wan_actors;
+    if(learner?.project_id!=='bees_native'||
+        !Number.isSafeInteger(actors)||actors<1||actors>8||
+        !bundle||bundle.index!==1||bundle.size!==actors+1||
+        job.resource_bundle?.id!==bundle.id)
+        return 'Bees WAN actors require an exact frozen learner-led resource bundle.';
+    const members=snapshot.jobs.filter(item=>
+        item.resource_bundle?.id===bundle.id);
+    const children=members.filter(item=>item.project_id==='bees_rollout');
+    if(members.length!==actors+1||children.length!==actors||
+        children.some(item=>item.status!=='waiting_adapter'||item.dispatch_id)||
+        learner.status!=='waiting_adapter'||learner.dispatch_id)
+        return 'All Bees WAN members must be reserved and unstarted before bundle authorization.';
+    const owners=new Set([learner.assigned_machine_id]);
+    for(let slot=0;slot<actors;slot++) {
+        const actor=children.find(child=>
+            child.frozen_parameters?.slot===slot&&
+            child.resource_bundle?.index===slot+2);
+        if(!actor||owners.has(actor.assigned_machine_id)||
+            actor.frozen_parameters?.learner_job_id!==learner.id||
+            actor.frozen_parameters?.lineage_root_id!==
+                (learner.artifact_lineage_root_id||learner.id)||
+            ['worker_sha256','trainer_sha256','runtime_version',
+                'wan_key_fingerprint'].some(key=>
+                    actor.frozen_parameters[key]!==learner.frozen_parameters[key]))
+            return 'Bees WAN slot, machine, worker/runtime or broker key differs from the learner.';
+        owners.add(actor.assigned_machine_id);
+        const host=snapshot.machines.find(m=>m.id===actor.assigned_machine_id);
+        const lease=snapshot.reservations.find(item=>
+            item.id===actor.lease_id&&
+            item.job_id===actor.id&&
+            item.project_id===actor.project_id&&
+            item.machine_id===actor.assigned_machine_id&&
+            item.status==='acknowledged'&&item.receipt_fresh===true&&
+            item.issued_by==='experiment-hub');
+        if(!host||host.status!=='connected'||host.local_executor_enabled!==true||
+            host.native_preflight_passed!==true||
+            !supportsJobRuntime(host,actor)||!lease||
+            nativeResourceBlock(actor,lease)||gpuStartBlock(actor,lease,host))
+            return 'Every Bees remote actor needs its original live owner, exact Unity source and acknowledged resource/GPU proof.';
+    }
+    return null;
+}
 function nativeStartReadiness(snapshot, job) {
     const block=reason=>({eligible:false,reason});
     if(job?.distributed_abort_requested_at)
@@ -1101,9 +1151,11 @@ function nativeStartReadiness(snapshot, job) {
                 machine.execution_capabilities?.cgroup_controllers.includes(c))))
         return block('Linux cgroup v2 CPU and memory controllers are unavailable.');
     if(!supportsJobRuntime(machine,job))
-        return block('The assigned worker does not approve this TinyBrains profile, GPU mode, checkpoint import and update count.');
+        return block('The assigned native worker does not approve this job\'s frozen simulation/runtime identity.');
     if(!supportsDesign(machine.design_catalog,job.project_id,job.frozen_parameters))
         return block('The assigned worker has not approved this exact Design configuration.');
+    const beesGroup=beesWanGroupBlock(snapshot,job);
+    if(beesGroup)return block(beesGroup);
     const curriculum=courierCurriculumBlock(snapshot,job,machine);
     if(curriculum)return block(curriculum);
     if(!distributedRolloutHost(snapshot,job,machine))
@@ -3673,6 +3725,9 @@ class ExperimentHub {
         const job=snapshot.jobs.find(j=>j.id===value.job_id);
         if(job?.project_id==='courier_lineage')
             throw Error('Courier remote PPO workers must Start through the frozen distributed group.');
+        if(job?.project_id==='bees_rollout'||
+            job?.project_id==='bees_native'&&job.frozen_parameters?.wan_actors>0)
+            throw Error('Bees WAN learners and remote actors must Start together through their verified resource bundle.');
         const readiness=nativeStartReadiness(snapshot,job);
         if(!readiness.eligible) {
             // One explicit Start approval may wait for an approved, CPU-only
