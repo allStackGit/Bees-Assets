@@ -1482,7 +1482,12 @@ fn inspect_training_evaluations(job: &Path) -> Result<(), Box<dyn Error>> {
         let complete = fs::symlink_metadata(&path).is_ok_and(|metadata|
             metadata.file_type().is_file() && metadata.len() <= 4 * 1024 * 1024);
         let result = if complete {
-            Some(serde_json::from_slice::<Value>(&fs::read(path)?)?)
+            let parsed: Value = serde_json::from_slice(&fs::read(path)?)?;
+            if parsed["kind"].as_str() != Some("native_policy_evaluation_complete") ||
+                parsed["schema_version"].as_u64() != Some(1) {
+                return Err(invalid("standalone native evaluation has an invalid completion receipt").into());
+            }
+            Some(parsed)
         } else { None };
         entries.push((entry.file_name().to_string_lossy().into_owned(), result));
     }
@@ -1498,8 +1503,14 @@ fn inspect_training_evaluations(job: &Path) -> Result<(), Box<dyn Error>> {
         let draws = row["draws"].as_u64().unwrap_or(0);
         format!("{name} | {wins}/{episodes} wins, {draws} draws")
     }).collect::<Vec<_>>();
-    let rows = titles.iter().map(|title| BattleMenuRow {
-        title, status: "  [Verified native evaluation]", unlocked: true,
+    let rows = titles.iter().zip(&entries).map(|(title, (_, result))| BattleMenuRow {
+        title,
+        status: if result.is_some() {
+            "  [Completed and verified native evaluation]"
+        } else {
+            "  [Incomplete or failed evaluation attempt]"
+        },
+        unlocked: true,
     }).collect::<Vec<_>>();
     let mut selection = 0;
     if let Some(index) = select_library(&rows, &mut selection, false)? {
