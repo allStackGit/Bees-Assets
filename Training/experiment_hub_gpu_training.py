@@ -15,6 +15,8 @@ Resource leases and GPU device identity remain the Hub agent's authority.
 from __future__ import annotations
 
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, wait
+from threading import current_thread
 from statistics import median
 from threading import Lock
 from time import perf_counter
@@ -443,3 +445,81 @@ class IndependentGpuTraining:
             gpu_training_last_qualified_seconds=self.last_qualified_seconds,
             gpu_training_qualified_work_per_second=self.last_qualified_work_rate,
         )
+
+
+class PersistentGpuForwardPool:
+    """Reuse one Python dispatch worker per leased GPU for autograd forwards.
+
+    This is an optional host-launch optimization for an existing data-
+    parallel trainer. It neither broadcasts models nor reduces gradients:
+    the caller owns those operations and the model/optimizer lifetimes.
+    Unlike torch.nn.parallel.parallel_apply, worker threads are created
+    once and reused for every shape group in the same training update.
+
+    Each call receives the caller's current device streams, grad mode and
+    CUDA/HIP autocast state. All submitted jobs finish before returning or
+    propagating a model error, so a subsequent optimizer step never races
+    unfinished Python dispatch. This object is single-owner, not reentrant.
+    """
+
+    def __init__(self, devices):
+        if (not isinstance(devices, (tuple, list)) or
+                len(devices) < 2 or len(devices) > 16 or
+                any(type(d) is not int or d < 0 for d in devices) or
+                len(set(devices)) != len(devices) or
+                not torch.cuda.is_available()):
+            raise ValueError("GPU forward pool needs 2–16 distinct leased ordinals")
+        for device in devices:
+            torch.cuda.get_device_properties(device)
+        self.devices = tuple(devices)
+        self._owner = current_thread()
+        self._workers = ThreadPoolExecutor(
+            max_workers=len(devices), thread_name_prefix="hub-gpu-forward")
+        self._closed = False
+        self.calls = 0
+
+    @staticmethod
+    def _forward(model, parts, device, stream, grad_enabled,
+                 autocast_enabled, autocast_dtype):
+        with (torch.set_grad_enabled(grad_enabled),
+              torch.cuda.device(device),
+              torch.cuda.stream(stream),
+              torch.autocast("cuda", enabled=autocast_enabled,
+                             dtype=autocast_dtype)):
+            return model(*parts)
+
+    def run(self, models, inputs, devices=None):
+        if self._closed or current_thread() is not self._owner:
+            raise RuntimeError("GPU forward dispatch requires its live owner thread")
+        ordinals = self.devices if devices is None else tuple(devices)
+        if (not 1 <= len(ordinals) <= len(self.devices) or
+                ordinals != self.devices[:len(ordinals)] or
+                len(models) != len(inputs) or len(models) != len(ordinals)):
+            raise ValueError("Forward cohort does not match the reserved GPUs")
+        streams = [torch.cuda.current_stream(d) for d in ordinals]
+        grad_enabled = torch.is_grad_enabled()
+        autocast_enabled = torch.is_autocast_enabled("cuda")
+        autocast_dtype = torch.get_autocast_dtype("cuda")
+        futures = [self._workers.submit(
+            self._forward, model, parts, device, stream,
+            grad_enabled, autocast_enabled, autocast_dtype)
+            for model,parts,device,stream in zip(models,inputs,ordinals,streams)]
+        # Join *all* GPUs even if one model fails, matching parallel_apply's
+        # exception boundary and protecting subsequent parameter updates.
+        wait(futures)
+        self.calls += 1
+        return [future.result() for future in futures]
+
+    def close(self):
+        if current_thread() is not self._owner:
+            raise RuntimeError("GPU forward pool must close on its owner")
+        if self._closed:
+            return
+        self._closed = True
+        self._workers.shutdown(wait=True)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
