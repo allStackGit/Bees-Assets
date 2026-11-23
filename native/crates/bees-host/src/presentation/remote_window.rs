@@ -61,6 +61,11 @@ const MAX_PENDING_ORDER_TIMINGS: usize = 4096;
 #[derive(Default)]
 struct WireCounts {
     bytes_received: u64,
+    /// Codec work is separate from socket polling and raster presentation.
+    compressed_snapshots: u64,
+    compressed_snapshot_wire_bytes: u64,
+    compressed_snapshot_uncompressed_bytes: u64,
+    decompress_wall_seconds: f64,
     snapshots: u64,
     frames_rendered: u64,
     orders_sent: u64,
@@ -685,6 +690,7 @@ impl PeerClient {
         let mut hello = serde_json::to_vec(&json!({
             "kind": "hello", "token": token,
             "resume_session_id": resume_session_id, "spectator": spectator,
+            "compressed_world_state": true,
         }))?;
         hello.push(b'\n');
         socket.write_all(&hello)?;
@@ -755,9 +761,22 @@ impl PeerClient {
         let mut start = 0;
         for index in 0..self.incoming.len() {
             if self.incoming[index] != b'\n' { continue; }
-            let message: Value = serde_json::from_slice(&self.incoming[start..index])?;
+            let mut message: Value = serde_json::from_slice(&self.incoming[start..index])?;
             let message_bytes=index-start;
             start = index + 1;
+            if message["kind"] == "world_state_lz4" {
+                if !self.authenticated {
+                    return Err(invalid("unauthenticated native host sent compressed world state").into());
+                }
+                let started = Instant::now();
+                let (decoded, original_bytes) =
+                    crate::remote_state_codec::decompress_world_state(&message)?;
+                self.metrics.decompress_wall_seconds += started.elapsed().as_secs_f64();
+                self.metrics.compressed_snapshots += 1;
+                self.metrics.compressed_snapshot_wire_bytes += message_bytes as u64;
+                self.metrics.compressed_snapshot_uncompressed_bytes += original_bytes as u64;
+                message = decoded;
+            }
             match message["kind"].as_str() {
                 Some("welcome") => {
                     if self.authenticated {
@@ -5773,6 +5792,10 @@ pub fn connect_remote_with_trust(
         "side":expected_side,
         "session_wall_seconds":session_seconds,
         "bytes_received":peer.metrics.bytes_received,
+        "compressed_snapshots":peer.metrics.compressed_snapshots,
+        "compressed_snapshot_wire_bytes":peer.metrics.compressed_snapshot_wire_bytes,
+        "compressed_snapshot_uncompressed_bytes":peer.metrics.compressed_snapshot_uncompressed_bytes,
+        "compressed_snapshot_decompression_wall_seconds":peer.metrics.decompress_wall_seconds,
         "world_snapshot_bytes":peer.metrics.world_snapshot_bytes,
         "world_snapshot_max_bytes":peer.metrics.world_snapshot_max_bytes,
         "network_poll_samples":peer.metrics.network_poll_samples,
