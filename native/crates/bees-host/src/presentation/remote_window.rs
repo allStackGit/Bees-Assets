@@ -218,12 +218,12 @@ impl RemoteArtwork {
     /// the same native source artwork already loaded for local play.
     fn paint(&mut self, state: &Value, camera: NativeCamera,
              visual: &RemoteVisual, fraction: f32, stats: &mut WireCounts,
-             show_art: bool) {
+             show_art: bool, finale_reveal: bool) {
         self.ships.clear();
         self.projectiles.clear();
         self.asteroids.clear();
         self.fire_tanks.clear();
-        self.fog_enabled = state["fog_enabled"] == true;
+        self.fog_enabled = state["fog_enabled"] == true && !finale_reveal;
         if self.fog_enabled {
             self.fog_coverage.fill(0);
             for source in state["fog_sources"].as_array().into_iter().flatten() {
@@ -5071,6 +5071,10 @@ pub fn connect_remote_with_trust(
                 }
             }
         }
+        let finale_focus = peer.state.as_ref().and_then(|state|
+            point_from_wire(&state["campaign_dialogue"]["finale_focus"]));
+        let finale_reveal = finale_focus.is_some() &&
+            dialogue_line >= super::campaign_dialogue::PLUTO_FINALE_REVEAL_LINE;
         let visual_fraction = peer.visual.fraction();
         if visual_fraction < 1.0 && !peer.visual.previous.is_empty() {
             peer.metrics.interpolated_draw_frames += 1;
@@ -5078,7 +5082,7 @@ pub fn connect_remote_with_trust(
         let artwork_started=Instant::now();
         if let (Some(state),Some(cam))=(peer.state.as_ref(),camera) {
             artwork.paint(state,cam,&peer.visual,visual_fraction,
-                &mut peer.metrics,show_art);
+                &mut peer.metrics,show_art,finale_reveal);
         }
         let artwork_seconds=artwork_started.elapsed().as_secs_f64();
         peer.metrics.artwork_seconds+=artwork_seconds;
@@ -5100,14 +5104,14 @@ pub fn connect_remote_with_trust(
                 now.saturating_duration_since(dialogue_reveal_started).as_secs_f32()
             },
             &artwork,show_art,range_overlay_active,
-            minimap_visible,
+            minimap_visible && (finale_focus.is_none() || finale_reveal),
             &mut combat_hud_draws, &mut hulls, &mut map_object_health_bars,
             &mut map_ships, &mut map_terrain, &mut map_objectives,
             &mut fog_masked, &mut fog_textured);
         // Remote selection geometry reads only the host's already-filtered
         // visible ships. Do not query private enemies, guess mineral values,
         // or send a new host command just to draw this tooltip.
-        let inspect = window.is_active() && peer.connected &&
+        let inspect = window.is_active() && peer.connected && !terminal &&
             peer.authenticated && !show_controls_help &&
             !show_battle_menu && surrender_confirmation.is_none() &&
             !shooting_menu && mode.is_none() && !held_fire_active &&

@@ -2000,8 +2000,7 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
     }
 
     fn source_hivemind_starting_position(&self, side: i32) -> Option<Vec2> {
-        let index = usize::try_from(side.checked_sub(1)?).ok()?;
-        self.hivemind_starting_positions?.get(index).copied()
+        self.source_faction_start(side)
     }
 
     fn source_hivemind_squad(
@@ -2110,6 +2109,11 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
 
     fn player_human_side(&self) -> Option<i32> {
         matches!(self.player.human_side, 1 | 2).then_some(self.player.human_side)
+    }
+
+    fn source_faction_start(&self, side: i32) -> Option<Vec2> {
+        let index = usize::try_from(side.checked_sub(1)?).ok()?;
+        self.hivemind_starting_positions?.get(index).copied()
     }
 
     fn player_fog_vision_radius(&self, ship_id: i64) -> Option<f32> {

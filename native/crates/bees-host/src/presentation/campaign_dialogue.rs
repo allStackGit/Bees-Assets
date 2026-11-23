@@ -2,6 +2,9 @@
 
 use bees_gameplay::campaign_dialogue::{CampaignCue, UploadMilestone};
 
+// Tom's first sighting begins the source fleet reveal.
+pub(crate) const PLUTO_FINALE_REVEAL_LINE: usize = 2;
+
 pub(super) fn gunship_attack_prompt(selected: bool) -> &'static str {
     if selected {
         "Choose Attack on Sight to let Tom fire"

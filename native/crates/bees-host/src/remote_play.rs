@@ -3109,7 +3109,9 @@ fn current_state(
     spectator: bool, measurements: &mut RemotePlayMeasurements,
 ) -> Value {
     let viewer = Some(side);
-    let fog = view.player_authority.player_fog_of_war_enabled();
+    let source_fog = view.player_authority.player_fog_of_war_enabled();
+    let finale_focus = (!spectator).then(|| view.pluto_finale_focus_for(side)).flatten();
+    let fog = source_fog && finale_focus.is_none();
     // Only fogged battles require a visibility index. In clear battles
     // every real ship is visible; avoid building and hashing an entire
     // ship roster on every network state projection. Fogged contacts still
@@ -3521,8 +3523,8 @@ fn current_state(
         // Only authenticated side-owned vision and its authored fading
         // masks are sent. The remote window reuses the native pixel stencil
         // instead of revealing old sprites outside the current host sight.
-        "fog_enabled": fog,
-        "fog_sources": if fog { sources.sources.iter().map(|(position, radius)|
+        "fog_enabled": source_fog,
+        "fog_sources": if source_fog { sources.sources.iter().map(|(position, radius)|
             json!({"x": position.x, "y": position.y, "radius": radius})
         ).collect::<Vec<_>>() } else { Vec::new() },
         "map_bounds": [[bounds.min.x, bounds.min.y], [bounds.max.x, bounds.max.y]],
@@ -3554,6 +3556,7 @@ fn current_state(
                 "camera_ship": view.campaign_camera_subject_for(side).map(|(id, _)| id),
                 "scout_alarm": view.campaign_scout_alarm,
                 "gunship_attack_prompt": view.campaign_gunship_attack_prompt_for(side),
+                "finale_focus": finale_focus.map(|point| [point.x, point.y]),
                 "opening_hud_locked": view.campaign_opening_hud_locked_for(side),
                 "mining_sites": view.briefing_mining_sites(side)
                     .map(|site| [site.x, site.y]).collect::<Vec<_>>(),

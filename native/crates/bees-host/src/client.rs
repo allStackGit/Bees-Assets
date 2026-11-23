@@ -1041,6 +1041,10 @@ impl NativeClient {
         self.dialogue_visible = dialogue.is_some();
         self.renderer.hide_terminal_banner = dialogue.is_some_and(|(cue, _, _)|
             cue == bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyVictory);
+        let finale_focus = view.player_authority.player_viewer_side()
+            .and_then(|side| view.pluto_finale_focus_for(side));
+        self.renderer.pluto_finale_reveal = finale_focus.is_some() &&
+            self.dialogue_line >= crate::presentation::campaign_dialogue::PLUTO_FINALE_REVEAL_LINE;
         self.audio.set_level_intro_ambience(
             dialogue.is_some_and(|(cue, _, _)| cue.is_level_intro()),
         );

@@ -281,6 +281,21 @@ impl<'a> NativeRenderWorldView<'a> {
             body.motion.position.is_finite()).then_some((id, body.motion.position))
     }
 
+    /// The source ending reveals the actual battle to its commander
+    /// after victory and aims the camera at the authored Bee deployment.
+    pub(crate) fn pluto_finale_focus_for(&self, viewer_side: i32) -> Option<Vec2> {
+        use bees_gameplay::campaign_dialogue::CampaignCue;
+
+        if !matches!(viewer_side, 1 | 2) || self.campaign_dialogue_side != Some(viewer_side) ||
+            !self.terminal_result.is_some_and(|result| result.winner_side == viewer_side) ||
+            !self.campaign_dialogue.is_some_and(|(_, cue)| cue == CampaignCue::PlutoAnomalyVictory)
+        {
+            return None;
+        }
+        self.player_authority.source_faction_start(3 - viewer_side)
+            .filter(|point| point.is_finite())
+    }
+
     pub(crate) fn campaign_gunship_attack_prompt_for(&self, viewer_side: i32) -> Option<i64> {
         use bees_gameplay::campaign_dialogue::CampaignCue;
 

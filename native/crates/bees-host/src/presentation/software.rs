@@ -272,6 +272,7 @@ pub struct NativeSoftwareRenderer {
     pub show_minimap: bool,
     pub opening_hud_locked: bool,
     pub hide_terminal_banner: bool,
+    pub pluto_finale_reveal: bool,
     /// Only affects the window; training runs keep the same headless world.
     pub show_shooting_menu: bool,
     pub focused_shooting_strategy: u8,
@@ -1234,7 +1235,7 @@ impl NativeSoftwareRenderer {
             sprite_raster_blended_pixels: 0,
             selection_box: None, show_weapon_ranges: false,
             show_minimap: true, opening_hud_locked: false, hide_terminal_banner: false,
-            show_shooting_menu: false,
+            pluto_finale_reveal: false, show_shooting_menu: false,
             focused_shooting_strategy: 1,
             active_tactical_action: None, locked_selection_all: false,
             chasing_selection_all: false,
@@ -2321,7 +2322,7 @@ impl NativeSoftwareRenderer {
     fn apply_player_fog(&mut self, view: &NativeRenderWorldView<'_>,
         counts: &mut NativeRenderCounts,
     ) {
-        if self.fog_override_off ||
+        if self.fog_override_off || self.pluto_finale_reveal ||
             !view.player_authority.player_fog_of_war_enabled() {
             self.fog_live.clear();
             self.fog_fades.clear();
@@ -3699,7 +3700,7 @@ impl NativeSoftwareRenderer {
         // main battlefield and this minimap. Otherwise the minimap could
         // reveal nothing after a resize because the hidden fog stencil was
         // no longer allocated when the override disabled the main mask.
-        let fog = !self.fog_override_off &&
+        let fog = !self.fog_override_off && !self.pluto_finale_reveal &&
             view.player_authority.player_fog_of_war_enabled();
         if fog {
             // The same allocation already holds the main-view fog stencil.
