@@ -282,6 +282,12 @@ def stage_parent_checkpoint(root: Path, job: dict) -> bool:
     for field in ("game_sha256", "runtime_version", "trainer_sha256", "seed"):
         if previous.get(field) != job[field]:
             raise ValueError("Parent Bees runtime or trainer differs at continuation: " + field)
+    if (previous.get("schema_version") == 3 or job["schema_version"] == 3) and (
+        previous.get("schema_version") != 3 or job["schema_version"] != 3 or
+        previous.get("game_payload_sha256") != job.get("game_payload_sha256") or
+        previous.get("wan_key_fingerprint") != job.get("wan_key_fingerprint")
+    ):
+        raise ValueError("Bees WAN checkpoint continuation requires the same complete Unity player and trusted broker.")
     if previous.get("hyperparameters", {}) != job["hyperparameters"]:
         raise ValueError("Parent Bees PPO hyperparameters changed across exact checkpoint continuation.")
     source = parent / "results" / lineage
