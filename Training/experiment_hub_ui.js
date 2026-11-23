@@ -1350,7 +1350,11 @@ document.addEventListener('DOMContentLoaded', () => {
             (!select.multiple||option.selected===options[index].selected)))
             return false;
         // Leave an actively edited menu intact until it is closed.
-        if(document.activeElement===select)return false;
+        const picker=select.id==='hub-compare-metric'
+            ?$('hub-compare-metric-picker')
+            :select.id==='hub-job-metrics' ? $('hub-job-metric-picker'):null;
+        if(document.activeElement===select||
+            picker?.contains(document.activeElement))return false;
         const previous=select.value;
         select.replaceChildren(...options);
         if(!select.multiple&&[...select.options].some(option=>option.value===previous))
@@ -2228,7 +2232,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const selected=new Set();
         for(let i=0;i<compareSlots.length;i++) {
             const select=$('hub-compare-'+compareSlots[i]);
-            select.replaceChildren(new Option('No run',''),
+            refreshSelectOptions(select,[
+                new Option('No run',''),
                 ...selectable.map(j=>new Option(
                     hubJobLabel(j)+
                     trialBatchLabel(j)+
@@ -2240,7 +2245,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ?' · curriculum stage':' · continuation'
                             :' · initial run')+
                     ' · '+j.status+
-                    ' · '+new Date(j.created_at).toLocaleDateString(),j.id)));
+                    ' · '+new Date(j.created_at).toLocaleDateString(),j.id))]);
             const desired=chooseDefaults&&i<2
                 ?defaults[i]?.id:(changedProject?remembered?.[i]:previous[i]);
             if(desired&&selectable.some(j=>j.id===desired)&&
@@ -2253,8 +2258,8 @@ document.addEventListener('DOMContentLoaded', () => {
         saveComparisonRuns();
         const configs=(state.configurations||[]).filter(c=>c.project_id===project);
         const configSelect=$('hub-compare-selection-config'),previousConfig=configSelect.value;
-        configSelect.replaceChildren(...configs.map(c=>
-            new Option(c.name+' · revision '+c.revision,c.id)));
+        refreshSelectOptions(configSelect, [...configs.map(c=>
+            new Option(c.name+' · revision '+c.revision,c.id))]);
         if(configs.some(c=>c.id===previousConfig))
             configSelect.value=previousConfig;
         const chosenIds=compareSlots.map(slot=>$('hub-compare-'+slot).value)
@@ -2284,8 +2289,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const oldPlan=cancelSelect.value;
         const cancellable=allPlans.filter(p=>
             ['waiting','needs_review'].includes(p.status)).reverse();
-        cancelSelect.replaceChildren(...cancellable.map(p=>
-            new Option(p.status+' · '+p.id.slice(-8),p.id)));
+        refreshSelectOptions(cancelSelect, [...cancellable.map(p=>
+            new Option(p.status+' · '+p.id.slice(-8),p.id))]);
         if(cancellable.some(p=>p.id===oldPlan))
             cancelSelect.value=oldPlan;
         $('hub-compare-selection-cancel').disabled=!cancellable.length;
@@ -2332,7 +2337,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     metric.key+' ('+metric.units.join('/')+')',
                 units:metric.units};
         });
-        metricSelect.replaceChildren(...metricOptions.map(m=>{
+        const priorMetricProject=metricSelect.dataset.metricProject;
+        const metricOptionsChanged=refreshSelectOptions(metricSelect,
+            metricOptions.map(m=>{
             const option=new Option(m.label,m.key);
             const key=m.key.slice(7);
             option.dataset.description=hubMetricDescription(key,m.units);
@@ -2411,16 +2418,18 @@ document.addEventListener('DOMContentLoaded', () => {
         for(const option of metricSelect.options)
             option.selected=metricChoices.includes(option.value);
         metricSelect.dataset.metricProject=project;
-        renderMetricPicker('hub-compare-metric','hub-compare-metric-picker');
+        if(metricOptionsChanged||priorMetricProject!==project||
+            oldMetrics.join('\u0000')!==selectedComparisonMetrics().join('\u0000'))
+            renderMetricPicker('hub-compare-metric','hub-compare-metric-picker');
         const selectedMetrics=selectedComparisonMetrics();
         const axisSelect=$('hub-compare-x-axis'),oldAxis=axisSelect.value;
         const timeAxes=['elapsed_training_seconds','active_training_time'];
         const availableTimeAxes=timeAxes.filter(key=>chartable.some(job=>
             hubComparisonPoints({job,points:history.get(job.id)||[]})
                 .some(point=>hubComparisonAxisValue(point,key)!==null)));
-        axisSelect.replaceChildren(
+        refreshSelectOptions(axisSelect, [
             new Option(comparisonAxisLabel('steps_completed'),'steps_completed'),
-            ...availableTimeAxes.map(key=>new Option(comparisonAxisLabel(key),key)));
+            ...availableTimeAxes.map(key=>new Option(comparisonAxisLabel(key),key))]);
         axisSelect.value=[...axisSelect.options].some(option=>
             option.value===oldAxis)?oldAxis:'steps_completed';
         const hasExportData=runs.some(run=>hubComparisonPoints(run).length);
