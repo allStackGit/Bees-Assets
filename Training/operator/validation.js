@@ -177,12 +177,15 @@ function validationIdentity(release, archiveSha, environmentArgs) {
 
 async function assertRlEnvironmentArgsValid(config, release, environmentArgs, python = null) {
     const args = [...(environmentArgs || [])].map(String);
+    const platform = process.platform === 'win32' ? 'WindowsPlayer' :
+        process.platform === 'linux' ? 'LinuxPlayer' : null;
+    if (!platform) throw Error('RL environment validation is unsupported on this operating system.');
     const artifact = (release.artifacts || []).find(item =>
         String(item.role) === 'dedicated' &&
-        String(item.platform) === 'WindowsPlayer'
+        String(item.platform) === platform
     );
     if (!artifact) {
-        throw new Error('Latest release has no local dedicated Windows artifact for RL environment validation.');
+        throw new Error('Latest release has no local dedicated ' + platform + ' artifact for RL environment validation.');
     }
 
     const entrypoint = String(artifact.entrypoint || '');
@@ -218,6 +221,9 @@ async function assertRlEnvironmentArgsValid(config, release, environmentArgs, py
                 entrypoint
             );
         }
+        // Python zipfile extraction does not restore executable permission
+        // bits. Set them only on this disposable, extracted Linux validator.
+        if (platform === 'LinuxPlayer') fs.chmodSync(executable, 0o755);
 
         const validatorSha = sha256File(executable);
         const log = path.join(
