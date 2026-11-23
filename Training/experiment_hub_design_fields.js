@@ -236,6 +236,9 @@ function validateCatalog(raw,installed=[],approved={}) {
             !/^[0-9a-f]{64}$/.test(String(entry?.trainer_sha256||''))||
             !/^[0-9a-f]{64}$/.test(String(entry?.runtime_version||'')))
             throw Error('Bees native Design defaults require pinned Unity worker and MA-POCA trainer SHA-256 values.');
+        if(entry.wan_release_sha256!==undefined&&
+            !/^[0-9a-f]{64}$/.test(entry.wan_release_sha256))
+            throw Error('Bees WAN source release must use a pinned content digest.');
         if(entry.worker_payload_sha256!==undefined&&
             !/^[0-9a-f]{64}$/.test(entry.worker_payload_sha256))
             throw Error('Bees WAN game package requires a complete Unity player content hash.');
@@ -248,13 +251,14 @@ function validateCatalog(raw,installed=[],approved={}) {
             runtime_version:entry.runtime_version,
             ...(entry.wan_key_fingerprint
                 ?{wan_key_fingerprint:entry.wan_key_fingerprint,
-                    worker_payload_sha256:entry.worker_payload_sha256}:{}),
+                    worker_payload_sha256:entry.worker_payload_sha256,
+                    wan_release_sha256:entry.wan_release_sha256}:{}),
             metric_catalog:metricCatalog(entry.metric_catalog)};
     }
     if(raw.bees_rollout!==undefined) {
         const entry=raw.bees_rollout;
         if(!installed.includes('bees_rollout')||
-            !['worker_sha256','worker_payload_sha256',
+            !['worker_sha256','worker_payload_sha256','wan_release_sha256',
                 'trainer_sha256','runtime_version',
                 'wan_key_fingerprint'].every(key=>
                     /^[0-9a-f]{64}$/.test(String(entry?.[key]||''))))
@@ -270,6 +274,7 @@ function validateCatalog(raw,installed=[],approved={}) {
         result.bees_rollout={...validateFields(entry),
             worker_sha256:entry.worker_sha256,
             worker_payload_sha256:entry.worker_payload_sha256,
+            wan_release_sha256:entry.wan_release_sha256,
             trainer_sha256:entry.trainer_sha256,
             runtime_version:entry.runtime_version,
             wan_key_fingerprint:entry.wan_key_fingerprint,
