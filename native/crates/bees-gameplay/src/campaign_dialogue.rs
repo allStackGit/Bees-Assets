@@ -845,6 +845,15 @@ impl CampaignDialogue {
         }
     }
 
+    pub fn pluto_gunship_command_handoff(&self) -> Option<i64> {
+        match self.mode {
+            DialogueMode::PlutoAnomaly {
+                gunship_id, gunship_briefing_after_entry: true, gunship_briefed: true, ..
+            } => Some(gunship_id),
+            _ => None,
+        }
+    }
+
     pub fn pluto_gunship_under_briefing(&self) -> Option<i64> {
         match self.mode {
             DialogueMode::PlutoAnomaly {

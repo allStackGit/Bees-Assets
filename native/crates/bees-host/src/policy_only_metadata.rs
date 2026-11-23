@@ -1351,6 +1351,7 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
         roster: &bees_gameplay::squads::NativeSquadRoster,
     ) {
         let briefing_gunship = dialogue.pluto_gunship_under_briefing();
+        let command_gunship = dialogue.pluto_gunship_command_handoff();
         for (ship_id, enabled) in dialogue.pluto_anomaly_input_permissions().into_iter().flatten() {
             let Some(owner) = roster.owning_squad(ship_id) else { continue };
             if !roster.get(owner).is_some_and(|squad| squad.side == dialogue.player_side()) {
@@ -1359,7 +1360,12 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             if let Some(permission) = self.player.squads.get_mut(&owner)
                 .filter(|permission| permission.user_controlled)
             {
+                let releasing_gunship = !permission.can_accept_input && enabled &&
+                    command_gunship == Some(ship_id);
                 permission.can_accept_input = enabled;
+                if releasing_gunship {
+                    self.player.chasing.insert(owner);
+                }
                 if briefing_gunship == Some(ship_id) {
                     self.player.cease_fire.insert(owner, true);
                 }

@@ -2,6 +2,14 @@
 
 use bees_gameplay::campaign_dialogue::{CampaignCue, UploadMilestone};
 
+pub(super) fn gunship_attack_prompt(selected: bool) -> &'static str {
+    if selected {
+        "Choose Attack on Sight to let Tom fire"
+    } else {
+        "Select Tom's Gunship, then choose Attack on Sight"
+    }
+}
+
 pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)] {
     match cue {
         // Original PlutoLines_Anomaly is split at physical Scout sighting,

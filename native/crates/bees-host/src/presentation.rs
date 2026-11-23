@@ -229,6 +229,7 @@ pub struct NativeRenderWorldView<'a> {
     pub campaign_dialogue_side: Option<i32>,
     pub campaign_camera_ship: Option<i64>,
     pub campaign_scout_alarm: bool,
+    pub campaign_gunship_handoff: Option<i64>,
     /// Current source GameState.PlayerScore, read from the same checkpointed
     /// physical death ledger as the terminal campaign result.
     pub campaign_score: Option<(i32, i64)>,
@@ -278,6 +279,20 @@ impl<'a> NativeRenderWorldView<'a> {
         let body = self.combat.ship_body(id)?;
         (ship.side == viewer_side && !ship.vitals.is_dead() && body.active &&
             body.motion.position.is_finite()).then_some((id, body.motion.position))
+    }
+
+    pub(crate) fn campaign_gunship_attack_prompt_for(&self, viewer_side: i32) -> Option<i64> {
+        use bees_gameplay::campaign_dialogue::CampaignCue;
+
+        if self.campaign_dialogue_side != Some(viewer_side) || self.terminal_result.is_some() ||
+            !self.campaign_dialogue.is_some_and(|(_, cue)|
+                cue == CampaignCue::PlutoAnomalyGunshipBriefingComplete)
+        {
+            return None;
+        }
+        let id = self.campaign_gunship_handoff?;
+        (self.combat.ship_body(id).is_some_and(|body| body.active) &&
+            self.combat.ship_cease_fire(id) == Some(true)).then_some(id)
     }
 
     /// The commander receives the tactical panel after Tom's briefing.

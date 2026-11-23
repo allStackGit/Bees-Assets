@@ -2403,6 +2403,13 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     minimap_objective_markers: &mut u64,
     fog_masked_pixels: &mut u64,
     fog_source_texture_pixels: &mut u64) {
+    let gunship_attack_prompt = state.and_then(|state| {
+        let gunship = state["campaign_dialogue"]["gunship_attack_prompt"].as_i64()?;
+        let actor_selected = squad_for_ship(state, gunship, i64::from(side))
+            .and_then(|squad| squad["owner"]["squad_id"].as_i64())
+            .is_some_and(|squad| selected.contains(&squad));
+        Some(actor_selected)
+    });
     // F6 avoids allocating or clearing a second per-frame art layer,
     // while normal mode reuses the exact local game sprite raster.
     if show_art {
@@ -2868,6 +2875,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                     == Some(i64::from(side));
                 let label = if !owner {
                     "Defend the unidentified vessel near Pluto"
+                } else if let Some(selected) = gunship_attack_prompt {
+                    super::campaign_dialogue::gunship_attack_prompt(selected)
                 } else if objective["honeybee_destroyed"] == true {
                     "First Honeybee destroyed  |  Monitor incoming enemy signals"
                 } else if objective["gunship_briefed"] == true {
@@ -3136,16 +3145,17 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             HudAction::PointFire=>mode==Some(TargetMode::Fire),
             _=>false,
         };
-        let color=if active{0x3d635d}else{0x244056};
+        let attack_prompt = gunship_attack_prompt == Some(true) && action == HudAction::AttackOnSight;
+        let color = if attack_prompt { 0x923e39 } else if active { 0x3d635d } else { 0x244056 };
         for line in pixels.chunks_exact_mut(WIDTH)
             .skip(rect.top).take(rect.bottom-rect.top) {
             line[rect.left..rect.right].fill(color);
         }
         outline(pixels,rect.left as i32,rect.top as i32,
             (rect.right-rect.left) as i32,(rect.bottom-rect.top) as i32,
-            if active{GOLD}else{0x456782});
+            if attack_prompt { RED } else if active { GOLD } else { 0x456782 });
         text::draw_at(pixels,WIDTH,rect.left+4,rect.top+7,
-            action.label(),1,if active{TEXT}else{MUTED});
+            action.label(),1,if active || attack_prompt { TEXT } else { MUTED });
     }
     if let Some(mode)=mode {
         text::draw_at(pixels,WIDTH,15,HEIGHT-55,

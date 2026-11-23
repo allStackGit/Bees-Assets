@@ -2726,6 +2726,10 @@ impl NativeSoftwareRenderer {
     pub fn render(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) -> NativeRenderCounts {
         self.sync_opening_hud(view);
         self.selection.synchronize(view);
+        let gunship_attack_prompt = view.player_authority.player_viewer_side()
+            .and_then(|side| view.campaign_gunship_attack_prompt_for(side))
+            .map(|ship| view.roster.owning_squad(ship)
+                .is_some_and(|owner| self.selection.squads().contains(&owner)));
         // Selected squad count can approach ship count in large battles.
         // Keep 1v1 allocation-free and reuse the large-selection lookup
         // rather than allocating a new hash table every rendered frame.
@@ -3399,6 +3403,8 @@ impl NativeSoftwareRenderer {
             let label = if view.player_authority.player_viewer_side()
                 != view.campaign_dialogue_side {
                 "Defend the unidentified vessel near Pluto"
+            } else if let Some(selected) = gunship_attack_prompt {
+                super::campaign_dialogue::gunship_attack_prompt(selected)
             } else if view.campaign_dialogue.is_some_and(|(_, cue)|
                 matches!(cue,
                     bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeDestroyed
@@ -3576,7 +3582,7 @@ impl NativeSoftwareRenderer {
                 view.player_authority.player_permissions(owner)
                     .is_some_and(|permission| permission.locked_on));
         if !self.opening_hud_locked {
-            counts.tactical_buttons_drawn = self.draw_tactical_bar();
+            counts.tactical_buttons_drawn = self.draw_tactical_bar(gunship_attack_prompt == Some(true));
             counts.selected_command_rows = self.draw_selected_command_status(view);
             self.draw_selected_priority(view);
             if self.show_shooting_menu { self.draw_shooting_menu(view); }
@@ -4004,7 +4010,7 @@ impl NativeSoftwareRenderer {
         scouts_ready + barges_ready + charges_ready + strikers_ready
     }
 
-    fn draw_tactical_bar(&mut self) -> usize {
+    fn draw_tactical_bar(&mut self, prompt_attack_on_sight: bool) -> usize {
         let has_selection = !self.selection.squads().is_empty();
         let mut drawn = 0usize;
         for (index, action) in tactical_hud::ACTIONS.iter().copied().enumerate() {
@@ -4013,6 +4019,8 @@ impl NativeSoftwareRenderer {
             let background = if !has_selection &&
                 action != tactical_hud::HudAction::SelectAll {
                 0x172334
+            } else if prompt_attack_on_sight && action == tactical_hud::HudAction::AttackOnSight {
+                0x923e39
             } else if self.show_shooting_menu && action == tactical_hud::HudAction::Shooting {
                 0x456c78
             } else if action == tactical_hud::HudAction::CeaseFire &&

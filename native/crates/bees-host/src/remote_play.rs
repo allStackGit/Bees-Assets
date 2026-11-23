@@ -3553,6 +3553,7 @@ fn current_state(
                 "line_count": crate::presentation::campaign_dialogue::line_count(cue),
                 "camera_ship": view.campaign_camera_subject_for(side).map(|(id, _)| id),
                 "scout_alarm": view.campaign_scout_alarm,
+                "gunship_attack_prompt": view.campaign_gunship_attack_prompt_for(side),
                 "opening_hud_locked": view.campaign_opening_hud_locked_for(side),
                 "mining_sites": view.briefing_mining_sites(side)
                     .map(|site| [site.x, site.y]).collect::<Vec<_>>(),
