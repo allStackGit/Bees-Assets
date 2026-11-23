@@ -203,6 +203,13 @@ class RemoteConsole:
                                      separators=(",", ":")) + "\n").encode("utf-8")
                 self._send_wire(packet)
             except OSError:
+                # A broken write half may leave the reader blocked forever
+                # on an otherwise open TCP socket. Close both directions
+                # so normal session recovery can authenticate a new peer.
+                try:
+                    self.socket.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
                 return
 
     def _start_heartbeat(self):
@@ -883,10 +890,11 @@ class RemoteConsole:
                 raise ValueError("too many unacknowledged native clock commands")
             request_id = self.next_request
             self.next_request += 1
-            self.pending_time_controls[request_id] = (
-                f"{kind}_result".replace("cycle_speed_result", "speed_result"),
-                scope,
-            )
+            receipt = {
+                "pause": "pause_result", "step": "step_result",
+                "cycle_speed": "speed_result",
+            }[kind]
+            self.pending_time_controls[request_id] = (receipt, scope)
         packet = {
             "kind": kind, "request_id": request_id,
             "world_id": scope[0], "episode_revision": scope[1],
