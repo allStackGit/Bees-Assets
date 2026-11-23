@@ -140,7 +140,9 @@ const DESIGN_FIELDS=Object.freeze([
 const METRICS=Object.freeze(['training_steps','elapsed_training_seconds',
     'environment_steps_per_second','mean_reward','mean_episode_steps',
     'policy_loss','value_loss','policy_entropy','self_play_elo',
-    'self_play_win_rate','evaluation_matches','evaluation_cases',
+    'self_play_win_rate','evaluation_cases_total',
+    'evaluation_cases_completed','evaluation_matches_completed',
+    'evaluation_matches','evaluation_cases',
     'evaluation_win_rate','evaluation_timeout_rate','evaluation_score_rate',
     ...[1,2,3,4,5,6].flatMap(players=>[
         'evaluation_score_rate_'+players+'p',
