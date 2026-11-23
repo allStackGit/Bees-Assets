@@ -5671,6 +5671,8 @@ fn archive_quick_battle_replay_source(
 #[cfg(feature = "client")]
 fn run_library_quick_battle(
     save_root: &Path, game_id: &str, config: &Path,
+    original_queen: Option<&Value>, original_factory: Option<&Value>,
+    sources: &fleet_builder::OriginalGameSources,
 ) -> Result<(), Box<dyn Error>> {
     let root = save_root.join("battles").join(game_id);
     // Non-checkpointed quick battles remain independent: they can launch
@@ -5680,7 +5682,10 @@ fn run_library_quick_battle(
     } else { None };
     let output = select_library_quick_battle_output(save_root, game_id, config, false)?;
     archive_quick_battle_replay_source(config,&output)?;
-    run_session(config, true, true, Some(output), None, None, None)
+    run_session_with_queen_access(
+        config, true, true, Some(output), None, None, None,
+        original_queen, original_factory, sources,
+    )
 }
 
 /// Generated fleet/policy matches cannot be recreated by a new menu
@@ -6698,6 +6703,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     // all existing writer leases and recovery guarantees.
                     return run_library_quick_battle(
                         save_root,"saved-freeplay-level",&source,
+                        original_queen.as_ref(), original_factory.as_ref(),
+                        &original_fighters,
                     );
                 }
                 let recording=saved_level_sources[index-named_freeplay_levels.len()];
@@ -6724,7 +6731,11 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 // The normal library owner, crash recovery and fresh
                 // CombatWorld initialization apply unchanged. We replay
                 // neither the old physical World nor its recorded inputs.
-                run_library_quick_battle(save_root,&recording.game_id,source)
+                run_library_quick_battle(
+                    save_root, &recording.game_id, source,
+                    original_queen.as_ref(), original_factory.as_ref(),
+                    &original_fighters,
+                )
             })()
         } else if training_fleet {
             fleet_training::choose_and_train(save_root)
@@ -6902,7 +6913,11 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 if game_kind == "challenge" { "challenges" } else { "campaigns" }
             ).join(game_id), bee_queen_unlocked)
         } else {
-            run_library_quick_battle(save_root, game_id, &games[index])
+            run_library_quick_battle(
+                save_root, game_id, &games[index],
+                original_queen.as_ref(), original_factory.as_ref(),
+                &original_fighters,
+            )
         };
         launch_failed = result.is_err();
         println!("{}", json!({
