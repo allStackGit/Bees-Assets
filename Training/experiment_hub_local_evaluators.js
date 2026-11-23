@@ -875,6 +875,14 @@ async function setupMini(hub,sourceJobId,{historical=false}={}) {
             throw Error('Frozen Mini suite file is not private and user-owned.');
         const suite=JSON.parse(fs.readFileSync(file,'utf8'));
         verifyFrozenMini(o,source,suite,name);
+        const retained=path.join(o.suites,'opponents',name,'checkpoint.pt');
+        if(!fs.existsSync(retained)) {
+            fs.copyFileSync(source.checkpoint,retained,fs.constants.COPYFILE_EXCL);
+            fs.chmodSync(retained,0o600);
+        }
+        if(crypto.createHash('sha256').update(fs.readFileSync(retained))
+            .digest('hex')!==source.sha256)
+            throw Error('Retained frozen Mini checkpoint differs from its saved source.');
         // An interrupted setup may have published the immutable suite before
         // systemd installed its one-shot service and timer. Finish that
         // installation instead of falsely reporting success.
@@ -938,6 +946,14 @@ async function setupMini(hub,sourceJobId,{historical=false}={}) {
             fs.renameSync(prepared,frozenPath);
             prepared=null;
         }
+        const retained=path.join(frozenPath,'checkpoint.pt');
+        if(!fs.existsSync(retained)) {
+            fs.copyFileSync(source.checkpoint,retained,fs.constants.COPYFILE_EXCL);
+            fs.chmodSync(retained,0o600);
+        }
+        if(crypto.createHash('sha256').update(fs.readFileSync(retained))
+            .digest('hex')!==source.sha256)
+            throw Error('Frozen Mini PPO checkpoint differs from its original SHA-256.');
         const suite={
             suite_id:name,
             maps:historical?seasonBoards(o):['basic-tiny-2p'],
