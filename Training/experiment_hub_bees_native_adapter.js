@@ -99,6 +99,35 @@ function normalize(parameters,context,approved) {
         environmentArgs:envArgs.slice(),hyperparameters:{...overrides}};
 }
 
+const DESIGN_FIELDS=Object.freeze([
+    {key:'max_steps',label:'Training environment steps',section:'training',
+        type:'integer',default:100000,min:1000,max:1000000000},
+    {key:'envs',label:'Parallel Unity environments',section:'environment',
+        type:'integer',default:8,min:1,max:64},
+    {key:'seed',label:'Random seed',section:'training',
+        type:'integer',default:42,min:0,max:2147483647},
+    {key:'device',label:'Learner device',section:'training',
+        type:'enum',default:'cuda',options:['cuda','cpu']},
+    {key:'hyperparameters.batch_size',label:'PPO minibatch size',section:'training',
+        type:'integer',default:4096,min:1,max:65536},
+    {key:'hyperparameters.buffer_size',label:'PPO buffer size',section:'training',
+        type:'integer',default:65536,min:64,max:4194304},
+    {key:'hyperparameters.learning_rate',label:'PPO learning rate',section:'training',
+        type:'number',default:0.001,min:0.000001,max:0.1},
+    {key:'hyperparameters.beta',label:'Entropy coefficient',section:'training',
+        type:'number',default:0.01,min:0,max:0.5},
+    {key:'hyperparameters.epsilon',label:'PPO clip epsilon',section:'training',
+        type:'number',default:0.15,min:0.01,max:0.5},
+    {key:'hyperparameters.lambd',label:'GAE lambda',section:'training',
+        type:'number',default:0.99,min:0.7,max:1},
+    {key:'hyperparameters.num_epoch',label:'PPO epochs',section:'training',
+        type:'integer',default:3,min:1,max:32},
+]);
+const METRICS=Object.freeze(['training_steps','elapsed_training_seconds',
+    'environment_steps_per_second','mean_reward','mean_episode_steps',
+    'policy_loss','value_loss','policy_entropy','self_play_elo',
+    'self_play_win_rate']);
+
 function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifactRoot}) {
     if(process.platform!=='linux')
         throw Error('The first native Bees Unity training adapter requires the Linux ROCm supervisor.');
@@ -156,6 +185,11 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
 
     return {
         executable:python,cwd:project,stop_policy:'interrupt-main',
+        design_catalog:{bees_native:{version:1,
+            worker_sha256:approved.worker_sha256,
+            trainer_sha256:approved.trainer_sha256,
+            fields:DESIGN_FIELDS.map(field=>({...field})),
+            metric_catalog:{base:[...METRICS]}}},
         gpu_verify_args(parameters,context) {
             if(parameters?.device!=='cuda'||!PCI.test(String(context.gpu_pci_address||'')))
                 throw Error('Bees GPU qualification requires a pinned ROCm PCI identity.');
