@@ -356,6 +356,33 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
     metrics["draw_rate"] = {
         "value": draws / receipt["episodes"], "unit": "ratio",
     }
+    # A genuine multi-scene benchmark must expose its weakest physical
+    # map as well as the pooled episode count. Keep the official pinned
+    # success gate unchanged; these additional independently measured
+    # metrics make scenario-count and per-map regressions visible in Hub.
+    physical_scenes = receipt["by_scene_sha256"]
+    scene_rates = [row["side_win_rate"] for row in physical_scenes.values()]
+    metrics["physical_scenes"] = {
+        "value": len(scene_rates), "unit": "count",
+    }
+    metrics["mean_scene_win_rate"] = {
+        "value": sum(scene_rates) / len(scene_rates), "unit": "ratio",
+    }
+    metrics["worst_scene_win_rate"] = {
+        "value": min(scene_rates), "unit": "ratio",
+    }
+    objective_rates = [
+        row["learner_mission_success_rate"]
+        for row in physical_scenes.values()
+        if "learner_mission_success_rate" in row
+    ]
+    if objective_rates and len(objective_rates) == len(physical_scenes):
+        metrics["mean_scene_objective_success_rate"] = {
+            "value": sum(objective_rates) / len(objective_rates), "unit": "ratio",
+        }
+        metrics["worst_scene_objective_success_rate"] = {
+            "value": min(objective_rates), "unit": "ratio",
+        }
     mean_duration = receipt.get("mean_episode_seconds")
     if (type(mean_duration) in (int, float) and
             0 <= mean_duration <= 1e12):
