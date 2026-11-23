@@ -1907,6 +1907,11 @@ impl BattleCatalog {
         if !belongs {
             return Err(invalid("sequenced campaign edit belongs to another career"));
         }
+        // Completed battle outcomes are folded before these edits.
+        // Consequently a hull can already be marked lost by a LATER battle
+        // at replay time. Validate current loss at command admission; here
+        // enforce immutable ownership and receipt order without rejecting
+        // an historically valid earlier ship transfer.
         match edit {
             CampaignSequencedEdit::Duplicate {
                 squad, purchased_ids, authored, tactics,
@@ -1942,7 +1947,8 @@ impl BattleCatalog {
                         !progress.purchases.iter().any(|(side, ship)|
                             *side == squad.side && ship.fleet_ship_id == id &&
                             ship.saved_squad_id == 0) ||
-                        progress.fleet.get(&id).is_some_and(|fleet| fleet.is_dead)
+                        progress.fleet.get(&id)
+                            .is_some_and(|fleet| fleet.side != squad.side)
                     {
                         return Err(invalid("duplicate claims an unavailable purchased reserve hull"));
                     }
@@ -1954,7 +1960,8 @@ impl BattleCatalog {
                             owner.current_saved_squad_id == 0 &&
                             owner.ship_type.is_none_or(|known| known == kind)) ||
                         progress.fleet.get(&id).is_some_and(|fleet|
-                            fleet.is_dead || fleet.ship_type.is_some_and(|known| known != kind))
+                            fleet.side != squad.side ||
+                            fleet.ship_type.is_some_and(|known| known != kind))
                     {
                         return Err(invalid("duplicate claims an unavailable original reserve hull"));
                     }
@@ -2028,8 +2035,7 @@ impl BattleCatalog {
                     transfer.to_saved_squad_id == transfer.from_saved_squad_id ||
                     progress.retired_squad_ids.contains(&transfer.to_saved_squad_id) ||
                     progress.fleet.get(&transfer.fleet_ship_id)
-                        .is_some_and(|fleet| fleet.is_dead &&
-                            transfer.to_saved_squad_id != 0) ||
+                        .is_some_and(|fleet| fleet.side != transfer.player_side) ||
                     (transfer.to_saved_squad_id > 0 &&
                         (progress.squads.get(&transfer.to_saved_squad_id)
                             .is_some_and(|squad| squad.side != transfer.player_side) ||
@@ -2062,7 +2068,7 @@ impl BattleCatalog {
                             *owner == side && ship.fleet_ship_id == id &&
                             ship.saved_squad_id == from) ||
                         progress.fleet.get(&id).is_some_and(|fleet|
-                            fleet.side != side || fleet.is_dead) ||
+                            fleet.side != side) ||
                         (to > 0 && (
                             progress.squads.get(&to).is_some_and(|squad|
                                 squad.side != side) ||
@@ -2110,7 +2116,6 @@ impl BattleCatalog {
                             edit.ship_type.is_none())) ||
                         progress.fleet.get(&edit.fleet_ship_id).is_some_and(|fleet|
                             fleet.side != side ||
-                            (fleet.is_dead && edit.to_saved_squad_id != 0) ||
                             edit.ship_type.is_some_and(|kind|
                                 fleet.ship_type.is_some_and(|recorded| recorded != kind))) ||
                         (edit.to_saved_squad_id > 0 &&
@@ -2153,8 +2158,7 @@ impl BattleCatalog {
                             squad.saved_squad_id == edit.to_saved_squad_id &&
                             squad.side != edit.player_side))) ||
                     progress.fleet.get(&edit.fleet_ship_id)
-                        .is_some_and(|fleet| fleet.side != edit.player_side ||
-                            (fleet.is_dead && edit.to_saved_squad_id != 0))
+                        .is_some_and(|fleet| fleet.side != edit.player_side)
                 {
                     return Err(invalid("invalid sequenced authored assignment"));
                 }
