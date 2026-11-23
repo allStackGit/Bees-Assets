@@ -1170,7 +1170,7 @@ fn choose_mix(
         // and Gunship sprites. Its 12-unit grid cannot fit the source
         // Beehive's 34-unit sprite or a 19-unit Fire Barge without
         // physical overlap. Keep that benchmark honest and deterministic.
-        if total == 1 || total > 64 { continue; }
+        if total > 64 { continue; }
         let support_name = if side == 0 { "Beehives" } else { "Carriers" };
         let mut options = vec![
             (FleetMix::Fighters, format!("{total} fighters  |  No support")),
@@ -1191,6 +1191,7 @@ fn choose_mix(
                 FleetMix::Specialists.support_count(total),
             )),
         ];
+        if total == 1 { options.truncate(1); }
         if total <= 64 {
             let codex: Value = serde_json::from_str(include_str!(
                 "../../../assets/ship-codex.json"
@@ -1208,6 +1209,19 @@ fn choose_mix(
                     "{total} {name} ships  |  Original physical class",
                 )));
             }
+        }
+        if total == 1 {
+            // A 1v1 is still an original playable game. The single
+            // source-authored combat class never needs dummy support
+            // vessels, wave slots or a different physics implementation.
+            let rows = options.iter().map(|(_, title)| BattleMenuRow {
+                title, status: "  [Original physical ship]", unlocked: true,
+            }).collect::<Vec<_>>();
+            let mut selected = 0_usize;
+            let Some(index) = select_library(&rows, &mut selected, false)?
+                else { return Ok(None) };
+            choices[side] = options[index].0;
+            continue;
         }
         if side == 0 {
             let scouts = FleetMix::Scouts.specialist_count(total);
