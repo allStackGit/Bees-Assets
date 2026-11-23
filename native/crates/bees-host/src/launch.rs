@@ -6279,6 +6279,11 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
     let mut launch_failed = false;
     let saved_network = save_root.join("multiplayer.json");
     let saved_host = save_root.join("multiplayer-host.json");
+    // The published game library and its authored assets are immutable for
+    // this menu session. Cache expensive original class/collider discovery;
+    // only the durable player campaign ledger changes after a mission.
+    let mut original_source_cache = HashMap::<PathBuf, OriginalGameSources>::new();
+    let mut original_queen_cache = HashMap::<PathBuf, Value>::new();
     loop {
         // The session controller can publish a new verified checkpoint or
         // register a second independent learner while this game is open.
@@ -6373,12 +6378,27 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let original_queen = if bee_queen_unlocked {
             library.games.iter().enumerate().find(|(_, game)|
                 game.id == "original-human-challenge" && game.kind == "challenge"
-            ).and_then(|(index, _)| match fleet_builder::original_challenge_queen(&games[index]) {
-                Ok(queen) => Some(queen),
-                Err(error) => {
-                    eprintln!("Original Queen FreePlay hull is not ready: {error}");
-                    None
-                },
+            ).and_then(|(index, _)| {
+                let path = &games[index];
+                if let Some(queen) = original_queen_cache.get(path) {
+                    return Some(queen.clone());
+                }
+                let started = Instant::now();
+                match fleet_builder::original_challenge_queen(path) {
+                    Ok(queen) => {
+                        println!("{}", json!({
+                            "kind": "native_original_queen_source_loaded",
+                            "load_wall_seconds": started.elapsed().as_secs_f64(),
+                            "ship_type": 17,
+                        }));
+                        original_queen_cache.insert(path.clone(), queen.clone());
+                        Some(queen)
+                    }
+                    Err(error) => {
+                        eprintln!("Original Queen FreePlay hull is not ready: {error}");
+                        None
+                    }
+                }
             })
         } else { None };
         let freeplay_unlocked = original_freeplay_finales.is_empty() ||
@@ -6393,14 +6413,30 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             original_freeplay_finales.iter().find_map(|(id, _)|
                 library.games.iter().enumerate().find(|(_, game)|
                     game.id == *id && game.kind == "campaign"
-                ).and_then(|(index, _)| match
-                    fleet_builder::original_campaign_hulls(&games[index])
-                {
-                    Ok(classes) => Some(classes),
-                    Err(error) => {
-                        eprintln!("Original combat fleet class sources unavailable: {error}");
-                        None
-                    },
+                ).and_then(|(index, _)| {
+                    let path = &games[index];
+                    if let Some(cached) = original_source_cache.get(path) {
+                        return Some(cached.clone());
+                    }
+                    let started = Instant::now();
+                    match fleet_builder::original_campaign_hulls(path) {
+                        Ok(sources) => {
+                            println!("{}", json!({
+                                "kind": "native_original_campaign_sources_loaded",
+                                "load_wall_seconds": started.elapsed().as_secs_f64(),
+                                "ship_classes_by_side": sources.ships.iter()
+                                    .map(Vec::len).collect::<Vec<_>>(),
+                                "mining_asteroid": sources.mining_asteroid.is_some(),
+                                "map_object": sources.map_object.is_some(),
+                            }));
+                            original_source_cache.insert(path.clone(), sources.clone());
+                            Some(sources)
+                        }
+                        Err(error) => {
+                            eprintln!("Original combat fleet class sources unavailable: {error}");
+                            None
+                        }
+                    }
                 })
             ).unwrap_or_default()
         } else { OriginalGameSources::default() };
