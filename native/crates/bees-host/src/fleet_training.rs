@@ -754,11 +754,11 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         (None, None, worlds, None, available_rollout_binary()?)
     } else {
         let Some(worlds) = choose_count(
-            "Parallel native arenas", &[1, 2, 4, 8, 16, 32, 64],
+            "Parallel native arenas", &[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024],
         )? else { return Ok(()); };
         let binary = available_rollout_binary()?;
         let processes = if binary.is_some() {
-            let choices = [1, 2, 4, 8, 16].into_iter()
+            let choices = [1, 2, 4, 8, 16, 32, 64, 128, 256].into_iter()
                 .filter(|&count| count <= worlds).collect::<Vec<_>>();
             let Some(count) = choose_count("Persistent rollout processes", &choices)? else {
                 return Ok(());
@@ -768,7 +768,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
             None
         };
         let Some(workers) = choose_count(
-            "CPU physics workers per rollout process", &[1, 2, 4, 8, 16, 32],
+            "CPU physics workers per rollout process", &[1, 2, 4, 8, 16, 32, 64, 128],
         )? else { return Ok(()); };
         (Some(worlds), Some(workers), None, processes, binary)
     };
