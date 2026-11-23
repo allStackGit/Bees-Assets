@@ -11005,7 +11005,8 @@ fn run_battle(
             world.roster.active_lifetimes().any(|owner|
                 world.roster.get(owner).is_some_and(|squad| squad.side == side) &&
                 world.player_authority.player_permissions(owner)
-                    .is_some_and(|permission| permission.user_controlled)
+                    .is_some_and(|permission|
+                        permission.user_controlled && permission.can_accept_input)
             )
         );
         if !playable[0] && !playable[1] {
