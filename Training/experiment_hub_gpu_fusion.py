@@ -221,10 +221,16 @@ class FrozenGpuFusion:
             torch.cuda.current_stream(self.device).synchronize()
 
     def _time(self, fn):
+        # Production inference queues many tiny forwards back-to-back.
+        # One isolated synchronized call rewards dispatch latency rather
+        # than sustained arithmetic throughput. Compare two unchanged,
+        # deterministic groups with a single final device barrier.
+        self._finish_gpu()
         begun = perf_counter()
         fn()
+        fn()
         self._finish_gpu()
-        return perf_counter() - begun
+        return (perf_counter() - begun) / 2
 
     def _qualify(self, args, rows):
         begun = perf_counter()
@@ -405,10 +411,13 @@ class FrozenGpuStreams:
         return outputs
 
     def _measure(self, fn):
+        stream = torch.cuda.current_stream(self.device)
+        stream.synchronize()
         started = perf_counter()
         fn()
-        torch.cuda.current_stream(self.device).synchronize()
-        return perf_counter()-started
+        fn()
+        stream.synchronize()
+        return (perf_counter()-started)/2
 
     def _qualify(self, args):
         try:
@@ -661,11 +670,13 @@ class FrozenGpuGraphs:
         return FrozenGpuGraphs._copy_results(output)
 
     def _elapsed(self, operation):
-        torch.cuda.current_stream(self.device).synchronize()
+        stream = torch.cuda.current_stream(self.device)
+        stream.synchronize()
         start = perf_counter()
         operation()
-        torch.cuda.current_stream(self.device).synchronize()
-        return perf_counter()-start
+        operation()
+        stream.synchronize()
+        return (perf_counter()-start)/2
 
     def _qualify(self, args):
         try:
