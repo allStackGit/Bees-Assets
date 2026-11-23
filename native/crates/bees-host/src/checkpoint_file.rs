@@ -321,7 +321,7 @@ pub fn persist_new_json(
     let target = canonical_writer_checkpoint_path(path.to_path_buf())?;
     let parent = target.parent().ok_or(CheckpointFileError::InvalidPath)?;
     let name = target.file_name().ok_or(CheckpointFileError::InvalidPath)?;
-    let (temporary, file) = create_unique_temporary_file(parent, name)?;
+    let (temporary, file) = create_unique_temporary_file(parent, name, false)?;
     let result = (|| -> Result<(), CheckpointFileError> {
         let mut writer = BufWriter::new(file);
         serde_json::to_writer(&mut writer, document)?;
@@ -351,10 +351,21 @@ pub fn persist_new_json(
 pub fn persist_new_bytes(path:&Path,bytes:&[u8])
     -> Result<(),CheckpointFileError>
 {
+    persist_new_bytes_with_permissions(path, bytes, false)
+}
+
+#[cfg(feature = "client")]
+pub fn persist_new_private_bytes(path: &Path, bytes: &[u8]) -> Result<(), CheckpointFileError> {
+    persist_new_bytes_with_permissions(path, bytes, true)
+}
+
+fn persist_new_bytes_with_permissions(
+    path: &Path, bytes: &[u8], private: bool,
+) -> Result<(), CheckpointFileError> {
     let target=canonical_writer_checkpoint_path(path.to_path_buf())?;
     let parent=target.parent().ok_or(CheckpointFileError::InvalidPath)?;
     let name=target.file_name().ok_or(CheckpointFileError::InvalidPath)?;
-    let (temporary,mut file)=create_unique_temporary_file(parent,name)?;
+    let (temporary,mut file)=create_unique_temporary_file(parent, name, private)?;
     let result=(||->Result<(),CheckpointFileError>{
         file.write_all(bytes)?;
         file.sync_all()?;
@@ -380,7 +391,7 @@ fn persist_atomic(
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     let name = path.file_name().ok_or(CheckpointFileError::InvalidPath)?;
-    let (temp_path, file) = create_unique_temporary_file(parent, name)?;
+    let (temp_path, file) = create_unique_temporary_file(parent, name, false)?;
     let mut renamed = false;
     let result = (|| -> Result<(), CheckpointFileError> {
         let mut writer = BufWriter::new(file);
@@ -405,6 +416,7 @@ fn persist_atomic(
 fn create_unique_temporary_file(
     parent: &Path,
     checkpoint_name: &std::ffi::OsStr,
+    private: bool,
 ) -> Result<(PathBuf, File), CheckpointFileError> {
     for _ in 0..MAX_TEMP_NAME_ATTEMPTS {
         let sequence = NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed);
@@ -412,7 +424,16 @@ fn create_unique_temporary_file(
         name.push(checkpoint_name);
         name.push(format!(".{}.{}.tmp", std::process::id(), sequence));
         let path = parent.join(name);
-        match OpenOptions::new().write(true).create_new(true).open(&path) {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        if private {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        #[cfg(not(unix))]
+        let _ = private; // Windows inherits permissions from the save directory.
+        match options.open(&path) {
             Ok(file) => return Ok((path, file)),
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(error.into()),

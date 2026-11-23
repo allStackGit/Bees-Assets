@@ -5845,6 +5845,103 @@ fn serve_native_archived_receipts(root: &Path) -> Result<(), Box<dyn Error>> {
 }
 
 #[cfg(feature = "client")]
+fn read_private_multiplayer_file(path: &Path, max_bytes: u64) -> io::Result<String> {
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_file() || metadata.len() == 0 || metadata.len() > max_bytes {
+        return Err(invalid("multiplayer credential must be a private regular file"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err(invalid("multiplayer credential must have owner-only permissions"));
+        }
+    }
+    fs::read_to_string(path)
+}
+
+#[cfg(feature = "client")]
+fn parse_host_side_tokens(token_map: &str) -> Result<HashMap<String, String>, Box<dyn Error>> {
+    let tokens: HashMap<String, String> = serde_json::from_str(token_map)
+        .map_err(|_| invalid("invalid multiplayer side-token map"))?;
+    if tokens.is_empty() || tokens.len()>2 ||
+        tokens.iter().any(|(side, token)|
+            !matches!(side.as_str(),"1"|"2") ||
+            !(24..=256).contains(&token.len()) ||
+            token.chars().any(char::is_control)) ||
+        tokens.values().collect::<HashSet<_>>().len()!=tokens.len() {
+        return Err(invalid("host must provide unique side 1/2 native multiplayer tokens").into());
+    }
+    Ok(tokens)
+}
+
+#[cfg(feature = "client")]
+const GENERATED_HOST_TOKEN_MAP: &str = "multiplayer-invites/host-side-tokens.json";
+
+#[cfg(feature = "client")]
+fn prepare_multiplayer_invites(save_root: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    use bees_host::checkpoint_file::{persist_new_private_bytes, CheckpointFileError};
+
+    let map = save_root.join(GENERATED_HOST_TOKEN_MAP);
+    let directory = map.parent().expect("generated token map has a parent");
+    let mut builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    match builder.create(directory) {
+        Ok(()) => {}
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error.into()),
+    }
+    if !fs::symlink_metadata(directory)?.file_type().is_dir() ||
+        directory.canonicalize()? != save_root.canonicalize()?.join("multiplayer-invites")
+    {
+        return Err(invalid("multiplayer invite directory must be inside the save directory").into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if fs::metadata(directory)?.permissions().mode() & 0o077 != 0 {
+            return Err(invalid("multiplayer invite directory must have owner-only permissions").into());
+        }
+    }
+
+    let publish = |path: &Path, bytes: &[u8]| -> Result<(), CheckpointFileError> {
+        match persist_new_private_bytes(path, bytes) {
+            Err(CheckpointFileError::Io(error)) if error.kind() == ErrorKind::AlreadyExists => Ok(()),
+            other => other,
+        }
+    };
+    if !map.try_exists()? {
+        let mut random = [0_u8; 64];
+        getrandom::getrandom(&mut random).map_err(CheckpointFileError::Entropy)?;
+        let to_token = |bytes: &[u8]| bytes.iter().map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let tokens = json!({"1": to_token(&random[..32]), "2": to_token(&random[32..])});
+        publish(&map, &serde_json::to_vec(&tokens)?)?;
+    }
+
+    // The map is the durable authority. If setup was interrupted, rebuild
+    // only missing invitations from that same map so existing peers can
+    // still reconnect to their original battle.
+    let tokens = parse_host_side_tokens(&read_private_multiplayer_file(&map, 2048)?)?;
+    for side in ["1", "2"] {
+        let token = tokens.get(side)
+            .ok_or_else(|| invalid("generated multiplayer credentials require both sides"))?;
+        let invite = directory.join(format!("side-{side}.token"));
+        if !invite.try_exists()? {
+            publish(&invite, token.as_bytes())?;
+        }
+        if read_private_multiplayer_file(&invite, 512)? != token.as_str() {
+            return Err(invalid("existing multiplayer invitation does not match the host map").into());
+        }
+    }
+    Ok(directory.to_path_buf())
+}
+
+#[cfg(feature = "client")]
 fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
     library: &NativeLibrary, games: &[PathBuf],
     trained: &[trained_library::TrainedGame],
@@ -5915,29 +6012,8 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
     // must FIRST be projected to the original physical single-Level human
     // challenge, exactly as the existing local trained-game picker does.
     let game_source = static_battle.map(|index| games[index].clone());
-    let token_file = save_root.join(&settings.tokens_file);
-    let metadata=fs::symlink_metadata(&token_file)?;
-    if !metadata.is_file() || metadata.file_type().is_symlink() ||
-        metadata.len()<2 || metadata.len()>2048 {
-        return Err(invalid("multiplayer host token map must be a private regular file").into());
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if metadata.permissions().mode() & 0o077 != 0 {
-            return Err(invalid("multiplayer host token map must have owner-only permissions").into());
-        }
-    }
-    let token_map=fs::read_to_string(&token_file)?;
-    let tokens:std::collections::HashMap<String,String>=serde_json::from_str(&token_map)?;
-    if tokens.is_empty() || tokens.len()>2 ||
-        tokens.iter().any(|(side, token)|
-            !matches!(side.as_str(),"1"|"2") ||
-            !(24..=256).contains(&token.len()) ||
-            token.chars().any(char::is_control)) ||
-        tokens.values().collect::<HashSet<_>>().len()!=tokens.len() {
-        return Err(invalid("host must provide unique side 1/2 native multiplayer tokens").into());
-    }
+    let token_map = read_private_multiplayer_file(&save_root.join(&settings.tokens_file), 2048)?;
+    let tokens = parse_host_side_tokens(&token_map)?;
     // Recovery of a terminal result is a different lifecycle from
     // launching a new battle. Offer the same saved multiplayer host and
     // side-token configuration without allocating a new physical World.
@@ -6946,10 +7022,33 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     || "127.0.0.1:7284".to_owned(), |settings| settings.listen.clone(),
                 );
                 let tokens_file = saved.as_ref().map_or_else(
-                    || Path::new("host-side-tokens.json"), |settings| settings.tokens_file.as_path(),
+                    || Path::new(""), |settings| settings.tokens_file.as_path(),
                 );
                 let Some((listen, tokens_file, remember)) = choose_multiplayer_host(listen, tokens_file)?
                     else { return Ok(()) };
+                let tokens_file = if tokens_file.as_os_str().is_empty() ||
+                    tokens_file == Path::new(GENERATED_HOST_TOKEN_MAP)
+                {
+                    let directory = prepare_multiplayer_invites(save_root)?;
+                    let folder = directory.display().to_string();
+                    let invite_rows = [
+                        BattleMenuRow {
+                            title: "Start hosting", status: "", unlocked: true,
+                        },
+                        BattleMenuRow {
+                            title: "Share only side-1.token or side-2.token with the matching player",
+                            status: "", unlocked: false,
+                        },
+                        BattleMenuRow { title: &folder, status: "", unlocked: false },
+                    ];
+                    let mut selected = 0;
+                    if select_library(&invite_rows, &mut selected, false)?.is_none() {
+                        return Ok(());
+                    }
+                    PathBuf::from(GENERATED_HOST_TOKEN_MAP)
+                } else {
+                    tokens_file
+                };
                 let settings = NativeSavedHost {
                     game_id: game_ids[game_index].to_owned(), listen, tokens_file,
                 };

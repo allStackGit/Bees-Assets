@@ -71,7 +71,7 @@ fn connection_form(
             ["Server address", "Private token file", "Join as"], "Connect")
     } else {
         ("Host Multiplayer", "Use an address on your private network or VPN.",
-            ["Listen address", "Private side-token map file", ""], "Start host")
+            ["Listen address", "Token map file (leave blank to create invitations)", ""], "Continue")
     };
     let remember_row = if joining { 3 } else { 2 };
     let button = remember_row + 1;
@@ -155,7 +155,7 @@ fn connection_form(
             let valid_endpoint = address.rsplit_once(':').is_some_and(|(host, port)|
                 !host.is_empty() && port.parse::<u16>().is_ok_and(|port| port != 0));
             if valid_endpoint && address.len() <= 255 && !address.contains(char::is_whitespace) &&
-                !file.trim().is_empty()
+                (!joining || !file.trim().is_empty())
             {
                 fields[0] = address.to_owned();
                 return Ok(Some((fields, role, remember)));
@@ -191,12 +191,14 @@ fn connection_form(
         };
         text::draw_at(&mut pixels, WIDTH, 91, 319, remember_label, 1, TEXT);
         text::draw_centered(&mut pixels, WIDTH, 319, action, 1, TEXT);
-        let footer = if show_error {
+        let footer = if show_error && joining {
             "Enter an address with a port and a token file path."
+        } else if show_error {
+            "Enter a listen address with a port."
         } else if joining {
             "Tab move   Left / Right change role   Space toggle   Enter connect   Esc return"
         } else {
-            "Tab move   Space toggle   Enter start host   Esc return"
+            "Tab move   Space toggle   Enter continue   Esc return"
         };
         text::draw_centered(&mut pixels, WIDTH, 365, footer, 1, MUTED);
         window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;

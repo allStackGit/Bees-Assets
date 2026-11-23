@@ -1354,8 +1354,12 @@ The packaged multiplayer option returns to the game library on disconnect
 or battle completion. A missing configuration never blocks offline play.
 
 Select **Host Multiplayer** in the packaged game library, pick an
-available game, and enter the listen address and path to the host's
-private side-token map. **Remember settings** saves those selections in
+available game, and enter the listen address. Leave the token map field
+blank to create individual invitation files in `multiplayer-invites`
+under your save folder. Give each player only their matching side's
+`.token` file and the server address. The host reuses these credentials so
+players can reconnect after a restart. To use an existing private token map,
+enter its path. **Remember settings** saves those selections in
 `multiplayer-host.json` in the same save directory:
 
 ```json
