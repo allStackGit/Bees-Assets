@@ -67,7 +67,7 @@ fn connection_form(
 ) -> Result<Option<([String; 2], Option<usize>, bool)>, minifb::Error> {
     let joining = role.is_some();
     let (title, hint, labels, action) = if joining {
-        ("Join Multiplayer", "Enter host:port and the path to the token file from your host.",
+        ("Join Multiplayer", "Use host:port or tls://host:port and the private player token file.",
             ["Server address", "Private token file", "Join as"], "Connect")
     } else {
         ("Host Multiplayer", "Use an address on your private network or VPN.",
