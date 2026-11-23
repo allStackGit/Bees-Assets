@@ -115,6 +115,10 @@ function renderPage(html,runtime={}) {
         '<h3>Bees Unity training — external coordinator</h3>'+
         '<p class="muted">Bees builds, training, checkpoints and remote workers belong to the separate Bees Experiment Manager. '+
         'This panel never launches Bees jobs through the native scheduler.</p>'+
+        (Number.isInteger(runtime.bees_bridge_port)
+            ?'<p><a href="http://127.0.0.1:'+runtime.bees_bridge_port+'/" target="_blank" rel="noopener noreferrer">'+
+                'Open full Bees experiments, training queue and evaluations</a></p>'
+            :'')+
         '<p id="hub-external-bees-status" role="status">Checking Bees manager.</p>'+
         '<p id="hub-external-bees-details" class="muted"></p>'+
         '<div class="hub-controls">'+
@@ -469,7 +473,8 @@ async function main(argv=process.argv.slice(2)) {
         hub.addProject({id:'courier',name:'Courier Ants'});
     }
     const beesBridge=new BeesBridge(process.env.EXPERIMENT_HUB_BEES_BRIDGE_PORT||null);
-    const runtime={...activeHubVersion(root),bees_bridge_configured:!!beesBridge.port};
+    const runtime={...activeHubVersion(root),bees_bridge_configured:!!beesBridge.port,
+        bees_bridge_port:beesBridge.port};
     const initialFrontend=frontendSnapshot(runtime);
     const frontend={current:initialFrontend,checkedSource:runtime.source_commit,
         backendPending:false,agentPending:false,snapshots:new Map([
