@@ -496,7 +496,7 @@ def physical_scene_identity(scene: dict) -> str:
 
 def verify_same_battle(scene: dict, run: dict,
                        policy_scene: dict, policy_run: dict,
-                       scripted_orders=None) -> str:
+                       scripted_orders=None, queue_repeats=None) -> str:
     """Guard the gameplay/training boundary before handing bytes to PPO."""
     source_id = physical_scene_identity(scene)
     if source_id != physical_scene_identity(policy_scene):
@@ -525,8 +525,10 @@ def verify_same_battle(scene: dict, run: dict,
     # gameplay commands after model ownership replaces human/server input.
     # Recompute exact orders independently; never whitelist arbitrary JSON
     # instructions or a second policy-specific combat algorithm.
-    if scripted_orders is None:
-        scripted_orders = policy_author().native_scripted_squad_orders
+    if scripted_orders is None or queue_repeats is None:
+        module = policy_author()
+        scripted_orders = scripted_orders or module.native_scripted_squad_orders
+        queue_repeats = queue_repeats or module.native_scripted_queue_repeats
     original_queues = expected["levels"][0]["scripted_queues"]
     original_squads = {squad["item_id"]: squad for squad in scene["squads"]}
     squad_indices = {
@@ -572,8 +574,7 @@ def verify_same_battle(scene: dict, run: dict,
         )
         allowed = {
             "squad_item_id": squad_id,
-            "repeat": (orders[0]["kind"] != "hold" and
-                       orders[-1]["kind"] != "bombard_map_object"),
+            "repeat": queue_repeats(orders, run["levels"][0]),
             "orders": orders,
         }
         if squad_id in deferred:
@@ -694,6 +695,7 @@ def convert(source: Path, destination: Path, archetypes: Path,
     physical_identity = verify_same_battle(
         scene, run, policy_scene, policy_run,
         author_module.native_scripted_squad_orders,
+        author_module.native_scripted_queue_repeats,
     )
     if (file_sha256(source) != source_sha or
             file_sha256(scene_path) != scene_sha or

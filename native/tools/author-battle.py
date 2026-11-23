@@ -460,6 +460,23 @@ def resize_empty_arena(scene: dict, map_size: float) -> None:
 
 
 
+def native_scripted_queue_repeats(orders: list[dict],
+                                  level: dict) -> bool:
+    """Keep objective completion one-shot; repeat persistent game tactics."""
+    if not orders or orders[0]["kind"] == "hold":
+        return False
+    if orders[-1]["kind"] == "bombard_map_object":
+        return False
+    exit_zone = level.get("extraction")
+    if (isinstance(exit_zone, dict) and len(orders) == 1 and
+            orders[0]["kind"] == "move_to_point" and
+            orders[0].get("destination") == exit_zone.get("center")):
+        # One physical arrival at the exit ends an extraction/escort;
+        # unlike patrol or pursuit, repeating this command is not useful.
+        return False
+    return True
+
+
 def native_demolition_orders(scene: dict, members: list[dict],
                              target: dict, attacking_side: int) -> list[dict] | None:
     """Author the original MoveToPoint + physical MapObject point-fire orders."""
@@ -1333,8 +1350,9 @@ def author(args) -> tuple[dict, dict, dict]:
             )
             plan = {
                 "squad_item_id": squad["item_id"],
-                "repeat": (orders[0]["kind"] != "hold" and
-                           orders[-1]["kind"] != "bombard_map_object"),
+                "repeat": native_scripted_queue_repeats(
+                    orders, run["levels"][0],
+                ),
                 "orders": orders,
             }
             if squad["item_id"] in deferred_squad_ids:
@@ -2406,8 +2424,9 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
         )
         queue = {
             "squad_item_id": squad_id,
-            "repeat": (orders[0]["kind"] != "hold" and
-                       orders[-1]["kind"] != "bombard_map_object"),
+            "repeat": native_scripted_queue_repeats(
+                orders, run["levels"][0],
+            ),
             "orders": orders,
         }
         if any(ship["entity_id"] in deferred_reinforcement_ships
