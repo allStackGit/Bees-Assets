@@ -164,9 +164,15 @@ pub(super) fn original_campaign_hulls(
                 // its own identity, not the enemy's historical ownership.
                 full_health["health"] = expected["health"].clone();
                 full_health["user_controlled"] = json!(true);
-                if regular && full_health["special"]["kind"] == "none" {
+                if full_health["special"]["kind"] == "none" {
+                    // A captured no-op source special is not a physical
+                    // ability. Removing the absent capability makes genuine
+                    // Carpenter/legacy supports eligible for the SAME
+                    // native layout clone used by ordinary fleet gameplay
+                    // and training, without touching their real healing,
+                    // warp, mining or weapon metadata.
                     full_health.as_object_mut().ok_or_else(||
-                        invalid("source original fighter is not a ship record"))?
+                        invalid("original source hull is not a ship record"))?
                         .remove("special");
                 }
                 result.ships[(side - 1) as usize].push(full_health);
