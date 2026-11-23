@@ -5794,6 +5794,10 @@ struct NativeSavedNetwork {
     address: String,
     side: i32,
     token_file: PathBuf,
+    /// An optional public DER trust anchor path, never embedded certificate
+    /// contents or private key material in the game preference JSON.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trusted_ca_file: Option<PathBuf>,
     /// Explicit view-only side credentials, never commander privileges.
     #[serde(default)]
     spectator: bool,
@@ -7662,6 +7666,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                             Ok(saved) => Some(MultiplayerJoin {
                                 address: saved.address,
                                 token_file: saved.token_file,
+                                trusted_ca_file: saved.trusted_ca_file,
                                 side: saved.side,
                                 spectator: saved.spectator,
                             }),
@@ -7681,21 +7686,25 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     bees_host::checkpoint_file::persist_atomic_json(&saved_network, &NativeSavedNetwork {
                         address: connection.address.clone(),
                         token_file: connection.token_file.clone(),
+                        trusted_ca_file: connection.trusted_ca_file.clone(),
                         side: connection.side,
                         spectator: connection.spectator,
                     })?;
                 }
                 let token_file = save_root.join(&connection.token_file);
+                let trusted_ca = connection.trusted_ca_file.as_ref().map(|path|
+                    save_root.join(path)
+                );
                 let session_name = if connection.spectator {
                     "multiplayer-spectator-session.json"
                 } else {
                     "multiplayer-session.json"
                 };
-                let result = bees_host::presentation::connect_remote(
+                let result = bees_host::presentation::connect_remote_with_trust(
                     &connection.address, &token_file, connection.side,
                     Some(&save_root.join(session_name)),
                     Some(&save_root.join("audio-settings.json")),
-                    connection.spectator,
+                    connection.spectator, trusted_ca.as_deref(),
                 );
                 last_multiplayer_join = Some(connection);
                 result
