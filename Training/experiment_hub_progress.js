@@ -125,7 +125,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'gpu_training_parallel_batches','gpu_training_calibration_complete',
             'gpu_training_work_confirmed','gpu_training_retunes',
             'gpu_training_live_work_per_second',
-            'gpu_training_last_qualified_work_per_second',
+            'gpu_training_qualified_work_per_second',
         ])retain(name,reported[name]);
         for(const name of ['ppo_compiled_loss_active',
             'ppo_compile_calibration_complete','ppo_compile_fallbacks',
