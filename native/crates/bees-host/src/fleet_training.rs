@@ -1531,10 +1531,19 @@ fn inspect_training_evaluations(job: &Path) -> Result<(), Box<dyn Error>> {
     }
     let titles = entries.iter().map(|(name, result)| {
         let Some(row) = result else { return format!("{name} | In progress or interrupted"); };
-        let wins = row["side_victories"].as_u64().unwrap_or(0);
+        let attributed = &row["candidate_terminal_matchup"]["counts"];
+        let wins = attributed["wins"].as_u64()
+            .or_else(|| row["side_victories"].as_u64()).unwrap_or(0);
         let episodes = row["episodes"].as_u64().unwrap_or(0);
-        let draws = row["draws"].as_u64().unwrap_or(0);
-        format!("{name} | {wins}/{episodes} wins, {draws} draws")
+        let draws = attributed["draws"].as_u64()
+            .or_else(|| row["draws"].as_u64()).unwrap_or(0);
+        let side = row["candidate_side_assignment"]["candidate_physical_side"]
+            .as_u64().or_else(|| row["learner_side"].as_u64()).unwrap_or(0);
+        let seed = row["policy_sampling_seed"].as_u64().unwrap_or(0);
+        let speed = row["world_steps_per_wall_second"].as_f64()
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .map_or(String::new(), |value| format!(" | {value:.0} SPS"));
+        format!("{name} | side {side} | seed {seed} | {wins}/{episodes} wins, {draws} draws{speed}")
     }).collect::<Vec<_>>();
     let rows = titles.iter().zip(&entries).map(|(title, (_, result))| BattleMenuRow {
         title,
