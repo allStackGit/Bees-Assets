@@ -74,6 +74,10 @@ struct WireCounts {
     briefing_requests_sent: u64,
     briefing_receipts: u64,
     briefing_rejections: u64,
+    lobby_ready_requests_sent: u64,
+    lobby_ready_receipts: u64,
+    lobby_ready_rejections: u64,
+    lobby_wait_frames: u64,
     speed_requests_sent: u64,
     speed_receipts: u64,
     orders_accepted: u64,
@@ -587,6 +591,11 @@ struct PeerClient {
     /// A denied cue is not resent every display frame. A new World or
     /// source cue can still request its own acknowledgment.
     briefing_rejected: Option<(u64,u64,u32)>,
+    /// Transport-only two-commander lobby admission for this exact World.
+    /// Never carry a ready vote across reconnect or episode turnover.
+    lobby_ready_pending: Option<(u64,u64,u64)>,
+    lobby_ready_approved: Option<(u64,u64)>,
+    lobby_ready_rejected: Option<(u64,u64)>,
     /// This commander's own time-control vote, not the shared pause state.
     /// It is cleared on reconnect and World turnover.
     pause_owned: bool,
@@ -664,6 +673,8 @@ impl PeerClient {
             pending_order_times: VecDeque::new(),
             briefing_pending: None, briefing_approved: None,
             briefing_rejected: None,
+            lobby_ready_pending: None, lobby_ready_approved: None,
+            lobby_ready_rejected: None,
             pause_owned: false, pause_pending: None, step_pending: None,
             speed_pending: None, inspection_pending: None,
             inspection_result: None, pause_episode: None,
@@ -805,6 +816,9 @@ impl PeerClient {
                         previous["world_id"] != message["world_id"] ||
                         previous["episode_revision"] != message["episode_revision"]);
                     if self.pause_episode != Some((world_id,revision)) {
+                        self.lobby_ready_pending = None;
+                        self.lobby_ready_approved = None;
+                        self.lobby_ready_rejected = None;
                         self.pause_owned = false;
                         self.pause_pending = None;
                         self.step_pending = None;
@@ -1049,6 +1063,35 @@ impl PeerClient {
                     }
                     self.metrics.briefing_receipts+=1;
                     self.notice=format!("Story {request}: {feedback}");
+                }
+                Some("lobby_ready_result") => {
+                    if !self.authenticated || self.spectator {
+                        return Err(invalid("unauthorized native lobby receipt").into());
+                    }
+                    let id=message["request_id"].as_u64()
+                        .ok_or_else(||invalid("native lobby receipt lacks request ID"))?;
+                    let processed=message["processed"].as_bool()
+                        .ok_or_else(||invalid("native lobby receipt lacks result"))?;
+                    let feedback=message["feedback"].as_str()
+                        .filter(|value|!value.is_empty())
+                        .ok_or_else(||invalid("native lobby receipt lacks feedback"))?;
+                    let Some((world,revision,pending_id))=self.lobby_ready_pending
+                    else { return Err(invalid("unsolicited native lobby receipt").into()) };
+                    if id!=pending_id {
+                        return Err(invalid("native lobby receipt mismatches request").into());
+                    }
+                    self.lobby_ready_pending=None;
+                    if self.pause_episode==Some((world,revision)) {
+                        if processed {
+                            self.lobby_ready_approved=Some((world,revision));
+                            self.lobby_ready_rejected=None;
+                        } else {
+                            self.lobby_ready_rejected=Some((world,revision));
+                            self.metrics.lobby_ready_rejections+=1;
+                        }
+                    }
+                    self.metrics.lobby_ready_receipts+=1;
+                    self.notice=format!("Lobby: {feedback}");
                 }
                 Some("pause_result") => {
                     if !self.authenticated || self.spectator {
@@ -1337,6 +1380,33 @@ impl PeerClient {
             "sequence":sequence}),"Campaign briefing ready".into())?;
         self.briefing_pending=Some((world,revision,sequence,id));
         self.metrics.briefing_requests_sent+=1;
+        Ok(())
+    }
+
+    /// Ready the original two-faction dedicated match, without issuing
+    /// any gameplay input or modifying the physical world. Reconnects
+    /// use fresh peer IDs, so the server deliberately discards old votes.
+    fn ready_lobby(&mut self, world:u64, revision:u64)
+        -> Result<(), Box<dyn Error>>
+    {
+        if !self.authenticated || !self.connected || self.spectator ||
+            self.lobby_ready_pending.is_some() ||
+            self.lobby_ready_approved==Some((world,revision)) ||
+            self.lobby_ready_rejected==Some((world,revision)) ||
+            !self.state.as_ref().is_some_and(|state|
+                state["world_id"].as_u64()==Some(world) &&
+                state["episode_revision"].as_u64()==Some(revision) &&
+                state["lobby"]["waiting"]==true)
+        {
+            return Err(invalid("two-player native lobby is unavailable or already ready").into());
+        }
+        let id=self.next_request;
+        self.enqueue_request(json!({
+            "kind":"lobby_ready", "world_id":world,
+            "episode_revision":revision,
+        }), "Ready for the authoritative match; waiting for other side".into())?;
+        self.lobby_ready_pending=Some((world,revision,id));
+        self.metrics.lobby_ready_requests_sent+=1;
         Ok(())
     }
 
@@ -3531,6 +3601,28 @@ pub fn connect_remote(
                 if music { "Music" } else { "Effects" },
                 (level * 100.0).round() as u32);
         }
+        // Ready is an explicitly authenticated transport admission, not a
+        // movement, strategy, or timer event. Enter is shared with story
+        // dialogue; during a lobby it takes priority over line advancement.
+        let lobby_waiting=peer.state.as_ref()
+            .is_some_and(|state|state["lobby"]["waiting"]==true);
+        if lobby_waiting && !show_controls_help && !show_battle_menu &&
+            !peer.spectator && window.is_active() &&
+            window.is_key_pressed(Key::Enter,KeyRepeat::No)
+        {
+            if let Some((world,revision))=peer.state.as_ref().and_then(|state|
+                Some((state["world_id"].as_u64()?,
+                    state["episode_revision"].as_u64()?)))
+            {
+                if peer.lobby_ready_approved!=Some((world,revision)) &&
+                    peer.lobby_ready_pending.is_none()
+                {
+                    if let Err(error)=peer.ready_lobby(world,revision) {
+                        peer.notice=error.to_string();
+                    }
+                }
+            }
+        }
         if !show_controls_help && window.is_key_pressed(Key::Space, KeyRepeat::No) {
             if peer.spectator {
                 soundtrack_paused=!soundtrack_paused;
@@ -3839,7 +3931,7 @@ pub fn connect_remote(
                     dialogue_line=count;
                 } else if !show_controls_help &&
                     (window.is_key_pressed(Key::L,KeyRepeat::No) ||
-                    window.is_key_pressed(Key::Enter,KeyRepeat::No)) {
+                    (!lobby_waiting && window.is_key_pressed(Key::Enter,KeyRepeat::No))) {
                     let incomplete = !dialogue_reveal_forced &&
                         authored_cue.and_then(|cue|
                             super::campaign_dialogue::visible_line(cue,dialogue_line))
@@ -4005,7 +4097,11 @@ pub fn connect_remote(
             surrender_confirmation=surrender_owner.clone();
         }
         peer.input_suppressed=peer.spectator||terminal||briefing||
-            host_briefing_paused||show_controls_help||menu_action_consumed;
+            host_briefing_paused||lobby_waiting||
+            show_controls_help||menu_action_consumed;
+        if lobby_waiting {
+            peer.metrics.lobby_wait_frames+=1;
+        }
         if !peer.input_suppressed && !held_fire_active &&
             peer.connected && peer.authenticated && window.is_active() &&
             window.is_key_pressed(Key::F3, KeyRepeat::No)
@@ -5051,6 +5147,27 @@ pub fn connect_remote(
             text::draw_at(&mut pixels,WIDTH,12,20,
                 &format!("Host speed: {speed}x"),1,[198,231,248]);
         }
+        if let Some(state)=peer.state.as_ref().filter(|state|
+            state["lobby"]["waiting"]==true)
+        {
+            let sides=state["lobby"]["ready_sides"].as_array()
+                .map_or_else(String::new, |items|
+                    items.iter().filter_map(|side|side.as_i64())
+                        .map(|side|side.to_string()).collect::<Vec<_>>().join(", "));
+            let admitted=state["lobby"]["ready_sides"].as_array()
+                .map_or(0,Vec::len);
+            let required=state["lobby"]["required_sides"].as_array()
+                .map_or(0,Vec::len);
+            let ready=peer.lobby_ready_approved.is_some();
+            let prompt=if peer.spectator { "Waiting for commanders" }
+                else if ready { "You are ready" }
+                else if peer.lobby_ready_pending.is_some() { "Waiting for ready ACK" }
+                else { "Press Enter to ready" };
+            text::draw_at(&mut pixels,WIDTH,12,HEIGHT-96,
+                text::fit(&format!(
+                    "MATCH LOBBY: {admitted}/{required} sides ready ({sides}) - {prompt}"
+                ),FIELD-22),1,[255,211,130]);
+        }
         if peer.state.as_ref().is_some_and(|state|
             state["commander_paused"] == true)
         {
@@ -5089,7 +5206,8 @@ pub fn connect_remote(
                 "C or F2: inspect the Fleet Codex",
                 "S: request surrender (commander only; confirmation required)",
                 "Q: disconnect from the host and close this window",
-                "Space: pause/resume   N: single step   F12: speed 1x/1.5x/2x",
+                "Enter: ready two-player match   Space: pause/resume",
+                "N: single step   F12: speed 1x/1.5x/2x",
             ];
             NativeSoftwareRenderer::draw_help_panel(
                 &mut pixels,WIDTH,HEIGHT,ROWS,&[0,6],
@@ -5164,7 +5282,8 @@ pub fn connect_remote(
                 "NETWORK / AUDIO",
                 "F4: surrender   F5: reconnect   F8: network measurements",
                 "F7: mute   F10/F11: effects   Shift+F10/F11: music",
-                "Space: shared pause   N: single tick   F12: game speed 1x/1.5x/2x",
+                "Enter: ready two-player match   Space: shared pause",
+                "N: single tick   F12: game speed 1x/1.5x/2x",
             ];
             if peer.spectator {
                 // The observer may navigate the native camera, artwork,
@@ -5317,6 +5436,10 @@ pub fn connect_remote(
         "briefing_requests_sent":peer.metrics.briefing_requests_sent,
         "briefing_receipts":peer.metrics.briefing_receipts,
         "briefing_rejections":peer.metrics.briefing_rejections,
+        "lobby_ready_requests_sent":peer.metrics.lobby_ready_requests_sent,
+        "lobby_ready_receipts":peer.metrics.lobby_ready_receipts,
+        "lobby_ready_rejections":peer.metrics.lobby_ready_rejections,
+        "lobby_wait_frames":peer.metrics.lobby_wait_frames,
         "orders_accepted":peer.metrics.orders_accepted,
         "orders_rejected":peer.metrics.orders_rejected,
         "order_ack_latency_samples":peer.metrics.order_ack_latency_samples,
