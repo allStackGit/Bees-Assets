@@ -189,6 +189,7 @@ pub struct NativeRenderCounts {
     pub special_ready_ships: usize,
     /// Real game/policy Striker loaded indicators drawn for visible hulls.
     pub striker_bomb_indicators: usize,
+    pub scout_beacon_charge_bars: usize,
     pub tactical_buttons_drawn: usize,
     pub selected_command_rows: usize,
     pub command_target_markers: usize,
@@ -3056,6 +3057,18 @@ impl NativeSoftwareRenderer {
                     counts.striker_bomb_indicators += 1;
                 }
             }
+            if ship.ship_type == bees_sim::combat_world::SCOUT_TYPE &&
+                owner.is_some_and(|squad| view.is_local_player_squad(squad))
+            {
+                if let Some(charge) = view.combat.game_scout_beacon_charge_percent(ship.entity_id) {
+                    counts.scout_beacon_charge_bars += usize::from(
+                        tactical_hud::draw_scout_beacon_charge(
+                            &mut self.pixels, self.width, self.width,
+                            (x.round() as i32, y.round() as i32), charge,
+                        ),
+                    );
+                }
+            }
             let health = ship.vitals.health() as f32 / ship.vitals.max_health() as f32;
             self.line(x - 10.0, y - 12.0, x + 10.0, y - 12.0, 0x3c2837);
             self.line(x - 10.0, y - 12.0, x - 10.0 + 20.0 * health, y - 12.0, color);
@@ -3962,7 +3975,8 @@ impl NativeSoftwareRenderer {
                             strikers_ready += usize::from(ready);
                         }
                     }
-                    18 if can_issue && view.combat.game_scout_configured(ship_id) => {
+                    bees_sim::combat_world::SCOUT_TYPE if can_issue &&
+                        view.combat.game_scout_beacon_charge_percent(ship_id).is_some() => {
                         scouts += 1;
                         scouts_ready += usize::from(
                             view.combat.player_scout_beacon_ready(ship_id));

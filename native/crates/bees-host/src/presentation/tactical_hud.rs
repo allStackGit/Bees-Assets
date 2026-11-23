@@ -36,6 +36,34 @@ pub(super) fn draw_scout_alarm(
     true
 }
 
+/// A Scout's vertical ChargingBar fills in twenty half-second steps.
+pub(super) fn draw_scout_beacon_charge(
+    pixels: &mut [u32], stride: usize, field_width: usize,
+    center: (i32, i32), percent: u8,
+) -> bool {
+    const STEPS: i32 = 20;
+    const WIDTH: usize = 4;
+    let left = center.0.saturating_add(13);
+    let top = center.1.saturating_sub(8);
+    if stride == 0 || field_width > stride || left < 0 || top < 0 ||
+        left as usize + WIDTH > field_width ||
+        top as usize + STEPS as usize + 2 > pixels.len() / stride
+    {
+        return false;
+    }
+
+    let filled = i32::from(percent.min(100)) * STEPS / 100;
+    for y in 0..STEPS + 2 {
+        let start = (top + y) as usize * stride + left as usize;
+        let row = &mut pixels[start..start + WIDTH];
+        row.fill(0xe8edf3);
+        if y > 0 && y <= STEPS {
+            row[1..WIDTH - 1].fill(if y > STEPS - filled { 0x39db3f } else { 0x253747 });
+        }
+    }
+    true
+}
+
 pub(super) fn battle_marker_color(
     custom_rgb: Option<[u8; 3]>, side: i32, human_side: Option<i32>, fallback: u32,
 ) -> u32 {

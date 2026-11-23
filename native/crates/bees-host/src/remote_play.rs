@@ -3239,6 +3239,9 @@ fn current_state(
             "beacon_alert": if owned && ship.ship_type == bees_sim::ship_assets::BEACON_TYPE {
                 Some(view.beacon_has_nearby_enemy(ship.entity_id))
             } else { None },
+            "scout_beacon_charge_percent": if owned && ship.ship_type == bees_sim::combat_world::SCOUT_TYPE {
+                view.combat.game_scout_beacon_charge_percent(ship.entity_id)
+            } else { None },
             "striker_bomb_ready": if ship.ship_type == 19 {
                 view.combat.game_striker_bomb_ready(ship.entity_id)
                     .or_else(|| view.combat.policy_striker_bomb_ready(ship.entity_id))

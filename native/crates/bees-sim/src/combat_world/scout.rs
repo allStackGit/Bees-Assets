@@ -148,6 +148,19 @@ impl CombatWorld {
         self.game_scout_runtime.contains_key(&scout_id)
     }
 
+    /// Progress of the source Scout's ChargingBar. Disabled or exhausted
+    /// Scouts hide it. The side cap and pending inputs affect deployment,
+    /// while the charge itself follows the ship's persisted cooldown.
+    pub fn game_scout_beacon_charge_percent(&self, scout_id: i64) -> Option<u8> {
+        let scout = self.game_scout_runtime.get(&scout_id)?;
+        (scout.enabled && scout.dropped < MAX_BEACONS).then(|| {
+            let elapsed = (COOLDOWN_SECONDS - scout.remaining_cooldown)
+                .clamp(0.0, COOLDOWN_SECONDS);
+            // Unity's bar advances by five percent per half-second.
+            (elapsed * 2.0).floor() as u8 * 5
+        })
+    }
+
     /// True when a Scout could still request a Stage-owned Squad ID.
     /// The scheduler must serialize those worlds to preserve the source's
     /// global minion lifetime allocation order across CPU workers.

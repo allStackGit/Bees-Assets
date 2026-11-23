@@ -256,6 +256,7 @@ pub struct NativeClient {
     pub minimap_briefing_mining_markers: u64,
     pub numbered_squad_rows_drawn: u64,
     pub striker_bomb_indicators_drawn: u64,
+    pub scout_beacon_charge_bar_draws: u64,
     pub minimap_camera_moves: u64,
     pub camera_pan_frames: u64,
     pub campaign_camera_follow_frames: u64,
@@ -361,6 +362,7 @@ impl NativeClient {
             minimap_briefing_mining_markers: 0,
             numbered_squad_rows_drawn: 0,
             striker_bomb_indicators_drawn: 0,
+            scout_beacon_charge_bar_draws: 0,
             minimap_camera_moves: 0, camera_pan_frames: 0, campaign_camera_follow_frames: 0,
             scout_alarm_frames: 0, pluto_finale_camera_frames: 0,
             camera_wheel_pans: 0, camera_boundary_clamps: 0,
@@ -2294,6 +2296,8 @@ impl NativeClient {
         self.numbered_squad_rows_drawn = self.numbered_squad_rows_drawn.saturating_add(counts.numbered_squad_rows as u64);
         self.striker_bomb_indicators_drawn = self.striker_bomb_indicators_drawn
             .saturating_add(counts.striker_bomb_indicators as u64);
+        self.scout_beacon_charge_bar_draws = self.scout_beacon_charge_bar_draws
+            .saturating_add(counts.scout_beacon_charge_bars as u64);
         self.selected_command_rows_drawn = self.selected_command_rows_drawn
             .saturating_add(counts.selected_command_rows as u64);
         self.command_target_markers_drawn = self.command_target_markers_drawn

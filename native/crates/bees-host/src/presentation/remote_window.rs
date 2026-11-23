@@ -171,6 +171,7 @@ struct WireCounts {
     command_target_draws: u64,
     destination_marker_draws: u64,
     striker_bomb_indicator_draws: u64,
+    scout_beacon_charge_bar_draws: u64,
     tactical_button_clicks: u64,
     squad_tab_clicks: u64,
     shooting_strategy_choices: u64,
@@ -2399,7 +2400,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     dialogue_elapsed_seconds: f32,
     artwork: &RemoteArtwork, show_art: bool, show_weapon_ranges: bool,
     show_minimap: bool,
-    combat_hud_draws: &mut [u64; 9], obstacle_hull_draws: &mut u64,
+    combat_hud_draws: &mut [u64; 10], obstacle_hull_draws: &mut u64,
     map_object_health_bars: &mut u64,
     minimap_ship_markers: &mut u64, minimap_terrain_markers: &mut u64,
     minimap_objective_markers: &mut u64,
@@ -2579,6 +2580,11 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 line(pixels,(center.0+12,center.1-9),(center.0+17,center.1-9),
                     if loaded {0x87dfad} else {0x987d7d});
                 combat_hud_draws[4]+=1;
+            }
+            if let Some(percent) = ship["scout_beacon_charge_percent"].as_u64().filter(|&v| v <= 100) {
+                combat_hud_draws[9] += u64::from(super::tactical_hud::draw_scout_beacon_charge(
+                    pixels, WIDTH, FIELD, center, percent as u8,
+                ));
             }
             if selected_ship {
                 // The original game selects the actual physical ShipBody,
@@ -5116,7 +5122,7 @@ pub fn connect_remote_with_trust(
         let mut map_objectives = 0_u64;
         let mut fog_masked = 0_u64;
         let mut fog_textured = 0_u64;
-        let mut combat_hud_draws = [0_u64; 9];
+        let mut combat_hud_draws = [0_u64; 10];
         let hud_started=Instant::now();
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,squad_list_offset,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
@@ -5327,6 +5333,7 @@ pub fn connect_remote_with_trust(
         peer.metrics.weapon_obstructed_contact_draws += combat_hud_draws[6];
         peer.metrics.destination_marker_draws += combat_hud_draws[7];
         peer.metrics.scout_alarm_frames += combat_hud_draws[8];
+        peer.metrics.scout_beacon_charge_bar_draws += combat_hud_draws[9];
         // The local client shows the selection box while dragging. Draw
         // only the current screen-space intent; the real ship collisions
         // are evaluated from the host-supplied hulls on release.
@@ -5680,6 +5687,7 @@ pub fn connect_remote_with_trust(
         "command_target_draws":peer.metrics.command_target_draws,
         "destination_marker_draws":peer.metrics.destination_marker_draws,
         "striker_bomb_indicator_draws":peer.metrics.striker_bomb_indicator_draws,
+        "scout_beacon_charge_bar_draws":peer.metrics.scout_beacon_charge_bar_draws,
         "tactical_button_clicks":peer.metrics.tactical_button_clicks,
         "squad_tab_clicks":peer.metrics.squad_tab_clicks,
         "shooting_strategy_choices":peer.metrics.shooting_strategy_choices,

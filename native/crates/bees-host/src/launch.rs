@@ -12987,6 +12987,7 @@ fn run_battle(
             "minimap_briefing_mining_markers": client.minimap_briefing_mining_markers,
             "numbered_squad_rows_drawn": client.numbered_squad_rows_drawn,
             "striker_bomb_indicators_drawn": client.striker_bomb_indicators_drawn,
+            "scout_beacon_charge_bar_draws": client.scout_beacon_charge_bar_draws,
             "minimap_camera_moves": client.minimap_camera_moves,
             "camera_pan_frames": client.camera_pan_frames,
             "campaign_camera_follow_frames": client.campaign_camera_follow_frames,
