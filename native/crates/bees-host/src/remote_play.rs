@@ -336,6 +336,12 @@ pub struct NativeArchivedBattleReceipt {
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct RemotePlayMeasurements {
     pub connections_accepted: u64,
+    /// Accepted TLS sockets, not yet authenticated to a World faction.
+    #[serde(default)]
+    pub encrypted_connections_accepted: u64,
+    /// Successfully authenticated peers after TLS certificate/handshake.
+    #[serde(default)]
+    pub encrypted_peers_authenticated: u64,
     pub authenticated_peers: u64,
     /// Actual side-scoped view-only authentications, not inferred
     /// from sockets or client-declared role flags.
@@ -1093,6 +1099,9 @@ impl NativeRemotePlay {
             let id = self.next_peer;
             self.next_peer += 1;
             self.measurements.connections_accepted += 1;
+            if socket.is_tls() {
+                self.measurements.encrypted_connections_accepted += 1;
+            }
             self.peers.push(Peer {
                 id, socket, side: None, spectator: false,
                 last_request_id: 0, incoming: Vec::new(),
@@ -1231,6 +1240,9 @@ impl NativeRemotePlay {
                                 active_spectators += 1;
                             } else { active_players += 1; }
                             self.measurements.authenticated_peers += 1;
+                            if peer.socket.is_tls() {
+                                self.measurements.encrypted_peers_authenticated += 1;
+                            }
                             if spectator {
                                 self.measurements.authenticated_spectators += 1;
                             }
