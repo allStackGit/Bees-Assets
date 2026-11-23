@@ -25,7 +25,9 @@ from native_training_artifacts import (
 def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
                    learner_side: int, seed: int, binary: Path | None,
                    physics_workers: int | None, device: str | None,
-                   resume: bool = False, scenario_workers: int = 1) -> dict:
+                   resume: bool = False, scenario_workers: int = 1,
+                        candidate_slot: int | None = None,
+                        reference_slot: int | None = None) -> dict:
     if not 2 <= len(sources) <= 64:
         raise ValueError("heterogeneous holdout needs 2..64 authored native source runs")
     if learner_side not in (1, 2) or not 0 <= seed < (1 << 63):
@@ -38,6 +40,8 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
             "parallel native holdouts require an existing native binary and explicit CPU inference; "
             "GPU allocation remains owned by the host or Experiment Hub"
         )
+    if (candidate_slot is None) != (reference_slot is None):
+        raise ValueError("candidate and reference model slots must be specified together")
     sources = [source.resolve(strict=True) for source in sources]
     if len(set(sources)) != len(sources):
         raise ValueError("a heterogeneous holdout cannot silently double-count one source")
@@ -65,6 +69,8 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
         "rollout_binary_sha256": file_sha256(binary) if binary else None,
         "physics_workers": physics_workers,
         "inference_device": device,
+        **({"candidate_slot": candidate_slot, "reference_slot": reference_slot}
+           if candidate_slot is not None else {}),
         **({"parallel_scenario_workers": scenario_workers}
            if scenario_workers > 1 else {}),
     }
@@ -106,6 +112,14 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
                         result.get("model_manifest_sha256") != manifest_sha or
                         result.get("learner_side") != learner_side or
                         result.get("policy_sampling_seed") != seed or
+                        (candidate_slot is not None and (
+                            not isinstance(result.get("candidate_side_assignment"), dict) or
+                            result["candidate_side_assignment"].get("candidate_slot") != candidate_slot or
+                            result["candidate_side_assignment"].get("reference_slot") != reference_slot or
+                            result["candidate_side_assignment"].get("candidate_physical_side") != learner_side
+                        )) or
+                        (candidate_slot is None and
+                         result.get("candidate_side_assignment") is not None) or
                         result.get("source_run_config") != str(source) or
                         result.get("model_dependencies") != model_dependencies or
                         result.get("inference_device_override") != device or
@@ -132,7 +146,7 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
             # evaluation concurrency or Windows/Linux process scheduling.
             result = evaluate(
                 source, manifest, destination, learner_side, binary, seed,
-                physics_workers, device,
+                physics_workers, device, candidate_slot, reference_slot,
             )
             result_path = destination / "evaluation-result.json"
         if (result.get("kind") != "native_policy_evaluation_complete" or
@@ -293,7 +307,9 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
 def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
                         seed: int, binary: Path | None,
                         physics_workers: int | None, device: str | None,
-                        resume: bool = False, scenario_workers: int = 1) -> dict:
+                        resume: bool = False, scenario_workers: int = 1,
+                        candidate_slot: int | None = None,
+                        reference_slot: int | None = None) -> dict:
     """Evaluate every authentic scenario from both faction perspectives.
 
     The existing single-side evaluator remains the only executor. Each side
@@ -302,6 +318,14 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
     """
     if not 2 <= len(sources) <= 64 or not 0 <= seed < (1 << 63):
         raise ValueError("paired native evaluation needs 2..64 scenarios and a fixed seed")
+    if (type(candidate_slot) is not int or type(reference_slot) is not int or
+            not 0 <= candidate_slot < (1 << 32) or
+            not 0 <= reference_slot < (1 << 32) or
+            candidate_slot == reference_slot):
+        raise ValueError(
+            "paired evaluation must pin distinct candidate and reference model slots "
+            "so the physical policy teams can be swapped"
+        )
     sources = [path.resolve(strict=True) for path in sources]
     if len(set(sources)) != len(sources):
         raise ValueError("paired native evaluation cannot duplicate a source run")
@@ -326,6 +350,8 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
         "physics_workers": physics_workers,
         "inference_device": device,
         "learner_sides": [1, 2],
+        "candidate_slot": candidate_slot,
+        "reference_slot": reference_slot,
         **({"parallel_scenario_workers": scenario_workers}
            if scenario_workers > 1 else {}),
     }
@@ -369,6 +395,8 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
                     side_request.get("source_runs") != pinned["source_runs"] or
                     side_request.get("learner_side") != side or
                     side_request.get("policy_sampling_seed") != seed or
+                    side_request.get("candidate_slot") != candidate_slot or
+                    side_request.get("reference_slot") != reference_slot or
                     side_request.get("rollout_binary_sha256") !=
                     pinned["rollout_binary_sha256"] or
                     side_request.get("physics_workers") != physics_workers or
@@ -399,7 +427,11 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
                         receipt.get("source_run_config_sha256") !=
                         pinned["source_runs"][index]["sha256"] or
                         receipt.get("model_manifest_sha256") !=
-                        pinned["model_manifest_sha256"]):
+                        pinned["model_manifest_sha256"] or
+                        not isinstance(receipt.get("candidate_side_assignment"), dict) or
+                        receipt["candidate_side_assignment"].get("candidate_slot") != candidate_slot or
+                        receipt["candidate_side_assignment"].get("reference_slot") != reference_slot or
+                        receipt["candidate_side_assignment"].get("candidate_physical_side") != side):
                     raise ValueError(f"side {side} individual evaluation receipt is invalid")
                 check_native_input_dependencies({
                     "source_dependencies": receipt["source_dependencies"],
@@ -410,6 +442,7 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
                 sources, manifest, destination, side, seed, binary,
                 physics_workers, device, resume=destination.exists(),
                 scenario_workers=scenario_workers,
+                candidate_slot=candidate_slot, reference_slot=reference_slot,
             )
         sides.append(result)
 
@@ -456,6 +489,8 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
         "model_manifest_sha256": pinned["model_manifest_sha256"],
         "model_dependencies": pinned["model_dependencies"],
         "policy_sampling_seed": seed,
+        "candidate_slot": candidate_slot,
+        "reference_slot": reference_slot,
         "scenarios": len(sources),
         "scenario_side_evaluations": len(sources) * 2,
         "requested_parallel_scenarios_per_side": scenario_workers,
@@ -502,7 +537,11 @@ def main():
     parser.add_argument("run_configs", nargs="+", type=Path)
     parser.add_argument("--learner-side", type=int, choices=(1, 2))
     parser.add_argument("--both-sides", action="store_true",
-                        help="evaluate every frozen scenario from both source faction sides")
+                        help="route a pinned candidate and reference policy onto both physical factions")
+    parser.add_argument("--candidate-slot", type=int,
+                        help="candidate model slot routed onto the evaluated physical faction")
+    parser.add_argument("--reference-slot", type=int,
+                        help="fixed opponent model slot on the opposing physical faction")
     parser.add_argument("--policy-seed", type=int, default=0)
     parser.add_argument("--rollout-binary", type=Path)
     parser.add_argument("--physics-workers", type=int)
@@ -516,11 +555,14 @@ def main():
     if args.both_sides:
         if args.learner_side is not None:
             parser.error("--both-sides and --learner-side are mutually exclusive")
+        if args.candidate_slot is None or args.reference_slot is None:
+            parser.error("--both-sides requires --candidate-slot and --reference-slot")
         result = evaluate_both_sides(
             args.run_configs, args.model_manifest, args.output_dir,
             args.policy_seed, args.rollout_binary, args.physics_workers,
             args.inference_device, resume=args.resume,
             scenario_workers=args.parallel_scenarios,
+            candidate_slot=args.candidate_slot, reference_slot=args.reference_slot,
         )
     else:
         if args.learner_side is None:
@@ -530,6 +572,7 @@ def main():
             args.policy_seed, args.rollout_binary, args.physics_workers,
             args.inference_device, resume=args.resume,
             scenario_workers=args.parallel_scenarios,
+            candidate_slot=args.candidate_slot, reference_slot=args.reference_slot,
         )
     print(json.dumps(result, sort_keys=True), flush=True)
 
