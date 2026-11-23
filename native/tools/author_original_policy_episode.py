@@ -255,6 +255,10 @@ def author_policy(source: dict, game: dict, ids: set[int], slots: dict[str, int]
             "team_id": team,
         })
     scene["has_policy_episode"] = True
+    # Distinguish native experiment controller authoring from a Unity
+    # episode captured with live, registered Unity policy Agents. The
+    # strict Rust source importer validates the separate provenance gate.
+    scene["native_policy_authored_episode"] = True
     scene["policy_episode"] = {
         "bee_side": scene["bee_side"],
         "human_side": scene["human_side"],
