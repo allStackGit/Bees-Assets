@@ -894,7 +894,9 @@ class RemoteConsole:
         is_held = action[0] == "held_fire"
         if ((state.get("lobby") or {}).get("waiting") is True or
                 state.get("waiting_for_player_reconnect") is True) and not (
-                    is_held and action[1].get("action") == "End"
+                    (is_held and action[1].get("action") == "End") or
+                    (action[0] == "surrender" and
+                     state.get("waiting_for_player_reconnect") is True)
                 ):
             raise ValueError("native host is waiting for both commanders")
         is_side_action = action[0] in ("surrender", "activate_retreat")
