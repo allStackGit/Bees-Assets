@@ -1849,6 +1849,12 @@ class PersistentGpuForwardPool:
         self.prepared_calls = 0
         self.owner_inline_prepared_calls = 0
         self.owner_inline_direct_calls = 0
+        # This pool is single-owner and every prepared call joins all
+        # worker submissions before returning. One producer event can be
+        # recorded repeatedly on the same primary stream; every queued
+        # peer wait observes the event generation at wait submission.
+        self._producer_event = torch.cuda.Event()
+        self._producer_event_records = 0
         self._pending_device_timings = deque()
         self._device_work_rates = {device:deque(maxlen=8)
                                    for device in self.devices}
@@ -1960,7 +1966,9 @@ class PersistentGpuForwardPool:
             gpu_forward_capacity_timing_samples=self.device_timing_samples,
             gpu_forward_all_shape_timing_samples=self.device_forward_timing_samples,
             gpu_forward_primary_inline_dispatches=self.owner_inline_prepared_calls,
-            gpu_forward_direct_inline_dispatches=self.owner_inline_direct_calls)
+            gpu_forward_direct_inline_dispatches=self.owner_inline_direct_calls,
+            gpu_forward_producer_event_reuses=max(
+                0,self._producer_event_records-1))
         rates = []
         for slot, device in enumerate(self.devices):
             # Heterogeneous-map forward durations are NOT directly
@@ -2099,8 +2107,12 @@ class PersistentGpuForwardPool:
                   any(type(n) is not int or n < 0 for n in pixel_work)))):
             raise ValueError("GPU prepared cohort must match its leased devices")
         streams = [torch.cuda.current_stream(device) for device in ordinals]
-        producer = torch.cuda.Event()
+        # Avoid allocating and destroying an inter-device ordering event
+        # for every small pair of PPO map shapes. Calls never overlap on
+        # this single-owner pool; workers enqueue all waits before return.
+        producer = self._producer_event
         producer.record(streams[0])
+        self._producer_event_records += 1
         grad_enabled = torch.is_grad_enabled()
         autocast_enabled = torch.is_autocast_enabled("cuda")
         autocast_dtype = torch.get_autocast_dtype("cuda")
