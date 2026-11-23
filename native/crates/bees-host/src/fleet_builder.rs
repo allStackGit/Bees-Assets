@@ -2784,13 +2784,14 @@ pub(super) fn archive(
             let base = if supporting { offsets[side][support_origin] }
                 else { [0.0, 0.0] };
             if supporting && side == 1 &&
-                !matches!(selected.mix[side], FleetMix::Queen | FleetMix::Factories)
+                !matches!(selected.mix[side], FleetMix::Queen)
             {
-                // A Carrier must not be cloned through NativeLevelLayout:
-                // its free Striker deck has real source-owned relationships
-                // and cannot be remapped by a generic single-hull clone.
-                // Materialize this one additional Carrier as a new source
-                // FleetShip, then attach its authentic deck below.
+                // Both authentic Carriers (with source-owned Drone/Striker
+                // children) and real production Factories require independent
+                // physical FleetShip ownership. Use the original source
+                // body for every copy, never clone a relationship-bearing
+                // or historically saved ship through a generic squad edit.
+                // Only the Carrier gets its existing free flight deck.
                 let authored_ship_id = 100 + index as i64;
                 let authored_squad_id = 200 + index as i64;
                 let mut carrier = scene["ships"].as_array()
@@ -2815,10 +2816,23 @@ pub(super) fn archive(
                         "can_accept_input": controlled,
                         "command_bans": [],
                     }));
-                carrier_parents.push((
-                    authored_ship_id, authored_squad_id, index,
-                    [75.0 + offset[0], offset[1]], controlled,
-                ));
+                if matches!(selected.mix[side], FleetMix::Factories) {
+                    // Factories retain original production hull and
+                    // fleet health; they have no Carrier flight deck.
+                    if scene["ships"].as_array()
+                        .and_then(|ships| ships.last())
+                        .is_none_or(|ship| ship["ship_type"] != 9)
+                    {
+                        return Err(invalid(
+                            "native Factory fleet is missing its original production class",
+                        ).into());
+                    }
+                } else {
+                    carrier_parents.push((
+                        authored_ship_id, authored_squad_id, index,
+                        [75.0 + offset[0], offset[1]], controlled,
+                    ));
+                }
                 squad_ids[side].push(authored_squad_id);
                 support_squads.push(authored_squad_id);
                 continue;
