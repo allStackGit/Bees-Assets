@@ -540,12 +540,27 @@ def native_scripted_squad_orders(scene: dict, members: list[dict],
                  "destination": copy.deepcopy(exit_zone["center"])}]
     survival = mission.get("survival")
     if (isinstance(survival, dict) and
-            survival.get("defending_side") == example["side"] and
-            any(ship["entity_id"] == survival.get("protected_ship_id")
-                for ship in members)):
-        # The protected physical hull must not receive an attack order
-        # that drives it out of the original defended zone.
-        return [{"kind": "hold"}]
+            survival.get("defending_side") == example["side"]):
+        protected_squad = next(
+            (squad for squad in scene["squads"]
+             if squad["side"] == example["side"] and
+             survival.get("protected_ship_id") in squad["members"]),
+            None,
+        )
+        if protected_squad is None:
+            raise ValueError("native survival has no real protected squad")
+        if any(ship["entity_id"] == survival["protected_ship_id"]
+               for ship in members):
+            # The protected physical hull must not leave its defended zone.
+            return [{"kind": "hold"}]
+        # The original ordinary Guard follows the actual protected squad.
+        # Specialist bombing, mining, scouting and Carrier/Queen lifecycles
+        # remain under their own real gameplay commands.
+        if (example["ship_type"] not in (0, 4, 5, 9, 10, 17, 18, 19, 22)
+                and example.get("turrets")
+                and example["base_speed"] > 0):
+            return [{"kind": "guard",
+                     "friendly_squad_item_id": protected_squad["item_id"]}]
     demolition = mission.get("demolition")
     if (isinstance(demolition, dict) and
             demolition.get("attacking_side") == example["side"]):
