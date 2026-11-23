@@ -58,7 +58,7 @@ def bind_original_campaign(args):
     )
     definitions = [
         (int(index), name) for index, name in re.findall(
-            r'new MissionDefinition\\(\\s*(\\d+)\\s*,\\s*"([^"]+)"',
+            r'new MissionDefinition\(\s*(\d+)\s*,\s*"([^"]+)"',
             source.read_text(encoding="utf-8"),
         )
     ]
