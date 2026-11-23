@@ -690,7 +690,6 @@ impl PeerClient {
         let mut hello = serde_json::to_vec(&json!({
             "kind": "hello", "token": token,
             "resume_session_id": resume_session_id, "spectator": spectator,
-            "compressed_world_state": true,
         }))?;
         hello.push(b'\n');
         socket.write_all(&hello)?;
@@ -812,6 +811,17 @@ impl PeerClient {
                     } else {
                         format!("Connected as player side {}", self.side)
                     };
+                    // The initial Hello is intentionally unchanged so new
+                    // clients still join older protocol-1 dedicated hosts.
+                    // Only a server that advertised the codec receives an
+                    // opt-in, and only after authenticating the chosen side.
+                    if message["state_codecs"].as_array().is_some_and(|codecs|
+                        codecs.iter().any(|codec| codec.as_str() == Some("lz4"))
+                    ) {
+                        self.enqueue_transport(json!({
+                            "kind": "state_compression", "codec": "lz4",
+                        }))?;
+                    }
                 }
                 Some("pong") => {
                     if !self.authenticated ||
@@ -1552,15 +1562,22 @@ impl PeerClient {
         let next=self.next_request.checked_add(1)
             .ok_or_else(|| invalid("native multiplayer request ID exhausted"))?;
         frame["request_id"]=json!(self.next_request);
+        self.enqueue_transport(frame)?;
+        self.next_request = next;
+        self.notice = notice;
+        Ok(())
+    }
+
+    /// Bounded transport writes shared by gameplay requests and capability
+    /// negotiation. A codec opt-in never consumes an input request ID.
+    fn enqueue_transport(&mut self, frame: Value) -> Result<(), Box<dyn Error>> {
         let mut packet = serde_json::to_vec(&frame)?;
         packet.push(b'\n');
         if self.queued_bytes + packet.len() > MAX_OUTGOING {
-            return Err(invalid("outgoing native orders exceed pending network budget").into());
+            return Err(invalid("outgoing native messages exceed pending network budget").into());
         }
         self.queued_bytes += packet.len();
         self.queued.push_back(packet);
-        self.next_request = next;
-        self.notice = notice;
         self.flush()?;
         Ok(())
     }
