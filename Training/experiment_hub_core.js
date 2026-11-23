@@ -703,7 +703,7 @@ function independentSequenceComplete(job) {
         job.evaluation_stop,job.dispatch_id);
 }
 function checkpointContinuationComplete(job) {
-    if(!['courier','tinybrains'].includes(job?.project_id))return false;
+    if(!['courier','tinybrains','bees_native'].includes(job?.project_id))return false;
     return job.status==='finished'
         ?job.checkpoint_ready_verified===true||
             job.checkpoint_proof_required!==true
@@ -7849,8 +7849,8 @@ class ExperimentHub {
         let parent=null,dependency=null,waitingPredecessor=false;
         let dependencyReady=false;
         if(ancestorId!==null) {
-            if(!['tinybrains','courier'].includes(project.id))
-                throw Error('Checkpoint continuation requires the TinyBrains or Courier adapter.');
+            if(!['tinybrains','courier','bees_native'].includes(project.id))
+                throw Error('Checkpoint continuation requires an installed checkpoint-capable adapter.');
             if(typeof ancestorId!=='string'||!UUID.test(ancestorId))
                 throw Error('Select a valid predecessor job for continuation.');
             parent=next.jobs.find(j=>j.id===ancestorId);
@@ -7885,14 +7885,22 @@ class ExperimentHub {
                 throw Error('This predecessor already has an active or unresolved successor.');
         }
         if(parent) {
+            if(project.id==='bees_native') {
+                for(const key of ['worker_sha256','trainer_sha256','runtime_version','seed']) {
+                    if(parent.frozen_parameters?.[key]!==frozen[key])
+                        throw Error('Bees checkpoint continuation must preserve the approved Unity executable, learner runtime, trainer and seed: '+key);
+                }
+            }
             if(project.id==='courier'&&(
                 (parent.frozen_parameters?.shared_policy===true)!==(frozen.shared_policy===true)||
                 frozen.shared_policy===true&&parent.frozen_parameters?.seed!==frozen.seed))
                 throw Error('Courier continuation must preserve the predecessor training mode and shared-policy seed.');
-            const digestField=project.id==='courier'?'config_sha256':'profile_sha256';
-            const digest=parent.frozen_parameters?.[digestField];
-            if(typeof digest!=='string'||digest!==frozen[digestField])
-                throw Error('Checkpoint continuation requires the same approved configuration digest as the predecessor.');
+            if(project.id!=='bees_native') {
+                const digestField=project.id==='courier'?'config_sha256':'profile_sha256';
+                const digest=parent.frozen_parameters?.[digestField];
+                if(typeof digest!=='string'||digest!==frozen[digestField])
+                    throw Error('Checkpoint continuation requires the same approved configuration digest as the predecessor.');
+            }
         }
         if(afterId!==null) {
             if(!UUID.test(String(afterId)))
@@ -7962,7 +7970,7 @@ class ExperimentHub {
                 .update(JSON.stringify(frozen)).digest('hex'),
             frozen_parameters:frozen, resources,
             ...(selectedMetrics?.length?{metric_selection:selectedMetrics.slice()}:{}),
-            ...(['courier','tinybrains'].includes(project.id)
+            ...(['courier','tinybrains','bees_native'].includes(project.id)
                 ?{checkpoint_proof_required:true}:{}),
             ...(selected.evaluation_stop
                 ?{evaluation_stop:evaluationPolicy(selected.evaluation_stop)}:{}),
