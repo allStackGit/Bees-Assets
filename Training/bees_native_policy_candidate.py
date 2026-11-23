@@ -144,7 +144,10 @@ def verify_candidate(directory: Path) -> dict[str, Any]:
     if root.is_symlink() or not root.is_dir():
         raise ValueError("Candidate path must be a real directory.")
     manifest = _json_file(root / "manifest.json", MAX_MANIFEST_SIZE)
-    if set(manifest) != MANIFEST_FIELDS or manifest["schema_version"] != 1 or (
+    extra = {"unity_worker_payload_sha256"} if (
+        "unity_worker_payload_sha256" in manifest
+    ) else set()
+    if set(manifest) != MANIFEST_FIELDS | extra or manifest["schema_version"] != 1 or (
         manifest["kind"] != "bees-unity-onnx-candidate" or
         manifest["deployment_status"] != "not-promoted" or
         manifest["model_file"] != "model.onnx"
@@ -162,6 +165,8 @@ def verify_candidate(directory: Path) -> dict[str, Any]:
     for label in ("model_sha256", "optimizer_checkpoint_sha256",
                   "unity_worker_sha256", "trainer_sha256", "runtime_version"):
         _digest(manifest[label], label)
+    if extra:
+        _digest(manifest["unity_worker_payload_sha256"], "complete Unity player")
     size = manifest["model_size_bytes"]
     if type(size) is not int or not 0 < size <= MAX_MODEL_SIZE:
         raise ValueError("Invalid Bees candidate ONNX size.")
@@ -186,6 +191,8 @@ def verify_candidate(directory: Path) -> dict[str, Any]:
         "lineage_root_id": lineage,
         "model_sha256": manifest["model_sha256"],
         "model_size_bytes": size,
+        **({"unity_worker_payload_sha256": manifest["unity_worker_payload_sha256"]}
+           if extra else {}),
         "evaluation": evaluation,
     }
 
