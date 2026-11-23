@@ -239,9 +239,18 @@ function validateCatalog(raw,installed=[],approved={}) {
             throw Error('TinyBrains Design defaults require approved profile identities.');
         if(!/^[0-9a-f]{64}$/.test(raw.tinybrains.source_sha256))
             throw Error('TinyBrains Design requires its frozen source run specification.');
+        const mapCatalog=raw.tinybrains.map_catalog??[];
+        if(!Array.isArray(mapCatalog)||mapCatalog.length>128||
+            new Set(mapCatalog.map(map=>map.id)).size!==mapCatalog.length||
+            mapCatalog.some(map=>!map||typeof map!=='object'||
+                Object.keys(map).sort().join(',')!=='id,players'||
+                typeof map.id!=='string'||!/^[a-z0-9_-]{1,80}$/.test(map.id)||
+                ![2,4,6].includes(map.players)))
+            throw Error('TinyBrains map choices must be a bounded trusted board catalogue.');
         result.tinybrains={...validateFields(raw.tinybrains),
             source_sha256:raw.tinybrains.source_sha256,
             metric_catalog:metricCatalog(raw.tinybrains.metric_catalog),
+            map_catalog:mapCatalog.map(map=>({...map})),
             profiles:Object.fromEntries(Object.entries(profiles).map(([id,entry])=>
                 [id,{profile_sha256:entry.profile_sha256}]))};
     }
