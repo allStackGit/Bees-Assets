@@ -14,7 +14,7 @@ import math
 from pathlib import Path
 import time
 
-from evaluate_policy import evaluate
+from evaluate_policy import evaluate, terminal_matchup
 from native_training_artifacts import (
     atomic_json, check_native_input_dependencies, file_sha256,
     native_manifest_model_dependencies, native_headless_environment,
@@ -120,6 +120,8 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
                         )) or
                         (candidate_slot is None and
                          result.get("candidate_side_assignment") is not None) or
+                        (candidate_slot is not None and
+                         not isinstance(result.get("candidate_terminal_matchup"), dict)) or
                         result.get("source_run_config") != str(source) or
                         result.get("model_dependencies") != model_dependencies or
                         result.get("inference_device_override") != device or
@@ -134,6 +136,17 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
                 check_native_input_dependencies({
                     "source_dependencies": result["source_dependencies"],
                 })
+                if candidate_slot is not None:
+                    observed, by_scene = terminal_matchup(
+                        destination, result, candidate_slot, reference_slot,
+                    )
+                    attributed = result["candidate_terminal_matchup"]
+                    if (attributed.get("counts") != dict(observed) or
+                            attributed.get("by_scene_sha256") != {
+                                digest: dict(counts)
+                                for digest, counts in by_scene.items()
+                            }):
+                        raise ValueError("completed model-role holdout differs from terminal journal")
                 reused = True
                 break
             if result_path.exists() or result_path.is_symlink():
@@ -278,6 +291,8 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
             "side_win_rate": row["result"]["side_win_rate"],
             "draw_rate": row["result"]["draw_rate"],
             "by_scene_sha256": row["result"]["by_scene_sha256"],
+            **({"candidate_terminal_matchup": row["result"]["candidate_terminal_matchup"]}
+               if candidate_slot is not None else {}),
             "world_steps": row["result"]["world_steps"],
             "measured_simulation_wall_seconds": row["result"]["wall_seconds"],
             **({"learner_mission_success_rate": row["result"]["learner_mission_success_rate"]}
