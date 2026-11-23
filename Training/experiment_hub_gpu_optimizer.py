@@ -1,4 +1,4 @@
-"""GPU-only, project-independent admission for fused Adam optimizer steps.
+"""GPU-only, project-independent admission for fused Adam/AdamW steps.
 
 Compare actual Adam kernels on independent temporary parameter/gradient/state
 storage. No live PPO parameters, optimizer moments, actions, RNG or checkpoint
@@ -25,7 +25,8 @@ def qualify_fused_adam(optimizer, *, min_speedup=0.08,
     result = dict(gpu_optimizer_fused_adam=0,
                   gpu_optimizer_fused_adam_qualified=0,
                   gpu_optimizer_fused_adam_probe_speedup=0.0)
-    if (not isinstance(optimizer, torch.optim.Adam) or
+    family = type(optimizer)
+    if (family not in (torch.optim.Adam,torch.optim.AdamW) or
             not 0 <= min_speedup <= 0.5 or
             not 1 <= samples <= 32 or max_parameter_bytes < 1):
         return result
@@ -70,8 +71,8 @@ def qualify_fused_adam(optimizer, *, min_speedup=0.08,
         return prepared
 
     try:
-        baseline = torch.optim.Adam(clone_groups(False))
-        candidate = torch.optim.Adam(clone_groups(True))
+        baseline = family(clone_groups(False))
+        candidate = family(clone_groups(True))
         stream = torch.cuda.current_stream(device)
         # First steps allocate native moment tensors and initialize fused
         # optimizers. Neither initialization belongs to steady-state time.
