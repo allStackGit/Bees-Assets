@@ -5196,7 +5196,7 @@ class ExperimentHub {
                 ?'stop_requested':report.state;
             if(state==='launch_requested'&&job.status!=='start_requested')continue;
             if(job.status==='stop_requested'&&report.state==='launch_requested')continue;
-            if(['courier','tinybrains'].includes(job.project_id)) {
+            if(['courier','tinybrains','bees_native'].includes(job.project_id)) {
                 if(state==='finished'&&report.checkpoint_ready_verified===true) {
                     job.checkpoint_ready_verified=true;
                     changed=true;
