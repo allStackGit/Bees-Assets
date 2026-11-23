@@ -21,7 +21,9 @@
         '<label>Seeds (comma-separated)<input id="hub-mixed-seeds" value="813101"></label>',
         '<label>Rotations per candidate seat<input id="hub-mixed-rotations" type="number" min="1" max="8" value="1"></label>',
         '</div><p id="hub-mixed-config-summary" class="muted"></p>',
-        '<fieldset><legend>Opponent pool</legend><div id="hub-mixed-opponents" class="formgrid"></div>',
+        '<fieldset><legend>Opponent pool</legend>',
+        '<label>Opponent selection<select id="hub-mixed-opponent-mode"><option value="configuration">Inherit fixed opponents from selected training configuration</option><option value="manual">Choose evaluation opponents separately</option></select></label>',
+        '<div id="hub-mixed-opponents" class="formgrid"></div>',
         '<p id="hub-mixed-coverage" class="muted" role="status">Choose opponents to see coverage.</p>',
         '<p class="muted">Every map tests every candidate starting seat; each seed/rotation uses an independently selected opponent lineup. Each suite is capped at 2,048 games.</p></fieldset>',
         '<div class="hub-controls"><button id="hub-mixed-save" type="button">Save evaluation</button>',
@@ -45,6 +47,22 @@
         field.replaceChildren(new Option(placeholder,''),...items.map(row=>new Option(row[1],row[0])));
         if(items.some(row=>row[0]===previous))field.value=previous;
     }
+    function selectedConfiguration() {
+        const value=$('hub-mixed-configuration').value;
+        return library?.configurations?.find(item=>item.id+':'+item.revision===value);
+    }
+    function syncOpponents() {
+        if($('hub-mixed-opponent-mode').value==='configuration') {
+            const config=selectedConfiguration();
+            chosen=new Set((config?.opponent_ids||[])
+                .filter(id=>!['frozen','current'].includes(id)));
+        }
+        for(const input of panel.querySelectorAll('[data-mixed-opponent]')) {
+            input.checked=chosen.has(input.value);
+            input.disabled=$('hub-mixed-opponent-mode').value==='configuration';
+        }
+        samplingCoverage();
+    }
     function samplingCoverage() {
         const count=chosen.size;
         const seeds=$('hub-mixed-seeds').value.split(',')
@@ -60,8 +78,7 @@
                     ' total distinct lineups for full per-map opponent coverage.';
     }
     function summary() {
-        const value=$('hub-mixed-configuration').value;
-        const c=library?.configurations?.find(x=>x.id+':'+x.revision===value);
+        const c=selectedConfiguration();
         const env=c?.environment;
         const operational=Object.entries(env?.parameters||{})
             .filter(([key])=>key!=='max_turns')
@@ -80,6 +97,7 @@
         $('hub-mixed-name').value=copy?record.name+' copy':record.name;
         $('hub-mixed-configuration').value=record.configuration_id+':'+record.configuration_revision;
         $('hub-mixed-maps').value=record.map_mode;
+        $('hub-mixed-opponent-mode').value=record.opponent_mode||'manual';
         $('hub-mixed-custom-maps-label').hidden=record.map_mode!=='custom';
         const selection=new Set(record.map_ids||[]);
         for(const option of $('hub-mixed-custom-maps').options)
@@ -88,7 +106,7 @@
         $('hub-mixed-seeds').value=record.seeds.join(',');
         $('hub-mixed-rotations').value=record.rotations;
         chosen=new Set(record.opponent_ids);
-        panel.querySelectorAll('[data-mixed-opponent]').forEach(c=>c.checked=chosen.has(c.value));
+        syncOpponents();
         $('hub-mixed-save').textContent=copy?'Save duplicate':'Save new revision';
         summary();
         samplingCoverage();
@@ -99,13 +117,14 @@
         editing=null;
         $('hub-mixed-name').value='';
         $('hub-mixed-maps').value='configuration';
+        $('hub-mixed-opponent-mode').value='configuration';
         $('hub-mixed-custom-maps-label').hidden=true;
         for(const option of $('hub-mixed-custom-maps').options)option.selected=false;
         $('hub-mixed-turns').value='';
         $('hub-mixed-seeds').value='813101';
         $('hub-mixed-rotations').value=1;
         chosen.clear();
-        panel.querySelectorAll('[data-mixed-opponent]').forEach(c=>c.checked=false);
+        syncOpponents();
         $('hub-mixed-save').textContent='Save evaluation';
         samplingCoverage();
     }
@@ -122,6 +141,7 @@
                 c.id+':'+c.revision,c.name+' · revision '+c.revision+' · '+c.stage
             ]),'Select a saved TinyBrains Design');
             summary();
+            syncOpponents();
         }
         const opponents=JSON.stringify(data.opponents);
         if(opponents!==opponentSignature) {
@@ -145,6 +165,7 @@
                     (item.checkpoint_sha256?' · '+item.checkpoint_sha256.slice(0,12):'')));
                 root.append(row);
             }
+            syncOpponents();
         }
         const templates=JSON.stringify(data.templates);
         if(templates!==templateSignature) {
@@ -226,6 +247,7 @@
             ...(turns?{max_turns:Number(turns)}:{}),
             seeds:seeds.map(Number),
             rotations:Number($('hub-mixed-rotations').value),
+            opponent_mode:$('hub-mixed-opponent-mode').value,
             opponent_ids:[...chosen]
         });
         if(result){clear();notice(result.message);}
@@ -259,7 +281,8 @@
     $('hub-mixed-new').addEventListener('click',clear);
     $('hub-mixed-freeze').addEventListener('click',freeze);
     $('hub-mixed-archive').addEventListener('click',archiveUnused);
-    $('hub-mixed-configuration').addEventListener('change',summary);
+    $('hub-mixed-configuration').addEventListener('change',()=>{summary();syncOpponents();});
+    $('hub-mixed-opponent-mode').addEventListener('change',syncOpponents);
     $('hub-mixed-seeds').addEventListener('input',samplingCoverage);
     $('hub-mixed-rotations').addEventListener('input',samplingCoverage);
     $('hub-mixed-maps').addEventListener('change',()=>{
