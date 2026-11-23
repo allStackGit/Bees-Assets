@@ -567,11 +567,12 @@ class FrozenInferenceMicrobatcher:
                              if pinned and origin[1].type=="cpu")
         if pinned and resident_bytes+self._pinned_bytes>self.max_pinned_bytes:
             raise MemoryError("Pinned host transfer memory exceeds its lease")
+        pinned_sources = {}
         for origin,parts in fragments.items():
             if pinned and origin[1].type=="cpu":
-                # One CPU-side consolidation into a pinned staging buffer,
-                # followed by one asynchronous H2D per dtype. Keep the
-                # staging allocation alive through a CUDA completion event.
+                # Allocate all pinned sources BEFORE submitting any GPU DMA.
+                # Allocation/copy errors then cannot discard memory already
+                # being read by an outstanding asynchronous transfer.
                 buffer = torch.empty(sum(t.numel() for t in parts),
                                      dtype=origin[0],device="cpu",pin_memory=True)
                 cursor = 0
@@ -579,15 +580,34 @@ class FrozenInferenceMicrobatcher:
                     width = part.numel()
                     buffer.narrow(0,cursor,width).copy_(part)
                     cursor += width
-                buffers.append(buffer)
-                banks[origin] = buffer.to(self.device,non_blocking=True)
-            else:
-                banks[origin] = torch.cat(parts,dim=0).to(
-                    self.device,non_blocking=False)
-        values = [tuple(banks[origin].narrow(0,start,count).view(shape)
-                        for origin,start,count,shape in fields)
-                  for fields in descriptors]
-        return values,buffers
+                pinned_sources[origin] = buffer
+        try:
+            for origin,parts in fragments.items():
+                if origin in pinned_sources:
+                    banks[origin] = pinned_sources[origin].to(
+                        self.device,non_blocking=True)
+                else:
+                    banks[origin] = torch.cat(parts,dim=0).to(
+                        self.device,non_blocking=False)
+            values = [tuple(banks[origin].narrow(0,start,count).view(shape)
+                            for origin,start,count,shape in fields)
+                      for fields in descriptors]
+            if pinned_sources:
+                buffers = list(pinned_sources.values())
+                completion = torch.cuda.Event()
+                completion.record(torch.cuda.current_stream(self.device))
+                # Even if the model forward later fails, these CPU buffers
+                # cannot be recycled until DMA completion. Bound retained
+                # staging allocations by max_pinned_bytes.
+                self._pinned_bytes += resident_bytes
+                self._pinned_pending.append((buffers,completion,resident_bytes))
+            return values,buffers
+        except BaseException:
+            if pinned_sources:
+                # Some DMA requests may already have been issued. Join only
+                # this worker's transfer stream before dropping host buffers.
+                torch.cuda.current_stream(self.device).synchronize()
+            raise
 
     def _dispatch(self, group):
         stream = (torch.cuda.current_stream(self.device)
@@ -658,13 +678,9 @@ class FrozenInferenceMicrobatcher:
                         t, t.new_zeros((target-actual,*t.shape[1:]))
                     ], dim=0) for t in row)
             values = executor.run(inputs)
-            if host_buffers:
-                event = torch.cuda.Event()
-                event.record(torch.cuda.current_stream(self.device))
-                size = sum(buffer.numel()*buffer.element_size()
-                           for buffer in host_buffers)
-                self._pinned_bytes += size
-                self._pinned_pending.append((host_buffers,event,size))
+            # Pinned sources were already retained by the transfer event
+            # before this model forward. An unsupported graph cannot
+            # accidentally return/reuse in-flight CPU staging storage.
             resolved = {}
             for idx,(key,value) in enumerate(zip(keys,values)):
                 members = owners[key]
