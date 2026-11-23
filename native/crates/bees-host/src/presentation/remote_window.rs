@@ -162,6 +162,7 @@ struct WireCounts {
     pluto_finale_camera_frames: u64,
     scout_alarm_frames: u64,
     pluto_scout_hint_frames: u64,
+    pluto_scout_selection_marker_frames: u64,
     ship_type_multiselections: u64,
     selection_drag_preview_frames: u64,
     weapon_range_draws: u64,
@@ -5172,7 +5173,30 @@ pub fn connect_remote_with_trust(
         if let (Some(state), Some(cam)) = (peer.state.as_ref(), camera) {
             let scope = (state["world_id"].as_u64().unwrap_or(0),
                 state["episode_revision"].as_u64().unwrap_or(0));
-            let scout_moved = state["campaign_dialogue"]["scout_moved_from_start"].as_bool();
+            let dialogue = &state["campaign_dialogue"];
+            if !peer.input_suppressed && peer.connected && peer.authenticated &&
+                controls.show_campaign_tooltips()
+            {
+                let hull = dialogue["reinforcements_scout"].as_i64().and_then(|id| {
+                    let ship = state["ships"].as_array()?.iter()
+                        .find(|ship| ship["id"].as_i64() == Some(id) && ship["owned"] == true)?;
+                    let bounds = ship["collider_bounds"].as_array().filter(|b| b.len() == 2)?;
+                    let rendered = peer.visual.position(ship, 0, visual_fraction)?;
+                    let offset = rendered - position(ship)?;
+                    Some(Aabb {
+                        min: point_from_wire(&bounds[0])? + offset,
+                        max: point_from_wire(&bounds[1])? + offset,
+                    })
+                });
+                if let Some(hull) = hull {
+                    peer.metrics.pluto_scout_selection_marker_frames += u64::from(
+                        super::campaign_dialogue::draw_pluto_scout_selection(
+                            &mut pixels, WIDTH, FIELD, cam, hull,
+                        ),
+                    );
+                }
+            }
+            let scout_moved = dialogue["scout_moved_from_start"].as_bool();
             if let Some(hint) = pluto_scout_tutorial
                 .update(scope, scout_moved, cam.center, now, controls.wasd_camera())
                 .filter(|_| controls.show_campaign_tooltips() && !briefing &&
@@ -5716,6 +5740,7 @@ pub fn connect_remote_with_trust(
         "pluto_finale_camera_frames":peer.metrics.pluto_finale_camera_frames,
         "scout_alarm_frames":peer.metrics.scout_alarm_frames,
         "pluto_scout_hint_frames":peer.metrics.pluto_scout_hint_frames,
+        "pluto_scout_selection_marker_frames":peer.metrics.pluto_scout_selection_marker_frames,
         "ship_type_multiselections":peer.metrics.ship_type_multiselections,
         "selection_drag_preview_frames":peer.metrics.selection_drag_preview_frames,
         "weapon_range_draws":peer.metrics.weapon_range_draws,

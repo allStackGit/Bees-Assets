@@ -858,6 +858,14 @@ impl CampaignDialogue {
         }
     }
 
+    pub fn unselected_pluto_reinforcements_scout(&self) -> Option<i64> {
+        match self.mode {
+            DialogueMode::PlutoReinforcements { scout_id, scout_selected: false, .. } =>
+                Some(scout_id),
+            _ => None,
+        }
+    }
+
     pub fn pluto_reinforcements_progress(&self) -> Option<(bool, bool)> {
         match self.mode {
             DialogueMode::PlutoReinforcements {

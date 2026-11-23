@@ -4302,12 +4302,17 @@ impl NativeSoftwareRenderer {
         }
     }
 
-    /// Keep the current command prompt, feedback, and hovered action
-    /// explanation visible inside the actual framebuffer. Window managers
-    /// truncate long title strings, particularly over remote desktop.
-    /// This remains optional presentation work; the headless simulator does
-    /// not allocate or render a second command message.
     #[cfg(feature = "client")]
+    pub(crate) fn draw_pluto_reinforcements_scout(
+        &mut self, view: &NativeRenderWorldView<'_>, scout: i64,
+    ) -> bool {
+        let Some(hull) = view.combat.ship_body(scout).and_then(|body| body.primary_bounds())
+        else { return false; };
+        super::campaign_dialogue::draw_pluto_scout_selection(
+            &mut self.pixels, self.width, self.width, self.camera, hull,
+        )
+    }
+
     #[cfg(feature = "client")]
     pub(crate) fn draw_pluto_scout_hint(&mut self, hint: &str) {
         super::campaign_dialogue::PlutoScoutTutorial::draw(
@@ -4315,6 +4320,8 @@ impl NativeSoftwareRenderer {
         );
     }
 
+    /// Display the current command prompt or hovered action in the framebuffer.
+    #[cfg(feature = "client")]
     pub fn draw_tactical_feedback(&mut self, feedback: &str) {
         if self.width < 520 || self.height < 250 ||
             self.show_shooting_menu { return; }

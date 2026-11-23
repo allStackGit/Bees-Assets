@@ -3594,6 +3594,7 @@ fn current_state(
                 "camera_ship": view.campaign_camera_subject_for(side).map(|(id, _)| id),
                 "scout_alarm": view.campaign_scout_alarm,
                 "scout_moved_from_start": view.pluto_scout_tutorial_for(side),
+                "reinforcements_scout": view.pluto_reinforcements_scout_for(side),
                 "gunship_attack_prompt": view.campaign_gunship_attack_prompt_for(side),
                 "finale_focus": finale_focus.map(|point| [point.x, point.y]),
                 "opening_hud_locked": view.campaign_opening_hud_locked_for(side),

@@ -2019,6 +2019,8 @@ where
                 .is_some_and(|dialogue| dialogue.pluto_scout_alarm_active(world.tick())),
             pluto_scout_tutorial: world.state.campaign_dialogue.as_ref()
                 .and_then(|dialogue| dialogue.pluto_scout_tutorial()),
+            pluto_reinforcements_scout: world.state.campaign_dialogue.as_ref()
+                .and_then(|dialogue| dialogue.unselected_pluto_reinforcements_scout()),
             campaign_gunship_handoff: world.state.campaign_dialogue.as_ref()
                 .and_then(|dialogue| dialogue.pluto_gunship_command_handoff()),
             campaign_score: world.state.metadata.campaign_score_snapshot(),

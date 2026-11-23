@@ -266,6 +266,7 @@ pub struct NativeClient {
     pub camera_boundary_clamps: u64,
     pub camera_zoom_clamps: u64,
     pub pluto_scout_hint_frames: u64,
+    pub pluto_scout_selection_marker_frames: u64,
     pub numbered_shortcut_selections: u64,
     pub cycled_shortcut_selections: u64,
     pub minimap_move_orders_submitted: u64,
@@ -366,7 +367,8 @@ impl NativeClient {
             minimap_camera_moves: 0, camera_pan_frames: 0, campaign_camera_follow_frames: 0,
             scout_alarm_frames: 0, pluto_finale_camera_frames: 0,
             camera_wheel_pans: 0, camera_boundary_clamps: 0,
-            camera_zoom_clamps: 0, pluto_scout_hint_frames: 0, numbered_shortcut_selections: 0,
+            camera_zoom_clamps: 0, pluto_scout_hint_frames: 0,
+            pluto_scout_selection_marker_frames: 0, numbered_shortcut_selections: 0,
             cycled_shortcut_selections: 0,
             minimap_move_orders_submitted: 0, right_drag_move_orders_submitted: 0,
             tactical_button_clicks: 0, squad_tab_clicks: 0,
@@ -2064,6 +2066,15 @@ impl NativeClient {
         );
         let render_started = Instant::now();
         let counts = self.renderer.render(&view, self.bounds);
+        if !briefing && self.controls.show_campaign_tooltips() {
+            if let Some(scout) = view.player_authority.player_viewer_side()
+                .and_then(|side| view.pluto_reinforcements_scout_for(side))
+            {
+                self.pluto_scout_selection_marker_frames += u64::from(
+                    self.renderer.draw_pluto_reinforcements_scout(&view, scout),
+                );
+            }
+        }
         let scout_moved = view.player_authority.player_viewer_side()
             .and_then(|side| view.pluto_scout_tutorial_for(side));
         let scout_hint = self.pluto_scout_tutorial.update(

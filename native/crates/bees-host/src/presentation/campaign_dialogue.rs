@@ -112,6 +112,48 @@ impl PlutoScoutTutorial {
     }
 }
 
+/// The authored selection cue follows the live hull and never intercepts a click.
+#[cfg(feature = "client")]
+pub(super) fn draw_pluto_scout_selection(
+    pixels: &mut [u32], stride: usize, field_width: usize,
+    camera: super::NativeCamera, hull: bees_sim::collision::Aabb,
+) -> bool {
+    if stride == 0 || field_width > stride || field_width < 32 { return false; }
+    let height = pixels.len() / stride;
+    let center = (hull.min + hull.max) * 0.5 - camera.center;
+    let half = (hull.max - hull.min) * (camera.pixels_per_unit * 0.5);
+    let x = field_width as f32 * 0.5 + center.x * camera.pixels_per_unit;
+    let y = height as f32 * 0.5 - center.y * camera.pixels_per_unit;
+    let left = (x - half.x.max(7.0) - 4.0).floor() as isize;
+    let right = (x + half.x.max(7.0) + 4.0).ceil() as isize;
+    let top = (y - half.y.max(7.0) - 4.0).floor() as isize;
+    let bottom = (y + half.y.max(7.0) + 4.0).ceil() as isize;
+    let horizontal = left.max(0)..right.min(field_width as isize - 1) + 1;
+    let vertical = top.max(0)..bottom.min(height as isize - 1) + 1;
+    let visible = !horizontal.is_empty() && !vertical.is_empty();
+    const COLOR: u32 = 0xdce25f;
+    if visible {
+        for row in [top, bottom] {
+            if vertical.contains(&row) {
+                let offset = row as usize * stride;
+                pixels[offset + horizontal.start as usize..offset + horizontal.end as usize]
+                    .fill(COLOR);
+            }
+        }
+        for column in [left, right] {
+            if horizontal.contains(&column) {
+                for row in vertical.clone() {
+                    pixels[row as usize * stride + column as usize] = COLOR;
+                }
+            }
+        }
+    }
+    let instruction = if visible { "Left-click the highlighted Scout to select it." }
+        else { "Find the first Scout or press 1 to select it." };
+    PlutoScoutTutorial::draw(pixels, stride, field_width, instruction);
+    visible
+}
+
 pub(super) fn gunship_attack_prompt(selected: bool, show_tooltips: bool) -> &'static str {
     if !show_tooltips {
         "Lieutenant Tom is awaiting orders"
