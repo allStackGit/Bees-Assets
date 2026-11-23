@@ -2421,6 +2421,15 @@ const server = http.createServer(async (req, res) => {
                 url.searchParams,null,bees);
             if(result)return json(res,result.status,result.data);
         }
+        if (req.method === 'GET' && route === '/api/hub/bees/summary') {
+            // Compact read-only projection; avoid copying mutable experiment
+            // definitions and the unrelated native registry over the tunnel.
+            return json(res, 200, {
+                active_id:state.active_id,
+                queue_armed:state.armed,
+                runs:state.items.map(beesComparisonJob),
+            });
+        }
         if (req.method === 'GET' && route === '/api/hub/bees/workers') {
             // This is a view of Bees' authoritative control plane, not a second
             // machine registry. Trainer IDs are not assumed to identify hosts.
