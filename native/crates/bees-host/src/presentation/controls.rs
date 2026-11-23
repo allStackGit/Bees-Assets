@@ -5,7 +5,7 @@
  
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::PathBuf;
 use minifb::{Key, KeyRepeat, ScaleMode, Window, WindowOptions};
 use serde::{Deserialize, Serialize};
@@ -105,7 +105,7 @@ pub fn show_control_settings() -> Result<(), Box<dyn std::error::Error>> {
     let mut pixels = vec![0; WIDTH * HEIGHT];
     while window.is_open() {
         if window.is_key_pressed(Key::F5, KeyRepeat::No) ||
-            (!controls.editing && window.is_key_pressed(Key::Escape, KeyRepeat::No)) {
+            (controls.mode == EditMode::Navigate && window.is_key_pressed(Key::Escape, KeyRepeat::No)) {
             break;
         }
         controls.edit(&window);
@@ -116,11 +116,19 @@ pub fn show_control_settings() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EditMode {
+    Navigate,
+    Capture,
+    ConfirmReset,
+}
+
 pub(crate) struct NativeControls {
     path: PathBuf,
     keys: Vec<Key>,
     selected: usize,
-    editing: bool,
+    mode: EditMode,
+    settings_unreadable: bool,
     notice: String,
 }
 
@@ -138,16 +146,37 @@ impl NativeControls {
                     "no XDG_CONFIG_HOME, APPDATA or HOME for native controls"))?;
             root.join("bees-native").join("controls.json")
         };
-        let mut keys=DEFAULTS.iter().chain(SHIFTED.iter())
-            .chain(TACTICAL_SHIFTED.iter())
-            .map(|&(_,key)|key).collect::<Vec<_>>();
-        match fs::symlink_metadata(&path) {
+        let (keys, notice, settings_unreadable) = match Self::load_keys(&path) {
+            Ok(keys) => (keys, "Select an action, press Enter, then press a letter".into(), false),
+            Err(error) => {
+                eprintln!("Using default native controls: {error}");
+                (Self::default_keys(), "Saved controls could not be read. Delete restores defaults.".into(), true)
+            }
+        };
+        Ok(Self { path, keys, selected: 0, mode: EditMode::Navigate, notice, settings_unreadable })
+    }
+
+    fn default_keys() -> Vec<Key> {
+        DEFAULTS.iter().chain(SHIFTED.iter()).chain(TACTICAL_SHIFTED.iter())
+            .map(|&(_, key)| key).collect()
+    }
+
+    fn load_keys(path: &std::path::Path) -> io::Result<Vec<Key>> {
+        const LIMIT: u64 = 16 * 1024;
+        let mut keys = Self::default_keys();
+        match fs::symlink_metadata(path) {
             Ok(metadata) if !metadata.file_type().is_file() =>
                 return Err(io::Error::new(io::ErrorKind::InvalidData,
                     "native control settings must be a regular file")),
             Ok(_) => {
-                let stored: StoredBindings=serde_json::from_slice(&fs::read(&path)?)
-                    .map_err(|err| io::Error::new(io::ErrorKind::InvalidData,err))?;
+                let mut bytes = Vec::new();
+                fs::File::open(path)?.take(LIMIT + 1).read_to_end(&mut bytes)?;
+                if bytes.len() as u64 > LIMIT {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData,
+                        "native control settings exceed the supported size"));
+                }
+                let stored: StoredBindings = serde_json::from_slice(&bytes)
+                    .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
                 if stored.schema_version != 1 {
                     return Err(io::Error::new(io::ErrorKind::InvalidData,
                         "unsupported native control settings schema"));
@@ -204,10 +233,10 @@ impl NativeControls {
                     // shifted keys, so a free slot exists whenever a
                     // newly added tactical default overlaps an old binding.
                     for index in previous..keys.len() {
-                        if keys[..index].contains(&keys[index]) {
+                        if keys[DEFAULTS.len()..index].contains(&keys[index]) {
                             let replacement=LETTERS.iter().copied()
                                 .chain(std::iter::once(Key::Comma))
-                                .find(|key|!keys[..index].contains(key) &&
+                                .find(|key|!keys[DEFAULTS.len()..index].contains(key) &&
                                     !keys[index+1..].contains(key))
                                 .ok_or_else(||io::Error::new(
                                     io::ErrorKind::InvalidData,
@@ -225,10 +254,7 @@ impl NativeControls {
             return Err(io::Error::new(io::ErrorKind::InvalidData,
                 "native gameplay hotkeys must be unique"));
         }
-        Ok(Self {
-            path, keys, selected:0, editing:false,
-            notice:"Select an action, press Enter, then press a letter".into(),
-        })
+        Ok(keys)
     }
 
     pub(crate) fn key(&self, action: &str) -> Key {
@@ -343,6 +369,14 @@ impl NativeControls {
     }
 
     fn save(&self) -> io::Result<()> {
+        match fs::symlink_metadata(&self.path) {
+            Ok(metadata) if !metadata.file_type().is_file() =>
+                return Err(io::Error::new(io::ErrorKind::InvalidData,
+                    "native control settings must be a regular file")),
+            Ok(_) => {},
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {},
+            Err(error) => return Err(error),
+        }
         let mut bindings=BTreeMap::new();
         for ((name,_), key) in DEFAULTS.iter().chain(SHIFTED.iter())
             .chain(TACTICAL_SHIFTED.iter()).zip(&self.keys) {
@@ -362,9 +396,29 @@ impl NativeControls {
     /// Each assignment is validated and persisted before it takes effect.
     /// A failed disk commit leaves the live layout unchanged.
     pub(crate) fn edit(&mut self,window:&Window) {
-        if self.editing {
+        if self.mode == EditMode::ConfirmReset {
+            if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
+                self.mode = EditMode::Navigate;
+                self.notice = "Restore defaults cancelled".into();
+            } else if window.is_key_pressed(Key::Enter, KeyRepeat::No) {
+                let previous = std::mem::replace(&mut self.keys, Self::default_keys());
+                match self.save() {
+                    Ok(()) => {
+                        self.settings_unreadable = false;
+                        self.notice = "Default controls restored".into();
+                    }
+                    Err(error) => {
+                        self.keys = previous;
+                        self.notice = format!("Could not restore default controls: {error}");
+                    }
+                }
+                self.mode = EditMode::Navigate;
+            }
+            return;
+        }
+        if self.mode == EditMode::Capture {
             if window.is_key_pressed(Key::Escape,KeyRepeat::No) {
-                self.editing=false;
+                self.mode = EditMode::Navigate;
                 self.notice="Key change cancelled".into();
                 return;
             }
@@ -394,9 +448,12 @@ impl NativeControls {
                         self.notice=format!("Could not save binding: {error}");
                     }
                 }
-                self.editing=false;
+                self.mode = EditMode::Navigate;
                 return;
             }
+        } else if window.is_key_pressed(Key::Delete, KeyRepeat::No) {
+            self.mode = EditMode::ConfirmReset;
+            self.notice = "Replace saved bindings with defaults? Enter confirms, Esc cancels.".into();
         } else if window.is_key_pressed(Key::Home, KeyRepeat::No) {
             self.selected = 0;
         } else if window.is_key_pressed(Key::End, KeyRepeat::No) {
@@ -410,7 +467,11 @@ impl NativeControls {
         } else if window.is_key_pressed(Key::Down,KeyRepeat::Yes) {
             self.selected=(self.selected+1).min(self.keys.len()-1);
         } else if window.is_key_pressed(Key::Enter,KeyRepeat::No) {
-            self.editing=true;
+            if self.settings_unreadable {
+                self.notice = "Restore defaults with Delete before replacing unreadable settings".into();
+                return;
+            }
+            self.mode = EditMode::Capture;
             self.notice=format!("Choose a letter for {}{}",
                 Self::name(self.selected),
                 if Self::is_shifted(self.selected) {" (Shift is automatic)"}
@@ -422,7 +483,7 @@ impl NativeControls {
         let start = (self.selected / BINDINGS_PER_PAGE) * BINDINGS_PER_PAGE;
         let mut lines=vec![
             "NATIVE GAMEPLAY HOTKEY SETTINGS".to_owned(),
-            "Up/Down: choose   Enter: rebind   F5: close".to_owned(),
+            "Up/Down: choose   Enter: rebind   Delete: defaults   F5: close".to_owned(),
             "Page Up/Down: jump   Esc: cancel rebind   Assigned letters swap".to_owned(),
             " ".to_owned(),
         ];
@@ -433,7 +494,7 @@ impl NativeControls {
         }
         lines.push(" ".to_owned());
         lines.push(format!("{}",
-            if self.editing {"Waiting for a letter (or comma for shooting)..."}
+            if self.mode == EditMode::Capture {"Waiting for a letter (or comma for shooting)..."}
             else {&self.notice}));
         let borrowed=lines.iter().map(String::as_str).collect::<Vec<_>>();
         NativeSoftwareRenderer::draw_help_panel(
