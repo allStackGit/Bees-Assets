@@ -595,9 +595,21 @@ async function main(argv=process.argv.slice(2)) {
                 return;
             }
             if(active&&agentNeedsRestart) {
-                frontend.activationReason='Agent replacement requires a verified idle native-job boundary.';
-                console.log('[hub-updates] Agent runtime activation deferred until jobs are idle.');
-                return;
+                // The global Hub ledger includes jobs owned by other machines.
+                // A remote Exeter trainer is OS-owned and does not depend on
+                // Halifax's local agent process. Only the verified local agent
+                // ownership scope can block its restart; if the enrolled
+                // systemd identity is uncertain, restartActivity deliberately
+                // falls back to all busy machines.
+                const localActivity=await localServices.restartActivity(hub,'agent');
+                if(localActivity.count) {
+                    frontend.activationReason='Agent update deferred: '+
+                        localActivity.count+' native job(s) within the '+
+                        (localActivity.scope==='local'?'Halifax':'unverified')+
+                        ' agent ownership scope require an idle boundary.';
+                    return;
+                }
+                console.log('[hub-updates] Mid-job override: restarting idle local agent while remote native services retain ownership.');
             }
             if(result.changed.length)
                 console.log('[hub-updates] Local fast-forwarded software: '+
