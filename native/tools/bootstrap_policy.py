@@ -561,6 +561,8 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          library_game_id: str | None = None,
                          library_game_title: str | None = None,
                          monitor_evaluation_run_configs: tuple[Path, ...] = (),
+                         parallel_monitor_suites: int = 1,
+                         monitor_evaluation_gpus: tuple[str, ...] = (),
                          checkpoint_selection: str = "primary",
                          evaluation_physics_workers: int | None = None,
                          rollout_gpus: str | None = None,
@@ -634,6 +636,10 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                         "--evaluation-policy-seed", str(evaluation_policy_seed)])
     for source in monitor_evaluation_run_configs:
         command.extend(["--monitor-evaluation-run-config", str(source.resolve(strict=True))])
+    if parallel_monitor_suites != 1:
+        command.extend(["--parallel-monitor-suites", str(parallel_monitor_suites)])
+    if monitor_evaluation_gpus:
+        command.extend(["--monitor-evaluation-gpus", *monitor_evaluation_gpus])
     if checkpoint_selection != "primary":
         command.extend(["--checkpoint-selection", checkpoint_selection])
     if evaluation_every != 1:
@@ -793,6 +799,11 @@ def main() -> None:
                         help="existing holdout native Levels evaluated after each finished learner update")
     parser.add_argument("--monitor-evaluation-run-config", type=Path, action="append", default=[],
                         help="extra independent native holdout suites (repeatable, requires primary holdout)")
+    parser.add_argument("--parallel-monitor-suites", type=int, default=1,
+                        help="parallel independent monitoring suites with explicit CPU or GPU allocation")
+    parser.add_argument("--monitor-evaluation-gpus", nargs="+",
+                        choices=("cuda:0", "cuda:1", "cuda:2", "cuda:3"),
+                        help="one distinct GPU per parallel monitoring worker; each GPU owns a serial suite lane")
     parser.add_argument("--checkpoint-selection", choices=("primary", "mean", "worst", "mean-scene", "worst-scene"), default="primary",
                         help="optional model selection by primary, mean or worst independent holdout")
     parser.add_argument("--evaluation-side", type=int, choices=(1, 2),
@@ -1002,6 +1013,16 @@ def main() -> None:
         parser.error("extra monitoring suites require training and a primary holdout")
     if len(args.monitor_evaluation_run_config) > 16:
         parser.error("no more than 16 independent native monitoring suites")
+    if (not 1 <= args.parallel_monitor_suites <= max(1, len(args.monitor_evaluation_run_config)) or
+            args.parallel_monitor_suites > 1 and args.rollout_binary is None):
+        parser.error("parallel monitoring requires a pinned native binary and enough monitoring suites")
+    if args.monitor_evaluation_gpus is not None:
+        if (not 2 <= len(args.monitor_evaluation_gpus) <= 4 or
+                len(args.monitor_evaluation_gpus) != args.parallel_monitor_suites or
+                len(set(args.monitor_evaluation_gpus)) != len(args.monitor_evaluation_gpus)):
+            parser.error("monitor GPU allocation requires 2..4 distinct GPUs, one per parallel worker")
+    elif args.parallel_monitor_suites > 1 and args.evaluation_inference_device != "cpu":
+        parser.error("CPU parallel monitors require --evaluation-inference-device cpu")
     if args.checkpoint_selection in ("mean", "worst") and not args.monitor_evaluation_run_config:
         parser.error("multi-suite model selection requires extra monitoring suites")
     if (args.holdout_worlds is None and args.evaluation_run_config is None) != (
@@ -1022,6 +1043,8 @@ def main() -> None:
         args.hub_auto_worlds is not None,
         args.holdout_worlds is not None, args.evaluation_run_config is not None,
         bool(args.monitor_evaluation_run_config),
+        args.parallel_monitor_suites != 1,
+        args.monitor_evaluation_gpus is not None,
         args.checkpoint_selection != "primary",
         args.evaluation_physics_workers is not None,
         args.evaluation_inference_device is not None,
@@ -1159,6 +1182,8 @@ def main() -> None:
                 library_game_id=args.library_game_id,
                 library_game_title=args.library_game_title,
                 monitor_evaluation_run_configs=tuple(args.monitor_evaluation_run_config),
+                parallel_monitor_suites=args.parallel_monitor_suites,
+                monitor_evaluation_gpus=tuple(args.monitor_evaluation_gpus or ()),
                 checkpoint_selection=args.checkpoint_selection,
                 evaluation_physics_workers=args.evaluation_physics_workers,
                 evaluation_inference_device=args.evaluation_inference_device,
