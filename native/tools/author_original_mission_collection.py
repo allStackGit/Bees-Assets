@@ -105,6 +105,39 @@ def author_collection(source_manifest: Path, destination: Path) -> dict:
             })
         if file_sha256(source_manifest) != manifest_sha:
             raise ValueError("Original campaign collection source manifest changed during authoring")
+        # Publish these actual original battles into the EXISTING native
+        # client library, rather than requiring a separate launcher. These
+        # are individual physical mission captures, not a fabricated
+        # replacement campaign ledger: the source campaign author
+        # independently handles story progression and career persistence.
+        # The game-library reader accepts at most 100 entries per file.
+        library_files = []
+        for first in range(0, len(authored), 100):
+            segment = authored[first:first + 100]
+            entries = []
+            for row in segment:
+                title = " ".join(
+                    str(row["source_original_level"]).split()
+                )
+                if not title or any(ord(ch) < 32 for ch in title):
+                    raise ValueError("Original Level name cannot be displayed in native library")
+                entries.append({
+                    "id": f"original-encounter-{row['mission_index']:03d}",
+                    "title": title[:120],
+                    "kind": "battle",
+                    "config": row["run"],
+                })
+            filename = ("native-library.json" if first == 0
+                        else f"native-library-{first // 100 + 1:03d}.json")
+            atomic_json(stage / filename, {
+                "library_schema": 1, "games": entries,
+            })
+            library_files.append({
+                "path": filename,
+                "sha256": file_sha256(stage / filename),
+                "game_count": len(entries),
+                "first_mission_index": segment[0]["mission_index"],
+            })
         suite = {
             "schema_version": 1,
             "kind": "native_original_campaign_source_collection",
@@ -112,9 +145,10 @@ def author_collection(source_manifest: Path, destination: Path) -> dict:
             "source_manifest": str(source_manifest),
             "physics_matrix_sha256": file_sha256(collision_matrix),
             "missions": authored,
+            "native_game_libraries": library_files,
         }
-        # No partial collection is ever considered committed; publish
-        # the complete original source Run set as a single directory.
+        # No partial collection or library becomes published; the complete
+        # source Run set and its menu indexes are committed atomically.
         atomic_json(stage / "collection-receipt.json", suite)
         sync_directory(stage)
         if destination.exists() or destination.is_symlink():
