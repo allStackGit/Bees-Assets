@@ -144,13 +144,13 @@ def validate_mixed_suite(file, suite):
     return suite
 
 
-def mixed_roster(pool, map_index, seed_index, seats, rotation):
-    # Keep the opponent lineup constant while rotating the candidate seat.
-    # Including the candidate seat in the pool offset would confound a
-    # starting-position effect with a different set of opponents.
-    # A complete pool-length set of rotations balances each opponent across
-    # every opposing slot for the same board and held-out seed.
-    start = (map_index + seed_index + rotation) % len(pool)
+def mixed_roster(pool, map_index, seed_index, seats, rotation, rotations_per_seed):
+    # Keep the opponent lineup constant across every candidate seat.
+    # Successive (seed, rotation) pairs enumerate distinct pool offsets,
+    # rather than repeating an offset when seed and rotation both increase.
+    # With seeds * rotations >= pool size every opponent visits every
+    # opposing seat on each map at least once.
+    start = (map_index + seed_index * rotations_per_seed + rotation) % len(pool)
     return [pool[(start + offset) % len(pool)] for offset in range(seats - 1)]
 
 
@@ -272,7 +272,8 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
             for scheduled in range(seats * suite.get("rotations", 1)):
                 rotation, seat = divmod(scheduled, seats)
                 roster = (mixed_roster(suite["opponents"], map_index, seed_index,
-                                       seats, rotation) if mixed else [])
+                                       seats, rotation, suite["rotations"])
+                          if mixed else [])
                 assigned = iter(roster)
                 seats_opponents = ([None if index == seat else next(assigned)
                                     for index in range(seats)] if mixed else [])
