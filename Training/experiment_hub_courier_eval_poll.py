@@ -9,7 +9,8 @@ import sys
 
 from experiment_hub_courier_evaluate import evaluate, read_suite
 from experiment_hub_eval_io import SUITE_ID, UUID
-from experiment_hub_eval_poll import final_checkpoint, poll_checkpoint, poll_batch
+from experiment_hub_eval_poll import (
+    final_checkpoint, poll_checkpoint, poll_batch, run_serialized_evaluator)
 
 POLICY = re.compile(r"round-([1-9][0-9]{0,14})\.zip")
 
@@ -75,7 +76,10 @@ def main():
                 raise ValueError("Courier project, artifact and evaluator directories must be separate.")
             setattr(args, key, directory)
             directories.append(directory)
-        poll(args, [read_suite(source) for source in args.suite])
+        suites=[read_suite(source) for source in args.suite]
+        if not run_serialized_evaluator(args.receipt_root,lambda:poll(args,suites)):
+            print("Courier evaluation deferred: another independent evaluator is active.",
+                  file=sys.stderr)
         return 0
     except (OSError, RuntimeError, ValueError, TypeError, KeyError, http.client.HTTPException) as exc:
         print(f"Scheduled Courier evaluation failed: {exc}", file=sys.stderr)

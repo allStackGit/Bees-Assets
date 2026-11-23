@@ -37,6 +37,28 @@ def exclusive(path: Path):
         yield
 
 
+def run_serialized_evaluator(receipt_root: Path, task):
+    """At most one independent evaluator consumes CPU on this host.
+
+    Courier and TinyBrains share their private receipt root. This advisory
+    kernel lock is common across suites, processes and Docker containers.
+    A busy slot defers this timer tick, never fabricates an evaluation or
+    interferes with an active trainer. Per-suite checkpoint locks remain.
+    """
+    acquired = False
+    try:
+        with exclusive(receipt_root / ".hub-evaluator-host.lock"):
+            acquired = True
+            task()
+            return True
+    except OSError as error:
+        locked = isinstance(error, BlockingIOError) or (
+            os.name == "nt" and getattr(error, "winerror", None) in (33, 36))
+        if acquired or not locked:
+            raise
+        return False
+
+
 def targets(port: int, machine: str, suite: str, project: str,
             host: str = "127.0.0.1") -> dict:
     query = urlencode({"project_id": project, "machine_id": machine, "suite_id": suite})

@@ -11,7 +11,8 @@ import tempfile
 from pathlib import Path
 
 from experiment_hub_eval_io import read_bounded, SHA256, suite_digest
-from experiment_hub_eval_poll import final_checkpoint, poll_checkpoint, poll_batch
+from experiment_hub_eval_poll import (
+    final_checkpoint, poll_checkpoint, poll_batch, run_serialized_evaluator)
 from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate_with_metrics, read_suite, suite_trials
 from experiment_hub_tinybrains_runtime import configure_engine
 
@@ -210,7 +211,10 @@ def main():
             if not directory.is_dir() or directory.is_relative_to(args.artifact_root):
                 raise ValueError("Evaluator directories must be outside training artifacts.")
             setattr(args, key, directory)
-        poll(args, [read_suite(source) for source in args.suite])
+        suites=[read_suite(source) for source in args.suite]
+        if not run_serialized_evaluator(args.receipt_root,lambda:poll(args,suites)):
+            print("TinyBrains evaluation deferred: another independent evaluator is active.",
+                  file=sys.stderr)
         return 0
     except (OSError, RuntimeError, ValueError, TypeError, KeyError, http.client.HTTPException) as exc:
         print(f"Scheduled TinyBrains evaluation failed: {exc}", file=sys.stderr)
