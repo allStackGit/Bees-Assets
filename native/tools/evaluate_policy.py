@@ -97,6 +97,63 @@ def setup_config(source_path, manifest, output, physics_workers=None):
     return source, len(levels) * episodes
 
 
+def assign_candidate_to_physical_side(config, candidate_slot, reference_slot,
+                                      learner_side, manifest):
+    """Run the same *physical* source matchup with policy roles swapped.
+
+    In native policy episodes, team 0 always means source Bee side and
+    team 1 means source Human side. The model manifest owns the actual
+    immutable weights; only the Run's existing team-to-slot routing may
+    change. Never invert scene combat physics, original faction IDs,
+    reward structures, squads, or rollout seeds.
+    """
+    if (type(candidate_slot) is not int or type(reference_slot) is not int or
+            not 0 <= candidate_slot < (1 << 32) or
+            not 0 <= reference_slot < (1 << 32) or
+            candidate_slot == reference_slot or learner_side not in (1, 2)):
+        raise ValueError("side-swapped native evaluation needs distinct uint32 model slots")
+    loaded = json.loads(manifest.read_text(encoding="utf-8"))
+    models = loaded.get("models") if isinstance(loaded, dict) else None
+    if not isinstance(models, list) or not models:
+        raise ValueError("native side-swapped evaluation requires a signed model manifest")
+    available = {item.get("slot") for item in models if isinstance(item, dict)}
+    if candidate_slot not in available or reference_slot not in available:
+        raise ValueError("candidate and reference weights must both exist in the pinned manifest")
+    assignments = []
+    for level in config["levels"]:
+        slots = level.get("model_slots")
+        if (not isinstance(slots, dict) or set(slots) != {"0", "1"} or
+                {slots["0"], slots["1"]} != {candidate_slot, reference_slot}):
+            raise ValueError("side-swapped holdout requires two original source policy team slots")
+        scene = json.loads(Path(level["scene"]).read_text(encoding="utf-8"))
+        policy = scene.get("policy_episode") if isinstance(scene, dict) else None
+        bee_side = scene.get("bee_side") if isinstance(scene, dict) else None
+        human_side = scene.get("human_side") if isinstance(scene, dict) else None
+        if (not isinstance(policy, dict) or
+                scene.get("has_policy_episode") is not True or
+                {bee_side, human_side} != {1, 2} or
+                policy.get("bee_side") != bee_side or
+                policy.get("human_side") != human_side):
+            raise ValueError("side-swapped evaluation requires original two-team native policy scenes")
+        candidate_team = "0" if learner_side == bee_side else "1"
+        level["model_slots"] = {
+            "0": candidate_slot if candidate_team == "0" else reference_slot,
+            "1": candidate_slot if candidate_team == "1" else reference_slot,
+        }
+        assignments.append({
+            "world_id": level.get("world_id"),
+            "candidate_physical_side": learner_side,
+            "candidate_policy_team": int(candidate_team),
+            "reference_physical_side": 3 - learner_side,
+        })
+    return {
+        "candidate_slot": candidate_slot,
+        "reference_slot": reference_slot,
+        "candidate_physical_side": learner_side,
+        "per_world": assignments,
+    }
+
+
 def expected_scene_episodes(config):
     """Exact authored map coverage for a complete native holdout.
 
@@ -319,7 +376,8 @@ def evaluation_execution_evidence(final_report):
     }
 
 def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
-             physics_workers=None, inference_device=None):
+             physics_workers=None, inference_device=None,
+             candidate_slot=None, reference_slot=None):
     manifest = manifest.resolve(strict=True)
     source_path = source_path.resolve(strict=True)
     manifest_sha = file_sha256(manifest)
@@ -354,6 +412,13 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
         if inference_device == "cuda:0" and not gpu_capable:
             raise ValueError("GPU evaluation cannot accelerate CPU-only ONNX models")
     config, expected = setup_config(source_path, manifest, output, physics_workers)
+    if (candidate_slot is None) != (reference_slot is None):
+        raise ValueError("side routing requires both candidate and reference model slots")
+    side_assignment = (
+        assign_candidate_to_physical_side(
+            config, candidate_slot, reference_slot, learner_side, manifest,
+        ) if candidate_slot is not None else None
+    )
     output.mkdir(parents=True, exist_ok=False)
     generated = output / "run.json"
     with generated.open("x", encoding="utf-8") as stream:
@@ -488,6 +553,8 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
         **({"model_store": model_store} if model_store else {}),
         "model_manifest": str(manifest), "model_manifest_sha256": manifest_sha,
         "learner_side": learner_side, "policy_sampling_seed": policy_seed,
+        **({"candidate_side_assignment": side_assignment}
+           if side_assignment is not None else {}),
         **({"inference_device_override": inference_device} if inference_device else {}),
         "run_id": config["run_id"],
         "episodes": expected, "worlds": len(config["levels"]),
