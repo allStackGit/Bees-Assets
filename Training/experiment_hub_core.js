@@ -704,6 +704,9 @@ function independentSequenceComplete(job) {
 }
 function checkpointContinuationComplete(job) {
     if(!['courier','tinybrains','bees_native'].includes(job?.project_id))return false;
+    if(job.project_id==='bees_native')
+        return job.status==='finished'&&job.checkpoint_ready_verified===true||
+            job.status==='stopped'&&job.checkpoint_stop_verified===true;
     return job.status==='finished'
         ?job.checkpoint_ready_verified===true||
             job.checkpoint_proof_required!==true
