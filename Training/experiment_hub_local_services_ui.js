@@ -21,6 +21,7 @@
     const historySource=$('hub-local-evaluator-history-source');
     const courierSetup=$('hub-local-courier-evaluator-setup');
     const evaluatorMessage=$('hub-local-evaluator-message');
+    const evaluatorMaps=$('hub-local-evaluator-map-results');
     const remoteRows=$('hub-remote-evaluator-rows');
     const remoteMessage=$('hub-remote-evaluator-message');
     let state=null,busy=false;
@@ -37,6 +38,39 @@
         control.disabled=disabled;
         control.addEventListener('click',()=>manageEvaluator(action,id,project));
         return control;
+    }
+    async function showMapResults(id) {
+        if(!evaluatorMaps)return;
+        evaluatorMaps.textContent='Loading '+id+' map results…';
+        try {
+            const response=await fetch('/api/hub/local-services/evaluator-maps?id='+
+                encodeURIComponent(id));
+            const report=await response.json();
+            if(!response.ok)throw Error(report.error||'Map results unavailable.');
+            if(!report.available) {
+                evaluatorMaps.textContent=report.reason||'No matching map report yet.';
+                return;
+            }
+            const lines=[
+                report.suite_id+' · checkpoint '+report.checkpoint_sha256.slice(0,12)+
+                    ' · '+report.successes+' wins / '+report.trials+' trials',
+                'Board | Players | Games | Wins | Draws | Losses | Mean place | Top-half',
+            ];
+            for(const map of report.maps) {
+                const mean=map.trials?(map.placement_sum/map.trials).toFixed(2):'—';
+                const top=map.trials?(100*map.top_half/map.trials).toFixed(1)+'%':'—';
+                lines.push([map.map,map.players,map.trials,map.win,map.draw,
+                    map.loss,mean,top].join(' | '));
+            }
+            const pre=document.createElement('pre');
+            pre.style.whiteSpace='pre';
+            pre.style.maxHeight='420px';
+            pre.style.overflow='auto';
+            pre.textContent=lines.join('\n');
+            evaluatorMaps.replaceChildren(pre);
+        }catch(error) {
+            evaluatorMaps.textContent='Map results: '+String(error.message||error);
+        }
     }
     function renderEvaluators(info) {
         if(!evaluatorRows||!evaluatorSetup)return;
@@ -117,6 +151,15 @@
                 status.textContent+=' · Admission deferred: '+
                     (info.evaluation_capacity?.reason||'local resource capacity unavailable');
             line.append(title,status);
+            if(item.managed&&item.project==='tinybrains'&&
+                (item.id.endsWith('-season')||item.id.startsWith('history-'))) {
+                const details=document.createElement('button');
+                details.type='button';
+                details.textContent='Map results';
+                details.disabled=busy;
+                details.addEventListener('click',()=>showMapResults(item.id));
+                line.append(details);
+            }
             if(item.managed) {
                 line.append(
                     evaluatorButton('Start','start',item.id,busy||item.active||admissionBlocked,item.project),
