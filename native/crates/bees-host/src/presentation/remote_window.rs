@@ -27,6 +27,7 @@ use super::minimap::MiniMapLayout;
 use super::tactical_hud::{HudAction, HudRect, ACTIONS, shooting_hit, shooting_rect};
 use bees_hivemind::protocol::SHOOTING_STRATEGIES;
 use crate::game_audio::NativeGameAudio;
+use crate::remote_tls::{client_tls_from_environment, RemoteSocket};
 use crate::unity_scene_snapshot::{NativeMusicLocation, NativeMapBackdrop};
 
 fn source_ship_catalog() -> &'static bees_sim::ship_assets::ShipAssetCatalog {
@@ -574,7 +575,7 @@ impl RemoteVisual {
 }
 
 struct PeerClient {
-    socket: TcpStream,
+    socket: RemoteSocket,
     incoming: Vec<u8>,
     queued: VecDeque<Vec<u8>>,
     written: usize,
@@ -654,15 +655,38 @@ impl PeerClient {
     fn connect(address: &str, token: &str, side: i32,
         resume_session_id: Option<&str>, spectator: bool,
     ) -> Result<Self, Box<dyn Error>> {
+        // An explicit TLS endpoint is never allowed to fall back to
+        // plaintext if certificate validation or the handshake fails.
+        // Existing LAN host:port clients retain their prior behavior.
+        let tls_endpoint = address.strip_prefix("tls://");
+        let endpoint = tls_endpoint.unwrap_or(address);
         let mut connection = None;
-        for candidate in address.to_socket_addrs()? {
+        for candidate in endpoint.to_socket_addrs()? {
             match TcpStream::connect_timeout(&candidate, Duration::from_secs(5)) {
                 Ok(socket) => { connection = Some(socket); break; }
                 Err(_) => continue,
             }
         }
-        let mut socket = connection.ok_or_else(|| invalid("native multiplayer server unreachable"))?;
-        socket.set_nodelay(true)?;
+        let tcp = connection.ok_or_else(|| invalid("native multiplayer server unreachable"))?;
+        tcp.set_nodelay(true)?;
+        let mut socket = if tls_endpoint.is_some() {
+            let authority = endpoint.rsplit_once(':')
+                .map(|(host, _)| host.trim_start_matches('[').trim_end_matches(']'))
+                .filter(|hostname| !hostname.is_empty())
+                .ok_or_else(|| invalid("TLS endpoint must include a valid host:port"))?;
+            // TLS authentication completes in the existing network worker,
+            // never on the minifb rendering thread. Use bounded socket
+            // timeouts for a stalled or malicious TLS server.
+            tcp.set_read_timeout(Some(Duration::from_secs(5)))?;
+            tcp.set_write_timeout(Some(Duration::from_secs(5)))?;
+            let mut secured = RemoteSocket::client(
+                tcp, client_tls_from_environment()?, authority,
+            )?;
+            secured.handshake_blocking()?;
+            secured
+        } else {
+            RemoteSocket::plain(tcp)
+        };
         let mut hello = serde_json::to_vec(&json!({
             "kind": "hello", "token": token,
             "resume_session_id": resume_session_id, "spectator": spectator,
