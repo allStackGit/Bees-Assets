@@ -1176,6 +1176,67 @@ fn choose_sizes() -> Result<Option<[usize; 2]>, Box<dyn Error>> {
     Ok(Some(fleet_sizes))
 }
 
+/// Source-authoritative SquadMaker mix selection. Counts affect only
+/// how many already-authored physical ships are admitted, not their
+/// combat stats, skills, AI, or native PPO rollout path.
+fn choose_original_composition(
+    mix: [FleetMix; 2], sizes: [usize; 2], fighters: &[Vec<Value>; 2],
+) -> Result<Option<[Vec<Value>; 2]>, Box<dyn Error>> {
+    let mut roster = [Vec::new(), Vec::new()];
+    for side in 0..2 {
+        if !matches!(mix[side], FleetMix::OriginalCombined) { continue; }
+        let available = &fighters[side];
+        if available.len() < 2 || sizes[side] < 2 || sizes[side] > 64 {
+            return Err(invalid("source original mix has no valid physical class selection").into());
+        }
+        let mut remaining = sizes[side];
+        for (index, source) in available.iter().enumerate() {
+            let count = if index + 1 == available.len() {
+                remaining
+            } else if remaining == 0 {
+                0
+            } else {
+                let mut counts = vec![0_usize, 1, 2, 4, 8, 16, 32, 64,
+                    remaining / (available.len() - index), remaining];
+                counts.retain(|count| *count <= remaining);
+                counts.sort_unstable();
+                counts.dedup();
+                let kind = source["ship_type"].as_u64()
+                    .ok_or_else(|| invalid("original mixed hull has no source class"))?;
+                let title = format!(
+                    "{} original class {kind} ships (side {}, {remaining} remaining)",
+                    if side == 0 { "Bee" } else { "Human" }, side + 1,
+                );
+                let rows = counts.iter().map(|count| BattleMenuRow {
+                    title: &title,
+                    status: if *count == 0 { "  [No ships of this class]" }
+                        else { "  [Use original physical hulls]" },
+                    unlocked: true,
+                }).collect::<Vec<_>>();
+                // The native selector's row title must distinguish counts;
+                // use one menu per source class, bounded to a few choices.
+                let names = counts.iter().map(|count|
+                    format!("{count} ships  |  Original class {kind}")
+                ).collect::<Vec<_>>();
+                let rows = rows.iter().zip(&names).map(|(row, name)| BattleMenuRow {
+                    title: name, status: row.status, unlocked: true,
+                }).collect::<Vec<_>>();
+                let mut selected = counts.iter().position(|count|
+                    *count == remaining / (available.len() - index)).unwrap_or(0);
+                let Some(choice) = select_library(&rows, &mut selected, false)?
+                    else { return Ok(None); };
+                counts[choice]
+            };
+            remaining -= count;
+            roster[side].extend(std::iter::repeat_with(|| source.clone()).take(count));
+        }
+        if remaining != 0 || roster[side].len() != sizes[side] {
+            return Err(invalid("original mixed fleet lost its authored physical ship count").into());
+        }
+    }
+    Ok(Some(roster))
+}
+
 fn choose_mix(
     fleet_sizes: [usize; 2], mining_field: bool, arena_size: Option<u32>,
     bee_queen_unlocked: bool, factory_available: bool,
