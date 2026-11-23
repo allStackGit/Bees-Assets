@@ -748,6 +748,21 @@ struct SourceProjectileArt {
     frames: Vec<NativeSprite>,
 }
 
+// Both local and LAN projectile rendering use the original clip cadence.
+fn projectile_art_frame(kind: u8, age_seconds: f32, count: usize) -> usize {
+    let frames_per_second = match kind {
+        2 | 7 => 4.0, // Bee/Human Medium Laser Shot
+        15 => 10.0, // Fire Tank Explosion
+        _ => 8.0,
+    };
+    let frame = (age_seconds.max(0.0) * frames_per_second).floor() as usize;
+    if matches!(kind, 13..=15) {
+        frame.min(count - 1)
+    } else {
+        frame % count
+    }
+}
+
 struct SourceProjectileAtlas {
     sprites: [Option<SourceProjectileArt>; SOURCE_PROJECTILE_TYPES],
     loaded: usize,
@@ -1961,12 +1976,7 @@ impl NativeSoftwareRenderer {
             .and_then(|atlas| atlas.sprites.get(usize::from(shot_type)))
             .and_then(Option::as_ref)
         else { return false };
-        let frame = (elapsed_seconds.max(0.0) * 8.0).floor() as usize;
-        let index = if matches!(shot_type, 13 | 14) {
-            frame.min(art.frames.len() - 1)
-        } else {
-            frame % art.frames.len()
-        };
+        let index = projectile_art_frame(shot_type, elapsed_seconds, art.frames.len());
         self.draw_sprite(
             &art.frames[index], point, rotation_degrees.to_radians(),
             self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
@@ -3052,19 +3062,14 @@ impl NativeSoftwareRenderer {
                 *seen = view.tick;
                 let age = view.tick.saturating_sub(*born) as f32
                     * view.fixed_step_seconds;
-                let elapsed_frame = (age * 8.0).floor() as usize;
-                let index = if matches!(projectile.projectile_type, 13 | 14) {
-                    elapsed_frame.min(art.frames.len() - 1)
-                } else {
-                    elapsed_frame % art.frames.len()
-                };
+                let index = projectile_art_frame(projectile.projectile_type, age, art.frames.len());
                 self.draw_sprite(&art.frames[index], position,
                     body.rotation_degrees.to_radians(),
                     self.camera.pixels_per_unit / art.pixels_per_unit, 1.0)
             } else { false };
             if drew_art {
                 counts.projectile_sprite_draws += 1;
-                if matches!(projectile.projectile_type, 13 | 14) {
+                if matches!(projectile.projectile_type, 13..=15) {
                     counts.projectile_explosion_sprite_draws += 1;
                 }
             } else {

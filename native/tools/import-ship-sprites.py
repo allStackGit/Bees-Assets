@@ -131,12 +131,22 @@ ASTEROID_IMAGES = (None,) + tuple(f"Asteroid {n}.png" for n in range(1, 29))
 # source timing or geometry; leave their authoritative collider outlines
 # until those presentations can be supported without inventing physics.
 PROJECTILE_IMAGES = (
-    None, "Bee Small Laser Shot.png", None, "Bumblebee Laser Shot.png",
-    "flagship_bolt.png", "Frigate Rocket In Flight.png",
-    "Human Small Laser Shot.png", None, None,
-    "Leafcutter Shot.png", "Queen Small Laser Shot.png",
-    "Queen Stinger Laser Shot.png", "Striker Bomb.png",
-    "Frigate Rocket Explosion.png", "Fireship Explosion.png", None,
+    None,
+    "Projectiles/Bee Small Laser Shot.png",
+    "Projectiles/pill_projectile_bee.png",
+    "Projectiles/Bumblebee Laser Shot.png",
+    "Projectiles/flagship_bolt.png",
+    "Projectiles/Frigate Rocket In Flight.png",
+    "Projectiles/Human Small Laser Shot.png",
+    "Projectiles/pill_projectile.png",
+    None,  # The beam needs its live source/target geometry.
+    "Projectiles/Leafcutter Shot.png",
+    "Projectiles/Queen Small Laser Shot.png",
+    "Projectiles/Queen Stinger Laser Shot.png",
+    "Projectiles/Striker Bomb.png",
+    "Projectiles/Frigate Rocket Explosion.png",
+    "Projectiles/Fireship Explosion.png",
+    "Objects/fire_tank_explosion.png",
 )
 
 
@@ -502,7 +512,7 @@ def main():
         SHIP_EFFECT_IMAGES, ROOT / "Sprites/Ships/Parts", b"BSS1", False,
     )
     projectiles, projectile_count = pack(
-        PROJECTILE_IMAGES, ROOT / "Sprites/Projectiles", b"BPS1", True,
+        PROJECTILE_IMAGES, ROOT / "Sprites", b"BPS1", True,
     )
     asteroids, asteroid_count = pack(
         ASTEROID_IMAGES, ROOT / "Sprites/Asteroids", b"BAS1", False,
