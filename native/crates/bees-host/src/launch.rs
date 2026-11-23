@@ -4558,24 +4558,19 @@ fn run_duplicate_saved_squad(
         &catalog, root, &progress, side, &projected_purchases,
         &projected_authored, new_id, &[created], &copied_tactics,
     )?;
-    // This older squad-duplication path uses individually committed career
-    // edits. Each published transfer remains valid if later work is
-    // interrupted; squad retirement now commits its reserve moves atomically.
-    catalog.create_saved_squad(&progress, output_root, side, template_id, new_id)?;
-    for &(id, kind, bought) in &selected {
-        let committed = catalog.load_progress(output_root)?;
-        if bought {
-            catalog.transfer_purchased_ship(&committed, output_root, id, new_id)?;
-        } else {
-            catalog.reassign_authored_ship(
-                &committed, output_root, side, id, 0, new_id, Some(kind),
-            )?;
-        }
-    }
-    for tactics in copied_tactics {
-        let committed = catalog.load_progress(output_root)?;
-        catalog.set_saved_squad_tactics(&committed, output_root, tactics)?;
-    }
+    // Creation, matching reserve FleetShips and copied effective player
+    // preferences publish together, after the complete native scene
+    // preflight. A crash cannot leave a half-filled duplicate. Subsequent
+    // squad edits replay in this same ordered career stream.
+    let purchased_ids = selected.iter().filter_map(|&(id, _, bought)|
+        bought.then_some(id)).collect::<Vec<_>>();
+    let authored = selected.iter().filter_map(|&(id, kind, bought)|
+        (!bought).then_some((id, kind))).collect::<Vec<_>>();
+    let tactics = copied_tactics.into_iter().next()
+        .ok_or_else(|| invalid("duplicated squad is missing its copied tactics"))?;
+    catalog.duplicate_saved_squad(
+        &progress, output_root, created, &purchased_ids, &authored, tactics,
+    )?;
     println!("{}", json!({
         "kind": "native_campaign_saved_squad_duplicated",
         "campaign_id": catalog.campaign_id, "side": side,
