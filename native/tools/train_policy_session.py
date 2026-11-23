@@ -1803,6 +1803,10 @@ def main():
                         help="optional directory receiving atomically uploaded *.tar collector archives")
     parser.add_argument("--bundle-receiver-listen",
                         help="start an authenticated native collector upload receiver on HOST:PORT; requires BEES_NATIVE_BUNDLE_TOKEN")
+    parser.add_argument("--bundle-receiver-tls-cert", type=Path,
+                        help="optional server TLS certificate for HTTPS native bundle transfers")
+    parser.add_argument("--bundle-receiver-tls-key", type=Path,
+                        help="private key file for --bundle-receiver-tls-cert (not embedded in session)")
     parser.add_argument("--collector-input-outbox", type=Path,
                         help="automatically export one shared verified input archive for each issued round")
     parser.add_argument("--hub-dispatch-plan", type=Path,
@@ -1953,6 +1957,10 @@ def main():
         parser.error("--bundle-archive-inbox requires distributed collection and --bundle-inbox")
     if args.bundle_receiver_listen is not None and not distributed_requested:
         parser.error("--bundle-receiver-listen requires distributed collection and --bundle-inbox")
+    if ((args.bundle_receiver_tls_cert is None) != (args.bundle_receiver_tls_key is None) or
+            args.bundle_receiver_tls_cert is not None and
+            args.bundle_receiver_listen is None):
+        parser.error("TLS receiver needs --bundle-receiver-listen, --bundle-receiver-tls-cert and --bundle-receiver-tls-key")
     if args.collector_input_outbox is not None and not distributed_requested:
         parser.error("--collector-input-outbox requires distributed collection and --bundle-inbox")
     if args.collector_input_outbox is not None and not args.collector_input_outbox.is_dir():
@@ -2172,6 +2180,8 @@ def main():
     receiver_context = (
         BundleReceiver(
             args.bundle_receiver_listen, Path(recipe["bundle_inbox"]),
+            tls_cert=args.bundle_receiver_tls_cert,
+            tls_key=args.bundle_receiver_tls_key,
             on_event=lambda kind, details: print(json.dumps({
                 "kind": kind, **details,
             }), flush=True),
