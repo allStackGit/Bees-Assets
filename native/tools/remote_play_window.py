@@ -116,6 +116,9 @@ class RemoteBattleWindow:
         # grow without pushing destructive campaign actions offscreen.
         self.footer_controls = ttk.Frame(self.footer)
         self.footer_controls.pack(fill="x")
+        # Time controls belong to a separate compact row. A 720px window
+        # must still show its campaign and match-result actions.
+        self.footer_clock = ttk.Frame(self.footer)
         self.status = tk.StringVar(value="Connecting to native host...")
         self.rejoin_button = ttk.Button(
             self.footer_controls, text="Rejoin recovered battle", command=self.rejoin,
@@ -123,18 +126,19 @@ class RemoteBattleWindow:
         )
         self.rejoin_button.pack(side="left", padx=10)
         self.pause_button = ttk.Button(
-            self.footer_controls, text="Pause", command=self.toggle_pause,
+            self.footer_clock, text="Pause", command=self.toggle_pause,
             state="disabled",
         )
         self.step_button = ttk.Button(
-            self.footer_controls, text="Step tick", command=lambda:
+            self.footer_clock, text="Step tick", command=lambda:
             self.request_host_clock("step"), state="disabled",
         )
         self.speed_button = ttk.Button(
-            self.footer_controls, text="Cycle speed", command=lambda:
+            self.footer_clock, text="Cycle speed", command=lambda:
             self.request_host_clock("speed"), state="disabled",
         )
         if not console.spectator:
+            self.footer_clock.pack(fill="x", pady=(3, 0))
             for button in (self.pause_button, self.step_button, self.speed_button):
                 button.pack(side="left", padx=3)
         self.surrender_button = ttk.Button(
