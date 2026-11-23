@@ -483,16 +483,22 @@ operator-controlled SSH inventory or the two-phase activation checks:
 
 ```sh
 node Training/bees_build_workers.js --platform both \
+    --install-root /home/halifax/ai/bees-unity-workers \
     --inventory /absolute/private/bees-machines.json \
     --apply --activate
 ```
 
-Omit `--apply --activate` to build and inspect the remote distribution
-plan without modifying machines; use `--apply` alone to install without
-changing their active release selectors. Repeat `--machine MACHINE_ID`
-to target a subset of the inventory. The one-command remote path requires
-Linux and cannot be combined with `--install-root` (local installation).
-It still does **not** restart Hub agents or interrupt existing training.
+Omit `--install-root` if Halifax itself already appears in the SSH inventory,
+or if you want to deploy only remote actors. Omit `--apply --activate`
+(without `--install-root`) to build and preview the remote distribution plan
+without modifying machines; use `--apply` alone to install without changing
+active selectors. Repeat `--machine MACHINE_ID` to select a subset. The
+one-command remote path requires Linux. If both local and remote installation
+are requested, Halifax's release is **installed but not activated** until
+every selected remote machine reports successful activation. If remote
+distribution fails, Halifax retains its existing active selector; rerun the
+published manifest through the distributor to complete an interrupted
+rollout. No step restarts Hub agents or interrupts existing training.
 
 The distributor validates the selected inventory and local artifacts first,
 then copies and verifies an immutable installation on **every selected machine**
