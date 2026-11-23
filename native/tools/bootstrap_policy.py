@@ -125,25 +125,75 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         raise ValueError("native bootstrap requires a one-Level native-authored policy scene")
     if not isinstance(scene.get("ships"), list):
         raise ValueError("native bootstrap requires authored policy ships")
+    original_authored = (
+        scenario == "custom" and scene.get("schema_version") == 35 and
+        scene.get("native_policy_authored_episode") is True and
+        scene.get("native_policy_capabilities_captured") is True
+    )
     if scenario == "custom":
         source_level = run["levels"][0]
         scene_field = source_level.get("scene")
-        if (scene.get("native_game_schema") != 1 or
+        if original_authored:
+            # The imported Unity physical source uses Vector2 objects for
+            # its real bounds, not native_game_schema's [x, y] arrays.
+            # Validate the SAME physical bounds, rather than modifying
+            # the experiment arena to satisfy a template.
+            def unity_vec(name):
+                item = scene.get(name)
+                if (not isinstance(item, dict) or set(item) != {"x", "y"} or
+                        any(type(item[axis]) not in (int, float) or
+                            not np.isfinite(item[axis]) for axis in ("x", "y"))):
+                    raise ValueError(f"custom original source has invalid {name}")
+                return [item["x"], item["y"]]
+            physical_bounds = {
+                "min": unity_vec("min"), "max": unity_vec("max"),
+            }
+        else:
+            physical_bounds = scene.get("bounds")
+        if (not (scene.get("native_game_schema") == 1 or original_authored) or
                 not isinstance(scene_field, str) or not scene_field or
                 (source_run.parent / scene_field).resolve() != source_scene or
                 run.get("stage_name") != scene["stage_name"] or
-                run.get("fragment_spawn", {}).get("map_bounds") != scene.get("bounds") or
+                run.get("fragment_spawn", {}).get("map_bounds") != physical_bounds or
                 not isinstance(scene.get("policy_episode"), dict) or
                 run.get("model_manifest") or run.get("hivemind")):
             raise ValueError(
-                "custom native policy scene must match the exact game-only "
-                "run's stage, map, and referenced source path"
+                "custom native policy source must match its exact physical "
+                "Stage, map and unbootstrapped Run"
             )
+        if original_authored:
+            expected_slots = {
+                "0": slots[0], "1": slots[1] if len(slots) > 1 else slots[0],
+            }
+            source_group = scene["policy_episode"].get("group_participants")
+            level_group = source_level.get("groups")
+            if (len(slots) != 2 or source_level.get("model_slots") != expected_slots or
+                    scene.get("has_policy_episode") is not True or
+                    (scene.get("targeting_context") or {}).get("has_player") is not False or
+                    scene.get("activate_hivemind") is not False or
+                    not isinstance(source_group, list) or not source_group or
+                    not isinstance(level_group, dict) or
+                    not isinstance(level_group.get("participants"), list) or
+                    level_group.get("episode_number") != scene["policy_episode"].get("episode_number") or
+                    sorted((row["side"], row["agent_id"]) for row in source_group)
+                    != sorted((row["side"], row["agent_id"])
+                              for row in level_group["participants"]) or
+                    Path(run.get("policy_worker", "")).resolve() != (
+                        ROOT / "native" / "tools" / "policy_worker.py"
+                    ).resolve()):
+                raise ValueError(
+                    "native original-fleet bootstrap requires the exact "
+                    "captured policy group, team slots and canonical v26 worker"
+                )
     real_teams = {}
     for ship in scene["ships"]:
         if not isinstance(ship, dict):
             raise ValueError("native bootstrap has invalid ship metadata")
         policy = ship.get("policy")
+        if original_authored and ship.get("has_bound_policy") is True:
+            if ship.get("is_rl_policy_controlled") is not True:
+                raise ValueError("native original policy source has unbound action ownership")
+            policy = {"team_id": ship.get("policy_team_id")}
         if policy is None:
             continue
         if not isinstance(policy, dict) or type(policy.get("team_id")) is not int:

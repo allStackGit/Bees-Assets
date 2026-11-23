@@ -353,7 +353,7 @@ def author_policy(source: dict, game: dict, ids: set[int], slots: dict[str, int]
     return scene, config, receipt
 
 
-def author(output: Path, original_run: Path, model_manifest: Path,
+def author(output: Path, original_run: Path, model_manifest: Path | None,
            policy_worker: Path, python: str, ship_ids: set[int],
            slots: dict[str, int], timeout: float, period: int,
            episodes: int, seed: int, tactics: str,
@@ -370,9 +370,13 @@ def author(output: Path, original_run: Path, model_manifest: Path,
     ship_ids = select_original_fleet_actors(
         source, ship_ids, squad_ids or set(), sides or set(),
     )
-    model_manifest = model_manifest.resolve(strict=True)
+    model_manifest = (
+        model_manifest.resolve(strict=True) if model_manifest is not None else None
+    )
     policy_worker = policy_worker.resolve(strict=True)
-    inputs = [run_path, scene_path, model_manifest, policy_worker]
+    inputs = [run_path, scene_path, policy_worker]
+    if model_manifest is not None:
+        inputs.append(model_manifest)
     hashes = {str(path): file_sha256(path) for path in inputs}
     annotated, run, receipt = author_policy(
         source, original, ship_ids, slots, timeout, period, episodes, seed,
@@ -389,7 +393,11 @@ def author(output: Path, original_run: Path, model_manifest: Path,
     run["levels"][0]["scene"] = "original-policy.scene.json"
     run["python"] = python
     run["policy_worker"] = str(policy_worker)
-    run["model_manifest"] = str(model_manifest)
+    # A missing manifest explicitly means the existing canonical
+    # bootstrap_policy.py must initialize the v26 policy first. The
+    # generated gameplay Run is never claimed to be runnable without
+    # actual, verified model weights.
+    run["model_manifest"] = str(model_manifest) if model_manifest else None
     run["policy_capture"] = "policy-capture.json"
     run["rollout_summary"] = "rollout-summary.json"
     run["notifications"] = "events.jsonl"
@@ -413,6 +421,7 @@ def author(output: Path, original_run: Path, model_manifest: Path,
             "native_policy_scene_sha256": file_sha256(stage / "original-policy.scene.json"),
             "native_policy_run_sha256": file_sha256(stage / "run.json"),
             "policy_training_uses_original_combat_world": True,
+            "requires_policy_bootstrap": model_manifest is None,
         })
         atomic_json(stage / "native-source-policy-receipt.json", receipt)
         sync_directory(stage)
@@ -428,7 +437,9 @@ def main() -> None:
     parser.add_argument("native_game_run", type=Path,
                         help="original physical native Run created by author_original_unity_level.py")
     parser.add_argument("output_directory", type=Path)
-    parser.add_argument("--model-manifest", type=Path, required=True)
+    parser.add_argument("--model-manifest", type=Path,
+                        help="existing native v26 model manifest; omit to create a "
+                             "source-authored policy Run for bootstrap_policy.py --scenario custom")
     parser.add_argument("--policy-worker", type=Path, required=True)
     parser.add_argument("--python", default="auto",
                         help="policy runtime executable; auto uses platform-native PATH")
