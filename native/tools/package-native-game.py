@@ -641,19 +641,22 @@ def write_launchers(output: Path, binary_name: str,
         # Administrators select a fresh output directory for a new match.
         # Secrets and listen addresses are supplied ONLY at runtime.
         if binary_name.endswith(".exe"):
-            launcher = output / "serve-native-two-player.cmd"
+            launcher = output / "serve-bees.cmd"
             launcher.write_text(
                 windows_start +
                 'if not defined BEES_NATIVE_REMOTE_LISTEN (echo Set BEES_NATIVE_REMOTE_LISTEN 1>&2 & popd & exit /b 2)\n' +
                 'if not defined BEES_NATIVE_REMOTE_SIDE_TOKENS (echo Set BEES_NATIVE_REMOTE_SIDE_TOKENS 1>&2 & popd & exit /b 2)\n' +
-                'if not defined BEES_NATIVE_SERVER_OUTPUT_DIR set "BEES_NATIVE_SERVER_OUTPUT_DIR=%BEES_SAVE%\\servers\\two-player"\n' +
-                'if not exist "%BEES_SAVE%" mkdir "%BEES_SAVE%"\n' +
-                f'".\\{server_binary}" serve "examples/native-two-player.run.json" ' +
-                '--output-dir "%BEES_NATIVE_SERVER_OUTPUT_DIR%" %*\n' + windows_finish,
+                'if "%~1"=="" (echo Usage: %~nx0 PACKAGED-RUN-JSON 1>&2 & popd & exit /b 2)\n' +
+                'if not "%~2"=="" (echo Expected exactly one run JSON path 1>&2 & popd & exit /b 2)\n' +
+                'if not exist "%~1" (echo Missing native run configuration 1>&2 & popd & exit /b 2)\n' +
+                'if not defined BEES_NATIVE_SERVER_OUTPUT_DIR set "BEES_NATIVE_SERVER_OUTPUT_DIR=%BEES_SAVE%\\servers\\hosted"\n' +
+                'if not exist "%BEES_NATIVE_SERVER_OUTPUT_DIR%" mkdir "%BEES_NATIVE_SERVER_OUTPUT_DIR%"\n' +
+                f'".\\{server_binary}" serve "%~1" ' +
+                '--output-dir "%BEES_NATIVE_SERVER_OUTPUT_DIR%"\n' + windows_finish,
                 encoding="utf-8", newline="\r\n",
             )
         else:
-            launcher = output / "serve-native-two-player.sh"
+            launcher = output / "serve-bees.sh"
             launcher.write_text(
                 "#!/bin/sh\n"
                 "set -eu\n"
@@ -661,10 +664,14 @@ def write_launchers(output: Path, binary_name: str,
                 ': "${BEES_NATIVE_REMOTE_LISTEN:?Set BEES_NATIVE_REMOTE_LISTEN to the host TCP address}"\n'
                 ': "${BEES_NATIVE_REMOTE_SIDE_TOKENS:?Set BEES_NATIVE_REMOTE_SIDE_TOKENS to JSON side credentials}"\n'
                 'save="${XDG_DATA_HOME:-$HOME/.local/share}/bees-native"\n'
-                'run="${BEES_NATIVE_SERVER_OUTPUT_DIR:-$save/servers/two-player}"\n'
-                'mkdir -p "$(dirname "$run")"\n'
-                f'exec "./{server_binary}" serve "examples/native-two-player.run.json" ' +
-                '--output-dir "$run" "$@"\n',
+                'if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then\n'
+                '  printf "Usage: %s PACKAGED-RUN-JSON\\n" "$0" >&2\n'
+                '  exit 2\n'
+                'fi\n'
+                'run="${BEES_NATIVE_SERVER_OUTPUT_DIR:-$save/servers/hosted}"\n'
+                'mkdir -p "$run"\n'
+                f'exec "./{server_binary}" serve "$1" ' +
+                '--output-dir "$run"\n',
                 encoding="utf-8", newline="\n",
             )
             launcher.chmod(0o755)
@@ -851,10 +858,10 @@ def verify_native_package(directory: Path) -> dict:
         headless if dedicated_server else None,
     )
     if dedicated_server:
-        launcher_name = ("serve-native-two-player.cmd" if binary_suffix
-                         else "serve-native-two-player.sh")
+        launcher_name = ("serve-bees.cmd" if binary_suffix
+                         else "serve-bees.sh")
         if launcher_name not in expected:
-            raise ValueError("native release has no restartable two-player dedicated host launcher")
+            raise ValueError("native release has no restartable dedicated host launcher")
         if compiled_sha256(game) == compiled_sha256(headless):
             raise ValueError("dedicated server must be a separately compiled native binary")
     if manifest.get("training_runtime", False) not in (True, False):
