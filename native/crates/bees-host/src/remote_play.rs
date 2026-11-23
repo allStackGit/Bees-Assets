@@ -80,6 +80,7 @@ enum WireInput {
         token: String,
         #[serde(default)] resume_session_id: Option<String>,
         #[serde(default)] spectator: bool,
+        #[serde(default)] compressed_world_state: bool,
     },
     Input { request_id: u64, action: NativePlayerInput },
     /// Transport liveness only. Runs even during a paused World and never
@@ -170,6 +171,9 @@ struct Peer {
     // their authorized faction. A side's commander token is never a
     // substitute and cannot elevate a spectator into command authority.
     spectator: bool,
+    /// Capability negotiated in authenticated Hello; reset on every TCP
+    /// connection. Never send this encoding to an older unmodified client.
+    compressed_world_state: bool,
     last_request_id: u64,
     weapon_overlay: Option<(u64, u64, Vec<SquadLifetime>)>,
     inspect_requests: VecDeque<(u64, u64, i64, u64)>,
@@ -466,6 +470,17 @@ pub struct RemotePlayMeasurements {
     /// Count one projection/JSON encoding per distinct authenticated
     /// (side, authority) seat, never once per cooperative peer.
     pub snapshot_unique_encoded_bytes: u64,
+    /// Actual replacement frames submitted for compressed client seats.
+    /// Original and encoded byte totals share the same frame denominator;
+    /// superseded frames can be omitted before socket transmission.
+    #[serde(default)]
+    pub compressed_state_frames_queued: u64,
+    #[serde(default)]
+    pub compressed_state_raw_bytes_queued: u64,
+    #[serde(default)]
+    pub compressed_state_wire_bytes_queued: u64,
+    #[serde(default)]
+    pub compressed_state_encoding_wall_seconds: f64,
     #[serde(default)]
     pub asteroid_pieces_projected: u64,
     #[serde(default)]
@@ -1140,6 +1155,7 @@ impl NativeRemotePlay {
             }
             self.peers.push(Peer {
                 id, socket, side: None, spectator: false,
+                compressed_world_state: false,
                 last_request_id: 0, incoming: Vec::new(),
                 weapon_overlay: None, inspect_requests: VecDeque::new(),
                 outgoing: Vec::new(), written: 0, writing_state: false,
@@ -1230,7 +1246,8 @@ impl NativeRemotePlay {
                     serde_json::from_slice(&peer.incoming[start..end]);
                 start = end + 1;
                 match message {
-                    Ok(WireInput::Hello { token, resume_session_id, spectator })
+                    Ok(WireInput::Hello { token, resume_session_id, spectator,
+                        compressed_world_state })
                         if peer.side.is_none() => {
                         let credentials = if spectator {
                             &self.spectator_tokens
@@ -1263,6 +1280,7 @@ impl NativeRemotePlay {
                             }
                             peer.side = Some(side);
                             peer.spectator = spectator;
+                            peer.compressed_world_state = compressed_world_state;
                             if !spectator && self.forfeit_absence
                                 .is_some_and(|(absent,_)| absent == side)
                             {
@@ -2258,6 +2276,10 @@ impl NativeRemotePlay {
         // score, campaign dialogue, or surrender capability. A player seat
         // cannot be upgraded by requesting the observer snapshot.
         let mut snapshots = HashMap::<(i32, bool), Vec<u8>>::new();
+        // The codec sees only the already fog-filtered side/privilege JSON.
+        // Cache its optional compressed form once per unique authorized
+        // projection rather than once for each cooperative TCP recipient.
+        let mut compressed = HashMap::<(i32, bool), Option<Vec<u8>>>::new();
         let measurements = &mut self.measurements;
         for peer in &mut self.peers {
             let Some(side) = peer.side else { continue };
@@ -2382,8 +2404,25 @@ impl NativeRemotePlay {
                 measurements.snapshot_unique_encoded_bytes += payload.len() as u64;
                 payload
             });
+            let encoded = encoded.as_slice();
+            let payload = if peer.compressed_world_state {
+                compressed.entry((side, spectator)).or_insert_with(|| {
+                    let started = Instant::now();
+                    let value = crate::remote_state_codec::compress_world_state(encoded);
+                    measurements.compressed_state_encoding_wall_seconds +=
+                        started.elapsed().as_secs_f64();
+                    value
+                }).as_deref().unwrap_or(encoded)
+            } else {
+                encoded
+            };
             let socket_started = Instant::now();
-            if peer.enqueue_state(encoded) {
+            if payload.len() != encoded.len() {
+                measurements.compressed_state_frames_queued += 1;
+                measurements.compressed_state_raw_bytes_queued += encoded.len() as u64;
+                measurements.compressed_state_wire_bytes_queued += payload.len() as u64;
+            }
+            if peer.enqueue_state(payload) {
                 measurements.states_superseded += 1;
             }
             if !peer.closed {
