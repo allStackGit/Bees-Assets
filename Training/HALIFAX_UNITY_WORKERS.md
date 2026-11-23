@@ -221,3 +221,39 @@ replicate the PPO optimizer across both GPUs or guarantee a throughput
 increase when rollout inference is CPU- or communication-bound. The
 native Hub still needs admission of these GPU claims before co-scheduling
 other projects on Halifax.
+
+## Run independent Bees jobs in the native Experiment Hub
+
+The first-class \`bees_native\` project uses the Hub's existing resource
+reservations and machine-owned Linux systemd supervisor. This mode starts
+independent Unity MA-POCA jobs and does **not** use the legacy centralized
+Bees manager or require its training queue to be running.
+
+After a Linux Unity dedicated-server worker has been compiled and the
+Python 3.10 ROCm/ML-Agents environment is installed, set the following
+on the enrolled Halifax **Hub agent service**:
+
+```text
+EXPERIMENT_HUB_WORKER_PROJECTS=tinybrains,courier,bees_native
+EXPERIMENT_HUB_BEES_ASSETS_ROOT=/absolute/path/to/Bees-Assets-checkout
+EXPERIMENT_HUB_BEES_PYTHON=/absolute/path/to/rocm-python310/bin/python
+EXPERIMENT_HUB_BEES_LINUX_WORKER=/absolute/path/to/Bees RL Training.x86_64
+EXPERIMENT_HUB_ENABLE_ROCM=1
+```
+
+Retain the agent's existing machine ID, enrollment identity, local root,
+GPU inventory and cgroup-v2 configuration. The local adapter independently
+checks the installed Unity worker, trainer YAML, ML-Agents entrypoint and
+Python. The Hub displays the approved worker/trainer SHA-256 pins in its
+Bees Unity (native training) Design tab. Create a configuration there,
+allocate up to 64 Unity environments within the assigned CPU count, and
+request either a CPU-only lease or **one exclusive GPU**. The same verified
+claim is enforced at native Start, with the approved physical ROCm PCI ID.
+Native Bees runs receive dedicated output directories, protected communicator
+port blocks and independent model/checkpoint hashes. Their reported PPO
+statistics are observational, not evaluation success.
+
+This first native mode is separate from the optional two-process legacy
+learner/local-actor mode above. It currently runs one learner with its local
+simulation processes; sharing a distributed rollout broker across machines
+and native Hub evaluation suite execution remain unfinished.
