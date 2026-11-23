@@ -513,7 +513,15 @@ def input_mission(run_path: Path, player_side: int,
                    scene.get("activate_hivemind") is False and
                    (scene.get("native_game_schema") == 1 or
                     scene.get("schema_version") == 35))
-        if ((scene.get("native_game_schema") != 1 and not prelude) or
+        # A genuine schema-35 Unity physical snapshot already contains
+        # the original Squad.IsHiveMindControlled, Squad.IsImmobile and
+        # OpponentId values. The canonical Rust importer binds these exact
+        # source authority fields to NativeHiveMindSquadSource. Native game
+        # scenes use the equivalent explicit squad.hivemind structure.
+        legacy_physical = scene.get("schema_version") == 35 and (
+            scene.get("native_game_schema") is None
+        )
+        if (not (scene.get("native_game_schema") == 1 or legacy_physical) or
                 not isinstance(hivemind, dict) or
                 hivemind.get("issue_source_commands") is not True or
                 hivemind.get("reconnect_game_id") is not None or
@@ -528,7 +536,21 @@ def input_mission(run_path: Path, player_side: int,
         player_owned, remote_owned = 0, 0
         opponent_ids = set()
         for squad in scene["squads"]:
-            source = squad.get("hivemind")
+            if legacy_physical:
+                identifier = squad.get("opponent_id_decimal")
+                if (not isinstance(identifier, str) or
+                        not identifier.isdecimal() or
+                        len(identifier) > 20 or
+                        int(identifier) > (1 << 64) - 1 or
+                        str(int(identifier)) != identifier):
+                    raise ValueError("original HiveMind Squad opponent ID was not captured")
+                source = {
+                    "opponent_id": int(identifier),
+                    "hivemind_controlled": squad.get("is_hivemind_controlled"),
+                    "immobile": squad.get("is_immobile"),
+                }
+            else:
+                source = squad.get("hivemind")
             if (not isinstance(source, dict) or
                     type(source.get("opponent_id")) is not int or
                     source["opponent_id"] <= 0 or
