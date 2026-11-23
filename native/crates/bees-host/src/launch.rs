@@ -6647,6 +6647,22 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
         settings.listen.chars().any(char::is_control) {
         return Err(invalid("native multiplayer host requires a private-network listen address").into());
     }
+    // Validate the exact DER identity and owner-private key before starting
+    // any new campaign mission or archiving a new generated battle. The
+    // child subsequently loads the same files under its normal TLS rules.
+    match (&settings.tls_certificate_der, &settings.tls_private_key_der) {
+        (Some(cert), Some(key)) => {
+            let _ = bees_host::remote_tls::server_tls_from_files(
+                &save_root.join(cert), &save_root.join(key),
+            )?;
+        }
+        (None, None) => {
+            let _ = bees_host::remote_tls::server_tls_from_environment()?;
+        }
+        _ => return Err(invalid(
+            "native multiplayer hosting requires both TLS certificate and private key",
+        ).into()),
+    }
     let custom_fleet = settings.game_id == fleet_builder::GAME_ID;
     // The original ten-stage Challenge is a career, not a stateless
     // quick battle or trained-policy registration. The same multiplayer
