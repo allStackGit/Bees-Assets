@@ -521,10 +521,15 @@ def rollout_worker_environment(
                 env.pop(key, None)
             env[name] = slots[index % leased_gpu_count]
         else:
-            # A Linux AMD device-cgroup lease may expose only verified
-            # render nodes without any inherited mask. On Windows the CUDA
-            # runtime is used for native NVIDIA GPU workers.
-            name = "CUDA_VISIBLE_DEVICES" if os.name == "nt" else "ROCR_VISIBLE_DEVICES"
+            # A Linux ROCm device-cgroup lease may expose only verified
+            # render nodes without an inherited mask; /dev/kfd identifies
+            # the actual HSA runtime interface. Linux CUDA and Windows
+            # CUDA hosts use the CUDA visibility API instead. This chooses
+            # a runtime filter, not ownership: the supervisor's exclusive
+            # lease and post-forward hardware identity remain mandatory.
+            name = ("ROCR_VISIBLE_DEVICES"
+                    if os.name != "nt" and Path("/dev/kfd").exists()
+                    else "CUDA_VISIBLE_DEVICES")
             env[name] = str(index % leased_gpu_count)
         env.pop("GPU_DEVICE_ORDINAL", None)
     # ROCm PyTorch intentionally uses the CUDA device API as well.
