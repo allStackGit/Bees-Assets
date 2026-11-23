@@ -432,12 +432,13 @@ def gather_training_columns_once(columns, index_groups, *,
     # original concatenation path and identical index order.
     contiguous=None
     head=index_groups[0]
-    if total and head.is_contiguous():
+    if total and head.is_contiguous() and head.stride(0)==1:
         storage=head.untyped_storage().data_ptr()
         offset=head.storage_offset()
         position=offset
         for group in index_groups:
-            if (not group.is_contiguous() or group.dtype!=head.dtype or
+            if (not group.is_contiguous() or group.stride(0)!=1 or
+                    group.dtype!=head.dtype or
                     group.untyped_storage().data_ptr()!=storage or
                     group.storage_offset()!=position):
                 break
