@@ -1414,7 +1414,12 @@ impl BattleCatalog {
         let purchase = CampaignPurchase {
             campaign_id: campaign_id.to_owned(), player_side, ship,
         };
-        commit_campaign_edit(output, "build-", "purchase.json", &purchase)?;
+        if progress.sequenced_edit_count > 0 {
+            commit_sequenced_edit(output, campaign_id,
+                CampaignSequencedEdit::Purchase(purchase))?;
+        } else {
+            commit_campaign_edit(output, "build-", "purchase.json", &purchase)?;
+        }
         Ok(ship)
     }
 
@@ -1441,13 +1446,18 @@ impl BattleCatalog {
         {
             return Err(invalid("transfer needs a live purchased hull and a different owned SavedSquad"));
         }
-        commit_campaign_edit(output, "transfer-", "transfer.json", &CampaignTransfer {
+        let receipt = CampaignTransfer {
             campaign_id: campaign_id.to_owned(),
-            player_side: side,
-            fleet_ship_id,
+            player_side: side, fleet_ship_id,
             from_saved_squad_id: ship.saved_squad_id,
             to_saved_squad_id,
-        })?;
+        };
+        if progress.sequenced_edit_count > 0 {
+            commit_sequenced_edit(output, campaign_id,
+                CampaignSequencedEdit::Transfer(receipt))?;
+        } else {
+            commit_campaign_edit(output, "transfer-", "transfer.json", &receipt)?;
+        }
         Ok(NativePurchasedShip { saved_squad_id: to_saved_squad_id, ..ship })
     }
 
@@ -1470,11 +1480,16 @@ impl BattleCatalog {
         {
             return Err(invalid("squad rename needs a live, owned SavedSquad and printable name"));
         }
-        commit_campaign_edit(output, "squad-name-", "name.json",
-            &CampaignSquadNameEdit {
-                campaign_id: campaign_id.to_owned(),
-                side, saved_squad_id, name: name.to_owned(),
-            })
+        let edit = CampaignSquadNameEdit {
+            campaign_id: campaign_id.to_owned(), side,
+            saved_squad_id, name: name.to_owned(),
+        };
+        if progress.sequenced_edit_count > 0 {
+            commit_sequenced_edit(output, campaign_id,
+                CampaignSequencedEdit::SquadName(edit))
+        } else {
+            commit_campaign_edit(output, "squad-name-", "name.json", &edit)
+        }
     }
 
     /// Record source-verified initial ownership without moving the ship.
@@ -1498,13 +1513,17 @@ impl BattleCatalog {
         {
             return Err(invalid("original FleetShip needs a new, live, source-owned identity"));
         }
-        commit_campaign_edit(output, "squad-edit-", "assignment.json",
-            &CampaignAuthoredAssignment {
-                campaign_id: campaign_id.to_owned(), player_side: side,
-                fleet_ship_id, from_saved_squad_id: source_squad_id,
-                to_saved_squad_id: source_squad_id,
-                ship_type: Some(ship_type),
-            })
+        let edit = CampaignAuthoredAssignment {
+            campaign_id: campaign_id.to_owned(), player_side: side,
+            fleet_ship_id, from_saved_squad_id: source_squad_id,
+            to_saved_squad_id: source_squad_id, ship_type: Some(ship_type),
+        };
+        if progress.sequenced_edit_count > 0 {
+            commit_sequenced_edit(output, campaign_id,
+                CampaignSequencedEdit::AuthoredAssignment(edit))
+        } else {
+            commit_campaign_edit(output, "squad-edit-", "assignment.json", &edit)
+        }
     }
 
     /// One immutable player FleetShip rename. No combat, ownership,
@@ -1523,11 +1542,16 @@ impl BattleCatalog {
         {
             return Err(invalid("fleet rename needs a live owned FleetShip and printable name"));
         }
-        commit_campaign_edit(output, "fleet-name-", "name.json",
-            &CampaignFleetShipNameEdit {
-                campaign_id: campaign_id.to_owned(),
-                side, fleet_ship_id, name: name.to_owned(),
-            })
+        let edit = CampaignFleetShipNameEdit {
+            campaign_id: campaign_id.to_owned(), side,
+            fleet_ship_id, name: name.to_owned(),
+        };
+        if progress.sequenced_edit_count > 0 {
+            commit_sequenced_edit(output, campaign_id,
+                CampaignSequencedEdit::FleetName(edit))
+        } else {
+            commit_campaign_edit(output, "fleet-name-", "name.json", &edit)
+        }
     }
 
     /// Append a player-owned SavedSquad without borrowing a transient
@@ -1553,10 +1577,15 @@ impl BattleCatalog {
             saved_squad_id: new_id, template_saved_squad_id: template_id,
             side,
         };
-        commit_campaign_edit(output, "squad-", "squad.json",
-            &CampaignSquadCreation {
-                campaign_id: campaign_id.to_owned(), squad,
-            })?;
+        let edit = CampaignSquadCreation {
+            campaign_id: campaign_id.to_owned(), squad,
+        };
+        if progress.sequenced_edit_count > 0 {
+            commit_sequenced_edit(output, campaign_id,
+                CampaignSequencedEdit::Create(edit))?;
+        } else {
+            commit_campaign_edit(output, "squad-", "squad.json", &edit)?;
+        }
         Ok(squad)
     }
 
@@ -1573,10 +1602,18 @@ impl BattleCatalog {
         if !progress.can_commit_saved_squad_retirement(side, saved_squad_id) {
             return Err(invalid("retired SavedSquad must be created, unreferenced and have all ships in reserve"));
         }
-        commit_campaign_edit(output, "squad-retire-", "retirement.json",
-            &CampaignSquadRetirement {
-                campaign_id: campaign_id.to_owned(), side, saved_squad_id,
-            })
+        let edit = CampaignSquadRetirement {
+            campaign_id: campaign_id.to_owned(), side, saved_squad_id,
+        };
+        if progress.sequenced_edit_count > 0 {
+            commit_sequenced_edit(output, campaign_id,
+                CampaignSequencedEdit::Retire(CampaignSquadRetirementWithReserve {
+                    campaign_id: campaign_id.to_owned(), side, saved_squad_id,
+                    purchased_fleet_ids: Vec::new(), authored_fleet_ids: Vec::new(),
+                }))
+        } else {
+            commit_campaign_edit(output, "squad-retire-", "retirement.json", &edit)
+        }
     }
 
     /// Retire a created squad and return all of its current FleetShips to
@@ -1605,12 +1642,17 @@ impl BattleCatalog {
             authored_fleet_ids.iter().any(|id| !authored.contains(id)) {
             return Err(invalid("SavedSquad reserve transfers differ from its current FleetShips"));
         }
-        commit_campaign_edit(output, "squad-reserve-retire-", "retirement.json",
-            &CampaignSquadRetirementWithReserve {
-                campaign_id: campaign_id.to_owned(), side, saved_squad_id,
-                purchased_fleet_ids: purchased_fleet_ids.to_vec(),
-                authored_fleet_ids: authored_fleet_ids.to_vec(),
-            })
+        let edit = CampaignSquadRetirementWithReserve {
+            campaign_id: campaign_id.to_owned(), side, saved_squad_id,
+            purchased_fleet_ids: purchased_fleet_ids.to_vec(),
+            authored_fleet_ids: authored_fleet_ids.to_vec(),
+        };
+        if progress.sequenced_edit_count > 0 {
+            commit_sequenced_edit(output, campaign_id,
+                CampaignSequencedEdit::Retire(edit))
+        } else {
+            commit_campaign_edit(output, "squad-reserve-retire-", "retirement.json", &edit)
+        }
     }
 
     /// Publish an authenticated, zero-cost SavedSquad tactics change.
@@ -1636,9 +1678,15 @@ impl BattleCatalog {
         {
             return Err(invalid("invalid or unchanged SavedSquad tactics"));
         }
-        commit_campaign_edit(output, "tactics-", "tactics.json", &CampaignTacticsEdit {
+        let edit = CampaignTacticsEdit {
             campaign_id: campaign_id.to_owned(), tactics: entry,
-        })
+        };
+        if progress.sequenced_edit_count > 0 {
+            commit_sequenced_edit(output, campaign_id,
+                CampaignSequencedEdit::Tactics(edit))
+        } else {
+            commit_campaign_edit(output, "tactics-", "tactics.json", &edit)
+        }
     }
 
     /// Commit an authored (pre-purchase) FleetShip reassignment after
@@ -1670,15 +1718,18 @@ impl BattleCatalog {
         {
             return Err(invalid("invalid, unavailable or stale authored FleetShip assignment"));
         }
-        commit_campaign_edit(output, "squad-edit-", "assignment.json",
-            &CampaignAuthoredAssignment {
-                campaign_id: campaign_id.to_owned(),
-                player_side: side, fleet_ship_id,
-                from_saved_squad_id: from_squad,
-                to_saved_squad_id: to_squad,
-                ship_type: source_ship_type,
-            },
-        )
+        let edit = CampaignAuthoredAssignment {
+            campaign_id: campaign_id.to_owned(),
+            player_side: side, fleet_ship_id,
+            from_saved_squad_id: from_squad,
+            to_saved_squad_id: to_squad, ship_type: source_ship_type,
+        };
+        if progress.sequenced_edit_count > 0 {
+            commit_sequenced_edit(output, campaign_id,
+                CampaignSequencedEdit::AuthoredAssignment(edit))
+        } else {
+            commit_campaign_edit(output, "squad-edit-", "assignment.json", &edit)
+        }
     }
 
     /// Apply one fully published, chronologically ordered career edit.
