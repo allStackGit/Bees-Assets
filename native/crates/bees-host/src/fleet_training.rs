@@ -1386,6 +1386,9 @@ fn choose_historical_checkpoint(job: &Path) -> Result<(), Box<dyn Error>> {
         }
     }
     choices.sort_unstable_by_key(|(round, attempt, _, _)| (*round, *attempt));
+    if choices.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+        return Err(invalid("multiple committed historical attempts claim the same optimizer round").into());
+    }
     if choices.is_empty() {
         println!("No committed historical optimizer rounds can be evaluated.");
         return Ok(());
@@ -1445,7 +1448,21 @@ fn evaluate_training_checkpoint(
                 .is_none_or(|file| file != "round-result.json") {
                 return Err(invalid("historical checkpoint is outside its native session").into());
             }
-            let selected: Value = serde_json::from_slice(&fs::read(&receipt)?)?;
+            let mut selected: Value = serde_json::from_slice(&fs::read(&receipt)?)?;
+            let directory_name = receipt.parent()
+                .and_then(|directory| directory.file_name())
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| invalid("historical round directory has no name"))?;
+            let number = directory_name.strip_prefix("round-")
+                .and_then(|rest| rest.split_once("-attempt-"))
+                .and_then(|(round, attempt)|
+                    (round.len() == 5 && attempt.len() == 3 &&
+                     round.bytes().all(|byte| byte.is_ascii_digit()) &&
+                     attempt.bytes().all(|byte| byte.is_ascii_digit()))
+                        .then_some(round))
+                .ok_or_else(|| invalid("invalid historical optimizer round directory identity"))?
+                .parse::<u64>()?;
+            selected["round"] = json!(number);
             if selected["learner_metrics"]["learner_slot"].as_u64() !=
                 config["learner_slot"].as_u64() {
                 return Err(invalid("historical model belongs to another learner slot").into());
