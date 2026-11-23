@@ -7341,6 +7341,7 @@ fn run_campaign_game_menu(
     catalog_path: &Path, output_root: &Path, hosted: bool,
     bee_queen_unlocked: bool,
 ) -> Result<Option<(String, i32)>, Box<dyn Error>> {
+    use bees_host::game_audio::NativeUiFeedback;
     use bees_host::presentation::{
         BattleMenuRow, NativeBattleMenuAction, NativeShopMenuRow,
         NativeTransferMenuRow, NativeCreateSquadMenuRow,
@@ -7360,6 +7361,8 @@ fn run_campaign_game_menu(
     let mut selected = 0;
     let mut number = 0_u64;
     let mut launch_failed = false;
+    let mut feedback = None;
+    let audio_preferences = default_native_user_save_root(root).join("audio-settings.json");
     // Scenario cap values are immutable authored Level options. Cache the
     // parsed cap once per route/config; progress can redirect a mission to
     // a different physical Level after the preceding result.
@@ -7807,7 +7810,9 @@ fn run_campaign_game_menu(
                     total_mined_tsv: counts.player_minerals_mined,
                     match_history_complete,
                 }
-            })?
+            },
+            feedback.take().or_else(|| launch_failed.then_some(NativeUiFeedback::Error))
+                .map(|cue| (audio_preferences.as_path(), cue)))?
             else { break };
         let index = match action {
             NativeBattleMenuAction::Play(index) => index,
@@ -7861,6 +7866,7 @@ fn run_campaign_game_menu(
                 );
                 progress = catalog.load_progress(output_root)?;
                 launch_failed = result.is_err();
+                feedback = result.is_ok().then_some(NativeUiFeedback::SquadDeleted);
                 if let Err(error) = result {
                     eprintln!("Could not delete SavedSquad #{saved_squad_id}: {error}");
                 }
@@ -7881,6 +7887,7 @@ fn run_campaign_game_menu(
                 );
                 progress = catalog.load_progress(output_root)?;
                 launch_failed = result.is_err();
+                feedback = result.is_ok().then_some(NativeUiFeedback::Saved);
                 if let Err(error) = result {
                     eprintln!("Could not save tactics for Squad #{saved_squad_id}: {error}");
                 }
@@ -10637,14 +10644,14 @@ fn run_battle(
                             ))));
                     match result {
                         Ok(path)=>{
-                            client.report_move("Named Level saved to FreePlay library");
+                            client.report_level_save(true);
                             println!("{}",json!({
                                 "kind":"native_freeplay_level_saved",
                                 "name":name,"manifest":path,
                             }));
                         },
                         Err(error)=>{
-                            client.report_move("FreePlay level could not be saved");
+                            client.report_level_save(false);
                             eprintln!("FreePlay Save Level: {error}");
                         },
                     }

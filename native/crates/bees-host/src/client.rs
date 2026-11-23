@@ -521,6 +521,17 @@ impl NativeClient {
 
     pub fn report_move(&mut self, feedback: &'static str) { self.input_feedback = feedback; }
 
+    pub fn report_level_save(&mut self, saved: bool) {
+        use crate::game_audio::NativeUiFeedback;
+        let (message, cue) = if saved {
+            ("Named Level saved to FreePlay library", NativeUiFeedback::Saved)
+        } else {
+            ("FreePlay level could not be saved", NativeUiFeedback::Error)
+        };
+        self.report_move(message);
+        self.audio.play_ui_feedback(cue);
+    }
+
     pub fn show_result(&mut self, controls: NativeResultControls) {
         self.result_controls = Some(controls);
         self.match_summary_visible = true;

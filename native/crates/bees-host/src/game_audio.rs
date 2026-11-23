@@ -46,11 +46,11 @@ enum Effect {
     BigLaser, BigLaserAlt, BeamCannon, FlagshipLaser, QueenLaser,
     RocketLaunch, StrikerBomb, Explosion, SmallExplosion, MediumExplosion,
     LargeExplosion, HugeExplosion, Warp, WarpGateStarting, WarpGateLoop,
-    Button, FireBargeClick, Intercom, LevelIntro,
+    Button, FireBargeClick, Intercom, LevelIntro, Save, DeleteSquad, Error,
 }
 
 impl Effect {
-    const ALL: [Self; 23] = [
+    const ALL: [Self; 26] = [
         Self::LightLaser, Self::LightLaserAlt,
         Self::SmallLaser, Self::SmallLaserAlt,
         Self::BigLaser, Self::BigLaserAlt,
@@ -59,6 +59,7 @@ impl Effect {
         Self::MediumExplosion, Self::LargeExplosion, Self::HugeExplosion,
         Self::Warp, Self::WarpGateStarting, Self::WarpGateLoop,
         Self::Button, Self::FireBargeClick, Self::Intercom, Self::LevelIntro,
+        Self::Save, Self::DeleteSquad, Self::Error,
     ];
 
     fn file(self) -> &'static str {
@@ -86,6 +87,9 @@ impl Effect {
             Self::FireBargeClick => "Fire Barge Detonation Click.mp3",
             Self::Intercom => "Intercom Notification Sound Effect.mp3",
             Self::LevelIntro => "Engine Hum Sound Effect.mp3",
+            Self::Save => "Save Sound Effect.mp3",
+            Self::DeleteSquad => "Delete Squad Sound Effect.mp3",
+            Self::Error => "Error Sound Effect.mp3",
         }
     }
 
@@ -203,11 +207,18 @@ pub struct NativeAudioMeasurements {
     pub effects_level: f32,
 }
 
+#[derive(Clone, Copy)]
+pub enum NativeUiFeedback {
+    Saved,
+    SquadDeleted,
+    Error,
+}
+
 pub struct NativeGameAudio {
     handle: Option<OutputStreamHandle>,
     root: Option<PathBuf>,
     effects: HashMap<Effect, Arc<[u8]>>,
-    voices: Vec<Sink>,
+    voices: Vec<(Sink, f32)>,
     music: Vec<Sink>,
     level_intro_active: bool,
     level_intro_voice: Option<Sink>,
@@ -380,7 +391,7 @@ impl NativeGameAudio {
             voice.set_volume(self.level_intro_volume());
         }
         for sink in &self.music { sink.set_volume(self.music_volume()); }
-        for sink in &self.voices { sink.set_volume(self.effect_volume()); }
+        for (sink, gain) in &self.voices { sink.set_volume(self.effect_volume() * *gain); }
         for sink in self.warp_gate_openings.values()
             .chain(self.warp_gate_loops.values()) {
             sink.set_volume(self.effect_volume());
@@ -579,7 +590,7 @@ impl NativeGameAudio {
     pub fn reset_remote_session(&mut self) {
         self.set_level_intro_ambience(false);
         self.reset_warp_gate_audio();
-        for sink in self.voices.drain(..) { sink.stop(); }
+        for (sink, _) in self.voices.drain(..) { sink.stop(); }
         self.current_episode = None;
         self.last_tick = None;
         self.seen_projectiles.clear();
@@ -589,8 +600,17 @@ impl NativeGameAudio {
     /// Authentic game UI click; completely separate from gameplay
     /// commands and the durable player-input trace.
     pub fn click_ui(&mut self) {
-        self.voices.retain(|sink| !sink.empty());
+        self.voices.retain(|(sink, _)| !sink.empty());
         self.play(Effect::Button);
+    }
+
+    pub fn play_ui_feedback(&mut self, feedback: NativeUiFeedback) {
+        self.voices.retain(|(sink, _)| !sink.empty());
+        self.play(match feedback {
+            NativeUiFeedback::Saved => Effect::Save,
+            NativeUiFeedback::SquadDeleted => Effect::DeleteSquad,
+            NativeUiFeedback::Error => Effect::Error,
+        });
     }
 
     /// Source SquadActionBox.Detonate plays this cue once for every
@@ -598,12 +618,12 @@ impl NativeGameAudio {
     /// It is a local user-command sound, never a fabricated CombatEvent
     /// or a headless training cost. Bound the burst for large selections.
     pub fn campaign_dialogue_presented(&mut self) {
-        self.voices.retain(|sink| !sink.empty());
+        self.voices.retain(|(sink, _)| !sink.empty());
         self.play(Effect::Intercom);
     }
 
     pub fn click_fire_barge_detonation(&mut self, count: usize) {
-        self.voices.retain(|sink| !sink.empty());
+        self.voices.retain(|(sink, _)| !sink.empty());
         self.measurements.sound_effects_dropped +=
             count.saturating_sub(MAX_NEW_EFFECTS_PER_FRAME) as u64;
         for _ in 0..count.min(MAX_NEW_EFFECTS_PER_FRAME) {
@@ -617,7 +637,8 @@ impl NativeGameAudio {
         // paused combat soundtrack. Dialogue and menu clicks remain
         // audible while a briefing blocks physical gameplay ticks.
         if self.muted || (self.paused &&
-            !matches!(effect, Effect::Button | Effect::Intercom))
+            !matches!(effect, Effect::Button | Effect::Intercom |
+                Effect::Save | Effect::DeleteSquad | Effect::Error))
         {
             return;
         }
@@ -634,9 +655,12 @@ impl NativeGameAudio {
             self.measurements.sound_effects_dropped += 1;
             return;
         };
-        sink.set_volume(self.effect_volume());
+        let gain = if matches!(effect, Effect::Save | Effect::DeleteSquad) {
+            0.5625 // Source UIAudioController.ReducedNotificationVolume.
+        } else { 1.0 };
+        sink.set_volume(self.effect_volume() * gain);
         sink.append(source);
-        self.voices.push(sink);
+        self.voices.push((sink, gain));
         self.measurements.sound_effects_started += 1;
     }
 
@@ -764,7 +788,7 @@ impl NativeGameAudio {
                 tick.saturating_sub(previous).saturating_sub(1);
         }
         self.last_tick = Some(tick);
-        self.voices.retain(|sink| !sink.empty());
+        self.voices.retain(|(sink, _)| !sink.empty());
         let mut budget = MAX_NEW_EFFECTS_PER_FRAME;
         // At most eight sounds can be admitted per frame: keep the
         // mixing queue on the stack, including during large battles.
@@ -890,7 +914,7 @@ impl NativeGameAudio {
                 tick.saturating_sub(previous).saturating_sub(1);
         }
         self.last_tick = Some(tick);
-        self.voices.retain(|sink| !sink.empty());
+        self.voices.retain(|(sink, _)| !sink.empty());
         let mut budget = MAX_NEW_EFFECTS_PER_FRAME;
         let mut new_effects = [None; MAX_NEW_EFFECTS_PER_FRAME];
         let mut new_effects_len = 0;
