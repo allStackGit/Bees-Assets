@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections import deque
 from contextlib import contextmanager
+from functools import lru_cache
 from math import isfinite
 from numbers import Integral
 from concurrent.futures import ThreadPoolExecutor, wait
@@ -201,6 +202,26 @@ def pack_immutable_gpu_scalar_columns(columns):
     return torch.stack(tuple(columns),dim=1)
 
 
+@lru_cache(maxsize=32)
+def _gpu_segment_backward_supported(device, dtype):
+    """Check forward and autograd support once per GPU/dtype without learner state."""
+    if not hasattr(torch,'segment_reduce'):
+        return False
+    try:
+        with torch.enable_grad():
+            x = torch.tensor([[1.,2.],[3.,4.],[5.,6.]],
+                             device=device,dtype=dtype,requires_grad=True)
+            lengths = torch.tensor([2,0,1],device=device,dtype=torch.int64)
+            y = torch.segment_reduce(x,reduce='sum',lengths=lengths,axis=0)
+            grad = torch.autograd.grad(y.sum(),x)[0]
+            expected = x.new_tensor([[4.,6.],[0.,0.],[5.,6.]])
+            return (torch.allclose(y,expected,rtol=1e-4,atol=1e-4)
+                    and torch.allclose(grad,torch.ones_like(x),
+                                       rtol=1e-4,atol=1e-4))
+    except (RuntimeError,NotImplementedError,TypeError,AttributeError,ValueError):
+        return False
+
+
 def sum_consecutive_training_segments(terms, counts, owner, *,
                                       denominator_dtype, min_parallel_rows=2048):
     """Reduce grouped training contributions without scatter atomics.
@@ -221,8 +242,8 @@ def sum_consecutive_training_segments(terms, counts, owner, *,
         raise ValueError("Training segment sizes do not match ordered contributions")
     use_segment = (terms.device.type=='cuda' and
                    len(terms)>=min_parallel_rows and
-                   len(counts)>1 and
-                   hasattr(torch,'segment_reduce'))
+                   _gpu_segment_backward_supported(
+                       terms.device,terms.dtype))
     if use_segment:
         try:
             lengths = torch.as_tensor(
