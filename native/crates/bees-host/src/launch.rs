@@ -1770,6 +1770,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees transfer <catalog.json> --output-dir <battle-runs> --ship <fleet-id> --squad <saved-id>
        bees transfer-batch <catalog.json> --output-dir <battle-runs> --side <1|2> --squad <saved-id|0> --ships <id,id,...>
        bees reassign <catalog.json> --output-dir <battle-runs> --side <n> --ship <fleet-id> --from <saved-id> --squad <saved-id>
+       bees reassign-batch <catalog.json> --output-dir <battle-runs> --side <1|2> --from <saved-id> --squad <saved-id|0> --ships <id,id,...>
        bees squad-create <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
        bees squad-duplicate <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
        bees squad-delete <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id>
@@ -2542,6 +2543,42 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             side, saved_squad_id, shooting_strategy_id, should_chase, cease_fire,
             match_speed, color_setting, formation, placements,
         }, false);
+    }
+    if first == "reassign-batch" {
+        let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--side") {
+            return Err(invalid(USAGE).into());
+        }
+        let side: i32 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--from") {
+            return Err(invalid(USAGE).into());
+        }
+        let from: i64 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--squad") {
+            return Err(invalid(USAGE).into());
+        }
+        let destination: i64 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--ships") {
+            return Err(invalid(USAGE).into());
+        }
+        let ships = args.next().ok_or_else(|| invalid(USAGE))?;
+        let ships = ships.to_string_lossy();
+        if ships.is_empty() || ships.len() > 32768 * 20 ||
+            args.next().is_some() {
+            return Err(invalid(USAGE).into());
+        }
+        let ids = ships.split(',').map(str::parse::<i64>)
+            .collect::<Result<Vec<_>, _>>()?;
+        return run_reassign_authored_ships(
+            &catalog, &output, side, &ids, from, destination,
+        );
     }
     if first == "reassign" {
         let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
@@ -4322,6 +4359,72 @@ fn original_fleet_source_squad(
         }
     }
     Ok(source_identity)
+}
+
+/// Reassign several original authored hulls through one verified campaign
+/// edit, including their source identity on the first durable claim.
+fn run_reassign_authored_ships(
+    catalog_path: &Path, output_root: &Path, side: i32,
+    fleet_ship_ids: &[i64], from_squad: i64, to_squad: i64,
+) -> Result<(), Box<dyn Error>> {
+    if !matches!(side, 1 | 2) || from_squad < 0 || to_squad < 0 ||
+        from_squad == to_squad || fleet_ship_ids.is_empty() ||
+        fleet_ship_ids.len() > 32768 {
+        return Err(invalid("invalid native original-fleet batch request").into());
+    }
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: battle_catalog::BattleCatalog =
+        serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
+    let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
+    let progress = catalog.load_progress(output_root)?;
+    let root = catalog_path.parent()
+        .ok_or_else(|| invalid("missing native campaign source root"))?;
+    let lost = progress.lost_player_fleet_ids(side)?;
+    let mut seen = HashSet::with_capacity(fleet_ship_ids.len());
+    let mut projected = progress.authored_roster_for_side(side);
+    let mut moves = Vec::with_capacity(fleet_ship_ids.len());
+    for &id in fleet_ship_ids {
+        if id <= 0 || !seen.insert(id) || lost.contains(&id) ||
+            progress.purchased_ship(id).is_some() ||
+            progress.authored_current_squad(id)
+                .is_some_and(|current| current != from_squad)
+        {
+            return Err(invalid("original fleet batch contains lost or unowned hulls").into());
+        }
+        let source_type = if progress.authored_current_squad(id).is_none() {
+            let (source_squad, kind) = original_fleet_source_squad(
+                &catalog, &progress, root, side, id, true,
+            )?.ok_or_else(|| invalid("original hull missing from native source scene"))?;
+            if source_squad != from_squad {
+                return Err(invalid("original hull belongs to another source squad").into());
+            }
+            Some(kind)
+        } else { None };
+        if let Some(row) = projected.iter_mut().find(|row| row.0 == id) {
+            row.2 = to_squad;
+        } else {
+            projected.push((id, from_squad, to_squad));
+        }
+        moves.push((id, from_squad, to_squad, source_type));
+    }
+    preflight_native_fleet_edit(
+        &catalog, root, &progress, side,
+        &progress.purchases_for_side(side), &projected, to_squad,
+    )?;
+    let count = catalog.reassign_authored_ships(&progress, output_root, side, &moves)?;
+    println!("{}", json!({
+        "kind": "native_campaign_original_fleet_batch_reassigned",
+        "campaign_id": catalog.campaign_id,
+        "player_side": side,
+        "fleet_ship_ids": fleet_ship_ids,
+        "from_saved_squad_id": from_squad,
+        "to_saved_squad_id": to_squad,
+        "ships_reassigned": count,
+        "cost_tsv": 0,
+    }));
+    Ok(())
 }
 
 fn run_reassign_authored_ship(
