@@ -27,6 +27,58 @@ from carrier_family import (
 )
 
 
+# Source CampaignMissionCatalog.cs is the original persisted level index.
+# A fully original campaign must retain every scenario in this order. The
+# existing native Level/story adapters remain the only gameplay path.
+ORIGINAL_CAMPAIGN_LEVELS = (
+    ("Anomaly", "pluto_anomaly"),
+    ("Reinforcements", "pluto_reinforcements"),
+    ("Pushback", "pluto_pushback"),
+    ("Bluer Pastures", "pluto_bluer_pastures"),
+    ("Seize the Means", "neptune_seize_means"),
+    ("Of Production", "neptune_of_production"),
+    ("Pressing Forward", "neptune_pressing_forward"),
+    ("Minesweeper", "titania_minesweeper"),
+    ("Beenoculars", "titania_beenoculars"),
+    ("On the Offensive", "uranus_on_the_offensive"),
+    ("On the Defensive", "uranus_on_the_defensive"),
+    ("A New Threat", "uranus_new_threat"),
+)
+
+
+def bind_original_campaign(args):
+    """Select all source missions, not a reduced handcrafted native story.
+
+    Validate against the living Unity mission catalog before authoring.
+    This is only source selection; BattleCatalog still validates each
+    original mission, all branch variants and physical FleetShip lineage.
+    """
+    source = Path(__file__).resolve().parents[2] / (
+        "Scripts/Levels/CampaignMissionCatalog.cs"
+    )
+    definitions = [
+        (int(index), name) for index, name in re.findall(
+            r'new MissionDefinition\\(\\s*(\\d+)\\s*,\\s*"([^"]+)"',
+            source.read_text(encoding="utf-8"),
+        )
+    ]
+    expected = list(enumerate(name for name, _ in ORIGINAL_CAMPAIGN_LEVELS))
+    if definitions != expected:
+        raise ValueError("the original persisted CampaignMissionCatalog changed")
+    if len(args.mission) != len(ORIGINAL_CAMPAIGN_LEVELS) or args.player_side != 2:
+        raise ValueError(
+            "the complete original campaign requires exactly twelve real "
+            "native Human-side mission runs, in source level order"
+        )
+    expected_stories = [(index, story) for index, (_, story)
+                        in enumerate(ORIGINAL_CAMPAIGN_LEVELS, 1)]
+    if args.mission_story and args.mission_story != expected_stories:
+        raise ValueError(
+            "--original-campaign cannot omit, reorder or rename an original mission story"
+        )
+    args.mission_story = expected_stories
+
+
 def read(path: Path) -> dict:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -2571,6 +2623,8 @@ def main() -> None:
                         help="new directory for a self-contained native campaign catalog")
     parser.add_argument("--mission", type=Path, action="append", required=True,
                         help="authored game-only battle.run.json; repeat in mission order")
+    parser.add_argument("--original-campaign", action="store_true",
+                        help="bind all 12 original persisted campaign missions and their native story rules in canonical source order")
     parser.add_argument("--player-side", type=int, choices=(1, 2), default=1)
     parser.add_argument("--title", default="Native Fleet Campaign")
     parser.add_argument("--persist-enemy-losses", action="store_true",
@@ -2632,6 +2686,11 @@ def main() -> None:
                         default=[], metavar="MISSION:NEW_SQUAD:TEMPLATE_SQUAD",
                         help="one-time victory SavedSquad; ships may be awarded into this ID in the same mission")
     args = parser.parse_args()
+    if args.original_campaign:
+        try:
+            bind_original_campaign(args)
+        except (ValueError, OSError) as error:
+            parser.error(str(error))
     if (any(mission > len(args.mission) for mission, _ in args.mission_story) or
             len({mission for mission, _ in args.mission_story}) != len(args.mission_story)):
         parser.error("--mission-story needs distinct existing mission indices")
