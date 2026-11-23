@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 /// Titania II's authored defended base, player deployment focus, and camera.
 pub const TITANIA_II_CENTER: Vec2 = Vec2::new(-32.0, 55.0);
 
+fn is_false(value: &bool) -> bool { !value }
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum CampaignDialogueSpec {
@@ -40,7 +42,11 @@ pub enum CampaignDialogueSpec {
     /// real military victory; the native career ledger owns those grants.
     NeptuneSeizeMeans { player_side: i32 },
     /// Neptune II's real mining withdrawal and escalating source waves.
-    NeptuneProduction { player_side: i32 },
+    NeptuneProduction {
+        player_side: i32,
+        #[serde(default, skip_serializing_if = "is_false")]
+        automatic_withdrawal: bool,
+    },
     PlutoEvacuation {
         player_side: i32, protected_ship_id: i64,
         /// The source Pluto IV officer roll call depends on actually
@@ -54,6 +60,8 @@ pub enum CampaignDialogueSpec {
     /// the fleet at any point using the genuine physical retreat zone.
     UranusDefensive {
         player_side: i32, has_cruiser: bool, met_scientists: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        automatic_withdrawal: bool,
     },
     /// Uranus I source encounter: only the named Bumblebee can trigger
     /// discovery, damage warning and follow-up casualty dialogue.
@@ -61,6 +69,17 @@ pub enum CampaignDialogueSpec {
 }
 
 impl CampaignDialogueSpec {
+    /// Older native runs record an explicit retreat order. Keep those
+    /// runs replayable while matching the briefing-created source zones
+    /// for newly authored Neptune II and Uranus II campaigns.
+    pub fn withdrawal_requires_player_activation(self) -> Option<bool> {
+        match self {
+            Self::NeptuneProduction { automatic_withdrawal, .. } |
+            Self::UranusDefensive { automatic_withdrawal, .. } => Some(!automatic_withdrawal),
+            _ => None,
+        }
+    }
+
     pub fn player_side(self) -> i32 {
         match self {
             Self::PlutoAnomaly { player_side, .. } |
@@ -70,7 +89,7 @@ impl CampaignDialogueSpec {
             Self::PlutoPushback { player_side, .. } |
             Self::NeptunePressingForward { player_side, .. } |
             Self::NeptuneSeizeMeans { player_side } |
-            Self::NeptuneProduction { player_side } |
+            Self::NeptuneProduction { player_side, .. } |
             Self::PlutoEvacuation { player_side, .. } |
             Self::UranusNewThreat { player_side, .. } |
             Self::UranusDefensive { player_side, .. } |

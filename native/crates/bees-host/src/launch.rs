@@ -9500,12 +9500,13 @@ fn run_battle(
                     Some(CampaignDialogueSpec::UranusNewThreat {
                         player_side, barges, has_cruiser,
                     }),
-                Some(CampaignDialogueSpec::UranusDefensive { met_scientists, .. }) =>
-                    Some(CampaignDialogueSpec::UranusDefensive {
-                        player_side, has_cruiser,
-                        met_scientists: mission.and_then(|owner| owner.met_scientists)
-                            .unwrap_or(met_scientists),
-                    }),
+                Some(CampaignDialogueSpec::UranusDefensive {
+                    met_scientists, automatic_withdrawal, ..
+                }) => Some(CampaignDialogueSpec::UranusDefensive {
+                    player_side, has_cruiser, automatic_withdrawal,
+                    met_scientists: mission.and_then(|owner| owner.met_scientists)
+                        .unwrap_or(met_scientists),
+                }),
                 other => other,
             };
         }

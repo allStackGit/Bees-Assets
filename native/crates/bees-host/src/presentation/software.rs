@@ -2709,17 +2709,7 @@ impl NativeSoftwareRenderer {
         self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
             half_extents: (bounds.max - bounds.min) * 0.5 },
             Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x33455e);
-        // Titania I creates its exit only when a real player ship
-        // approaches the planet. Other authored exits are known from
-        // the outset and remain visible to the commander.
-        let exit_zone = view.combat.active_extraction_bounds().or_else(|| {
-            if view.campaign_objective == Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaMinesweeper) {
-                None
-            } else {
-                view.combat.extraction_objective().map(|(_, bounds, _)| bounds)
-            }
-        });
-        if let Some(zone) = exit_zone {
+        if let Some((_, zone, _)) = view.visible_extraction_objective() {
             self.shape(&ShipShape::Box { offset: (zone.min + zone.max) * 0.5,
                 half_extents: (zone.max - zone.min) * 0.5 },
                 Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x75dbab);
@@ -3722,10 +3712,7 @@ impl NativeSoftwareRenderer {
         // The exit is a known authored mission destination, not a
         // hidden enemy unit. Show it before physics activates its trigger
         // so the player can actually command the convoy across the map.
-        if let Some((_, exit, _)) = view.combat.extraction_objective()
-            .filter(|_| view.campaign_objective != Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaMinesweeper) ||
-                view.combat.active_extraction_bounds().is_some())
-        {
+        if let Some((_, exit, _)) = view.visible_extraction_objective() {
             if let Some((left, top, right, bottom)) = layout.project_rect(exit.min, exit.max) {
                 let color = 0x75dbab;
                 self.line(left, top, right, top, color);

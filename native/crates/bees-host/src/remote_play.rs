@@ -3726,12 +3726,8 @@ fn current_state(
                 [bounds.max.x, bounds.max.y],
             ])
         ),
-        "extraction_destination": view.combat.extraction_objective()
-            // The Titania I zone does not exist until the first actual
-            // player proximity trigger. Never reveal an uncreated collider.
-            .filter(|(_, _, escort)| !*escort &&
-                (view.campaign_objective != Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaMinesweeper) ||
-                 view.combat.active_extraction_bounds().is_some()))
+        "extraction_destination": view.visible_extraction_objective()
+            .filter(|(_, _, escort)| !*escort)
             .map(|(_, bounds, _)| [
                 [bounds.min.x, bounds.min.y],
                 [bounds.max.x, bounds.max.y],

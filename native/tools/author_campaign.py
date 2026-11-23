@@ -1471,7 +1471,10 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 late_count += 1
                 next_due += 60
             level["campaign_dialogue"] = {
-                "neptune_production": {"player_side": args.player_side}
+                "neptune_production": {
+                    "player_side": args.player_side,
+                    "automatic_withdrawal": True,
+                }
             }
         elif story == "uranus_on_the_offensive":
             # The original Uranus I locates the one authored Bumblebee
@@ -1703,6 +1706,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             level["campaign_dialogue"] = {
                 "uranus_defensive": {
                     "player_side": args.player_side,
+                    "automatic_withdrawal": True,
                     # These source campaign flags are authored separately:
                     # persistent Cruiser ownership is recomputed by native
                     # launch and scientist contact must be explicitly known.

@@ -8,6 +8,7 @@ use bees_gameplay::level_events::NativeLevelNotification;
 use bees_gameplay::{squads::NativeSquadRoster,
     commands::NativeSquadCommandDirector,
     player_inputs::NativePlayerAuthority};
+use bees_sim::collision::Aabb;
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::simulation::WorldId;
 use bees_sim::geometry::Vec2;
@@ -266,17 +267,38 @@ pub struct NativeRenderWorldView<'a> {
 }
 
 impl<'a> NativeRenderWorldView<'a> {
+    fn neptune_mining_briefing(&self) -> bool {
+        use bees_gameplay::campaign_dialogue::CampaignCue;
+
+        // The latest story cue is retained until another is published.
+        // The first physical tick marks the end of the opening briefing
+        // in both local play and the authenticated LAN host.
+        self.tick == 0 &&
+            matches!(self.campaign_dialogue, Some((_, CampaignCue::NeptuneProductionBriefing)))
+    }
+
+    pub(crate) fn visible_extraction_objective(&self) -> Option<(i32, Aabb, bool)> {
+        use bees_gameplay::campaign_dialogue::CampaignObjectiveKind;
+
+        if self.neptune_mining_briefing() ||
+            (self.campaign_objective == Some(CampaignObjectiveKind::TitaniaMinesweeper) &&
+                self.combat.active_extraction_bounds().is_none())
+        {
+            return None;
+        }
+        self.combat.extraction_objective()
+    }
+
     /// Neptune's briefing explicitly reveals its five mine sites to the
     /// campaign commander. Use their physical positions for the duration
     /// of the cue, including when reopening a checkpoint in the briefing.
     pub(crate) fn briefing_mining_sites(&self, viewer_side: i32)
         -> impl Iterator<Item = Vec2> + '_
     {
-        use bees_gameplay::campaign_dialogue::CampaignCue;
         use bees_sim::obstacle::ObstacleKind;
 
         let visible = self.campaign_dialogue_side == Some(viewer_side) &&
-            matches!(self.campaign_dialogue, Some((_, CampaignCue::NeptuneProductionBriefing)));
+            self.neptune_mining_briefing();
         visible.then_some(()).into_iter()
             .flat_map(move |()| self.combat.render_obstacles())
             .filter_map(|(obstacle, body)| (obstacle.kind == ObstacleKind::MiningAsteroid)

@@ -3935,19 +3935,11 @@ impl NativePhysicalScene {
             setup.target_ship = setup.target_ship.or(mission.target_ship);
             setup.campaign_dialogue = setup.campaign_dialogue.or(mission.campaign_dialogue);
         }
-        // Neptune II and Uranus II create the physical Zone only after
-        // SetRetreatForNeptune2/SetRetreatForUranus2 is chosen. Enforce the
-        // original source rule for BOTH native-scene and Unity-import
-        // missions at the one canonical Level-construction boundary.
-        // Historical custom withdrawal skirmishes without either authored
-        // campaign retain their old immediate exit.
-        if matches!(setup.campaign_dialogue,
-            Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::NeptuneProduction { .. } |
-                 bees_gameplay::campaign_dialogue::CampaignDialogueSpec::UranusDefensive { .. })
+        if let Some((zone, requires_activation)) = setup.extraction.as_mut().zip(
+            setup.campaign_dialogue.and_then(|story|
+                story.withdrawal_requires_player_activation()),
         ) {
-            if let Some(zone) = &mut setup.extraction {
-                if zone.retreat_on_exit { zone.requires_player_activation = true; }
-            }
+            if zone.retreat_on_exit { zone.requires_player_activation = requires_activation; }
         }
         for &ship_id in &self.active_policy_ship_ids {
             if !self.source_policy_bindings.contains_key(&ship_id) {
@@ -4105,7 +4097,7 @@ impl NativePhysicalScene {
                     setup.demolition.is_some() || setup.escort.is_some() ||
                     setup.extraction.is_some() =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
-            Some(CampaignDialogueSpec::NeptuneProduction { player_side })
+            Some(CampaignDialogueSpec::NeptuneProduction { player_side, .. })
                 if player_side != human_side ||
                     self.activate_mining != Some(true) ||
                     self.activate_hivemind != Some(true) ||
