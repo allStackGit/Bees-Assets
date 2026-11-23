@@ -745,22 +745,17 @@ impl SourceShipRemainsAtlas {
 /// projectile lifetime, hit geometry and root-shot identity stay in CombatWorld.
 struct SourceProjectileArt {
     pixels_per_unit: f32,
+    frames_per_second: f32,
+    looped: bool,
     frames: Vec<NativeSprite>,
 }
 
-// Both local and LAN projectile rendering use the original clip cadence.
-fn projectile_art_frame(kind: u8, age_seconds: f32, count: usize) -> usize {
-    let frames_per_second = match kind {
-        2 | 7 => 4.0, // Bee/Human Medium Laser Shot
-        8 => 24.0, // Laser Beam
-        15 => 10.0, // Fire Tank Explosion
-        _ => 8.0,
-    };
-    let frame = (age_seconds.max(0.0) * frames_per_second).floor() as usize;
-    if matches!(kind, 13..=15) {
-        frame.min(count - 1)
-    } else {
-        frame % count
+impl SourceProjectileArt {
+    fn frame(&self, age_seconds: f32) -> &NativeSprite {
+        let elapsed = (age_seconds.max(0.0) * self.frames_per_second).floor() as usize;
+        let count = self.frames.len();
+        let index = if self.looped { elapsed % count } else { elapsed.min(count - 1) };
+        &self.frames[index]
     }
 }
 
@@ -773,7 +768,11 @@ impl SourceProjectileAtlas {
     fn decode(bytes: &[u8]) -> io::Result<Self> {
         let invalid = || io::Error::new(io::ErrorKind::InvalidData,
             "invalid native projectile sprite atlas");
-        if bytes.get(..4) != Some(&b"BPS1"[..]) { return Err(invalid()); }
+        let legacy = match bytes.get(..4) {
+            Some(signature) if signature == b"BPS1" => true,
+            Some(signature) if signature == b"BPS2" => false,
+            _ => return Err(invalid()),
+        };
         let mut at = 4usize;
         let count = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
         if count > SOURCE_PROJECTILE_TYPES { return Err(invalid()); }
@@ -784,7 +783,18 @@ impl SourceProjectileAtlas {
             at += 1;
             let ppu = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
             let frame_count = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
-            if kind >= SOURCE_PROJECTILE_TYPES || sprites[kind].is_some() ||
+            let (fps, looped) = if legacy {
+                let fps = match kind { 2 | 7 => 4, 8 => 24, 15 => 10, _ => 8 };
+                (fps, !matches!(kind, 13..=15))
+            } else {
+                let fps = source_art_u16(bytes, &mut at).ok_or_else(invalid)?;
+                let looped = match *bytes.get(at).ok_or_else(invalid)? {
+                    0 => false, 1 => true, _ => return Err(invalid()),
+                };
+                at += 1;
+                (fps, looped)
+            };
+            if !(1..=120).contains(&fps) || kind >= SOURCE_PROJECTILE_TYPES || sprites[kind].is_some() ||
                 ppu == 0 || !(1..=64).contains(&frame_count) {
                 return Err(invalid());
             }
@@ -800,7 +810,7 @@ impl SourceProjectileAtlas {
                 frames.push(source_art_sprite(bytes, &mut at, width, height)?);
             }
             sprites[kind] = Some(SourceProjectileArt {
-                pixels_per_unit: ppu as f32, frames,
+                pixels_per_unit: ppu as f32, frames_per_second: fps as f32, looped, frames,
             });
         }
         if at != bytes.len() { return Err(invalid()); }
@@ -1985,7 +1995,7 @@ impl NativeSoftwareRenderer {
         &mut self, art: &SourceProjectileArt, kind: u8, position: Vec2,
         rotation_degrees: f32, age: f32, beam_half_extents: Option<Vec2>,
     ) -> bool {
-        let frame = &art.frames[projectile_art_frame(kind, age, art.frames.len())];
+        let frame = art.frame(age);
         let screen_scale = self.camera.pixels_per_unit;
         if kind == 8 {
             let Some(extents) = beam_half_extents.filter(|value|

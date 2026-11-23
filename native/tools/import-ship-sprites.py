@@ -150,6 +150,26 @@ PROJECTILE_IMAGES = (
 )
 
 
+PROJECTILE_CLIPS = (
+    None,
+    "Projectiles/Animations/Bee Small Laser Shot.anim",
+    "Projectiles/Animations/Bee Medium Laser Shot.anim",
+    "Projectiles/Animations/Bumblebee Laser Shot.anim",
+    "Projectiles/Animations/Flagship Laser Shot.anim",
+    "Projectiles/Animations/Frigate Rocket In Flight.anim",
+    "Projectiles/Animations/Human Small Laser Shot.anim",
+    "Projectiles/Animations/Human Medium Laser Shot.anim",
+    "Projectiles/Animations/Laser Beam.anim",
+    "Projectiles/Animations/Leaf Cutter Shot Idle.anim",
+    "Projectiles/Animations/Queen Small Laser Shot.anim",
+    "Projectiles/Animations/Queen Stinger Laser Shot.anim",
+    "Projectiles/Animations/Striker Bomb.anim",
+    "Projectiles/Animations/Frigate Rocket Explosion.anim",
+    "Projectiles/Animations/Fireship Explosion.anim",
+    "Objects/Fire Tank Explosion.anim",
+)
+
+
 def source_frames(path: Path, animation: bool, *, large_static: bool = False):
     metadata = path.with_suffix(".png.meta").read_text(encoding="utf-8")
     source_ppu = re.search(r"^  spritePixelsToUnits: (\d+)$", metadata, re.MULTILINE)
@@ -303,6 +323,43 @@ def pack(images, directory, magic, animated, palettes=None,
             packed_pixels(data, frame)
             if palettes is not None:
                 packed_color_mask(data, frame, palettes[kind])
+    return data, len(entries)
+
+
+def pack_projectiles():
+    entries = [(kind, image, PROJECTILE_CLIPS[kind])
+               for kind, image in enumerate(PROJECTILE_IMAGES) if image]
+    data = bytearray(struct.pack("<4sH", b"BPS2", len(entries)))
+    for kind, image, clip in entries:
+        texture = ROOT / "Sprites" / image
+        metadata = texture.with_suffix(".png.meta").read_text(encoding="utf-8")
+        authored = (ROOT / "Sprites" / clip).read_text(encoding="utf-8")
+        sprite_guid = re.search(r"^guid: ([0-9a-f]{32})$", metadata, re.MULTILINE)
+        ids = re.findall(r"^      internalID: (-?\d+)$", metadata, re.MULTILINE)
+        rate = re.search(r"^  m_SampleRate: (\d+)$", authored, re.MULTILINE)
+        loop = re.search(r"^    m_LoopTime: ([01])$", authored, re.MULTILINE)
+        duration = re.search(r"^    m_StopTime: ([\d.]+)$", authored, re.MULTILINE)
+        keys = re.findall(
+            r"^    - time: ([\d.]+)\n      value: \{fileID: (-?\d+), guid: ([0-9a-f]{32}), type: 3\}$",
+            authored, re.MULTILINE,
+        )
+        ppu, frames = source_frames(texture, True)
+        if (not all((sprite_guid, rate, loop, duration)) or
+                len(ids) != len(frames) or len(set(ids)) != len(ids) or
+                not 1 <= len(keys) <= 64 or not 1 <= int(rate[1]) <= 120):
+            raise ValueError(f"Invalid source projectile animation: {clip}")
+        fps = int(rate[1])
+        if abs(float(duration[1]) * fps - len(keys)) > 0.001:
+            raise ValueError(f"Nonuniform source projectile duration: {clip}")
+        slices = dict(zip(ids, frames, strict=True))
+        data.extend(struct.pack("<BHHHB", kind, ppu, len(keys), fps, int(loop[1])))
+        for index, (seconds, sprite_id, guid) in enumerate(keys):
+            if (abs(float(seconds) * fps - index) > 0.001 or
+                    guid != sprite_guid[1] or sprite_id not in slices):
+                raise ValueError(f"Invalid source projectile frame {index}: {clip}")
+            frame = slices[sprite_id]
+            data.extend(struct.pack("<HH", frame.width, frame.height))
+            packed_pixels(data, frame)
     return data, len(entries)
 
 
@@ -511,9 +568,7 @@ def main():
     effects, effect_count = pack(
         SHIP_EFFECT_IMAGES, ROOT / "Sprites/Ships/Parts", b"BSS1", False,
     )
-    projectiles, projectile_count = pack(
-        PROJECTILE_IMAGES, ROOT / "Sprites", b"BPS1", True,
-    )
+    projectiles, projectile_count = pack_projectiles()
     asteroids, asteroid_count = pack(
         ASTEROID_IMAGES, ROOT / "Sprites/Asteroids", b"BAS1", False,
     )

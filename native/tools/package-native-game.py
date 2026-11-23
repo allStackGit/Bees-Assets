@@ -44,7 +44,7 @@ ARTWORK_ATLASES = (
     ("map-background", "map-backgrounds.rgba", b"BSS1"),
     ("map-fog", "map-fog.rgba", b"BSS1"),
     ("portrait", "dialogue-portraits.rgba", b"BDP1"),
-    ("projectile", "projectile-sprites.rgba", b"BPS1"),
+    ("projectile", "projectile-sprites.rgba", b"BPS2"),
     ("asteroid", "asteroid-sprites.rgba", b"BAS1"),
     ("animation", "ship-animations.rgba", b"BSA1"),
     ("remains", "ship-remains.rgba", b"BSR1"),
@@ -668,7 +668,9 @@ def verify_presentation_assets(directory: Path, manifest: dict, inventory: dict)
             raise ValueError(f"native release is missing required artwork: {name}")
         with (directory / name).open("rb") as atlas:
             header = atlas.read(6)
-        if header[:4] != signature or int.from_bytes(header[4:], "little") == 0:
+        legacy_projectiles = signature == b"BPS2" and header[:4] == b"BPS1"
+        if ((header[:4] != signature and not legacy_projectiles) or
+                int.from_bytes(header[4:], "little") == 0):
             raise ValueError(f"native release has an invalid artwork header: {name}")
 
 
