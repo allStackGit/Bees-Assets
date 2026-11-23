@@ -88,8 +88,53 @@ function resetBuildDirectory(directory, force) {
     ensureDir(directory);
 }
 
+function queryLinuxUnityProcesses(projectPath) {
+    // Linux Unity Hub launches an Editor/Unity child. A live editor's lock
+    // must never be removed merely because the Windows process query is absent.
+    const project = fs.realpathSync.native(projectPath);
+    const running = [];
+    const matching = [];
+    for (const entry of fs.readdirSync('/proc', { withFileTypes: true })) {
+        if (!entry.isDirectory() || !/^[0-9]+$/.test(entry.name)) continue;
+        const proc = path.join('/proc', entry.name);
+        let name;
+        try { name = fs.readFileSync(path.join(proc, 'comm'), 'utf8').trim(); }
+        catch (_) { continue; } // A process can exit during enumeration.
+        if (!/^Unity(?:\.bin)?$/i.test(name)) continue;
+
+        const pid = Number(entry.name);
+        running.push(pid); // Unreadable/inconclusive processes block lock removal.
+        let argv;
+        try {
+            argv = fs.readFileSync(path.join(proc, 'cmdline'))
+                .toString('utf8').split('\0').filter(Boolean);
+        } catch (_) {
+            continue;
+        }
+        for (let i = 0; i < argv.length; i++) {
+            const value = argv[i];
+            let candidate = '';
+            if (/^-projectpath$/i.test(value)) candidate = argv[i + 1] || '';
+            else if (/^-projectpath=/i.test(value)) candidate = value.slice(value.indexOf('=') + 1);
+            if (!candidate || !path.isAbsolute(candidate)) continue;
+            try {
+                if (fs.realpathSync.native(candidate) === project) {
+                    matching.push({ pid, command_line: argv.join(' ') });
+                    break;
+                }
+            } catch (_) {
+                // Do not infer the owner from an invalid or stale argv path.
+            }
+        }
+    }
+    return { project: matching, all: running };
+}
+
 function queryUnityProcesses(projectPath) {
-    if (process.platform !== 'win32') return { project: [], all: [] };
+    if (process.platform === 'linux') return queryLinuxUnityProcesses(projectPath);
+    if (process.platform !== 'win32') {
+        throw new Error('Unity project lock handling is unsupported on this operating system.');
+    }
     const ps = powershellExecutable();
     const env = { ...process.env, BEES_UNITY_PROJECT: path.resolve(projectPath) };
     const script = [
