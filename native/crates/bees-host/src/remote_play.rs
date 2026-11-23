@@ -680,6 +680,9 @@ pub struct NativeRemotePlay {
     // spectator credentials independent, and do not let a player token
     // grant time control or unblock a nonexistent player lobby.
     spectator_only_host: bool,
+    // Immutable authored session length, used only to annotate physical
+    // episode revisions in Fish Tank snapshots. The Level owns resets.
+    spectator_series_episodes: u32,
     /// A graphical local host already owns its own briefing pacing.
     /// Only dedicated LAN hosting needs remote viewer acknowledgment.
     dedicated_briefing_gate: bool,
@@ -847,7 +850,8 @@ impl NativeRemotePlay {
         }));
         Ok(Some(Self {
             listener, tls, host_session_id, recovered_session: false,
-            archive_only: false, spectator_only_host: false, dedicated_briefing_gate: dedicated,
+            archive_only: false, spectator_only_host: false,
+            spectator_series_episodes: 1, dedicated_briefing_gate: dedicated,
             side_tokens, spectator_tokens,
             archived_receipts: HashMap::new(), peers: Vec::new(),
             next_peer: 1, last_state: None, force_initial_state: false,
@@ -1138,6 +1142,20 @@ impl NativeRemotePlay {
                 sides
             },
         }));
+        Ok(())
+    }
+
+    /// Record the authored AI-only session length before admitting viewers.
+    /// This is presentation metadata, not a second scheduler or episode
+    /// counter: every episode still comes from the one CombatWorld reset.
+    pub fn configure_spectator_series(&mut self, episodes: u32) -> io::Result<()> {
+        if !self.spectator_only_host || !(1..=64).contains(&episodes) ||
+            self.peers.iter().any(|peer| peer.side.is_some())
+        {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                "Fish Tank series needs 1..64 episodes and spectator-only authority"));
+        }
+        self.spectator_series_episodes = episodes;
         Ok(())
     }
 
@@ -2483,6 +2501,16 @@ impl NativeRemotePlay {
                 );
                 state["commander_paused"] = json!(commander_paused);
                 state["game_speed"] = json!(game_speed);
+                if self.spectator_only_host {
+                    // A read-only hint derived from the canonical World
+                    // revision and immutable run configuration. No extra
+                    // scoreboard or competing battle lifecycle is kept.
+                    state["fish_tank_series"] = json!({
+                        "episode": (view.episode_revision.saturating_add(1))
+                            .min(u64::from(self.spectator_series_episodes)),
+                        "total": self.spectator_series_episodes,
+                    });
+                }
                 if two_sided {
                     state["connected_commander_sides"] = json!(&connected_commander_sides);
                     state["waiting_for_player_reconnect"] = json!(waiting_for_reconnect);
