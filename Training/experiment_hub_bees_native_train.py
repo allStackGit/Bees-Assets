@@ -540,7 +540,7 @@ def record_model(root: Path, job: dict):
             exports.append((int(suffix), candidate))
     if not exports:
         raise RuntimeError("No versioned Bees checkpoint accompanies the final model.")
-    _, latest = max(exports, key=lambda item: item[0])
+    saved_step, latest = max(exports, key=lambda item: item[0])
     paired = latest.with_suffix(".onnx")
     if paired.is_symlink() or not paired.is_file() or sha256_file(paired) != model_sha:
         raise RuntimeError("Final Bees ONNX does not match the latest saved checkpoint.")
@@ -558,6 +558,7 @@ def record_model(root: Path, job: dict):
            if job["schema_version"] >= 2 else {}),
         "model": str(model), "sha256": model_sha,
         "checkpoint": str(checkpoint), "checkpoint_sha256": checkpoint_sha,
+        "steps_completed": saved_step,
         "completed_at": datetime.now(timezone.utc).isoformat(),
     }
     with (root / "model.json").open("x", encoding="utf-8") as handle:
@@ -600,7 +601,10 @@ def publish_policy_candidate(root: Path, job: dict) -> Path:
 
     evaluation = None
     evaluation_source = root / "evaluations" / "summary.json"
-    if job["evaluation_profile"] != "off":
+    requires_final = job["evaluation_profile"] != "off" and (
+        job.get("evaluation_schedule") is None or job["evaluation_schedule"]["include_final"]
+    )
+    if requires_final:
         if evaluation_source.is_symlink() or not evaluation_source.is_file() or (
             evaluation_source.stat().st_size > 32768
         ):
@@ -888,7 +892,38 @@ def main():
 
     child=None
     stopped=False
+    target_stop_sha=None
+    ignore_stop_marker=False
     stop_file=root/"stop.request"
+
+    def evaluation_stop_identity():
+        if schedule is None or schedule["stop_min_trials"] is None:
+            return None
+        proof_file = root / "evaluation-stop.json"
+        if not proof_file.exists():
+            return None
+        if (proof_file.is_symlink() or not proof_file.is_file() or
+            proof_file.stat().st_size > 4096):
+            raise ValueError("Invalid Bees evaluation Stop provenance.")
+        proof = json.loads(proof_file.read_text(encoding="utf-8"))
+        sha = proof.get("checkpoint_sha256")
+        if (proof.get("schema_version") != 1 or not isinstance(sha, str) or
+            len(sha) != 64 or any(ch not in "0123456789abcdef" for ch in sha)):
+            raise ValueError("Invalid Bees evaluation Stop checkpoint identity.")
+        file = checkpoint_root / "completed" / sha / "summary.json"
+        if (file.is_symlink() or not file.is_file() or file.stat().st_size > 32768
+            or file.resolve() != file):
+            raise ValueError("Bees evaluation Stop proof is missing its local benchmark.")
+        summary = json.loads(file.read_text(encoding="utf-8"))
+        trials, wins = summary.get("total_matches"), summary.get("total_wins")
+        if (summary.get("job_id") != job["job_id"] or
+            summary.get("profile") != job["evaluation_profile"] or
+            summary.get("model_sha256") != sha or
+            type(trials) is not int or trials < schedule["stop_min_trials"] or
+            type(wins) is not int or not 0 <= wins <= trials or
+            wins / trials < schedule["stop_min_success_rate"]):
+            raise ValueError("Bees evaluation Stop proof does not meet the frozen threshold.")
+        return sha
     def stop(_signum,_frame):
         nonlocal stopped
         if stopped: return
@@ -896,6 +931,9 @@ def main():
         if child and child.poll() is None:
             child.send_signal(signal.SIGINT)
     def observe_stop_marker():
+        nonlocal target_stop_sha, ignore_stop_marker
+        if ignore_stop_marker:
+            return False
         if not stop_file.exists() and not stop_file.is_symlink():
             return False
         if stop_file.is_symlink() or not stop_file.is_file() or (
@@ -903,6 +941,17 @@ def main():
         ):
             raise RuntimeError("Bees cooperative Stop marker is not an empty regular file.")
         if not stopped:
+            try:
+                target_stop_sha = evaluation_stop_identity()
+            except (OSError, ValueError, RuntimeError) as error:
+                print("[Bees Hub evaluation] Stop proof unavailable: " + str(error),
+                      file=sys.stderr, flush=True)
+                target_stop_sha = None
+            if target_stop_sha and progress.training_finished_at is not None:
+                # PPO already finished while the authenticated threshold
+                # Stop was in transit. Complete only its final evaluation.
+                ignore_stop_marker = True
+                return False
             stop(signal.SIGINT,None)
         return True
     signal.signal(signal.SIGINT,stop)
@@ -965,101 +1014,119 @@ def main():
                 print("[Bees native Hub] Stop has no verified resumable checkpoint: "+str(error),
                       file=sys.stderr,flush=True)
                 return 1
-            # ExecStopPost records the actual main exit status. A verified
-            # optimizer/model pair and an expected learner exit must return 0
-            # for the Hub's checkpoint_stop_verified contract.
-            return 0
-        if result!=0:
-            return result or 1
-        record_model(root,job)
+            # Manual Stops remain prompt. A success-threshold Stop is a
+            # completed training sequence and must separately evaluate the
+            # exact final saved model (which may differ from its trigger).
+            if not target_stop_sha:
+                return 0
+            ignore_stop_marker = True
+            stopped = False
+            print("[Bees Hub evaluation] Threshold met; verifying final saved checkpoint.",
+                  flush=True)
+        else:
+            if result!=0:
+                return result or 1
+            record_model(root,job)
         if job["evaluation_profile"] in ("scripted-maps-v1","scripted-coverage-v2") and (
             schedule is None or schedule["include_final"]
         ):
             evaluation_root=root/"evaluations"
-            evaluation_root.mkdir(mode=0o700)
             model=json.loads((root/"model.json").read_text(encoding="utf-8"))
-            observed=[]
-            cases=evaluation_cases(job["evaluation_profile"])
-            progress.evaluation_started_at=time.monotonic()
-            progress.values["evaluation_cases_total"]={
-                "value":len(cases),"unit":"count",
-            }
-            progress.values["evaluation_cases_completed"]={
-                "value":0,"unit":"count",
-            }
-            progress.values["evaluation_matches_completed"]={
-                "value":0,"unit":"count",
-            }
-            progress.poll()
-            for index,case in enumerate(cases):
-                if not stopped:
-                    observe_stop_marker()
-                if stopped: return 0
-                label,_,_,opponent=case
-                recipe=benchmark_recipe(evaluation_root,job,case,index)
-                for source,digest in (
-                    ("evaluator_script","evaluator_sha256"),
-                    ("evaluator_core","evaluator_core_sha256"),
-                    ("opponent_script","opponent_script_sha256"),
-                ):
-                    require_file(Path(job[source]),job[digest])
-                output=evaluation_root/("stdout-"+label+".txt")
-                command=[
-                    sys.executable,"-B",job["evaluator_script"],
-                    "--benchmark",str(recipe),
-                    "--candidate",model["model"],
-                    "--candidate-sha256",model["sha256"],
-                    "--opponent","scripted:"+opponent,
-                    "--env",str(live_binary),
-                    "--build-id",job["game_sha256"],
-                    "--run-id",job["job_id"],
-                    "--output-root",str(evaluation_root),
-                    "--base-port",str(port),
-                ]
-                with output.open("xb") as stream:
-                    child=subprocess.Popen(command,
-                        cwd=str(Path(job["training_script"]).parent),
-                        stdout=stream,start_new_session=True)
-                    while child.poll() is None:
-                        if not stopped:
-                            observe_stop_marker()
-                        time.sleep(0.25)
-                if stopped: return 0
-                if child.returncode!=0:
-                    raise RuntimeError("Independent Bees evaluation failed for "+label)
-                if output.stat().st_size>16384:
-                    raise RuntimeError("Benchmark output path exceeded the expected size.")
-                lines=output.read_text(encoding="utf-8").strip().splitlines()
-                if not lines:
-                    raise RuntimeError("Benchmark evaluator returned no result.")
-                reported=Path(lines[-1])
-                if reported.parent!=evaluation_root or not reported.name.endswith(".json"):
-                    raise RuntimeError("Benchmark evaluator returned an unexpected output path.")
-                observed.append(collect_benchmark(
-                    evaluation_root, reported, job, label, opponent, model["sha256"]
-                ))
+            cached = checkpoint_root / "completed" / model["sha256"]
+            if cached.is_dir() and (cached / "summary.json").is_file():
+                # Identical model bytes reuse the identical benchmark; never
+                # introduce a contradictory second receipt for the same suite.
+                shutil.copytree(cached, evaluation_root,
+                                ignore=shutil.ignore_patterns("model.onnx", "snapshot.json"))
+                print("[Bees Hub evaluation] Reusing exact final checkpoint evaluation.",
+                      flush=True)
+            else:
+                evaluation_root.mkdir(mode=0o700)
+                observed=[]
+                cases=evaluation_cases(job["evaluation_profile"])
+                progress.evaluation_started_at=time.monotonic()
+                progress.values["evaluation_cases_total"]={
+                    "value":len(cases),"unit":"count",
+                }
                 progress.values["evaluation_cases_completed"]={
-                    "value":len(observed),"unit":"count",
+                    "value":0,"unit":"count",
                 }
                 progress.values["evaluation_matches_completed"]={
-                    "value":sum(item["matches"] for item in observed),"unit":"count",
+                    "value":0,"unit":"count",
                 }
-                # A case is only counted after its frozen benchmark receipt
-                # and outcome accounting have been verified.
                 progress.poll()
-            summary={
-                "schema_version":1,"job_id":job["job_id"],
-                "profile":job["evaluation_profile"],"model_sha256":model["sha256"],
-                "case_count":len(observed),"cases":observed,
-                "total_matches":sum(item["matches"] for item in observed),
-                "total_wins":sum(item["wins"] for item in observed),
-                "total_draws":sum(item["draws"] for item in observed),
-                "total_losses":sum(item["losses"] for item in observed),
-                "total_timeouts":sum(item["timeouts"] for item in observed),
-            }
-            with (evaluation_root/"summary.json").open("x",encoding="utf-8") as stream:
-                json.dump(summary,stream,sort_keys=True,indent=2)
-                stream.write("\n")
+                for index,case in enumerate(cases):
+                    if not stopped:
+                        observe_stop_marker()
+                    if stopped: return 0
+                    label,_,_,opponent=case
+                    recipe=benchmark_recipe(evaluation_root,job,case,index)
+                    for source,digest in (
+                        ("evaluator_script","evaluator_sha256"),
+                        ("evaluator_core","evaluator_core_sha256"),
+                        ("opponent_script","opponent_script_sha256"),
+                    ):
+                        require_file(Path(job[source]),job[digest])
+                    output=evaluation_root/("stdout-"+label+".txt")
+                    command=[
+                        sys.executable,"-B",job["evaluator_script"],
+                        "--benchmark",str(recipe),
+                        "--candidate",model["model"],
+                        "--candidate-sha256",model["sha256"],
+                        "--opponent","scripted:"+opponent,
+                        "--env",str(live_binary),
+                        "--build-id",job["game_sha256"],
+                        "--run-id",job["job_id"],
+                        "--output-root",str(evaluation_root),
+                        "--base-port",str(port),
+                    ]
+                    with output.open("xb") as stream:
+                        child=subprocess.Popen(command,
+                            cwd=str(Path(job["training_script"]).parent),
+                            stdout=stream,start_new_session=True,
+                            env={**os.environ, "BEES_HUB_EVAL_THREADS":
+                                 str(schedule["cpu_threads"] if schedule else 2)})
+                        while child.poll() is None:
+                            if not stopped:
+                                observe_stop_marker()
+                            time.sleep(0.25)
+                    if stopped: return 0
+                    if child.returncode!=0:
+                        raise RuntimeError("Independent Bees evaluation failed for "+label)
+                    if output.stat().st_size>16384:
+                        raise RuntimeError("Benchmark output path exceeded the expected size.")
+                    lines=output.read_text(encoding="utf-8").strip().splitlines()
+                    if not lines:
+                        raise RuntimeError("Benchmark evaluator returned no result.")
+                    reported=Path(lines[-1])
+                    if reported.parent!=evaluation_root or not reported.name.endswith(".json"):
+                        raise RuntimeError("Benchmark evaluator returned an unexpected output path.")
+                    observed.append(collect_benchmark(
+                        evaluation_root, reported, job, label, opponent, model["sha256"]
+                    ))
+                    progress.values["evaluation_cases_completed"]={
+                        "value":len(observed),"unit":"count",
+                    }
+                    progress.values["evaluation_matches_completed"]={
+                        "value":sum(item["matches"] for item in observed),"unit":"count",
+                    }
+                    # A case is only counted after its frozen benchmark receipt
+                    # and outcome accounting have been verified.
+                    progress.poll()
+                summary={
+                    "schema_version":1,"job_id":job["job_id"],
+                    "profile":job["evaluation_profile"],"model_sha256":model["sha256"],
+                    "case_count":len(observed),"cases":observed,
+                    "steps_completed":model["steps_completed"],
+                    "total_matches":sum(item["matches"] for item in observed),
+                    "total_wins":sum(item["wins"] for item in observed),
+                    "total_draws":sum(item["draws"] for item in observed),
+                    "total_losses":sum(item["losses"] for item in observed),
+                    "total_timeouts":sum(item["timeouts"] for item in observed),
+                }
+                with (evaluation_root/"summary.json").open("x",encoding="utf-8") as stream:
+                    json.dump(summary,stream,sort_keys=True,indent=2)
+                    stream.write("\n")
         publish_policy_candidate(root,job)
         return 0
     finally:
