@@ -107,9 +107,11 @@ function externalLearnerPython(config) {
     return executable;
 }
 
-function preflightExternalLearner(executable, config) {
-    const device = String(config.learnerDevice || 'cuda').toLowerCase();
-    const gpu = gpuBinding(config,'learner');
+function preflightExternalLearner(executable, config, role = 'learner') {
+    const device = String(role === 'local-actor'
+        ?(process.env.BEES_LOCAL_ACTOR_TORCH_DEVICE || config.localActor?.torchDevice || 'cpu')
+        :(config.learnerDevice || 'cuda')).toLowerCase();
+    const gpu = gpuBinding(config,role);
     if (!['cpu', 'cuda'].includes(device)) throw Error('Bees learner device must be cpu or cuda.');
     const probe = [
         'import json,sys,importlib.metadata as metadata',
@@ -160,7 +162,7 @@ function preflightExternalLearner(executable, config) {
         );
     }
     console.log(
-        'External Bees learner: Python ' + result.python +
+        'Bees '+role+' Python '+result.python +
         ' torch=' + result.torch +
         ' backend=' + result.backend +
         ' device=' + result.device +
