@@ -10,7 +10,9 @@
 //! {kind:"input", request_id:u64, action:NativePlayerInput}. The host replies
 //! with kind:"input_result" and projects side-filtered kind:"world_state".
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fs;
 use std::io::{self, Read, Write};
+use std::path::Path;
 use std::net::{TcpListener, TcpStream};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -548,6 +550,33 @@ fn credential_digest(tokens: &HashMap<i32, String>) -> [u8; 32] {
     digest.finalize().into()
 }
 
+/// Host-owned private token files keep multiplayer secrets out of both
+/// packaged releases and process environment strings. The exact same token
+/// validation applies to legacy inline JSON and disk-backed credentials.
+fn read_private_remote_tokens(path: &Path, label: &str)
+    -> io::Result<HashMap<i32, String>>
+{
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() ||
+        metadata.len() == 0 || metadata.len() > 4096
+    {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput,
+            format!("{label} must be a private regular JSON file of at most 4096 bytes")));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied,
+                format!("{label} must not be readable by group or other users")));
+        }
+    }
+    let raw = fs::read(path)?;
+    serde_json::from_slice(&raw).map_err(|error|
+        io::Error::new(io::ErrorKind::InvalidInput,
+            format!("{label} has invalid JSON token mapping: {error}")))
+}
+
 pub struct NativeRemotePlay {
     listener: TcpListener,
     // Identifies this one authoritative host session across TCP reconnects.
@@ -624,17 +653,26 @@ impl NativeRemotePlay {
         // Explicit side tokens enable independently authenticated human
         // players only where the imported Level actually grants each
         // side source player control.
-        let side_tokens: HashMap<i32, String> =
-            if let Ok(raw) = std::env::var("BEES_NATIVE_REMOTE_SIDE_TOKENS") {
-                serde_json::from_str(&raw).map_err(|error|
-                    io::Error::new(io::ErrorKind::InvalidInput,
-                        format!("invalid BEES_NATIVE_REMOTE_SIDE_TOKENS: {error}")))?
-            } else {
-                let token = std::env::var("BEES_NATIVE_REMOTE_TOKEN").map_err(|_|
-                    io::Error::new(io::ErrorKind::InvalidInput,
-                        "BEES_NATIVE_REMOTE_TOKEN or BEES_NATIVE_REMOTE_SIDE_TOKENS is required"))?;
-                HashMap::from([(local_side, token)])
-            };
+        let side_file = std::env::var_os("BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE");
+        let inline_sides = std::env::var("BEES_NATIVE_REMOTE_SIDE_TOKENS").ok();
+        let old_token = std::env::var("BEES_NATIVE_REMOTE_TOKEN").ok();
+        let supplied = usize::from(side_file.is_some()) +
+            usize::from(inline_sides.is_some()) + usize::from(old_token.is_some());
+        if supplied != 1 {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                "choose exactly one remote commander credential source: token file, side JSON, or legacy token"));
+        }
+        let side_tokens: HashMap<i32, String> = if let Some(path) = side_file {
+            read_private_remote_tokens(
+                Path::new(&path), "BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE",
+            )?
+        } else if let Some(raw) = inline_sides {
+            serde_json::from_str(&raw).map_err(|error|
+                io::Error::new(io::ErrorKind::InvalidInput,
+                    format!("invalid BEES_NATIVE_REMOTE_SIDE_TOKENS: {error}")))?
+        } else {
+            HashMap::from([(local_side, old_token.expect("one source selected"))])
+        };
         if side_tokens.is_empty() || side_tokens.len() > 2 ||
             side_tokens.iter().any(|(&side, token)|
                 !(1..=2).contains(&side) || token.len() < 24 ||
@@ -648,16 +686,26 @@ impl NativeRemotePlay {
         // Viewers still receive only their own faction's existing
         // fog-filtered projection. They MUST have independent credentials,
         // not a commander token with an opt-in client-side "read only" flag.
-        let spectator_tokens: HashMap<i32, String> = match
-            std::env::var("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS")
-        {
-            Ok(raw) => serde_json::from_str(&raw).map_err(|error|
-                io::Error::new(io::ErrorKind::InvalidInput,
-                    format!("invalid BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS: {error}")))?,
-            Err(std::env::VarError::NotPresent) => HashMap::new(),
-            Err(error) => return Err(io::Error::new(io::ErrorKind::InvalidInput,
-                format!("invalid native spectator token environment: {error}"))),
-        };
+        let spectator_file =
+            std::env::var_os("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS_FILE");
+        let inline_spectators =
+            std::env::var("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS").ok();
+        if spectator_file.is_some() && inline_spectators.is_some() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                "choose spectator credentials from a private file or inline JSON, not both"));
+        }
+        let spectator_tokens: HashMap<i32, String> =
+            if let Some(path) = spectator_file {
+                read_private_remote_tokens(
+                    Path::new(&path), "BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS_FILE",
+                )?
+            } else if let Some(raw) = inline_spectators {
+                serde_json::from_str(&raw).map_err(|error|
+                    io::Error::new(io::ErrorKind::InvalidInput,
+                        format!("invalid BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS: {error}")))?
+            } else {
+                HashMap::new()
+            };
         if spectator_tokens.len() > 2 ||
             spectator_tokens.iter().any(|(&side, token)|
                 !(1..=2).contains(&side) || !side_tokens.contains_key(&side) ||
