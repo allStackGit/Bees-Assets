@@ -2140,14 +2140,24 @@ pub(super) fn archive(
     // This is the same native FogOfWarVision switch consumed by the
     // actual Level; camera and policy perception read that shared state.
     scene["activate_fog_of_war"] = json!(selected.fog_of_war);
+    let original_game = selected.original_hulls.iter().any(|ships| !ships.is_empty());
     for side in 0..2 {
-        let Some(source) = &selected.source_fighter[side] else { continue };
+        let expected = if side == 0 { 21_u8 } else { 13_u8 };
+        let source = selected.source_fighter[side].as_ref()
+            .or_else(|| selected.original_hulls[side].iter()
+                .find(|ship| ship["ship_type"] == expected));
+        let Some(source) = source else {
+            if original_game {
+                return Err(invalid("complete original FreePlay needs its authentic Wasp and Gunship starters").into());
+            }
+            continue;
+        };
         let kind = match selected.mix[side] {
             FleetMix::SourceClass(kind) => kind,
             FleetMix::OriginalCombined => source["ship_type"].as_u64()
                 .and_then(|kind| u8::try_from(kind).ok())
                 .ok_or_else(|| invalid("original mixed fleet has no source starter class"))?,
-            _ => return Err(invalid("original fighter source has no matching class choice").into()),
+            _ => expected,
         };
         if source["ship_type"] != kind || source["side"] != side + 1 ||
             source["policy"].is_object() || source["special"].is_object() ||
@@ -2263,6 +2273,58 @@ pub(super) fn archive(
     // fleet metadata, visuals and colliders come from a known native game
     // scene, never from an approximate handcrafted stats table.
     let mut source_archetypes: Value = serde_json::from_str(SOURCE_ARCHETYPES)?;
+    if original_game {
+        let templates = source_archetypes["ships"].as_array_mut()
+            .ok_or_else(|| invalid("native original game has no archetype registry"))?;
+        for (side, originals) in selected.original_hulls.iter().enumerate() {
+            for source in originals {
+                let Some(kind) = source["ship_type"].as_u64()
+                    .and_then(|value| u8::try_from(value).ok())
+                else { continue };
+                if !original_special_class(side, kind) { continue; }
+                // Each native support/specialist imports its original
+                // health/TSV, exact collision, weapon and lifecycle fields.
+                // The ordinary CombatWorld consumes it for gameplay AND RL.
+                if let Some(existing) = templates.iter_mut().find(|ship|
+                    ship["side"] == side + 1 && ship["ship_type"] == kind)
+                {
+                    *existing = source.clone();
+                } else {
+                    templates.push(source.clone());
+                }
+            }
+        }
+        for side in 0..2 {
+            let support = selected.mix[side].support_count(selected.fleet_sizes[side]);
+            let specialist = selected.mix[side].specialist_count(selected.fleet_sizes[side]);
+            let needed = (support > 0).then(|| selected.mix[side].support_type(side))
+                .into_iter().chain((0..specialist).map(|index|
+                    selected.mix[side].specialist_type_at(side, index)));
+            for kind in needed {
+                if kind == 17 { continue; } // Queen supplied by separate completed Challenge
+                if !selected.original_hulls[side].iter().any(|ship|
+                    ship["ship_type"] == kind)
+                {
+                    return Err(invalid(
+                        "original campaign has no canonical specialist or support source for this fleet",
+                    ).into());
+                }
+            }
+            if side == 1 && support > 0 &&
+                !matches!(selected.mix[1], FleetMix::Queen | FleetMix::Factories)
+            {
+                for kind in [8, 19] {
+                    if !selected.original_hulls[1].iter().any(|ship|
+                        ship["ship_type"] == kind)
+                    {
+                        return Err(invalid(
+                            "original Carrier requires authentic Drone and Striker children",
+                        ).into());
+                    }
+                }
+            }
+        }
+    }
     if selected.mix.iter().any(|mix| matches!(mix, FleetMix::Queen)) {
         let queen = selected.queen_archetype.as_ref()
             .ok_or_else(|| invalid("original Queen FreePlay requires an authenticated Challenge boss"))?;
@@ -2286,10 +2348,10 @@ pub(super) fn archive(
             .ok_or_else(|| invalid("native source archetypes have no ship list"))?
             .push(factory.clone());
     }
-    if support_count[1] > 0 &&
+    if !original_game && support_count[1] > 0 &&
         !matches!(selected.mix[1], FleetMix::Queen | FleetMix::Factories)
     {
-        // The original Carrier carries both Drone and Striker combat
+        // The sandbox Carrier carries both Drone and Striker combat
         // complements. Reuse the exact source-authored Drone hull and
         // weapon from the existing native game scene, discarding only
         // that example's external policy ownership. This does NOT
