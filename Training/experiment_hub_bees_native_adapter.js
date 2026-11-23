@@ -276,7 +276,11 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             parent.game_sha256!==approved.worker_sha256||
             parent.trainer_sha256!==approved.trainer_sha256||
             parent.runtime_version!==approved.runtime_version||
-            parent.seed!==frozen.seed)
+            parent.seed!==frozen.seed||
+            (frozen.wanActors>0||parent.schema_version===3)&&(
+                frozen.wanActors===0||parent.schema_version!==3||
+                parent.game_payload_sha256!==approved.worker_payload_sha256||
+                parent.wan_key_fingerprint!==approved.wan_key_fingerprint))
             throw Error('Bees parent Unity binary, learner runtime or seed differs from the approved continuation.');
         const previous=parent.hyperparameters||{};
         if([...new Set([...Object.keys(previous),...Object.keys(frozen.hyperparameters)])]
