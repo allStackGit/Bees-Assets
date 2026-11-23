@@ -38,6 +38,7 @@ const {
     pruneReleaseTrainingRuntimes,
 } = require('./runtime');
 const { localActorBrokerSlots } = require('./localActor');
+const { binding: gpuBinding } = require('./gpuBinding');
 
 function centralSupervisorAgentPath(preparedRuntime) {
     const runtimeRootValue = String(
@@ -699,6 +700,7 @@ function commandIdentity(
     supervisorArgs,
     learnerLaunchCommand,
     preparedRuntimeVersion,
+    gpuFingerprint = '',
 ) {
     return sha256Text(
         path.resolve(bootstrapPython) + os.EOL +
@@ -708,6 +710,8 @@ function commandIdentity(
         supervisorArgs.map(String).join(os.EOL) + os.EOL +
         '--prepared-runtime-version--' + os.EOL +
         String(preparedRuntimeVersion || '') + os.EOL +
+        '--gpu-owner-binding--' + os.EOL +
+        String(gpuFingerprint || '') + os.EOL +
         '--managed-learner-launch--' + os.EOL +
         learnerLaunchCommand.map(String).join(os.EOL)
     );
@@ -785,12 +789,14 @@ async function startCentralAgentIfNeeded(
         '--runtime-state-file', paths.centralRuntimeStatePath,
         '--shutdown-request-file', paths.centralAgentShutdownRequestPath,
     ];
+    const gpu = gpuBinding(config, 'learner');
     const commandHash = commandIdentity(
         bootstrapPython,
         agent,
         supervisorArgs,
         fallback.launch_command,
         preparedRuntime.runtime_version,
+        gpu.fingerprint,
     );
 
     let existing = null;
@@ -874,6 +880,7 @@ async function startCentralAgentIfNeeded(
         owner_token: ownerToken,
         executable_path: path.resolve(bootstrapPython),
         command_hash: commandHash,
+        gpu_binding:gpu.fingerprint || null,
         supervisor_python: path.resolve(bootstrapPython),
         supervisor_agent: path.resolve(agent),
         learner_python: String(preparedRuntime.learner_python),
@@ -900,6 +907,7 @@ async function startCentralAgentIfNeeded(
     try {
         child = spawn(bootstrapPython, launchArgs, {
             cwd: path.resolve(preparedRuntime.runtime_root),
+            env: gpu.environment,
             detached: true,
             windowsHide: true,
             stdio: ['ignore', stdoutFd, stderrFd],
