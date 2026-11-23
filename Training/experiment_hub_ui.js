@@ -4151,7 +4151,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     (!parameters.trainer_sha256||
                         entry.trainer_sha256===parameters.trainer_sha256)&&
                     (!parameters.runtime_version||
-                        entry.runtime_version===parameters.runtime_version))
+                        entry.runtime_version===parameters.runtime_version)&&
+                    (!parameters.wan_key_fingerprint||
+                        entry.wan_key_fingerprint===parameters.wan_key_fingerprint))
                     return {entry,machine};
             }else if(project==='tinybrains') {
                 const profiles=machine.design_catalog?.tinybrains?.profiles||{};
@@ -4172,6 +4174,8 @@ document.addEventListener('DOMContentLoaded', () => {
             worker_sha256:choice.entry.worker_sha256,
             trainer_sha256:choice.entry.trainer_sha256,
             runtime_version:choice.entry.runtime_version,
+            ...(choice.entry.wan_key_fingerprint
+                ?{wan_key_fingerprint:choice.entry.wan_key_fingerprint}:{}),
             max_steps:100000,envs:8,seed:42,device:'cuda',
             hyperparameters:{},
         };
@@ -4366,6 +4370,7 @@ document.addEventListener('DOMContentLoaded', () => {
             worker_sha256:chosen?.entry?.worker_sha256||null,
             trainer_sha256:chosen?.entry?.trainer_sha256||null,
             runtime_version:chosen?.entry?.runtime_version||null,
+            wan_key_fingerprint:chosen?.entry?.wan_key_fingerprint||null,
             profile_sha256:chosen?.entry?.profile_sha256||null,
             training_schema_sha256:chosen?.entry?.training_schema_sha256||null,
             source_sha256:chosen?.machine?.design_catalog?.tinybrains?.source_sha256||null});
@@ -5492,7 +5497,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return project==='bees_native'
                 ?entry.worker_sha256===params.worker_sha256&&
                     entry.trainer_sha256===params.trainer_sha256&&
-                    entry.runtime_version===params.runtime_version
+                    entry.runtime_version===params.runtime_version&&
+                    ((params.wan_actors||0)===0||
+                        entry.wan_key_fingerprint===params.wan_key_fingerprint)
                 :project==='courier'
                 ?entry.config_sha256===params.config_sha256&&
                     (!params.training_schema_sha256||
