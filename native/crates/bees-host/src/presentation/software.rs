@@ -752,6 +752,7 @@ struct SourceProjectileArt {
 fn projectile_art_frame(kind: u8, age_seconds: f32, count: usize) -> usize {
     let frames_per_second = match kind {
         2 | 7 => 4.0, // Bee/Human Medium Laser Shot
+        8 => 24.0, // Laser Beam
         15 => 10.0, // Fire Tank Explosion
         _ => 8.0,
     };
@@ -1970,17 +1971,33 @@ impl NativeSoftwareRenderer {
     #[cfg(feature = "client")]
     pub(super) fn remote_projectile_art(
         &mut self, shot_type: u8, point: Vec2, rotation_degrees: f32,
-        elapsed_seconds: f32,
+        elapsed_seconds: f32, beam_half_extents: Option<Vec2>,
     ) -> bool {
         let Some(art) = source_projectile_art()
             .and_then(|atlas| atlas.sprites.get(usize::from(shot_type)))
             .and_then(Option::as_ref)
         else { return false };
-        let index = projectile_art_frame(shot_type, elapsed_seconds, art.frames.len());
-        self.draw_sprite(
-            &art.frames[index], point, rotation_degrees.to_radians(),
-            self.camera.pixels_per_unit / art.pixels_per_unit, 1.0,
-        )
+        self.draw_projectile_sprite(art, shot_type, point, rotation_degrees,
+            elapsed_seconds, beam_half_extents)
+    }
+
+    fn draw_projectile_sprite(
+        &mut self, art: &SourceProjectileArt, kind: u8, position: Vec2,
+        rotation_degrees: f32, age: f32, beam_half_extents: Option<Vec2>,
+    ) -> bool {
+        let frame = &art.frames[projectile_art_frame(kind, age, art.frames.len())];
+        let screen_scale = self.camera.pixels_per_unit;
+        if kind == 8 {
+            let Some(extents) = beam_half_extents.filter(|value|
+                value.is_finite() && value.x > 0.0 && value.y > 0.0)
+                else { return false };
+            let scale_x = 2.0 * extents.x * screen_scale / frame.width as f32;
+            let scale_y = 2.0 * extents.y * screen_scale / frame.height as f32;
+            return self.draw_scaled_sprite(frame, position, rotation_degrees.to_radians(),
+                scale_x, scale_y, 1.0);
+        }
+        self.draw_sprite(frame, position, rotation_degrees.to_radians(),
+            screen_scale / art.pixels_per_unit, 1.0)
     }
 
     /// Source collision-asteroid and fragment art share atlas identity,
@@ -3052,17 +3069,20 @@ impl NativeSoftwareRenderer {
                 .and_then(|atlas| atlas.sprites.get(usize::from(projectile.projectile_type)))
                 .and_then(Option::as_ref);
             let drew_art = if let Some(art) = art {
-                let age = projectile.artwork_elapsed_seconds(body).unwrap_or_else(|| {
-                    let (born, seen) = self.projectile_art_ticks
-                        .entry(projectile.entity_id)
-                        .or_insert((view.tick, view.tick));
-                    *seen = view.tick;
-                    view.tick.saturating_sub(*born) as f32 * view.fixed_step_seconds
-                });
-                let index = projectile_art_frame(projectile.projectile_type, age, art.frames.len());
-                self.draw_sprite(&art.frames[index], position,
-                    body.rotation_degrees.to_radians(),
-                    self.camera.pixels_per_unit / art.pixels_per_unit, 1.0)
+                let age = projectile.artwork_elapsed_seconds(body, view.fixed_step_seconds)
+                    .unwrap_or_else(|| {
+                        let (born, seen) = self.projectile_art_ticks
+                            .entry(projectile.entity_id)
+                            .or_insert((view.tick, view.tick));
+                        *seen = view.tick;
+                        view.tick.saturating_sub(*born) as f32 * view.fixed_step_seconds
+                    });
+                let beam_half_extents = match body.shape() {
+                    Some(ShipShape::Box { half_extents, .. }) => Some(*half_extents),
+                    _ => None,
+                };
+                self.draw_projectile_sprite(art, projectile.projectile_type, position,
+                    body.rotation_degrees, age, beam_half_extents)
             } else { false };
             if drew_art {
                 counts.projectile_sprite_draws += 1;
@@ -4815,6 +4835,13 @@ impl NativeSoftwareRenderer {
     }
 
     fn draw_sprite(&mut self, sprite: &NativeSprite, position: Vec2, angle: f32, scale: f32, alpha: f32) -> bool {
+        self.draw_scaled_sprite(sprite, position, angle, scale, scale, alpha)
+    }
+
+    fn draw_scaled_sprite(
+        &mut self, sprite: &NativeSprite, position: Vec2, angle: f32,
+        scale_x: f32, scale_y: f32, alpha: f32,
+    ) -> bool {
         let (center_x, center_y) = self.project(position);
         let (sin, cos) = angle.sin_cos();
         let Some((px0, py0, px1, py1)) = sprite.painted_bounds else {
@@ -4830,10 +4857,10 @@ impl NativeSoftwareRenderer {
         let alpha_cy = (py0 + py1) as f32 * 0.5 - half_h;
         let half_alpha_w = (px1 - px0) as f32 * 0.5;
         let half_alpha_h = (py1 - py0) as f32 * 0.5;
-        let bounds_x = center_x + scale * (alpha_cx * cos + alpha_cy * sin);
-        let bounds_y = center_y + scale * (-alpha_cx * sin + alpha_cy * cos);
-        let extent_x = scale * (half_alpha_w * cos.abs() + half_alpha_h * sin.abs());
-        let extent_y = scale * (half_alpha_w * sin.abs() + half_alpha_h * cos.abs());
+        let bounds_x = center_x + alpha_cx * scale_x * cos + alpha_cy * scale_y * sin;
+        let bounds_y = center_y - alpha_cx * scale_x * sin + alpha_cy * scale_y * cos;
+        let extent_x = half_alpha_w * scale_x * cos.abs() + half_alpha_h * scale_y * sin.abs();
+        let extent_y = half_alpha_w * scale_x * sin.abs() + half_alpha_h * scale_y * cos.abs();
         let left = (bounds_x - extent_x).floor().clamp(0.0, self.width as f32) as usize;
         let right = (bounds_x + extent_x).ceil().clamp(0.0, self.width as f32) as usize;
         let top = (bounds_y - extent_y).floor().clamp(0.0, self.height as f32) as usize;
@@ -4846,14 +4873,15 @@ impl NativeSoftwareRenderer {
         // by scale for EVERY pixel, even for large transparent sprite areas.
         // Compute offsets from the row origin (not accumulated additions)
         // to avoid growing rounding error across wide source sprites.
-        let inv_scale = scale.recip();
-        let dx_left = (left as f32 + 0.5 - center_x) * inv_scale;
-        let du = cos * inv_scale;
-        let dv = sin * inv_scale;
+        let dx_left = left as f32 + 0.5 - center_x;
+        let du = cos / scale_x;
+        let dv = sin / scale_y;
+        let dy_u = sin / scale_x;
+        let dy_v = cos / scale_y;
         for y in top..bottom {
-            let dy = (y as f32 + 0.5 - center_y) * inv_scale;
-            let u_left = dx_left * cos - dy * sin + half_w;
-            let v_left = dx_left * sin + dy * cos + half_h;
+            let dy = y as f32 + 0.5 - center_y;
+            let u_left = dx_left * du - dy * dy_u + half_w;
+            let v_left = dx_left * dv + dy * dy_v + half_h;
             let row = y * self.width;
             for x in left..right {
                 let delta = (x - left) as f32;

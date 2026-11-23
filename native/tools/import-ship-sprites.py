@@ -139,7 +139,7 @@ PROJECTILE_IMAGES = (
     "Projectiles/Frigate Rocket In Flight.png",
     "Projectiles/Human Small Laser Shot.png",
     "Projectiles/pill_projectile.png",
-    None,  # The beam needs its live source/target geometry.
+    "Projectiles/beam.png",
     "Projectiles/Leafcutter Shot.png",
     "Projectiles/Queen Small Laser Shot.png",
     "Projectiles/Queen Stinger Laser Shot.png",

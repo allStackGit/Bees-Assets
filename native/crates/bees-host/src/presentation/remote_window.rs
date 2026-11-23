@@ -346,7 +346,9 @@ impl RemoteArtwork {
                     tick.saturating_sub(*first) as f32 * dt.max(0.0)
                 });
             let angle = visual.heading_for(shot, 1, fraction);
-            if self.raster.remote_projectile_art(kind, point, angle, age) {
+            let beam_half_extents = (kind == 8 && shot["collider"]["kind"] == "box")
+                .then(|| point_from_wire(&shot["collider"]["half_extents"])).flatten();
+            if self.raster.remote_projectile_art(kind, point, angle, age, beam_half_extents) {
                 self.projectiles.insert(id);
                 stats.projectile_sprite_draws += 1;
             }

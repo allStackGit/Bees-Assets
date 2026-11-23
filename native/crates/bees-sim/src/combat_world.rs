@@ -573,9 +573,12 @@ impl CombatProjectile {
     }
 
     /// Read-only presentation age. Explosions already own a recovered
-    /// timeline, and medium shots travel at constant speed from their
-    /// launch point. No render clock is needed in the simulation loop.
-    pub fn artwork_elapsed_seconds(&self, body: &ProjectileBody) -> Option<f32> {
+    /// timeline, beams extend once per tick, and medium shots travel at
+    /// constant speed. The simulation needs no separate render clock.
+    pub fn artwork_elapsed_seconds(&self, body: &ProjectileBody, fixed_dt: f32) -> Option<f32> {
+        if let ImpactBehavior::Beam { length_scale, .. } = &self.behavior {
+            return Some(((*length_scale - 1.0) * 0.5).max(0.0) * fixed_dt);
+        }
         if let ImpactBehavior::Explosion { timeline, .. } = &self.behavior {
             return Some(timeline.elapsed_seconds());
         }

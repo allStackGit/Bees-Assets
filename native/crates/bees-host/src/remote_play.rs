@@ -2934,7 +2934,7 @@ fn current_state(
                 [bounds.max.x, bounds.max.y],
             ]),
         });
-        if let Some(age) = shot.artwork_elapsed_seconds(body) {
+        if let Some(age) = shot.artwork_elapsed_seconds(body, view.fixed_step_seconds) {
             snapshot["artwork_age_seconds"] = json!(age);
         }
         Some(snapshot)
