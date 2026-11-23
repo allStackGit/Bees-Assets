@@ -496,7 +496,7 @@ def record_model(root: Path, job: dict):
         "job_id": job_id,
         **({"lineage_root_id": job["lineage_root_id"],
             "continuation_of_job_id": job["continuation_of_job_id"]}
-           if job["schema_version"] == 2 else {}),
+           if job["schema_version"] >= 2 else {}),
         "model": str(model), "sha256": sha256_file(model),
         "checkpoint": str(checkpoint), "checkpoint_sha256": checkpoint_sha,
         "completed_at": datetime.now(timezone.utc).isoformat(),
