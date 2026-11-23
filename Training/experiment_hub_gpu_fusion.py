@@ -793,6 +793,7 @@ class MeasuredGpuExecution:
         self._pending_graph_validation = set()
         self.graph_profiles_released = 0
         self.graph_profiles_evicted = 0
+        self.strategy_profiles_evicted = 0
 
     def _trim_graph_residency(self):
         """Enforce graph residency after direct strategy qualification.
@@ -907,6 +908,9 @@ class MeasuredGpuExecution:
                         self.fusion.qualifications += 1
                         decision = self.fusion._qualify(args, rows)
                         self.fusion._profiles[fused_shape] = decision
+                        while len(self.fusion._profiles) > self.fusion.max_profiles:
+                            self.fusion._profiles.popitem(last=False)
+                            self.strategy_profiles_evicted += 1
                         if decision.fused:
                             choice, best_seconds = "fused", decision.fused_seconds
                 if self.streams.enabled:
@@ -914,6 +918,9 @@ class MeasuredGpuExecution:
                     self.streams.qualifications += 1
                     decision = self.streams._qualify(stream_args)
                     self.streams.profiles[stream_shape] = decision
+                    while len(self.streams.profiles) > self.streams.max_profiles:
+                        self.streams.profiles.popitem(last=False)
+                        self.strategy_profiles_evicted += 1
                     if decision.fused and decision.fused_seconds < best_seconds:
                         choice, best_seconds = "streams", decision.fused_seconds
                 if self.allow_graphs and self.graphs.enabled:
@@ -945,6 +952,20 @@ class MeasuredGpuExecution:
         else:
             self.choices.move_to_end(signature)
         if choice == "fused":
+            # A private first-shape qualification may have been evicted
+            # from the bounded fusion cache while the outer shape choice
+            # remained. Calling fusion.run() on that cache miss would run
+            # expensive calibration unexpectedly on the inference hot path.
+            try:
+                _, _, fusion_signature = self.fusion._prepare(batches)
+            except ValueError:
+                fusion_signature = None
+            if (fusion_signature is None or
+                    fusion_signature not in self.fusion._profiles):
+                self.choices[signature] = "eager"
+                self.eager_calls += 1
+                return self.fusion._eager([
+                    FrozenGpuFusion._args(batch) for batch in batches])
             before = self.fusion.fused_calls
             result = self.fusion.run(batches)
             if self.fusion.fused_calls == before:
@@ -968,6 +989,15 @@ class MeasuredGpuExecution:
                 self.fused_calls += 1
             return result
         if choice == "streams":
+            # As with graph captures, cache eviction must never schedule
+            # a fresh multi-width GPU benchmark without its owner's
+            # explicit calibration budget.
+            _, stream_signature = self.streams._prepare(batches)
+            if stream_signature not in self.streams.profiles:
+                self.choices[signature] = "eager"
+                self.eager_calls += 1
+                return self.streams._serial([
+                    FrozenGpuFusion._args(batch) for batch in batches])
             before = self.streams.parallel_calls
             result = self.streams.run(batches)
             if self.streams.parallel_calls == before:
@@ -1023,6 +1053,7 @@ class MeasuredGpuExecution:
             gpu_execution_refresh_invalidations=self.refresh_invalidations,
             gpu_execution_graph_profiles_released=self.graph_profiles_released,
             gpu_execution_graph_profiles_evicted=self.graph_profiles_evicted,
+            gpu_execution_strategy_profiles_evicted=self.strategy_profiles_evicted,
             **self.fusion.metrics(),
             **self.streams.metrics(),
             **self.graphs.metrics(),
