@@ -645,7 +645,7 @@ def write_launchers(output: Path, binary_name: str,
             launcher.write_text(
                 windows_start +
                 'if not defined BEES_NATIVE_REMOTE_LISTEN (echo Set BEES_NATIVE_REMOTE_LISTEN 1>&2 & popd & exit /b 2)\n' +
-                'if not defined BEES_NATIVE_REMOTE_SIDE_TOKENS (echo Set BEES_NATIVE_REMOTE_SIDE_TOKENS 1>&2 & popd & exit /b 2)\n' +
+                'if not defined BEES_NATIVE_REMOTE_SIDE_TOKENS if not defined BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE (echo Set commander token JSON or BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE 1>&2 & popd & exit /b 2)\n' +
                 'if "%~1"=="" (echo Usage: %~nx0 PACKAGED-RUN-JSON 1>&2 & popd & exit /b 2)\n' +
                 'if not "%~2"=="" (echo Expected exactly one run JSON path 1>&2 & popd & exit /b 2)\n' +
                 'if not exist "%~1" (echo Missing native run configuration 1>&2 & popd & exit /b 2)\n' +
@@ -662,7 +662,10 @@ def write_launchers(output: Path, binary_name: str,
                 "set -eu\n"
                 'cd "$(dirname "$0")"\n'
                 ': "${BEES_NATIVE_REMOTE_LISTEN:?Set BEES_NATIVE_REMOTE_LISTEN to the host TCP address}"\n'
-                ': "${BEES_NATIVE_REMOTE_SIDE_TOKENS:?Set BEES_NATIVE_REMOTE_SIDE_TOKENS to JSON side credentials}"\n'
+                'if [ -z "${BEES_NATIVE_REMOTE_SIDE_TOKENS:-}" ] && [ -z "${BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE:-}" ]; then\n'
+                '  echo "Set BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE or BEES_NATIVE_REMOTE_SIDE_TOKENS" >&2\n'
+                '  exit 2\n'
+                'fi\n'
                 'save="${XDG_DATA_HOME:-$HOME/.local/share}/bees-native"\n'
                 'if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then\n'
                 '  printf "Usage: %s PACKAGED-RUN-JSON\\n" "$0" >&2\n'
