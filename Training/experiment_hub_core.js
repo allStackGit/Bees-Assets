@@ -6775,6 +6775,7 @@ class ExperimentHub {
             !supportsTinyBrainsProfile(learner,{
                 project_id:'tinybrains',resources:learnerBudget,
                 frozen_parameters:{...config.parameters,
+                    training_stage:config.parameters.training_stage??'full_multiplayer',
                     device:tinyBrainsDeviceForLease(config.parameters,learnerBudget),
                     rollout_endpoints:[endpoint]},
                 continuation_of_job_id:value.learner.continuation_of_job_id??null,
@@ -7669,6 +7670,12 @@ class ExperimentHub {
         // Freeze the exact input and resources. No executable, shell snippet,
         // directory, or process arguments can be supplied in the job request.
         const frozen = config(selected.parameters);
+        // New TinyBrains jobs must freeze the complete map/player-count stage.
+        // Older saved designs omitted it and silently inherited basic-tiny-2p
+        // from their checkpoints, even when the run was labeled Full Maps.
+        // The operator can still explicitly select a narrower stage.
+        if(project.id==='tinybrains'&&!Object.hasOwn(frozen,'training_stage'))
+            frozen.training_stage='full_multiplayer';
         requireCourierTrainingPin(project.id,frozen);
         const resources = resourceRequest(value.resources);
         const runName=value.run_name==null||value.run_name===''
