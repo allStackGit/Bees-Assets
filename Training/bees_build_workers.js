@@ -108,7 +108,26 @@ function projectVersion() {
     return match[1];
 }
 
-function dirtySource() {
+// A fresh Editor import may generate .meta for tracked, non-Unity tooling
+// under Assets/Training. Capture only metadata absent BEFORE the build;
+// existing metadata and all game/C# metadata remain source inputs.
+function initialToolMetadata() {
+    const result=runSync('git',['ls-files','-z','--','Training'],{
+        cwd:paths.assetsRoot,timeout:30000,maxBuffer:16*1024*1024,check:false,
+    });
+    if(result.status!==0)
+        throw Error('Cannot inspect tracked tooling before Unity compilation.');
+    const ignored=new Set();
+    for(const name of String(result.stdout||'').split('\0')) {
+        if(!/^Training\/[^/]+\.(?:js|py|md|svg|html|json|sh|cmd|ps1)$/i.test(name))
+            continue;
+        const meta=name+'.meta';
+        if(!fs.existsSync(path.join(paths.assetsRoot,meta)))
+            ignored.add(meta);
+    }
+    return ignored;
+}
+function dirtySource(ignoredMeta=new Set()) {
     const result = runSync('git', ['status', '--porcelain', '--untracked-files=normal','--',
         '.',...protectedExclusions()], {
         cwd: paths.assetsRoot,
@@ -116,7 +135,10 @@ function dirtySource() {
         maxBuffer: 2 * 1024 * 1024,
         check: false,
     });
-    return result.status === 0 ? Boolean(String(result.stdout || '').trim()) : null;
+    if(result.status!==0)return null;
+    return String(result.stdout||'').split(/\r?\n/).filter(Boolean)
+        .some(line=>!line.startsWith('?? ')||
+            !ignoredMeta.has(line.slice(3)));
 }
 
 async function sha256(file) {
@@ -135,7 +157,7 @@ const protectedExclusions=()=>[...PROTECTED].flatMap(name=>[
     ':(exclude)'+name+'/**',
     ':(exclude)**/'+name+'/**',
 ]);
-async function sourceSnapshot() {
+async function sourceSnapshot(ignoredMeta=new Set()) {
     const names=new Set();
     for(const args of [
         ['diff','--name-only','-z','HEAD','--','.',...protectedExclusions()],
@@ -149,7 +171,8 @@ async function sourceSnapshot() {
         if(result.status!==0)
             throw Error('Cannot capture the exact modified Unity source inventory.');
         for(const name of String(result.stdout||'').split('\0')) {
-            if(name&&!protectedPath(name))names.add(name);
+            if(name&&!protectedPath(name)&&
+                !(args[0]==='ls-files'&&ignoredMeta.has(name)))names.add(name);
         }
     }
     const hashes=[];
@@ -217,10 +240,11 @@ async function build(argv = process.argv.slice(2)) {
             throw Error('--install-root must be outside the Unity project tree.');
     }
     const commit = getGitShortSha();
-    const sourceDirty = dirtySource();
+    const ignoredMeta=initialToolMetadata();
+    const sourceDirty = dirtySource(ignoredMeta);
     if(sourceDirty===null)
         throw Error('Cannot establish the Unity source status before building workers.');
-    const sourceFingerprint=await sourceSnapshot();
+    const sourceFingerprint=await sourceSnapshot(ignoredMeta);
     const packagesManifest = path.join(paths.beesRoot, 'Packages', 'manifest.json');
     const packagesSha = await sha256(packagesManifest);
     const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
@@ -275,8 +299,8 @@ async function build(argv = process.argv.slice(2)) {
 
     if (getGitShortSha() !== commit ||
         (await sha256(packagesManifest)) !== packagesSha ||
-        dirtySource() !== sourceDirty||
-        (await sourceSnapshot())!==sourceFingerprint) {
+        dirtySource(ignoredMeta) !== sourceDirty||
+        (await sourceSnapshot(ignoredMeta))!==sourceFingerprint) {
         throw Error('Unity source or project packages changed during the worker build; artifacts were not published.');
     }
     const manifest = {
