@@ -26,6 +26,7 @@ pub mod presentation;
 pub mod player_trace;
 pub mod remote_play;
 pub mod remote_tls;
+pub mod remote_state_codec;
 pub mod world_fingerprint;
 pub mod policy_action_trace;
 #[cfg(feature = "client")]
