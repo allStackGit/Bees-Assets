@@ -263,6 +263,9 @@ function validateCatalog(raw,installed=[],approved={}) {
                 'wan_key_fingerprint'].every(key=>
                     /^[0-9a-f]{64}$/.test(String(entry?.[key]||''))))
             throw Error('Bees remote actor must advertise exact Unity, PPO, runtime and WAN key hashes.');
+        if(entry.cuda_enabled!==undefined&&
+            typeof entry.cuda_enabled!=='boolean')
+            throw Error('Bees WAN Windows CUDA option must be explicitly trusted.');
         if(entry.wan_forward_managed!==undefined&&
             typeof entry.wan_forward_managed!=='boolean')
             throw Error('Bees WAN actor SSH ownership must be a trusted boolean.');
@@ -279,6 +282,7 @@ function validateCatalog(raw,installed=[],approved={}) {
             runtime_version:entry.runtime_version,
             wan_key_fingerprint:entry.wan_key_fingerprint,
             wan_forward_managed:entry.wan_forward_managed===true,
+            cuda_enabled:entry.cuda_enabled===true,
             ...(entry.wan_forward_managed===true
                 ?{wan_target_machine_id:entry.wan_target_machine_id}:{})};
     }
