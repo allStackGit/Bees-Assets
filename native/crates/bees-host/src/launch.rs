@@ -5972,8 +5972,9 @@ fn serve_native_archived_receipts(root: &Path) -> Result<(), Box<dyn Error>> {
     if receipts.is_empty() {
         return Err(invalid("no committed native multiplayer receipts for this game").into());
     }
-    if env::var_os("BEES_NATIVE_REMOTE_SIDE_TOKENS").is_none() {
-        return Err(invalid("archived multiplayer requires authenticated player-side tokens").into());
+    if env::var_os("BEES_NATIVE_REMOTE_SIDE_TOKENS").is_none() &&
+        env::var_os("BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE").is_none() {
+        return Err(invalid("archived multiplayer requires authenticated player-side credentials").into());
     }
     let mut server = bees_host::remote_play::NativeRemotePlay::from_environment(0, true)?
         .ok_or_else(|| invalid("archived multiplayer requires a LAN listen endpoint"))?;
@@ -6234,6 +6235,7 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
                     .arg("serve-receipts").arg(&receipt_root)
                     .env("BEES_NATIVE_REMOTE_LISTEN", &settings.listen)
                     .env("BEES_NATIVE_REMOTE_SIDE_TOKENS", &token_map)
+                    .env_remove("BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE")
                     .env_remove("BEES_NATIVE_REMOTE_TOKEN")
                     .status()?;
                 if !status.success() {
@@ -6445,6 +6447,7 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
     let outcome = launch
         .env("BEES_NATIVE_REMOTE_LISTEN",&settings.listen)
         .env("BEES_NATIVE_REMOTE_SIDE_TOKENS",&token_map)
+        .env_remove("BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE")
         .env_remove("BEES_NATIVE_REMOTE_TOKEN")
         .status()?;
     if !outcome.success() {
@@ -9921,10 +9924,11 @@ fn run_battle(
     // players, with each source squad verified below. Only the legacy
     // single-token cooperative mode needs an authored local player side.
     if remote_step_interval.is_some() && !(1..=2).contains(&local_player_side) &&
-        env::var_os("BEES_NATIVE_REMOTE_SIDE_TOKENS").is_none()
+        env::var_os("BEES_NATIVE_REMOTE_SIDE_TOKENS").is_none() &&
+        env::var_os("BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE").is_none()
     {
         return Err(invalid(
-            "cooperative remote play requires an authored local player side; dedicated hosts must provide BEES_NATIVE_REMOTE_SIDE_TOKENS",
+            "remote play requires an authored local player side or explicit dedicated host side-token credentials",
         ).into());
     }
     let mut remote = bees_host::remote_play::NativeRemotePlay::from_environment(
