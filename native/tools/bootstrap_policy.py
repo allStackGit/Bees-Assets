@@ -20,7 +20,9 @@ import tempfile
 import numpy as np
 
 from native_training_artifacts import (atomic_json, file_sha256, sync_directory,
-                                       native_cargo_release_args)
+                                       native_cargo_release_args,
+                                       snapshot_native_stage_assets, native_stage_snapshot_hashes,
+                                       verify_frozen_stage_assets)
 from native_training_holdout import write_native_holdout
 from policy_worker import checked_manifest, install_bees_actor, mlagents_behavior_spec
 
@@ -73,6 +75,7 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         source_run = example_dir / f"native-{scenario}.run.json"
     scene = json.loads(source_scene.read_text(encoding="utf-8"))
     run = json.loads(source_run.read_text(encoding="utf-8"))
+    stage_assets = snapshot_native_stage_assets(run, source_run)
     source_episodes = run.get("episodes_per_world")
     if (type(source_episodes) is not int or
             not 1 <= source_episodes <= 1000000):
@@ -274,6 +277,11 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
                 raise ValueError("native physical source changed while initializing the model")
             staged_scene_templates[digest] = name
         scene_outputs.append(name)
+    for name, (_, payload) in stage_assets.items():
+        with (output / name).open("xb") as file:
+            file.write(payload)
+            file.flush()
+            os.fsync(file.fileno())
     run.update({
         "run_id": f"native-{scenario}-bootstrap-{seed}",
         "stage_name": scene["stage_name"],
@@ -399,6 +407,8 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
                 )
             ],
         } if scenario == "custom" else {}),
+        **({"stage_assets_sha256": native_stage_snapshot_hashes(stage_assets)}
+           if stage_assets else {}),
         "episodes_per_world": episodes_per_world,
         "holdout_worlds": holdout_worlds,
         "holdout_seed": holdout_seed if holdout_worlds is not None else None,
@@ -501,6 +511,8 @@ def verified_existing_bootstrap(output: Path, seed: int, slots: list[int],
                 file_sha256(output / "holdout-run.json") != receipt.get("holdout_run_sha256")):
             raise ValueError("frozen native holdout configuration changed")
     config = json.loads((output / "run.json").read_text(encoding="utf-8"))
+    if "stage_assets_sha256" in receipt:
+        verify_frozen_stage_assets(output, config, receipt["stage_assets_sha256"])
     expected_scenes = (
         [entry["scene"] for entry in source_receipts] if source_receipts
         else ["scene.json"]

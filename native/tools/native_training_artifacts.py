@@ -193,6 +193,51 @@ def check_native_model_dependencies(dependencies):
             raise ValueError(f"native model weights changed during evaluation: {file}")
 
 
+FROZEN_STAGE_FILES = {
+    "collision_matrix": "stage-collision-matrix.json",
+    "stage_palette": "stage-asteroid-palette.json",
+}
+
+
+def snapshot_native_stage_assets(run: dict, source: Path) -> dict:
+    """Read the exact legacy assets and make their run links relocatable."""
+    configured = {key: run.get(key) for key in FROZEN_STAGE_FILES}
+    if all(value is None for value in configured.values()):
+        return {}
+    if run.get("native_stage") is not None or any(
+        not isinstance(value, str) or not value for value in configured.values()
+    ):
+        raise ValueError("native Stage requires either inline settings or both exported assets")
+    assets = {}
+    for key, name in FROZEN_STAGE_FILES.items():
+        original = (source.parent / configured[key]).resolve(strict=True)
+        payload = original.read_bytes()
+        assets[name] = (original, payload)
+        run[key] = name
+    return assets
+
+
+def native_stage_snapshot_hashes(assets: dict) -> dict:
+    """Reject source changes before committing the captured physical inputs."""
+    hashes = {}
+    for name, (original, payload) in assets.items():
+        digest = hashlib.sha256(payload).hexdigest()
+        if file_sha256(original) != digest:
+            raise ValueError(f"native Stage asset changed while copying: {original}")
+        hashes[name] = digest
+    return hashes
+
+
+def verify_frozen_stage_assets(root: Path, run: dict, hashes: dict) -> None:
+    if not isinstance(hashes, dict) or hashes.keys() != set(FROZEN_STAGE_FILES.values()):
+        raise ValueError("native Stage snapshot has an incomplete asset inventory")
+    for key, name in FROZEN_STAGE_FILES.items():
+        asset = root / name
+        if (run.get("native_stage") is not None or run.get(key) != name or
+                asset.is_symlink() or file_sha256(asset) != hashes[name]):
+            raise ValueError(f"frozen native Stage asset or link changed: {name}")
+
+
 def native_input_dependencies(*runs):
     """Pin the original physical scenes, Stage files and inference code.
 

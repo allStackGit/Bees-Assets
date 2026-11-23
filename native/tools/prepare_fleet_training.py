@@ -23,7 +23,10 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
-from native_training_artifacts import atomic_json, file_sha256, sync_directory
+from native_training_artifacts import (
+    atomic_json, file_sha256, sync_directory, FROZEN_STAGE_FILES,
+    snapshot_native_stage_assets, native_stage_snapshot_hashes, verify_frozen_stage_assets,
+)
 
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
@@ -660,6 +663,7 @@ def convert(source: Path, destination: Path, archetypes: Path,
     scene_sha = file_sha256(scene_path)
     archetypes_sha = file_sha256(archetypes)
     scene, run = source_battle(source)
+    stage_assets = snapshot_native_stage_assets(run, source)
     scene, run, clone_count = materialize(scene, run)
     if not isinstance(run.get("max_rounds"), int) or run["max_rounds"] <= 10:
         raise ValueError("source battle has no valid native episode round limit")
@@ -858,7 +862,7 @@ def convert(source: Path, destination: Path, archetypes: Path,
             } for side in (1, 2)
         },
     }
-    # Publish all four files and their joint receipt as one immutable
+    # Publish the paired scenes, Stage assets and receipt as one immutable
     # directory. An interrupted authoring attempt must not leave a
     # seemingly usable but incomplete model initialization source.
     with tempfile.TemporaryDirectory(
@@ -868,8 +872,14 @@ def convert(source: Path, destination: Path, archetypes: Path,
         complete.mkdir()
         for name, value in files.items():
             atomic_json(complete / name, value)
+        for name, (_, payload) in stage_assets.items():
+            with (complete / name).open("xb") as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
         receipt["outputs_sha256"] = {
-            name: file_sha256(complete / name) for name in files
+            **{name: file_sha256(complete / name) for name in files},
+            **native_stage_snapshot_hashes(stage_assets),
         }
         atomic_json(complete / "training-source.json", receipt)
         sync_directory(complete)
@@ -888,16 +898,22 @@ def verify_prepared_source(source_dir: Path) -> dict:
              "battle.policy.scene.json", "battle.policy.run.json")
     if (receipt.get("kind") != "native_fleet_skirmish_training_source" or
             receipt.get("schema_version") != 1 or
-            not isinstance(receipt.get("outputs_sha256"), dict) or
-            set(receipt["outputs_sha256"]) != set(names)):
+            not isinstance(receipt.get("outputs_sha256"), dict)):
+        raise ValueError("native fleet training source has no complete published receipt")
+    published = receipt["outputs_sha256"]
+    stage_files = set(published) - set(names)
+    if not set(names).issubset(published) or (
+            stage_files and stage_files != set(FROZEN_STAGE_FILES.values())):
         raise ValueError("native fleet training source has no complete published receipt")
     for name in names:
-        if file_sha256(source_dir / name) != receipt["outputs_sha256"][name]:
+        if file_sha256(source_dir / name) != published[name]:
             raise ValueError(f"native fleet training source changed after publication: {name}")
     scene = read_json(source_dir / names[0])
     run = read_json(source_dir / names[1])
     policy_scene = read_json(source_dir / names[2])
     policy_run = read_json(source_dir / names[3])
+    if stage_files:
+        verify_frozen_stage_assets(source_dir, run, {name: published[name] for name in stage_files})
     if (run["levels"][0]["scene"] != names[0] or
             policy_run["levels"][0]["scene"] != names[2] or
             verify_same_battle(scene, run, policy_scene, policy_run) !=
