@@ -738,6 +738,22 @@ def verify_evaluation(directory, manifest_sha, source_sha, learner_side, policy_
         )
         if expected_weights != result["model_dependencies"]:
             raise ValueError(f"holdout model weights differ from committed evaluation: {directory}")
+    if candidate_slot is not None:
+        from evaluate_policy import terminal_matchup
+        actual, by_scene = terminal_matchup(
+            directory, result, candidate_slot, reference_slot,
+        )
+        attributed = result.get("candidate_terminal_matchup")
+        if (not isinstance(attributed, dict) or
+                attributed.get("counts") != dict(actual) or
+                attributed.get("by_scene_sha256") != {
+                    key: dict(value) for key, value in by_scene.items()
+                } or
+                attributed.get("candidate_win_rate") !=
+                    actual["wins"] / result["episodes"]):
+            raise ValueError(
+                f"native checkpoint monitor changed actual model ownership: {directory}"
+            )
     summary = read_json(summary_path)
     if (summary.get("run_id") != result.get("run_id") or
             summary.get("policy_manifest_sha256") != manifest_sha or
@@ -1906,6 +1922,12 @@ def main():
     if any(side != args.evaluation_side for side in args.monitor_evaluation_side) and (
             args.self_play_opponent_slot is None or args.learner_slot is None):
         parser.error("opposing-faction monitors require pinned learner and self-play opponent slots")
+    if (any(side != args.evaluation_side for side in args.monitor_evaluation_side) and
+            args.checkpoint_selection.startswith("mission")):
+        parser.error(
+            "opposing-faction model attribution cannot rank original physical "
+            "mission goals as if the candidate owned their objective"
+        )
     if args.checkpoint_selection.startswith("mission") and args.evaluation_run_config is None:
         parser.error("physical mission ranking requires a pinned primary evaluation suite")
     if len(args.monitor_evaluation_run_config) > 16:
