@@ -1011,9 +1011,21 @@ def main() -> None:
             args.train_rounds is None or
             args.holdout_worlds is None and args.evaluation_run_config is None):
         parser.error("extra monitoring suites require training and a primary holdout")
-    if len(args.monitor_evaluation_run_config) > 16:
+    # A rotated source curriculum can provide independent monitoring
+    # suites without separately repeating every config on the command
+    # line. The session validates and pins the entire authored plan.
+    rotation_monitor_count = 0
+    if args.curriculum_plan is not None:
+        plan = json.loads(args.curriculum_plan.read_text(encoding="utf-8"))
+        rotation = plan.get("rotation") if isinstance(plan, dict) else None
+        if isinstance(rotation, dict):
+            monitors = rotation.get("monitor_run_configs", [])
+            if isinstance(monitors, list):
+                rotation_monitor_count = len(monitors)
+    available_monitors = len(args.monitor_evaluation_run_config) + rotation_monitor_count
+    if available_monitors > 16:
         parser.error("no more than 16 independent native monitoring suites")
-    if (not 1 <= args.parallel_monitor_suites <= max(1, len(args.monitor_evaluation_run_config)) or
+    if (not 1 <= args.parallel_monitor_suites <= max(1, available_monitors) or
             args.parallel_monitor_suites > 1 and args.rollout_binary is None):
         parser.error("parallel monitoring requires a pinned native binary and enough monitoring suites")
     if args.monitor_evaluation_gpus is not None:
