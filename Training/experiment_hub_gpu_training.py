@@ -654,6 +654,32 @@ class PinnedGpuStaging:
         self.async_copies += 1
         return destination
 
+    def upload(self, source):
+        """Transfer a transient PPO microbatch through the same pinned pool.
+
+        Output allocation remains on the caller's compute stream. When a
+        pinned DMA is selected, only that stream waits on the copy's event;
+        no CPU-wide device sync is introduced. Host buffers remain owned by
+        this pool until the device event completes and can then be reused by
+        subsequent microbatches or a later PPO update.
+        """
+        if (self._closed or not isinstance(source,torch.Tensor) or
+                source.device.type!="cpu" or not source.is_contiguous()):
+            raise ValueError("GPU upload requires contiguous host input and a live lease")
+        consumer = torch.cuda.current_stream(self.device)
+        destination = torch.empty(
+            source.shape,dtype=source.dtype,device=self.device)
+        previous_async = self.async_copies
+        self.copy_(destination,source)
+        if self.async_copies != previous_async:
+            # copy_ recorded an event on the same leased transfer stream.
+            # Do not wait on its completion on the host. The stream wait
+            # makes the tensor safe for immediate GPU model consumption.
+            event = self._pending[-1][1]
+            consumer.wait_event(event)
+            destination.record_stream(consumer)
+        return destination
+
     def finish_update(self):
         """Finish one immutable GPU upload generation, retaining host buffers.
 
