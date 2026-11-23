@@ -77,7 +77,7 @@ function options(argv) {
             result.installRoot = path.resolve(value);
         } else if (name === '--activate') {
             result.activate = true;
-            i--;
+            continue;
         } else {
             throw Error('Unknown or incomplete argument: ' + name + '\n' + usage());
         }
