@@ -14,6 +14,11 @@ import sys
 
 
 def main():
+    # Running a Python file rather than -m changes sys.path[0]. Restore the
+    # approved worker project's editable source discovery when it uses src/.
+    source = Path.cwd() / "src"
+    if (source / "ants_mapoca").is_dir():
+        sys.path.insert(0,str(source))
     args = sys.argv[1:]
     # The trusted worker adapter creates the complete, already-validated
     # invocation. Never activate GPU features in CPU-only rollout services.
