@@ -1358,14 +1358,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
     }
     const expandedRecordDetails=new Set();
-    function recordDetail(key,label,message) {
-        const details=document.createElement('details');
-        if(expandedRecordDetails.has(key))details.open=true;
+    function persistDetailsOpen(details,key) {
+        details.open=expandedRecordDetails.has(key);
         details.addEventListener('toggle',()=>{
             if(!details.isConnected)return;
             if(details.open)expandedRecordDetails.add(key);
             else expandedRecordDetails.delete(key);
         });
+    }
+    function recordDetail(key,label,message) {
+        const details=document.createElement('details');
+        persistDetailsOpen(details,key);
         const summary=document.createElement('summary');
         summary.textContent=label;
         const description=document.createElement('p');
@@ -5512,7 +5515,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const all=[...available].filter(key=>/^[a-z][a-z0-9_]{0,63}$/.test(key))
             .sort();
-        select.replaceChildren(...all.map(key=>{
+        const changed=refreshSelectOptions(select,all.map(key=>{
             const option=new Option(key+(observed.has(key)
                 ?' · recorded':' · supported'),key);
             option.dataset.description=hubMetricDescription(key);
@@ -5525,7 +5528,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?'Performance and resources':'Other supported metrics';
             return option;
         }));
-        renderMetricPicker('hub-job-metrics','hub-job-metric-picker');
+        if(changed)renderMetricPicker('hub-job-metrics','hub-job-metric-picker');
         $('hub-job-save-metric-defaults').disabled=metricDefaultsSaving||!configuration;
         $('hub-job-reset-metric-defaults').disabled=metricDefaultsSaving||
             savedDefaults===null;
@@ -5710,7 +5713,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         j.checkpoint_stop_verified===true&&j.capacity_released_at)||
                     ['start_requested','launch_requested','running'].includes(j.status))||
                 ['waiting_adapter','waiting_predecessor'].includes(j.status)));
-        predecessorSelect.replaceChildren(
+        refreshSelectOptions(predecessorSelect, [
             new Option('New experiment (no predecessor)',''),
             ...availableParents.map(j=>new Option(
                 j.configuration_name+' · '+j.status+
@@ -5723,7 +5726,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     j.continuation_machine_id))?.name||
                     j.assigned_machine_id||j.continuation_machine_id||
                     'machine not assigned yet')+
-                ' · '+j.id.slice(-8),j.id)));
+                ' · '+j.id.slice(-8),j.id))]);
         if(availableParents.some(j=>j.id===previousParent))
             predecessorSelect.value=previousParent;
         renderCurriculumChoice();
@@ -5786,12 +5789,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const pipeline=$('hub-pipeline-panel');
         pipeline.hidden=['bees','ants'].includes(project);
         const kind=$('hub-pipeline-kind'),oldKind=kind.value;
-        kind.replaceChildren(
+        refreshSelectOptions(kind, [
             new Option('Fresh jobs in sequence (wait for predecessor)','independent'),
             new Option('Independent trials (can run concurrently)','batch'),
             ...(['tinybrains','courier'].includes(project)
                 ?[new Option('Checkpoint continuation (sequential, inherited model)','continuation')]
-                :[]));
+                :[])]);
         if(pipelineKindProject===project&&
             ['independent','batch','continuation'].includes(oldKind)&&
             (oldKind!=='continuation'||['tinybrains','courier'].includes(project)))
@@ -5828,13 +5831,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     Boolean(j.dispatch_id&&j.assigned_machine_id&&j.execution_updated_at);
                 return queued||completed;
             });
-        pipelinePredecessor.replaceChildren(
+        refreshSelectOptions(pipelinePredecessor, [
             new Option(checkpointPipeline?'New experiment (no predecessor)':
                 'New independent sequence (no predecessor)',''),
             ...sequenceParents.map(j=>new Option(
                 (checkpointPipeline?'':j.project_id+' · ')+
                     j.configuration_name+' · '+j.status+' · '+j.id.slice(-8),
-                j.id)));
+                j.id))]);
         if(sequenceParents.some(j=>j.id===formerPipelineParent))
             pipelinePredecessor.value=formerPipelineParent;
         if(project!=='bees') {
@@ -5851,9 +5854,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         $('hub-job-queue').disabled=['bees','ants'].includes(project)||!configs.length;
         const previousMachine=$('hub-job-machine').value;
-        $('hub-job-machine').replaceChildren(new Option('Automatic best fit',''),
+        refreshSelectOptions($('hub-job-machine'), [new Option('Automatic best fit',''),
             ...state.machines.filter(m=>m.status==='connected')
-                .map(m=>new Option(m.name+' ('+m.id+')',m.id)));
+                .map(m=>new Option(m.name+' ('+m.id+')',m.id))]);
         if(state.machines.some(m=>m.id===previousMachine&&m.status==='connected'))
             $('hub-job-machine').value=previousMachine;
         renderDistributedGroup();
@@ -6204,6 +6207,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     'Training, evaluation and diagnostics',fullLearning));
             if(policy) {
                 const details=document.createElement('details');
+                persistDetailsOpen(details,'job-evaluations:'+j.id);
                 const summary=document.createElement('summary');
                 summary.textContent='Evaluation receipts and next eligibility';
                 details.append(summary);
@@ -6420,6 +6424,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         // reaching this archive; these are actual frozen
                         // evaluation inputs, not guesses from the suite ID.
                         const definitionDetails=document.createElement('details');
+                        persistDetailsOpen(definitionDetails,
+                            'job-suite-definition:'+j.id+':'+rule.suite_id);
                         const summary=document.createElement('summary');
                         summary.textContent=rule.suite_id+
                             ' · inspect exact frozen suite definition';
@@ -6972,11 +6978,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(more.childNodes.length) {
                 const menu=document.createElement('details');
                 menu.className='hub-job-action-menu';
-                if(expandedRecordDetails.has('job-actions:'+j.id))menu.open=true;
-                menu.addEventListener('toggle',()=>{
-                    if(menu.open)expandedRecordDetails.add('job-actions:'+j.id);
-                    else expandedRecordDetails.delete('job-actions:'+j.id);
-                });
+                persistDetailsOpen(menu,'job-actions:'+j.id);
                 const heading=document.createElement('summary');
                 const count=more.querySelectorAll('button').length;
                 heading.textContent='More actions'+(count?' ('+count+')':'');
@@ -7064,8 +7066,8 @@ document.addEventListener('DOMContentLoaded', () => {
             m.status==='connected'&&
             (m.agent_platform==='linux'&&m.gpu_inventory_source==='amdgpu-sysfs-v1'||
              m.agent_platform==='win32'&&m.gpu_inventory_source==='nvidia-smi-v1'));
-        physical.replaceChildren(new Option('Select machine with physical GPUs',''),
-            ...candidates.map(m=>new Option(m.name+' ('+m.id+')',m.id)));
+        refreshSelectOptions(physical, [new Option('Select machine with physical GPUs',''),
+            ...candidates.map(m=>new Option(m.name+' ('+m.id+')',m.id))]);
         if(candidates.some(m=>m.id===previousGpuMachine))
             physical.value=previousGpuMachine;
         else if(candidates.length===1)physical.value=candidates[0].id;
@@ -7085,8 +7087,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const budgetMachine=$('hub-budget-machine');
         const selectedBudgetId=budgetMachine.value;
-        budgetMachine.replaceChildren(new Option('Select machine',''),
-            ...state.machines.map(m=>new Option(m.name+' ('+m.id+')',m.id)));
+        refreshSelectOptions(budgetMachine, [new Option('Select machine',''),
+            ...state.machines.map(m=>new Option(m.name+' ('+m.id+')',m.id))]);
         const preferred=state.machines.some(m=>m.id===selectedBudgetId)
             ?selectedBudgetId:state.machines[0]?.id||'';
         budgetMachine.value=preferred;
@@ -7103,8 +7105,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const gpuBudgetMachine=$('hub-gpu-budget-machine');
         const priorGpuBudgetId=gpuBudgetMachine.value;
         const budgetCandidates=state.machines.filter(m=>(m.gpus||[]).length>0);
-        gpuBudgetMachine.replaceChildren(new Option('Select GPU machine',''),
-            ...budgetCandidates.map(m=>new Option(m.name+' ('+m.id+')',m.id)));
+        refreshSelectOptions(gpuBudgetMachine, [new Option('Select GPU machine',''),
+            ...budgetCandidates.map(m=>new Option(m.name+' ('+m.id+')',m.id))]);
         const chosenGpuBudget=budgetCandidates.some(m=>m.id===priorGpuBudgetId)
             ?priorGpuBudgetId:budgetCandidates[0]?.id||'';
         gpuBudgetMachine.value=chosenGpuBudget;
@@ -7442,14 +7444,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if(!state.machines.length)readiness.textContent='No enrolled machines.';
         }
         const selectedProject=$('hub-lease-project').value;
-        $('hub-lease-project').replaceChildren(...state.projects.map(p=>
-            new Option(p.name,p.id)));
+        refreshSelectOptions($('hub-lease-project'), [...state.projects.map(p=>
+            new Option(p.name,p.id))]);
         $('hub-lease-project').value=state.projects.some(p=>p.id===selectedProject)
             ?selectedProject:project;
         const selectedMachine=$('hub-lease-machine').value;
         const machines=state.machines.filter(m=>m.status==='connected');
-        $('hub-lease-machine').replaceChildren(...machines.map(m=>
-            new Option(m.name+' ('+m.id+')',m.id)));
+        refreshSelectOptions($('hub-lease-machine'), [...machines.map(m=>
+            new Option(m.name+' ('+m.id+')',m.id))]);
         if(machines.some(m=>m.id===selectedMachine))
             $('hub-lease-machine').value=selectedMachine;
         $('hub-lease-request').disabled=!machines.length;
@@ -8532,9 +8534,9 @@ document.addEventListener('DOMContentLoaded', () => {
             machine.installed_projects?.includes('courier')&&
             machine.courier_remote_lineage_endpoints?.length&&
             (!shared||machine.courier_shared_policy_maps>0));
-        courierMachine.replaceChildren(...machines.map(machine=>new Option(
+        refreshSelectOptions(courierMachine, [...machines.map(machine=>new Option(
             (machine.name||machine.id)+' ('+machine.id+') · '+
-                machine.courier_remote_lineage_endpoints.length+' approved endpoints',machine.id)));
+                machine.courier_remote_lineage_endpoints.length+' approved endpoints',machine.id))]);
         if(machines.some(machine=>machine.id===prior))courierMachine.value=prior;
         const machine=machines.find(item=>item.id===courierMachine.value);
         const endpoints=machine?.courier_remote_lineage_endpoints||[];
@@ -8715,9 +8717,9 @@ document.addEventListener('DOMContentLoaded', () => {
             (selected.parameters.device!=='cpu'||m.tinybrains_remote_cpu_learner===true&&
                 m.tinybrains_cpu_fallback_profiles?.includes(selected.parameters.profile))&&
             m.tinybrains_remote_rollout_endpoints?.length);
-        distributedMachine.replaceChildren(...machines.map(m=>new Option(
+        refreshSelectOptions(distributedMachine, [...machines.map(m=>new Option(
             (m.name||m.id)+' ('+m.id+') · '+
-                m.tinybrains_remote_rollout_endpoints.length+' collectors',m.id)));
+                m.tinybrains_remote_rollout_endpoints.length+' collectors',m.id))]);
         if(machines.some(m=>m.id===prior))distributedMachine.value=prior;
         const machine=machines.find(m=>m.id===distributedMachine.value);
         const endpoints=machine?.tinybrains_remote_rollout_endpoints||[];
@@ -8731,14 +8733,14 @@ document.addEventListener('DOMContentLoaded', () => {
             host.local_executor_enabled&&host.id!==machine?.id&&
             !host.installed_projects?.includes('tinybrains_rollout'));
         const oldHost=prepareHost.value,oldEndpoint=prepareEndpoint.value;
-        prepareHost.replaceChildren(...candidates.map(host=>
-            new Option(host.name+' ('+host.id+')',host.id)));
+        refreshSelectOptions(prepareHost, [...candidates.map(host=>
+            new Option(host.name+' ('+host.id+')',host.id))]);
         if(candidates.some(host=>host.id===oldHost))prepareHost.value=oldHost;
         const used=new Set(pending.filter(p=>p.collector.machine_id===prepareHost.value)
             .map(p=>p.collector.endpoint));
         const permitted=endpoints.filter(endpoint=>!used.has(endpoint));
-        prepareEndpoint.replaceChildren(...permitted.map(endpoint=>
-            new Option(endpoint,endpoint)));
+        refreshSelectOptions(prepareEndpoint, [...permitted.map(endpoint=>
+            new Option(endpoint,endpoint))]);
         if(permitted.includes(oldEndpoint))prepareEndpoint.value=oldEndpoint;
         preparePanel.hidden=!machine||!candidates.length||!permitted.length||
             !machine.tinybrains_rollout_subset;
