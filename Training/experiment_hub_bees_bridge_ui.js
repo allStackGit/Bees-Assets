@@ -3,16 +3,16 @@
 // The external Bees manager owns these actions. Do not infer successful starts
 // from HTTP acceptance; only its later control-plane observations can do so.
 (() => {
-    const root=document.getElementById('hub-bees-bridge-controls');
+    const root=document.getElementById('hub-external-bees-controls');
     if(!root)return;
     const $=id=>document.getElementById(id);
-    const status=$('hub-bees-bridge-status');
-    const details=$('hub-bees-bridge-details');
-    const message=$('hub-bees-operation');
-    const workers=$('hub-bees-worker-summary');
+    const status=$('hub-external-bees-status');
+    const details=$('hub-external-bees-details');
+    const message=$('hub-external-bees-operation');
+    const workers=$('hub-external-bees-worker-summary');
     const buttons={
-        stop:$('hub-bees-stop'),resume:$('hub-bees-resume'),
-        fresh:$('hub-bees-new'),import:$('hub-bees-import'),
+        stop:$('hub-external-bees-stop'),resume:$('hub-external-bees-resume'),
+        fresh:$('hub-external-bees-new'),import:$('hub-external-bees-import'),
     };
     let current=null,connected=false,updating=false,acting=false;
     async function api(route,body) {
@@ -114,7 +114,7 @@
             await refresh();
         }
     }
-    $('hub-bees-refresh').addEventListener('click',()=>{void refresh();});
+    $('hub-external-bees-refresh').addEventListener('click',()=>{void refresh();});
     buttons.stop.addEventListener('click',()=>void act('stop',
         {confirm_stop:true},'Gracefully stop the current Bees training run?'));
     buttons.resume.addEventListener('click',()=>void act('start',
@@ -124,7 +124,7 @@
         {mode:'new',env_args:current.env_args||[],confirm_new_run:true},
         'Start a NEW Bees run and optimizer lineage? This does not resume the previous checkpoint.'));
     buttons.import.addEventListener('click',()=>{
-        const manifest=$('hub-bees-import-manifest').value.trim();
+        const manifest=$('hub-external-bees-import-manifest').value.trim();
         if(!/^(?:[A-Za-z]:\\|\\\\)/.test(manifest)||
             !manifest.toLowerCase().endsWith('worker-build-manifest.json')) {
             message.textContent='Enter the absolute Windows path to the incoming worker-build-manifest.json on the Bees manager.';
