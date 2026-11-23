@@ -1890,6 +1890,21 @@ function createTinyBrainsPersistentDockerAdapter({
         }else for(const filename of mixedFiles) {
             const name=filename.slice(0,-5),file=path.join(root,filename);
             try {
+                // Authoring writes a suite definition before installing its
+                // dedicated evaluator service. Do not advertise it as runnable
+                // until the systemd service and timer are both present.
+                const match=/^tinybrains_mix_([a-f0-9]{20})_v([1-9][0-9]*)$/.exec(name);
+                const machine=process.env.EXPERIMENT_HUB_MACHINE_ID;
+                if(!match||!/^[a-z][a-z0-9_-]{0,47}$/.test(String(machine||'')))
+                    throw Error('No locally enrolled machine for mixed evaluator service.');
+                const unit='bees-experiment-hub-tinybrains-'+machine+
+                    '-evaluator-mix-'+match[1]+'-v'+match[2];
+                for(const suffix of ['.service','.timer']) {
+                    const entry=fs.lstatSync(path.join(systemdRoot,unit+suffix));
+                    if(!entry.isFile()||entry.isSymbolicLink()||
+                        entry.uid!==process.getuid()||entry.mode&0o077)
+                        throw Error('Mixed evaluator unit is not privately installed.');
+                }
                 const stat=fs.lstatSync(file);
                 if(!stat.isFile()||stat.isSymbolicLink()||
                     fs.realpathSync(file)!==file||stat.uid!==process.getuid()||
