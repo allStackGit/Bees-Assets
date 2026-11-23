@@ -426,16 +426,36 @@ def gather_training_columns_once(columns, index_groups, *,
                 for group in index_groups)):
         return None
     total=sum(group.numel() for group in index_groups)
-    # Account for BOTH the selected columns and the transient concatenated
-    # index tensor. A 2D value bank contributes every field in each row.
-    # The original group index views cost no new allocation, but cat does.
-    index_bytes=total*max(group.element_size() for group in index_groups)
+    # Index groups produced as adjacent views of one packed minibatch bank
+    # can be selected directly. Avoid a separate device cat allocation and
+    # kernel for those groups; unrelated/non-contiguous sources keep the
+    # original concatenation path and identical index order.
+    contiguous=None
+    head=index_groups[0]
+    if total and head.is_contiguous():
+        storage=head.untyped_storage().data_ptr()
+        offset=head.storage_offset()
+        position=offset
+        for group in index_groups:
+            if (not group.is_contiguous() or group.dtype!=head.dtype or
+                    group.untyped_storage().data_ptr()!=storage or
+                    group.storage_offset()!=position):
+                break
+            position+=group.numel()
+        else:
+            contiguous=torch.as_strided(head,(total,),(1,),offset)
+    # Count every selected scalar, including multi-column banks. Index
+    # storage is already resident for the contiguous path; otherwise
+    # reserve the original bounded transient concatenation allocation.
+    index_bytes=(0 if contiguous is not None else
+                 total*max(group.element_size() for group in index_groups))
     output_bytes=total*sum(
         column.element_size() * (column.shape[1] if column.ndim==2 else 1)
         for column in columns)
     if not total or index_bytes+output_bytes>max_output_bytes:
         return None
-    indices=torch.cat(tuple(index_groups))
+    indices=(contiguous if contiguous is not None
+             else torch.cat(tuple(index_groups)))
     result=tuple(column.index_select(0,indices) for column in columns)
     return result,tuple(group.numel() for group in index_groups)
 
