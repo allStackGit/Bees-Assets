@@ -273,6 +273,16 @@ fn append_training_arguments(
             .ok_or_else(|| invalid("invalid in-game native holdout worker allocation"))?;
         command.arg("--evaluation-physics-workers").arg(n.to_string());
     }
+    // Keep the fixed holdout on its separately selected physical device;
+    // training and resume must both forward this immutable job setting.
+    if let Some(device) = recipe["evaluation_inference_device"].as_str() {
+        if !valid_torch_device(device) || device == "cuda" {
+            return Err(invalid("invalid native holdout inference device").into());
+        }
+        command.arg("--evaluation-inference-device").arg(device);
+    } else if !recipe["evaluation_inference_device"].is_null() {
+        return Err(invalid("invalid native holdout inference device").into());
+    }
     if recipe["hub_plan"].is_string() {
         if !recipe["worlds"].is_null() || !recipe["physics_workers"].is_null() ||
             !recipe["rollout_processes"].is_null()
