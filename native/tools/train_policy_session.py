@@ -970,6 +970,7 @@ def measured_distributed_collection_windows(completed):
             "collector_output_bytes_received",
             "collector_output_wire_bytes_received",
             "collector_output_resumed_prefix_bytes",
+            "collector_staged_prefix_rehash_bytes",
             "collector_uploads_received",
             "collector_upload_and_verify_wall_seconds",
         ):
@@ -1003,6 +1004,7 @@ def measured_distributed_collection_windows(completed):
         "collector_input_bytes_served", "collector_output_bytes_received",
         "collector_output_wire_bytes_received",
         "collector_output_resumed_prefix_bytes",
+        "collector_staged_prefix_rehash_bytes",
         "collector_uploads_received", "collector_upload_and_verify_wall_seconds",
     )
     transfer = {}
