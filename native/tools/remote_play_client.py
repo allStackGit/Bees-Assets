@@ -55,6 +55,7 @@ HELP = """Commands:
   surrender confirm    Concede the battle (irreversible after host commits)
   activate-retreat     Open your side's authored retreat exit
   rejoin               Reconnect to the SAME recovered native host session
+  claim-forfeit        Claim victory after the host's opponent-disconnect grace
   pause|resume         Hold or release your own dedicated-host pause vote
   step                 Advance one authoritative tick while you own a pause
   speed                Cycle the dedicated host's 1x, 1.5x, 2x game speed
@@ -133,6 +134,7 @@ class RemoteConsole:
         self.time_controls_available = False
         self.pause_owned = False
         self.pending_time_controls = {}
+        self.forfeit_request_id = None
         self.notifications = SimpleQueue()
         self.lock = threading.Lock()
         # A periodic liveness probe shares the real TCP stream with
@@ -244,6 +246,7 @@ class RemoteConsole:
                                 self.lobby_ready_request = None
                                 self.lobby_ready_owned = False
                                 self.pause_owned = False
+                                self.forfeit_request_id = None
                                 self.weapon_overlay_enabled = False
                                 self.seen_ship_classes.clear()
                                 # A first world snapshot may arrive after
@@ -515,6 +518,8 @@ class RemoteConsole:
                         if not self.silent:
                             print(note)
                     elif kind == "input_result":
+                        if message.get("request_id") == self.forfeit_request_id:
+                            self.forfeit_request_id = None
                         if message.get("request_id") == self.surrender_request_id:
                             # A rejected order was never committed to the
                             # authoritative Level, so permit a fresh request.
@@ -923,6 +928,33 @@ class RemoteConsole:
         self.next_request += 1
         return packet["request_id"]
 
+    def claim_forfeit(self, state=None):
+        """Ask the original host to adjudicate an absent opposing faction.
+
+        Neither the loser side nor disconnect duration is supplied by the
+        client. A rejected or stale claim does not modify the game.
+        """
+        if self.spectator or not self.alive or self.host_session_id is None:
+            raise ValueError("only a connected commander can claim forfeit")
+        if self.forfeit_request_id is not None:
+            raise ValueError("forfeit request already awaiting host decision")
+        if state is None:
+            state = self.snapshot()
+        if not isinstance(state, dict) or state.get("forfeit_claim_available") is not True:
+            raise ValueError("host has not authorized a forfeit claim")
+        request_id = self.next_request
+        packet = {
+            "kind": "claim_forfeit", "request_id": request_id,
+            "world_id": state["world_id"],
+            "episode_revision": state["episode_revision"],
+        }
+        self._send_wire(
+            (json.dumps(packet, separators=(",", ":")) + "\n").encode("utf-8")
+        )
+        self.next_request += 1
+        self.forfeit_request_id = request_id
+        return request_id
+
     def time_control(self, command, state=None):
         """Request the source host's actual clock, not a local simulation.
 
@@ -1163,6 +1195,8 @@ class RemoteConsole:
             if state.get("waiting_for_player_reconnect") is True:
                 print("Match paused for commander reconnection; connected sides: "
                       f"{state.get('connected_commander_sides', [])}")
+                if state.get("forfeit_claim_available") is True:
+                    print("Opponent grace elapsed: enter 'claim-forfeit' to request victory")
             if self.time_controls_available:
                 print(f"Host clock: {state.get('game_speed', 1):g}x"
                       f", paused: {state.get('commander_paused') is True}"
@@ -1192,6 +1226,12 @@ class RemoteConsole:
                 delta = receipt.get("campaign_score_delta")
                 if delta is not None:
                     print(f"Committed campaign score delta: {delta:+d}")
+            return
+        if cmd == "claim-forfeit":
+            if argv:
+                raise ValueError("claim-forfeit takes no arguments")
+            self.claim_forfeit(state)
+            print("Forfeit request submitted to the authoritative host")
             return
         if cmd in ("pause", "resume", "step", "speed"):
             if argv:
