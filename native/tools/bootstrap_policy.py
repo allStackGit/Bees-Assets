@@ -28,6 +28,28 @@ DEFAULT_CONFIG = ROOT / "Training" / "rl_1v1_config.yaml"
 U64 = 1 << 64
 
 
+def distinct_physical_scenarios(training_run: dict) -> list[dict]:
+    """Find exact authored gameplay scenarios, disregarding only arena RNG/IDs.
+
+    All command, mission, model, source-scene and physical contracts remain
+    part of the key. Reused by the standalone bootstrap and the original
+    multi-map collection author; both require the same coverage semantics.
+    """
+    sources = training_run.get("levels")
+    if not isinstance(sources, list) or not sources:
+        raise ValueError("native source requires at least one physical Level")
+    distinct = {}
+    for level in sources:
+        if not isinstance(level, dict):
+            raise ValueError("native source contains an invalid physical Level")
+        identity = json.dumps({
+            key: value for key, value in level.items()
+            if key not in ("world_id", "level_id", "seed", "episode_seeds")
+        }, sort_keys=True, separators=(",", ":"))
+        distinct.setdefault(identity, level)
+    return list(distinct.values())
+
+
 def write_native_holdout(output: Path, training_run: dict,
                          worlds: int, seed: int, episodes: int) -> None:
     """Pin independent physical holdouts for every authored source Level.
@@ -43,24 +65,7 @@ def write_native_holdout(output: Path, training_run: dict,
     sources = run.get("levels")
     if not isinstance(sources, list) or not sources:
         raise ValueError("fixed holdout requires authored physical source Levels")
-    # Training may run hundreds of independent replicas of ONE identical
-    # authored map/fleet. A fixed evaluation should cover every distinct
-    # physical scenario, not waste hundreds of CPU arenas replaying one
-    # map solely because its training seeds or host World IDs differ.
-    # All gameplay/reward/mission/model-routing fields stay in this key;
-    # only explicitly per-arena transport IDs and RNG seeds are omitted.
-    def scenario_key(level):
-        return json.dumps({
-            key: value for key, value in level.items() if key not in (
-                "world_id", "level_id", "seed", "episode_seeds",
-            )
-        }, sort_keys=True, separators=(",", ":"))
-    distinct = {}
-    for level in sources:
-        if not isinstance(level, dict):
-            raise ValueError("native fixed holdout has an invalid authored Level")
-        distinct.setdefault(scenario_key(level), level)
-    scenarios = list(distinct.values())
+    scenarios = distinct_physical_scenarios(run)
     count = len(scenarios)
     if worlds < count or worlds % count != 0:
         raise ValueError(

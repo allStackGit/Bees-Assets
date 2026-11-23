@@ -49,7 +49,7 @@ def selectors(item: dict, key: str, low: int, high: int) -> set[int]:
 def configured_plan(plan: dict, collection: dict) -> list[dict]:
     required = {"schema_version", "missions", "model_slots", "timeout_seconds",
                 "decision_period", "episodes_per_world", "rotation_rounds_per_stage"}
-    allowed = required | {"python", "source_ai_tactics"}
+    allowed = required | {"python", "source_ai_tactics", "fixed_holdout"}
     if (not required.issubset(plan) or set(plan) - allowed or
             plan["schema_version"] != 1 or
             not isinstance(plan["missions"], list) or
@@ -77,6 +77,18 @@ def configured_plan(plan: dict, collection: dict) -> list[dict]:
             raise ValueError("training episode timeout is not finite")
     except (OverflowError, TypeError):
         raise ValueError("training episode timeout is not finite") from None
+    if "fixed_holdout" in plan:
+        holdout = plan["fixed_holdout"]
+        if (not isinstance(holdout, dict) or
+                set(holdout) != {
+                    "seed", "worlds_per_scenario", "episodes_per_world",
+                } or not integer(holdout["seed"], 0, U64 - 1) or
+                not integer(holdout["worlds_per_scenario"], 1, 1024) or
+                not integer(holdout["episodes_per_world"], 1, 10000)):
+            raise ValueError(
+                "fixed physical holdout needs a uint64 seed, 1..1024 "
+                "Worlds per distinct original fleet and 1..10000 episodes"
+            )
     original_missions = collection.get("missions")
     if (collection.get("kind") != "native_original_campaign_source_collection" or
             collection.get("schema_version") != 1 or
@@ -178,6 +190,14 @@ def author_collection(original_collection: Path, source_plan: Path,
                 "original physical training needs at most sixteen independently "
                 "authored native Stage configurations per rotation"
             )
+        fixed_holdout = config.get("fixed_holdout")
+        if fixed_holdout is not None:
+            # Import the canonical bootstrap holdout author only when the
+            # experiment explicitly requests evaluation. It retains the
+            # same original game physics and seeded episode schedule.
+            from bootstrap_policy import (
+                distinct_physical_scenarios, write_native_holdout,
+            )
         stages = []
         for index, (fingerprint, runs) in enumerate(grouped.items(), 1):
             if len(runs) > 1:
@@ -200,6 +220,30 @@ def author_collection(original_collection: Path, source_plan: Path,
                 ]
                 source_count = 1
             staged_run = read(run_file)
+            holdout_info = {}
+            if fixed_holdout is not None:
+                original_count = len(distinct_physical_scenarios(staged_run))
+                count = original_count * fixed_holdout["worlds_per_scenario"]
+                if count > 1024:
+                    raise ValueError(
+                        "fixed Stage evaluation exceeds 1024 physical Worlds"
+                    )
+                seed = (
+                    fixed_holdout["seed"] +
+                    (index - 1) * 0x9E3779B97F4A7C15
+                ) % U64
+                write_native_holdout(
+                    run_file.parent, staged_run, count, seed,
+                    fixed_holdout["episodes_per_world"],
+                )
+                holdout_path = run_file.parent / "holdout-run.json"
+                holdout_info = {
+                    "holdout_run": holdout_path.relative_to(stage).as_posix(),
+                    "holdout_run_sha256": file_sha256(holdout_path),
+                    "holdout_physical_scenarios": original_count,
+                    "holdout_worlds": count,
+                    "holdout_episodes_per_world": fixed_holdout["episodes_per_world"],
+                }
             scene_name = staged_run["levels"][0]["scene"]
             scene_path = (run_file.parent / scene_name).resolve(strict=True)
             if not scene_path.is_relative_to(stage):
@@ -213,6 +257,7 @@ def author_collection(original_collection: Path, source_plan: Path,
                 "original_mission_indices": grouped_sources,
                 "physical_world_templates": source_count,
                 "physical_contract_sha256": fingerprint,
+                **holdout_info,
             })
         if len(stages) > 1:
             rotation = {
@@ -220,6 +265,11 @@ def author_collection(original_collection: Path, source_plan: Path,
                 "rotation": {
                     "rounds_per_stage": config["rotation_rounds_per_stage"],
                     "run_configs": [row["run"] for row in stages[1:]],
+                    **({
+                        "monitor_run_configs": [
+                            row["holdout_run"] for row in stages[1:]
+                        ],
+                    } if fixed_holdout is not None else {}),
                 },
             }
             atomic_json(stage / "curriculum.json", rotation)
@@ -239,6 +289,13 @@ def author_collection(original_collection: Path, source_plan: Path,
             "authored_missions": prepared,
             "bootstrap_run": stages[0]["run"],
             "bootstrap_scene": stages[0]["bootstrap_scene"],
+            **({
+                "primary_evaluation_run": stages[0]["holdout_run"],
+                "primary_evaluation_run_sha256": stages[0]["holdout_run_sha256"],
+                "independent_monitor_evaluation_runs": [
+                    row["holdout_run"] for row in stages[1:]
+                ],
+            } if fixed_holdout is not None else {}),
             **({
                 "curriculum_plan": "curriculum.json",
                 "curriculum_sha256": file_sha256(stage / "curriculum.json"),
