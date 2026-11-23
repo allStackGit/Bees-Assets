@@ -788,7 +788,7 @@ pub(super) fn choose_for_preferred_side(
         )? else { return Ok(None); };
         count
     } else { 1 };
-    let Some(objective) = choose_objective(mix)? else { return Ok(None); };
+    let Some(objective) = choose_objective(mix, sources)? else { return Ok(None); };
     let player_side = match mode {
         0 | 4 => Some(1),
         1 | 5 => Some(2),
@@ -915,7 +915,7 @@ pub(super) fn choose_multiplayer(
     let Some(specialist_squad_sizes) =
         choose_specialist_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
-    let Some(objective) = choose_objective(mix)? else { return Ok(None); };
+    let Some(objective) = choose_objective(mix, sources)? else { return Ok(None); };
     let objective_side = match objective {
         Objective::Elimination => None,
         Objective::TargetFactory => Some(1),
@@ -1003,7 +1003,7 @@ pub(super) fn choose_benchmark(
         )? else { return Ok(None); };
         ai_tactics[side] = value;
     }
-    let Some(objective) = choose_objective(mix)? else { return Ok(None); };
+    let Some(objective) = choose_objective(mix, sources)? else { return Ok(None); };
     let objective_side = match objective {
         Objective::Elimination => None,
         Objective::TargetFactory => Some(1),
@@ -1527,7 +1527,9 @@ fn choose_squad_sizes(
     Ok(Some(selected_sizes))
 }
 
-fn choose_objective(mix: [FleetMix; 2]) -> Result<Option<Objective>, Box<dyn Error>> {
+fn choose_objective(mix: [FleetMix; 2], sources: &OriginalGameSources)
+    -> Result<Option<Objective>, Box<dyn Error>>
+{
     let mut choices = vec![
         (Objective::Elimination, "Eliminate all opposing ships", "  [Standard battle]"),
         (Objective::Survival, "Defend your command ship for 90 seconds", "  [Incoming waves]"),
@@ -1537,6 +1539,13 @@ fn choose_objective(mix: [FleetMix; 2]) -> Result<Option<Objective>, Box<dyn Err
         (Objective::Demolition, "Destroy a fortified MapObject", "  [90-second assault]"),
         (Objective::TargetFlagship, "Destroy the enemy flagship", "  [Physical commander hull]"),
     ];
+    if sources.ships.iter().any(|ships| !ships.is_empty()) &&
+        sources.map_object.is_none()
+    {
+        // A production original game cannot substitute the demo target
+        // collider when the authored campaign has no matching MapObject.
+        choices.retain(|(kind, _, _)| !matches!(kind, Objective::Demolition));
+    }
     if matches!(mix[1], FleetMix::Factories) {
         choices.push((
             Objective::TargetFactory,
@@ -3314,8 +3323,26 @@ pub(super) fn archive(
         let map_objects = scene.as_object_mut().ok_or_else(||
             invalid("fleet source scene must be a JSON object"))?
             .entry("map_objects").or_insert_with(|| json!([]));
-        map_objects.as_array_mut().ok_or_else(||
-            invalid("fleet scene has invalid MapObjects"))?.push(json!({
+        let target = if original_game {
+            let mut source = selected.original_map_object.clone()
+                .ok_or_else(|| invalid(
+                    "original demolition game has no authored physical MapObject",
+                ))?;
+            if source["kind"] != "generic" ||
+                !source["max_health"].as_i64().is_some_and(|hp| hp > 0) ||
+                !source["collider"].is_object()
+            {
+                return Err(invalid(
+                    "original demolition target is not a healthy physical MapObject",
+                ).into());
+            }
+            source["entity_id"] = json!(target_id);
+            source["position"] = json!([0.0, 0.0]);
+            source["rotation_degrees"] = json!(0.0);
+            source["health"] = source["max_health"].clone();
+            source
+        } else {
+            json!({
                 "entity_id": target_id,
                 "kind": "generic",
                 "position": [0.0, 0.0],
@@ -3323,7 +3350,10 @@ pub(super) fn archive(
                 "layer": 18,
                 "max_health": 240,
                 "collider": { "kind": "circle", "offset": [0.0, 0.0], "radius": 7.0 },
-            }));
+            })
+        };
+        map_objects.as_array_mut().ok_or_else(||
+            invalid("fleet scene has invalid MapObjects"))?.push(target);
         run["levels"][0]["demolition"] = json!({
             "attacking_side": attacker,
             "target_map_object_id": target_id,
