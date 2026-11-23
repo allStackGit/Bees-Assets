@@ -1525,6 +1525,9 @@ pub struct NativeExportedPolicyLevelSetup<A> {
     pub demolition: Option<bees_sim::episode_terminal::DemolitionObjective>,
     pub escort: Option<bees_sim::episode_terminal::EscortObjective>,
     pub target_ship: Option<bees_sim::episode_terminal::TargetShipObjective>,
+    /// Optional game-only timeout supplied by the same native Level author.
+    /// Never changes an imported Unity MA-POCA episode's learned horizon.
+    pub game_timeout_seconds: Option<f32>,
     pub campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
     /// Immutable source campaign Codex class knowledge from the frozen
     /// career receipt; never a policy/training reward or client guess.
@@ -3982,6 +3985,17 @@ impl NativePhysicalScene {
             Some(_) => setup.initial_full_asteroids,
             None => 0,
         };
+        if setup.game_timeout_seconds.is_some() &&
+            (self.source_episode.is_some() || setup.groups.is_some() ||
+             self.policy_game_timeout_seconds.is_some())
+        {
+            // No gameplay author can silently replace an imported source
+            // learner deadline, or the fixed playable-policy opponent
+            // contract. One physical coordinator owns terminal outcomes.
+            return Err(NativePolicyOnlyLevelError::Snapshot(
+                NativeSnapshotError::InvalidEpisodeSource,
+            ));
+        }
         let mut episode = if self.source_episode.is_some() {
             self.exported_episode()
         } else if setup.groups.is_some() &&
@@ -3990,7 +4004,9 @@ impl NativePhysicalScene {
             // Models in training still require frozen reward normalization;
             // only an explicitly playable opponent uses normal game rules.
             Err(NativeSnapshotError::InvalidEpisodeSource)
-        } else if let Some(timeout) = self.policy_game_timeout_seconds {
+        } else if let Some(timeout) =
+            setup.game_timeout_seconds.or(self.policy_game_timeout_seconds)
+        {
             NativeEpisodeRewardCoordinator::new_game_with_timeout(
                 bee_side, human_side, timeout,
             ).map_err(NativeSnapshotError::Episode)
