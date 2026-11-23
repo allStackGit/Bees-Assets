@@ -461,34 +461,84 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
             )
         sides.append(result)
 
-    # Preserve source-by-source comparisons. Pooled win rate is useful but
-    # would hide a map or an opponent faction on which the candidate fails.
+    # Group episodes may alternate team ownership. Count the candidate's
+    # ACTUAL authored model slot from each terminal journal, not the winner
+    # of whichever physical side was requested in that run. Combine both
+    # role assignments per map before comparing physical faction outcomes.
     paired = []
+    total_candidate_wins = total_candidate_draws = 0
+    actual_side_exposure = {1: 0, 2: 0}
+    actual_side_wins = {1: 0, 2: 0}
     for index, source in enumerate(sources):
         left = sides[0]["by_source"][index]
         right = sides[1]["by_source"][index]
         if (left["source_run_sha256"] != right["source_run_sha256"] or
                 left["source_run_sha256"] != pinned["source_runs"][index]["sha256"]):
             raise ValueError("paired native scenario identities do not match")
+        models = [
+            left["candidate_terminal_matchup"]["counts"],
+            right["candidate_terminal_matchup"]["counts"],
+        ]
+        expected_episodes = left["episodes"] + right["episodes"]
+        if sum(model.get("matches", 0) for model in models) != expected_episodes:
+            raise ValueError("paired native scenario has missing model-owned terminal episodes")
+        counted = {}
+        rates = {}
+        for physical_side in (1, 2):
+            prefix = f"candidate_side_{physical_side}"
+            games = sum(model.get(prefix.replace("side_", "as_side_"), 0)
+                        for model in models)
+            wins = sum(model.get(prefix + "_wins", 0) for model in models)
+            losses = sum(model.get(prefix + "_losses", 0) for model in models)
+            draws_on_side = sum(model.get(prefix + "_draws", 0) for model in models)
+            if games <= 0 or wins + losses + draws_on_side != games:
+                raise ValueError(
+                    f"paired native scenario has incomplete side {physical_side} policy ownership"
+                )
+            counted[physical_side] = {
+                "episodes": games, "wins": wins, "losses": losses,
+                "draws": draws_on_side,
+            }
+            rates[physical_side] = wins / games
+            actual_side_exposure[physical_side] += games
+            actual_side_wins[physical_side] += wins
+        candidate_wins = sum(model["wins"] for model in models)
+        candidate_draws = sum(model["draws"] for model in models)
+        if (sum(row["wins"] for row in counted.values()) != candidate_wins or
+                sum(row["draws"] for row in counted.values()) != candidate_draws):
+            raise ValueError("paired faction breakdown disagrees with model-owned terminal results")
+        total_candidate_wins += candidate_wins
+        total_candidate_draws += candidate_draws
         paired.append({
             "scenario": index + 1,
             "source_run": str(source),
             "source_run_sha256": left["source_run_sha256"],
-            "side_1_win_rate": left["side_win_rate"],
-            "side_2_win_rate": right["side_win_rate"],
-            "side_win_rate_gap": abs(left["side_win_rate"] - right["side_win_rate"]),
-            "worst_side_win_rate": min(left["side_win_rate"], right["side_win_rate"]),
-            "side_1_scene_results": left["by_scene_sha256"],
-            "side_2_scene_results": right["by_scene_sha256"],
+            "candidate_wins": candidate_wins,
+            "candidate_draws": candidate_draws,
+            "candidate_episodes": expected_episodes,
+            "side_1_win_rate": rates[1],
+            "side_2_win_rate": rates[2],
+            "side_win_rate_gap": abs(rates[1] - rates[2]),
+            "worst_side_win_rate": min(rates.values()),
+            "by_physical_side": {
+                "1": counted[1], "2": counted[2],
+            },
+            "side_1_scene_results": left["candidate_terminal_matchup"]["by_scene_sha256"],
+            "side_2_scene_results": right["candidate_terminal_matchup"]["by_scene_sha256"],
         })
     episodes = sum(side["episodes"] for side in sides)
-    victories = sum(side["side_victories"] for side in sides)
+    # Preserve physical requested-side wins for source-level diagnostics,
+    # but do NOT use those wins to evaluate the candidate's policy score.
+    physical_side_victories = sum(side["side_victories"] for side in sides)
     draws = sum(side["draws"] for side in sides)
     steps = sum(side["world_steps"] for side in sides)
     measured = sum(side["measured_simulation_wall_seconds"] for side in sides)
     execution = sum(side["measured_execution_wall_seconds"] for side in sides)
     if (episodes <= 0 or steps <= 0 or measured <= 0 or execution <= 0 or
-            not 0 <= victories + draws <= episodes):
+            not 0 <= physical_side_victories + draws <= episodes or
+            total_candidate_draws != draws or
+            not 0 <= total_candidate_wins + total_candidate_draws <= episodes or
+            sum(actual_side_exposure.values()) != episodes):
         raise ValueError("paired native evaluation has incomplete measurements")
     for path, pinned_source in zip(sources, pinned["source_runs"]):
         if file_sha256(path) != pinned_source["sha256"]:
@@ -510,11 +560,24 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
         "scenario_side_evaluations": len(sources) * 2,
         "requested_parallel_scenarios_per_side": scenario_workers,
         "completed_sides_reused": reused_sides,
-        "episodes": episodes, "side_victories": victories, "draws": draws,
-        "pooled_win_rate": victories / episodes,
+        "episodes": episodes, "side_victories": physical_side_victories,
+        "candidate_slot_victories": total_candidate_wins,
+        "candidate_slot_draws": total_candidate_draws,
+        "candidate_model_episodes": episodes,
+        "draws": draws,
+        "pooled_win_rate": total_candidate_wins / episodes,
         "equal_side_mean_win_rate": sum(
-            side["mean_scenario_win_rate"] for side in sides
-        ) / 2,
+            row["side_1_win_rate"] + row["side_2_win_rate"]
+            for row in paired
+        ) / (2 * len(paired)),
+        "by_candidate_physical_side": {
+            str(side): {
+                "episodes": actual_side_exposure[side],
+                "wins": actual_side_wins[side],
+                "win_rate": actual_side_wins[side] / actual_side_exposure[side],
+            }
+            for side in (1, 2)
+        },
         "worst_side_scenario_win_rate": min(
             row["worst_side_win_rate"] for row in paired
         ),
@@ -534,9 +597,18 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
                 output / f"side-{index}" / "evaluation-suite-result.json"
             ),
             "episodes": side["episodes"],
-            "side_win_rate": side["side_win_rate"],
-            "mean_scenario_win_rate": side["mean_scenario_win_rate"],
-            "worst_scenario_win_rate": side["worst_scenario_win_rate"],
+            "requested_physical_side_win_rate": side["side_win_rate"],
+            "candidate_win_rate": (
+                sum(row["candidate_terminal_matchup"]["counts"]["wins"]
+                    for row in side["by_source"]) / side["episodes"]
+            ),
+            "candidate_episodes_by_physical_side": {
+                str(physical_side): sum(
+                    row["candidate_terminal_matchup"]["counts"].get(
+                        f"candidate_as_side_{physical_side}", 0
+                    ) for row in side["by_source"]
+                ) for physical_side in (1, 2)
+            },
         } for index, side in enumerate(sides, start=1)],
         "by_scenario": paired,
     }
