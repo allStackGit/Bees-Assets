@@ -919,7 +919,7 @@ async function archiveUnusedEvaluations(hub) {
     if(!unused.length)return {message:'No unreferenced mixed evaluation versions need archiving.',
         archived:0,blocked:[]};
     const archive=privateDirectory(path.join(o.suites,'archived'),true);
-    let archived=0;
+    let archived=0,unitFilesChanged=false;
     const blocked=[];
     for(const suiteId of unused) {
         const match=/^tinybrains_mix_([a-f0-9]{20})_v([1-9][0-9]*)$/.exec(suiteId);
@@ -954,17 +954,21 @@ async function archiveUnusedEvaluations(hub) {
             // approved suite from the discovery directory.
             if(!custom.unusedVersions(o,hub).includes(suiteId))
                 throw Error('The evaluation became referenced by a saved job/configuration.');
-            fs.renameSync(origin,destination);
             if(serviceExists) {
+                // Retire unit files first while the immutable recipe is
+                // still in its original location. If cleanup is interrupted,
+                // Set up can reinstall the same frozen service safely.
                 fs.unlinkSync(unit.timerFile);
+                unitFilesChanged=true;
                 fs.unlinkSync(unit.serviceFile);
             }
+            fs.renameSync(origin,destination);
             archived++;
         }catch(error) {
             blocked.push({suite_id:suiteId,reason:String(error.message||error).slice(0,180)});
         }
     }
-    if(archived)await systemctl(['daemon-reload']);
+    if(archived||unitFilesChanged)await systemctl(['daemon-reload']);
     return {archived,blocked,message:'Archived '+archived+
         ' unused mixed evaluation version(s); frozen recipes and prior receipts remain intact.'+
         (blocked.length?' '+blocked.length+' version(s) need attention; see archive details.':'')};
