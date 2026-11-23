@@ -231,10 +231,14 @@ fn append_training_arguments(
         .filter(|n| (1..=99_999).contains(n))
         .ok_or_else(|| invalid("invalid training round count"))?;
     let side = recipe["learner_side"].as_u64().unwrap_or(1);
-    if ![1, 2].contains(&side) || recipe["evaluation_side"].as_u64() != Some(side) ||
-        recipe["holdout_worlds"].as_u64() != Some(8) {
+    if ![1, 2].contains(&side) || recipe["evaluation_side"].as_u64() != Some(side) {
         return Err(invalid("training learner and holdout sides do not match").into());
     }
+    // Generated fixed-seed holdouts are the trainer's own CombatWorld arenas,
+    // not another evaluation engine or a second battle lifecycle.
+    let holdout_worlds = recipe["holdout_worlds"].as_u64()
+        .filter(|worlds| matches!(*worlds, 8 | 16 | 32 | 64 | 128))
+        .ok_or_else(|| invalid("invalid native fixed-holdout arena count"))?;
     let slot = side - 1;
     // Native Simulation resets the original CombatWorld and policy routing
     // after each episode without respawning a process or reloading weights.
@@ -389,7 +393,7 @@ fn append_training_arguments(
         return Err(invalid("training job is not owned by the saved native game").into());
     }
     command.arg("--optimizer-device").arg(device)
-        .arg("--holdout-worlds").arg("8")
+        .arg("--holdout-worlds").arg(holdout_worlds.to_string())
         .arg("--evaluation-side").arg(side.to_string())
         .arg("--library-save-root").arg(saves)
         .arg("--library-game-id").arg(game_id)
@@ -840,6 +844,9 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         &evaluation_rows, &mut evaluation_selection, false,
     )? else { return Ok(()); };
     let evaluation_inference_device = evaluation_devices[evaluation_index];
+    let Some(holdout_worlds) = choose_count(
+        "Fixed-seed native holdout arenas", &[8, 16, 32, 64, 128],
+    )? else { return Ok(()); };
 
     // Resolve and validate before allocating a permanent job name. GPU
     // availability and the Python environment are validated by the existing
@@ -895,7 +902,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "optimizer_device": optimizer_device,
         "learner_gpus": learner_gpus,
         "inference_device": inference_device,
-        "holdout_worlds": 8,
+        "holdout_worlds": holdout_worlds,
         "evaluation_side": learner_side,
         "game_id": game_id,
         "title": format!("Trained: {title}"),
@@ -945,7 +952,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "self_play_refresh_every": refresh_every,
         "early_stop_patience": early_stop_patience,
         "evaluation_every": evaluation_every,
-        "holdout_worlds": 8,
+        "holdout_worlds": holdout_worlds,
         "policy_reinforcements": policy_reinforcements,
         "stdout": stdout_path,
         "stderr": stderr_path,
