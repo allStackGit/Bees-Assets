@@ -308,6 +308,74 @@ class MeasuredIndependentTrainForwards:
             ppo_shared_train_forward_profiles=len(self.profiles))
 
 
+class ImmutableGpuRowCache:
+    """Reuse immutable observation rows already transferred to another GPU.
+
+    The caller supplies stable per-update row identities; no global input
+    state, epoch order, optimizer or model state is owned here. A first
+    transfer is the normal nonblocking device copy. Later groups containing
+    only cached rows are reassembled on the destination GPU, avoiding
+    repeated PCIe/peer copies. The cache is bounded by a caller-owned GPU
+    memory lease and must be cleared at the end of the training update.
+    """
+
+    def __init__(self, device, *, max_bytes):
+        if (not isinstance(device,torch.device) or device.type!="cuda" or
+                type(max_bytes) is not int or max_bytes<0):
+            raise ValueError("Invalid leased GPU row-cache device or budget")
+        self.device,self.max_bytes = device,max_bytes
+        self.rows = {}
+        self.resident_bytes = self.hits = self.misses = self.bytes_saved = 0
+        self.copied_bytes = 0
+        self.admitted_buffers = 0
+
+    def fetch(self, identifiers, boards):
+        if (not isinstance(boards,torch.Tensor) or boards.ndim<1 or
+                boards.device.type!="cuda" or
+                len(identifiers)!=len(boards) or
+                len(set(identifiers))!=len(identifiers)):
+            raise ValueError("Immutable GPU row request changed shape or identity")
+        if boards.device == self.device:
+            return boards
+        keys = tuple(identifiers)
+        if keys and all(key in self.rows and
+                        self.rows[key].shape[1:] == boards.shape[1:] and
+                        self.rows[key].dtype == boards.dtype for key in keys):
+            self.hits += len(keys)
+            self.bytes_saved += boards.numel()*boards.element_size()
+            if len(keys)==1:
+                return self.rows[keys[0]]
+            return torch.cat([self.rows[key] for key in keys],dim=0)
+        self.misses += 1
+        copied = boards.to(self.device,non_blocking=True)
+        size = copied.numel()*copied.element_size()
+        self.copied_bytes += size
+        # Store new rows as views of one already-necessary device transfer.
+        # Charging the entire underlying storage prevents the retained
+        # slices from quietly exceeding the lease if a batch contains
+        # both cached and uncached rows.
+        if (self.resident_bytes+size <= self.max_bytes and
+                any(key not in self.rows for key in keys)):
+            for index,key in enumerate(keys):
+                if key not in self.rows:
+                    self.rows[key] = copied[index:index+1]
+            self.resident_bytes += size
+            self.admitted_buffers += 1
+        return copied
+
+    def clear(self):
+        self.rows.clear()
+        self.resident_bytes = 0
+
+    def metrics(self):
+        return dict(
+            cached_peer_rows=self.hits,
+            cached_peer_bytes_saved=self.bytes_saved,
+            cached_peer_resident_bytes=self.resident_bytes,
+            cached_peer_copied_bytes=self.copied_bytes,
+            cached_peer_buffer_allocations=self.admitted_buffers)
+
+
 class IndependentGpuTraining:
     """Measure-and-select execution for genuinely independent GPU learners.
 
