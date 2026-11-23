@@ -107,7 +107,7 @@ function normalize(parameters,context,approved) {
     const matches=parameters.evaluation_matches??8;
     if(!['off','scripted-maps-v1','scripted-coverage-v2'].includes(profile)||
         !Number.isSafeInteger(matches)||matches<1||matches>100)
-        throw Error('Bees evaluation profile must be off or scripted-maps-v1 with 1–100 matches per scenario.');
+        throw Error('Bees evaluation profile must be off, scripted-maps-v1 or scripted-coverage-v2, with 1–100 matches per scenario.');
     return {maxSteps,envs,seed,device,profile,matches,batching,
         environmentArgs:envArgs.slice(),hyperparameters:{...overrides}};
 }
