@@ -380,6 +380,18 @@ struct CampaignSquadRetirement {
     saved_squad_id: i64,
 }
 
+/// A squad deletion and every resulting reserve transfer form one career
+/// transaction. Nothing is applied if the receipt is incomplete or forged.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignSquadRetirementWithReserve {
+    campaign_id: String,
+    side: i32,
+    saved_squad_id: i64,
+    purchased_fleet_ids: Vec<i64>,
+    authored_fleet_ids: Vec<i64>,
+}
+
 /// One immutable tactical edit. Later numbered edits supersede earlier
 /// preferences without rewriting the receipt for a prior campaign battle.
 #[derive(Deserialize, Serialize)]
@@ -1536,6 +1548,40 @@ impl BattleCatalog {
             })
     }
 
+    /// Retire a created squad and return all of its current FleetShips to
+    /// reserve in one immutable publication, after the caller has verified
+    /// every possible campaign deployment with that final roster.
+    pub fn retire_saved_squad_with_reserve(
+        &self, progress: &CampaignProgress<'_>, output: &Path,
+        side: i32, saved_squad_id: i64,
+        purchased_fleet_ids: &[i64], authored_fleet_ids: &[i64],
+    ) -> io::Result<()> {
+        let campaign_id = self.campaign_id.as_deref()
+            .ok_or_else(|| invalid("SavedSquad deletion requires a native campaign"))?;
+        if !progress.can_retire_saved_squad(side, saved_squad_id) ||
+            purchased_fleet_ids.len() > 32768 || authored_fleet_ids.len() > 32768 {
+            return Err(invalid("SavedSquad cannot be deleted or contains too many FleetShips"));
+        }
+        let purchased = progress.purchases.iter().filter_map(|&(owner, ship)|
+            (owner == side && ship.saved_squad_id == saved_squad_id)
+                .then_some(ship.fleet_ship_id)).collect::<HashSet<_>>();
+        let authored = progress.authored_roster.iter().filter_map(|(&id, owner)|
+            (owner.side == side && owner.current_saved_squad_id == saved_squad_id)
+                .then_some(id)).collect::<HashSet<_>>();
+        if purchased.len() != purchased_fleet_ids.len() ||
+            authored.len() != authored_fleet_ids.len() ||
+            purchased_fleet_ids.iter().any(|id| !purchased.contains(id)) ||
+            authored_fleet_ids.iter().any(|id| !authored.contains(id)) {
+            return Err(invalid("SavedSquad reserve transfers differ from its current FleetShips"));
+        }
+        commit_campaign_edit(output, "squad-reserve-retire-", "retirement.json",
+            &CampaignSquadRetirementWithReserve {
+                campaign_id: campaign_id.to_owned(), side, saved_squad_id,
+                purchased_fleet_ids: purchased_fleet_ids.to_vec(),
+                authored_fleet_ids: authored_fleet_ids.to_vec(),
+            })
+    }
+
     /// Publish an authenticated, zero-cost SavedSquad tactics change.
     /// The caller has already checked every mission configuration using
     /// the common native scene installer. No completed battle is mutated.
@@ -2334,6 +2380,59 @@ impl BattleCatalog {
             {
                 return Err(invalid("stale or nonempty retired SavedSquad receipt"));
             }
+            progress.created_squads.retain(|squad|
+                squad.saved_squad_id != edit.saved_squad_id);
+            progress.tactics.retain(|row|
+                row.saved_squad_id != edit.saved_squad_id);
+            progress.retired_squad_ids.insert(edit.saved_squad_id);
+        }
+        // A generated squad's reserve moves and retirement are one atomic
+        // ledger edit. Existing one-by-one transfer/retirement receipts above
+        // remain readable; new edits never expose an intermediate fleet.
+        for directory in numbered_directories(output, "squad-reserve-retire-")? {
+            let bytes = match fs::read(directory.join("retirement.json")) {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            let edit: CampaignSquadRetirementWithReserve =
+                serde_json::from_slice(&bytes).map_err(|error|
+                    invalid(format!("invalid atomic SavedSquad retirement: {error}")))?;
+            if edit.campaign_id != *campaign ||
+                !progress.can_retire_saved_squad(edit.side, edit.saved_squad_id) ||
+                edit.purchased_fleet_ids.len() > 32768 ||
+                edit.authored_fleet_ids.len() > 32768 {
+                return Err(invalid("invalid atomic SavedSquad retirement identity"));
+            }
+            let purchased = progress.purchases.iter().filter_map(|&(owner, ship)|
+                (owner == edit.side && ship.saved_squad_id == edit.saved_squad_id)
+                    .then_some(ship.fleet_ship_id)).collect::<HashSet<_>>();
+            let authored = progress.authored_roster.iter().filter_map(|(&id, owner)|
+                (owner.side == edit.side &&
+                    owner.current_saved_squad_id == edit.saved_squad_id).then_some(id))
+                .collect::<HashSet<_>>();
+            if purchased.len() != edit.purchased_fleet_ids.len() ||
+                authored.len() != edit.authored_fleet_ids.len() ||
+                edit.purchased_fleet_ids.iter().any(|id| !purchased.contains(id)) ||
+                edit.authored_fleet_ids.iter().any(|id| !authored.contains(id)) {
+                return Err(invalid("atomic SavedSquad retirement cannot claim foreign or stale FleetShips"));
+            }
+            for (_, ship) in progress.purchases.iter_mut() {
+                if purchased.contains(&ship.fleet_ship_id) {
+                    ship.saved_squad_id = 0;
+                }
+            }
+            for (&id, owner) in progress.authored_roster.iter_mut() {
+                if authored.contains(&id) {
+                    owner.current_saved_squad_id = 0;
+                }
+            }
+            progress.transfer_count = progress.transfer_count
+                .checked_add(purchased.len() as u64)
+                .ok_or_else(|| invalid("saved squad transfer count overflow"))?;
+            progress.authored_transfer_count = progress.authored_transfer_count
+                .checked_add(authored.len() as u64)
+                .ok_or_else(|| invalid("authored squad edit counter overflow"))?;
             progress.created_squads.retain(|squad|
                 squad.saved_squad_id != edit.saved_squad_id);
             progress.tactics.retain(|row|
