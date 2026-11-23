@@ -420,15 +420,33 @@ def rollout_worker_environment(
     if gpu_ids is not None:
         env[mask] = str(gpu_ids[index % len(gpu_ids)])
     elif leased_gpu_count == 2:
-        # The Hub supervisor has already verified the EXACT two PCI-bound
-        # render devices through HIP and restricted the service to those
-        # nodes. Select different devices for successive resident actors,
-        # without changing the pinned model manifest or allocating another
-        # GPU. ROCm reindexes each child's sole visible GPU to cuda:0.
-        for key in GPU_MASK_ENVIRONMENTS:
-            env.pop(key, None)
+        # The OS/Hub supervisor has already attested two exclusive GPUs.
+        # Narrow its inherited visibility mask, when present, rather than
+        # replacing an NVIDIA CUDA allocation with a ROCm-only mask.
+        inherited = [
+            (name, env[name]) for name in GPU_MASK_ENVIRONMENTS if name in env
+        ]
+        if len(inherited) > 1:
+            raise ValueError("leased GPU actors have conflicting visibility masks")
+        if inherited:
+            name, raw = inherited[0]
+            slots = raw.split(",")
+            if (len(slots) != leased_gpu_count or
+                    any(not slot or any(ch.isspace() for ch in slot)
+                        for slot in slots) or len(set(slots)) != leased_gpu_count):
+                raise ValueError(
+                    "dual-GPU Hub lease needs exactly two distinct visible GPU identities"
+                )
+            for key in GPU_MASK_ENVIRONMENTS:
+                env.pop(key, None)
+            env[name] = slots[index % leased_gpu_count]
+        else:
+            # A Linux AMD device-cgroup lease may expose only verified
+            # render nodes without any inherited mask. On Windows the CUDA
+            # runtime is used for native NVIDIA GPU workers.
+            name = "CUDA_VISIBLE_DEVICES" if os.name == "nt" else "ROCR_VISIBLE_DEVICES"
+            env[name] = str(index % leased_gpu_count)
         env.pop("GPU_DEVICE_ORDINAL", None)
-        env["ROCR_VISIBLE_DEVICES"] = str(index % leased_gpu_count)
     # ROCm PyTorch intentionally uses the CUDA device API as well.
     # The OS supervisor, or the explicit numeric mask, isolates one GPU.
     # No physical GPU ordinal is guessed from a Hub PCI/UUID lease.
