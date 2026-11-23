@@ -43,12 +43,29 @@ def write_native_holdout(output: Path, training_run: dict,
     sources = run.get("levels")
     if not isinstance(sources, list) or not sources:
         raise ValueError("fixed holdout requires authored physical source Levels")
-    count = len(sources)
+    # Training may run hundreds of independent replicas of ONE identical
+    # authored map/fleet. A fixed evaluation should cover every distinct
+    # physical scenario, not waste hundreds of CPU arenas replaying one
+    # map solely because its training seeds or host World IDs differ.
+    # All gameplay/reward/mission/model-routing fields stay in this key;
+    # only explicitly per-arena transport IDs and RNG seeds are omitted.
+    def scenario_key(level):
+        return json.dumps({
+            key: value for key, value in level.items() if key not in (
+                "world_id", "level_id", "seed", "episode_seeds",
+            )
+        }, sort_keys=True, separators=(",", ":"))
+    distinct = {}
+    for level in sources:
+        if not isinstance(level, dict):
+            raise ValueError("native fixed holdout has an invalid authored Level")
+        distinct.setdefault(scenario_key(level), level)
+    scenarios = list(distinct.values())
+    count = len(scenarios)
     if worlds < count or worlds % count != 0:
         raise ValueError(
-            f"balanced native holdout must cover all {count} original physical "
-            "Levels an equal number of times; increase --holdout-worlds or "
-            "use an independent multi-Stage evaluation suite"
+            f"balanced native holdout needs at least {count} Worlds, "
+            "divisible by the number of distinct source physical scenarios"
         )
     from bisect import bisect_left
     occupied = set()
@@ -101,7 +118,7 @@ def write_native_holdout(output: Path, training_run: dict,
     run["levels"] = []
     holdout_seed_ranges = []
     for index in range(worlds):
-        original = sources[index % count]
+        original = scenarios[index % count]
         level = dict(original)
         if index >= count:
             level["world_id"] = max_world + index - count + 1
