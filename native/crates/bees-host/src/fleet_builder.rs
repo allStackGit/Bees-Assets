@@ -52,58 +52,6 @@ fn original_battle_scene(root: &Path, run_name: &str) -> Result<Value, Box<dyn E
     Ok(serde_json::from_slice(&fs::read(scene_path)?)?)
 }
 
-/// A real original Campaign may supply the human production Factory.
-/// The packaged policy example is not usable: its 100 HP/TSV and zero
-/// movement are incompatible with the original 850 HP / 200 TSV class.
-pub(super) fn original_campaign_factory(
-    catalog_path: &Path,
-) -> Result<Option<Value>, Box<dyn Error>> {
-    let catalog_path = catalog_path.canonicalize()?;
-    let root = catalog_path.parent()
-        .ok_or_else(|| invalid("original campaign catalog has no directory"))?;
-    let catalog: Value = serde_json::from_slice(&fs::read(catalog_path)?)?;
-    let stages = catalog["battles"].as_array()
-        .ok_or_else(|| invalid("original Campaign catalog has no battle list"))?;
-    let codex: Value = serde_json::from_str(include_str!(
-        "../../../assets/ship-codex.json"
-    ))?;
-    let original = &codex["ships"][9];
-    if original["ship_type"] != 9 {
-        return Err(invalid("original Factory codex source is unavailable").into());
-    }
-    for stage in stages {
-        let mut paths = Vec::new();
-        if let Some(path) = stage["config"].as_str() { paths.push(path); }
-        for outcome in ("on_victory", "on_defeat") {
-            if let Some(path) = stage["mission"][outcome]["config"].as_str() {
-                paths.push(path);
-            }
-        }
-        for run in paths {
-            let scene = original_battle_scene(root, run)?;
-            for ship in scene["ships"].as_array().into_iter().flatten()
-                .chain(scene["fleet_templates"].as_array().into_iter().flatten())
-                .filter(|ship| ship["side"] == 2 && ship["ship_type"] == 9)
-            {
-                if (ship["max_health"] != original["health"] ||
-                    ship["original_health"] != original["health"] ||
-                    ship["max_tsv"] != original["tsv"] ||
-                    ship["base_speed"].as_f64() != original["speed"].as_f64() ||
-                    ship["sight"]["source_sight"].as_f64() != original["sight"].as_f64() ||
-                    ship["size_class"] != 4 ||
-                    ship["policy"].is_object()
-                ) {
-                    return Err(invalid("original Factory source does not match its physical class contract").into());
-                }
-                let mut ready = ship.clone();
-                ready["health"] = original["health"].clone();
-                return Ok(Some(ready));
-            }
-        }
-    }
-    Ok(None)
-}
-
 fn original_regular_class(side: usize, kind: u8) -> bool {
     match side {
         0 => matches!(kind, 3 | 14 | 15 | 16 | 21),
@@ -175,6 +123,7 @@ pub(super) fn original_campaign_hulls(
                     ship["base_speed"].as_f64() != expected["speed"].as_f64() ||
                     ship["sight"]["source_sight"].as_f64() != expected["sight"].as_f64() ||
                     ship["policy"].is_object() ||
+                    (kind == 9 && ship["size_class"] != 4) ||
                     (regular && (ship["special"].is_object() ||
                         ship["special_weapon"].is_object() ||
                         ship["drone_carrier_id"].is_number() ||
@@ -676,6 +625,9 @@ pub(super) struct FleetChoice {
     /// Ordinary source-authored combat classes, used by the unified
     /// physical fleet roster instead of a synthetic Mixed Fleet policy.
     original_fighters: [Vec<Value>; 2],
+    /// Canonical original campaign archetypes for support, specialists,
+    /// and starter ships; demo archetypes remain only for sandbox games.
+    original_hulls: [Vec<Value>; 2],
     carrier_deck: usize,
     terrain: Terrain,
     map_background: NativeMapBackdrop,
@@ -862,6 +814,7 @@ pub(super) fn choose_for_preferred_side(
                 _ => None,
             }),
         original_fighters: original_roster,
+        original_hulls: fighters.clone(),
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: matches!(mode, 3 | 6), benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
@@ -959,6 +912,7 @@ pub(super) fn choose_multiplayer(
                 _ => None,
             }),
         original_fighters: original_roster,
+        original_hulls: fighters.clone(),
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: false,
         benchmark: false,
@@ -1050,6 +1004,7 @@ pub(super) fn choose_benchmark(
                 _ => None,
             }),
         original_fighters: original_roster,
+        original_hulls: fighters.clone(),
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: true,
         benchmark: true,
@@ -1200,7 +1155,10 @@ fn choose_original_composition(
     let mut roster = [Vec::new(), Vec::new()];
     for side in 0..2 {
         if !matches!(mix[side], FleetMix::OriginalCombined) { continue; }
-        let available = &fighters[side];
+        let available = fighters[side].iter().filter(|ship|
+            ship["ship_type"].as_u64().is_some_and(|kind|
+                original_regular_class(side, kind as u8))
+        ).collect::<Vec<_>>();
         if available.len() < 2 || sizes[side] < 2 || sizes[side] > 64 {
             return Err(invalid("source original mix has no valid physical class selection").into());
         }
@@ -1242,7 +1200,7 @@ fn choose_original_composition(
                 counts[choice]
             };
             remaining -= count;
-            roster[side].extend(std::iter::repeat_with(|| source.clone()).take(count));
+            roster[side].extend(std::iter::repeat_with(|| (*source).clone()).take(count));
         }
         if remaining != 0 || roster[side].len() != sizes[side] {
             return Err(invalid("original mixed fleet lost its authored physical ship count").into());
@@ -1294,6 +1252,7 @@ fn choose_mix(
                 let Some(kind) = ship["ship_type"].as_u64()
                     .and_then(|kind| u8::try_from(kind).ok())
                 else { continue };
+                if !original_regular_class(side, kind) { continue; }
                 if (side == 0 && kind == 21) || (side == 1 && kind == 13) {
                     continue; // already offered as the source default
                 }
@@ -1303,7 +1262,10 @@ fn choose_mix(
                     "{total} {name} ships  |  Original physical class",
                 )));
             }
-            if total > 1 && fighters[side].len() > 1 {
+            if total > 1 && fighters[side].iter().filter(|ship|
+                ship["ship_type"].as_u64().is_some_and(|kind|
+                    original_regular_class(side, kind as u8))
+            ).count() > 1 {
                 options.push((
                     FleetMix::OriginalCombined,
                     format!("{total} mixed original vessels  |  All sourced classes"),
