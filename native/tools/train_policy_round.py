@@ -781,6 +781,7 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
     CPU/GPU budget and accepting an incomplete aggregate.
     """
     started = time.perf_counter()
+    next_progress = started + 15.0
     processes = [None] * len(shards)
     windows_jobs = {}
     windows_job_stats = {}
@@ -861,6 +862,27 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                         stop_parallel_rollout_workers([processes[index]])
                     settled.add(index)
                 if len(metrics) != len(shards):
+                    now = time.perf_counter()
+                    if now >= next_progress:
+                        print(json.dumps({
+                            "kind": "native_rollout_collection_progress",
+                            "scope": "completed_workers_only",
+                            "workers_total": len(shards),
+                            "workers_completed": len(metrics),
+                            "workers_active": sum(
+                                process is not None and process.poll() is None
+                                for index, process in enumerate(processes)
+                                if index not in settled
+                            ),
+                            "completed_world_steps": sum(
+                                row["successful_world_steps"] for row in metrics.values()
+                            ),
+                            "completed_policy_rows": sum(
+                                row["successful_policy_rows"] for row in metrics.values()
+                            ),
+                            "elapsed_wall_seconds": now - started,
+                        }, sort_keys=True), flush=True)
+                        next_progress = now + 15.0
                     time.sleep(0.1)
             if len(shards) == 1:
                 # Preserve the historical one-process metric receipt layout.
