@@ -531,7 +531,12 @@ class FrozenInferenceMicrobatcher:
             # the OS cost of allocating and pinning host memory.
             for buffer in buffers:
                 bytes_used = buffer.numel()*buffer.element_size()
-                if len(self._pinned_pool)<32:
+                # Keep a small reusable host cache; the remaining
+                # pinned-memory budget stays available to active DMA
+                # transfers and the machine's other training projects.
+                if (len(self._pinned_pool)<16 and
+                        self._pinned_cached_bytes+bytes_used <=
+                        min(self.max_pinned_bytes//4,64*1048576)):
                     self._pinned_pool.append(buffer)
                     self._pinned_cached_bytes += bytes_used
 
@@ -641,6 +646,11 @@ class FrozenInferenceMicrobatcher:
             raise
 
     def _dispatch(self, group):
+        # Reap completed staging DMA even when the selected strategy is
+        # now exact/eager rather than pinned. Do not retain finished host
+        # transfers indefinitely after qualification rejects pinning.
+        if self._pinned_pending:
+            self._reap_pinned()
         stream = (torch.cuda.current_stream(self.device)
                   if self.device.type == "cuda" else None)
         owners = OrderedDict()
