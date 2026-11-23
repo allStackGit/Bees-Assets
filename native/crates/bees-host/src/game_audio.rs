@@ -164,6 +164,9 @@ fn source_audio_root() -> Option<PathBuf> {
     if let Some(root) = std::env::var_os("BEES_NATIVE_AUDIO") {
         return Some(PathBuf::from(root));
     }
+    if let Some(root) = crate::presentation::packaged_asset_root() {
+        return Some(root.join("audio"));
+    }
     let mut candidates = vec![
         PathBuf::from("assets/audio"), PathBuf::from("native/assets/audio"),
         PathBuf::from("Music"),

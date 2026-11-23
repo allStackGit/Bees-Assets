@@ -801,6 +801,10 @@ fn source_art_path(filename: &str) -> Option<std::path::PathBuf> {
     if let Some(requested) = requested {
         return requested.is_file().then_some(requested);
     }
+    if let Some(root) = super::packaged_asset_root() {
+        let path = root.join(filename);
+        return path.is_file().then_some(path);
+    }
     let mut candidates = vec![
         std::path::PathBuf::from("native/assets").join(filename),
         std::path::PathBuf::from("assets").join(filename),

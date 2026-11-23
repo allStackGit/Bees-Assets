@@ -52,6 +52,14 @@ pub use selection::{NativeSquadSelection, NativeSupportMode};
 pub use tactical_hud::HudAction;
 pub(crate) use tactical_hud::retreat_button_rect;
 
+/// Recognize the released layout independently of the process working directory.
+pub(crate) fn packaged_asset_root() -> Option<std::path::PathBuf> {
+    let executable = std::env::current_exe().ok()?;
+    let directory = executable.parent()?;
+    directory.join("examples/native-library.json").is_file()
+        .then(|| directory.join("assets"))
+}
+
 /// Inverse of the minifb aspect-preserving viewport transform. Share this
 /// between native menu and remote-game windows so pointer targeting remains
 /// aligned with the existing virtual framebuffer at every desktop size.
