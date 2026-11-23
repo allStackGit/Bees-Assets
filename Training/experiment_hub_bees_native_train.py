@@ -449,6 +449,8 @@ class EventProgress:
             if status.is_symlink() or not status.is_file() or status.stat().st_size>2048:
                 raise ValueError("Native WAN broker progress file is not a bounded regular file.")
             snapshot=json.loads(status.read_text(encoding="utf-8"))
+            if not isinstance(snapshot,dict):
+                raise ValueError("Native WAN telemetry must be a bounded mapping.")
             published=snapshot.get("reported_at_unix_ms")
             age=time.time()*1000-published if type(published) is int else float("inf")
             if snapshot.get("schema_version")==1 and (
