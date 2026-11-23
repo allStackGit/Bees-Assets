@@ -919,10 +919,24 @@ async function action(hub,value) {
         const current=custom.read(o).templates.find(row=>row.id===value.id);
         if(!current||current.revision!==value.expected_revision)
             throw Error('Saved evaluation revision changed; reload before deletion.');
-        const unit=unitFiles(o,'mix-'+current.id+'-v'+current.revision);
-        if(fs.existsSync(unit.timerFile))
-            await systemctl(['stop',unit.timer]);
-        return custom.deleteEvaluation(o,value);
+        const referenced=hub.snapshot().jobs.some(job=>{
+            if(job.status==='cancelled')return false;
+            return [job.evaluation_monitor,job.evaluation_stop].some(policy=>
+                (policy?.all_of||[policy]).some(rule=>
+                    rule?.suite_id===current.suite_id));
+        });
+        // A prequeued/running/terminal job may still require its pinned final
+        // suite. Never disarm its scheduler merely because a saved template
+        // was deleted. Old immutable service files and receipts are retained.
+        if(!referenced) {
+            const unit=unitFiles(o,'mix-'+current.id+'-v'+current.revision);
+            if(fs.existsSync(unit.timerFile))
+                await systemctl(['stop',unit.timer]);
+        }
+        const removed=custom.deleteEvaluation(o,value);
+        return {...removed,message:removed.message+(referenced
+            ?' A job still references its frozen suite; its evaluator schedule was preserved.'
+            :' Its evaluator timer was stopped.')};
     }
     if(value.action==='freeze-history'&&value.id===undefined&&
         UUID.test(String(value.source_job_id||''))) {
