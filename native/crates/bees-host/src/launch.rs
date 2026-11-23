@@ -4558,9 +4558,9 @@ fn run_duplicate_saved_squad(
         &catalog, root, &progress, side, &projected_purchases,
         &projected_authored, new_id, &[created], &copied_tactics,
     )?;
-    // As with native squad deletion, each durable receipt is recoverable
-    // after interruption. A partial edit retains valid career ownership
-    // and can be finished from the ordinary FleetShip transfer editor.
+    // This older squad-duplication path uses individually committed career
+    // edits. Each published transfer remains valid if later work is
+    // interrupted; squad retirement now commits its reserve moves atomically.
     catalog.create_saved_squad(&progress, output_root, side, template_id, new_id)?;
     for &(id, kind, bought) in &selected {
         let committed = catalog.load_progress(output_root)?;
