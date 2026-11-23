@@ -31,17 +31,32 @@ class LocalExecution {
         this.machineId=machineId;
         this.supervisor=supervisor;
         this.projects=projects.slice();
-        this.evaluationSuites=Object.fromEntries(projects.flatMap(project=>{
-            const adapter=supervisor.adapters?.[project];
+        this.evaluationSuites={};
+        this.refreshEvaluationSuites();
+    }
+    refreshEvaluationSuites() {
+        const next=Object.fromEntries(this.projects.flatMap(project=>{
+            const adapter=this.supervisor.adapters?.[project];
+            if(typeof adapter?.refreshEvaluationSuites==='function') {
+                try {adapter.refreshEvaluationSuites();}
+                catch(error) {
+                    // Bad optional suite files must not disconnect the native
+                    // worker or hide unrelated project capability reports.
+                    console.warn('[hub-evaluations] '+project+' local suite refresh: '+
+                        String(error.message||error).slice(0,180));
+                }
+            }
             if(adapter?.evaluation_suites==null)return [];
             if(typeof adapter.readEvaluation!=='function')
                 throw Error('Advertised evaluation suites require a local reader.');
             return [[project,suiteIds(adapter.evaluation_suites)]];
         }));
+        this.evaluationSuites=next;
+        return structuredClone(next);
     }
     advertisement(){
         return {local_executor:true,installed_projects:this.projects.slice(),
-            evaluation_suites:structuredClone(this.evaluationSuites),
+            evaluation_suites:this.refreshEvaluationSuites(),
             design_catalog:Object.assign({},...this.projects.map(project=>
                 this.supervisor.adapters?.[project]?.design_catalog||{})),
             tinybrains_profiles:{...this.supervisor.adapters?.tinybrains?.tinybrains_profiles},
@@ -120,6 +135,8 @@ class LocalExecution {
         if(order.action==='start'&&!this.projects.includes(job.project_id))
             throw Error('A locally installed project adapter is required for Start.');
         const localAdapter=this.supervisor.adapters?.[job.project_id];
+        if(order.action==='start')
+            this.refreshEvaluationSuites();
         if(order.action==='start'&&!supportsEvaluation(this.evaluationSuites,job))
             throw Error('Local adapter does not support the requested evaluation suite.');
         if(order.action==='qualify_gpu') {
