@@ -430,11 +430,15 @@ function fromEnvironment(env=process.env,options={}) {
     // This module path is chosen by the machine administrator in local
     // environment configuration, never by the Hub, a job or a heartbeat.
     let adapters=(options.loadAdapters||require)(adapterFile);
+    if(!adapters||typeof adapters!=='object'||Array.isArray(adapters))
+        throw Error('The enrolled machine adapter module must export a project map.');
     // Add Bees Unity to a machine's existing trusted adapter map without
     // replacing its TinyBrains/Courier owners or their approved profiles.
     // The optional roles are chosen only in the machine-local environment;
     // no Hub job can provide a module path or install a new adapter.
     if(env.EXPERIMENT_HUB_BEES_ADDON_ROLES!==undefined) {
+        if(typeof env.EXPERIMENT_HUB_BEES_ADDON_ROLES!=='string')
+            throw Error('The machine-local Bees additive role selection must be text.');
         const roles=env.EXPERIMENT_HUB_BEES_ADDON_ROLES.split(',');
         if(!roles.length||roles.length>2||
             roles.some(role=>!['bees_native','bees_rollout'].includes(role))||
