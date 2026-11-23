@@ -405,6 +405,7 @@ class BundleReceiver:
         self.upload_bytes_received = 0
         self.upload_wire_bytes_received = 0
         self.upload_resumed_prefix_bytes = 0
+        self.staged_prefix_rehash_bytes = 0
         self.upload_and_verify_seconds = 0.0
         self.completed_uploads = 0
         self.lock = threading.Lock()
@@ -436,6 +437,7 @@ class BundleReceiver:
                 "collector_output_bytes_received": self.upload_bytes_received,
                 "collector_output_wire_bytes_received": self.upload_wire_bytes_received,
                 "collector_output_resumed_prefix_bytes": self.upload_resumed_prefix_bytes,
+                "collector_staged_prefix_rehash_bytes": self.staged_prefix_rehash_bytes,
                 "collector_upload_and_verify_wall_seconds": self.upload_and_verify_seconds,
                 "collector_uploads_received": self.completed_uploads,
             }
@@ -469,6 +471,7 @@ class BundleReceiver:
             self.upload_bytes_received = 0
             self.upload_wire_bytes_received = 0
             self.upload_resumed_prefix_bytes = 0
+            self.staged_prefix_rehash_bytes = 0
             self.upload_and_verify_seconds = 0.0
             self.completed_uploads = 0
         for state in staged:
@@ -571,37 +574,44 @@ class BundleReceiver:
                 raise ValueError("collector upload was not admitted")
             path = self._issued_stage_path(collector_id, digest, total)
             state = self.staged_uploads.get(collector_id)
-            if state is None:
-                if path.is_symlink():
-                    raise ValueError("staged collector file is a symlink")
-                if path.exists():
-                    if not path.is_file() or path.stat().st_size > total:
-                        raise ValueError("invalid recovered native upload prefix")
-                    # Reconstruct the prefix digest only after a receiver
-                    # process restart; same-process retries reuse the live
-                    # incremental hasher without rereading gigabytes.
-                    hasher = hashlib.sha256()
-                    with path.open("rb") as stream:
-                        while chunk := stream.read(CHUNK):
-                            hasher.update(chunk)
-                    received = path.stat().st_size
-                else:
-                    if offset:
-                        raise ValueError("collector resume has no matching staged prefix")
-                    with path.open("xb"):
-                        pass
-                    hasher, received = hashlib.sha256(), 0
-                state = {
-                    "path": path, "digest": digest, "total": total,
-                    "received": received, "hasher": hasher,
-                }
+        if state is None:
+            # The active collector claim prevents concurrent appends to
+            # this file. Never hold the global receiver lock while hashing
+            # a multi-GB recovered prefix: other machines must continue
+            # uploading, downloading, and reporting their work.
+            if path.is_symlink():
+                raise ValueError("staged collector file is a symlink")
+            if path.exists():
+                if not path.is_file() or path.stat().st_size > total:
+                    raise ValueError("invalid recovered native upload prefix")
+                hasher = hashlib.sha256()
+                received = 0
+                with path.open("rb") as stream:
+                    while chunk := stream.read(CHUNK):
+                        hasher.update(chunk)
+                        received += len(chunk)
+            else:
+                if offset:
+                    raise ValueError("collector resume has no matching staged prefix")
+                with path.open("xb"):
+                    pass
+                hasher, received = hashlib.sha256(), 0
+            state = {
+                "path": path, "digest": digest, "total": total,
+                "received": received, "hasher": hasher,
+            }
+            with self.lock:
+                if collector_id not in self.inflight:
+                    raise ValueError("collector claim ended during staged upload recovery")
                 self.staged_uploads[collector_id] = state
-            if (state["digest"] != digest or state["total"] != total or
-                    state["received"] != offset or state["path"] != path or
-                    path.is_symlink() or not path.is_file() or
-                    path.stat().st_size != offset):
-                raise ValueError("collector upload offset or immutable identity differs")
-            return state
+                if received:
+                    self.staged_prefix_rehash_bytes += received
+        if (state["digest"] != digest or state["total"] != total or
+                state["received"] != offset or state["path"] != path or
+                path.is_symlink() or not path.is_file() or
+                path.stat().st_size != offset):
+            raise ValueError("collector upload offset or immutable identity differs")
+        return state
 
     def discard_upload(self, collector_id):
         with self.lock:
