@@ -161,7 +161,7 @@ pub(super) fn original_campaign_fighters(
                     ship["policy"].is_object() || ship["special"].is_object() ||
                     ship["special_weapon"].is_object() ||
                     ship["drone_carrier_id"].is_number() ||
-                    !ship["turrets"].is_array() || !ship["persistent_fleet"].is_boolean()
+                    !ship["turrets"].is_array() || ship["persistent_fleet"] != true
                 {
                     // A source example is not a canonical original class
                     // merely because it has a familiar ship_type number.
@@ -296,7 +296,7 @@ impl ReinforcementPattern {
 }
 
 #[derive(Clone, Copy)]
-enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Scouts, ReconMiners, Chargers, FireBarges, Siege, Gate, Detonators, Queen, Factories }
+enum FleetMix { Fighters, SourceClass(u8), Balanced, SupportHeavy, Specialists, Miners, Scouts, ReconMiners, Chargers, FireBarges, Siege, Gate, Detonators, Queen, Factories }
 
 #[derive(Clone, Copy)]
 enum AiTactics {
@@ -449,6 +449,7 @@ impl FleetMix {
     fn label(self) -> &'static str {
         match self {
             Self::Fighters => "fighters",
+            Self::SourceClass(_) => "original-class",
             Self::Balanced => "balanced",
             Self::SupportHeavy => "support-heavy",
             Self::Specialists => "specialists",
@@ -501,7 +502,7 @@ impl FleetMix {
 
     fn support_count(self, total: usize) -> usize {
         (match self {
-            Self::Fighters => 0,
+            Self::Fighters | Self::SourceClass(_) => 0,
             Self::Balanced => total.div_ceil(4).min(8),
             Self::SupportHeavy => (total / 2).min(12),
             Self::Specialists => if total >= 4 { total.div_ceil(4).min(8) } else { 0 },
@@ -652,6 +653,7 @@ pub(super) struct FleetChoice {
     /// scene before the battle's immutable source checkpoint is committed.
     queen_archetype: Option<Value>,
     factory_archetype: Option<Value>,
+    source_fighter: [Option<Value>; 2],
     carrier_deck: usize,
     terrain: Terrain,
     map_background: NativeMapBackdrop,
@@ -690,9 +692,11 @@ fn invalid(message: &'static str) -> io::Error {
 
 pub(super) fn choose(
     save_root: &Path, queen_archetype: Option<&Value>,
-    factory_archetype: Option<&Value>,
+    factory_archetype: Option<&Value>, fighters: &[Vec<Value>; 2],
 ) -> Result<Option<FleetChoice>, Box<dyn Error>> {
-    choose_for_preferred_side(save_root, None, queen_archetype, factory_archetype)
+    choose_for_preferred_side(
+        save_root, None, queen_archetype, factory_archetype, fighters,
+    )
 }
 
 /// Original FreePlay SwitchSides leaves the active Level and opens Squad
@@ -701,6 +705,7 @@ pub(super) fn choose(
 pub(super) fn choose_for_preferred_side(
     save_root: &Path, preferred_side: Option<i32>,
     queen_archetype: Option<&Value>, factory_archetype: Option<&Value>,
+    fighters: &[Vec<Value>; 2],
 ) -> Result<Option<FleetChoice>,Box<dyn Error>> {
     if preferred_side.is_some_and(|side|!matches!(side,1|2)) {
         return Err(invalid("preferred Fleet Builder side must be Bee or Human").into());
@@ -734,7 +739,7 @@ pub(super) fn choose_for_preferred_side(
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(
         fleet_sizes, ore_count > 0, arena_size, queen_archetype.is_some(),
-        factory_archetype.is_some(),
+        factory_archetype.is_some(), fighters,
     )? else { return Ok(None); };
     let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
@@ -824,7 +829,14 @@ pub(super) fn choose_for_preferred_side(
     };
     Ok(Some(FleetChoice {
         player_side, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, queen_archetype: queen_archetype.cloned(),
-        factory_archetype: factory_archetype.cloned(), carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
+        factory_archetype: factory_archetype.cloned(),
+        source_fighter: std::array::from_fn(|side|
+            match mix[side] {
+                FleetMix::SourceClass(kind) => fighters[side].iter()
+                    .find(|ship| ship["ship_type"] == kind).cloned(),
+                _ => None,
+            }),
+        carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: matches!(mode, 3 | 6), benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
     }))
@@ -835,6 +847,7 @@ pub(super) fn choose_for_preferred_side(
 pub(super) fn choose_multiplayer(
     authenticated_side: Option<i32>, save_root: &Path,
     queen_archetype: Option<&Value>, factory_archetype: Option<&Value>,
+    fighters: &[Vec<Value>; 2],
 ) -> Result<Option<FleetChoice>, Box<dyn Error>> {
     // The existing LAN host's token map is authoritative. A HiveMind
     // opponent is selectable only when exactly one real remote commander
@@ -869,7 +882,7 @@ pub(super) fn choose_multiplayer(
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size,
-        queen_archetype.is_some(), factory_archetype.is_some())? else { return Ok(None); };
+        queen_archetype.is_some(), factory_archetype.is_some(), fighters)? else { return Ok(None); };
     let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
@@ -909,7 +922,14 @@ pub(super) fn choose_multiplayer(
     Ok(Some(FleetChoice {
         player_side: if use_hivemind { authenticated_side } else { None },
         fleet_sizes, squad_sizes, specialist_squad_sizes, mix, queen_archetype: queen_archetype.cloned(),
-        factory_archetype: factory_archetype.cloned(), carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
+        factory_archetype: factory_archetype.cloned(),
+        source_fighter: std::array::from_fn(|side|
+            match mix[side] {
+                FleetMix::SourceClass(kind) => fighters[side].iter()
+                    .find(|ship| ship["ship_type"] == kind).cloned(),
+                _ => None,
+            }),
+        carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: false,
         benchmark: false,
         spectator_episodes: 1,
@@ -923,6 +943,7 @@ pub(super) fn choose_multiplayer(
 /// exactly the same collision, command and ship code used in windowed play.
 pub(super) fn choose_benchmark(
     queen_archetype: Option<&Value>, factory_archetype: Option<&Value>,
+    fighters: &[Vec<Value>; 2],
 ) -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain(fleet_sizes)? else { return Ok(None); };
@@ -931,7 +952,7 @@ pub(super) fn choose_benchmark(
     let Some(asteroid_timer) = choose_collision_asteroid_timer()? else { return Ok(None); };
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size,
-        queen_archetype.is_some(), factory_archetype.is_some())? else { return Ok(None); };
+        queen_archetype.is_some(), factory_archetype.is_some(), fighters)? else { return Ok(None); };
     let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
@@ -988,7 +1009,14 @@ pub(super) fn choose_benchmark(
         else { return Ok(None); };
     Ok(Some(FleetChoice {
         player_side: None, fleet_sizes, squad_sizes, specialist_squad_sizes, mix, queen_archetype: queen_archetype.cloned(),
-        factory_archetype: factory_archetype.cloned(), carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
+        factory_archetype: factory_archetype.cloned(),
+        source_fighter: std::array::from_fn(|side|
+            match mix[side] {
+                FleetMix::SourceClass(kind) => fighters[side].iter()
+                    .find(|ship| ship["ship_type"] == kind).cloned(),
+                _ => None,
+            }),
+        carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: true,
         benchmark: true,
         spectator_episodes: 1,
@@ -1132,6 +1160,7 @@ fn choose_sizes() -> Result<Option<[usize; 2]>, Box<dyn Error>> {
 fn choose_mix(
     fleet_sizes: [usize; 2], mining_field: bool, arena_size: Option<u32>,
     bee_queen_unlocked: bool, factory_available: bool,
+    fighters: &[Vec<Value>; 2],
 ) -> Result<Option<[FleetMix; 2]>, Box<dyn Error>>
 {
     let mut choices = [FleetMix::Fighters; 2];
@@ -1162,6 +1191,24 @@ fn choose_mix(
                 FleetMix::Specialists.support_count(total),
             )),
         ];
+        if total <= 64 {
+            let codex: Value = serde_json::from_str(include_str!(
+                "../../../assets/ship-codex.json"
+            ))?;
+            for ship in &fighters[side] {
+                let Some(kind) = ship["ship_type"].as_u64()
+                    .and_then(|kind| u8::try_from(kind).ok())
+                else { continue };
+                if (side == 0 && kind == 21) || (side == 1 && kind == 13) {
+                    continue; // already offered as the source default
+                }
+                let name = codex["ships"][usize::from(kind)]["name"].as_str()
+                    .ok_or_else(|| invalid("source fighter has no original Codex name"))?;
+                options.push((FleetMix::SourceClass(kind), format!(
+                    "{total} {name} ships  |  Original physical class",
+                )));
+            }
+        }
         if side == 0 {
             let scouts = FleetMix::Scouts.specialist_count(total);
             options.push((FleetMix::Scouts, format!(
@@ -1514,7 +1561,10 @@ fn mixed_fleet_offsets(
     let support = mix.support_count(total);
     let specialist = mix.specialist_count(total);
     let fighters = total - support - specialist;
-    let fighter_kind = if side == 0 { 21 } else { 13 };
+    let fighter_kind = match mix {
+        FleetMix::SourceClass(kind) => kind,
+        _ => if side == 0 { 21 } else { 13 },
+    };
     let support_kind = mix.support_type(side);
     let fighter_size = catalog.sprite_size(fighter_kind)
         .ok_or_else(|| invalid("source fighter has no sprite extents"))?;
