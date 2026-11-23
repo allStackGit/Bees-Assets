@@ -27,6 +27,7 @@ function supportsJobRuntime(machine,job) {
         return machine?.agent_platform==='linux'&&
             machine?.installed_projects?.includes('bees_rollout')&&
             approved?.worker_sha256===frozen.worker_sha256&&
+            approved?.worker_payload_sha256===frozen.worker_payload_sha256&&
             approved?.trainer_sha256===frozen.trainer_sha256&&
             approved?.runtime_version===frozen.runtime_version&&
             approved?.wan_key_fingerprint===frozen.wan_key_fingerprint;
@@ -38,6 +39,8 @@ function supportsJobRuntime(machine,job) {
             pinned?.worker_sha256===job.frozen_parameters?.worker_sha256&&
             pinned?.trainer_sha256===job.frozen_parameters?.trainer_sha256&&
             pinned?.runtime_version===job.frozen_parameters?.runtime_version&&
+            ((job.frozen_parameters?.wan_actors||0)===0||
+                pinned?.worker_payload_sha256===job.frozen_parameters.worker_payload_sha256)&&
             ((job.frozen_parameters?.wan_actors||0)===0||
                 pinned?.wan_key_fingerprint===job.frozen_parameters.wan_key_fingerprint);
     }
@@ -540,7 +543,7 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
     const keys=new Set(['max_steps','envs','seed','device','hyperparameters',
         'environment_args','worker_sha256','trainer_sha256','runtime_version',
         'evaluation_profile','evaluation_matches','batch_inference',
-        'wan_actors','wan_key_fingerprint']);
+        'wan_actors','wan_key_fingerprint','worker_payload_sha256']);
     if(!object(parameters)||Object.keys(parameters).some(key=>!keys.has(key))||
         !SHA256.test(String(parameters.worker_sha256||''))||
         !SHA256.test(String(parameters.trainer_sha256||''))||
@@ -555,7 +558,8 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
         throw Error('Bees native jobs require a pinned Unity worker and MA-POCA trainer, 1,000–100 billion steps, 1–64 environments, a seed and a CPU/ROCm device.');
     const actors=parameters.wan_actors??0;
     if(!Number.isSafeInteger(actors)||actors<0||actors>8||
-        actors>0&&!SHA256.test(String(parameters.wan_key_fingerprint||''))||
+        actors>0&&(!SHA256.test(String(parameters.wan_key_fingerprint||''))||
+            !SHA256.test(String(parameters.worker_payload_sha256||'')))||
         actors===0&&parameters.wan_key_fingerprint!==undefined&&
             !SHA256.test(String(parameters.wan_key_fingerprint)))
         throw Error('Bees WAN actors require a private key fingerprint and a frozen 1–8 machine capacity.');
@@ -1092,7 +1096,7 @@ function beesWanGroupBlock(snapshot,job) {
             actor.frozen_parameters?.learner_job_id!==learner.id||
             actor.frozen_parameters?.lineage_root_id!==
                 (learner.artifact_lineage_root_id||learner.id)||
-            ['worker_sha256','trainer_sha256','runtime_version',
+            ['worker_sha256','worker_payload_sha256','trainer_sha256','runtime_version',
                 'wan_key_fingerprint'].some(key=>
                     actor.frozen_parameters[key]!==learner.frozen_parameters[key]))
             return 'Bees WAN slot, machine, worker/runtime or broker key differs from the learner.';
@@ -6591,7 +6595,8 @@ class ExperimentHub {
             if(!eligible(machine)||!machine.installed_projects?.includes('bees_rollout')||
                 !machine.design_catalog?.bees_rollout||
                 machine.design_catalog.bees_rollout.wan_key_fingerprint!==key||
-                ['worker_sha256','trainer_sha256','runtime_version'].some(field=>
+                ['worker_sha256','worker_payload_sha256','trainer_sha256',
+                    'runtime_version'].some(field=>
                     machine.design_catalog.bees_rollout[field]!==configRow.parameters[field]))
                 throw Error('Bees WAN actor '+actor.machine_id+
                     ' does not approve the learner Unity, PPO runtime or private broker key.');
@@ -6620,6 +6625,7 @@ class ExperimentHub {
                     learner_job_id:learner.id,lineage_root_id:root,
                     slot:index,envs:actor.envs,device:actor.device,
                     worker_sha256:learner.frozen_parameters.worker_sha256,
+                    worker_payload_sha256:learner.frozen_parameters.worker_payload_sha256,
                     trainer_sha256:learner.frozen_parameters.trainer_sha256,
                     runtime_version:learner.frozen_parameters.runtime_version,
                     wan_key_fingerprint:key,
@@ -8019,7 +8025,7 @@ class ExperimentHub {
             const learner=next.jobs.find(j=>j.id===frozen.learner_job_id);
             const fields=['learner_job_id','lineage_root_id','worker_sha256',
                 'trainer_sha256','runtime_version','wan_key_fingerprint',
-                'envs','device','slot'];
+                'worker_payload_sha256','envs','device','slot'];
             if(internalBeesRollout!==true||
                 Object.keys(frozen).some(key=>!fields.includes(key))||
                 !UUID.test(String(frozen.learner_job_id||''))||
@@ -8038,8 +8044,8 @@ class ExperimentHub {
                 frozen.slot>=learner.frozen_parameters.wan_actors||
                 frozen.lineage_root_id!==
                     (learner.artifact_lineage_root_id||learner.id)||
-                ['worker_sha256','trainer_sha256','runtime_version',
-                    'wan_key_fingerprint'].some(key=>
+                ['worker_sha256','worker_payload_sha256','trainer_sha256',
+                    'runtime_version','wan_key_fingerprint'].some(key=>
                         frozen[key]!==learner.frozen_parameters[key])||
                 next.jobs.some(job=>job.project_id==='bees_rollout'&&
                     job.frozen_parameters?.learner_job_id===learner.id&&
