@@ -23,7 +23,8 @@ from native_training_artifacts import (
 
 def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
                    learner_side: int, seed: int, binary: Path | None,
-                   physics_workers: int | None, device: str | None) -> dict:
+                   physics_workers: int | None, device: str | None,
+                   resume: bool = False) -> dict:
     if not 2 <= len(sources) <= 64:
         raise ValueError("heterogeneous holdout needs 2..64 authored native source runs")
     if learner_side not in (1, 2) or not 0 <= seed < (1 << 63):
@@ -37,23 +38,90 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
     env = native_headless_environment()
     model_store = env.get("BEES_NATIVE_MODEL_STORE")
     model_dependencies = native_manifest_model_dependencies(manifest, model_store)
+    binary = binary.resolve(strict=True) if binary is not None else None
+    request = {
+        "schema_version": 1,
+        "kind": "native_heterogeneous_evaluation_request",
+        "source_runs": [
+            {"path": str(path), "sha256": digest}
+            for path, digest in zip(sources, original_sha)
+        ],
+        "model_manifest": str(manifest),
+        "model_manifest_sha256": manifest_sha,
+        "model_dependencies": model_dependencies,
+        "model_store": model_store,
+        "learner_side": learner_side,
+        "policy_sampling_seed": seed,
+        "rollout_binary": str(binary) if binary else None,
+        "rollout_binary_sha256": file_sha256(binary) if binary else None,
+        "physics_workers": physics_workers,
+        "inference_device": device,
+    }
     output = output.resolve()
-    if not output.parent.is_dir() or output.exists() or output.is_symlink():
-        raise FileExistsError("heterogeneous holdout requires a fresh output directory")
-    output.mkdir()
-    sync_directory(output.parent)
+    if not output.parent.is_dir() or output.is_symlink():
+        raise ValueError("heterogeneous holdout parent or destination is unsafe")
+    if resume:
+        if not output.is_dir() or output.is_symlink():
+            raise FileNotFoundError("resume needs the existing owned native evaluation directory")
+        if json.loads((output / "suite-request.json").read_text(encoding="utf-8")) != request:
+            raise ValueError("cannot resume against changed model, source, native binary or settings")
+        if (output / "evaluation-suite-result.json").exists():
+            raise FileExistsError("heterogeneous evaluation is already fully published")
+    else:
+        if output.exists():
+            raise FileExistsError("heterogeneous holdout requires a fresh output directory")
+        output.mkdir()
+        atomic_json(output / "suite-request.json", request)
+        sync_directory(output)
+        sync_directory(output.parent)
     begun = time.monotonic()
+    reused = 0
     results = []
     for index, source in enumerate(sources, start=1):
-        # The source's own physical Stage, fixed-step, world roster, mission,
-        # map and episode seeds are independently validated by the original
-        # native evaluator. Never replace them with a generic benchmark.
-        destination = output / f"scenario-{index:03d}"
-        result = evaluate(
-            source, manifest, destination, learner_side, binary, seed,
-            physics_workers, device,
-        )
-        result_path = destination / "evaluation-result.json"
+        # Every scenario uses a separate native Stage; only verified,
+        # immutable completed receipts may be reused after interruption.
+        # Leave incomplete attempts intact for diagnostics and start a
+        # fresh attempt rather than deleting an interrupted rollout.
+        base = output / f"scenario-{index:03d}"
+        destination = base
+        attempt = 0
+        while destination.exists() or destination.is_symlink():
+            if destination.is_symlink() or not destination.is_dir():
+                raise ValueError("native scenario output path has invalid ownership")
+            result_path = destination / "evaluation-result.json"
+            if result_path.is_file() and not result_path.is_symlink():
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+                if (result.get("kind") != "native_policy_evaluation_complete" or
+                        result.get("source_run_config_sha256") != original_sha[index - 1] or
+                        result.get("model_manifest_sha256") != manifest_sha or
+                        result.get("learner_side") != learner_side or
+                        result.get("policy_sampling_seed") != seed or
+                        result.get("source_run_config") != str(source) or
+                        result.get("model_dependencies") != model_dependencies or
+                        result.get("inference_device_override") != device or
+                        result.get("requested_physics_workers") != (
+                            physics_workers if physics_workers is not None
+                            else json.loads(source.read_text(encoding="utf-8")).get("physics_workers", 1)
+                        )):
+                    raise ValueError(f"native scenario {index} has a conflicting completed receipt")
+                check_native_input_dependencies({
+                    "source_dependencies": result["source_dependencies"],
+                })
+                reused += 1
+                break
+            if result_path.exists() or result_path.is_symlink():
+                raise ValueError(f"native scenario {index} has an invalid completion marker")
+            attempt += 1
+            destination = output / f"scenario-{index:03d}-attempt-{attempt:03d}"
+        else:
+            # No complete result was reusable. The existing evaluator
+            # exclusively claims a new directory and publishes its own
+            # completion marker after the actual physical rollout.
+            result = evaluate(
+                source, manifest, destination, learner_side, binary, seed,
+                physics_workers, device,
+            )
+            result_path = destination / "evaluation-result.json"
         if (result.get("kind") != "native_policy_evaluation_complete" or
                 result.get("source_run_config_sha256") != original_sha[index - 1] or
                 result.get("model_manifest_sha256") != manifest_sha or
@@ -121,6 +189,8 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
         "learner_side": learner_side,
         "policy_sampling_seed": seed,
         "scenarios": len(receipts),
+        "completed_scenarios_reused": reused,
+        "resumed": resume,
         "episodes": episodes,
         "side_victories": victories, "draws": draws,
         "side_win_rate": victories / episodes,
@@ -140,8 +210,13 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
         "measured_simulation_world_steps_per_second": steps / measured,
         "measured_execution_wall_seconds": execution_seconds,
         "measured_execution_world_steps_per_second": steps / execution_seconds,
-        "total_elapsed_wall_seconds": elapsed,
-        "elapsed_world_steps_per_second": steps / elapsed,
+        # A resume covers only new execution in this invocation. Claiming
+        # a suite-wide elapsed SPS here would count reused work without its
+        # historical elapsed cost.
+        "current_invocation_wall_seconds": elapsed,
+        **({"total_elapsed_wall_seconds": elapsed,
+            "elapsed_world_steps_per_second": steps / elapsed}
+           if reused == 0 else {}),
         "by_source": [{
             "scenario": row["scenario"],
             "source_run": row["source_run"],
@@ -187,11 +262,13 @@ def main():
     parser.add_argument("--rollout-binary", type=Path)
     parser.add_argument("--physics-workers", type=int)
     parser.add_argument("--inference-device", choices=("cpu", "cuda:0"))
+    parser.add_argument("--resume", action="store_true",
+                        help="continue unfinished scenarios from an unchanged pinned suite request")
     args = parser.parse_args()
     print(json.dumps(evaluate_suite(
         args.run_configs, args.model_manifest, args.output_dir, args.learner_side,
         args.policy_seed, args.rollout_binary, args.physics_workers,
-        args.inference_device,
+        args.inference_device, resume=args.resume,
     ), sort_keys=True), flush=True)
 
 
