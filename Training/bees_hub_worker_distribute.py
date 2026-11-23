@@ -282,32 +282,62 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
         })
     if not apply:
         return plan
-    for index, (machine, staging, archive, match) in enumerate(prepared):
-        stage_remote(machine, staging)
-        scp(machine, [*scripts, manifest, archive] +
-            ([source_runtime] if runtime else []), staging + "/")
-        install = (
+
+    def remote_install(machine: dict, staging: str, archive: Path,
+                       activate_now: bool, cleanup: bool) -> dict:
+        archive_name = PLATFORM_ARCHIVE[machine["platform"]][1]
+        command = (
             machine["python_path"] + " -B " + staging +
             "/bees_hub_worker_install.py install --root " +
             machine["install_root"] + " --manifest " + staging +
             "/worker-build-manifest.json --archive " + staging + "/" +
-            archive_name + (" --activate" if activate else "") +
-            " --cleanup-staging"
+            archive_name + (" --activate" if activate_now else "") +
+            (" --cleanup-staging" if cleanup else "")
         )
-        output = run(ssh_base(machine, install), "Install verified Unity player on " +
-                     machine["machine_id"], timeout=1800)
+        output = run(
+            ssh_base(machine, command),
+            ("Activate" if activate_now else "Install") +
+            " verified Unity player on " + machine["machine_id"],
+            timeout=1800,
+        )
         try:
             remote = json.loads(output.strip().splitlines()[-1])
         except (ValueError, IndexError) as exc:
-            raise RuntimeError("Remote Bees Unity installer returned no verified receipt.") from exc
+            raise RuntimeError("Remote Bees Unity installer returned no verified receipt on " +
+                               machine["machine_id"]) from exc
+        expected = next(item for item in doc["artifacts"]
+                        if item["platform"] == PLATFORM_ARCHIVE[machine["platform"]][0])
         if (remote.get("release_sha256") != digest or
-            remote.get("platform") != platform_name or
-            remote.get("player_tree_sha256") != match["player_tree_sha256"] or
+            remote.get("platform") != expected["platform"] or
+            remote.get("player_tree_sha256") != expected["player_tree_sha256"] or
             runtime and (remote.get("runtime_sha256") != runtime["archive_sha256"] or
                          remote.get("runtime_version") != runtime["runtime_version"]) or
-            activate and remote.get("activated") is not True):
-            raise RuntimeError("Remote Bees Unity installation receipt does not match built release.")
+            activate_now and remote.get("activated") is not True):
+            raise RuntimeError("Unity worker receipt disagrees with the approved release on " +
+                               machine["machine_id"])
+        return remote
+
+    # Complete uploads and verified immutable installations on ALL selected
+    # hosts before changing even one active selector. Remote transfer failures
+    # leave the previous active release untouched on every machine.
+    for index, (machine, staging, archive, _match) in enumerate(prepared):
+        stage_remote(machine, staging)
+        scp(machine, [*scripts, manifest, archive] +
+            ([source_runtime] if runtime else []), staging + "/")
+        remote = remote_install(machine, staging, archive,
+                                activate_now=False, cleanup=not activate)
+        plan[index]["installed"] = True
         plan[index]["staging_cleaned"] = remote.get("staging_cleaned") is True
+
+    if activate:
+        # Activations are independently atomic on each host. Network loss
+        # during this phase can still leave a partial activation; rerunning
+        # the same idempotent release finishes the remaining selectors.
+        for index, (machine, staging, archive, _match) in enumerate(prepared):
+            remote = remote_install(machine, staging, archive,
+                                    activate_now=True, cleanup=True)
+            plan[index]["activated"] = True
+            plan[index]["staging_cleaned"] = remote.get("staging_cleaned") is True
     return plan
 
 
