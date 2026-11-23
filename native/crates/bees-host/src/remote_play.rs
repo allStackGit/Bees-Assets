@@ -161,6 +161,9 @@ struct Peer {
     close_after_flush: bool,
     closed: bool,
     accepted_at: Instant,
+    /// Only authenticated inbound traffic renews a live TCP seat. The
+    /// matching client sends transport pings even while physics is paused.
+    last_inbound_at: Instant,
 }
 
 impl Peer {
@@ -331,6 +334,10 @@ pub struct RemotePlayMeasurements {
     /// Authenticated transport replies, independent of world snapshots.
     #[serde(default)]
     pub heartbeat_replies: u64,
+    /// Dead TCP sockets cannot hold a commander seat, pause vote or
+    /// manually firing weapon indefinitely after a network partition.
+    #[serde(default)]
+    pub idle_authenticated_peers_reaped: u64,
     pub orders_processed: u64,
     pub orders_rejected: u64,
     /// Poll intervals that deferred at least one complete authenticated
@@ -966,6 +973,7 @@ impl NativeRemotePlay {
                 newest_state: None, input_replies: VecDeque::new(),
                 archived_terminal: false, close_after_flush: false,
                 closed: false, accepted_at: Instant::now(),
+                last_inbound_at: Instant::now(),
             });
         }
 
@@ -1004,6 +1012,7 @@ impl NativeRemotePlay {
                     Ok(0) => { peer.closed = true; break; }
                     Ok(n) => {
                         budget -= n;
+                        peer.last_inbound_at=Instant::now();
                         peer.incoming.extend_from_slice(&chunk[..n]);
                         self.measurements.input_buffer_peak_bytes = self.measurements
                             .input_buffer_peak_bytes.max(peer.incoming.len());
@@ -1012,6 +1021,15 @@ impl NativeRemotePlay {
                     Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
                     Err(_) => { peer.closed = true; break; }
                 }
+            }
+            if peer.side.is_some() &&
+                peer.last_inbound_at.elapsed()>=Duration::from_secs(60) {
+                // A half-open socket might never report EOF. Retire it
+                // through the SAME reaper as an explicit disconnect so its
+                // pause vote and held-fire gesture cannot strand gameplay.
+                peer.closed=true;
+                self.measurements.idle_authenticated_peers_reaped+=1;
+                continue;
             }
             let mut start = 0;
             while !peer.closed {
