@@ -133,8 +133,21 @@ def native_headless_environment():
     with the caller.
     """
     env = os.environ.copy()
-    for key in ("BEES_NATIVE_REMOTE_LISTEN", "BEES_NATIVE_REMOTE_SIDE_TOKENS",
-                "BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS", "BEES_NATIVE_REMOTE_TOKEN"):
+    # A native learner/holdout cannot host or join multiplayer. Strip
+    # private token paths and TLS keys as well as inline credentials:
+    # Windows child processes otherwise inherit them even with LISTEN
+    # removed, despite needing only model-store and GPU allocation state.
+    for key in (
+        "BEES_NATIVE_REMOTE_LISTEN",
+        "BEES_NATIVE_REMOTE_SIDE_TOKENS",
+        "BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE",
+        "BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS",
+        "BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS_FILE",
+        "BEES_NATIVE_REMOTE_TOKEN",
+        "BEES_NATIVE_REMOTE_TLS_CERT_DER",
+        "BEES_NATIVE_REMOTE_TLS_KEY_DER",
+        "BEES_NATIVE_REMOTE_TLS_CA_DER",
+    ):
         env.pop(key, None)
     return env
 
