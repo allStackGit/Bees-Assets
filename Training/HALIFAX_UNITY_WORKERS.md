@@ -286,11 +286,107 @@ Native Bees runs receive dedicated output directories, protected communicator
 port blocks and independent model/checkpoint hashes. Their reported PPO
 statistics are observational, not evaluation success.
 
-This first native mode is separate from the optional two-process legacy
-learner/local-actor mode above. It currently runs one learner with its local
-simulation processes. Independent post-training evaluation supports the
-versioned four-case and 48-case scripted coverage suites. A shared distributed
-rollout broker across Hub machine leases is not yet implemented for this mode.
+Native Hub Bees Unity jobs preserve the legacy learner/actor separation.
+Without WAN actors, they run the learner and all environments locally.
+Independent post-training evaluation supports the versioned four-case and
+48-case scripted coverage suites. To add Hub-reserved remote Unity actors,
+use the independently owned WAN group below.
+
+### Native Hub WAN training across enrolled Linux machines
+
+This opt-in mode uses the existing Bees elastic WAN trajectory protocol:
+**one Hub-owned learner** holds the optimizer/checkpoints, and **1–8 separately
+leased Hub remote actors** run pinned Unity workers and local inference. The
+existing resource-bundle scheduler owns the cross-machine starts and stops.
+The legacy Exeter Bees manager is unaffected.
+
+Each machine must have the **same Unity worker binary SHA-256, MA-POCA trainer
+and immutable Python runtime version**. Enroll the learner's Hub agent with:
+
+\`\`\`text
+EXPERIMENT_HUB_WORKER_PROJECTS=tinybrains,courier,bees_native
+EXPERIMENT_HUB_BEES_WAN_KEY=/absolute/private/path/bees-wan.hex
+EXPERIMENT_HUB_BEES_WAN_BROKER_PORT=55051
+\`\`\`
+
+On each enrolled **Linux** actor agent (the worker's other existing projects
+can remain enabled):
+
+\`\`\`text
+EXPERIMENT_HUB_WORKER_PROJECTS=bees_rollout
+EXPERIMENT_HUB_BEES_ASSETS_ROOT=/absolute/path/to/Bees-Assets
+EXPERIMENT_HUB_BEES_PYTHON=/absolute/path/to/python310/bin/python
+EXPERIMENT_HUB_BEES_LINUX_WORKER=/absolute/path/to/Bees RL Training.x86_64
+EXPERIMENT_HUB_BEES_WAN_KEY=/absolute/private/path/bees-wan.hex
+EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT=56051
+\`\`\`
+
+The WAN key is a privately provisioned file containing exactly 64
+lowercase hexadecimal characters, mode 0600 on each machine. Never commit
+or transfer it through the Hub configuration or Git. The agents advertise
+only its SHA-256 fingerprint. If WAN actors request a GPU, retain their
+existing ROCm settings and request one exclusive GPU per actor.
+
+The learner broker binds **only to 127.0.0.1:55051**. On each remote
+actor machine establish a private, authenticated and persistent tunnel
+to the learner's loopback port, for example (adjust the remote host):
+
+\`\`\`sh
+ssh -N -o ExitOnForwardFailure=yes \
+    -L 127.0.0.1:56051:127.0.0.1:55051 learner-ssh-host
+\`\`\`
+
+The actor connects only to its preinstalled 127.0.0.1:56051 listener.
+Do not expose the broker on a public interface or assume a tunnel exists
+merely because the Hub machine heartbeat is connected. There can be only
+one active WAN learner on the fixed local broker port.
+
+In Hub Design, save a **bees_native** configuration with \`wan_actors=N\`,
+\`wan_key_fingerprint\` inherited from its enrolled learner, 1–64 local Unity
+environments and the normal training parameters. A local learner environment
+count of at least 1 is used in this initial mode.
+
+The authenticated coordinator API can reserve the group in one transaction
+using its existing project configuration and machine IDs:
+
+\`\`\`json
+{
+  "confirm_queue": true,
+  "learner": {
+    "configuration_id": "EXISTING_BEES_NATIVE_CONFIGURATION_UUID",
+    "expected_revision": 1,
+    "machine_id": "halifax",
+    "resources": {"cpus": 8, "ram_mb": 16384, "gpu_count": 1}
+  },
+  "actors": [
+    {
+      "machine_id": "remote-linux-machine",
+      "resources": {"cpus": 4, "ram_mb": 8192, "gpu_count": 0},
+      "envs": 4,
+      "device": "cpu"
+    }
+  ]
+}
+\`\`\`
+
+POST this object to \`/api/hub/distributed/bees\` using the Hub's existing
+authenticated operator action. The saved learner's \`wan_actors\` must equal
+the actor count. One CPU/GPU claim is created for each original machine;
+the returned \`bundle_id\` is a normal Hub resource bundle, with **no Start
+authorized**. After each agent has freshly acknowledged the leases and the
+SSH tunnels exist, use \`/api/hub/resource-bundles/start\` or the Hub's
+existing resource-bundle controls. Scheduled Starts can use the established
+\`resource-bundles/schedule-start\` lifecycle. Always stop or cancel the
+**whole bundle** using the matching group operation; an individual actor
+cannot own a checkpoint and must not be silently detached.
+
+The native transport and Hub reservations are implemented, but the user
+still needs to provision private tunnels, matching Unity builds, and local
+services. Remote **Windows** actor integration through the native Hub
+adapter is not implemented here; Windows continues to be supported by the
+existing legacy Bees coordinator route. The Hub's cross-machine start
+transaction does not guarantee simultaneous process startup or continued
+actor health after a learner fails.
 
 ### Portable native policy candidates
 
