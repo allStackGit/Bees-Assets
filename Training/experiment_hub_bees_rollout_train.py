@@ -24,7 +24,7 @@ SHA = re.compile(r"^[0-9a-f]{64}$")
 FIELDS = {
     "schema_version", "job_id", "learner_job_id", "lineage_root_id",
     "output_root", "game_binary", "game_sha256",
-    "training_script", "training_sha256", "trainer_source",
+    "game_payload_sha256", "training_script", "training_sha256", "trainer_source",
     "trainer_sha256", "runtime_version", "evaluator_script",
     "evaluator_core", "opponent_script", "actor_script",
     "actor_sha256", "envs", "torch_threads", "device", "expected_gpu_pci",
@@ -66,11 +66,14 @@ def inspect_job(filename: Path) -> dict:
             raise ValueError("Bees remote ROCm actor needs a leased PCI identity.")
     elif job["expected_gpu_pci"] is not None:
         raise ValueError("Bees CPU-only actor cannot use a GPU.")
-    for key in ("game_sha256", "trainer_sha256", "training_sha256",
+    for key in ("game_sha256", "game_payload_sha256", "trainer_sha256", "training_sha256",
                 "actor_sha256", "auth_token_fingerprint", "runtime_version"):
         if not isinstance(job[key], str) or SHA.fullmatch(job[key]) is None:
             raise ValueError("Invalid Bees remote SHA-256: " + key)
     verify_pinned_runtime(job)
+    from bees_unity_worker_identity import unity_worker_tree_sha256
+    if unity_worker_tree_sha256(Path(job["game_binary"])) != job["game_payload_sha256"]:
+        raise ValueError("Remote Unity simulation files differ from the learner's pinned build.")
     for source, digest, executable in (
         ("game_binary", "game_sha256", True),
         ("training_script", "training_sha256", False),
@@ -104,7 +107,7 @@ def main(argv=None) -> int:
         verify_runtime_device(job["expected_gpu_pci"])
 
     build, trainer, runtime = (
-        job["game_sha256"], job["trainer_sha256"], job["runtime_version"]
+        job["game_payload_sha256"], job["trainer_sha256"], job["runtime_version"]
     )
     os.environ.update({
         "BEES_TRAINING_BUILD_ID": build,
