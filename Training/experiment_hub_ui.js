@@ -1271,8 +1271,10 @@ function approvedTinyBrainsProfiles(machines) {
                     ?' · Coordinator update waiting to activate ('+
                         data.pending_commit.slice(0,12)+')':'')+
                 (data.pending_agent_commit
-                    ?' · Agent update waiting for idle training ('+
-                        data.pending_agent_commit.slice(0,12)+')':'');
+                    ?' · Agent update pending activation ('+
+                        data.pending_agent_commit.slice(0,12)+')':'')+
+                (data.activation_reason
+                    ?' · '+data.activation_reason:'');
         }catch(error) {
             // Preserve the server-rendered running version, and surface the
             // failed check rather than hiding it behind a permanent spinner.
