@@ -222,6 +222,14 @@ def _gpu_segment_backward_supported(device, dtype):
         return False
 
 
+def prepare_training_segment_reduction(device, *, dtype=torch.float32):
+    """Admit a GPU's optional segment-sum kernel outside timed PPO updates."""
+    if (not isinstance(device,torch.device) or device.type!='cuda' or
+            not isinstance(dtype,torch.dtype)):
+        raise ValueError("Expected a leased CUDA/HIP device and tensor dtype")
+    return _gpu_segment_backward_supported(device,dtype)
+
+
 def sum_consecutive_training_segments(terms, counts, owner, *,
                                       denominator_dtype, min_parallel_rows=2048):
     """Reduce grouped training contributions without scatter atomics.
