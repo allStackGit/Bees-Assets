@@ -102,6 +102,36 @@ def reward_baselines(scene: dict) -> tuple[dict[int, int], list[int]]:
     return fleet, denominators
 
 
+def select_original_fleet_actors(
+    scene: dict, ship_ids: set[int], squad_ids: set[int],
+    sides: set[int],
+) -> set[int]:
+    """Expand source-side/squad choices without creating substitute agents.
+
+    All IDs come from the exact captured source Squads. A selected ship
+    must still own its entire original command squad; the lower-level
+    source_actors() gate enforces that for every selection mode.
+    """
+    if not ship_ids and not squad_ids and not sides:
+        raise ValueError("select source policy ships, original squads, or sides")
+    if sides - {1, 2}:
+        raise ValueError("native source policy sides must be 1 or 2")
+    resolved = set(ship_ids)
+    found = set()
+    for squad in scene.get("squads", []):
+        squad_id = squad.get("item_id")
+        if squad_id in squad_ids:
+            found.add(squad_id)
+        if squad_id in squad_ids or squad.get("side") in sides:
+            members = squad.get("member_ids")
+            if not isinstance(members, list):
+                raise ValueError(f"source squad {squad_id} has no physical members")
+            resolved.update(members)
+    if squad_ids != found:
+        raise ValueError(f"unknown source squad identities: {sorted(squad_ids - found)}")
+    return resolved
+
+
 def source_actors(scene: dict, ids: set[int]) -> tuple[list[dict], set[int]]:
     """Validate every requested policy actor before changing physical ownership."""
     if (scene.get("schema_version") != 35 or
@@ -140,7 +170,7 @@ def source_actors(scene: dict, ids: set[int]) -> tuple[list[dict], set[int]]:
                 not isinstance(ship.get("has_special_action"), bool) or
                 not isinstance(ship.get("special_ready"), bool) or
                 type(ship.get("side_starting_tsv")) is not int or
-                ship["side_starting_tsv"] <= 0 or
+                ship["side_starting_tsv"] < 0 or
                 not all(isinstance(ship.get(key), bool) for key in (
                     "mining_possible", "healing_possible", "warp_possible",
                     "has_living_parent_carrier", "is_carrier_child"
@@ -326,11 +356,20 @@ def author_policy(source: dict, game: dict, ids: set[int], slots: dict[str, int]
 def author(output: Path, original_run: Path, model_manifest: Path,
            policy_worker: Path, python: str, ship_ids: set[int],
            slots: dict[str, int], timeout: float, period: int,
-           episodes: int, seed: int, tactics: str) -> dict:
+           episodes: int, seed: int, tactics: str,
+           squad_ids: set[int] | None = None,
+           sides: set[int] | None = None) -> dict:
     run_path = original_run.resolve(strict=True)
     original = read(run_path)
+    if (not isinstance(original.get("levels"), list) or len(original["levels"]) != 1 or
+            not isinstance(original["levels"][0], dict) or
+            original["levels"][0].get("scene") != "source-level.json"):
+        raise ValueError("source policy selection requires one captured original game Level")
     scene_path = (run_path.parent / original["levels"][0]["scene"]).resolve(strict=True)
     source = read(scene_path)
+    ship_ids = select_original_fleet_actors(
+        source, ship_ids, squad_ids or set(), sides or set(),
+    )
     model_manifest = model_manifest.resolve(strict=True)
     policy_worker = policy_worker.resolve(strict=True)
     inputs = [run_path, scene_path, model_manifest, policy_worker]
@@ -393,8 +432,14 @@ def main() -> None:
     parser.add_argument("--policy-worker", type=Path, required=True)
     parser.add_argument("--python", default="auto",
                         help="policy runtime executable; auto uses platform-native PATH")
-    parser.add_argument("--policy-ship", type=int, required=True, action="append",
-                        help="original live physical ship ID; repeat for all selected actors")
+    parser.add_argument("--policy-ship", type=int, action="append", default=[],
+                        help="original live physical ship ID; repeat for complete command squads")
+    parser.add_argument("--policy-squad", type=int, action="append", default=[],
+                        help="select all actual ships in an original captured Squad; repeat for others")
+    parser.add_argument("--policy-side", type=int, action="append", default=[],
+                        choices=(1, 2),
+                        help="select all actual captured Squads of this faction, "
+                             "including all ship classes and carrier children")
     parser.add_argument("--model-slots", default="0,1",
                         help="two genuine model slots for team0,team1 (default 0,1)")
     parser.add_argument("--timeout-seconds", type=float, required=True)
@@ -411,6 +456,7 @@ def main() -> None:
         set(args.policy_ship), strict_model_slots(args.model_slots),
         args.timeout_seconds, args.decision_period,
         args.episodes_per_world, args.seed, args.source_ai_tactics,
+        squad_ids=set(args.policy_squad), sides=set(args.policy_side),
     ), sort_keys=True), flush=True)
 
 
