@@ -248,17 +248,28 @@ class EventProgress:
             temp.unlink(missing_ok=True)
 
 def record_model(root: Path, job_id: str):
-    models=sorted((root/"results"/job_id).rglob("*.onnx"))
-    if not models:
-        raise RuntimeError("Bees learner exited without exporting a model.")
-    model=max(models,key=lambda p:p.stat().st_mtime_ns)
-    receipt={
-        "schema_version":1,"job_id":job_id,
-        "model":str(model),"sha256":sha256_file(model),
-        "completed_at":datetime.now(timezone.utc).isoformat(),
+    run_root = root / "results" / job_id
+    models = sorted(run_root.rglob("*.onnx"))
+    checkpoints = sorted(run_root.glob("*/checkpoint.pt"))
+    if not models or not checkpoints:
+        raise RuntimeError(
+            "Bees learner exited without both an ONNX network and an optimizer/critic checkpoint."
+        )
+    model = max(models, key=lambda p: p.stat().st_mtime_ns)
+    checkpoint = max(checkpoints, key=lambda p: p.stat().st_mtime_ns)
+    if model.is_symlink() or checkpoint.is_symlink() or (
+            not model.is_file() or not checkpoint.is_file()
+            or model.stat().st_size < 1 or checkpoint.stat().st_size < 1):
+        raise RuntimeError("Bees completed model or optimizer checkpoint is missing or redirected.")
+    receipt = {
+        "schema_version": 1, "job_id": job_id,
+        "model": str(model), "sha256": sha256_file(model),
+        "checkpoint": str(checkpoint),
+        "checkpoint_sha256": sha256_file(checkpoint),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
     }
-    with (root/"model.json").open("x",encoding="utf-8") as handle:
-        json.dump(receipt,handle,sort_keys=True)
+    with (root / "model.json").open("x", encoding="utf-8") as handle:
+        json.dump(receipt, handle, sort_keys=True)
         handle.write("\n")
 
 def main():
