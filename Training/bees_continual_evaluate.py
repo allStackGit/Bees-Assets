@@ -553,7 +553,21 @@ class OnnxPolicy:
 
         providers = [provider] if provider else ["CPUExecutionProvider"]
         try:
-            self.session = ort.InferenceSession(str(self.path), providers=providers)
+            # The Hub's concurrent CPU evaluator shares the learner's
+            # supervised CPU lease. Leave standalone evaluation unchanged.
+            thread_limit = os.environ.get("BEES_HUB_EVAL_THREADS")
+            if thread_limit:
+                count = int(thread_limit)
+                if not 1 <= count <= 64:
+                    raise ValueError("Invalid Hub evaluator CPU thread limit.")
+                options = ort.SessionOptions()
+                options.intra_op_num_threads = count
+                options.inter_op_num_threads = 1
+                self.session = ort.InferenceSession(
+                    str(self.path), sess_options=options, providers=providers
+                )
+            else:
+                self.session = ort.InferenceSession(str(self.path), providers=providers)
         except Exception as exc:
             raise EvaluationError(f"Could not load ONNX policy {self.path}: {exc}") from exc
 
@@ -798,7 +812,13 @@ def run_match_group(
     time_scale: Optional[float] = None,
     opponent_script: Optional[str] = None,
     episode_results_out: Optional[List[EpisodeResult]] = None,
+    base_port: Optional[int] = None,
 ) -> MatchSummary:
+    if base_port is not None and (
+        type(base_port) is not int or not 1024 <= base_port <= 65535
+        or not 0 <= worker_id <= 65535 - base_port
+    ):
+        raise EvaluationError("Invalid reserved evaluation communicator port.")
     if (opponent_model_path is None) == (opponent_script is None):
         raise EvaluationError("Select exactly one opponent ONNX model or scripted controller.")
     if matches <= 0:
@@ -830,6 +850,7 @@ def run_match_group(
     environment = _owned_unity_environment(UnityEnvironment,
         file_name=str(Path(environment_path)),
         worker_id=worker_id,
+        **({"base_port": base_port} if base_port is not None else {}),
         seed=seed,
         no_graphics=no_graphics,
         timeout_wait=timeout_wait,

@@ -75,7 +75,8 @@ def read_benchmark(path: Path) -> tuple[dict, str]:
 def evaluate(recipe: Path, candidate: Path, opponent: str | Path, environment: Path,
              build_id: str, run_id: str, output_root: Path, *,
              candidate_sha256: str = "", experiment: dict | None = None,
-             purpose: str = "development") -> Path:
+             purpose: str = "development",
+             base_port: int | None = None) -> Path:
     if purpose not in {"development", "heldout"}:
         raise ValueError("Unknown benchmark evaluation purpose.")
     benchmark, recipe_hash = read_benchmark(recipe)
@@ -131,6 +132,7 @@ def evaluate(recipe: Path, candidate: Path, opponent: str | Path, environment: P
             "max_environment_steps_per_match", 200000
         ),
         episode_results_out=episodes,
+        **({"base_port": base_port} if base_port is not None else {}),
     )
     stamp = datetime.now(timezone.utc)
     record = {
