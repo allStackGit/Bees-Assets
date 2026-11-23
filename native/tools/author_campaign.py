@@ -395,6 +395,26 @@ def trained_opponent(run_path: Path, run: dict, scene_path: Path,
 
 
 
+def source_hivemind_authority(squad: dict, captured: bool) -> dict:
+    """Normalize only source authority evidence, never synthesize a server AI."""
+    if not isinstance(squad, dict):
+        raise ValueError("Original HiveMind squad is malformed")
+    if not captured:
+        return squad.get("hivemind")
+    identifier = squad.get("opponent_id_decimal")
+    if (not isinstance(identifier, str) or
+            not identifier.isdecimal() or
+            len(identifier) > 20 or
+            int(identifier) > (1 << 64) - 1 or
+            str(int(identifier)) != identifier):
+        raise ValueError("Original Unity HiveMind squad opponent ID was not captured")
+    return {
+        "opponent_id": int(identifier),
+        "hivemind_controlled": squad.get("is_hivemind_controlled"),
+        "immobile": squad.get("is_immobile"),
+    }
+
+
 def input_mission(run_path: Path, player_side: int,
                   story: str | None = None,
                   require_career_fleet: bool = True) -> tuple[dict, dict, dict]:
@@ -445,8 +465,14 @@ def input_mission(run_path: Path, player_side: int,
         squads = scene.get("squads")
         ships = scene.get("ships")
         hive = run.get("hivemind")
-        if (scene.get("native_game_schema") != 1 or
+        original_snapshot = (
+            scene.get("native_game_schema") is None and
+            scene.get("schema_version") == 35
+        )
+        if (not (scene.get("native_game_schema") == 1 or original_snapshot) or
                 scene.get("local_player_side") is not None or
+                (original_snapshot and
+                 (scene.get("targeting_context") or {}).get("has_player") is not False) or
                 scene.get("activate_hivemind") is not True or
                 scene.get("activate_fog_of_war") is True or
                 not isinstance(scene.get("starting_positions"), list) or
@@ -454,7 +480,10 @@ def input_mission(run_path: Path, player_side: int,
                 type(scene.get("hivemind_initial_command_delay_seconds", 0)) is not int or
                 scene.get("hivemind_initial_command_delay_seconds", 0) < 0 or
                 scene.get("policy_gameplay") is True or
-                scene.get("policy_episode") is not None or
+                (original_snapshot and
+                 scene.get("has_policy_episode") is not False) or
+                (not original_snapshot and
+                 scene.get("policy_episode") is not None) or
                 run.get("model_manifest") is not None or
                 not isinstance(hive, dict) or
                 hive.get("issue_source_commands") is not True or
@@ -466,17 +495,23 @@ def input_mission(run_path: Path, player_side: int,
                 any(not isinstance(ship, dict) or
                     ship.get("side") not in (1, 2) or
                     ship.get("user_controlled") is True or
-                    ship.get("policy") is not None
+                    ship.get("policy") is not None or
+                    (original_snapshot and ship.get("has_bound_policy") is True)
                     for ship in ships) or
                 any(not isinstance(squad, dict) or
                     squad.get("side") not in (1, 2) or
                     squad.get("user_controlled") is True or
                     squad.get("can_accept_input") is True or
-                    not isinstance(squad.get("hivemind"), dict) or
-                    squad["hivemind"].get("hivemind_controlled") is not True or
-                    type(squad["hivemind"].get("opponent_id")) is not int or
-                    squad["hivemind"]["opponent_id"] <= 0 or
-                    type(squad["hivemind"].get("immobile")) is not bool
+                    not isinstance(source_hivemind_authority(
+                        squad, original_snapshot), dict) or
+                    source_hivemind_authority(
+                        squad, original_snapshot).get("hivemind_controlled") is not True or
+                    type(source_hivemind_authority(
+                        squad, original_snapshot).get("opponent_id")) is not int or
+                    source_hivemind_authority(
+                        squad, original_snapshot)["opponent_id"] <= 0 or
+                    type(source_hivemind_authority(
+                        squad, original_snapshot).get("immobile")) is not bool
                     for squad in squads) or
                 {squad["side"] for squad in squads} != {1, 2} or
                 {ship["side"] for ship in ships} != {1, 2}):
@@ -484,8 +519,11 @@ def input_mission(run_path: Path, player_side: int,
                 "Fish Tank requires an original two-faction native scene, "
                 "both sides HiveMind-owned, with no player or policy agents"
             )
+        physical_bounds = ({
+            key: [scene[key]["x"], scene[key]["y"]] for key in ("min", "max")
+        } if original_snapshot else scene.get("bounds"))
         if (scene.get("stage_name") != run.get("stage_name") or
-                scene.get("bounds") != run.get("fragment_spawn", {}).get("map_bounds")):
+                physical_bounds != run.get("fragment_spawn", {}).get("map_bounds")):
             raise ValueError("Fish Tank source has mismatched Stage and physical bounds")
         return scene, run, {
             "source_run": str(run_path),
@@ -494,7 +532,8 @@ def input_mission(run_path: Path, player_side: int,
             "source_scene_sha256": file_sha256(scene_path),
             "player_fleet_contract": {"ships": [], "squads": []},
             "hivemind_source_opponents": sorted({
-                squad["hivemind"]["opponent_id"] for squad in squads
+                source_hivemind_authority(squad, original_snapshot)["opponent_id"]
+                for squad in squads
             }),
             "spectator": True,
         }
@@ -536,21 +575,7 @@ def input_mission(run_path: Path, player_side: int,
         player_owned, remote_owned = 0, 0
         opponent_ids = set()
         for squad in scene["squads"]:
-            if legacy_physical:
-                identifier = squad.get("opponent_id_decimal")
-                if (not isinstance(identifier, str) or
-                        not identifier.isdecimal() or
-                        len(identifier) > 20 or
-                        int(identifier) > (1 << 64) - 1 or
-                        str(int(identifier)) != identifier):
-                    raise ValueError("original HiveMind Squad opponent ID was not captured")
-                source = {
-                    "opponent_id": int(identifier),
-                    "hivemind_controlled": squad.get("is_hivemind_controlled"),
-                    "immobile": squad.get("is_immobile"),
-                }
-            else:
-                source = squad.get("hivemind")
+            source = source_hivemind_authority(squad, legacy_physical)
             if (not isinstance(source, dict) or
                     type(source.get("opponent_id")) is not int or
                     source["opponent_id"] <= 0 or
@@ -2375,9 +2400,11 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
         game_scene, game_run, provenance = input_mission(
             source_path, side, require_career_fleet=False,
         )
-        if game_scene.get("native_game_schema") != 1:
+        if (game_scene.get("native_game_schema") != 1 and
+                game_scene.get("schema_version") != 35):
             raise ValueError(
-                f"post-campaign game {game_id} requires a complete native game scene"
+                f"post-campaign game {game_id} requires a complete native "
+                "or captured original physical game scene"
             )
         prefix = f"postcampaign-{game_id}"
         scene_file = f"{prefix}.scene.json"
