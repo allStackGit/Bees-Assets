@@ -256,6 +256,7 @@ pub struct NativeClient {
     pub striker_bomb_indicators_drawn: u64,
     pub minimap_camera_moves: u64,
     pub camera_pan_frames: u64,
+    pub campaign_camera_follow_frames: u64,
     pub camera_wheel_pans: u64,
     pub camera_boundary_clamps: u64,
     pub camera_zoom_clamps: u64,
@@ -353,7 +354,7 @@ impl NativeClient {
             minimap_briefing_mining_markers: 0,
             numbered_squad_rows_drawn: 0,
             striker_bomb_indicators_drawn: 0,
-            minimap_camera_moves: 0, camera_pan_frames: 0,
+            minimap_camera_moves: 0, camera_pan_frames: 0, campaign_camera_follow_frames: 0,
             camera_wheel_pans: 0, camera_boundary_clamps: 0,
             camera_zoom_clamps: 0, numbered_shortcut_selections: 0,
             cycled_shortcut_selections: 0,
@@ -1336,6 +1337,15 @@ impl NativeClient {
                 self.camera_wheel_pans += 1;
             }
             }
+        }
+        if let Some((_, position)) = view.player_authority.player_viewer_side()
+            .and_then(|side| view.campaign_camera_subject_for(side))
+        {
+            self.renderer.camera.center = position;
+            if self.renderer.camera.constrain_to_map(bounds, width, height) {
+                self.camera_zoom_clamps += 1;
+            }
+            self.campaign_camera_follow_frames += 1;
         }
         let allows_input = !self.show_controls_help && !briefing &&
             !self.playback && view.terminal_result.is_none();

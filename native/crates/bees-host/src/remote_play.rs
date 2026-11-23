@@ -3551,6 +3551,7 @@ fn current_state(
                 "sequence": sequence,
                 "cue": cue,
                 "line_count": crate::presentation::campaign_dialogue::line_count(cue),
+                "camera_ship": view.campaign_camera_subject_for(side).map(|(id, _)| id),
                 "mining_sites": view.briefing_mining_sites(side)
                     .map(|site| [site.x, site.y]).collect::<Vec<_>>(),
                 "lines": crate::presentation::campaign_dialogue::

@@ -2003,6 +2003,8 @@ where
             terminal_result: world.state.events.latest_finalized_episode().map(|episode| episode.result),
             campaign_dialogue: world.state.campaign_dialogue.as_ref().map(|dialogue| dialogue.current()),
             campaign_dialogue_side: world.state.campaign_dialogue.as_ref().map(|dialogue| dialogue.player_side()),
+            campaign_camera_ship: world.state.campaign_dialogue.as_ref()
+                .and_then(|dialogue| dialogue.camera_subject()),
             campaign_score: world.state.metadata.campaign_score_snapshot(),
             campaign_codex: world.state.metadata.campaign_codex_classes(),
             player_match_counts: world.state.metadata.player_match_counts(),

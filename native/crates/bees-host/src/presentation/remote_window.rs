@@ -157,6 +157,7 @@ struct WireCounts {
     minimap_camera_moves: u64,
     /// Frames in which the actual window edge moved the presentation camera.
     camera_edge_pan_frames: u64,
+    campaign_camera_follow_frames: u64,
     ship_type_multiselections: u64,
     selection_drag_preview_frames: u64,
     weapon_range_draws: u64,
@@ -4587,8 +4588,20 @@ pub fn connect_remote_with_trust(
                 HEIGHT as f32/2.0,FIELD,HEIGHT,authored_zoom);}
             if window.is_key_down(Key::Minus){cam.zoom_at(1.0/1.035,
                 FIELD as f32/2.0,HEIGHT as f32/2.0,FIELD,HEIGHT,authored_zoom);}
-            if let Some(map)=peer.state.as_ref().and_then(bounds) {
-                cam.constrain_to_map(map,FIELD,HEIGHT);
+            if let Some(state) = peer.state.as_ref() {
+                if let Some(id) = state["campaign_dialogue"]["camera_ship"].as_i64() {
+                    let subject = state["ships"].as_array().into_iter().flatten()
+                        .find(|ship| ship["id"].as_i64() == Some(id) && ship["friendly"] == true);
+                    if let Some(position) = subject.and_then(|ship|
+                        peer.visual.position(ship, 0, peer.visual.fraction()))
+                    {
+                        cam.center = position;
+                        peer.metrics.campaign_camera_follow_frames += 1;
+                    }
+                }
+                if let Some(map) = bounds(state) {
+                    cam.constrain_to_map(map, FIELD, HEIGHT);
+                }
             }
             if shooting_menu {
                 // The shared native 40-strategy grid is a modal. A press
@@ -5571,6 +5584,7 @@ pub fn connect_remote_with_trust(
         "minimap_objective_markers":peer.metrics.minimap_objective_markers,
         "minimap_camera_moves":peer.metrics.minimap_camera_moves,
         "camera_edge_pan_frames":peer.metrics.camera_edge_pan_frames,
+        "campaign_camera_follow_frames":peer.metrics.campaign_camera_follow_frames,
         "ship_type_multiselections":peer.metrics.ship_type_multiselections,
         "selection_drag_preview_frames":peer.metrics.selection_drag_preview_frames,
         "weapon_range_draws":peer.metrics.weapon_range_draws,

@@ -410,6 +410,18 @@ impl CampaignDialogue {
 
     pub fn current(&self) -> (u32, CampaignCue) { (self.sequence, self.cue) }
 
+    /// Pluto I's camera tracks the live Scout during the sighting and
+    /// Tom during his Gunship briefing. The next story cue releases it.
+    pub fn camera_subject(&self) -> Option<i64> {
+        match (self.mode, self.cue) {
+            (DialogueMode::PlutoAnomaly { scout_id, .. }, CampaignCue::PlutoAnomalyHoneybeeSpotted) =>
+                Some(scout_id),
+            (DialogueMode::PlutoAnomaly { gunship_id, .. }, CampaignCue::PlutoAnomalyGunshipArrived) =>
+                Some(gunship_id),
+            _ => None,
+        }
+    }
+
     pub fn allows_surrender(&self) -> bool {
         !matches!(self.objective_kind(), Some(CampaignObjectiveKind::PlutoAnomaly)) ||
             matches!(self.cue, CampaignCue::PlutoAnomalyGunshipBriefingComplete |

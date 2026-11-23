@@ -12989,6 +12989,7 @@ fn run_battle(
             "striker_bomb_indicators_drawn": client.striker_bomb_indicators_drawn,
             "minimap_camera_moves": client.minimap_camera_moves,
             "camera_pan_frames": client.camera_pan_frames,
+            "campaign_camera_follow_frames": client.campaign_camera_follow_frames,
             "camera_wheel_pans": client.camera_wheel_pans,
             "camera_boundary_clamps": client.camera_boundary_clamps,
             "camera_zoom_clamps": client.camera_zoom_clamps,

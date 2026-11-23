@@ -227,6 +227,7 @@ pub struct NativeRenderWorldView<'a> {
     /// The original CampaignDialogue player's side, not a mutable local
     /// viewer. Dedicated multiplayer hosts can have no local viewer.
     pub campaign_dialogue_side: Option<i32>,
+    pub campaign_camera_ship: Option<i64>,
     /// Current source GameState.PlayerScore, read from the same checkpointed
     /// physical death ledger as the terminal campaign result.
     pub campaign_score: Option<(i32, i64)>,
@@ -267,6 +268,17 @@ pub struct NativeRenderWorldView<'a> {
 }
 
 impl<'a> NativeRenderWorldView<'a> {
+    pub(crate) fn campaign_camera_subject_for(&self, viewer_side: i32) -> Option<(i64, Vec2)> {
+        if self.campaign_dialogue_side != Some(viewer_side) || self.terminal_result.is_some() {
+            return None;
+        }
+        let id = self.campaign_camera_ship?;
+        let ship = self.combat.ship(id)?;
+        let body = self.combat.ship_body(id)?;
+        (ship.side == viewer_side && !ship.vitals.is_dead() && body.active &&
+            body.motion.position.is_finite()).then_some((id, body.motion.position))
+    }
+
     fn neptune_mining_briefing(&self) -> bool {
         use bees_gameplay::campaign_dialogue::CampaignCue;
 
