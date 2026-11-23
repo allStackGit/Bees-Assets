@@ -32,7 +32,7 @@ def board_seats(board):
 # New mixed suites never accept browser-provided paths. Opponent directories
 # are derived from the approved private suite root and immutable identities.
 MIXED_SUITE = re.compile(r"tinybrains_mix_[a-f0-9]{20}_v[1-9][0-9]*")
-FROZEN_OPPONENT = re.compile(r"tinybrains_mini_[a-f0-9]{20}")
+FROZEN_OPPONENT = re.compile(r"tinybrains_(?:mini|frozen)_[a-f0-9]{20}")
 MIXED_MAX_GAMES = 2048
 
 
