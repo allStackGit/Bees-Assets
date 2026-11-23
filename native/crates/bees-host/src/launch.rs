@@ -6538,6 +6538,12 @@ const GENERATED_SINGLE_SIDE_TOKEN_MAPS: [&str; 2] = [
 ];
 
 #[cfg(feature = "client")]
+const GENERATED_SINGLE_SIDE_SPECTATOR_MAPS: [&str; 2] = [
+    "multiplayer-invites/host-spectator-side-1-tokens.json",
+    "multiplayer-invites/host-spectator-side-2-tokens.json",
+];
+
+#[cfg(feature = "client")]
 fn prepare_multiplayer_invites(save_root: &Path) -> Result<PathBuf, Box<dyn Error>> {
     use bees_host::checkpoint_file::{persist_new_private_bytes, CheckpointFileError};
 
@@ -6645,6 +6651,28 @@ fn prepare_multiplayer_invites(save_root: &Path) -> Result<PathBuf, Box<dyn Erro
         }
         if read_private_multiplayer_file(&invite, 512)? != token.as_str() {
             return Err(invalid("existing read-only invite differs from host spectator mapping").into());
+        }
+    }
+    // Preserve the original two independent read-only credentials, but
+    // scope a single-commander host's spectator admissions to the one
+    // authorized physical side. An invitation never grants orders.
+    for (index, side) in ["1", "2"].into_iter().enumerate() {
+        let token = viewers.get(side)
+            .ok_or_else(|| invalid("generated spectator side is missing"))?;
+        let derived = save_root.join(GENERATED_SINGLE_SIDE_SPECTATOR_MAPS[index]);
+        if !derived.try_exists()? {
+            let single = std::collections::HashMap::from([
+                (side.to_owned(), token.to_owned()),
+            ]);
+            publish(&derived, &serde_json::to_vec(&single)?)?;
+        }
+        let saved = parse_host_side_tokens(
+            &read_private_multiplayer_file(&derived, 2048)?,
+        )?;
+        if saved.len() != 1 || saved.get(side) != Some(token) {
+            return Err(invalid(
+                "read-only single-side invitation differs from original spectator identity",
+            ).into());
         }
     }
     Ok(directory.to_path_buf())
@@ -6786,13 +6814,19 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
         tokens.retain(|key, _| key == &side);
         token_map = serde_json::to_string(&tokens)?;
     }
-    // Only the complete two-sided invitation set can use both spectator
-    // sides. Single-side trained-policy hosting must never advertise an
-    // observer whose physical faction has no authorized player token.
-    let generated_viewers = (
-        settings.tokens_file == Path::new(GENERATED_HOST_TOKEN_MAP) &&
-        tokens.len() == 2
-    ).then(|| save_root.join("multiplayer-invites/host-spectator-tokens.json"));
+    // The spectator map must authorize exactly the same faction set as
+    // the actual player token map, but with entirely separate read-only
+    // secrets. This applies to new matches and durable recovery alike.
+    let generated_viewers = if settings.tokens_file ==
+        Path::new(GENERATED_HOST_TOKEN_MAP) && tokens.len() == 2 {
+        Some(save_root.join("multiplayer-invites/host-spectator-tokens.json"))
+    } else {
+        GENERATED_SINGLE_SIDE_TOKEN_MAPS.iter().position(|path|
+            settings.tokens_file == Path::new(path)
+        ).filter(|&index| tokens.len() == 1 &&
+            tokens.contains_key(&(index + 1).to_string())
+        ).map(|index| save_root.join(GENERATED_SINGLE_SIDE_SPECTATOR_MAPS[index]))
+    };
     // Recovery of a terminal result is a different lifecycle from
     // launching a new battle. Offer the same saved multiplayer host and
     // side-token configuration without allocating a new physical World.
@@ -7875,7 +7909,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                                 unlocked: true,
                             },
                             BattleMenuRow {
-                                title: "Read-only viewers use spectator-1.token or spectator-2.token",
+                                title: "Read-only viewers use spectator token matching their permitted side",
                                 status: "", unlocked: false,
                             },
                             BattleMenuRow { title: &folder, status: "", unlocked: false },
