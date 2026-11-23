@@ -163,6 +163,7 @@ function candidates(hub) {
             catch { /* An offline/older worker may not advertise defaults. */ }
             return {id:c.id,revision:c.revision,name:c.name,
                 stage:c.parameters.training_stage||'full_multiplayer',
+                opponent_ids:c.parameters.training_opponent_ids||['frozen','current'],
                 ...(environment?{environment}:{}),
             };
         });
