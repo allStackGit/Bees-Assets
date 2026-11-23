@@ -811,6 +811,26 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "cpu"
     };
 
+    // Fixed holdouts run on the local host even when training collectors
+    // are distributed. Record their device independently of the PPO
+    // optimizer so evaluations can use a secondary CUDA/ROCm card.
+    let evaluation_devices = ["cpu", "cuda:0", "cuda:1", "cuda:2", "cuda:3"];
+    let evaluation_titles = [
+        "CPU evaluation inference",
+        "CUDA / ROCm GPU 0 evaluation inference",
+        "CUDA / ROCm GPU 1 evaluation inference",
+        "CUDA / ROCm GPU 2 evaluation inference",
+        "CUDA / ROCm GPU 3 evaluation inference",
+    ];
+    let evaluation_rows = evaluation_titles.iter().map(|title| BattleMenuRow {
+        title, status: "  [Independent fixed-holdout device]", unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut evaluation_selection = 0;
+    let Some(evaluation_index) = select_library(
+        &evaluation_rows, &mut evaluation_selection, false,
+    )? else { return Ok(()); };
+    let evaluation_inference_device = evaluation_devices[evaluation_index];
+
     // Resolve and validate before allocating a permanent job name. GPU
     // availability and the Python environment are validated by the existing
     // bootstrap and learner, not guessed from operating-system strings.
@@ -846,6 +866,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         // CPUs from the player's chosen local allocation; Experiment Hub
         // collector capacity is remote, not implicitly available here.
         "evaluation_physics_workers": workers.map(|n| n.min(8)).unwrap_or(1),
+        "evaluation_inference_device": evaluation_inference_device,
         "trainer_config": trainer_config,
         "trainer_config_sha256": trainer_config_sha256,
         "curriculum_plan": curriculum_plan,
@@ -907,6 +928,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "optimizer_device": optimizer_device,
         "learner_gpus": learner_gpus,
         "inference_device": inference_device,
+        "evaluation_inference_device": evaluation_inference_device,
         "rounds": rounds,
         "episodes_per_world": episodes_per_world,
         "learner_side": learner_side,
@@ -1601,7 +1623,9 @@ fn evaluate_training_checkpoint(
         .filter(|number| (1..=128).contains(number)) {
         command.arg("--physics-workers").arg(workers.to_string());
     }
-    if let Some(device) = config["evaluation_inference_device"].as_str() {
+    let evaluation_device = config["evaluation_inference_device"].as_str()
+        .or_else(|| invocation["evaluation_inference_device"].as_str());
+    if let Some(device) = evaluation_device {
         if !valid_torch_device(device) || device == "cuda" {
             return Err(invalid("native evaluation has an invalid recorded inference device").into());
         }
@@ -1635,7 +1659,7 @@ fn evaluate_training_checkpoint(
         "checkpoint_sha256": checkpoint_sha,
         "learner_slot": learner_slot,
         "training_round": training_round,
-        "evaluation_inference_device": config["evaluation_inference_device"],
+        "evaluation_inference_device": evaluation_device,
         "output": destination,
         "log": log_path,
         "pid": child.id(),
