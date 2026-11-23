@@ -126,6 +126,14 @@ if(enabled('bees_native')) {
     });
 }
 if(enabled('bees_rollout')) {
+    const sshKeys=['EXPERIMENT_HUB_BEES_WAN_SSH_USER',
+        'EXPERIMENT_HUB_BEES_WAN_SSH_TAILNET_IP',
+        'EXPERIMENT_HUB_BEES_WAN_SSH_IDENTITY_FILE',
+        'EXPERIMENT_HUB_BEES_WAN_SSH_KNOWN_HOSTS_FILE',
+        'EXPERIMENT_HUB_BEES_WAN_LEARNER_MACHINE'];
+    const sshEnabled=sshKeys.some(key=>process.env[key]!==undefined);
+    if(sshEnabled&&sshKeys.some(key=>!process.env[key]))
+        throw Error('Bees managed WAN SSH forwarding needs all five locally enrolled learner and credential settings.');
     adapters.bees_rollout=createBeesRolloutAdapter({
         projectRoot:required('EXPERIMENT_HUB_BEES_ASSETS_ROOT'),
         pythonPath:required('EXPERIMENT_HUB_BEES_PYTHON'),
@@ -133,6 +141,15 @@ if(enabled('bees_rollout')) {
         artifactRoot:artifactDirectory('bees_rollout'),
         keyPath:required('EXPERIMENT_HUB_BEES_WAN_KEY'),
         forwardPort:Number(required('EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT')),
+        sshForward:sshEnabled?{
+            learnerMachineId:required('EXPERIMENT_HUB_BEES_WAN_LEARNER_MACHINE'),
+            tailnetIp:required('EXPERIMENT_HUB_BEES_WAN_SSH_TAILNET_IP'),
+            sshUser:required('EXPERIMENT_HUB_BEES_WAN_SSH_USER'),
+            identityFile:required('EXPERIMENT_HUB_BEES_WAN_SSH_IDENTITY_FILE'),
+            knownHostsFile:required('EXPERIMENT_HUB_BEES_WAN_SSH_KNOWN_HOSTS_FILE'),
+            sshPort:port('EXPERIMENT_HUB_BEES_WAN_SSH_PORT',22),
+            brokerPort:port('EXPERIMENT_HUB_BEES_WAN_BROKER_PORT',55051),
+        }:null,
     });
 }
 module.exports=adapters;
