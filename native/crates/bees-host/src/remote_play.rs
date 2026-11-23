@@ -164,6 +164,9 @@ struct Peer {
     /// Only authenticated inbound traffic renews a live TCP seat. The
     /// matching client sends transport pings even while physics is paused.
     last_inbound_at: Instant,
+    /// Older terminal viewers do not transmit transport pings. Keep their
+    /// pre-existing lifetime rules; idle leases apply to heartbeat peers.
+    heartbeat_enabled: bool,
 }
 
 impl Peer {
@@ -974,6 +977,7 @@ impl NativeRemotePlay {
                 archived_terminal: false, close_after_flush: false,
                 closed: false, accepted_at: Instant::now(),
                 last_inbound_at: Instant::now(),
+                heartbeat_enabled: false,
             });
         }
 
@@ -1022,7 +1026,7 @@ impl NativeRemotePlay {
                     Err(_) => { peer.closed = true; break; }
                 }
             }
-            if peer.side.is_some() &&
+            if peer.side.is_some() && peer.heartbeat_enabled &&
                 peer.last_inbound_at.elapsed()>=Duration::from_secs(60) {
                 // A half-open socket might never report EOF. Retire it
                 // through the SAME reaper as an explicit disconnect so its
@@ -1184,6 +1188,7 @@ impl NativeRemotePlay {
                         }
                     }
                     Ok(WireInput::Ping { nonce }) if peer.side.is_some() => {
+                        peer.heartbeat_enabled=true;
                         // Reply through the bounded reliable queue. A stalled
                         // client may drop an old state frame, never this pong.
                         // No physical tick, source timer or command replay.
