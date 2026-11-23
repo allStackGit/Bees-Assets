@@ -157,9 +157,8 @@ pub struct NativeClient {
     // step. Refresh their optional diagnostics at human-readable cadence.
     last_title_update: Option<Instant>,
     performance: NativeLivePerformance,
-    /// The Unity game exposes mouse-edge scrolling as a user preference.
-    /// F6 toggles it locally without adding a gameplay or persisted setting.
-    edge_scroll_enabled: bool,
+    /// Authored camera default when the player has no saved override.
+    source_edge_scrolling: bool,
     /// The original FreePlay/FishTank menu may disable display fog;
     /// campaign and Challenge visibility cannot be overridden.
     allow_freeplay_fog: bool,
@@ -309,7 +308,7 @@ impl NativeClient {
             ship_inspection_frames: 0, ship_inspection_queries: 0,
             last_title_update: None,
             performance: NativeLivePerformance::new(now),
-            edge_scroll_enabled: false,
+            source_edge_scrolling: false,
             allow_freeplay_fog: false,
             allow_freeplay_restart: false, allow_freeplay_save: false,
             allow_new_squads: false,
@@ -372,7 +371,7 @@ impl NativeClient {
     /// Imported once from the source scene, not inferred from a UI map.
     pub fn set_source_edge_scrolling(&mut self, enabled: Option<bool>) {
         if let Some(enabled) = enabled {
-            self.edge_scroll_enabled = enabled;
+            self.source_edge_scrolling = enabled;
         }
     }
 
@@ -1248,10 +1247,7 @@ impl NativeClient {
             self.renderer.camera = NativeCamera::fit(self.bounds, width, height);
         }
         if self.window.is_active() && self.window.is_key_pressed(Key::F6, KeyRepeat::No) {
-            self.edge_scroll_enabled = !self.edge_scroll_enabled;
-            self.input_feedback = if self.edge_scroll_enabled {
-                "Mouse-edge scrolling enabled"
-            } else { "Mouse-edge scrolling disabled" };
+            self.input_feedback = self.controls.toggle_edge_scrolling(self.source_edge_scrolling);
         }
         let speed = 500.0 * elapsed / self.renderer.camera.pixels_per_unit;
         let mut pan_x = 0.0;
@@ -1280,7 +1276,7 @@ impl NativeClient {
         } else {
             self.middle_drag_last = None;
         }
-        if self.edge_scroll_enabled && self.window.is_active() &&
+        if self.controls.edge_scrolling(self.source_edge_scrolling) && self.window.is_active() &&
             !camera_grab && !self.renderer.show_shooting_menu {
             if let Some((x, y)) = mouse.filter(|&(x, y)|
                 self.renderer.minimap_world_at(bounds, x, y).is_none()) {

@@ -3272,7 +3272,6 @@ pub fn connect_remote(
     // Pure local presentation preference, never sent to the host.
     let mut show_minimap=true;
     // Explicit local override; otherwise use source Stage/user preference.
-    let mut edge_scroll_override:Option<bool>=None;
     let mut drag_start:Option<(i32,i32)>=None;
     let mut last_middle:Option<(f32,f32)>=None;
     let mut dialogue_key:Option<(u64,u64,u64)>=None;
@@ -3488,10 +3487,7 @@ pub fn connect_remote(
             if window.is_key_down(Key::LeftShift)||window.is_key_down(Key::RightShift) {
                 let authored=peer.state.as_ref().and_then(|s|
                     s["camera_edge_scrolling"].as_bool()).unwrap_or(false);
-                let enabled=!edge_scroll_override.unwrap_or(authored);
-                edge_scroll_override=Some(enabled);
-                peer.notice=if enabled {"Mouse-edge scrolling enabled".into()}
-                    else {"Mouse-edge scrolling disabled".into()};
+                peer.notice = controls.toggle_edge_scrolling(authored).into();
             } else {
                 show_art=!show_art;
                 peer.notice=if show_art {
@@ -4262,7 +4258,7 @@ pub fn connect_remote(
                 .and_then(|map| MiniMapLayout::top_right(FIELD, HEIGHT, map))).flatten();
             let authored_edge=peer.state.as_ref().and_then(|state|
                 state["camera_edge_scrolling"].as_bool()).unwrap_or(false);
-            if edge_scroll_override.unwrap_or(authored_edge) && window.is_active() &&
+            if controls.edge_scrolling(authored_edge) && window.is_active() &&
                 !shooting_menu && !held_fire_active && !show_codex &&
                 !show_campaign_rewards
             {

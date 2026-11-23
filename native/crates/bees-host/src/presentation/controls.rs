@@ -90,6 +90,37 @@ struct StoredBindings {
     bindings: BTreeMap<String,String>,
 }
 
+#[derive(Default, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+struct CameraPreferences {
+    edge_scrolling: Option<bool>,
+}
+
+impl CameraPreferences {
+    fn load(path: &std::path::Path) -> Self {
+        let loaded = (|| -> io::Result<Self> {
+            let metadata = fs::symlink_metadata(path)?;
+            if !metadata.file_type().is_file() || metadata.len() > 1024 {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid native camera settings"));
+            }
+            let mut bytes = Vec::new();
+            fs::File::open(path)?.take(1025).read_to_end(&mut bytes)?;
+            if bytes.len() > 1024 {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid native camera settings"));
+            }
+            serde_json::from_slice(&bytes).map_err(io::Error::other)
+        })();
+        match loaded {
+            Ok(value) => value,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Self::default(),
+            Err(error) => {
+                eprintln!("Using the level's native camera settings: {error}");
+                Self::default()
+            }
+        }
+    }
+}
+
 const BINDINGS_PER_PAGE: usize = 13;
 
 pub fn show_control_settings() -> Result<(), Box<dyn std::error::Error>> {
@@ -125,6 +156,7 @@ enum EditMode {
 
 pub(crate) struct NativeControls {
     path: PathBuf,
+    camera: CameraPreferences,
     keys: Vec<Key>,
     selected: usize,
     mode: EditMode,
@@ -153,7 +185,10 @@ impl NativeControls {
                 (Self::default_keys(), "Saved controls could not be read. Delete restores defaults.".into(), true)
             }
         };
-        Ok(Self { path, keys, selected: 0, mode: EditMode::Navigate, notice, settings_unreadable })
+        let camera = CameraPreferences::load(&path.with_extension("camera.json"));
+        Ok(Self {
+            path, camera, keys, selected: 0, mode: EditMode::Navigate, notice, settings_unreadable,
+        })
     }
 
     fn default_keys() -> Vec<Key> {
@@ -255,6 +290,41 @@ impl NativeControls {
                 "native gameplay hotkeys must be unique"));
         }
         Ok(keys)
+    }
+
+    pub(crate) fn edge_scrolling(&self, level_default: bool) -> bool {
+        self.camera.edge_scrolling.unwrap_or(level_default)
+    }
+
+    fn save_edge_scrolling(&mut self, enabled: Option<bool>) -> io::Result<()> {
+        // Camera settings have their own file, so changing them from a
+        // battle never republishes stale key bindings from that window.
+        self.camera.edge_scrolling = enabled;
+        let path = self.path.with_extension("camera.json");
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if !metadata.file_type().is_file() =>
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid native camera settings path")),
+            Ok(_) => {},
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {},
+            Err(error) => return Err(error),
+        }
+        let parent = path.parent().filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new("."));
+        fs::create_dir_all(parent)?;
+        crate::checkpoint_file::persist_atomic_json(&path, &self.camera)
+            .map_err(|error| io::Error::other(format!("{error:?}")))
+    }
+
+    pub(crate) fn toggle_edge_scrolling(&mut self, level_default: bool) -> &'static str {
+        let enabled = !self.edge_scrolling(level_default);
+        if let Err(error) = self.save_edge_scrolling(Some(enabled)) {
+            eprintln!("Could not save native edge scrolling: {error}");
+            "Mouse-edge scrolling changed for this battle only"
+        } else if enabled {
+            "Mouse-edge scrolling enabled"
+        } else {
+            "Mouse-edge scrolling disabled"
+        }
     }
 
     pub(crate) fn key(&self, action: &str) -> Key {
@@ -451,6 +521,16 @@ impl NativeControls {
                 self.mode = EditMode::Navigate;
                 return;
             }
+        } else if window.is_key_pressed(Key::Insert, KeyRepeat::No) {
+            let next = match self.camera.edge_scrolling {
+                None => Some(true),
+                Some(true) => Some(false),
+                Some(false) => None,
+            };
+            self.notice = match self.save_edge_scrolling(next) {
+                Ok(()) => "Camera preference saved".into(),
+                Err(error) => format!("Could not save camera preference: {error}"),
+            };
         } else if window.is_key_pressed(Key::Delete, KeyRepeat::No) {
             self.mode = EditMode::ConfirmReset;
             self.notice = "Replace saved bindings with defaults? Enter confirms, Esc cancels.".into();
@@ -485,7 +565,11 @@ impl NativeControls {
             "NATIVE GAMEPLAY HOTKEY SETTINGS".to_owned(),
             "Up/Down: choose   Enter: rebind   Delete: defaults   F5: close".to_owned(),
             "Page Up/Down: jump   Esc: cancel rebind   Assigned letters swap".to_owned(),
-            " ".to_owned(),
+            format!("Insert: mouse-edge scrolling [{}]", match self.camera.edge_scrolling {
+                None => "Level default",
+                Some(true) => "On",
+                Some(false) => "Off",
+            }),
         ];
         for i in start..(start + BINDINGS_PER_PAGE).min(self.keys.len()) {
             lines.push(format!("{} {:<23} : {}",
