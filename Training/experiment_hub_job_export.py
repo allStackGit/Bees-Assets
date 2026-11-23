@@ -73,6 +73,31 @@ def safe_source(root: Path, source: Path, include_replays: bool) -> bool:
     return stat.S_ISREG(info.st_mode) and info.st_nlink == 1
 
 
+
+def safe_bees_policy_model(root: Path, source: Path, project: str, job_id: str) -> bool:
+    """Admit exactly one proven ONNX artifact, not arbitrary trainer binaries.
+
+    A source may be a machine-mounted job folder or the Hub's authenticated
+    remote artifact mirror. The same portable policy verifier checks either.
+    """
+    if project != "bees_native" or source.relative_to(root).as_posix() != (
+        "policy-candidate/model.onnx"
+    ):
+        return False
+    if source.is_symlink() or not source.is_file() or (
+        source.stat().st_nlink != 1 or source.resolve(strict=True) != source.absolute()
+    ):
+        raise ValueError("Bees policy candidate model was redirected or replaced.")
+    from bees_native_policy_candidate import verify_candidate
+    try:
+        verified = verify_candidate(source.parent)
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        raise ValueError("Bees policy candidate is not exportable: " + str(error)) from error
+    if verified["job_id"] != job_id:
+        raise ValueError("Bees policy candidate does not belong to selected Hub job.")
+    return True
+
+
 class SelectedObservationRows:
     """Stream one captured native observation file into a selected-metric CSV."""
 
@@ -567,7 +592,9 @@ def export(spec: dict, output: Path) -> dict:
                     and not (current / d).is_symlink())
                 for filename in sorted(files):
                     source = current / filename
-                    if not safe_source(folder, source, bool(spec.get("include_replays", False))):
+                    if not safe_source(folder, source, bool(spec.get("include_replays", False))) and (
+                        not safe_bees_policy_model(folder, source, project, job_id)
+                    ):
                         continue
                     add_file(source, name_prefix + "/" +
                              source.relative_to(folder).as_posix())
