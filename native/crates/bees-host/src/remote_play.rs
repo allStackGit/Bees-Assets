@@ -456,11 +456,15 @@ pub struct RemotePlayMeasurements {
     #[serde(default)]
     pub spectator_pause_requests: u64,
     #[serde(default)]
-    pub spectator_paused_steps: u64,
+    pub spectator_step_requests: u64,
+    #[serde(default)]
+    pub spectator_step_ticks: u64,
     #[serde(default)]
     pub spectator_speed_changes: u64,
     #[serde(default)]
     pub commander_paused_polls: u64,
+    #[serde(default)]
+    pub spectator_paused_polls: u64,
     #[serde(default)]
     pub commander_step_requests: u64,
     #[serde(default)]
@@ -1625,7 +1629,7 @@ impl NativeRemotePlay {
                             self.paused_step_owner = Some(peer.id);
                             self.measurements.commander_step_requests += 1;
                             if peer.spectator {
-                                self.measurements.spectator_paused_steps += 1;
+                                self.measurements.spectator_step_requests += 1;
                             }
                         } else {
                             self.measurements.commander_step_rejections += 1;
@@ -2047,7 +2051,12 @@ impl NativeRemotePlay {
     pub fn commander_paused(&mut self, world_id: WorldId, revision: u64) -> bool {
         let paused = self.pause_episode == Some((world_id.0, revision)) &&
             !self.pause_peers.is_empty();
-        if paused { self.measurements.commander_paused_polls += 1; }
+        if paused {
+            self.measurements.commander_paused_polls += 1;
+            if self.spectator_only_host {
+                self.measurements.spectator_paused_polls += 1;
+            }
+        }
         paused
     }
 
@@ -2058,6 +2067,9 @@ impl NativeRemotePlay {
         let Some(owner) = self.paused_step_owner.take() else { return false };
         if !self.pause_peers.contains(&owner) { return false; }
         self.measurements.commander_step_ticks += 1;
+        if self.spectator_only_host {
+            self.measurements.spectator_step_ticks += 1;
+        }
         // Render the result even if that tick is not a normal every-fifth
         // multiplayer snapshot; other clients see the exact same World.
         self.force_initial_state = true;
