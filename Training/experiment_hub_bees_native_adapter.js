@@ -63,7 +63,7 @@ function normalize(parameters,context,approved) {
     const allowed=new Set([
         'max_steps','envs','device','seed','hyperparameters','environment_args',
         'worker_sha256','trainer_sha256','runtime_version','evaluation_profile','evaluation_matches','batch_inference',
-        'wan_actors',
+        'wan_actors','wan_key_fingerprint',
     ]);
     if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
         Object.keys(parameters).some(key=>!allowed.has(key)))
@@ -107,7 +107,10 @@ function normalize(parameters,context,approved) {
         throw Error('Bees batched cross-worker inference must be a boolean.');
     const wanActors=parameters.wan_actors??0;
     if(!Number.isSafeInteger(wanActors)||wanActors<0||wanActors>8||
-        (wanActors>0&&!approved.wan_key_fingerprint))
+        (wanActors>0&&(!approved.wan_key_fingerprint||
+            parameters.wan_key_fingerprint!==approved.wan_key_fingerprint))||
+        (wanActors===0&&parameters.wan_key_fingerprint!==undefined&&
+            parameters.wan_key_fingerprint!==approved.wan_key_fingerprint))
         throw Error('Bees native WAN actors require an approved private broker key and 1–8 remote actors.');
     const profile=parameters.evaluation_profile??'off';
     const matches=parameters.evaluation_matches??8;
@@ -292,6 +295,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             worker_sha256:approved.worker_sha256,
             runtime_version:approved.runtime_version,
             trainer_sha256:approved.trainer_sha256,
+            ...(key?{wan_key_fingerprint:key.fingerprint}:{}),
             fields:DESIGN_FIELDS.map(field=>({...field})),
             metric_catalog:{base:[...METRICS]}}},
         gpu_verify_args(parameters,context) {
