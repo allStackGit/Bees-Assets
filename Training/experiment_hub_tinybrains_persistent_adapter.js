@@ -73,6 +73,7 @@ const TINYBRAINS_METRIC_CATALOG={
         'ppo_fused_adam_settled','ppo_fused_adam_steps',
         'ppo_fused_adam_preflight_failed','ppo_fused_adam_restored',
         'ppo_fused_adam_probe_samples',
+        'gpu_optimizer_fused_adam','gpu_optimizer_fused_adam_qualified',
         'ppo_compile_fallbacks','ppo_compile_calibration_complete',
         'ppo_compile_compiled_samples','ppo_compile_eager_samples',
         'ppo_compile_restored','ppo_gradient_foreach_batches',
@@ -273,6 +274,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_fused_adam_settled','ppo_fused_adam_steps',
         'ppo_fused_adam_preflight_failed','ppo_fused_adam_restored',
         'ppo_fused_adam_probe_samples',
+        'gpu_optimizer_fused_adam','gpu_optimizer_fused_adam_qualified',
         'ppo_compile_fallbacks','ppo_compile_calibration_complete',
         'ppo_compile_compiled_samples','ppo_compile_eager_samples',
         'ppo_compile_restored','ppo_gradient_foreach_batches',
@@ -423,6 +425,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'collector_balance_trial_sps_gain','policy_lag_mean'])
         add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
+    add('gpu_optimizer_fused_adam_probe_speedup',
+        row.gpu_optimizer_fused_adam_probe_speedup,'ratio');
     // A bounded async PPO batch can contain several immutable behavior
     // versions. Only report stale experience when the source lag histogram
     // accounts exactly for every delivered decision.
