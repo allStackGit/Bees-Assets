@@ -13,6 +13,7 @@ from queue import SimpleQueue
 import shlex
 import socket
 import threading
+import time
 
 
 def remote_token(side, spectator=False):
@@ -169,7 +170,7 @@ class RemoteConsole:
         while not self.heartbeat_stop.wait(10.0):
             if not self.alive:
                 return
-            now = __import__("time").monotonic()
+            now = time.monotonic()
             with self.lock:
                 outstanding = self.heartbeat_outstanding
                 if outstanding is not None:
@@ -362,7 +363,7 @@ class RemoteConsole:
                                     self.heartbeat_sent_at is None):
                                 raise ValueError("unsolicited or invalid native heartbeat")
                             self.heartbeat_rtt_ms = (
-                                __import__("time").monotonic() -
+                                time.monotonic() -
                                 self.heartbeat_sent_at
                             ) * 1000.0
                             self.heartbeat_pongs += 1
