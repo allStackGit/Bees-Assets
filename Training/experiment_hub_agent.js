@@ -333,7 +333,8 @@ async function main() {
         Object.assign(advertisement,evaluatorObservation.value);
     };
     let active=false,executingNative=false,busyHeartbeat=null,
-        last='initial',receipts=[],pendingReports=[],pendingGpuReports=[],
+        normalHeartbeat=null,stopping=false,reconnectTimer=null,
+        reconnectDelay=2500,last='initial',receipts=[],pendingReports=[],pendingGpuReports=[],
         pendingEvaluatorReports=[],pendingRemoteRestart=null;
     const artifactCache=new Map();
     let artifactSync=null;
@@ -350,6 +351,7 @@ async function main() {
     const nativeOwned=()=>Boolean(executor?.supervisor.snapshot().some(entry=>
         !['finished','failed','stopped'].includes(entry.state)));
     const poll=async(expedite=false)=>{
+        if(stopping)return;
         if(active) {
             if(executingNative&&!busyHeartbeat) {
                 // The existing interval must maintain machine liveness while
@@ -369,9 +371,16 @@ async function main() {
         active=true;
         try{
             const restartAwaitingReceipt=pendingRemoteRestart;
-            const response=await sendHeartbeat(url,id,token,receipts,
+            // Track the normal request separately from the native command.
+            // SIGTERM must not send a sign-off while this request can still
+            // re-create the old instance on the coordinator.
+            const inFlight=sendHeartbeat(url,id,token,receipts,
                 pendingReports,advertisement,pendingGpuReports,
                 !restartAwaitingReceipt,false,pendingEvaluatorReports);
+            normalHeartbeat=inFlight;
+            let response;
+            try {response=await inFlight;}
+            finally {if(normalHeartbeat===inFlight)normalHeartbeat=null;}
             // The coordinator accepted these reports. Any subsequent agent
             // crash is reconciled using the native service journal.
             pendingReports=[];
@@ -462,10 +471,25 @@ async function main() {
                                 :'; native starts blocked (preflight failed)'
                         :'; observation only, no job execution')+').');
             last='connected';
+            reconnectDelay=2500;
+            if(reconnectTimer)clearTimeout(reconnectTimer);
+            reconnectTimer=null;
         }catch(error){
             const message=String(error.message||error);
             if(last!==message)console.error('[experiment-hub-agent] '+message);
             last=message;
+            // The regular 15-second cadence provides steady-state liveness.
+            // After a coordinator restart or brief transport failure, make a
+            // bounded earlier re-authentication attempt instead of leaving
+            // the machine offline for another full heartbeat interval.
+            if(!stopping&&!once&&!reconnectTimer) {
+                const delay=reconnectDelay;
+                reconnectDelay=Math.min(INTERVAL_MS,reconnectDelay*2);
+                reconnectTimer=setTimeout(()=>{
+                    reconnectTimer=null;
+                    void poll(true);
+                },delay);
+            }
         }finally{active=false;}
     };
     // Start the existing heartbeat cadence before a potentially slow native
@@ -481,14 +505,18 @@ async function main() {
         // leaving separately OS-owned native jobs and checkpoint journals.
         // Sign off before this process disappears so the replacement agent
         // does not collide with a stale 45-second instance identity.
-        let stopping=false;
         process.once('SIGTERM',async()=>{
             if(stopping)return;
             stopping=true;
             clearInterval(timer);
             if(mirrorTimer)clearInterval(mirrorTimer);
+            if(reconnectTimer)clearTimeout(reconnectTimer);
             try {
-                if(busyHeartbeat)await busyHeartbeat;
+                // Both ordinary and busy heartbeats may still be in flight.
+                // Wait for their coordinator mutations to settle before the
+                // closing heartbeat. Native work is separately OS-owned.
+                await Promise.allSettled([normalHeartbeat,busyHeartbeat]
+                    .filter(Boolean));
                 await sendHeartbeat(url,id,token,[],[],advertisement,[],false,true);
             }catch(error) {
                 console.error('[experiment-hub-agent] Update sign-off: '+
