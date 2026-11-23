@@ -533,14 +533,25 @@ class FrozenGpuGraphs:
         tuple/dict structure. Mixed types retain the independent clone path.
         """
         leaves = [tensor for value in values for tensor in _leaves(value)]
-        if (len(leaves) < 3 or len({(tensor.dtype, tensor.device)
-                                    for tensor in leaves}) != 1):
+        if len(leaves)<3:
             return [FrozenGpuGraphs._own(value) for value in values]
-        packed = torch.cat([tensor.reshape(-1) for tensor in leaves])
-        copied = iter(packed.split([tensor.numel() for tensor in leaves]))
+        # Separate dtype/device banks preserve exact integer, Boolean and
+        # float outputs without materializing one GPU copy for every
+        # independent model's tiny tensor.
+        fields, offsets, sources = [], {}, {}
+        for tensor in leaves:
+            key = (tensor.dtype,tensor.device)
+            start = offsets.get(key,0)
+            offsets[key] = start+tensor.numel()
+            sources.setdefault(key,[]).append(tensor.reshape(-1))
+            fields.append((key,start,tensor.numel(),tensor.shape))
+        banks = {key:torch.cat(parts,dim=0)
+                 for key,parts in sources.items()}
+        copied = iter(banks[key].narrow(0,start,count).reshape(shape)
+                      for key,start,count,shape in fields)
         def restore(value):
             if isinstance(value, torch.Tensor):
-                return next(copied).reshape(value.shape)
+                return next(copied)
             if isinstance(value, tuple):
                 parts = [restore(item) for item in value]
                 return type(value)(*parts) if hasattr(value, "_fields") else tuple(parts)
