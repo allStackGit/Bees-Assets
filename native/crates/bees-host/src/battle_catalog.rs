@@ -383,6 +383,10 @@ enum CampaignSequencedEdit {
         tactics: NativeSavedSquadTactics,
     },
     Purchase(CampaignPurchase),
+    BatchPurchase {
+        player_side: i32,
+        ships: Vec<NativePurchasedShip>,
+    },
     Transfer(CampaignTransfer),
     /// Atomic, ordered reserve/fleet reorganization. Each recorded source
     /// is verified before ANY current owner is changed.
@@ -1433,6 +1437,42 @@ impl BattleCatalog {
         Ok(ship)
     }
 
+    /// Purchase multiple persistent FleetShips under one bank debit and
+    /// one career commit. The caller preflights every physical Level with
+    /// this entire projected roster before constructing the receipt.
+    pub fn buy_ships(
+        &self, progress: &CampaignProgress<'_>, output: &Path,
+        player_side: i32, ship_type: u8, saved_squad_id: i64,
+        first_fleet_ship_id: i64, count: u32,
+    ) -> io::Result<Vec<NativePurchasedShip>> {
+        let campaign = self.campaign_id.as_deref()
+            .ok_or_else(|| invalid("native fleet purchase requires a campaign"))?;
+        let shop = self.buildable_ships.iter().find(|entry|
+            entry.player_side == player_side && entry.ship_type == ship_type &&
+            entry.purchasable)
+            .ok_or_else(|| invalid("unavailable campaign shop class"))?;
+        let total = shop.price_tsv.checked_mul(u64::from(count))
+            .ok_or_else(|| invalid("native fleet purchase cost overflow"))?;
+        if !matches!(player_side, 1 | 2) || count == 0 || count > 256 ||
+            first_fleet_ship_id <= progress.highest_fleet_id() ||
+            first_fleet_ship_id <= 0 ||
+            first_fleet_ship_id.checked_add(i64::from(count) - 1).is_none() ||
+            saved_squad_id < 0 || progress.is_retired_saved_squad(saved_squad_id) ||
+            !progress.bank_history_complete ||
+            !progress.is_ship_unlocked(shop) ||
+            progress.unspent_minerals()? < total {
+            return Err(invalid("batch purchase needs valid ownership, funds, and unused FleetShip IDs"));
+        }
+        let ships = (0..count).map(|index| NativePurchasedShip {
+            fleet_ship_id: first_fleet_ship_id + i64::from(index),
+            saved_squad_id, ship_type, price_tsv: shop.price_tsv,
+        }).collect::<Vec<_>>();
+        commit_sequenced_edit(output, campaign, CampaignSequencedEdit::BatchPurchase {
+            player_side, ships: ships.clone(),
+        })?;
+        Ok(ships)
+    }
+
     /// A purchased ship can join a different SavedSquad between missions.
     /// Preserve its FleetShip identity, type, TSV cost and career totals;
     /// never modify a historical battle or the original purchase receipt.
@@ -1894,6 +1934,7 @@ impl BattleCatalog {
         let belongs = match &edit {
             CampaignSequencedEdit::Duplicate { .. } => true,
             CampaignSequencedEdit::Purchase(row) => row.campaign_id == campaign,
+            CampaignSequencedEdit::BatchPurchase { .. } => true,
             CampaignSequencedEdit::Transfer(row) => row.campaign_id == campaign,
             CampaignSequencedEdit::BatchTransfer { .. } => true,
             CampaignSequencedEdit::BatchAuthoredAssignments { .. } => true,
@@ -2024,6 +2065,61 @@ impl BattleCatalog {
                     return Err(invalid("sequenced purchase conflicts with recorded FleetShip"));
                 }
                 progress.purchases.push((receipt.player_side, ship));
+            }
+            CampaignSequencedEdit::BatchPurchase { player_side, ships } => {
+                if !matches!(player_side, 1 | 2) ||
+                    ships.is_empty() || ships.len() > 256 {
+                    return Err(invalid("invalid native multi-hull purchase"));
+                }
+                let mut ids = HashSet::with_capacity(ships.len());
+                let mut cost = 0u64;
+                // The edition is immutable and all hulls and their exact
+                // source prices are checked before changing the bank.
+                for ship in &ships {
+                    if ship.fleet_ship_id <= 0 || !ids.insert(ship.fleet_ship_id) ||
+                        ship.saved_squad_id < 0 ||
+                        progress.is_retired_saved_squad(ship.saved_squad_id) ||
+                        progress.purchases.iter().any(|(_, row)|
+                            row.fleet_ship_id == ship.fleet_ship_id) ||
+                        progress.authored_roster.contains_key(&ship.fleet_ship_id) ||
+                        !self.buildable_ships.iter().any(|class|
+                            class.player_side == player_side &&
+                            class.ship_type == ship.ship_type &&
+                            class.price_tsv == ship.price_tsv && class.purchasable) ||
+                        (ship.saved_squad_id > 0 &&
+                            (progress.squads.get(&ship.saved_squad_id)
+                                .is_some_and(|squad| squad.side != player_side) ||
+                             progress.created_squads.iter().any(|squad|
+                                squad.saved_squad_id == ship.saved_squad_id &&
+                                squad.side != player_side)))
+                    {
+                        return Err(invalid("invalid class, destination or identity in native batch purchase"));
+                    }
+                    cost = cost.checked_add(ship.price_tsv)
+                        .ok_or_else(|| invalid("batch purchase mineral cost overflow"))?;
+                    if progress.fleet.get(&ship.fleet_ship_id)
+                        .is_some_and(|fleet| fleet.side != player_side ||
+                            fleet.ship_type.is_some_and(|kind| kind != ship.ship_type)) {
+                        return Err(invalid("historical FleetShip conflicts with batch purchase"));
+                    }
+                }
+                progress.spent_minerals = progress.spent_minerals
+                    .checked_add(cost)
+                    .ok_or_else(|| invalid("batch purchase total overflow"))?;
+                for ship in ships {
+                    progress.fleet.entry(ship.fleet_ship_id)
+                        .or_insert_with(|| FleetProgress {
+                            side: player_side, ship_type: Some(ship.ship_type),
+                            loss_history_complete: true, combat_history_complete: true,
+                            special_history_complete: true,
+                            combat: NativeFleetCombatStats {
+                                source_kills: Some(0),
+                                ..NativeFleetCombatStats::default()
+                            },
+                            ..FleetProgress::default()
+                        });
+                    progress.purchases.push((player_side, ship));
+                }
             }
             CampaignSequencedEdit::Transfer(transfer) => {
                 let member = progress.purchases.iter_mut().find(|(_, ship)|
