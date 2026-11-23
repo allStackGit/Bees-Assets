@@ -613,6 +613,9 @@ struct PeerClient {
     /// This commander's own time-control vote, not the shared pause state.
     /// It is cleared on reconnect and World turnover.
     pause_owned: bool,
+    /// Authenticated welcome grants time control to commanders in normal
+    /// matches or view-only seats in a genuine AI-only Fish Tank.
+    time_control_authorized: bool,
     pause_pending: Option<(u64,bool)>,
     step_pending: Option<u64>,
     speed_pending: Option<u64>,
@@ -718,7 +721,8 @@ impl PeerClient {
             lobby_ready_pending: None, lobby_ready_approved: None,
             lobby_ready_rejected: None,
             forfeit_pending: None,
-            pause_owned: false, pause_pending: None, step_pending: None,
+            pause_owned: false, time_control_authorized: false,
+            pause_pending: None, step_pending: None,
             speed_pending: None, inspection_pending: None,
             inspection_result: None, pause_episode: None,
             authenticated: false, connected: true,
@@ -814,6 +818,8 @@ impl PeerClient {
                         break;
                     }
                     self.host_session_id = Some(host_id.to_owned());
+                    self.time_control_authorized = message["hosted_time_control"]
+                        .as_bool().unwrap_or(!self.spectator);
                     self.authenticated = true;
                     self.notice = if self.spectator {
                         format!("Watching side {} (read only, source fog)", self.side)
@@ -1178,7 +1184,7 @@ impl PeerClient {
                     self.notice=format!("Lobby: {feedback}");
                 }
                 Some("pause_result") => {
-                    if !self.authenticated || self.spectator {
+                    if !self.authenticated || !self.time_control_authorized {
                         return Err(invalid("unauthorized host pause receipt").into());
                     }
                     let request = message["request_id"].as_u64()
@@ -1206,7 +1212,7 @@ impl PeerClient {
                     };
                 }
                 Some("step_result") => {
-                    if !self.authenticated || self.spectator {
+                    if !self.authenticated || !self.time_control_authorized {
                         return Err(invalid("unauthorized fixed-step receipt").into());
                     }
                     let request = message["request_id"].as_u64()
@@ -1225,7 +1231,7 @@ impl PeerClient {
                     } else { feedback.to_owned() };
                 }
                 Some("speed_result") => {
-                    if !self.authenticated || self.spectator {
+                    if !self.authenticated || !self.time_control_authorized {
                         return Err(invalid("unauthorized host speed receipt").into());
                     }
                     let request = message["request_id"].as_u64()
@@ -1532,7 +1538,7 @@ impl PeerClient {
     fn request_pause(&mut self, world:u64, revision:u64, paused:bool)
         -> Result<(), Box<dyn Error>>
     {
-        if !self.authenticated || !self.connected || self.spectator ||
+        if !self.authenticated || !self.connected || !self.time_control_authorized ||
             self.pause_pending.is_some() {
             return Err(invalid("pause request requires an idle authenticated player seat").into());
         }
@@ -1548,7 +1554,7 @@ impl PeerClient {
     fn request_step(&mut self, world:u64, revision:u64)
         -> Result<(), Box<dyn Error>>
     {
-        if !self.authenticated || !self.connected || self.spectator ||
+        if !self.authenticated || !self.connected || !self.time_control_authorized ||
             !self.pause_owned || self.pause_pending.is_some() ||
             self.step_pending.is_some() {
             return Err(invalid("single-step requires your active pause and no pending requests").into());
@@ -1564,7 +1570,7 @@ impl PeerClient {
     fn request_cycle_speed(&mut self, world:u64, revision:u64)
         -> Result<(), Box<dyn Error>>
     {
-        if !self.authenticated || !self.connected || self.spectator ||
+        if !self.authenticated || !self.connected || !self.time_control_authorized ||
             self.speed_pending.is_some() {
             return Err(invalid("game-speed control requires an idle authenticated player seat").into());
         }
@@ -3957,7 +3963,7 @@ pub fn connect_remote_with_trust(
             }
         }
         if !show_controls_help && window.is_key_pressed(Key::Space, KeyRepeat::No) {
-            if peer.spectator {
+            if peer.spectator && !peer.time_control_authorized {
                 soundtrack_paused=!soundtrack_paused;
                 peer.notice=if soundtrack_paused {
                     "Soundtrack paused".into()
@@ -3973,7 +3979,7 @@ pub fn connect_remote_with_trust(
                 }
             }
         }
-        if !show_controls_help && !peer.spectator &&
+        if !show_controls_help && peer.time_control_authorized &&
             !window.is_key_down(Key::LeftShift) &&
             !window.is_key_down(Key::RightShift) &&
             window.is_key_pressed(Key::N, KeyRepeat::No)
@@ -3997,7 +4003,7 @@ pub fn connect_remote_with_trust(
                 peer.notice=error.to_string();
             }
         }
-        if !show_controls_help && !peer.spectator &&
+        if !show_controls_help && peer.time_control_authorized &&
             window.is_key_pressed(Key::F12,KeyRepeat::No)
         {
             if let Some((world,revision))=peer.state.as_ref().and_then(|state|Some((
@@ -5647,9 +5653,12 @@ pub fn connect_remote_with_trust(
             state["commander_paused"] == true)
         {
             text::draw_at(&mut pixels,WIDTH,12,36,
-                if peer.spectator { "Battle paused by a commander" }
-                else if peer.pause_owned {
+                if peer.pause_owned {
                     "Battle paused - Space to release your pause"
+                } else if peer.spectator && peer.time_control_authorized {
+                    "Fish Tank paused by another spectator"
+                } else if peer.spectator {
+                    "Battle paused by a commander"
                 } else { "Battle paused by another commander" },
                 1,[255,211,130]);
         }
