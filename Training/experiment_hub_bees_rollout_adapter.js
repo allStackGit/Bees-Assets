@@ -161,6 +161,7 @@ function createBeesRolloutAdapter({
             runtime_version:approved.runtime_version,
             wan_key_fingerprint:approved.wan_key_fingerprint,
             wan_forward_managed:Boolean(approvedForward),
+            cuda_enabled:enableWindowsCuda,
             ...(approvedForward?{
                 wan_target_machine_id:approvedForward.learner_machine_id,
             }:{}),
