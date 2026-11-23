@@ -6446,6 +6446,13 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         // synthetic example override the canonical original assets.
         let original_factory = original_fighters.ships[1].iter()
             .find(|ship| ship["ship_type"] == 9).cloned();
+        let original_assets_ready = original_freeplay_finales.is_empty() ||
+            (original_fighters.ships[0].iter().any(|ship| ship["ship_type"] == 21) &&
+             original_fighters.ships[1].iter().any(|ship| ship["ship_type"] == 13));
+        // A completed source campaign with missing canonical original Wasp
+        // or Gunship cannot enter developer demo FreePlay by accident. Do
+        // not affect a standalone sandbox library with no source career.
+        let playable_freeplay = freeplay_unlocked && original_assets_ready;
         let unlocked_games = library.games.iter().map(|game| -> io::Result<bool> {
             if let Some(gate) = game.unlock_after_playtime.as_ref() {
                 return read_fish_tank_unlocked(&fish_tank_unlock_file(
@@ -6526,12 +6533,14 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let fleet_builder_index = rows.len();
         rows.push(BattleMenuRow {
             title: "Build Fleet Skirmish",
-            status: if freeplay_unlocked {
-                "  [Custom native fleets]"
-            } else {
+            status: if !freeplay_unlocked {
                 "  [Locked: finish the original Uranus campaign]"
+            } else if !original_assets_ready {
+                "  [Original campaign combat assets incomplete]"
+            } else {
+                "  [Custom native fleets]"
             },
-            unlocked: freeplay_unlocked,
+            unlocked: playable_freeplay,
         });
         let saved_fleet_sources = recordings.iter().filter(|recording|
             recording.game_id == fleet_builder::GAME_ID &&
@@ -6545,7 +6554,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             } else {
                 "  [New battle from prior physical fleet]"
             },
-            unlocked: freeplay_unlocked && !saved_fleet_sources.is_empty(),
+            unlocked: playable_freeplay && !saved_fleet_sources.is_empty(),
         });
         // Source FreePlay exposes previous authored Levels in its menu.
         // An archived quick battle is reusable only if its original start
@@ -6567,7 +6576,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             } else {
                 "  [New battle from original authored setup]"
             },
-            unlocked: freeplay_unlocked &&
+            unlocked: playable_freeplay &&
                 (!named_freeplay_levels.is_empty() || !saved_level_sources.is_empty()),
         });
         let fleet_train_index = rows.len();
@@ -6589,7 +6598,12 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let fleet_benchmark_index = rows.len();
         rows.push(BattleMenuRow {
             title: "Benchmark Fleet Simulation",
-            status: "  [Measured headless SPS]", unlocked: true,
+            status: if original_assets_ready {
+                "  [Measured headless SPS]"
+            } else {
+                "  [Original campaign combat assets incomplete]"
+            },
+            unlocked: original_assets_ready,
         });
         let Some(index) = select_library(&rows, &mut selected, launch_failed)?
             else { break };
@@ -6873,7 +6887,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             })()
         } else if hosting {
             run_library_host(&saved_host,save_root,&library,&games,&trained,
-                freeplay_unlocked, original_queen.as_ref(), original_factory.as_ref(),
+                playable_freeplay, original_queen.as_ref(), original_factory.as_ref(),
                 &original_fighters)
         } else if let Some(trained_index) = trained_index {
             // A selected trained model can still run the exact original
