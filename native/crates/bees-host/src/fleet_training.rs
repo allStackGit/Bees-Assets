@@ -1602,7 +1602,7 @@ fn evaluate_training_checkpoint(
         command.arg("--physics-workers").arg(workers.to_string());
     }
     if let Some(device) = config["evaluation_inference_device"].as_str() {
-        if !matches!(device, "cpu" | "cuda:0") {
+        if !valid_torch_device(device) || device == "cuda" {
             return Err(invalid("native evaluation has an invalid recorded inference device").into());
         }
         command.arg("--inference-device").arg(device);
