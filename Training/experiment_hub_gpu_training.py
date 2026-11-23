@@ -1823,6 +1823,7 @@ class PersistentGpuForwardPool:
         self._closed = False
         self.calls = 0
         self.prepared_calls = 0
+        self.owner_inline_prepared_calls = 0
         self._pending_device_timings = deque()
         self._device_work_rates = {device:deque(maxlen=8)
                                    for device in self.devices}
@@ -1914,7 +1915,8 @@ class PersistentGpuForwardPool:
         self._collect_device_timings()
         metrics = dict(
             gpu_forward_capacity_pending_events=len(self._pending_device_timings),
-            gpu_forward_capacity_timing_samples=self.device_timing_samples)
+            gpu_forward_capacity_timing_samples=self.device_timing_samples,
+            gpu_forward_primary_inline_dispatches=self.owner_inline_prepared_calls)
         rates = []
         for slot, device in enumerate(self.devices):
             samples = self._device_work_rates[device]
@@ -2045,19 +2047,45 @@ class PersistentGpuForwardPool:
                   ordinals not in self._admitted_capacity_weights and
                   self.prepared_calls % 4 == 0 and
                   len(self._pending_device_timings)<32)
-        futures = [self._workers.submit(
-            self._prepared_forward, model, factory, device, stream,
-            producer if i else None,
-            grad_enabled, autocast_enabled, autocast_dtype,
-            pixel_work[i] if sample else 0)
-            for i,(model,factory,device,stream) in enumerate(zip(
-                models,input_factories,ordinals,streams))]
-        # Join Python dispatch, not GPU completion. Original tensors and
-        # autograd operations retain their device-stream dependencies.
-        wait(futures)
+        if len(ordinals)==2:
+            # Launch GPU 1's worker first, then enqueue GPU 0's forward
+            # directly on the owning learner thread. The owner is otherwise
+            # idle waiting for two executor dispatches on every tiny map
+            # pair. This eliminates one queue/context-switch round trip
+            # without serializing the two GPU streams or changing autograd
+            # ownership. The secondary worker still waits for the producer
+            # event before touching any source-GPU tensors.
+            peer = self._workers.submit(
+                self._prepared_forward,models[1],input_factories[1],
+                ordinals[1],streams[1],producer,
+                grad_enabled,autocast_enabled,autocast_dtype,
+                pixel_work[1] if sample else 0)
+            try:
+                primary = self._prepared_forward(
+                    models[0],input_factories[0],ordinals[0],streams[0],
+                    None,grad_enabled,autocast_enabled,autocast_dtype,
+                    pixel_work[0] if sample else 0)
+            except BaseException:
+                # No optimizer step may proceed while a peer dispatch is
+                # still using the current minibatch's source tensors.
+                wait((peer,))
+                raise
+            collected = [primary,peer.result()]
+            self.owner_inline_prepared_calls += 1
+        else:
+            futures = [self._workers.submit(
+                self._prepared_forward, model, factory, device, stream,
+                producer if i else None,
+                grad_enabled, autocast_enabled, autocast_dtype,
+                pixel_work[i] if sample else 0)
+                for i,(model,factory,device,stream) in enumerate(zip(
+                    models,input_factories,ordinals,streams))]
+            # Join Python dispatch, not GPU completion. Original tensors
+            # and autograd operations retain their stream dependencies.
+            wait(futures)
+            collected = [future.result() for future in futures]
         self.calls += 1
         self.prepared_calls += 1
-        collected = [future.result() for future in futures]
         if sample:
             for device,(_,timing) in zip(ordinals,collected):
                 begin,end,pixels = timing
