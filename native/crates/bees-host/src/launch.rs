@@ -146,6 +146,11 @@ struct LevelConfig {
     /// the actual capacity from the original level or challenge.
     #[serde(default)]
     supply_capacity: Option<SourceSupplyCapacity>,
+    /// The original full collision asteroid bodies are spawned inside
+    /// CombatWorld before the Level's first navigation/vision snapshot.
+    /// Zero preserves prior run files; no separate visual-only asteroids.
+    #[serde(default)]
+    initial_full_asteroids: u16,
     /// Authoritative source Stage timer for collision asteroids. Missing
     /// means the Level has no timer, not that the game draws fake asteroids.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -789,7 +794,7 @@ fn make_setup(
         seed,
         broadphase_cell_size: config.broadphase_cell_size,
         decision_period: period,
-        initial_full_asteroids: 0,
+        initial_full_asteroids: usize::from(level.initial_full_asteroids),
         collision_asteroid_timer: level.collision_asteroid_timer,
         groups,
         ship_catalog: assets.shared_ship_catalog(),

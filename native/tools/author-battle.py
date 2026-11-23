@@ -900,21 +900,29 @@ def author(args) -> tuple[dict, dict, dict]:
     # and Level-owned fixed-step timer. Both playable and policy scenes
     # inherit these exact same collision and spawning rules.
     asteroid_interval = getattr(args, "collision_asteroid_interval", None)
+    initial_asteroids = getattr(args, "initial_collision_asteroids", 0)
+    if not 0 <= initial_asteroids <= 4096:
+        raise ValueError("initial collision asteroid count must be 0..4096")
     if asteroid_interval is not None:
         minimum, maximum = asteroid_interval
         if not 1 <= minimum <= maximum <= 3600:
             raise ValueError("collision asteroid interval must be 1..3600 seconds, MIN <= MAX")
+    if asteroid_interval is not None or initial_asteroids:
         palette = run["native_stage"].get("asteroid_prefab_numbers")
         if not isinstance(palette, list) or not palette:
             raise ValueError("collision asteroid spawning requires source Stage asteroid prefabs")
-        scene["activate_collision_asteroids"] = True
+    scene["activate_collision_asteroids"] = bool(asteroid_interval or initial_asteroids)
+    if asteroid_interval is not None:
         run["levels"][0]["collision_asteroid_timer"] = {
             "minimum_seconds": minimum,
             "maximum_seconds": maximum,
         }
     else:
-        scene["activate_collision_asteroids"] = False
         run["levels"][0].pop("collision_asteroid_timer", None)
+    if initial_asteroids:
+        run["levels"][0]["initial_full_asteroids"] = initial_asteroids
+    else:
+        run["levels"][0].pop("initial_full_asteroids", None)
     scene["activate_fog_of_war"] = args.fog
     if host is not None:
         scene["local_player_side"] = host
@@ -2395,6 +2403,9 @@ def battle_parser() -> argparse.ArgumentParser:
                         metavar=("MIN_SECONDS", "MAX_SECONDS"),
                         help="enable real source collision asteroids using the shared Level timer; "
                              "spawn interval in original integer seconds, 1..3600")
+    parser.add_argument("--initial-collision-asteroids", type=int, default=0,
+                        help="start the same physical Level with 0..4096 real source "
+                             "collision asteroids, before the first player/policy observation")
     parser.add_argument("--empty-map", action="store_true",
                         help="omit source mining resources, static boxes and map objects")
     parser.add_argument("--arena-size", type=float,
