@@ -147,6 +147,7 @@ function renderPage(html,runtime={}) {
         '</div>'+
         '<div id="hub-local-evaluator-rows" class="hub-standalone"></div>'+
         '<p id="hub-local-evaluator-message" class="hub-notice" role="status"></p>'+
+        '<div id="hub-local-evaluator-map-results" class="hub-standalone"></div>'+
         '<h4>Remote evaluator services</h4>'+
         '<p class="muted">Control only existing services verified by enrolled remote agents. '+
         'Operations are one-use; uncertain results require review, not automatic replay. '+
