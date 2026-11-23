@@ -173,13 +173,22 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         const receipt=JSON.parse(fs.readFileSync(metadata,'utf8'));
         if(receipt.schema_version!==1||receipt.job_id!==context.job_id||
             !SHA.test(String(receipt.sha256||''))||
+            !SHA.test(String(receipt.checkpoint_sha256||''))||
             typeof receipt.model!=='string'||!path.isAbsolute(receipt.model)||
-            !receipt.model.startsWith(path.join(root,'results')+path.sep))
-            throw Error('Invalid Bees native model receipt.');
+            typeof receipt.checkpoint!=='string'||!path.isAbsolute(receipt.checkpoint)||
+            !receipt.model.startsWith(path.join(root,'results')+path.sep)||
+            !receipt.checkpoint.startsWith(path.join(root,'results')+path.sep)||
+            path.basename(receipt.checkpoint)!=='checkpoint.pt')
+            throw Error('Invalid Bees native checkpoint receipt.');
         const model=fs.realpathSync(receipt.model);
-        if(!model.startsWith(path.join(root,'results')+path.sep)||
-            fileHash(model)!==receipt.sha256)
-            throw Error('Native Bees model bytes differ from recorded checkpoint.');
+        const optimizer=fs.realpathSync(receipt.checkpoint);
+        const within=path.join(root,'results')+path.sep;
+        if(!model.startsWith(within)||!optimizer.startsWith(within)||
+            !fs.statSync(model).isFile()||!fs.statSync(optimizer).isFile()||
+            fs.statSync(model).size<1||fs.statSync(optimizer).size<1||
+            fileHash(model)!==receipt.sha256||
+            fileHash(optimizer)!==receipt.checkpoint_sha256)
+            throw Error('Native Bees model or optimizer checkpoint differs from committed bytes.');
         return receipt;
     }
 
