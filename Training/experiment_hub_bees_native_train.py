@@ -444,6 +444,33 @@ class EventProgress:
             self.last_step=self.steps
             self.last_at=current
         metrics=dict(self.values)
+        status=self.root/"wan-status.json"
+        if status.exists() or status.is_symlink():
+            if status.is_symlink() or not status.is_file() or status.stat().st_size>2048:
+                raise ValueError("Native WAN broker progress file is not a bounded regular file.")
+            snapshot=json.loads(status.read_text(encoding="utf-8"))
+            published=snapshot.get("reported_at_unix_ms")
+            age=time.time()*1000-published if type(published) is int else float("inf")
+            if snapshot.get("schema_version")==1 and (
+                snapshot.get("job_id")==self.job_id and 0<=age<=90000
+            ):
+                for source,name,unit in (
+                    ("active_actors","wan_active_actors","count"),
+                    ("active_environments","wan_active_environments","count"),
+                    ("remote_steps_per_second","wan_remote_steps_per_second","rate"),
+                    ("trainer_steps_per_second","wan_trainer_steps_per_second","rate"),
+                    ("trajectory_queue_batches","wan_trajectory_queue_batches","count"),
+                    ("backpressure_last_minute","wan_backpressure_last_minute","count"),
+                ):
+                    value=snapshot.get(source)
+                    if type(value) not in (int,float) or (
+                        unit=="count" and (type(value) is not int or value<0)
+                    ):
+                        raise ValueError("Invalid native WAN broker metric: "+source)
+                    measured=measured_metric(float(value),unit)
+                    if measured is None or measured["value"]<0:
+                        raise ValueError("Invalid WAN broker measurement: "+source)
+                    metrics[name]=measured
         metrics["elapsed_training_seconds"]={"value":elapsed,"unit":"seconds"}
         metrics["training_steps"]={"value":self.steps,"unit":"count"}
         if self.evaluation_started_at is not None:
@@ -751,6 +778,8 @@ def main():
             job["game_payload_sha256"], job["trainer_sha256"], job["runtime_version"]
         )
         child_env.update({
+            "BEES_HUB_WAN_STATUS_PATH": str(root/"wan-status.json"),
+            "BEES_HUB_WAN_JOB_ID": job["job_id"],
             "BEES_TRAINING_BUILD_ID": job["wan_release_sha256"],
             "BEES_TRAINING_RUN_ID": job["lineage_root_id"],
             "BEES_TRAINING_COMPATIBILITY_KEY": hashlib.sha256(
