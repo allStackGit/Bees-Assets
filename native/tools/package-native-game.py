@@ -36,6 +36,23 @@ EXAMPLES = (
 )
 
 
+# These names and signatures are the native client's external atlas formats.
+# Keep invocation and verification driven by one release inventory.
+ARTWORK_ATLASES = (
+    ("ship", "ship-sprites.rgba", b"BSS2"),
+    ("beacon", "beacon-enemy.rgba", b"BSS2"),
+    ("map-background", "map-backgrounds.rgba", b"BSS1"),
+    ("map-fog", "map-fog.rgba", b"BSS1"),
+    ("portrait", "dialogue-portraits.rgba", b"BDP1"),
+    ("projectile", "projectile-sprites.rgba", b"BPS1"),
+    ("asteroid", "asteroid-sprites.rgba", b"BAS1"),
+    ("animation", "ship-animations.rgba", b"BSA1"),
+    ("remains", "ship-remains.rgba", b"BSR1"),
+    ("deck", "carrier-decks.rgba", b"BCD1"),
+    ("queen", "queen-parts.rgba", b"BSS1"),
+    ("effects", "ship-effects.rgba", b"BSS1"),
+    ("queen-explosion", "queen-explosion.rgba", b"BSR1"),
+)
 
 
 # Training-capable distributions keep the exact canonical Python learner,
@@ -604,7 +621,9 @@ def write_launchers(output: Path, binary_name: str) -> None:
         launcher.chmod(0o755)
 
 
-def create_manifest(output: Path, *, include_training: bool = False) -> None:
+def create_manifest(
+    output: Path, *, include_training: bool = False, audio_paths: list[Path] | None = None,
+) -> None:
     files = []
     for path in sorted(output.rglob("*")):
         if not path.is_file() or path == output / "manifest.json":
@@ -618,15 +637,37 @@ def create_manifest(output: Path, *, include_training: bool = False) -> None:
             "bytes": path.stat().st_size,
             "sha256": digest.hexdigest(),
         })
+    manifest = {
+        "format": "bees-native-game-package",
+        "version": 1,
+        "training_runtime": include_training,
+        "content": files,
+    }
+    if audio_paths is not None:
+        manifest["presentation_audio"] = [path.as_posix() for path in audio_paths]
     (output / "manifest.json").write_text(
-        json.dumps({
-            "format": "bees-native-game-package",
-            "version": 1,
-            "training_runtime": include_training,
-            "content": files,
-        }, indent=2) + "\n",
-        encoding="utf-8",
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8",
     )
+
+
+def verify_presentation_assets(directory: Path, manifest: dict, inventory: dict) -> None:
+    # Earlier release manifests carry only the general file inventory.
+    if "presentation_audio" not in manifest:
+        return
+    audio = manifest["presentation_audio"]
+    if (not isinstance(audio, list) or len(audio) < 20 or
+            any(not isinstance(name, str) or not name.startswith("assets/audio/") or
+                not name.endswith(".mp3") or name not in inventory or inventory[name][0] == 0
+                for name in audio) or len(set(audio)) != len(audio)):
+        raise ValueError("native release is missing required audio tracks")
+    for _, filename, signature in ARTWORK_ATLASES:
+        name = f"assets/{filename}"
+        if name not in inventory or inventory[name][0] < 7:
+            raise ValueError(f"native release is missing required artwork: {name}")
+        with (directory / name).open("rb") as atlas:
+            header = atlas.read(6)
+        if header[:4] != signature or int.from_bytes(header[4:], "little") == 0:
+            raise ValueError(f"native release has an invalid artwork header: {name}")
 
 
 def validate_packaged_library(data: dict) -> list[dict]:
@@ -731,6 +772,7 @@ def verify_native_package(directory: Path) -> dict:
         if sha.hexdigest() != digest:
             raise ValueError(f"native release asset hash changed: {name}")
 
+    verify_presentation_assets(directory, manifest, expected)
     if not any((directory / name).is_file() for name in ("bees", "bees.exe")):
         raise ValueError("native release is missing the game executable")
     game = directory / ("bees.exe" if (directory / "bees.exe").is_file() else "bees")
@@ -965,22 +1007,10 @@ def main() -> None:
         shutil.copy2(binary, staging / binary.name)
         assets = staging / "assets"
         assets.mkdir()
-        subprocess.run([
-            sys.executable, str(CONVERTER),
-            "--ship-output", str(assets / "ship-sprites.rgba"),
-            "--beacon-output", str(assets / "beacon-enemy.rgba"),
-            "--map-background-output", str(assets / "map-backgrounds.rgba"),
-            "--map-fog-output", str(assets / "map-fog.rgba"),
-            "--portrait-output", str(assets / "dialogue-portraits.rgba"),
-            "--projectile-output", str(assets / "projectile-sprites.rgba"),
-            "--asteroid-output", str(assets / "asteroid-sprites.rgba"),
-            "--animation-output", str(assets / "ship-animations.rgba"),
-            "--remains-output", str(assets / "ship-remains.rgba"),
-            "--deck-output", str(assets / "carrier-decks.rgba"),
-            "--queen-output", str(assets / "queen-parts.rgba"),
-            "--effects-output", str(assets / "ship-effects.rgba"),
-            "--queen-explosion-output", str(assets / "queen-explosion.rgba"),
-        ], cwd=ROOT, check=True)
+        converter_args = [sys.executable, str(CONVERTER)]
+        for option, filename, _ in ARTWORK_ATLASES:
+            converter_args.extend((f"--{option}-output", str(assets / filename)))
+        subprocess.run(converter_args, cwd=ROOT, check=True)
         for source, relative in audio:
             destination = staging / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1029,7 +1059,8 @@ def main() -> None:
         for name in ("remote_play_client.py", "remote_play_window.py"):
             shutil.copy2(ROOT / "native/tools" / name, clients / name)
         write_launchers(staging, binary.name)
-        create_manifest(staging, include_training=args.include_training)
+        create_manifest(staging, include_training=args.include_training,
+                        audio_paths=[relative for _, relative in audio])
         # A release is only discoverable once all playable scenes, model
         # assets and optional learner/source dependencies have passed the
         # same complete inventory verifier used by a receiving computer.
