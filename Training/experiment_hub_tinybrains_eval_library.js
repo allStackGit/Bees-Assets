@@ -489,4 +489,4 @@ function library(o,hub) {
         maps:['basic-tiny-2p',...boards(o)]};
 }
 module.exports={read,library,customSuites,saveEvaluation,deleteEvaluation,nameOpponent,
-    registerFrozenOpponent,referencedSuites,unusedVersions};
+    availableOpponents,registerFrozenOpponent,referencedSuites,unusedVersions};
