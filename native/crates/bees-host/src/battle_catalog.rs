@@ -1825,7 +1825,11 @@ impl BattleCatalog {
                     squad.template_saved_squad_id <= 0 ||
                     squad.template_saved_squad_id == squad.saved_squad_id ||
                     progress.is_retired_saved_squad(squad.template_saved_squad_id) ||
-                    progress.created_squads.iter().any(|old|
+                    progress.squads.get(&squad.template_saved_squad_id)
+                        .is_some_and(|record| record.side != squad.side) ||
+                    progress.created_squads.iter().any(|record|
+                        record.saved_squad_id == squad.template_saved_squad_id &&
+                        record.side != squad.side) ||                    progress.created_squads.iter().any(|old|
                         old.saved_squad_id == squad.saved_squad_id) ||
                     tactics.side != squad.side ||
                     tactics.saved_squad_id != squad.saved_squad_id ||
@@ -1859,8 +1863,10 @@ impl BattleCatalog {
                         return Err(invalid("duplicate claims an unavailable original reserve hull"));
                     }
                 }
+                let purchased_set = purchased_ids.iter().copied()
+                    .collect::<HashSet<_>>();
                 for (_, ship) in &mut progress.purchases {
-                    if purchased_ids.contains(&ship.fleet_ship_id) {
+                    if purchased_set.contains(&ship.fleet_ship_id) {
                         ship.saved_squad_id = squad.saved_squad_id;
                     }
                 }
