@@ -229,7 +229,8 @@ function ensureTailnetIdentity(config) {
     if (transport !== 'tailnet') return;
 
     const bridges = getTailnetBridgePaths();
-    const bridge = String(bridges.gateway_windows);
+    const bridge = String(process.platform === 'linux'
+        ? bridges.distribution_linux : bridges.gateway_windows);
     const hostname = String(config.tailnetLearnerName || 'bees-learner').trim();
     if (!/^[A-Za-z0-9-]{1,63}$/.test(hostname)) {
         throw new Error('tailnetLearnerName must contain only letters, digits, and dashes.');
@@ -299,7 +300,8 @@ async function startTailnetGatewayIfNeeded(config) {
     if (transport !== 'tailnet') return;
 
     const bridges = getTailnetBridgePaths();
-    const bridge = String(bridges.gateway_windows);
+    const bridge = String(process.platform === 'linux'
+        ? bridges.distribution_linux : bridges.gateway_windows);
     const stateDir = path.join(paths.tailnetRoot, 'LearnerState');
     const hostname = String(config.tailnetLearnerName || 'bees-learner').trim();
     const controlPort = Number(config.controlPort);
