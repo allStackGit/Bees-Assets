@@ -468,7 +468,9 @@ function fromEnvironment(env=process.env,options={}) {
         const local={root,machineId,adapters,helperPath,helperSha256,
             gpuEnabled:env.EXPERIMENT_HUB_ENABLE_CUDA==='1'||
                 (env.EXPERIMENT_HUB_TINYBRAINS_CUDA==='1'&&
-                    adapters.tinybrains_rollout?.gpu_execution==='cuda')};
+                    adapters.tinybrains_rollout?.gpu_execution==='cuda')||
+                (env.EXPERIMENT_HUB_BEES_WAN_CUDA==='1'&&
+                    adapters.bees_rollout?.gpu_execution==='cuda')};
         supervisor=options.createSupervisor
             ?options.createSupervisor(local)
             :new WindowsSupervisor(local);
