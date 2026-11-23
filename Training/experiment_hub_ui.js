@@ -1539,7 +1539,7 @@ document.addEventListener('DOMContentLoaded', () => {
         panel.className='hub-standalone';
         panel.innerHTML='<h4>Bees Unity — distributed WAN training</h4>'+
             '<p class="muted">Reserve one authoritative MA-POCA learner and 1–8 independently leased Linux Unity actors. '+
-            'An operator-installed private broker tunnel is required on every actor machine. '+
+            'Actors can own a private Tailnet SSH forward when enrolled for it; otherwise install a private loopback forward before Start. '+
             'Reserving does not start any workload.</p>'+
             '<div class="hub-controls">'+
             '<label>Saved WAN learner <select id="hub-bees-wan-config"></select></label>'+
@@ -1639,24 +1639,34 @@ document.addEventListener('DOMContentLoaded', () => {
         if(configs.some(c=>c.id===previous))selected.value=previous;
         const config=configs.find(c=>c.id===selected.value);
         const members=(state?.machines||[]).filter(machine=>
-            machine.status==='connected'&&machine.agent_platform==='linux'&&
+            machine.status==='connected'&&
+            ['linux','win32'].includes(machine.agent_platform)&&
             machine.local_executor_enabled===true&&machine.native_preflight_passed===true);
         const supports=(machine,role)=>config&&machine.installed_projects?.includes(role)&&
-            ['worker_sha256','worker_payload_sha256','trainer_sha256',
-                'runtime_version','wan_key_fingerprint'].every(key=>
+            (role==='bees_native'?
+                ['worker_sha256','worker_payload_sha256','wan_release_sha256',
+                    'trainer_sha256','runtime_version','wan_key_fingerprint']:
+                ['wan_release_sha256','trainer_sha256','runtime_version',
+                    'wan_key_fingerprint']).every(key=>
                 machine.design_catalog?.[role]?.[key]===config.parameters[key]);
         const learner=$('hub-bees-wan-learner'),prior=learner.value;
-        const learners=members.filter(machine=>supports(machine,'bees_native'));
+        const learners=members.filter(machine=>machine.agent_platform==='linux'&&
+            supports(machine,'bees_native'));
         refreshSelectOptions(learner,learners.map(machine=>
             new Option(machine.name+' ('+machine.id+')',machine.id)));
         if(learners.some(machine=>machine.id===prior))learner.value=prior;
         const actors=members.filter(machine=>supports(machine,'bees_rollout')&&
-            machine.id!==learner.value);
+            machine.id!==learner.value&&
+            (machine.design_catalog.bees_rollout.wan_forward_managed!==true||
+                machine.design_catalog.bees_rollout.wan_target_machine_id===learner.value));
         for(const row of $('hub-bees-wan-actors').children) {
             const input=row.querySelector('.hub-bees-wan-machine');
             const value=input.value;
             refreshSelectOptions(input,actors.map(machine=>
-                new Option(machine.name+' ('+machine.id+')',machine.id)));
+                new Option(machine.name+' ('+machine.id+' · '+
+                    (machine.agent_platform==='win32'?'Windows CPU':'Linux')+' · '+
+                    (machine.design_catalog.bees_rollout.wan_forward_managed
+                        ?'managed SSH':'manual forward')+')',machine.id)));
             if(actors.some(machine=>machine.id===value))input.value=value;
         }
         $('hub-bees-wan-add').disabled=
@@ -4290,6 +4300,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         entry.trainer_sha256===parameters.trainer_sha256)&&
                     (!parameters.worker_payload_sha256||
                         entry.worker_payload_sha256===parameters.worker_payload_sha256)&&
+                    (!parameters.wan_release_sha256||
+                        entry.wan_release_sha256===parameters.wan_release_sha256)&&
                     (!parameters.runtime_version||
                         entry.runtime_version===parameters.runtime_version)&&
                     (!parameters.wan_key_fingerprint||
@@ -4314,7 +4326,8 @@ document.addEventListener('DOMContentLoaded', () => {
             worker_sha256:choice.entry.worker_sha256,
             trainer_sha256:choice.entry.trainer_sha256,
             ...(choice.entry.worker_payload_sha256
-                ?{worker_payload_sha256:choice.entry.worker_payload_sha256}:{}),
+                ?{worker_payload_sha256:choice.entry.worker_payload_sha256,
+                    wan_release_sha256:choice.entry.wan_release_sha256}:{}),
             runtime_version:choice.entry.runtime_version,
             ...(choice.entry.wan_key_fingerprint
                 ?{wan_key_fingerprint:choice.entry.wan_key_fingerprint}:{}),
@@ -4406,6 +4419,7 @@ document.addEventListener('DOMContentLoaded', () => {
             parameters.worker_sha256??=choice.entry.worker_sha256;
             parameters.trainer_sha256??=choice.entry.trainer_sha256;
             parameters.worker_payload_sha256??=choice.entry.worker_payload_sha256;
+            parameters.wan_release_sha256??=choice.entry.wan_release_sha256;
             parameters.runtime_version??=choice.entry.runtime_version;
             if(choice.entry.wan_key_fingerprint)
                 parameters.wan_key_fingerprint??=choice.entry.wan_key_fingerprint;
@@ -4514,6 +4528,7 @@ document.addEventListener('DOMContentLoaded', () => {
             config_sha256:chosen?.entry?.config_sha256||null,
             worker_sha256:chosen?.entry?.worker_sha256||null,
             worker_payload_sha256:chosen?.entry?.worker_payload_sha256||null,
+            wan_release_sha256:chosen?.entry?.wan_release_sha256||null,
             trainer_sha256:chosen?.entry?.trainer_sha256||null,
             runtime_version:chosen?.entry?.runtime_version||null,
             wan_key_fingerprint:chosen?.entry?.wan_key_fingerprint||null,
@@ -5644,6 +5659,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?entry.worker_sha256===params.worker_sha256&&
                     (!params.worker_payload_sha256||
                         entry.worker_payload_sha256===params.worker_payload_sha256)&&
+                    (!params.wan_release_sha256||
+                        entry.wan_release_sha256===params.wan_release_sha256)&&
                     entry.trainer_sha256===params.trainer_sha256&&
                     entry.runtime_version===params.runtime_version&&
                     ((params.wan_actors||0)===0||
