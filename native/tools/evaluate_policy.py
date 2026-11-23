@@ -375,6 +375,62 @@ def evaluation_execution_evidence(final_report):
         "model_execution": execution,
     }
 
+def verified_evaluation_device(execution, requested):
+    """Attest actual backend placement before publishing a GPU holdout.
+
+    The model manifest is the immutable model identity. Device placement
+    is an independent observed runtime fact: a CPU fallback is never
+    accepted as completed work on GPU N, even with matching model hashes.
+    """
+    if requested is None:
+        return None
+    if execution is None:
+        if requested != "cpu":
+            raise ValueError("native GPU evaluation has no completed inference evidence")
+        return None
+    gpu_providers = ("CUDAExecutionProvider", "ROCMExecutionProvider")
+    seen_gpu = False
+    for slot, model in execution["model_execution"].items():
+        if "device" in model:
+            actual = model["device"]
+            if actual != "cpu":
+                if not isinstance(actual, str) or not actual.startswith("cuda:"):
+                    raise ValueError(f"invalid resident GPU device for model slot {slot}")
+                if actual != requested:
+                    raise ValueError(f"native evaluation model slot {slot} executed on {actual}, not {requested}")
+                seen_gpu = True
+        else:
+            providers = model.get("providers")
+            if not isinstance(providers, list) or not providers:
+                raise ValueError(f"native ONNX evaluation model slot {slot} lacks actual providers")
+            primary = providers[0]
+            if primary in gpu_providers:
+                options = model.get("provider_options")
+                device_id = (
+                    options.get(primary, {}).get("device_id")
+                    if isinstance(options, dict) else None
+                )
+                actual = f"cuda:{device_id}"
+                if actual != requested:
+                    raise ValueError(f"native ONNX evaluation model slot {slot} executed on {actual}, not {requested}")
+                seen_gpu = True
+            elif primary != "CPUExecutionProvider":
+                raise ValueError(f"unsupported native ONNX execution provider for slot {slot}")
+    if requested == "cpu":
+        if seen_gpu or execution["gpu_forward_calls"] != 0:
+            raise ValueError("native CPU evaluation actually executed GPU inference")
+        return {"device": "cpu", "scope": "reported_backend_placement"}
+    if (not seen_gpu or execution["gpu_forward_calls"] <= 0 or
+            execution["gpu_forward_rows"] <= 0):
+        raise ValueError("native GPU evaluation completed no resident accelerator inference")
+    return {
+        "device": requested,
+        "scope": "completed_resident_backend_forwards",
+        "completed_gpu_forward_calls": execution["gpu_forward_calls"],
+        "completed_gpu_forward_rows": execution["gpu_forward_rows"],
+    }
+
+
 def terminal_matchup(directory, result, candidate_slot, incumbent_slot):
     """Read only the terminal records; reconcile them with the verified summary."""
     journal = directory / "events.jsonl"
@@ -663,6 +719,7 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
         summary.get("resident_policy_exit_clean"), worker_report,
     )
     execution = evaluation_execution_evidence(worker_report)
+    verified_device = verified_evaluation_device(execution, inference_device)
     # Preserve observed execution-only throughput separately from the
     # startup/finalization-inclusive wall rate. Worker wall seconds are a
     # SUM of independently timed parallel worker tasks, not process CPU
@@ -678,6 +735,8 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
         "schema_version": 1, "kind": "native_policy_evaluation_complete",
         **({"policy_forward_latency": latency} if latency is not None else {}),
         **({"policy_execution": execution} if execution is not None else {}),
+        **({"verified_inference_placement": verified_device}
+           if verified_device is not None else {}),
         "source_run_config": str(source_path), "source_run_config_sha256": source_sha,
         "source_dependencies": source_dependencies,
         "model_dependencies": model_dependencies,
