@@ -456,6 +456,8 @@ def main():
                 "case_count":len(observed),"cases":observed,
                 "total_matches":sum(item["matches"] for item in observed),
                 "total_wins":sum(item["wins"] for item in observed),
+                "total_draws":sum(item["draws"] for item in observed),
+                "total_losses":sum(item["losses"] for item in observed),
                 "total_timeouts":sum(item["timeouts"] for item in observed),
             }
             with (evaluation_root/"summary.json").open("x",encoding="utf-8") as stream:
