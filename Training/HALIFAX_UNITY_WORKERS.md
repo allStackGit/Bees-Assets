@@ -59,6 +59,9 @@ From the Unity project's Assets directory:
 node Training/bees_build_workers.js --platform linux
 # With Windows Build Support installed:
 node Training/bees_build_workers.js --platform both
+# Optional: install the verified host-platform worker locally after building:
+node Training/bees_build_workers.js --platform both \
+    --install-root /home/halifax/ai/bees-unity-workers --activate
 ```
 
 Artifacts appear under ../Builds/OfflineWorkers/<build-id>/, including
@@ -71,7 +74,11 @@ project lock is checked on Linux as well as Windows. Unity logs appear
 under ../Logs/Build/.
 
 IMPORTANT: Compiling workers does not change the active Bees release, run,
-checkpoints, remote installations or Experiment Hub.
+checkpoints, remote installations or Experiment Hub. Only explicit
+`--install-root` installs the matching local host player, and `--activate`
+selects it for future Hub agent starts; neither command restarts a running
+agent or interrupts an active training job. A build targeting only the other
+OS cannot be installed locally.
 
 ## Deploy through the existing Windows Bees cluster
 
