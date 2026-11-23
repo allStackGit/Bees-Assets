@@ -1383,12 +1383,36 @@ fn evaluate_training_checkpoint(job: &Path, best: bool) -> Result<(), Box<dyn Er
         sha256_file(Path::new(checkpoint))? != checkpoint_sha {
         return Err(invalid("selected native policy checkpoint or manifest changed").into());
     }
-    let side = config["evaluation_side"].as_u64()
+    let trained_side = config["evaluation_side"].as_u64()
         .filter(|side| matches!(*side, 1 | 2))
         .ok_or_else(|| invalid("native evaluation requires original learner faction"))?;
-    if best && selection["learner_side"].as_u64() != Some(side) {
+    if best && selection["learner_side"].as_u64() != Some(trained_side) {
         return Err(invalid("best checkpoint belongs to a different faction").into());
     }
+    // A self-play recipe pins real learner and reference model slots.
+    // The established evaluator can rotate the candidate onto either
+    // authored physical faction without manufacturing a new simulator.
+    let matchup = config["learner_slot"].as_u64().zip(
+        config["self_play"]["opponent_slot"].as_u64()
+    ).filter(|(candidate, reference)| candidate != reference);
+    let side = if matchup.is_some() {
+        let rows = [
+            BattleMenuRow {
+                title: "Evaluate candidate on training faction",
+                status: "  [Original authored side]", unlocked: true,
+            },
+            BattleMenuRow {
+                title: "Evaluate candidate on opposite faction",
+                status: "  [Native side-swapped policy matchup]", unlocked: true,
+            },
+        ];
+        let mut chosen = 0;
+        match select_library(&rows, &mut chosen, false)? {
+            Some(0) => trained_side,
+            Some(1) => 3 - trained_side,
+            _ => return Ok(()),
+        }
+    } else { trained_side };
     let Some(seed) = choose_count(
         "Independent policy sampling seed", &[0, 1, 42, 2026, 10007],
     )? else { return Ok(()); };
@@ -1429,6 +1453,10 @@ fn evaluate_training_checkpoint(job: &Path, best: bool) -> Result<(), Box<dyn Er
     command.arg(&evaluator).arg(&source).arg(manifest).arg(&destination)
         .arg("--learner-side").arg(side.to_string())
         .arg("--policy-seed").arg(seed.to_string());
+    if let Some((candidate, reference)) = matchup {
+        command.arg("--candidate-slot").arg(candidate.to_string())
+            .arg("--reference-slot").arg(reference.to_string());
+    }
     if let Some(workers) = invocation["evaluation_physics_workers"].as_u64()
         .filter(|number| (1..=128).contains(number)) {
         command.arg("--physics-workers").arg(workers.to_string());
@@ -1452,6 +1480,9 @@ fn evaluate_training_checkpoint(job: &Path, best: bool) -> Result<(), Box<dyn Er
         "job": job,
         "selection": if best { "best_fixed_holdout" } else { "latest_checkpoint" },
         "policy_seed": seed,
+        "candidate_physical_side": side,
+        "candidate_slot": matchup.map(|(candidate, _)| candidate),
+        "reference_slot": matchup.map(|(_, reference)| reference),
         "source": source,
         "manifest": manifest,
         "checkpoint": checkpoint,
