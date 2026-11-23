@@ -71,9 +71,15 @@ fn original_special_class(side: usize, kind: u8) -> bool {
 /// Reuse the physically authored class contracts present in the original
 /// campaign instead of replacing Wasp/Gunship with approximate ship stats.
 /// Every selected ship still enters the same CombatWorld and squad clones.
+#[derive(Clone, Default)]
+pub(super) struct OriginalGameSources {
+    pub(super) ships: [Vec<Value>; 2],
+    pub(super) mining_asteroid: Option<Value>,
+}
+
 pub(super) fn original_campaign_hulls(
     catalog_path: &Path,
-) -> Result<[Vec<Value>; 2], Box<dyn Error>> {
+) -> Result<OriginalGameSources, Box<dyn Error>> {
     let catalog_path = catalog_path.canonicalize()?;
     let root = catalog_path.parent()
         .ok_or_else(|| invalid("original campaign catalog is missing its root"))?;
@@ -86,7 +92,7 @@ pub(super) fn original_campaign_hulls(
     // Original support and special classes retain their authored weapon,
     // vision, carrier and economy contracts. Only ordinary combat hulls
     // are eligible for generic native roster cloning.
-    let mut result: [Vec<Value>; 2] = [Vec::new(), Vec::new()];
+    let mut result = OriginalGameSources::default();
     for stage in stages {
         let mut configs = Vec::new();
         if let Some(path) = stage["config"].as_str() {
@@ -99,6 +105,20 @@ pub(super) fn original_campaign_hulls(
         }
         for run in configs {
             let scene = original_battle_scene(root, run)?;
+            if result.mining_asteroid.is_none() {
+                // The source mining collider is a genuine physical game
+                // obstacle. Placement is separately authored for FreePlay,
+                // but the shared native simulation consumes its original
+                // health and polygon instead of a 100-HP demonstration rock.
+                result.mining_asteroid = scene["mining_asteroids"].as_array()
+                    .into_iter().flatten().find(|ore|
+                        ore["entity_id"].as_i64().is_some_and(|id| id > 0) &&
+                        ore["health"].as_i64().is_some_and(|hp| hp > 0) &&
+                        ore["layer"].as_u64().is_some_and(|layer| layer < 32) &&
+                        ore["local_vertices"].as_array()
+                            .is_some_and(|points| points.len() >= 3)
+                    ).cloned();
+            }
             for ship in scene["ships"].as_array().into_iter().flatten()
                 .chain(scene["fleet_templates"].as_array().into_iter().flatten())
             {
@@ -109,7 +129,7 @@ pub(super) fn original_campaign_hulls(
                 if !(1..=2).contains(&side) ||
                     !(original_regular_class((side - 1) as usize, kind) ||
                       original_special_class((side - 1) as usize, kind)) ||
-                    result[(side - 1) as usize].iter().any(|existing|
+                    result.ships[(side - 1) as usize].iter().any(|existing|
                         existing["ship_type"] == kind)
                 {
                     continue;
@@ -137,11 +157,11 @@ pub(super) fn original_campaign_hulls(
                 let mut full_health = ship.clone();
                 full_health["health"] = expected["health"].clone();
                 full_health["user_controlled"] = json!(true);
-                result[(side - 1) as usize].push(full_health);
+                result.ships[(side - 1) as usize].push(full_health);
             }
         }
     }
-    for classes in &mut result {
+    for classes in &mut result.ships {
         classes.sort_unstable_by_key(|ship| ship["ship_type"].as_u64().unwrap_or(255));
     }
     Ok(result)
