@@ -265,6 +265,91 @@ def discrete_action_logprob_entropy(logits, actions):
     return chosen_logp, entropy
 
 
+_SPARSE_SPATIAL_ADMISSION = {}
+
+
+def qualify_sparse_spatial_training_logits(device, *, dtype=torch.float32,
+                                           actions=5, min_speedup=0.10):
+    """Qualify sparse selection against dense NCHW-to-NHWC copy on one GPU.
+
+    Uses synthetic tensors (not learner weights or Torch RNG), checks the
+    exact action values and autograd gradients, and compares sustained
+    forward+backward time for small and large spatial maps. Qualification
+    is intended for startup, outside the useful PPO throughput window.
+    The result is read-only throughout concurrent GPU training forwards.
+    """
+    if (not isinstance(device,torch.device) or device.type!="cuda" or
+            dtype!=torch.float32 or type(actions) is not int or
+            not 2<=actions<=128 or not 0<=min_speedup<=0.5):
+        return False
+    key=(str(device),dtype,actions)
+    if key in _SPARSE_SPATIAL_ADMISSION:
+        return bool(_SPARSE_SPATIAL_ADMISSION[key][1])
+    # Register a disabled result before any qualification so a partial
+    # ROCm backend failure cannot select an unproven optimization.
+    _SPARSE_SPATIAL_ADMISSION[key]=((),frozenset())
+    try:
+        samples=[]
+        winners=set()
+        for side in (32,64):
+            n=8
+            area=side*side
+            elements=n*actions*area
+            data=torch.arange(elements,device=device,dtype=dtype)
+            logits=(data*0.0007).sin().reshape(n,actions,side,side)
+            logits=logits.detach().requires_grad_(True)
+            count=max(1,n*area//64)
+            owners=torch.arange(count,device=device,dtype=torch.int64)%n
+            local=(torch.arange(count,device=device,dtype=torch.int64)*37)%area
+            absolute=owners*area+local
+
+            def dense():
+                flat=logits.permute(0,2,3,1).reshape(-1,actions)
+                return flat.index_select(0,absolute)
+
+            def sparse():
+                return logits.flatten(2)[owners,:,absolute-owners*area]
+
+            def forward_backward(operation):
+                value=operation()
+                grad,=torch.autograd.grad(value.square().sum(),logits)
+                return value.detach(),grad.detach()
+
+            reference,ref_grad=forward_backward(dense)
+            candidate,candidate_grad=forward_backward(sparse)
+            if (not torch.allclose(reference,candidate,rtol=1e-6,atol=1e-6)
+                    or not torch.allclose(ref_grad,candidate_grad,
+                                           rtol=1e-5,atol=1e-6)):
+                samples.append(elements)
+                continue
+
+            def seconds(operation):
+                torch.cuda.synchronize(device)
+                started=perf_counter()
+                for _ in range(2):
+                    forward_backward(operation)
+                torch.cuda.synchronize(device)
+                return (perf_counter()-started)/2
+
+            eager_times,selected_times=[],[]
+            for round_index in range(4):
+                order=((dense,eager_times),(sparse,selected_times))
+                if round_index%2:
+                    order=order[::-1]
+                for operation,timings in order:
+                    timings.append(seconds(operation))
+            baseline=median(eager_times)
+            optimized=median(selected_times)
+            samples.append(elements)
+            if baseline>0 and optimized<=baseline*(1-min_speedup):
+                winners.add(elements)
+        _SPARSE_SPATIAL_ADMISSION[key]=(tuple(samples),frozenset(winners))
+        return bool(winners)
+    except (RuntimeError,ValueError,TypeError,NotImplementedError,
+            torch.OutOfMemoryError):
+        return False
+
+
 def select_spatial_training_logits(logits, owners, absolute_cells, *,
                                    min_dense_elements=8192,
                                    max_sparse_fraction=0.125):
@@ -294,8 +379,13 @@ def select_spatial_training_logits(logits, owners, absolute_cells, *,
     boards,actions,height,width=logits.shape
     cells_per_board=height*width
     population=len(absolute_cells)
+    sizes,winners=_SPARSE_SPATIAL_ADMISSION.get(
+        (str(logits.device),logits.dtype,actions),((),frozenset()))
+    closest=(min(sizes,key=lambda size:abs(size-logits.numel()))
+             if sizes else None)
     if (logits.device.type=="cuda" and
             logits.numel()>=min_dense_elements and
+            closest in winners and
             population <= boards*cells_per_board*max_sparse_fraction):
         # Indices already carry a board owner and absolute flat cell
         # location, so derive a local location with only a small 1D GPU
