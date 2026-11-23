@@ -65,6 +65,8 @@ def inspect_job(filename: Path) -> dict:
         "training_script","training_sha256","trainer_source",
         "trainer_sha256","output_root","num_envs","max_steps",
         "device","seed","hyperparameters","expected_gpu_pci","environment_args",
+        "evaluation_profile","evaluation_matches","evaluator_script","evaluator_sha256",
+        "evaluator_core","evaluator_core_sha256","opponent_script","opponent_script_sha256",
     }
     if not isinstance(job, dict) or set(job) != keys or job["schema_version"] != 1:
         raise ValueError("Unexpected Bees native job schema.")
@@ -89,11 +91,19 @@ def inspect_job(filename: Path) -> dict:
         ("game_binary","game_sha256",True),
         ("training_script","training_sha256",False),
         ("trainer_source","trainer_sha256",False),
+        ("evaluator_script","evaluator_sha256",False),
+        ("evaluator_core","evaluator_core_sha256",False),
+        ("opponent_script","opponent_script_sha256",False),
     ):
         value = job[digest]
         if not isinstance(value,str) or len(value)!=64 or any(c not in "0123456789abcdef" for c in value):
             raise ValueError("Invalid frozen input hash.")
         require_file(Path(job[source]),value,executable)
+    if job["evaluation_profile"] not in ("off","scripted-maps-v1") or (
+        type(job["evaluation_matches"]) is not int or
+        not 1 <= job["evaluation_matches"] <= 100
+    ):
+        raise ValueError("Unsupported frozen post-training evaluation profile.")
     pci = job["expected_gpu_pci"]
     if job["device"] == "cuda":
         if not isinstance(pci,str):
@@ -272,6 +282,71 @@ def record_model(root: Path, job_id: str):
         json.dump(receipt, handle, sort_keys=True)
         handle.write("\n")
 
+# Versioned, independently scored scenarios. The benchmark runner owns
+# match/timeout accounting; these are observations, not training rewards or
+# an authorization to promote a policy. This is deliberately not described
+# as exhaustive map or ship coverage.
+SCRIPTED_CASES = (
+    ("small_1v1_pursuit", 1, 32, "pursuit"),
+    ("medium_2v2_strafe", 2, 64, "strafe"),
+    ("large_4v4_pursuit", 4, 96, "pursuit"),
+    ("wide_6v6_strafe", 6, 128, "strafe"),
+)
+
+def benchmark_recipe(root: Path, job: dict, case: tuple, index: int) -> Path:
+    label,players,map_size,_ = case
+    recipe = {
+        "schema_version":1,"id":"bees-native-"+label.replace("_","-"),
+        "revision":1,"behavior_name":"BeesRL1v1",
+        "matches":job["evaluation_matches"],
+        "seed":(job["seed"]+131071+index*65537)%(2**31),
+        "max_environment_steps_per_match":200000,
+        "env_args":[
+            "--rl-matchup-mode=sampled",
+            f"--rl-ships-per-side={players}",
+            f"--rl-map-size={map_size}",
+            "--rl-bee-ship-types=Wasp,Hornet",
+            "--rl-human-ship-types=Gunship,Frigate",
+            "--rl-episode-timeout=60",
+            "--rl-health-ratio=0.5",
+        ],
+    }
+    file = root / ("recipe-"+label+".json")
+    with file.open("x",encoding="utf-8") as handle:
+        json.dump(recipe,handle,sort_keys=True)
+        handle.write("\n")
+    return file
+
+def collect_benchmark(root: Path, report_file: Path, job: dict, label: str, opponent: str) -> dict:
+    if report_file.is_symlink() or not report_file.is_file() or (
+        report_file.parent != root/"evaluations"
+    ):
+        raise RuntimeError("Benchmark output path is missing or redirected.")
+    report=json.loads(report_file.read_text(encoding="utf-8"))
+    source=report.get("benchmark",{})
+    summary=report.get("metrics",{})
+    if(report.get("schema_version")!=1 or
+       report.get("candidate_sha256")!=json.loads((root/"model.json").read_text())["sha256"] or
+       report.get("environment_executable_sha256")!=job["game_sha256"] or
+       report.get("opponent_path")!="scripted:"+opponent or
+       source.get("id")!="bees-native-"+label.replace("_","-") or
+       summary.get("matches")!=job["evaluation_matches"]):
+        raise RuntimeError("Independent benchmark result does not match its frozen scenario.")
+    results = {}
+    for name in ("matches","wins","losses","draws","timeouts"):
+        value=summary.get(name)
+        if(type(value) is not int or value<0 or value>job["evaluation_matches"]):
+            raise RuntimeError("Invalid benchmark match count: "+name)
+        results[name]=value
+    if(results["wins"]+results["losses"]+results["draws"]!=results["matches"] or
+       results["timeouts"]>results["draws"]):
+        raise RuntimeError("Benchmark outcome accounting is inconsistent.")
+    return {
+        "case":label,"opponent":opponent,
+        "report_file":report_file.name,"report_sha256":sha256_file(report_file),
+        **results,
+    }
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--job",required=True)
@@ -325,10 +400,66 @@ def main():
         except (OSError,ValueError,RuntimeError):
             pass
         result=child.returncode
-        if result==0:
-            record_model(root,job["job_id"])
-            return 0
-        return 130 if stopped else result or 1
+        if result!=0 or stopped:
+            return 130 if stopped else result or 1
+        record_model(root,job["job_id"])
+        if job["evaluation_profile"]=="scripted-maps-v1":
+            evaluation_root=root/"evaluations"
+            evaluation_root.mkdir(mode=0o700)
+            model=json.loads((root/"model.json").read_text(encoding="utf-8"))
+            observed=[]
+            for index,case in enumerate(SCRIPTED_CASES):
+                if stopped: return 130
+                label,_,_,opponent=case
+                recipe=benchmark_recipe(evaluation_root,job,case,index)
+                for source,digest in (
+                    ("evaluator_script","evaluator_sha256"),
+                    ("evaluator_core","evaluator_core_sha256"),
+                    ("opponent_script","opponent_script_sha256"),
+                ):
+                    require_file(Path(job[source]),job[digest])
+                output=evaluation_root/("stdout-"+label+".txt")
+                command=[
+                    sys.executable,"-B",job["evaluator_script"],
+                    "--benchmark",str(recipe),
+                    "--candidate",model["model"],
+                    "--candidate-sha256",model["sha256"],
+                    "--opponent","scripted:"+opponent,
+                    "--env",job["game_binary"],
+                    "--build-id",job["game_sha256"],
+                    "--run-id",job["job_id"],
+                    "--output-root",str(evaluation_root),
+                ]
+                with output.open("xb") as stream:
+                    child=subprocess.Popen(command,
+                        cwd=str(Path(job["training_script"]).parent),
+                        stdout=stream,start_new_session=True)
+                    while child.poll() is None:
+                        time.sleep(0.25)
+                if stopped: return 130
+                if child.returncode!=0:
+                    raise RuntimeError("Independent Bees evaluation failed for "+label)
+                if output.stat().st_size>16384:
+                    raise RuntimeError("Benchmark output path exceeded the expected size.")
+                lines=output.read_text(encoding="utf-8").strip().splitlines()
+                if not lines:
+                    raise RuntimeError("Benchmark evaluator returned no result.")
+                reported=Path(lines[-1])
+                if reported.parent!=evaluation_root or not reported.name.endswith(".json"):
+                    raise RuntimeError("Benchmark evaluator returned an unexpected output path.")
+                observed.append(collect_benchmark(root,reported,job,label,opponent))
+            summary={
+                "schema_version":1,"job_id":job["job_id"],
+                "profile":"scripted-maps-v1","model_sha256":model["sha256"],
+                "case_count":len(observed),"cases":observed,
+                "total_matches":sum(item["matches"] for item in observed),
+                "total_wins":sum(item["wins"] for item in observed),
+                "total_timeouts":sum(item["timeouts"] for item in observed),
+            }
+            with (evaluation_root/"summary.json").open("x",encoding="utf-8") as stream:
+                json.dump(summary,stream,sort_keys=True,indent=2)
+                stream.write("\n")
+        return 0
     finally:
         if child and child.poll() is None:
             child.send_signal(signal.SIGINT)
