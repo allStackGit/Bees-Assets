@@ -175,7 +175,7 @@ function validField(field) {
 function validateCatalog(raw,installed=[],approved={}) {
     if(raw==null)return {};
     if(!raw||typeof raw!=='object'||Array.isArray(raw)||
-        Object.keys(raw).some(key=>!['courier','tinybrains','bees_native'].includes(key))||
+        Object.keys(raw).some(key=>!['courier','tinybrains','bees_native','bees_rollout'].includes(key))||
         JSON.stringify(raw).length>32768)
         throw Error('Invalid bounded project Design catalogue.');
     const validateFields=entry=>{
@@ -236,11 +236,29 @@ function validateCatalog(raw,installed=[],approved={}) {
             !/^[0-9a-f]{64}$/.test(String(entry?.trainer_sha256||''))||
             !/^[0-9a-f]{64}$/.test(String(entry?.runtime_version||'')))
             throw Error('Bees native Design defaults require pinned Unity worker and MA-POCA trainer SHA-256 values.');
+        if(entry.wan_key_fingerprint!==undefined&&
+            !/^[0-9a-f]{64}$/.test(entry.wan_key_fingerprint))
+            throw Error('Bees WAN private key identity must be a pinned SHA-256 fingerprint.');
         result.bees_native={...validateFields(entry),
             worker_sha256:entry.worker_sha256,
             trainer_sha256:entry.trainer_sha256,
             runtime_version:entry.runtime_version,
+            ...(entry.wan_key_fingerprint
+                ?{wan_key_fingerprint:entry.wan_key_fingerprint}:{}),
             metric_catalog:metricCatalog(entry.metric_catalog)};
+    }
+    if(raw.bees_rollout!==undefined) {
+        const entry=raw.bees_rollout;
+        if(!installed.includes('bees_rollout')||
+            !['worker_sha256','trainer_sha256','runtime_version',
+                'wan_key_fingerprint'].every(key=>
+                    /^[0-9a-f]{64}$/.test(String(entry?.[key]||''))))
+            throw Error('Bees remote actor must advertise exact Unity, PPO, runtime and WAN key hashes.');
+        result.bees_rollout={...validateFields(entry),
+            worker_sha256:entry.worker_sha256,
+            trainer_sha256:entry.trainer_sha256,
+            runtime_version:entry.runtime_version,
+            wan_key_fingerprint:entry.wan_key_fingerprint};
     }
     if(raw.tinybrains!==undefined) {
         const profiles=raw.tinybrains?.profiles;
