@@ -106,27 +106,25 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
                 genericRates++;
             }
         }
-        // Shared GPU execution is a project-neutral data plane: retain
-        // comparable coalescing and learner-concurrency evidence before
-        // optional backend-specific per-worker diagnostics fill 96 slots.
-        for(const name of [
-            'gpu_microbatch_submitted','gpu_microbatch_coalesced',
-            'gpu_microbatch_groups','gpu_microbatch_fallbacks',
-            'gpu_microbatch_flat_groups','gpu_microbatch_bucketed_groups',
-            'gpu_microbatch_head_of_line_bypasses',
-            'gpu_microbatch_admitted_profiles','gpu_microbatch_rejected_profiles',
-            'gpu_microbatch_profile_refreshes',
-            'gpu_microbatch_policy_refreshes','gpu_microbatch_policy_refresh_seconds',
-            'gpu_microbatch_qualification_seconds',
-            'gpu_execution_fused_calls','gpu_execution_stream_calls',
-            'gpu_execution_graph_calls','gpu_execution_weight_refreshes',
-            'gpu_execution_refresh_invalidations','gpu_graph_replays',
-            'gpu_training_selected_parallel','gpu_training_selected_streams',
-            'gpu_training_parallel_batches','gpu_training_calibration_complete',
-            'gpu_training_work_confirmed','gpu_training_retunes',
-            'gpu_training_live_work_per_second',
-            'gpu_training_qualified_work_per_second',
-        ])retain(name,reported[name]);
+        // New training projects inherit the same shared GPU data plane.
+        // Accept measured GPU runtime counters/rates through the existing
+        // neutral metrics contract without adding project-specific chart
+        // names for every executor or batching strategy. Prefer completed
+        // useful work, then selected strategy and queue pressure, before
+        // optional fine-grained transfer counts. Keep chart width bounded.
+        const sharedGpuPrefix=/^gpu_(?:microbatch|training|execution|fusion|graph|stream)_/;
+        const sharedGpuPriority=name=>
+            /(?:^|_)(?:useful|live|qualified)_work_per_second$/.test(name)?0:
+                /(?:work_confirmed|selected_streams|selected_parallel|coalesced|flat_groups|bucketed_groups|pinned_groups|fallback|policy_refresh)/.test(name)?1:
+                    /(?:pending|queue|retune|allocation|bytes)/.test(name)?2:3;
+        const sharedGpu=Object.entries(reported)
+            .filter(([name,value])=>sharedGpuPrefix.test(name)&&
+                value&&typeof value==='object'&&
+                Number.isFinite(value.value));
+        sharedGpu.sort(([a],[b])=>
+            sharedGpuPriority(a)-sharedGpuPriority(b)||a.localeCompare(b));
+        for(const [name,value] of sharedGpu.slice(0,24))
+            retain(name,value);
         for(const name of ['ppo_compiled_loss_active',
             'ppo_compile_calibration_complete','ppo_compile_fallbacks',
             'ppo_compiled_loss_qualified','ppo_compiled_loss_mismatches',
