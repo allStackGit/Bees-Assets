@@ -127,7 +127,7 @@ function extractWorkerArchive(python, archive, destination, entrypoint) {
         '  if len(members)>100000: raise ValueError("too many Unity archive entries")',
         '  for item in members:',
         '    name=item.filename; parts=pathlib.PurePosixPath(name).parts',
-        '    if not name or name.startswith("/") or "\\\\" in name or "\\x00" in name or ".." in parts or name in names:',
+        '    if not name or name.startswith("/") or "\\\\" in name or "\\x00" in name or ":" in name or ".." in parts or name in names:',
         '      raise ValueError("unsafe/duplicate worker archive path")',
         '    mode=item.external_attr>>16',
         '    if stat.S_ISLNK(mode): raise ValueError("symbolic link in worker archive")',
