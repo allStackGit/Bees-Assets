@@ -139,13 +139,8 @@ fn frozen_quick_battle_source(folder:&Path)->Option<PathBuf> {
     for asset in std::iter::once(levels[0]["scene"].as_str()?)
         .chain(matrix).chain(palette)
     {
-        let asset = Path::new(asset);
-        if asset.components().count() != 1 || asset.file_name().is_none_or(|name|
-            name == "replay-source-run.json")
-        {
-            return None;
-        }
-        let meta = fs::symlink_metadata(folder.join(asset)).ok()?;
+        let asset = super::replay_asset_path(folder, Path::new(asset), false).ok()??;
+        let meta = fs::symlink_metadata(asset).ok()?;
         if !meta.file_type().is_file() || meta.len() > 4 * 1024 * 1024 {
             return None;
         }

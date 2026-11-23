@@ -1962,6 +1962,16 @@ impl CampaignReplaySetup {
         }
         if use_archive {
             let config: RunConfig = serde_json::from_slice(&bytes)?;
+            let root = source.parent().ok_or_else(|| invalid("recorded campaign has no asset directory"))?;
+            for asset in config.levels.iter().map(|level| &level.scene)
+                .chain(config.collision_matrix.iter()).chain(config.stage_palette.iter())
+            {
+                let file = replay_asset_path(root, asset, false)?
+                    .ok_or_else(|| invalid("unsafe recorded campaign asset path"))?;
+                if !fs::symlink_metadata(&file)?.file_type().is_file() {
+                    return Err(invalid("recorded campaign asset is not a regular file").into());
+                }
+            }
             if setup.assets_sha256.as_ref() != Some(&native_start_asset_digests(&source, &config)?) {
                 return Err(invalid("recorded campaign physical archive changed").into());
             }
@@ -5641,7 +5651,45 @@ fn select_library_quick_battle_output(
     }
 }
 
-/// Archive the exact one-Level RunConfig and its sibling physical files
+/// A physical archive preserves relative paths while keeping every file
+/// under the battle folder and away from its own run and receipt files.
+fn replay_asset_path(root: &Path, relative: &Path, create: bool) -> io::Result<Option<PathBuf>> {
+    use std::path::Component;
+
+    let mut parts = relative.components().peekable();
+    let mut path = root.to_owned();
+    let mut depth = 0;
+    while let Some(Component::Normal(name)) = parts.next() {
+        depth += 1;
+        let Some(name) = name.to_str() else { return Ok(None) };
+        if depth > 8 || name.contains([':', '\\']) ||
+            ["results", ".results", "Demonstrations", "Logs", "TrainingHistory~"]
+                .iter().any(|reserved| name.eq_ignore_ascii_case(reserved)) ||
+            (depth == 1 && ["run", "replay-source-run.json", "campaign-replay-setup.json",
+                "native-quick-battle-start.json"].iter()
+                .any(|reserved| name.eq_ignore_ascii_case(reserved)))
+        {
+            return Ok(None);
+        }
+        path.push(name);
+        if parts.peek().is_none() {
+            return Ok(Some(path));
+        }
+        if create {
+            match fs::create_dir(&path) {
+                Ok(()) => {},
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => {},
+                Err(error) => return Err(error),
+            }
+        }
+        if !fs::symlink_metadata(&path)?.file_type().is_dir() {
+            return Ok(None);
+        }
+    }
+    Ok(None)
+}
+
+/// Archive the exact one-Level RunConfig and its relative physical files
 /// before the first tick. Byte copies preserve the trace identities.
 /// External model or HiveMind games keep their original pinned paths.
 fn archive_battle_physics(
@@ -5670,14 +5718,10 @@ fn archive_battle_physics(
     for name in std::iter::once(&run.levels[0].scene)
         .chain(run.collision_matrix.iter()).chain(run.stage_palette.iter())
     {
-        // Copy only sibling paths that the unchanged RunConfig will resolve
-        // from its new folder. Never substitute a differently hashed config.
-        if name.components().count() != 1 || name.file_name().is_none_or(|name|
-            name == "replay-source-run.json")
-        {
+        // Keep the relative layout so replay hashes see the unchanged run.
+        let Some(source) = replay_asset_path(parent, name, false)? else {
             return Ok(false);
-        }
-        let source = parent.join(name);
+        };
         let metadata = fs::symlink_metadata(&source)?;
         if !metadata.file_type().is_file() || metadata.len() > 4 * 1024 * 1024 {
             return Ok(false);
@@ -5706,7 +5750,9 @@ fn archive_battle_physics(
     // Physical inputs first, run last as the archive's presence marker.
     // An interrupted write can resume from identical source bytes.
     for (name, bytes) in assets {
-        persist(&saved.join(name), &bytes)?;
+        let target = replay_asset_path(saved, name, true)?
+            .ok_or_else(|| invalid("unsafe native replay asset destination"))?;
+        persist(&target, &bytes)?;
     }
     persist(&saved.join("replay-source-run.json"),&run_bytes)?;
     Ok(true)
