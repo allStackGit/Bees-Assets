@@ -134,6 +134,11 @@ if(enabled('bees_rollout')) {
     const sshEnabled=sshKeys.some(key=>process.env[key]!==undefined);
     if(sshEnabled&&sshKeys.some(key=>!process.env[key]))
         throw Error('Bees managed WAN SSH forwarding needs all five locally enrolled learner and credential settings.');
+    const sshPortRaw=process.env.EXPERIMENT_HUB_BEES_WAN_SSH_PORT??'22';
+    const sshPort=Number(sshPortRaw);
+    if(!/^[1-9][0-9]*$/.test(sshPortRaw)||
+        !Number.isSafeInteger(sshPort)||sshPort>65535)
+        throw Error('Bees WAN SSH listener needs a locally approved port 1–65535.');
     adapters.bees_rollout=createBeesRolloutAdapter({
         projectRoot:required('EXPERIMENT_HUB_BEES_ASSETS_ROOT'),
         pythonPath:required('EXPERIMENT_HUB_BEES_PYTHON'),
@@ -147,7 +152,7 @@ if(enabled('bees_rollout')) {
             sshUser:required('EXPERIMENT_HUB_BEES_WAN_SSH_USER'),
             identityFile:required('EXPERIMENT_HUB_BEES_WAN_SSH_IDENTITY_FILE'),
             knownHostsFile:required('EXPERIMENT_HUB_BEES_WAN_SSH_KNOWN_HOSTS_FILE'),
-            sshPort:port('EXPERIMENT_HUB_BEES_WAN_SSH_PORT',22),
+            sshPort,
             brokerPort:port('EXPERIMENT_HUB_BEES_WAN_BROKER_PORT',55051),
         }:null,
     });
