@@ -729,6 +729,92 @@ function checkpointCandidates(hub,o) {
         a.id.localeCompare(b.id)).slice(0,256);
 }
 
+// A named opponent is an immutable model, not an evaluator timer. This
+// intentionally avoids creating an unnecessary 76-map historical suite.
+async function freezeCheckpointOpponent(hub,candidateId,opponentName) {
+    const o=localOptions(hub);
+    const source=checkpointCandidates(hub,o).find(item=>item.id===candidateId);
+    if(!source||typeof opponentName!=='string'||!opponentName.trim()||
+        opponentName.length>80)
+        throw Error('Select a verified saved PPO checkpoint and enter an opponent name.');
+    privateDirectory(o.suites);
+    privateDirectory(o.scratch,true);
+    const launcher=presentFile(o.launcher);
+    if(fs.readFileSync(launcher,'utf8')!==launcherText(o))
+        throw Error('The approved TinyBrains evaluator launcher has changed. Use Set up TinyBrains evaluations before freezing a checkpoint.');
+    const input=presentFile(source.checkpoint);
+    const expected=crypto.createHash('sha256')
+        .update(fs.readFileSync(input)).digest('hex');
+    if(source.final_sha256&&source.final_sha256!==expected)
+        throw Error('The finished Hub job final checkpoint no longer matches its approved SHA-256.');
+    const id='tinybrains_frozen_'+expected.slice(0,20);
+    const known=custom.read(o).opponent_models.find(item=>item.id===id);
+    if(known) {
+        if(known.checkpoint_sha256!==expected)
+            throw Error('Saved frozen model ID differs from the selected checkpoint.');
+        return custom.registerFrozenOpponent(o,{...known,label:opponentName});
+    }
+    const root=privateDirectory(path.join(o.suites,'opponents'),true);
+    const destination=path.join(root,id);
+    const stage=fs.mkdtempSync(path.join(o.scratch,'candidate-freeze-'));
+    const output=path.join(stage,'out');
+    fs.mkdirSync(output,{mode:0o700});
+    let prepared=null;
+    try {
+        const {stdout}=await run(launcher,[
+            '-B',presentFile(path.join(o.hubRoot,
+                'Training/experiment_hub_tinybrains_freeze.py')),
+            '--checkpoint',input,'--output',output,
+            '--expected-sha256',expected,'--engine-path',o.engine,
+        ],{timeout:360000,maxBuffer:1048576});
+        const info=JSON.parse(stdout.trim().split(/\\r?\\n/).at(-1));
+        if(info.checkpoint_sha256!==expected||
+            [info.model_sha256,info.manifest_sha256,info.runtime_sha256]
+                .some(hash=>!SHA256.test(hash))||
+            !Number.isSafeInteger(info.model_size_metric_bytes)||
+            info.model_size_metric_bytes<1||info.model_size_metric_bytes>1048576)
+            throw Error('Frozen checkpoint export failed the approved Mini model/hash verification.');
+        const exported=presentDirectory(path.join(output,'export'));
+        const required=[['model.onnx',info.model_sha256],
+            ['manifest.json',info.manifest_sha256]];
+        for(const [file,sha] of required) {
+            const actual=crypto.createHash('sha256')
+                .update(fs.readFileSync(presentFile(path.join(exported,file)))).digest('hex');
+            if(actual!==sha)
+                throw Error('Frozen model export bytes differ from the pinned hash.');
+        }
+        if(fs.existsSync(destination)) {
+            privateDirectory(destination);
+            for(const [file,sha] of required) {
+                if(crypto.createHash('sha256').update(fs.readFileSync(
+                    presentFile(path.join(destination,file)))).digest('hex')!==sha)
+                    throw Error('An existing immutable opponent directory differs from this checkpoint.');
+            }
+        }else {
+            prepared=fs.mkdtempSync(path.join(root,'.candidate-stage-'));
+            for(const [file] of required) {
+                const target=path.join(prepared,file);
+                fs.copyFileSync(path.join(exported,file),target,fs.constants.COPYFILE_EXCL);
+                fs.chmodSync(target,0o600);
+            }
+            fs.renameSync(prepared,destination);
+            prepared=null;
+        }
+        if(crypto.createHash('sha256').update(fs.readFileSync(input)).digest('hex')!==expected)
+            throw Error('Source checkpoint changed after the frozen export.');
+        return custom.registerFrozenOpponent(o,{
+            id,label:opponentName,
+            source_job_id:source.job_id,source_file:source.file,
+            ppo_updates:source.updates,checkpoint_sha256:expected,
+            model_sha256:info.model_sha256,
+            manifest_sha256:info.manifest_sha256,
+            runtime_sha256:info.runtime_sha256,
+        });
+    }finally {
+        if(prepared)fs.rmSync(prepared,{recursive:true,force:true});
+        fs.rmSync(stage,{recursive:true,force:true});
+    }
+}
 function verifyFrozenMini(options,source,suite,name=MINI_SUITE) {
     const directory=path.join(options.suites,'opponents',name);
     if(suite.suite_id!==name||suite.opponent!=='mini'||
@@ -1083,6 +1169,9 @@ async function action(hub,value) {
             ?' A job still references its frozen suite; its evaluator schedule was preserved.'
             :' Its evaluator timer was stopped.')};
     }
+    if(value.action==='freeze-checkpoint-opponent'&&value.id===undefined)
+        return freezeCheckpointOpponent(hub,value.source_checkpoint_id,
+            value.opponent_name);
     if(value.action==='freeze-history'&&value.id===undefined&&
         UUID.test(String(value.source_job_id||''))) {
         const result=await setupMini(hub,value.source_job_id,{historical:true});
