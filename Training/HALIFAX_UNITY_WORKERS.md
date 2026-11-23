@@ -300,8 +300,12 @@ leased Hub remote actors** run pinned Unity workers and local inference. The
 existing resource-bundle scheduler owns the cross-machine starts and stops.
 The legacy Exeter Bees manager is unaffected.
 
-Each machine must have the **same Unity worker binary SHA-256, MA-POCA trainer
-and immutable Python runtime version**. Enroll the learner's Hub agent with:
+Each machine must have the **same complete Unity player contents** (the executable,
+supporting libraries and game data), MA-POCA trainer and immutable Python runtime.
+The agents independently calculate the full player tree's SHA-256 identity;
+matching the executable alone is insufficient. Keep the Unity player files
+together exactly as installed and do not add files inside its directory while
+a WAN training version is pinned. Enroll the learner's Hub agent with:
 
 \`\`\`text
 EXPERIMENT_HUB_WORKER_PROJECTS=tinybrains,courier,bees_native
@@ -320,6 +324,13 @@ EXPERIMENT_HUB_BEES_LINUX_WORKER=/absolute/path/to/Bees RL Training.x86_64
 EXPERIMENT_HUB_BEES_WAN_KEY=/absolute/private/path/bees-wan.hex
 EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT=56051
 \`\`\`
+
+On both learner and actor machines, the dedicated Unity player path must
+resolve to an installed build folder containing the `Bees RL Training.x86_64`
+launcher, its `*_Data` directory and dependent libraries. The actor
+`worker_payload_sha256` is compared to the learner's frozen Design and
+checked again by the Python runner at process startup. The full worker
+payload identity is preserved in completed WAN policy-candidate manifests.
 
 The WAN key is a privately provisioned file containing exactly 64
 lowercase hexadecimal characters, mode 0600 on each machine. Never commit
