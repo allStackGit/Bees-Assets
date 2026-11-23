@@ -17,6 +17,8 @@
     const evaluatorSetup=$('hub-local-evaluator-setup');
     const evaluatorMini=$('hub-local-evaluator-mini-setup');
     const miniSource=$('hub-local-evaluator-mini-source');
+    const evaluatorHistory=$('hub-local-evaluator-history-freeze');
+    const historySource=$('hub-local-evaluator-history-source');
     const courierSetup=$('hub-local-courier-evaluator-setup');
     const evaluatorMessage=$('hub-local-evaluator-message');
     const remoteRows=$('hub-remote-evaluator-rows');
@@ -57,6 +59,23 @@
                 miniSource.value=previous;
             miniSource.disabled=busy||!candidates.length;
         }
+        if(historySource) {
+            const previous=historySource.value;
+            const historical=info?.historical_candidates||[];
+            historySource.replaceChildren();
+            for(const item of historical) {
+                const option=document.createElement('option');
+                option.value=item.id;
+                option.textContent=(item.batch_size===null?'Batch unknown':'Batch '+item.batch_size)+
+                    ' · '+item.updates+' updates · '+item.id.slice(0,12);
+                historySource.append(option);
+            }
+            if(historical.some(item=>item.id===previous))
+                historySource.value=previous;
+            historySource.disabled=busy||!historical.length;
+            if(evaluatorHistory)evaluatorHistory.disabled=busy||
+                !info?.tinybrains_available||!historical.length;
+        }
         if(evaluatorMini)evaluatorMini.disabled=busy||
             !info?.tinybrains_available||!candidates.length||
             info.entries?.some(item=>item.project==='tinybrains'&&
@@ -80,6 +99,7 @@
                         item.id==='nano-season'?'TinyBrains Nano · all 76 season maps (2/4/6 players)':
                         item.id==='micro-season'?'TinyBrains Micro · all 76 season maps (2/4/6 players)':
                         item.id==='mini-season'?'TinyBrains Frozen Mini · all 76 season maps (2/4/6 players)':
+                        item.id.startsWith('history-')?'TinyBrains Frozen checkpoint '+item.id.slice(-10)+' · all 76 maps':
                             'TinyBrains Nano + Micro (same checkpoint)';
             const status=document.createElement('span');
             status.textContent=!item.installed?(item.reason||'Not installed'):
@@ -285,6 +305,8 @@
         if(busy)return;
         const message=action==='setup-mini'
             ?'Freeze the selected finished Batch-128 PPO checkpoint as a new Mini-class evaluation opponent? Its exported weights and suite seeds remain immutable. This does not change training.'
+            :action==='freeze-history'
+            ?'Freeze this completed TinyBrains checkpoint into a new SHA-pinned historical opponent and 76-map evaluation suite? The service will be installed but not started. Existing models and training are unchanged.'
             :action==='setup'
             ?(project==='courier'
                 ?'Set up the approved Courier survival evaluator using the installed local environment? The suite is pinned to the current environment file. A local agent restart is needed to advertise it.'
@@ -301,6 +323,7 @@
         busy=true;
         if(evaluatorSetup)evaluatorSetup.disabled=true;
         if(evaluatorMini)evaluatorMini.disabled=true;
+        if(evaluatorHistory)evaluatorHistory.disabled=true;
         if(courierSetup)courierSetup.disabled=true;
         try {
             const response=await fetch('/api/hub/local-services/evaluators',{
@@ -309,7 +332,9 @@
                 body:JSON.stringify({
                     action,project,...(id?{id}:{}),
                     ...(action==='setup-mini'&&miniSource
-                        ?{source_job_id:miniSource.value}:{}),
+                        ?{source_job_id:miniSource.value}:{})
+                    ,...(action==='freeze-history'&&historySource
+                        ?{source_job_id:historySource.value}:{}),
                     confirm_action:true,
                 }),
             });
@@ -429,6 +454,7 @@
     if(tinyConnect)tinyConnect.addEventListener('click',connectTinyBrains);
     if(evaluatorSetup)evaluatorSetup.addEventListener('click',()=>manageEvaluator('setup'));
     if(evaluatorMini)evaluatorMini.addEventListener('click',()=>manageEvaluator('setup-mini'));
+    if(evaluatorHistory)evaluatorHistory.addEventListener('click',()=>manageEvaluator('freeze-history'));
     if(courierSetup)courierSetup.addEventListener('click',()=>manageEvaluator('setup',undefined,'courier'));
     refresh.addEventListener('click',update);
     // The coordinator may accept its first agent capability heartbeat after
