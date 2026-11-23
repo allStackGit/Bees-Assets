@@ -512,20 +512,28 @@ function config(value) {
 // Validate the persisted capability pin at configuration save and job freeze,
 // not only during placement. A stale Design page must not queue jobs that can
 // never be admitted by a worker supporting the requested PPO overrides.
+// Persisted TinyBrains authoring metadata originates exclusively from a
+// bounded, authenticated agent report. Offline catalogues may define drafts,
+// but may never prove execution readiness or reserve native resources.
+function tinyBrainsAuthoringCatalog(machine) {
+    if(machine.status==='connected')
+        return machine.local_executor_enabled===true&&
+            machine.installed_projects?.includes('tinybrains')
+            ?machine.design_catalog?.tinybrains||null:null;
+    if(machine.status==='offline'&&machine.agent_enrolled===true)
+        return machine.trusted_design_catalog?.tinybrains||null;
+    return null;
+}
 // Preserve only worker-advertised, approved environment scalar defaults when
 // a TinyBrains Design is saved. Evaluation authoring can then resolve the
 // identical saved environment while the agent is temporarily disconnected.
 // Never accept environment defaults supplied in a browser request.
 function approvedTinyBrainsEnvironment(parameters,machines) {
-    // These catalogues were validated from authenticated agent reports and
-    // retained in the Hub ledger. Design authoring must not require the agent
-    // to be online; actual job admission still requires fresh verification.
     const catalog=[...(machines||[])].sort((a,b)=>
         Number(b.status==='connected')-Number(a.status==='connected'))
-        .find(machine=>
-        machine.design_catalog?.tinybrains?.profiles?.[parameters.profile]
-            ?.profile_sha256===parameters.profile_sha256)
-        ?.design_catalog?.tinybrains;
+        .map(tinyBrainsAuthoringCatalog)
+        .find(item=>item?.profiles?.[parameters.profile]
+            ?.profile_sha256===parameters.profile_sha256);
     if(!catalog||!Array.isArray(catalog.fields)||catalog.fields.length>128||
         !SHA256.test(String(catalog.source_sha256||'')))return null;
     if(parameters.design_source_sha256&&
@@ -551,9 +559,9 @@ function approvedTinyBrainsEnvironment(parameters,machines) {
         profile_sha256:parameters.profile_sha256,
         parameters:values};
 }
-// Resolve browser-selected opponent IDs exclusively against a connected,
-// trusted worker's pinned model catalogue. Persist hashes with the Design
-// so a later model replacement cannot silently alter queued training jobs.
+// Resolve browser-selected opponent IDs against trusted, bounded catalogue
+// data. Persist immutable hashes so changed or missing opponent bytes cannot
+// silently alter queued training jobs.
 function pinTinyBrainsOpponents(parameters,machines,previous=null) {
     if(parameters.training_opponent_ids===undefined) {
         delete parameters.training_opponent_pins;
@@ -577,15 +585,14 @@ function pinTinyBrainsOpponents(parameters,machines,previous=null) {
         parameters.training_opponent_pins=copy(earlier.training_opponent_pins);
         return;
     }
-    const host=[...(machines||[])].sort((a,b)=>
+    const catalog=[...(machines||[])].sort((a,b)=>
         Number(b.status==='connected')-Number(a.status==='connected'))
-        .find(machine=>
-        machine.design_catalog?.tinybrains?.profiles?.[parameters.profile]
+        .map(tinyBrainsAuthoringCatalog)
+        .find(item=>item?.profiles?.[parameters.profile]
             ?.profile_sha256===parameters.profile_sha256&&
-        Array.isArray(machine.design_catalog.tinybrains.opponent_catalog));
-    if(!host)
-        throw Error('No previously authenticated TinyBrains worker catalog matches this profile. Reconnect a trusted worker to refresh its approved opponents.');
-    const catalog=host.design_catalog.tinybrains.opponent_catalog;
+            Array.isArray(item.opponent_catalog))?.opponent_catalog;
+    if(!catalog)
+        throw Error('No authenticated TinyBrains opponent catalog matches this Design profile. Check the worker profile and installed opponent models.');
     parameters.training_opponent_pins=ids.map(id=>{
         const row=catalog.find(item=>item.id===id);
         if(!row)throw Error('Selected opponent '+id+' is not installed and verified on the TinyBrains worker.');
@@ -5876,6 +5883,20 @@ class ExperimentHub {
                 changed=true;
             }
         }
+        // Save only genuinely changed, validated authoring metadata. This
+        // comes from the already authenticated heartbeat, never browser
+        // input. It remains available when the agent or coordinator restarts.
+        if(report.local_executor&&
+            report.installed_projects.includes('tinybrains')&&
+            report.design_catalog?.tinybrains) {
+            const registered=next.machines.find(m=>m.id===machine.id);
+            const trusted={tinybrains:report.design_catalog.tinybrains};
+            if(registered&&JSON.stringify(registered.trusted_design_catalog)!==
+                    JSON.stringify(trusted)) {
+                registered.trusted_design_catalog=copy(trusted);
+                changed=true;
+            }
+        }
         if (changed) this.commit(next);
         // Keep non-authoritative history independent from the native Stop
         // path. Only a separate, explicitly opted-in and immutable receipt
@@ -6296,8 +6317,13 @@ class ExperimentHub {
         const previous=value.id?this.state.configurations.find(c=>
             c.id===value.id&&c.project_id===project.id&&
             c.revision===value.revision):null;
+        // state.machines is the persistent registration registry, *not* the
+        // authenticated capability projection. Use the same derived source
+        // that Design sees, including a bounded trusted offline catalogue.
+        const designMachines=project.id==='tinybrains'
+            ?this.snapshot().machines:null;
         if(project.id==='tinybrains')
-            pinTinyBrainsOpponents(params,this.state.machines,previous);
+            pinTinyBrainsOpponents(params,designMachines,previous);
         requireCourierTrainingPin(project.id,params);
         if(project.id==='tinybrains'&&Object.hasOwn(params,'rollout_endpoints'))
             throw Error('Select TinyBrains rollout machines when reserving the group.');
@@ -6337,7 +6363,7 @@ class ExperimentHub {
         else if(Object.hasOwn(value,'evaluation_monitor'))delete item.evaluation_monitor;
         compatibleMonitoringStop(item.evaluation_monitor,item.evaluation_stop);
         if(project.id==='tinybrains') {
-            const frozen=approvedTinyBrainsEnvironment(params,next.machines);
+            const frozen=approvedTinyBrainsEnvironment(params,designMachines);
             if(frozen)item.environment_snapshot=frozen;
             else if(item.environment_snapshot?.parameters_sha256!==
                     crypto.createHash('sha256').update(JSON.stringify(params)).digest('hex'))
