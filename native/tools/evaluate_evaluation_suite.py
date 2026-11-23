@@ -605,6 +605,20 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
                 candidate_slot=candidate_slot, reference_slot=reference_slot,
                 scenario_devices=scenario_devices,
             )
+        if scenario_devices is not None:
+            physical = result.get("physical_inference_device_identities")
+            if (not isinstance(physical, dict) or
+                    set(physical) != set(scenario_devices) or
+                    len(set(physical.values())) != len(scenario_devices) or
+                    any(not isinstance(value, str) or not value
+                        for value in physical.values())):
+                raise ValueError(
+                    f"native paired evaluation side {side} lacks distinct physical GPU proof"
+                )
+            if sides and sides[0]["physical_inference_device_identities"] != physical:
+                raise ValueError(
+                    "native paired evaluation changed physical GPU ownership between sides"
+                )
         sides.append(result)
 
     # Group episodes may alternate team ownership. Count the candidate's
@@ -705,7 +719,9 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
         "scenarios": len(sources),
         "scenario_side_evaluations": len(sources) * 2,
         "requested_parallel_scenarios_per_side": scenario_workers,
-        **({"allocated_inference_devices": list(scenario_devices)}
+        **({"allocated_inference_devices": list(scenario_devices),
+            "physical_inference_device_identities":
+                sides[0]["physical_inference_device_identities"]}
            if scenario_devices is not None else {}),
         "completed_sides_reused": reused_sides,
         **({"per_side_inference_device_work": {
