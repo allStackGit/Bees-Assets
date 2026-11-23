@@ -8110,6 +8110,7 @@ fn run_campaign_game_menu(
                 ship_type: ship.ship_type,
                 saved_squad_id: 0,
                 quantity: 1,
+                unit_price_tsv: ship.price_tsv,
             });
             for &squad_id in squad_destinations.get(&ship.player_side)
                 .into_iter().flatten()
@@ -8127,6 +8128,7 @@ fn run_campaign_game_menu(
                     ship_type: ship.ship_type,
                     saved_squad_id: squad_id,
                     quantity: 1,
+                    unit_price_tsv: ship.price_tsv,
                 });
             }
             // A whole purchase has one bank debit and one complete fleet
@@ -8158,6 +8160,7 @@ fn run_campaign_game_menu(
                         ship_type: ship.ship_type,
                         saved_squad_id: destination,
                         quantity,
+                        unit_price_tsv: ship.price_tsv,
                     });
                 }
             }
@@ -8630,6 +8633,18 @@ fn run_campaign_game_menu(
                 feedback = result.is_ok().then_some(NativeUiFeedback::Saved);
                 if let Err(error) = result {
                     eprintln!("Could not save tactics for Squad #{saved_squad_id}: {error}");
+                }
+                continue;
+            }
+            NativeBattleMenuAction::BuyFleet { side, requisition } => {
+                let result = run_build_fleet(
+                    &catalog_path, output_root, side, &requisition,
+                );
+                progress = catalog.load_progress(output_root)?;
+                launch_failed = result.is_err();
+                feedback = result.is_ok().then_some(NativeUiFeedback::Saved);
+                if let Err(error) = result {
+                    eprintln!("Could not purchase the selected mixed fleet: {error}");
                 }
                 continue;
             }
