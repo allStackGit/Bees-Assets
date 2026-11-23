@@ -6259,6 +6259,13 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
         tokens.retain(|key, _| key == &side);
         token_map = serde_json::to_string(&tokens)?;
     }
+    // Only the complete two-sided invitation set can use both spectator
+    // sides. Single-side trained-policy hosting must never advertise an
+    // observer whose physical faction has no authorized player token.
+    let generated_viewers = (
+        settings.tokens_file == Path::new(GENERATED_HOST_TOKEN_MAP) &&
+        tokens.len() == 2
+    ).then(|| save_root.join("multiplayer-invites/host-spectator-tokens.json"));
     // Recovery of a terminal result is a different lifecycle from
     // launching a new battle. Offer the same saved multiplayer host and
     // side-token configuration without allocating a new physical World.
@@ -6288,13 +6295,17 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
                 // writer lease; it opens no gameplay or policy runtime.
                 // Credentials remain inherited from this protected file,
                 // never written into any game archive.
-                let status = std::process::Command::new(env::current_exe()?)
-                    .arg("serve-receipts").arg(&receipt_root)
+                let mut archive_host = std::process::Command::new(env::current_exe()?);
+                archive_host.arg("serve-receipts").arg(&receipt_root)
                     .env("BEES_NATIVE_REMOTE_LISTEN", &settings.listen)
                     .env("BEES_NATIVE_REMOTE_SIDE_TOKENS", &token_map)
                     .env_remove("BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE")
-                    .env_remove("BEES_NATIVE_REMOTE_TOKEN")
-                    .status()?;
+                    .env_remove("BEES_NATIVE_REMOTE_TOKEN");
+                if let Some(viewers) = &generated_viewers {
+                    archive_host.env("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS_FILE", viewers)
+                        .env_remove("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS");
+                }
+                let status = archive_host.status()?;
                 if !status.success() {
                     return Err(invalid("archived native multiplayer host exited unsuccessfully").into());
                 }
@@ -6501,12 +6512,15 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
         // and require a local display for an independently hosted match.
         launch.arg("serve").arg(source).arg("--output-dir").arg(output);
     }
-    let outcome = launch
-        .env("BEES_NATIVE_REMOTE_LISTEN",&settings.listen)
+    launch.env("BEES_NATIVE_REMOTE_LISTEN",&settings.listen)
         .env("BEES_NATIVE_REMOTE_SIDE_TOKENS",&token_map)
         .env_remove("BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE")
-        .env_remove("BEES_NATIVE_REMOTE_TOKEN")
-        .status()?;
+        .env_remove("BEES_NATIVE_REMOTE_TOKEN");
+    if let Some(viewers) = &generated_viewers {
+        launch.env("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS_FILE", viewers)
+            .env_remove("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS");
+    }
+    let outcome = launch.status()?;
     if !outcome.success() {
         return Err(invalid("native multiplayer host exited without completing its battle").into());
     }
