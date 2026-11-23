@@ -313,6 +313,103 @@ and the shared manifest at enrollment and Start. For Linux-only groups, the
 exact complete-player hash can identify the common release without a manifest;
 mixed-platform groups require the shared two-platform manifest.
 
+**Repeatable install and distribution.** After compiling both targets,
+the builder prints the absolute directory containing
+\`worker-build-manifest.json\`, \`rl-linux.zip\` and \`rl-windows.zip\`.
+Only built, hash-verified archives are installed. Example on Halifax (adjust
+paths to match your actual builder output):
+
+\`\`\`sh
+python3 -B Training/bees_hub_worker_install.py install \
+    --root /home/halifax/ai/bees-unity-workers \
+    --manifest /absolute/OfflineWorkers/BUILD/worker-build-manifest.json \
+    --archive /absolute/OfflineWorkers/BUILD/rl-linux.zip --activate
+\`\`\`
+
+The installer writes an immutable release under
+\`<root>/releases/<manifest-sha256>/Linux/\` (or \`Windows/\`) and an
+explicit \`<root>/current.json\` selector. It never overwrites an existing
+release or changes a running Unity process. Configure **once on each Hub
+agent**, for both learner and actor roles:
+
+\`\`\`text
+EXPERIMENT_HUB_BEES_WORKER_INSTALL_ROOT=/absolute/bees-unity-workers
+\`\`\`
+
+On Windows, use an absolute local path such as
+\`C:/ProgramData/BeesUnityWorkers\`. Once this variable is set,
+the agent selects its local worker executable and exact copied manifest
+from the activated release. You do not need separate
+\`EXPERIMENT_HUB_BEES_LINUX_WORKER\`,
+\`EXPERIMENT_HUB_BEES_WINDOWS_WORKER\` or
+\`EXPERIMENT_HUB_BEES_WORKER_MANIFEST\` values. Existing explicit-path
+installations remain supported when the install-root variable is absent.
+Restart only **idle** agents after activation; active jobs continue
+using their original immutable player and learner.
+
+To transfer an exact build to enrolled SSH-accessible machines,
+create a private JSON inventory with explicit host identities. For example:
+
+\`\`\`json
+{
+  "schema_version": 1,
+  "machines": [
+    {
+      "machine_id": "lancaster",
+      "platform": "linux",
+      "tailnet_ip": "100.100.100.100",
+      "ssh_user": "larry",
+      "ssh_port": 22,
+      "ssh_identity_file": "/home/halifax/.ssh/id_ed25519",
+      "ssh_known_hosts_file": "/home/halifax/.ssh/known_hosts",
+      "python_path": "/usr/bin/python3",
+      "install_root": "/home/larry/bees-unity-workers"
+    },
+    {
+      "machine_id": "exeter",
+      "platform": "windows",
+      "tailnet_ip": "100.100.100.101",
+      "ssh_user": "training",
+      "ssh_port": 22,
+      "ssh_identity_file": "/home/halifax/.ssh/id_ed25519",
+      "ssh_known_hosts_file": "/home/halifax/.ssh/known_hosts",
+      "python_path": "C:/Python310/python.exe",
+      "install_root": "C:/ProgramData/BeesUnityWorkers"
+    }
+  ]
+}
+\`\`\`
+
+Use the machines' actual Tailscale addresses, Windows/Linux Python paths,
+and locally installed pinned OpenSSH host keys; the above IPs and users
+are examples, not discovered machine configuration. Linux uses an
+owner-private SSH identity (mode 0600). Remote paths must not contain
+spaces. Both platforms require a working SSH/SFTP server for remote
+installation; if Windows OpenSSH is not available, copy its ZIP and
+manifest by another trusted means and run the same local installer there.
+
+\`\`\`sh
+# Preview selected targets and bytes; no machine is changed.
+python3 -B Training/bees_hub_worker_distribute.py \
+    --manifest /absolute/OfflineWorkers/BUILD/worker-build-manifest.json \
+    --inventory /absolute/private/bees-machines.json
+
+# Explicitly transfer, verify, install and select the new release.
+python3 -B Training/bees_hub_worker_distribute.py \
+    --manifest /absolute/OfflineWorkers/BUILD/worker-build-manifest.json \
+    --inventory /absolute/private/bees-machines.json \
+    --apply --activate
+\`\`\`
+
+The distributor copies only the platform-specific ZIP, manifest, and
+two small installer/identity scripts. Each remote machine verifies the
+ZIP and extracted Unity player against the shared manifest before
+activation. It does not change passwords, install Unity/Python,
+configure Hub enrollment, edit running agent services, or restart
+active jobs. On an enrolled machine you can inspect its selected
+release with \`python -B Training/bees_hub_worker_install.py current
+--root /absolute/bees-unity-workers\`.
+
 **Halifax learner agent** (append to the existing installed agent variables):
 
 \`\`\`text
