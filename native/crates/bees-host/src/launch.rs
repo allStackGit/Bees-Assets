@@ -5810,6 +5810,10 @@ struct NativeSavedHost {
     game_id: String,
     listen: String,
     tokens_file: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tls_certificate_der: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tls_private_key_der: Option<PathBuf>,
 }
 
 /// Source GameMenus.SaveLevel stores a LevelOptions name and the same
@@ -6601,6 +6605,31 @@ fn prepare_multiplayer_invites(save_root: &Path) -> Result<PathBuf, Box<dyn Erro
     Ok(directory.to_path_buf())
 }
 
+/// Apply optional desktop-selected server identity only to the dedicated
+/// child process. The game menu never modifies its own global environment,
+/// and the original native TLS loader still checks the bounded DER files,
+/// PKCS#8 private key permissions, and the configured certificate chain.
+#[cfg(feature = "client")]
+fn configure_library_host_tls(
+    command: &mut std::process::Command,
+    settings: &NativeSavedHost,
+    save_root: &Path,
+) -> io::Result<()> {
+    match (&settings.tls_certificate_der, &settings.tls_private_key_der) {
+        (Some(cert), Some(key)) => {
+            command.env("BEES_NATIVE_REMOTE_TLS_CERT_DER", save_root.join(cert))
+                .env("BEES_NATIVE_REMOTE_TLS_KEY_DER", save_root.join(key));
+        }
+        (None, None) => {
+            // Preserve CLI operators' existing explicit environment.
+        }
+        _ => return Err(invalid(
+            "native multiplayer TLS requires both server certificate and private key",
+        )),
+    }
+    Ok(())
+}
+
 #[cfg(feature = "client")]
 fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
     library: &NativeLibrary, games: &[PathBuf],
@@ -6742,6 +6771,7 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
                     archive_host.env("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS_FILE", viewers)
                         .env_remove("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS");
                 }
+                configure_library_host_tls(&mut archive_host, settings, save_root)?;
                 let status = archive_host.status()?;
                 if !status.success() {
                     return Err(invalid("archived native multiplayer host exited unsuccessfully").into());
@@ -6957,6 +6987,7 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
         launch.env("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS_FILE", viewers)
             .env_remove("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS");
     }
+    configure_library_host_tls(&mut launch, settings, save_root)?;
     let outcome = launch.status()?;
     if !outcome.success() {
         return Err(invalid("native multiplayer host exited without completing its battle").into());
@@ -7748,7 +7779,14 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 let tokens_file = saved.as_ref().map_or_else(
                     || Path::new(""), |settings| settings.tokens_file.as_path(),
                 );
-                let Some((listen, tokens_file, remember)) = choose_multiplayer_host(listen, tokens_file)?
+                let certificate = saved.as_ref().and_then(|settings|
+                    settings.tls_certificate_der.as_deref()
+                );
+                let private_key = saved.as_ref().and_then(|settings|
+                    settings.tls_private_key_der.as_deref()
+                );
+                let Some((listen, tokens_file, tls_certificate_der, tls_private_key_der, remember)) =
+                    choose_multiplayer_host(listen, tokens_file, certificate, private_key)?
                     else { return Ok(()) };
                 let tokens_file = if tokens_file.as_os_str().is_empty() ||
                     tokens_file == Path::new(GENERATED_HOST_TOKEN_MAP)
@@ -7782,6 +7820,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 };
                 let settings = NativeSavedHost {
                     game_id: game_ids[game_index].to_owned(), listen, tokens_file,
+                    tls_certificate_der, tls_private_key_der,
                 };
                 if remember {
                     bees_host::checkpoint_file::persist_atomic_json(&saved_host, &settings)?;
