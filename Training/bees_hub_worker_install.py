@@ -137,10 +137,12 @@ def installed(root: Path, release: str) -> dict:
             runtime_archive.stat().st_size != runtime["archive_bytes"] or
             sha256_file(runtime_archive) != runtime["archive_sha256"]):
             raise ValueError("Installed Bees Python learner runtime archive differs from the release.")
-        verify_runtime(runtime_archive,
-                       expected_sha256=runtime["archive_sha256"],
-                       expected_version=runtime["runtime_version"],
-                       expected_build_id=doc["build_id"])
+        verified = verify_runtime(runtime_archive,
+                                  expected_sha256=runtime["archive_sha256"],
+                                  expected_version=runtime["runtime_version"],
+                                  expected_build_id=doc["build_id"])
+        if verified["source_commit"] != doc.get("source_commit"):
+            raise ValueError("Installed Bees Python runtime and Unity source commits differ.")
     return {
         "schema_version": 1,
         **({
@@ -212,10 +214,12 @@ def install(root: Path, manifest: Path, archive: Path) -> dict:
             runtime_source.stat().st_size != runtime["archive_bytes"] or
             sha256_file(runtime_source) != runtime["archive_sha256"]):
             raise ValueError("Unity release's Python training runtime ZIP is missing or changed.")
-        verify_runtime(runtime_source,
-                       expected_sha256=runtime["archive_sha256"],
-                       expected_version=runtime["runtime_version"],
-                       expected_build_id=doc["build_id"])
+        verified = verify_runtime(runtime_source,
+                                  expected_sha256=runtime["archive_sha256"],
+                                  expected_version=runtime["runtime_version"],
+                                  expected_build_id=doc["build_id"])
+        if verified["source_commit"] != doc.get("source_commit"):
+            raise ValueError("Bees Python runtime belongs to a different Unity source commit.")
     if not archive.is_absolute() or archive.is_symlink() or not archive.is_file():
         raise ValueError("Unity worker ZIP must be an absolute regular local archive.")
     if (archive.stat().st_size != record["archive_bytes"] or
