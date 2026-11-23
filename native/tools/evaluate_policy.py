@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import uuid
 
+from native_windows_rollout_job import run_owned_native_process
 from native_mission_contract import level_has_goal, verified_policy_observations
 from native_training_artifacts import (file_sha256, check_learner, sync_directory, atomic_json,
                                        native_input_dependencies,
@@ -661,7 +662,7 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
     if inference_device is not None:
         env["BEES_NATIVE_INFERENCE_DEVICE_OVERRIDE"] = inference_device
     with (output / "evaluation.log").open("x", encoding="utf-8") as log:
-        subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT, env=env)
+        run_owned_native_process(command, stdout=log, stderr=subprocess.STDOUT, env=env)
     summary_path = output / "rollout-summary.json"
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     score = summary.get("evaluation")
