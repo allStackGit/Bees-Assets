@@ -342,7 +342,8 @@ class MeasuredIndependentTrainForwards:
 
     def __init__(self, first, second, device, *,
                  max_profiles=16, min_speedup=0.10,
-                 qualified_independent=False):
+                 qualified_independent=False,
+                 first_parameters=(), second_parameters=()):
         from collections import OrderedDict
         if (not qualified_independent or not callable(first) or
                 not callable(second) or not isinstance(device,torch.device) or
@@ -350,6 +351,21 @@ class MeasuredIndependentTrainForwards:
                 not 0<=min_speedup<=0.5):
             raise ValueError("GPU training forward overlap needs trusted independent functions")
         self.first,self.second,self.device = first,second,device
+        first_parameters=tuple(first_parameters)
+        second_parameters=tuple(second_parameters)
+        # Qualification evaluates actual optimizer-relevant backward work
+        # without assigning to .grad or stepping Adam. Disjoint owners
+        # prevent synthetic grad propagation from crossing networks.
+        if (first_parameters and second_parameters and
+                not set(map(id,first_parameters)).isdisjoint(
+                    set(map(id,second_parameters)))):
+            raise ValueError("Overlapping GPU training forwards share gradients")
+        for parameter in (*first_parameters,*second_parameters):
+            if (not isinstance(parameter,torch.Tensor) or
+                    parameter.device!=device or
+                    not parameter.requires_grad):
+                raise ValueError("Qualified GPU forward parameters mismatch device")
+        self.grad_parameters=(*first_parameters,*second_parameters)
         self.min_speedup,self.max_profiles = min_speedup,max_profiles
         self.profiles,self.visits = OrderedDict(),OrderedDict()
         self.streams = None
@@ -393,8 +409,18 @@ class MeasuredIndependentTrainForwards:
         caller = torch.cuda.current_stream(self.device)
         caller.synchronize()
         began = perf_counter()
-        action()
-        action()
+        for _ in range(2):
+            outputs=action()
+            if self.grad_parameters:
+                # Real model parameters, but no optimizer and no mutations
+                # to .grad. Autograd computes the forward+backward schedule
+                # on synthetic loss scalars and releases its graph.
+                scalar_outputs=tuple(
+                    tensor.sum() for result in outputs
+                    for tensor in _tensor_outputs(result))
+                torch.autograd.grad(
+                    scalar_outputs,self.grad_parameters,
+                    allow_unused=True,retain_graph=False)
         caller.synchronize()
         return (perf_counter()-began)/2
 
@@ -423,13 +449,17 @@ class MeasuredIndependentTrainForwards:
                 with torch.no_grad():
                     reference = self._serial(first_input,second_input)
                     candidate = self._parallel(first_input,second_input)
-                    if all(torch.allclose(a,b,rtol=1e-5,atol=1e-6)
-                           for a,b in zip(reference,candidate)):
+                    equivalent = all(
+                        torch.allclose(a,b,rtol=1e-5,atol=1e-6)
+                        for a,b in zip(reference,candidate))
+                if equivalent:
+                    with torch.enable_grad():
                         serial = [self._time(lambda:self._serial(
                             first_input,second_input)) for _ in range(2)]
                         concurrent = [self._time(lambda:self._parallel(
                             first_input,second_input)) for _ in range(2)]
-                        selected = median(concurrent)<median(serial)*(1-self.min_speedup)
+                    selected = (median(concurrent) <
+                                median(serial)*(1-self.min_speedup))
             except (RuntimeError,ValueError,TypeError,NotImplementedError,
                     MemoryError,torch.OutOfMemoryError):
                 self.fallbacks += 1
