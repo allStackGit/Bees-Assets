@@ -407,6 +407,26 @@ class LocalExecution {
                     String(error.message||error)).slice(0,220);
             }
         }
+        if(job.project_id==='bees_native'&&ownsArtifacts&&lease.status==='acknowledged'&&
+            ['finished','stopped'].includes(state)&&report.checkpoint_model_sha256&&
+            activeEvaluation(job)&&supportsEvaluation(this.evaluationSuites,job)) {
+            const rule=evaluationRules(activeEvaluation(job))[0];
+            try {
+                const receipt=await localAdapter.readEvaluation(Object.freeze({
+                    job_id:job.id,project_id:job.project_id,
+                    artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                    continuation_of_job_id:job.continuation_of_job_id||null,
+                    frozen_parameters:job.frozen_parameters,
+                    state,final_checkpoint_sha256:report.checkpoint_model_sha256,
+                    dispatch_id:order.dispatch_id,suite_id:rule.suite_id,
+                }));
+                if(receipt&&receipt.checkpoint_sha256===report.checkpoint_model_sha256)
+                    report.evaluation=evaluationEvidence(receipt,rule,order.dispatch_id);
+            }catch(error) {
+                report.evaluation_issue=(rule.suite_id+': '+String(error.message||error)).slice(0,160);
+                report.evaluation_issues=[report.evaluation_issue];
+            }
+        }
         if(lease.status!=='released'&&ownsArtifacts&&typeof localAdapter?.readProgress==='function'&&
             ['running','stop_requested','finished','failed','stopped']
                 .includes(state)) {

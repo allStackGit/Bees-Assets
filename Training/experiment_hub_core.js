@@ -923,7 +923,7 @@ function retainEvaluationCohorts(job,receipts) {
     if(changed)job.evaluation_candidates=cohorts;
     return changed;
 }
-function missingFinalEvaluationRules(job) {
+function missingFinalEvaluationRules(job,allowOwnedBeesTerminal=false) {
     if(job.evaluation_monitor?.include_final===false&&!job.evaluation_stop)return [];
     // A regression Stop is not a successful training sequence and cannot
     // authorize promotion/continuation. It can still request an evaluation
@@ -934,7 +934,8 @@ function missingFinalEvaluationRules(job) {
         job.evaluation_regression_stop_evidence?.dispatch_id===job.dispatch_id&&
         SHA256.test(String(job.evaluation_regression_stop_evidence?.checkpoint_sha256||''))&&
         Boolean(job.stop_requested_at);
-    if(!job.capacity_released_at||!checkpointContinuationComplete(job)||
+    if((!job.capacity_released_at&&!(allowOwnedBeesTerminal&&job.project_id==='bees_native'))||
+        !checkpointContinuationComplete(job)||
         !(independentSequenceComplete(job)||regressionStopped)||
         !SHA256.test(job.checkpoint_model_sha256||''))return [];
     const cohort=job.evaluation_candidates?.find(row=>row.checkpoint_sha256===job.checkpoint_model_sha256);
@@ -985,8 +986,8 @@ function finalEvaluationPending(snapshot,job,observedAt) {
     }
     return observedAt<deadline;
 }
-function retainFinalEvaluations(job,report) {
-    const rules=missingFinalEvaluationRules(job);
+function retainFinalEvaluations(job,report,allowOwnedBeesTerminal=false) {
+    const rules=missingFinalEvaluationRules(job,allowOwnedBeesTerminal);
     if(!rules.length||report.checkpoint_model_sha256!==job.checkpoint_model_sha256)return false;
     const policy=activeEvaluation(job);
     const raw=policy.all_of?report.evaluations:report.evaluation?[report.evaluation]:[];
@@ -5186,6 +5187,8 @@ class ExperimentHub {
                             changed=true;
                         }
                     }
+                    if(job.project_id==='bees_native'&&supportsEvaluation(evaluationSuites,job)&&
+                        retainFinalEvaluations(job,report,true))changed=true;
                     accepted.set(report.job_id,{progress:null,evaluation:null,
                         evaluationIssue:null,resources:null});
                 }
@@ -5424,6 +5427,11 @@ class ExperimentHub {
                     job.final_progress=selected;
                     changed=true;
                 }
+                // Final Bees evaluation is part of the native job. Retain
+                // it with the verified terminal model without requiring the
+                // operator to first release the otherwise terminal lease.
+                if(job.project_id==='bees_native'&&supportsEvaluation(evaluationSuites,job)&&
+                    retainFinalEvaluations(job,report,true))changed=true;
                 if(job.release_on_terminal&&['finished','stopped'].includes(job.status))
                     this.releaseIn(next,lease);
             }
