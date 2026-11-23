@@ -353,8 +353,15 @@ statistics are observational, not evaluation success.
 Native Hub Bees Unity jobs preserve the legacy learner/actor separation.
 Without WAN actors, they run the learner and all environments locally.
 Independent post-training evaluation supports the versioned four-case and
-48-case scripted coverage suites. To add Hub-reserved remote Unity actors,
-use the independently owned WAN group below.
+48-case scripted coverage suites. The native Hub also accepts a final
+threshold for `bees_scripted_maps_v1` or `bees_scripted_coverage_v2`,
+but only when the saved Bees training configuration selects the matching
+`evaluation_profile`. The receipt reports exact final ONNX bytes and
+independent benchmark wins after the policy candidate is published.
+These are **final-only** thresholds, not checkpoint-cadence or early-stop
+evaluations; in-training monitoring is deliberately not advertised.
+To add Hub-reserved remote Unity actors, use the independently owned WAN
+group below.
 
 ### Native Hub WAN training: Linux learner, Linux or Windows actors
 
