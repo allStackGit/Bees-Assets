@@ -15,6 +15,7 @@ Resource leases and GPU device identity remain the Hub agent's authority.
 from __future__ import annotations
 
 from collections import deque
+from math import isfinite
 from concurrent.futures import ThreadPoolExecutor, wait
 from threading import current_thread
 from statistics import median
@@ -128,20 +129,27 @@ def discrete_action_logprob_entropy(logits, actions):
     return chosen_logp, entropy
 
 
-def allocate_gpu_work_rows(rows, pixel_area, device_pixel_budgets):
+def allocate_gpu_work_rows(rows, pixel_area, device_pixel_budgets, *, weights=None):
     """Partition same-shape training rows across independently leased GPUs.
 
     Return contiguous row counts, preserving observation/action order.
     A small-memory GPU receives only the rows it can safely hold; the
     optimizer's primary GPU retains any surplus. This avoids rejecting
     useful parallel work simply because an equal split would not fit.
+    Optional measured forward-throughput weights bias contiguous work
+    toward the less-contended GPU without ever violating memory limits.
     Returns None if fewer than two GPUs can execute the group.
     """
     if (type(rows) is not int or rows < 1 or
             type(pixel_area) is not int or pixel_area < 1 or
             not isinstance(device_pixel_budgets,(tuple,list)) or
             not 1 <= len(device_pixel_budgets) <= 16 or
-            any(type(n) is not int or n < 0 for n in device_pixel_budgets)):
+            any(type(n) is not int or n < 0 for n in device_pixel_budgets) or
+            (weights is not None and
+             (not isinstance(weights,(tuple,list)) or
+              len(weights)!=len(device_pixel_budgets) or
+              any(type(value) not in (int,float) or
+                  not isfinite(value) or value<=0 for value in weights)))):
         raise ValueError("Invalid bounded GPU row-partition request")
     if rows < 2 or len(device_pixel_budgets) < 2:
         return None
@@ -158,16 +166,20 @@ def allocate_gpu_work_rows(rows, pixel_area, device_pixel_budgets):
         return None
     remaining = rows
     result = []
-    for i, limit in enumerate(capacity):
+    capacity_weights = (tuple(weights[:len(capacity)]) if weights is not None
+                        else (1.0,)*len(capacity))
+    for i,limit in enumerate(capacity):
         future = capacity[i+1:]
-        # Do not allocate so much to this GPU that later GPUs are left
-        # idle, but use extra headroom here if later leases cannot hold
-        # their nominal balanced share.
-        necessary = max(0, remaining-sum(future))
-        even = (remaining+len(future))//(len(future)+1)
-        assigned = min(limit,max(necessary,even))
-        if assigned < 1:
+        # Keep at least one productive row on each admitted GPU. A share
+        # must also leave enough work for the remaining devices, and meet
+        # their hard physical memory ceilings.
+        minimum = max(1,remaining-sum(future))
+        maximum = min(limit,remaining-len(future))
+        if minimum>maximum:
             return None
+        ideal = round(remaining*capacity_weights[i]/
+                      sum(capacity_weights[i:]))
+        assigned = max(minimum,min(maximum,ideal))
         result.append(assigned)
         remaining -= assigned
     return tuple(result) if remaining == 0 and len(result) > 1 else None
