@@ -169,7 +169,7 @@ class FrozenInferenceMicrobatcher:
         self._last_event = None
         self._outstanding = 0
         self._outstanding_bytes = 0
-        self._first_producer = None
+        self._producer_recent = {}
         self._multi_producer = False
         self._counters = dict(submitted=0, dispatched=0, model_forwards=0,
                               groups=0, coalesced=0, rejected=0, fallbacks=0,
@@ -231,11 +231,18 @@ class FrozenInferenceMicrobatcher:
                     self.max_pending_bytes):
                 self._counters["rejected"] += len(checked)
                 raise RuntimeError("Frozen inference queue reached its capacity")
-            producer = get_ident()
-            if self._first_producer is None:
-                self._first_producer = producer
-            elif producer != self._first_producer:
-                self._multi_producer = True
+            producer, timestamp = get_ident(), perf_counter()
+            # A historic second thread must not impose a batching delay
+            # on a lone active collector for the rest of a training run.
+            self._producer_recent = {
+                owner:seen for owner,seen in self._producer_recent.items()
+                if timestamp-seen <= 0.02}
+            self._producer_recent[producer] = timestamp
+            if len(self._producer_recent)>64:
+                self._producer_recent = dict(sorted(
+                    self._producer_recent.items(),key=lambda item:item[1],
+                    reverse=True)[:64])
+            self._multi_producer |= len(self._producer_recent)>1
             self._pending.extend(_Request(model_id,args,rows,byte_count,future,ready)
                                  for (model_id,args,rows,byte_count,_),future
                                  in zip(checked,futures))
@@ -385,7 +392,11 @@ class FrozenInferenceMicrobatcher:
                 # complete batch atomically. Never introduce a timer wait
                 # on its serial critical path. Independent collector
                 # threads unlock the short coalescing window automatically.
-                delay = self.wait_seconds if self._multi_producer else 0.0
+                recent = perf_counter()
+                active_producers = sum(
+                    recent-seen <= 0.02
+                    for seen in self._producer_recent.values())
+                delay = self.wait_seconds if active_producers>1 else 0.0
                 deadline = perf_counter()+delay
                 group, layouts, rows, batch_bytes = [], {}, 0, 0
                 while len(group) < self.max_requests:
@@ -632,7 +643,10 @@ class FrozenInferenceMicrobatcher:
                           cached_model_cohorts=len(self._executors),
                           pending_input_bytes=self._outstanding_bytes,
                           calibrated_batch_shapes=len(self._admission),
-                          multiple_producers=int(self._multi_producer))
+                          multiple_producers=int(self._multi_producer),
+                          active_producers=sum(
+                              perf_counter()-seen <= 0.02
+                              for seen in self._producer_recent.values()))
             return {"gpu_microbatch_"+name:value
                     for name,value in values.items()}
 
