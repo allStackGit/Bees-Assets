@@ -302,20 +302,20 @@ learner. This mode does not alter the legacy Bees Experiment Manager.
 
 **Build identity.** A Linux and Windows Unity player legitimately have
 different binary hashes. Build both from one source checkout using
-\`node Training/bees_build_workers.js --platform both\`, then transfer the
+`node Training/bees_build_workers.js --platform both`, then transfer the
 Linux/Windows worker build directories and the exact, unedited
-\`worker-build-manifest.json\` to their respective machines. Store the
+`worker-build-manifest.json` to their respective machines. Store the
 manifest **outside each player directory** so copying it cannot change that
 player's own content hash. The manifest
 records the complete player-tree hash of each platform and provides a shared
-\`wan_release_sha256\`. Each agent verifies its own installed player tree
+`wan_release_sha256`. Each agent verifies its own installed player tree
 and the shared manifest at enrollment and Start. For Linux-only groups, the
 exact complete-player hash can identify the common release without a manifest;
 mixed-platform groups require the shared two-platform manifest.
 
 **Repeatable install and distribution.** After compiling both targets,
 the builder prints the absolute directory containing
-\`worker-build-manifest.json\`, \`rl-linux.zip\` and \`rl-windows.zip\`.
+`worker-build-manifest.json`, `rl-linux.zip` and `rl-windows.zip`.
 The same directory now contains a pinned `bees-runtime.zip` with
 the exact Python trainer, WAN actor code, evaluator and trainer YAML.
 The installer and distributor verify that runtime as part of the same
@@ -325,30 +325,30 @@ ProjectSettings contents) and rejects a two-platform release if the source
 changes during compilation. Example on Halifax (adjust
 paths to match your actual builder output):
 
-\`\`\`sh
+```sh
 python3 -B Training/bees_hub_worker_install.py install \
     --root /home/halifax/ai/bees-unity-workers \
     --manifest /absolute/OfflineWorkers/BUILD/worker-build-manifest.json \
     --archive /absolute/OfflineWorkers/BUILD/rl-linux.zip --activate
-\`\`\`
+```
 
 The installer writes an immutable release under
-\`<root>/releases/<manifest-sha256>/Linux/\` (or \`Windows/\`) and an
-explicit \`<root>/current.json\` selector. It never overwrites an existing
+`<root>/releases/<manifest-sha256>/Linux/` (or `Windows/`) and an
+explicit `<root>/current.json` selector. It never overwrites an existing
 release or changes a running Unity process. Configure **once on each Hub
 agent**, for both learner and actor roles:
 
-\`\`\`text
+```text
 EXPERIMENT_HUB_BEES_WORKER_INSTALL_ROOT=/absolute/bees-unity-workers
-\`\`\`
+```
 
 On Windows, use an absolute local path such as
-\`C:/ProgramData/BeesUnityWorkers\`. Once this variable is set,
+`C:/ProgramData/BeesUnityWorkers`. Once this variable is set,
 the agent selects its local Unity executable, frozen Python
 training runtime, and exact copied manifest from the activated release. You do not need separate
-\`EXPERIMENT_HUB_BEES_LINUX_WORKER\`,
-\`EXPERIMENT_HUB_BEES_WINDOWS_WORKER\` or
-\`EXPERIMENT_HUB_BEES_WORKER_MANIFEST\` values. Existing explicit-path
+`EXPERIMENT_HUB_BEES_LINUX_WORKER`,
+`EXPERIMENT_HUB_BEES_WINDOWS_WORKER` or
+`EXPERIMENT_HUB_BEES_WORKER_MANIFEST` values. Existing explicit-path
 installations remain supported when the install-root variable is absent.
 Restart only **idle** agents after activation; active jobs continue
 using their original immutable player and learner.
@@ -356,7 +356,7 @@ using their original immutable player and learner.
 To transfer an exact build to enrolled SSH-accessible machines,
 create a private JSON inventory with explicit host identities. For example:
 
-\`\`\`json
+```json
 {
   "schema_version": 1,
   "machines": [
@@ -384,7 +384,7 @@ create a private JSON inventory with explicit host identities. For example:
     }
   ]
 }
-\`\`\`
+```
 
 Use the machines' actual Tailscale addresses, Windows/Linux Python paths,
 and locally installed pinned OpenSSH host keys; the above IPs and users
@@ -394,7 +394,7 @@ spaces. Both platforms require a working SSH/SFTP server for remote
 installation; if Windows OpenSSH is not available, copy its ZIP and
 manifest by another trusted means and run the same local installer there.
 
-\`\`\`sh
+```sh
 # Preview selected targets and bytes; no machine is changed.
 python3 -B Training/bees_hub_worker_distribute.py \
     --manifest /absolute/OfflineWorkers/BUILD/worker-build-manifest.json \
@@ -405,7 +405,7 @@ python3 -B Training/bees_hub_worker_distribute.py \
     --manifest /absolute/OfflineWorkers/BUILD/worker-build-manifest.json \
     --inventory /absolute/private/bees-machines.json \
     --apply --activate
-\`\`\`
+```
 
 The distributor copies the platform-specific ZIP, shared frozen
 Python runtime ZIP, manifest, and installation helpers. Each machine
@@ -414,12 +414,12 @@ manifest before activation; the exact trainer and actor sources no longer
 depend on the remote checkout's revision. It does not change passwords, install Unity/Python,
 configure Hub enrollment, edit running agent services, or restart
 active jobs. On an enrolled machine you can inspect its selected
-release with \`python -B Training/bees_hub_worker_install.py current
---root /absolute/bees-unity-workers\`.
+release with `python -B Training/bees_hub_worker_install.py current
+--root /absolute/bees-unity-workers`.
 
 **Halifax learner agent** (append to the existing installed agent variables):
 
-\`\`\`text
+```text
 EXPERIMENT_HUB_WORKER_PROJECTS=tinybrains,courier,bees_native
 EXPERIMENT_HUB_BEES_ASSETS_ROOT=/absolute/path/to/Bees-Assets
 EXPERIMENT_HUB_BEES_PYTHON=/absolute/path/to/python310/bin/python
@@ -427,7 +427,7 @@ EXPERIMENT_HUB_BEES_LINUX_WORKER=/absolute/path/to/Bees RL Training.x86_64
 EXPERIMENT_HUB_BEES_WORKER_MANIFEST=/absolute/path/to/worker-build-manifest.json
 EXPERIMENT_HUB_BEES_WAN_KEY=/absolute/private/path/bees-wan.hex
 EXPERIMENT_HUB_BEES_WAN_BROKER_PORT=55051
-\`\`\`
+```
 
 Keep the existing machine identity, GPU inventory, ROCm settings and native
 supervisor enrollment. The broker listens on **127.0.0.1:55051**, not a
@@ -435,7 +435,7 @@ public interface. Only one WAN learner can bind this fixed port at a time.
 
 **Linux actor agent** (can include other installed Hub projects):
 
-\`\`\`text
+```text
 EXPERIMENT_HUB_WORKER_PROJECTS=bees_rollout
 EXPERIMENT_HUB_BEES_ASSETS_ROOT=/absolute/path/to/Bees-Assets
 EXPERIMENT_HUB_BEES_PYTHON=/absolute/path/to/python310/bin/python
@@ -443,18 +443,18 @@ EXPERIMENT_HUB_BEES_LINUX_WORKER=/absolute/path/to/Bees RL Training.x86_64
 EXPERIMENT_HUB_BEES_WORKER_MANIFEST=/absolute/path/to/worker-build-manifest.json
 EXPERIMENT_HUB_BEES_WAN_KEY=/absolute/private/path/bees-wan.hex
 EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT=56051
-\`\`\`
+```
 
-**Windows CPU actor agent:** set the same \`EXPERIMENT_HUB_BEES_ASSETS_ROOT\`,
-\`EXPERIMENT_HUB_BEES_PYTHON\`, \`EXPERIMENT_HUB_BEES_WORKER_MANIFEST\`,
-\`EXPERIMENT_HUB_BEES_WAN_KEY\`, and \`EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT\`
+**Windows CPU actor agent:** set the same `EXPERIMENT_HUB_BEES_ASSETS_ROOT`,
+`EXPERIMENT_HUB_BEES_PYTHON`, `EXPERIMENT_HUB_BEES_WORKER_MANIFEST`,
+`EXPERIMENT_HUB_BEES_WAN_KEY`, and `EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT`
 variables to Windows absolute paths, and use
-\`EXPERIMENT_HUB_BEES_WINDOWS_WORKER=C:\path\to\Bees RL Training.exe\`.
-Set \`EXPERIMENT_HUB_WORKER_PROJECTS=bees_rollout\` alongside any other
+`EXPERIMENT_HUB_BEES_WINDOWS_WORKER=C:\path\to\Bees RL Training.exe`.
+Set `EXPERIMENT_HUB_WORKER_PROJECTS=bees_rollout` alongside any other
 approved installed projects. Windows actors use the Hub's existing
 machine-owned Windows Job Object supervisor and must request **zero GPUs**.
 
-The \`EXPERIMENT_HUB_BEES_WAN_KEY\` file contains the same 64 lowercase
+The `EXPERIMENT_HUB_BEES_WAN_KEY` file contains the same 64 lowercase
 hexadecimal characters on all machines. On Linux it must be a private real
 file (mode 0600); on Windows restrict it with local NTFS permissions. Do
 not commit, upload through Hub configurations, or place SSH credentials in
@@ -464,13 +464,13 @@ the repository. The Hub advertises only a SHA-256 fingerprint of the key.
 forward within the same native Hub service. Configure all five additional
 machine-local agent variables:
 
-\`\`\`text
+```text
 EXPERIMENT_HUB_BEES_WAN_LEARNER_MACHINE=halifax
 EXPERIMENT_HUB_BEES_WAN_SSH_TAILNET_IP=100.100.100.100
 EXPERIMENT_HUB_BEES_WAN_SSH_USER=your_learner_ssh_user
 EXPERIMENT_HUB_BEES_WAN_SSH_IDENTITY_FILE=/absolute/private/path/id_ed25519
 EXPERIMENT_HUB_BEES_WAN_SSH_KNOWN_HOSTS_FILE=/absolute/path/known_hosts
-\`\`\`
+```
 
 Replace the sample address with the learner's real Tailscale IPv4.
 Use Windows absolute paths for the SSH identity and known-hosts files
@@ -481,9 +481,9 @@ set `EXPERIMENT_HUB_BEES_WAN_SSH_EXECUTABLE` to the local approved
 absolute executable path. No remote SSH server is needed on an actor
 merely to connect its forwarding client to Halifax.
 A fixed SSH port may be configured using
-\`EXPERIMENT_HUB_BEES_WAN_SSH_PORT=22\`. The learner-side forwarded broker
+`EXPERIMENT_HUB_BEES_WAN_SSH_PORT=22`. The learner-side forwarded broker
 port defaults to 55051 and is configured using
-\`EXPERIMENT_HUB_BEES_WAN_BROKER_PORT\` when different. Only a pinned host
+`EXPERIMENT_HUB_BEES_WAN_BROKER_PORT` when different. Only a pinned host
 key and noninteractive key-based SSH login are accepted. The actor runner
 starts and supervises the SSH forward, and fails its own Hub service if the
 forward exits.
@@ -491,10 +491,10 @@ forward exits.
 Without the managed SSH settings, provision an
 authenticated private forward before starting the group. For example:
 
-\`\`\`sh
+```sh
 ssh -N -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=yes \
     -L 127.0.0.1:56051:127.0.0.1:55051 user@learner-tailnet-ip
-\`\`\`
+```
 
 Actor traffic must remain on private loopback and the authenticated broker.
 Each Hub training or evaluation job stages a private disposable copy of
@@ -512,14 +512,14 @@ alongside total training SPS. A missing tunnel cannot silently turn the experime
 into a local-only run. The agent's machine heartbeat by itself does not
 prove that a manually installed forwarding service is available.
 
-**Use in Hub.** Save a \`bees_native\` Design configuration with
-\`wan_actors=N\` and the locally advertised broker, worker and shared-release
+**Use in Hub.** Save a `bees_native` Design configuration with
+`wan_actors=N` and the locally advertised broker, worker and shared-release
 hashes. Use the **Bees Unity — distributed WAN training** controls to select
 the learner, 1–8 distinct remote actor machines, each CPU/RAM/GPU budget and
 Unity environment count. The reservation uses
-\`POST /api/hub/distributed/bees\`. The response is a standard
-\`resource_bundle\` with no Starts authorized; group Start and Stop use the
-existing \`/api/hub/resource-bundles/*\` actions after fresh lease receipts.
+`POST /api/hub/distributed/bees`. The response is a standard
+`resource_bundle` with no Starts authorized; group Start and Stop use the
+existing `/api/hub/resource-bundles/*` actions after fresh lease receipts.
 All remote actors remain tied to their original learner and private session.
 A terminated actor requests a graceful learner Stop/checkpoint; uncertain
 native ownership or failed machine leases still require reconciliation.
