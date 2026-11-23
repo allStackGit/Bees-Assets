@@ -1481,6 +1481,18 @@ fn evaluate_training_checkpoint(
         .ok_or_else(|| invalid("selected checkpoint lacks its physical policy artifact"))?;
     let checkpoint_sha = model[if historical { "next_checkpoint_sha256" } else { "checkpoint_sha256" }].as_str()
         .ok_or_else(|| invalid("selected checkpoint lacks its artifact digest"))?;
+    let learner_slot = config["learner_slot"].as_u64()
+        .filter(|slot| *slot < (1u64 << 32))
+        .ok_or_else(|| invalid("native session has no valid learner policy slot"))?;
+    let training_round = if historical {
+        model["learner_metrics"]["round"].as_u64()
+            .or_else(|| model["round"].as_u64())
+    } else if best {
+        model["round"].as_u64()
+    } else {
+        selection["completed_rounds"].as_u64()
+    };
+
     if sha256_file(Path::new(manifest))? != manifest_sha ||
         sha256_file(Path::new(checkpoint))? != checkpoint_sha {
         return Err(invalid("selected native policy checkpoint or manifest changed").into());
@@ -1554,7 +1566,13 @@ fn evaluate_training_checkpoint(
         invalid("native evaluation job identifiers exhausted"))?;
     command.arg(&evaluator).arg(&source).arg(manifest).arg(&destination)
         .arg("--learner-side").arg(side.to_string())
-        .arg("--policy-seed").arg(seed.to_string());
+        .arg("--policy-seed").arg(seed.to_string())
+        .arg("--selected-checkpoint").arg(checkpoint)
+        .arg("--selected-checkpoint-sha256").arg(checkpoint_sha)
+        .arg("--selected-learner-slot").arg(learner_slot.to_string());
+    if let Some(round) = training_round {
+        command.arg("--selected-training-round").arg(round.to_string());
+    }
     if side != trained_side {
         let (candidate, reference) = matchup
             .ok_or_else(|| invalid("opposing-faction evaluation has no reference policy"))?;
@@ -1590,6 +1608,9 @@ fn evaluate_training_checkpoint(
         "source": source,
         "manifest": manifest,
         "checkpoint": checkpoint,
+        "checkpoint_sha256": checkpoint_sha,
+        "learner_slot": learner_slot,
+        "training_round": training_round,
         "output": destination,
         "log": log_path,
         "pid": child.id(),
@@ -1642,10 +1663,12 @@ fn inspect_training_evaluations(job: &Path) -> Result<(), Box<dyn Error>> {
         let side = row["candidate_side_assignment"]["candidate_physical_side"]
             .as_u64().or_else(|| row["learner_side"].as_u64()).unwrap_or(0);
         let seed = row["policy_sampling_seed"].as_u64().unwrap_or(0);
+        let training_round = row["selected_training_checkpoint"]["training_round"]
+            .as_u64().map(|n| format!(" | round {n}")).unwrap_or_default();
         let speed = row["world_steps_per_wall_second"].as_f64()
             .filter(|value| value.is_finite() && *value > 0.0)
             .map_or(String::new(), |value| format!(" | {value:.0} SPS"));
-        format!("{name} | side {side} | seed {seed} | {wins}/{episodes} wins, {draws} draws{speed}")
+        format!("{name}{training_round} | side {side} | seed {seed} | {wins}/{episodes} wins, {draws} draws{speed}")
     }).collect::<Vec<_>>();
     let rows = titles.iter().zip(&entries).map(|(title, (_, result))| BattleMenuRow {
         title,
