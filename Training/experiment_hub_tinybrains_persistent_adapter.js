@@ -1358,6 +1358,11 @@ function createTinyBrainsPersistentDockerAdapter({
     }):[];
     const designEnabled=installedLearningPath
         .includes('HUB_DESIGN_OVERRIDES_VERSION = 1');
+    const opponentSupport=installedLearningPath.includes('--hub-opponents-json')&&
+        fs.readFileSync(path.join(project,'src/ants_mapoca/pipeline.py'),'utf8')
+            .includes('hub_opponents=None')&&
+        fs.readFileSync(path.join(project,'src/ants_mapoca/opponents.py'),'utf8')
+            .includes('self.fixed[name]');
     const mapCatalogue=stageSupport
         ?approvedStage('full_multiplayer').maps.map(map=>{
             const id=sourceMapId(map);
@@ -1376,7 +1381,7 @@ function createTinyBrainsPersistentDockerAdapter({
         {id:'frozen',label:'Adaptive frozen self-play snapshots'},
         {id:'current',label:'Current policy self-play'},
     ];
-    try {
+    if(opponentSupport)try {
         const suites=path.join(os.homedir(),'evaluation-audits/tinybrains/suites');
         const o={suites,project};
         const registered=opponentLibrary.read(o);
@@ -1417,6 +1422,8 @@ function createTinyBrainsPersistentDockerAdapter({
             if(pins!==undefined)throw Error('Training opponent pins require selected opponent IDs.');
             return null;
         }
+        if(!opponentSupport)
+            throw Error('Install the approved TinyBrains named-opponent runtime before selecting a training roster.');
         if(!Array.isArray(ids)||!Array.isArray(pins)||!ids.length||
             ids.length>16||ids.length!==pins.length||
             new Set(ids).size!==ids.length)
@@ -1896,7 +1903,9 @@ function createTinyBrainsPersistentDockerAdapter({
         gpu_execution:'cuda',
         ...(designEnabled?{design_catalog:{tinybrains:{...designFields,source_sha256:designSourceSha256,
             metric_catalog:TINYBRAINS_METRIC_CATALOG,
-            map_catalog:mapCatalogue,opponent_catalog:opponentCatalog,profiles:
+            map_catalog:mapCatalogue,
+            opponent_catalog:opponentSupport?opponentCatalog:[],
+            profiles:
             Object.fromEntries([...approved].map(([id,item])=>[
                 id,{profile_sha256:item.sha256},
             ]))}}}:{}),
