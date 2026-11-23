@@ -173,6 +173,8 @@ function renderPage(html,runtime={}) {
             'Only an enrolled worker with a locally installed trusted adapter may execute a job.'+
             '</div>')
         +'\n<script src="/experiment-hub-services.js?v='+
+            runtime.frontend_revision+'"></script>'+
+            '\n<script src="/experiment-hub-library.js?v='+
             runtime.frontend_revision+'"></script>\n</body>\n</html>\n';
 }
 
@@ -184,6 +186,7 @@ const FRONTEND_ASSETS=Object.freeze({
     html:'experiments.html',
     ui:'experiment_hub_ui.js',
     servicesUi:'experiment_hub_local_services_ui.js',
+    libraryUi:'experiment_hub_tinybrains_library_ui.js',
     beakerIcon:'experiment_hub_beaker.svg',
 });
 function frontendSnapshot(runtime,commit=null,checkout=path.resolve(__dirname,'..')) {
@@ -316,6 +319,8 @@ function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null,
                 return sendFile(res,assets.ui,'text/javascript; charset=utf-8');
             if(req.method==='GET'&&route==='/experiment-hub-services.js')
                 return sendFile(res,assets.servicesUi,'text/javascript; charset=utf-8');
+            if(req.method==='GET'&&route==='/experiment-hub-library.js')
+                return sendFile(res,assets.libraryUi,'text/javascript; charset=utf-8');
             if(req.method==='GET'&&route==='/api/hub/software/version') {
                 const candidate=releases?.workerSourceCommit||
                     releases?.latest?.worker?.source_commit;
