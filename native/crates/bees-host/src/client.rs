@@ -185,6 +185,7 @@ pub struct NativeClient {
     dialogue_reveal_forced: bool,
     dialogue_visible: bool,
     pluto_finale_camera: crate::presentation::campaign_dialogue::PlutoFinaleCamera,
+    pluto_scout_tutorial: crate::presentation::campaign_dialogue::PlutoScoutTutorial,
     held_fire_target: Option<Vec2>,
     /// User-pinned range display; the source combined gesture adds only a
     /// transient overlay and cannot alter this independent preference.
@@ -263,6 +264,7 @@ pub struct NativeClient {
     pub camera_wheel_pans: u64,
     pub camera_boundary_clamps: u64,
     pub camera_zoom_clamps: u64,
+    pub pluto_scout_hint_frames: u64,
     pub numbered_shortcut_selections: u64,
     pub cycled_shortcut_selections: u64,
     pub minimap_move_orders_submitted: u64,
@@ -323,6 +325,7 @@ impl NativeClient {
             dialogue_pause_started: None, dialogue_reveal: None,
             dialogue_reveal_forced: false, dialogue_visible: false,
             pluto_finale_camera: Default::default(),
+            pluto_scout_tutorial: Default::default(),
             held_fire_target: None,
             range_overlay_pinned: false,
             selection_drag: None, minimap_dragging: false,
@@ -361,7 +364,7 @@ impl NativeClient {
             minimap_camera_moves: 0, camera_pan_frames: 0, campaign_camera_follow_frames: 0,
             scout_alarm_frames: 0, pluto_finale_camera_frames: 0,
             camera_wheel_pans: 0, camera_boundary_clamps: 0,
-            camera_zoom_clamps: 0, numbered_shortcut_selections: 0,
+            camera_zoom_clamps: 0, pluto_scout_hint_frames: 0, numbered_shortcut_selections: 0,
             cycled_shortcut_selections: 0,
             minimap_move_orders_submitted: 0, right_drag_move_orders_submitted: 0,
             tactical_button_clicks: 0, squad_tab_clicks: 0,
@@ -2048,6 +2051,15 @@ impl NativeClient {
         );
         let render_started = Instant::now();
         let counts = self.renderer.render(&view, self.bounds);
+        let scout_moved = view.player_authority.player_viewer_side()
+            .and_then(|side| view.pluto_scout_tutorial_for(side));
+        let scout_hint = self.pluto_scout_tutorial.update(
+            (view.world_id.0, view.episode_revision), scout_moved, self.renderer.camera.center, now,
+        );
+        if let Some(hint) = scout_hint.filter(|_| !briefing) {
+            self.renderer.draw_pluto_scout_hint(hint);
+            self.pluto_scout_hint_frames += 1;
+        }
         // This is the visible viewport, after camera clamp/zoom and before
         // any UI overlay. Combat audio never reads or changes world RNG.
         let (viewport_w, viewport_h) = self.renderer.size();

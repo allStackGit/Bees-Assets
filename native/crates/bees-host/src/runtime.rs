@@ -2017,6 +2017,8 @@ where
                 .and_then(|dialogue| dialogue.camera_subject()),
             campaign_scout_alarm: world.state.campaign_dialogue.as_ref()
                 .is_some_and(|dialogue| dialogue.pluto_scout_alarm_active(world.tick())),
+            pluto_scout_tutorial: world.state.campaign_dialogue.as_ref()
+                .and_then(|dialogue| dialogue.pluto_scout_tutorial()),
             campaign_gunship_handoff: world.state.campaign_dialogue.as_ref()
                 .and_then(|dialogue| dialogue.pluto_gunship_command_handoff()),
             campaign_score: world.state.metadata.campaign_score_snapshot(),

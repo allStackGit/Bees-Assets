@@ -229,6 +229,7 @@ pub struct NativeRenderWorldView<'a> {
     pub campaign_dialogue_side: Option<i32>,
     pub campaign_camera_ship: Option<i64>,
     pub campaign_scout_alarm: bool,
+    pub pluto_scout_tutorial: Option<(i64, bool)>,
     pub campaign_gunship_handoff: Option<i64>,
     /// Current source GameState.PlayerScore, read from the same checkpointed
     /// physical death ledger as the terminal campaign result.
@@ -294,6 +295,15 @@ impl<'a> NativeRenderWorldView<'a> {
         }
         self.player_authority.source_faction_start(3 - viewer_side)
             .filter(|point| point.is_finite())
+    }
+
+    pub(crate) fn pluto_scout_tutorial_for(&self, viewer_side: i32) -> Option<bool> {
+        if self.campaign_dialogue_side != Some(viewer_side) || self.terminal_result.is_some() {
+            return None;
+        }
+        let (scout, moved) = self.pluto_scout_tutorial?;
+        self.combat.ship_body(scout).filter(|body| body.active)?;
+        Some(moved)
     }
 
     pub(crate) fn campaign_gunship_attack_prompt_for(&self, viewer_side: i32) -> Option<i64> {

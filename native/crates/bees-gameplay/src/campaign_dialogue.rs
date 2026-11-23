@@ -219,6 +219,8 @@ enum DialogueMode {
         scout_id: i64, honeybee_id: i64, gunship_id: i64,
         spotted: bool,
         #[serde(default, skip_serializing_if = "is_false")]
+        scout_moved_from_start: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
         withdrawal_before_report: bool,
         #[serde(default, skip_serializing_if = "is_false")]
         gunship_briefing_after_entry: bool,
@@ -356,7 +358,8 @@ impl CampaignDialogue {
                 DialogueMode::PlutoAnomaly {
                     scout_id, honeybee_id, gunship_id, withdrawal_before_report,
                     gunship_briefing_after_entry, gunship_contact_briefing,
-                    spotted: false, scout_report_started: false, scout_withdrawal_arrived: false,
+                    spotted: false, scout_moved_from_start: false,
+                    scout_report_started: false, scout_withdrawal_arrived: false,
                     scout_alarm_until_tick: None, report_completed: false, gunship_arrived: false, gunship_contact_reached: false,
                     gunship_briefed: false,
                     honeybee_destroyed: false,
@@ -953,6 +956,20 @@ impl CampaignDialogue {
             DialogueMode::PlutoAnomaly { scout_id, honeybee_id, spotted: false, .. } =>
                 Some((scout_id, honeybee_id)),
             _ => None,
+        }
+    }
+
+    pub fn pluto_scout_tutorial(&self) -> Option<(i64, bool)> {
+        match self.mode {
+            DialogueMode::PlutoAnomaly { scout_id, spotted: false, scout_moved_from_start, .. } =>
+                Some((scout_id, scout_moved_from_start)),
+            _ => None,
+        }
+    }
+
+    pub fn record_pluto_scout_movement(&mut self) {
+        if let DialogueMode::PlutoAnomaly { scout_moved_from_start, .. } = &mut self.mode {
+            *scout_moved_from_start = true;
         }
     }
 

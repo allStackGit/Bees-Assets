@@ -45,6 +45,72 @@ impl PlutoFinaleCamera {
     }
 }
 
+#[cfg(feature = "client")]
+#[derive(Default)]
+pub(crate) struct PlutoScoutTutorial {
+    opening: Option<PlutoScoutOpening>,
+}
+
+#[cfg(feature = "client")]
+struct PlutoScoutOpening {
+    scope: (u64, u64),
+    started_at: std::time::Instant,
+    camera: ScoutCameraLesson,
+}
+
+#[cfg(feature = "client")]
+enum ScoutCameraLesson {
+    WaitingForScout,
+    WaitingForCamera(bees_sim::geometry::Vec2),
+    Complete,
+}
+
+#[cfg(feature = "client")]
+impl PlutoScoutTutorial {
+    pub(crate) fn update(
+        &mut self, scope: (u64, u64), scout_moved: Option<bool>,
+        center: bees_sim::geometry::Vec2, now: std::time::Instant,
+    ) -> Option<&'static str> {
+        let Some(scout_moved) = scout_moved else {
+            self.opening = None;
+            return None;
+        };
+        if self.opening.as_ref().is_none_or(|opening| opening.scope != scope) {
+            self.opening = Some(PlutoScoutOpening {
+                scope, started_at: now, camera: ScoutCameraLesson::WaitingForScout,
+            });
+        }
+        let opening = self.opening.as_mut()?;
+        if scout_moved && matches!(opening.camera, ScoutCameraLesson::WaitingForScout) {
+            opening.camera = ScoutCameraLesson::WaitingForCamera(center);
+        }
+        match opening.camera {
+            ScoutCameraLesson::WaitingForScout => {
+                (now.saturating_duration_since(opening.started_at).as_secs_f32() > 10.0)
+                    .then_some("Left-click the Scout to select it. Right-click in space to move it.")
+            }
+            ScoutCameraLesson::WaitingForCamera(origin) => {
+                if (center - origin).length_squared() > 100.0 {
+                    opening.camera = ScoutCameraLesson::Complete;
+                    None
+                } else {
+                    Some("Use the arrow keys to move the camera.")
+                }
+            }
+            ScoutCameraLesson::Complete => None,
+        }
+    }
+
+    pub(crate) fn draw(pixels: &mut [u32], stride: usize, field_width: usize, hint: &str) {
+        use super::text;
+        let Some(width) = field_width.checked_sub(32) else { return };
+        for row in pixels.chunks_exact_mut(stride).skip(39).take(20) {
+            row[12..field_width - 12].fill(0x1c3045);
+        }
+        text::draw_at(pixels, stride, 16, 45, text::fit(hint, width), 1, [255, 211, 130]);
+    }
+}
+
 pub(super) fn gunship_attack_prompt(selected: bool) -> &'static str {
     if selected {
         "Choose Attack on Sight to let Tom fire"

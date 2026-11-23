@@ -160,6 +160,7 @@ struct WireCounts {
     campaign_camera_follow_frames: u64,
     pluto_finale_camera_frames: u64,
     scout_alarm_frames: u64,
+    pluto_scout_hint_frames: u64,
     ship_type_multiselections: u64,
     selection_drag_preview_frames: u64,
     weapon_range_draws: u64,
@@ -3526,6 +3527,7 @@ pub fn connect_remote_with_trust(
     let mut dialogue_key:Option<(u64,u64,u64)>=None;
     let mut dialogue_line=0usize;
     let mut pluto_finale_camera = super::campaign_dialogue::PlutoFinaleCamera::default();
+    let mut pluto_scout_tutorial = super::campaign_dialogue::PlutoScoutTutorial::default();
     let mut dialogue_pause_started:Option<((u64,u64,u64),usize,Instant)>=None;
     let mut dialogue_reveal_scope:Option<((u64,u64,u64),usize)>=None;
     let mut dialogue_reveal_started=Instant::now();
@@ -5128,6 +5130,17 @@ pub fn connect_remote_with_trust(
             &mut combat_hud_draws, &mut hulls, &mut map_object_health_bars,
             &mut map_ships, &mut map_terrain, &mut map_objectives,
             &mut fog_masked, &mut fog_textured);
+        if let (Some(state), Some(cam)) = (peer.state.as_ref(), camera) {
+            let scope = (state["world_id"].as_u64().unwrap_or(0),
+                state["episode_revision"].as_u64().unwrap_or(0));
+            let scout_moved = state["campaign_dialogue"]["scout_moved_from_start"].as_bool();
+            if let Some(hint) = pluto_scout_tutorial.update(scope, scout_moved, cam.center, now)
+                .filter(|_| !briefing && peer.connected && peer.authenticated && !peer.spectator)
+            {
+                super::campaign_dialogue::PlutoScoutTutorial::draw(&mut pixels, WIDTH, FIELD, hint);
+                peer.metrics.pluto_scout_hint_frames += 1;
+            }
+        }
         // Remote selection geometry reads only the host's already-filtered
         // visible ships. Do not query private enemies, guess mineral values,
         // or send a new host command just to draw this tooltip.
@@ -5656,6 +5669,7 @@ pub fn connect_remote_with_trust(
         "campaign_camera_follow_frames":peer.metrics.campaign_camera_follow_frames,
         "pluto_finale_camera_frames":peer.metrics.pluto_finale_camera_frames,
         "scout_alarm_frames":peer.metrics.scout_alarm_frames,
+        "pluto_scout_hint_frames":peer.metrics.pluto_scout_hint_frames,
         "ship_type_multiselections":peer.metrics.ship_type_multiselections,
         "selection_drag_preview_frames":peer.metrics.selection_drag_preview_frames,
         "weapon_range_draws":peer.metrics.weapon_range_draws,

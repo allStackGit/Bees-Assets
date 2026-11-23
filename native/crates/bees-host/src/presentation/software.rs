@@ -4277,6 +4277,13 @@ impl NativeSoftwareRenderer {
     /// This remains optional presentation work; the headless simulator does
     /// not allocate or render a second command message.
     #[cfg(feature = "client")]
+    #[cfg(feature = "client")]
+    pub(crate) fn draw_pluto_scout_hint(&mut self, hint: &str) {
+        super::campaign_dialogue::PlutoScoutTutorial::draw(
+            &mut self.pixels, self.width, self.width, hint,
+        );
+    }
+
     pub fn draw_tactical_feedback(&mut self, feedback: &str) {
         if self.width < 520 || self.height < 250 ||
             self.show_shooting_menu { return; }

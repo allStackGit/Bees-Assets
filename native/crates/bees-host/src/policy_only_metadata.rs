@@ -1561,6 +1561,12 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         Ok(())
     }
 
+    fn pluto_scout_moved_from_start(&self, world: &CombatWorld, scout_id: i64, side: i32) -> bool {
+        let Some(start) = self.source_faction_start(side) else { return false };
+        world.ship_body(scout_id).is_some_and(|body| body.active &&
+            (body.motion.position - start).length_squared() > 9.0)
+    }
+
     fn pluto_anomaly_honeybee_spotted(
         &self, world: &CombatWorld, scout_id: i64, honeybee_id: i64,
     ) -> bool {

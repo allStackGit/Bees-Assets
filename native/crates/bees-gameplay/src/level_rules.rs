@@ -627,6 +627,10 @@ pub trait NativeLevelCommandContext {
         &self, _world: &CombatWorld, _player_side: i32, _bumblebee_id: i64,
     ) -> bool { false }
 
+    fn pluto_scout_moved_from_start(
+        &self, _world: &CombatWorld, _scout_id: i64, _side: i32,
+    ) -> bool { false }
+
     /// Source Pluto I temporarily expands the first Scout's proximity
     /// collider to 60 units. Only the genuine source Honeybee crossing
     /// that physical collider may trigger its first story encounter.
@@ -1720,6 +1724,13 @@ where
                 .is_some_and(|target| state.metadata.uranus_offensive_bumblebee_discovered(
                     &state.combat, dialogue.player_side(), target,
                 ));
+            if let Some((scout, false)) = dialogue.pluto_scout_tutorial() {
+                if state.metadata.pluto_scout_moved_from_start(
+                    &state.combat, scout, dialogue.player_side(),
+                ) {
+                    dialogue.record_pluto_scout_movement();
+                }
+            }
             let pluto_spotted = dialogue.pluto_anomaly_target()
                 .is_some_and(|(scout, honeybee)|
                     state.metadata.pluto_anomaly_honeybee_spotted(
