@@ -1160,8 +1160,13 @@ def early_stop_decision(completed, evaluations, baseline_holdout, recipe):
     # patience starts anew; checkpoint improvements remain measured against
     # the one fixed reference holdout.
     curriculum = recipe.get("curriculum")
-    final_stage_start = (curriculum["stages"][-1]["start_round"]
-                         if curriculum is not None else 1)
+    final_stage_start = (
+        curriculum["rotation"]["rounds_per_stage"] *
+        (1 + len(curriculum["rotation"]["run_configs"]))
+        if curriculum is not None and curriculum.get("rotation") is not None
+        else curriculum["stages"][-1]["start_round"]
+        if curriculum is not None else 1
+    )
     for index, (directory, _) in enumerate(completed, 1):
         if curriculum is not None and index == final_stage_start:
             last_meaningful_evaluation = evaluated
@@ -2068,7 +2073,11 @@ def main():
     recipe["source_dependencies"] = native_input_dependencies(
         run, recipe.get("evaluation_config"),
         *recipe.get("monitor_evaluations", []),
-        *([] if curriculum is None else [item["run_config"] for item in curriculum["stages"]]),
+        *([] if curriculum is None else [
+            item["run_config"] for item in curriculum["stages"]
+        ] + [
+            *curriculum.get("rotation", {}).get("run_configs", [])
+        ]),
     )
     if args.continual_release_plan is not None:
         if args.learner_slot is None:
@@ -2258,8 +2267,10 @@ def main():
                 plan = curriculum["plan"]
                 if file_sha256(Path(plan["path"])) != plan["sha256"]:
                     raise ValueError("curriculum plan changed during training")
-                for item in curriculum["stages"]:
-                    source = item["run_config"]
+                for source in (
+                    [item["run_config"] for item in curriculum["stages"]] +
+                    curriculum.get("rotation", {}).get("run_configs", [])
+                ):
                     if file_sha256(Path(source["path"])) != source["sha256"]:
                         raise ValueError("curriculum source run changed during training")
             check_native_input_dependencies(recipe)

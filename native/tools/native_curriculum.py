@@ -47,25 +47,25 @@ def load_curriculum(path, base_run, total_rounds, round_python, learner_slot, se
     plan = _pin(path)
     document = json.loads(Path(plan["path"]).read_text(encoding="utf-8"))
     if (not isinstance(document, dict) or document.get("schema_version") != 1 or
-            set(document) != {"schema_version", "stages"} or
-            not isinstance(document["stages"], list) or not document["stages"]):
-        raise ValueError("curriculum requires schema_version 1 and nonempty stages")
+            set(document) not in (
+                {"schema_version", "stages"}, {"schema_version", "rotation"}
+            )):
+        raise ValueError("curriculum requires explicit ordered stages or a fixed rotation")
+    rotated = "rotation" in document
+    if not rotated and (
+        not isinstance(document["stages"], list) or not document["stages"]
+    ):
+        raise ValueError("curriculum needs authored Stage transitions")
     base = _source(base_run["path"])
     base_worker = base.get("policy_worker")
     if not isinstance(base_worker, str) or not base_worker:
         raise ValueError("base curriculum run requires a policy worker")
     base_worker = (Path(base_run["path"]).parent / base_worker).resolve(strict=True)
 
-    stages = []
-    previous_round = 1
-    for item in document["stages"]:
-        if (not isinstance(item, dict) or
-                set(item) != {"start_round", "run_config"} or
-                type(item["start_round"]) is not int or
-                not previous_round < item["start_round"] <= total_rounds or
-                not isinstance(item["run_config"], str) or not item["run_config"]):
-            raise ValueError("curriculum stages need strictly increasing start_round values in 2..rounds")
-        run = _pin(Path(plan["path"]).parent / item["run_config"])
+    def validated_stage_run(value):
+        if not isinstance(value, str) or not value:
+            raise ValueError("curriculum Stage needs a source Run JSON filename")
+        run = _pin(Path(plan["path"]).parent / value)
         source = _source(run["path"])
         worker = source.get("policy_worker")
         if (not isinstance(worker, str) or not worker or
@@ -78,11 +78,54 @@ def load_curriculum(path, base_run, total_rounds, round_python, learner_slot, se
         if learner_slot is not None and not any(
             learner_slot in slots for slots in routed
         ):
-            raise ValueError("curriculum stage does not route the selected learner slot")
+            raise ValueError("curriculum Stage does not route the selected learner slot")
         if self_play is not None:
             required = {learner_slot, self_play["opponent_slot"]}
             if not any(required.issubset(slots) for slots in routed):
-                raise ValueError("curriculum stage must route both self-play model slots")
+                raise ValueError("curriculum Stage must route both self-play model slots")
+        return run
+
+    if rotated:
+        # Revisit each original Stage for the SAME number of completed
+        # optimization rounds. The first source is always the positional
+        # base_run. No new learner or physical simulation is constructed.
+        rotation = document["rotation"]
+        if (not isinstance(rotation, dict) or
+                set(rotation) != {"rounds_per_stage", "run_configs"} or
+                type(rotation["rounds_per_stage"]) is not int or
+                not 1 <= rotation["rounds_per_stage"] <= 10000 or
+                not isinstance(rotation["run_configs"], list) or
+                not 1 <= len(rotation["run_configs"]) <= 15):
+            raise ValueError("native Stage rotation requires 1..15 additional "
+                             "runs and 1..10000 completed rounds per Stage")
+        if total_rounds < (
+            (len(rotation["run_configs"]) + 1) * rotation["rounds_per_stage"]
+        ):
+            raise ValueError("native Stage rotation requires at least one complete "
+                             "cycle so all authored physical maps can be trained")
+        alternatives = [validated_stage_run(value)
+                        for value in rotation["run_configs"]]
+        if len({base_run["path"], *(item["path"] for item in alternatives)}) != (
+            len(alternatives) + 1
+        ):
+            raise ValueError("native Stage rotation cannot repeat an authored source Run")
+        return {
+            "plan": plan, "stages": [],
+            "rotation": {
+                "rounds_per_stage": rotation["rounds_per_stage"],
+                "run_configs": alternatives,
+            },
+        }
+
+    stages = []
+    previous_round = 1
+    for item in document["stages"]:
+        if (not isinstance(item, dict) or
+                set(item) != {"start_round", "run_config"} or
+                type(item["start_round"]) is not int or
+                not previous_round < item["start_round"] <= total_rounds):
+            raise ValueError("curriculum stages need strictly increasing start_round values in 2..rounds")
+        run = validated_stage_run(item["run_config"])
         stages.append({"start_round": item["start_round"], "run_config": run})
         previous_round = item["start_round"]
     return {"plan": plan, "stages": stages}
@@ -91,6 +134,12 @@ def load_curriculum(path, base_run, total_rounds, round_python, learner_slot, se
 def selected_curriculum_run(base_run, curriculum, round_number):
     """Select one immutable source without modifying the round's checkpoint."""
     run, start = base_run, 1
+    if curriculum is not None and curriculum.get("rotation") is not None:
+        rotation = curriculum["rotation"]
+        period = rotation["rounds_per_stage"]
+        sources = [base_run, *rotation["run_configs"]]
+        completed_periods = (round_number - 1) // period
+        return sources[completed_periods % len(sources)], completed_periods * period + 1
     if curriculum is not None:
         for item in curriculum["stages"]:
             if round_number < item["start_round"]:
@@ -106,14 +155,26 @@ def curriculum_stage_metrics(base_run, curriculum, completed, evaluations, fleet
     observed *fleet* collection windows can supply stage throughput.
     Missing observations remain unknown instead of becoming fast samples.
     """
-    stages = [{"start_round": 1, "run_config": base_run},
-              *curriculum["stages"]]
+    rotation = curriculum.get("rotation")
+    if rotation is not None:
+        period = rotation["rounds_per_stage"]
+        sources = [base_run, *rotation["run_configs"]]
+        stages = [
+            {"start_round": index * period + 1, "run_config": source}
+            for index, source in enumerate(sources)
+        ]
+    else:
+        stages = [{"start_round": 1, "run_config": base_run},
+                  *curriculum["stages"]]
     grouped = [[] for _ in stages]
     group_index = 0
     for number, (directory, record) in enumerate(completed, 1):
-        while (group_index + 1 < len(stages) and
-               stages[group_index + 1]["start_round"] <= number):
-            group_index += 1
+        if rotation is not None:
+            group_index = ((number - 1) // period) % len(stages)
+        else:
+            while (group_index + 1 < len(stages) and
+                   stages[group_index + 1]["start_round"] <= number):
+                group_index += 1
         grouped[group_index].append((number, directory, record))
     windows = ({row["round"]: row for row in fleet_window["rounds"]}
                if fleet_window is not None else {})
@@ -150,7 +211,8 @@ def curriculum_stage_metrics(base_run, curriculum, completed, evaluations, fleet
         ), None)
         report.append({
             "start_round": stage["start_round"],
-            "end_round": (stages[index + 1]["start_round"] - 1
+            "end_round": (None if rotation is not None else
+                          stages[index + 1]["start_round"] - 1
                           if index + 1 < len(stages) else None),
             "source_run_config": stage["run_config"]["path"],
             "source_run_config_sha256": stage["run_config"]["sha256"],
@@ -177,4 +239,11 @@ def curriculum_stage_metrics(base_run, curriculum, completed, evaluations, fleet
                 last_holdout[1]["side_win_rate"] if last_holdout else None),
         })
     active = selected_curriculum_run(base_run, curriculum, max(1, len(completed)))[1]
-    return {"active_stage_start_round": active, "stages": report}
+    return {
+        "active_stage_start_round": active, "stages": report,
+        **({
+            "rotation_rounds_per_stage": period,
+            "rotation_cycle_rounds": period * len(stages),
+            "completed_full_cycles": len(completed) // (period * len(stages)),
+        } if rotation is not None else {}),
+    }
