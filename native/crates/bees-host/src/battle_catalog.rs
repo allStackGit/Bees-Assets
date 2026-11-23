@@ -689,8 +689,17 @@ impl CampaignProgress<'_> {
         self.created_squads.iter().any(|squad|
             squad.side == side && squad.saved_squad_id == id) &&
         !self.retired_squad_ids.contains(&id) &&
+        // A child squad still inherits this template's tactics and class;
+        // its parent cannot disappear from the active fleet editor.
         !self.created_squads.iter().any(|squad|
-            squad.template_saved_squad_id == id)
+            squad.template_saved_squad_id == id) &&
+        // Purchases are the current folded state of every immutable
+        // transfer receipt, not the initial purchased squad assignment.
+        // Historical battle membership does not prevent a retired squad
+        // from retaining its old career statistics.
+        !self.purchases.iter().any(|(_, ship)| ship.saved_squad_id == id) &&
+        !self.authored_roster.values().any(|owner|
+            owner.current_saved_squad_id == id)
     }
 
     /// Historical career rows may retain retired SavedSquad identities.
@@ -1516,12 +1525,7 @@ impl BattleCatalog {
     ) -> io::Result<()> {
         let campaign_id = self.campaign_id.as_deref()
             .ok_or_else(|| invalid("SavedSquad deletion requires a native campaign"))?;
-        if !progress.can_retire_saved_squad(side, saved_squad_id) ||
-            progress.purchases.iter().any(|(_, ship)|
-                ship.saved_squad_id == saved_squad_id) ||
-            progress.authored_roster.values().any(|owner|
-                owner.current_saved_squad_id == saved_squad_id)
-        {
+        if !progress.can_retire_saved_squad(side, saved_squad_id) {
             return Err(invalid("retired SavedSquad must be created, unreferenced and have all ships in reserve"));
         }
         commit_campaign_edit(output, "squad-retire-", "retirement.json",
@@ -2324,16 +2328,7 @@ impl BattleCatalog {
             let edit: CampaignSquadRetirement = serde_json::from_slice(&bytes)
                 .map_err(|error| invalid(format!("invalid SavedSquad retirement: {error}")))?;
             if edit.campaign_id != *campaign ||
-                !matches!(edit.side, 1 | 2) || edit.saved_squad_id <= 0 ||
-                !progress.created_squads.iter().any(|squad|
-                    squad.side == edit.side && squad.saved_squad_id == edit.saved_squad_id) ||
-                progress.retired_squad_ids.contains(&edit.saved_squad_id) ||
-                progress.created_squads.iter().any(|squad|
-                    squad.template_saved_squad_id == edit.saved_squad_id) ||
-                progress.purchases.iter().any(|(_, ship)|
-                    ship.saved_squad_id == edit.saved_squad_id) ||
-                progress.authored_roster.values().any(|owner|
-                    owner.current_saved_squad_id == edit.saved_squad_id)
+                !progress.can_retire_saved_squad(edit.side, edit.saved_squad_id)
             {
                 return Err(invalid("stale or nonempty retired SavedSquad receipt"));
             }
