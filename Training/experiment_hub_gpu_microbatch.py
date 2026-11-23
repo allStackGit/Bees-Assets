@@ -25,6 +25,11 @@ from time import perf_counter
 import torch
 from torch import nn
 
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
 from experiment_hub_gpu_fusion import MeasuredGpuExecution, _leaves, _equivalent
 
 
@@ -181,6 +186,7 @@ class FrozenInferenceMicrobatcher:
                               flat_groups=0, flat_packed_bytes=0,
                               head_of_line_bypasses=0,
                               host_input_requests=0, host_input_bytes=0,
+                              numpy_input_arrays=0,
                               policy_refreshes=0,
                               policy_refresh_seconds=0.0,
                               policy_refresh_bytes=0)
@@ -206,6 +212,15 @@ class FrozenInferenceMicrobatcher:
             if model_id not in self.models:
                 raise ValueError("Frozen model membership changed")
             args = inputs if isinstance(inputs, tuple) else (inputs,)
+            # Native CPU simulations commonly expose NumPy board buffers.
+            # torch.from_numpy wraps their storage without one new CPU
+            # allocation or per-board device upload. The caller retains
+            # ownership and must keep every board immutable until result().
+            args = tuple(
+                torch.from_numpy(value) if np is not None and
+                    isinstance(value,np.ndarray) and
+                    value.flags.c_contiguous and value.flags.writeable
+                else value for value in args)
             if not args or any(not isinstance(x, torch.Tensor) or x.ndim < 1
                                or x.requires_grad or
                                x.device not in (self.device,torch.device("cpu"))
@@ -257,6 +272,10 @@ class FrozenInferenceMicrobatcher:
             self._outstanding += len(checked)
             self._outstanding_bytes += sum(row[3] for row in checked)
             self._counters["submitted"] += len(checked)
+            self._counters["numpy_input_arrays"] += sum(
+                isinstance(x,np.ndarray) for _,inputs,_ in requests
+                for x in (inputs if isinstance(inputs,tuple) else (inputs,))
+                ) if np is not None else 0
             self._counters["host_input_requests"] += sum(
                 any(t.device.type=="cpu" for t in args) for _,args,_,_,_ in checked)
             self._counters["host_input_bytes"] += sum(
