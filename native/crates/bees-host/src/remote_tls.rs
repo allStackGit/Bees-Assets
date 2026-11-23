@@ -71,16 +71,24 @@ pub fn server_tls_from_environment() -> io::Result<Option<Arc<ServerConfig>>> {
 /// development switch exists; server names are checked against the actual
 /// host from the supplied endpoint, including IP address SANs.
 #[cfg(feature = "client")]
-pub fn client_tls_from_environment() -> io::Result<Arc<ClientConfig>> {
-    let authority = env::var_os("BEES_NATIVE_REMOTE_TLS_CA_DER")
-        .ok_or_else(|| invalid("TLS multiplayer requires BEES_NATIVE_REMOTE_TLS_CA_DER"))?;
+pub fn client_tls_from_file(authority: &Path) -> io::Result<Arc<ClientConfig>> {
+    // A selected certificate has exactly the same bounded regular-file
+    // requirements as the environment-provided trust anchor. It is never
+    // treated as a client credential or written into gameplay checkpoints.
     let mut roots = RootCertStore::empty();
     roots.add(CertificateDer::from(
-        private_file(Path::new(&authority), false)?,
+        private_file(authority, false)?,
     )).map_err(invalid)?;
     Ok(Arc::new(ClientConfig::builder()
         .with_root_certificates(roots)
         .with_no_client_auth()))
+}
+
+#[cfg(feature = "client")]
+pub fn client_tls_from_environment() -> io::Result<Arc<ClientConfig>> {
+    let authority = env::var_os("BEES_NATIVE_REMOTE_TLS_CA_DER")
+        .ok_or_else(|| invalid("TLS multiplayer requires BEES_NATIVE_REMOTE_TLS_CA_DER or a trusted CA file in Join Multiplayer"))?;
+    client_tls_from_file(Path::new(&authority))
 }
 
 /// Shared nonblocking TLS/plaintext adapter for the original JSON framing.
