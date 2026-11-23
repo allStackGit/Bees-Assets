@@ -135,7 +135,8 @@ def required_source(scene: dict) -> tuple[dict, list[float], list[float]]:
 
 def canonical_original_ai(source: dict, bounds: dict,
                           level: dict, tactics: str,
-                          deferred_hivemind: bool) -> list[dict]:
+                          deferred_hivemind: bool,
+                          excluded_squads: frozenset[int] = frozenset()) -> list[dict]:
     """Use the existing native game command author; never emulate Ship AI."""
     script_path = Path(__file__).resolve().with_name("author-battle.py")
     spec = importlib.util.spec_from_file_location("bees_native_battle_author", script_path)
@@ -179,7 +180,8 @@ def canonical_original_ai(source: dict, bounds: dict,
     }
     added = []
     for index, squad in enumerate(source["squads"]):
-        if (squad.get("user_controlled") is True or
+        if (squad["item_id"] in excluded_squads or
+                squad.get("user_controlled") is True or
                 squad["item_id"] in scripted or
                 (squad.get("is_hivemind_controlled") is True and
                  (source.get("activate_hivemind") is True or deferred_hivemind))):
