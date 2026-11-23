@@ -47,6 +47,44 @@ def selectors(item: dict, key: str, low: int, high: int) -> set[int]:
     return set(raw)
 
 
+def planned_physical_coverage(scene: dict) -> dict:
+    """Describe actual authored ships, not estimated learner throughput."""
+    ships = scene.get("ships")
+    if not isinstance(ships, list):
+        raise ValueError("original policy coverage needs a physical ship roster")
+    by_side = {}
+    for ship in ships:
+        if (not isinstance(ship, dict) or
+                type(ship.get("side")) is not int or
+                type(ship.get("ship_type")) is not int or
+                type(ship.get("entity_id")) is not int):
+            raise ValueError("original coverage has an invalid physical ship")
+        side = str(ship["side"])
+        row = by_side.setdefault(side, {
+            "physical_ships": 0, "policy_agents": 0,
+            "policy_ship_types": {}, "all_ship_types": {},
+        })
+        row["physical_ships"] += 1
+        kind = str(ship["ship_type"])
+        row["all_ship_types"][kind] = row["all_ship_types"].get(kind, 0) + 1
+        if ship.get("has_bound_policy") is True:
+            if ship.get("is_rl_policy_controlled") is not True:
+                raise ValueError("original physical policy actor is not bound to its action owner")
+            row["policy_agents"] += 1
+            row["policy_ship_types"][kind] = (
+                row["policy_ship_types"].get(kind, 0) + 1
+            )
+    return {
+        "kind": "planned_original_physical_scenario_coverage",
+        "source_level_name": scene.get("level_name"),
+        "source_level_map_index": scene.get("source_level_map_index"),
+        "source_stage_name": scene.get("stage_name"),
+        "sides": by_side,
+        "physical_ships": len(ships),
+        "policy_agents": sum(row["policy_agents"] for row in by_side.values()),
+    }
+
+
 def configured_plan(plan: dict, collection: dict) -> list[dict]:
     required = {"schema_version", "missions", "model_slots", "timeout_seconds",
                 "decision_period", "episodes_per_world", "rotation_rounds_per_stage"}
@@ -169,6 +207,9 @@ def author_collection(original_collection: Path, source_plan: Path,
                 sides=selectors(item, "policy_sides", 1, 2),
             )
             run = unit / "run.json"
+            coverage = planned_physical_coverage(
+                read(unit / "original-policy.scene.json")
+            )
             effective = load(run)
             fingerprint = hashlib.sha256(json.dumps(
                 physical_contract(effective), sort_keys=True,
@@ -185,6 +226,7 @@ def author_collection(original_collection: Path, source_plan: Path,
                 "stage_fingerprint": fingerprint,
                 "policy_ships": result["selected_policy_ship_ids"],
                 "policy_squads": result["selected_policy_squad_ids"],
+                "planned_physical_coverage": coverage,
             })
         if len(grouped) > 16:
             raise ValueError(
@@ -297,6 +339,22 @@ def author_collection(original_collection: Path, source_plan: Path,
             "episodes_per_world": config["episodes_per_world"],
             "stages": stages,
             "authored_missions": prepared,
+            "planned_original_source_coverage": {
+                "source_missions": len(prepared),
+                "unique_physical_stage_contracts": len(stages),
+                "source_map_indices": sorted({
+                    row["planned_physical_coverage"]["source_level_map_index"]
+                    for row in prepared
+                }),
+                "total_source_policy_agents": sum(
+                    row["planned_physical_coverage"]["policy_agents"]
+                    for row in prepared
+                ),
+                "total_source_physical_ships": sum(
+                    row["planned_physical_coverage"]["physical_ships"]
+                    for row in prepared
+                ),
+            },
             "bootstrap_run": stages[0]["run"],
             "bootstrap_scene": stages[0]["bootstrap_scene"],
             **({
@@ -420,6 +478,8 @@ def verified_training_collection(directory: Path) -> tuple[dict, Path]:
         if (not policy_scene.is_relative_to(root) or
                 file_sha256(policy_scene) != row.get("authored_policy_scene_sha256")):
             raise ValueError("authored original FleetShip policy scene changed")
+        if planned_physical_coverage(read(policy_scene)) != row.get("planned_physical_coverage"):
+            raise ValueError("planned original map/fleet coverage differs from physical actors")
     if len(stages) > 1:
         rotation = pinned(
             receipt.get("curriculum_plan"),
