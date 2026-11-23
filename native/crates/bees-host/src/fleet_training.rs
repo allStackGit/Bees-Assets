@@ -1131,6 +1131,9 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
         ("Evaluate Best Holdout Checkpoint".to_string(),
          "  [Independent native fixed-source evaluation]".to_string(),
          job.join("model").join("session").join("best-evaluated.json").is_file()),
+        ("Evaluate Historical Optimizer Round".to_string(),
+         "  [Choose verified historical checkpoint]".to_string(),
+         job.join("model").join("session").is_dir()),
         ("Inspect Standalone Evaluations".to_string(),
          "  [Completed verified results and pending attempts]".to_string(),
          job.join("evaluations").is_dir()),
@@ -1334,9 +1337,10 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
                 .open(job.join("stop.request"))?;
             println!("Graceful native training stop requested; the current round may finish before the learner exits.");
         }
-        Some(3) => evaluate_training_checkpoint(job, false)?,
-        Some(4) => evaluate_training_checkpoint(job, true)?,
-        Some(5) => inspect_training_evaluations(job)?,
+        Some(3) => evaluate_training_checkpoint(job, NativeEvaluationCheckpoint::Latest)?,
+        Some(4) => evaluate_training_checkpoint(job, NativeEvaluationCheckpoint::Best)?,
+        Some(5) => choose_historical_checkpoint(job)?,
+        Some(6) => inspect_training_evaluations(job)?,
         _ => {},
     }
     Ok(())
@@ -1442,6 +1446,10 @@ fn evaluate_training_checkpoint(
                 return Err(invalid("historical checkpoint is outside its native session").into());
             }
             let selected: Value = serde_json::from_slice(&fs::read(&receipt)?)?;
+            if selected["learner_metrics"]["learner_slot"].as_u64() !=
+                config["learner_slot"].as_u64() {
+                return Err(invalid("historical model belongs to another learner slot").into());
+            }
             if selected["schema_version"].as_u64() != Some(1) ||
                 selected["kind"].as_str() != Some("native_training_round_complete") {
                 return Err(invalid("historical native training receipt is invalid").into());
