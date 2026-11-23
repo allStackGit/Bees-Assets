@@ -25,14 +25,14 @@ import yaml
 from tensorboard.backend.event_processing.event_file_loader import EventFileLoader
 
 PORT_BASE = 22000
-PORT_WIDTH = 64
+PORT_WIDTH = 128
 PORT_LAST = 54000
 MAX_EVENT_FILES = 64
 MAX_METRIC_BYTES = 32768
 MAX_EVENT_ROWS_PER_POLL = 4096
 TAGS = {
     "Environment/Cumulative Reward": ("mean_reward", "scalar"),
-    "Environment/Episode Length": ("mean_episode_steps", "count"),
+    "Environment/Episode Length": ("mean_episode_steps", "scalar"),
     "Losses/Policy Loss": ("policy_loss", "scalar"),
     "Losses/Value Loss": ("value_loss", "scalar"),
     "Policy/Entropy": ("policy_entropy", "scalar"),
@@ -297,10 +297,22 @@ def main():
     try:
         child=subprocess.Popen(command,cwd=str(Path(job["training_script"]).parent.parent),
                                start_new_session=True)
+        telemetry_error = False
         while child.poll() is None:
-            progress.poll()
+            try:
+                progress.poll()
+            except (OSError,ValueError,RuntimeError) as error:
+                if not telemetry_error:
+                    print("[Bees native Hub] Progress telemetry unavailable: "+str(error),
+                          file=sys.stderr,flush=True)
+                    telemetry_error = True
+            else:
+                telemetry_error = False
             time.sleep(5)
-        progress.poll()
+        try:
+            progress.poll()
+        except (OSError,ValueError,RuntimeError):
+            pass
         result=child.returncode
         if result==0:
             record_model(root,job["job_id"])
