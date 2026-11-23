@@ -1,6 +1,6 @@
 //! Scenario selection using the same window and bitmap font as play.
 
-use minifb::{Key, KeyRepeat, MouseButton, MouseMode, ScaleMode, Window, WindowOptions};
+use minifb::{Key, KeyRepeat, MouseButton, ScaleMode, Window, WindowOptions};
 use std::time::Instant;
 use std::path::Path;
 
@@ -94,24 +94,6 @@ const SQUAD_RANK_CATEGORIES: [&str; 5] = [
 const TEXT: [u8; 3] = [232, 240, 250];
 const MUTED: [u8; 3] = [155, 178, 206];
 
-/// Keep one stable layout for mission browsing, editor panels and story
-/// screens. The window scales this framebuffer with letterboxing; pointer
-/// input must use the inverse transform rather than the raw window pixels.
-fn menu_mouse_pos(window: &Window) -> Option<(f32, f32)> {
-    let (width, height) = window.get_size();
-    if width == 0 || height == 0 { return None; }
-    let scale = (width as f32 / WIDTH as f32)
-        .min(height as f32 / HEIGHT as f32);
-    if !scale.is_finite() || scale <= 0.0 { return None; }
-    let offset_x = (width as f32 - WIDTH as f32 * scale) * 0.5;
-    let offset_y = (height as f32 - HEIGHT as f32 * scale) * 0.5;
-    let (x, y) = window.get_mouse_pos(MouseMode::Discard)?;
-    let x = (x - offset_x) / scale;
-    let y = (y - offset_y) / scale;
-    (x >= 0.0 && x < WIDTH as f32 && y >= 0.0 && y < HEIGHT as f32)
-        .then_some((x, y))
-}
- 
 /// One list-navigation contract for mission selection, shop, squad management,
 /// and career history. Keep the selected row visible even for very large
 /// authored campaigns, without allocating a second UI model.
@@ -402,7 +384,7 @@ pub fn show_campaign_intermission(
         let next = window.is_key_pressed(Key::Space, KeyRepeat::No) ||
             window.is_key_pressed(Key::Enter, KeyRepeat::No) ||
             window.is_key_pressed(Key::Right, KeyRepeat::No) ||
-            (click && !mouse_down && menu_mouse_pos(&window)
+            (click && !mouse_down && super::virtual_window_mouse(&window, WIDTH, HEIGHT)
                 .is_some_and(|(_, y)| y >= 400.0));
         mouse_down = click;
         if next {
@@ -1184,7 +1166,7 @@ fn select_battle_inner(
             }
             let pressed = window.get_mouse_down(MouseButton::Left);
             if pressed && !mouse_down {
-                if let Some((x, y)) = menu_mouse_pos(&window) {
+                if let Some((x, y)) = super::virtual_window_mouse(&window, WIDTH, HEIGHT) {
                     let y = y as usize;
                     if (100.0..700.0).contains(&x) &&
                         (LIST_TOP..LIST_TOP + PAGE_SIZE * ROW_HEIGHT).contains(&y)
@@ -1430,7 +1412,7 @@ fn select_battle_inner(
         }
         let pressed = window.get_mouse_down(MouseButton::Left);
         if pressed && !mouse_down {
-            if let Some((x, y)) = menu_mouse_pos(&window) {
+            if let Some((x, y)) = super::virtual_window_mouse(&window, WIDTH, HEIGHT) {
                 let y = y as usize;
                 if (100.0..700.0).contains(&x) && (LIST_TOP..LIST_TOP + PAGE_SIZE * ROW_HEIGHT).contains(&y) {
                     let row = (y - LIST_TOP) / ROW_HEIGHT;
