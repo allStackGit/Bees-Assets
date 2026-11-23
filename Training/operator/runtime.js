@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+const { binding: gpuBinding } = require('./gpuBinding');
+
 const {
     ensureDir,
     exists,
@@ -107,6 +109,7 @@ function externalLearnerPython(config) {
 
 function preflightExternalLearner(executable, config) {
     const device = String(config.learnerDevice || 'cuda').toLowerCase();
+    const gpu = gpuBinding(config,'learner');
     if (!['cpu', 'cuda'].includes(device)) throw Error('Bees learner device must be cpu or cuda.');
     const probe = [
         'import json,sys,importlib.metadata as metadata',
@@ -133,7 +136,7 @@ function preflightExternalLearner(executable, config) {
     ].join('\n');
     let result;
     try {
-        result = invokePythonJson(executable, ['-c', probe, device]);
+        result = invokePythonJson(executable, ['-c', probe, device], paths.assetsRoot, gpu.environment);
     } catch (error) {
         throw Error(
             'Configured Bees learner Python failed compatibility preflight: ' +
@@ -153,7 +156,8 @@ function preflightExternalLearner(executable, config) {
         ' torch=' + result.torch +
         ' backend=' + result.backend +
         ' device=' + result.device +
-        ' visible_gpus=' + result.gpus
+        ' visible_gpus=' + result.gpus +
+        (gpu.index!==null?' physical_gpu_index='+gpu.index:'')
     );
     return result;
 }
