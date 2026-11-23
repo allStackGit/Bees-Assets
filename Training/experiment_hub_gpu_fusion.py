@@ -374,10 +374,13 @@ class FrozenGpuStreams:
                             for _ in range(min(self.max_streams, len(self.models)))]
         caller = torch.cuda.current_stream(self.device)
         outputs = []
+        # One caller dependency per active stream, not per tiny model.
+        # Work submitted to a reused stream remains ordered by that stream.
+        for stream in self.streams:
+            stream.wait_stream(caller)
         with torch.inference_mode():
             for index, (model, parts) in enumerate(zip(self.models, args)):
                 stream = self.streams[index % len(self.streams)]
-                stream.wait_stream(caller)
                 with torch.cuda.stream(stream):
                     outputs.append(model(*parts))
                 # The owner may release the source after run() returns, but
