@@ -6982,34 +6982,40 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
                     let commands_side = |side| squads.iter().any(|squad|
                         squad["side"] == side && squad["user_controlled"] == true &&
                         squad["can_accept_input"] == true);
-                    if let Some(human) = single_remote_side {
+                    let spectator_fleet = if let Some(human) = single_remote_side {
                         let ai = 3 - human;
-                        if !commands_side(human) || commands_side(ai) {
-                            return None;
-                        }
-                        // Existing saved matches may be policy-controlled,
-                        // or a human opponent may have been removed later.
-                        // Require genuine original scripted commands in the
-                        // saved source, not just a non-user squad flag.
+                        // Existing saved matches may be policy-controlled
+                        // or have lost their original human roster. Require
+                        // genuine authored scripted command queues, not
+                        // simply the absence of user permissions.
                         let run: Value = serde_json::from_slice(
                             &fs::read(&source).ok()?,
                         ).ok()?;
                         if !run["hivemind"].is_null() { return None; }
                         let queues = run["levels"][0]["scripted_queues"].as_array()?;
-                        let scripted = queues.iter().any(|queue| {
+                        let scripted_side = |side| queues.iter().any(|queue| {
                             let Some(id) = queue["squad_item_id"].as_i64() else {
                                 return false;
                             };
                             queue["orders"].as_array().is_some_and(|orders| !orders.is_empty()) &&
                             squads.iter().any(|squad|
-                                squad["item_id"] == id && squad["side"] == ai
+                                squad["item_id"] == id && squad["side"] == side
                             )
                         });
-                        if !scripted { return None; }
-                    } else if !commands_side(1) || !commands_side(2) {
-                        return None;
-                    }
-                    Some((recording.title, source))
+                        let human_vs_ai = commands_side(human) &&
+                            !commands_side(ai) && scripted_side(ai);
+                        let ai_vs_ai = !commands_side(human) &&
+                            !commands_side(ai) && scripted_side(human) &&
+                            scripted_side(ai);
+                        if !human_vs_ai && !ai_vs_ai { return None; }
+                        ai_vs_ai
+                    } else {
+                        if !commands_side(1) || !commands_side(2) {
+                            return None;
+                        }
+                        false
+                    };
+                    Some((recording.title, source, spectator_fleet))
                 }).collect::<Vec<_>>();
             if saved.is_empty() {
                 fleet_builder::choose_multiplayer(
@@ -7022,9 +7028,11 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
                     status: "  [New source-authored physical match]",
                     unlocked: true,
                 });
-                rows.extend(saved.iter().map(|(title, _)| BattleMenuRow {
-                    title, status: if single_remote_side.is_some() {
-                        "  [Reuse authentic commander and scripted-AI squads]"
+                rows.extend(saved.iter().map(|(title, _, spectators)| BattleMenuRow {
+                    title, status: if *spectators {
+                        "  [Watch both authentic scripted factions]"
+                    } else if single_remote_side.is_some() {
+                        "  [Reuse commander and scripted-AI squads]"
                     } else {
                         "  [Reuse two player-controlled factions]"
                     },
