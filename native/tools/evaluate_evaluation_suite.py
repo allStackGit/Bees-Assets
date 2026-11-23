@@ -8,6 +8,7 @@ silently forcing different maps into one shared Stage configuration.
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import math
 from pathlib import Path
@@ -24,11 +25,19 @@ from native_training_artifacts import (
 def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
                    learner_side: int, seed: int, binary: Path | None,
                    physics_workers: int | None, device: str | None,
-                   resume: bool = False) -> dict:
+                   resume: bool = False, scenario_workers: int = 1) -> dict:
     if not 2 <= len(sources) <= 64:
         raise ValueError("heterogeneous holdout needs 2..64 authored native source runs")
     if learner_side not in (1, 2) or not 0 <= seed < (1 << 63):
         raise ValueError("invalid learner faction or fixed policy sampler seed")
+    if (type(scenario_workers) is not int or
+            not 1 <= scenario_workers <= min(16, len(sources))):
+        raise ValueError("scenario workers must be 1..16 and no more than authored scenarios")
+    if scenario_workers > 1 and (binary is None or device != "cpu"):
+        raise ValueError(
+            "parallel native holdouts require an existing native binary and explicit CPU inference; "
+            "GPU allocation remains owned by the host or Experiment Hub"
+        )
     sources = [source.resolve(strict=True) for source in sources]
     if len(set(sources)) != len(sources):
         raise ValueError("a heterogeneous holdout cannot silently double-count one source")
@@ -56,6 +65,8 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
         "rollout_binary_sha256": file_sha256(binary) if binary else None,
         "physics_workers": physics_workers,
         "inference_device": device,
+        **({"parallel_scenario_workers": scenario_workers}
+           if scenario_workers > 1 else {}),
     }
     output = output.resolve()
     if not output.parent.is_dir() or output.is_symlink():
@@ -75,16 +86,15 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
         sync_directory(output)
         sync_directory(output.parent)
     begun = time.monotonic()
-    reused = 0
-    results = []
-    for index, source in enumerate(sources, start=1):
-        # Every scenario uses a separate native Stage; only verified,
-        # immutable completed receipts may be reused after interruption.
-        # Leave incomplete attempts intact for diagnostics and start a
-        # fresh attempt rather than deleting an interrupted rollout.
+    def evaluate_one(index, source):
+        # Every scenario owns its native World, source scene, subprocess
+        # and atomic receipt. No Python or Rust gameplay state is shared.
+        # Keep incomplete attempts for forensics and recovery, never
+        # overwrite another worker's previously issued directory.
         base = output / f"scenario-{index:03d}"
         destination = base
         attempt = 0
+        reused = False
         while destination.exists() or destination.is_symlink():
             if destination.is_symlink() or not destination.is_dir():
                 raise ValueError("native scenario output path has invalid ownership")
@@ -101,22 +111,25 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
                         result.get("inference_device_override") != device or
                         result.get("requested_physics_workers") != (
                             physics_workers if physics_workers is not None
-                            else json.loads(source.read_text(encoding="utf-8")).get("physics_workers", 1)
-                        )):
-                    raise ValueError(f"native scenario {index} has a conflicting completed receipt")
+                            else json.loads(source.read_text(encoding="utf-8")).get(
+                                "physics_workers", 1
+                            ))):
+                    raise ValueError(
+                        f"native scenario {index} has a conflicting completed receipt"
+                    )
                 check_native_input_dependencies({
                     "source_dependencies": result["source_dependencies"],
                 })
-                reused += 1
+                reused = True
                 break
             if result_path.exists() or result_path.is_symlink():
                 raise ValueError(f"native scenario {index} has an invalid completion marker")
             attempt += 1
             destination = output / f"scenario-{index:03d}-attempt-{attempt:03d}"
         else:
-            # No complete result was reusable. The existing evaluator
-            # exclusively claims a new directory and publishes its own
-            # completion marker after the actual physical rollout.
+            # Uses the one original native evaluator. The frozen model
+            # manifest and physical seeds are identical regardless of
+            # evaluation concurrency or Windows/Linux process scheduling.
             result = evaluate(
                 source, manifest, destination, learner_side, binary, seed,
                 physics_workers, device,
@@ -129,14 +142,33 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
                 result.get("policy_sampling_seed") != seed or
                 not result_path.is_file()):
             raise ValueError(f"heterogeneous holdout scenario {index} is unverified")
-        results.append({
+        return ({
             "scenario": index,
             "source_run": str(source),
             "source_run_sha256": original_sha[index - 1],
             "result_path": result_path.relative_to(output).as_posix(),
             "result_sha256": file_sha256(result_path),
             "result": result,
-        })
+        }, reused)
+
+    # Workers are bounded and explicit; no unmeasured automatic oversub-
+    # scription, no second learning loop, and no GPU sharing assumption.
+    # Retrieve futures in source order so output is deterministic even
+    # when slower maps complete after later short scenarios.
+    if scenario_workers == 1:
+        completed = [
+            evaluate_one(index, source)
+            for index, source in enumerate(sources, start=1)
+        ]
+    else:
+        with ThreadPoolExecutor(max_workers=scenario_workers) as pool:
+            futures = [
+                pool.submit(evaluate_one, index, source)
+                for index, source in enumerate(sources, start=1)
+            ]
+            completed = [future.result() for future in futures]
+    results = [row for row, _ in completed]
+    reused = sum(was_reused for _, was_reused in completed)
     # Recheck ALL pinned physical scenes, Stage files, model inputs and
     # source configurations at publication, including early scenarios.
     for source, digest, row in zip(sources, original_sha, results):
@@ -206,7 +238,12 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
         ),
         "world_steps": steps, "policy_rows": policy_rows,
         "measured_simulation_wall_seconds": measured,
-        "measured_simulation_wall_scope": "sum_of_sequential_native_evaluation_wall_seconds",
+        "measured_simulation_wall_scope": (
+            "sum_of_concurrent_native_evaluation_process_wall_seconds"
+            if scenario_workers > 1
+            else "sum_of_sequential_native_evaluation_wall_seconds"
+        ),
+        "requested_parallel_scenarios": scenario_workers,
         "measured_simulation_world_steps_per_second": steps / measured,
         "measured_execution_wall_seconds": execution_seconds,
         "measured_execution_world_steps_per_second": steps / execution_seconds,
@@ -256,7 +293,7 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
 def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
                         seed: int, binary: Path | None,
                         physics_workers: int | None, device: str | None,
-                        resume: bool = False) -> dict:
+                        resume: bool = False, scenario_workers: int = 1) -> dict:
     """Evaluate every authentic scenario from both faction perspectives.
 
     The existing single-side evaluator remains the only executor. Each side
@@ -289,6 +326,8 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
         "physics_workers": physics_workers,
         "inference_device": device,
         "learner_sides": [1, 2],
+        **({"parallel_scenario_workers": scenario_workers}
+           if scenario_workers > 1 else {}),
     }
     output = output.resolve()
     if not output.parent.is_dir() or output.is_symlink():
@@ -334,6 +373,7 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
                     pinned["rollout_binary_sha256"] or
                     side_request.get("physics_workers") != physics_workers or
                     side_request.get("inference_device") != device or
+                    side_request.get("parallel_scenario_workers", 1) != scenario_workers or
                     result.get("kind") != "native_heterogeneous_evaluation_complete" or
                     result.get("learner_side") != side or
                     result.get("model_manifest_sha256") != pinned["model_manifest_sha256"] or
@@ -369,6 +409,7 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
             result = evaluate_suite(
                 sources, manifest, destination, side, seed, binary,
                 physics_workers, device, resume=destination.exists(),
+                scenario_workers=scenario_workers,
             )
         sides.append(result)
 
@@ -417,6 +458,7 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
         "policy_sampling_seed": seed,
         "scenarios": len(sources),
         "scenario_side_evaluations": len(sources) * 2,
+        "requested_parallel_scenarios_per_side": scenario_workers,
         "completed_sides_reused": reused_sides,
         "episodes": episodes, "side_victories": victories, "draws": draws,
         "pooled_win_rate": victories / episodes,
@@ -467,6 +509,9 @@ def main():
     parser.add_argument("--inference-device", choices=("cpu", "cuda:0"))
     parser.add_argument("--resume", action="store_true",
                         help="continue unfinished scenarios from an unchanged pinned suite request")
+    parser.add_argument("--parallel-scenarios", type=int, default=1,
+                        help="explicit CPU-only parallel native evaluation processes (1..16); "
+                             "requires --rollout-binary and --inference-device cpu")
     args = parser.parse_args()
     if args.both_sides:
         if args.learner_side is not None:
@@ -475,6 +520,7 @@ def main():
             args.run_configs, args.model_manifest, args.output_dir,
             args.policy_seed, args.rollout_binary, args.physics_workers,
             args.inference_device, resume=args.resume,
+            scenario_workers=args.parallel_scenarios,
         )
     else:
         if args.learner_side is None:
@@ -483,6 +529,7 @@ def main():
             args.run_configs, args.model_manifest, args.output_dir, args.learner_side,
             args.policy_seed, args.rollout_binary, args.physics_workers,
             args.inference_device, resume=args.resume,
+            scenario_workers=args.parallel_scenarios,
         )
     print(json.dumps(result, sort_keys=True), flush=True)
 
