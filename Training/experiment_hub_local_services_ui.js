@@ -63,11 +63,14 @@
                     map.loss,mean,top].join(' | '));
             }
             if(Array.isArray(report.opponents)&&report.opponents.length) {
-                lines.push('', 'Opponent presence (not head-to-head wins):',
-                    'Opponent | Games present | Opponent seats | Candidate wins | Draws | Losses');
+                lines.push('', 'Mixed-opponent outcomes:',
+                    'Opponent | Games present | Opponent seats | Whole-game wins | Draws | Losses | Pairwise higher | Tied | Lower');
                 for(const opponent of report.opponents)
                     lines.push([opponent.id,opponent.games,opponent.seats,
-                        opponent.win,opponent.draw,opponent.loss].join(' | '));
+                        opponent.win,opponent.draw,opponent.loss,
+                        opponent.pair_win??'—',opponent.pair_draw??'—',
+                        opponent.pair_loss??'—'].join(' | '));
+                lines.push('Pairwise comparisons are correlated within a multiplayer match; they are not independent game wins.');
             }
             const pre=document.createElement('pre');
             pre.style.whiteSpace='pre';
