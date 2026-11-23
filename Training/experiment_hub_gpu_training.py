@@ -329,6 +329,23 @@ class ImmutableGpuRowCache:
         self.copied_bytes = 0
         self.admitted_buffers = 0
         self.oom_evictions = 0
+        self.contiguous_view_hits = 0
+
+    @staticmethod
+    def _contiguous_cached_view(views):
+        """Reuse a contiguous original GPU allocation without a cat kernel."""
+        first = views[0]
+        stride = first.stride()
+        start = first.storage_offset()
+        storage = first.untyped_storage().data_ptr()
+        step = stride[0]
+        if all(row.shape == first.shape and row.stride() == stride and
+               row.untyped_storage().data_ptr() == storage and
+               row.storage_offset() == start + i*step
+               for i,row in enumerate(views)):
+            return torch.as_strided(
+                first,(len(views),*first.shape[1:]),stride)
+        return None
 
     def fetch(self, identifiers, boards):
         if (not isinstance(boards,torch.Tensor) or boards.ndim<1 or
@@ -343,8 +360,15 @@ class ImmutableGpuRowCache:
                         self.rows[key].shape[1:] == boards.shape[1:] and
                         self.rows[key].dtype == boards.dtype for key in keys):
             try:
-                result = (self.rows[keys[0]] if len(keys)==1 else
-                          torch.cat([self.rows[key] for key in keys],dim=0))
+                if len(keys)==1:
+                    result = self.rows[keys[0]]
+                else:
+                    views = [self.rows[key] for key in keys]
+                    result = self._contiguous_cached_view(views)
+                    if result is None:
+                        result = torch.cat(views,dim=0)
+                    else:
+                        self.contiguous_view_hits += 1
             except torch.OutOfMemoryError:
                 # Optional caching cannot exhaust the remaining activation
                 # workspace and prevent a valid PPO minibatch. Evict the
@@ -390,7 +414,8 @@ class ImmutableGpuRowCache:
             cached_peer_resident_bytes=self.resident_bytes,
             cached_peer_copied_bytes=self.copied_bytes,
             cached_peer_buffer_allocations=self.admitted_buffers,
-            cached_peer_oom_evictions=self.oom_evictions)
+            cached_peer_oom_evictions=self.oom_evictions,
+            cached_peer_contiguous_view_hits=self.contiguous_view_hits)
 
 
 class IndependentGpuTraining:
