@@ -541,6 +541,7 @@ class PinnedGpuStaging:
         self._closed = False
         self.async_bytes = self.direct_bytes = self.async_copies = 0
         self.pinned_reuses = self.pinned_allocations = 0
+        self.pinned_cross_shape_reuses = 0
 
     def _make_stream(self):
         if self._copy_stream is not None:
@@ -569,9 +570,15 @@ class PinnedGpuStaging:
     def _checkout(self, source):
         self._reap_completed()
         for index,buffer in enumerate(self._free_pinned):
-            if buffer.dtype==source.dtype and buffer.shape==source.shape:
+            if buffer.dtype==source.dtype and buffer.numel()==source.numel():
                 self.pinned_reuses += 1
-                return self._free_pinned.pop(index)
+                self._free_pinned.pop(index)
+                if buffer.shape!=source.shape:
+                    self.pinned_cross_shape_reuses += 1
+                # A view changes no pinned allocation or lease accounting.
+                # Most PPO map groups are contiguous but use different
+                # (batch,channels,height,width) shapes of equal byte size.
+                return buffer.view(source.shape)
         nbytes = source.numel()*source.element_size()
         while self._pinned_total_bytes+nbytes > self.max_pinned_bytes:
             if self._free_pinned:
@@ -586,9 +593,11 @@ class PinnedGpuStaging:
             pinned,event,size = self._pending.popleft()
             event.synchronize()
             self._pending_bytes -= size
-            if pinned.shape==source.shape and pinned.dtype==source.dtype:
+            if pinned.dtype==source.dtype and pinned.numel()==source.numel():
                 self.pinned_reuses += 1
-                return pinned
+                if pinned.shape!=source.shape:
+                    self.pinned_cross_shape_reuses += 1
+                return pinned.view(source.shape)
             self._pinned_total_bytes -= size
         try:
             pinned = torch.empty(
