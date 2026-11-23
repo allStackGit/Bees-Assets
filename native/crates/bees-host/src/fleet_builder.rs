@@ -296,7 +296,7 @@ impl ReinforcementPattern {
 }
 
 #[derive(Clone, Copy)]
-enum FleetMix { Fighters, SourceClass(u8), Balanced, SupportHeavy, Specialists, Miners, Scouts, ReconMiners, Chargers, FireBarges, Siege, Gate, Detonators, Queen, Factories }
+enum FleetMix { Fighters, SourceClass(u8), OriginalCombined, Balanced, SupportHeavy, Specialists, Miners, Scouts, ReconMiners, Chargers, FireBarges, Siege, Gate, Detonators, Queen, Factories }
 
 #[derive(Clone, Copy)]
 enum AiTactics {
@@ -450,6 +450,7 @@ impl FleetMix {
         match self {
             Self::Fighters => "fighters",
             Self::SourceClass(_) => "original-class",
+            Self::OriginalCombined => "original-mixed",
             Self::Balanced => "balanced",
             Self::SupportHeavy => "support-heavy",
             Self::Specialists => "specialists",
@@ -502,7 +503,7 @@ impl FleetMix {
 
     fn support_count(self, total: usize) -> usize {
         (match self {
-            Self::Fighters | Self::SourceClass(_) => 0,
+            Self::Fighters | Self::SourceClass(_) | Self::OriginalCombined => 0,
             Self::Balanced => total.div_ceil(4).min(8),
             Self::SupportHeavy => (total / 2).min(12),
             Self::Specialists => if total >= 4 { total.div_ceil(4).min(8) } else { 0 },
@@ -654,6 +655,9 @@ pub(super) struct FleetChoice {
     queen_archetype: Option<Value>,
     factory_archetype: Option<Value>,
     source_fighter: [Option<Value>; 2],
+    /// Ordinary source-authored combat classes, used by the unified
+    /// physical fleet roster instead of a synthetic Mixed Fleet policy.
+    original_fighters: [Vec<Value>; 2],
     carrier_deck: usize,
     terrain: Terrain,
     map_background: NativeMapBackdrop,
@@ -834,8 +838,13 @@ pub(super) fn choose_for_preferred_side(
             match mix[side] {
                 FleetMix::SourceClass(kind) => fighters[side].iter()
                     .find(|ship| ship["ship_type"] == kind).cloned(),
+                FleetMix::OriginalCombined => fighters[side].first().cloned(),
                 _ => None,
             }),
+        original_fighters: std::array::from_fn(|side|
+            if matches!(mix[side], FleetMix::OriginalCombined) {
+                fighters[side].clone()
+            } else { Vec::new() }),
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: matches!(mode, 3 | 6), benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
@@ -927,8 +936,13 @@ pub(super) fn choose_multiplayer(
             match mix[side] {
                 FleetMix::SourceClass(kind) => fighters[side].iter()
                     .find(|ship| ship["ship_type"] == kind).cloned(),
+                FleetMix::OriginalCombined => fighters[side].first().cloned(),
                 _ => None,
             }),
+        original_fighters: std::array::from_fn(|side|
+            if matches!(mix[side], FleetMix::OriginalCombined) {
+                fighters[side].clone()
+            } else { Vec::new() }),
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: false,
         benchmark: false,
@@ -1014,8 +1028,13 @@ pub(super) fn choose_benchmark(
             match mix[side] {
                 FleetMix::SourceClass(kind) => fighters[side].iter()
                     .find(|ship| ship["ship_type"] == kind).cloned(),
+                FleetMix::OriginalCombined => fighters[side].first().cloned(),
                 _ => None,
             }),
+        original_fighters: std::array::from_fn(|side|
+            if matches!(mix[side], FleetMix::OriginalCombined) {
+                fighters[side].clone()
+            } else { Vec::new() }),
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: true,
         benchmark: true,
@@ -1208,6 +1227,12 @@ fn choose_mix(
                 options.push((FleetMix::SourceClass(kind), format!(
                     "{total} {name} ships  |  Original physical class",
                 )));
+            }
+            if total > 1 && fighters[side].len() > 1 {
+                options.push((
+                    FleetMix::OriginalCombined,
+                    format!("{total} mixed original vessels  |  All sourced classes"),
+                ));
             }
         }
         if total == 1 {
