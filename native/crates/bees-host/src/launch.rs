@@ -11032,6 +11032,12 @@ fn run_battle(
             }
         }
     }
+    if let Some(server) = &mut remote {
+        // The restored sink is authoritative for cumulative Fish Tank
+        // results. Reconstruct the view from committed EpisodeFinal events
+        // rather than starting a second in-memory score at zero.
+        server.refresh_spectator_series_results(host.sink_mut().measurements())?;
+    }
     if let Some(cursor) = &resume_cursor {
         match (remote.as_mut(), cursor.remote_play.as_ref()) {
             (Some(server), Some(saved)) => {
@@ -12066,6 +12072,17 @@ fn run_battle(
             }
         }
         if let Some(server) = &mut remote {
+            // Only delivered episode terminals contribute to spectator
+            // scores. The canonical sink already deduplicates revisions,
+            // even after a host crash and recovery.
+            if let Err(error) = server.refresh_spectator_series_results(
+                host.sink_mut().measurements(),
+            ) {
+                failed_window = Some(format!(
+                    "Fish Tank committed results: {error}"
+                ));
+                break;
+            }
             if let Some(world) = host.render_world(0) {
                 server.broadcast(&world, client_bounds[0]);
             }
