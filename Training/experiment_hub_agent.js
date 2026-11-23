@@ -389,6 +389,10 @@ async function main() {
             pendingReports=[];
             pendingGpuReports=[];
             pendingEvaluatorReports=[];
+            // A shutdown requested while this HTTP call was pending cannot
+            // execute a newly offered native Start or evaluator directive.
+            // The replacement owner must reconcile any durable offer.
+            if(stopping)return;
             if(restartAwaitingReceipt) {
                 pendingRemoteRestart=null;
                 try {
