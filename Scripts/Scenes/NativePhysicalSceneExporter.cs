@@ -347,6 +347,9 @@ internal static class NativePhysicalSceneExporter
         public int bee_side, human_side;
         public Vector2Int beehive_size_pixels;
         public bool has_policy_episode;
+        // Original physical action capabilities captured even for ordinary
+        // non-policy ships; policy authoring must not infer missing inputs.
+        public bool native_policy_capabilities_captured = true;
         public SourcePolicyEpisode policy_episode = new SourcePolicyEpisode();
         public Vector2 min, max;
         // The original source's Map dimensions, not an estimate inferred
@@ -676,31 +679,23 @@ internal static class NativePhysicalSceneExporter
                 // a weapon's observed MaxRange later changes.
                 hivemind_sight_range = ship.HiveMindVision != null
                     ? ship.HiveMindVision.Range : 0,
-                has_weapons = hasBoundPolicy && ship.HasWeapons,
-                has_turrets = hasBoundPolicy && ship.HasTurrets,
-                has_special_action = hasBoundPolicy &&
-                    RlCombatPerception.HasSpecialAction(ship),
-                special_ready = hasBoundPolicy &&
-                    RlCombatPerception.GetSpecialReadiness(ship) > 0f,
-                special_resource_fraction = hasBoundPolicy
-                    ? RlCombatPerception.GetSpecialResourceFraction(ship) : 0f,
-                special_cooldown_fraction = hasBoundPolicy
-                    ? RlCombatPerception.GetSpecialCooldownFraction(ship) : 0f,
-                special_phase = hasBoundPolicy
-                    ? RlCombatPerception.GetSpecialPhase(ship) : 0f,
-                mining_possible = hasBoundPolicy &&
-                    RlOneVsOneAgent.CanUseMiningAction(ship),
-                healing_possible = hasBoundPolicy &&
-                    RlOneVsOneAgent.CanUseHealingAction(ship),
-                warp_possible = hasBoundPolicy &&
-                    RlOneVsOneAgent.CanUseWarpAction(ship),
+                has_weapons = ship.HasWeapons,
+                has_turrets = ship.HasTurrets,
+                has_special_action = RlCombatPerception.HasSpecialAction(ship),
+                special_ready = RlCombatPerception.GetSpecialReadiness(ship) > 0f,
+                special_resource_fraction = RlCombatPerception.GetSpecialResourceFraction(ship),
+                special_cooldown_fraction = RlCombatPerception.GetSpecialCooldownFraction(ship),
+                special_phase = RlCombatPerception.GetSpecialPhase(ship),
+                mining_possible = RlOneVsOneAgent.CanUseMiningAction(ship),
+                healing_possible = RlOneVsOneAgent.CanUseHealingAction(ship),
+                warp_possible = RlOneVsOneAgent.CanUseWarpAction(ship),
                 // Carrier.Kill reassigns ordinary Drone/Striker children
                 // too. Preserve their real link independently of whether
                 // a neural policy happens to control this ship.
                 is_carrier_child = carrierChild != null,
                 has_living_parent_carrier = hasParent,
                 parent_carrier_id = hasParent ? carrierChild.Carrier.Id : 0,
-                side_starting_tsv = hasBoundPolicy
+                side_starting_tsv = ship.Side > 0 && ship.Side <= level.State.InitialTsv.Length
                     ? level.State.InitialTsv[ship.Side - 1] : 0,
                 team_retainable_mined_tsv = hasBoundPolicy
                     ? RlOneVsOneEpisodeCoordinator.GetRetainableMinedTsv(
