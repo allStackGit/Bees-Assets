@@ -1589,6 +1589,60 @@ impl BattleCatalog {
         Ok(squad)
     }
 
+    /// Copy a source-authored squad and its actual reserved FleetShips in
+    /// one durable publication, including the effective player tactics.
+    /// Future edits use the same ordered career stream, so subsequent
+    /// transfers and renames cannot replay before this new squad exists.
+    pub fn duplicate_saved_squad(
+        &self, progress: &CampaignProgress<'_>, output: &Path,
+        squad: NativeCreatedSquad, purchased_ids: &[i64],
+        authored: &[(i64, u8)], tactics: NativeSavedSquadTactics,
+    ) -> io::Result<()> {
+        let campaign = self.campaign_id.as_deref()
+            .ok_or_else(|| invalid("native squad duplication requires a campaign"))?;
+        if !matches!(squad.side, 1 | 2) ||
+            squad.saved_squad_id <= progress.highest_saved_squad_id() ||
+            squad.saved_squad_id == i64::MAX ||
+            squad.template_saved_squad_id <= 0 ||
+            squad.template_saved_squad_id == squad.saved_squad_id ||
+            progress.is_retired_saved_squad(squad.template_saved_squad_id) ||
+            tactics.side != squad.side ||
+            tactics.saved_squad_id != squad.saved_squad_id ||
+            !(1..=40).contains(&tactics.shooting_strategy_id) ||
+            tactics.formation.is_some_and(|formation| !formation.is_valid()) ||
+            !tactics.placements_valid() ||
+            purchased_ids.len() + authored.len() > 32768
+        {
+            return Err(invalid("invalid SavedSquad duplicate source or tactics"));
+        }
+        let mut seen = HashSet::new();
+        for &id in purchased_ids {
+            if id <= 0 || !seen.insert(id) ||
+                !progress.purchases.iter().any(|(side, ship)|
+                    *side == squad.side && ship.fleet_ship_id == id &&
+                    ship.saved_squad_id == 0) ||
+                progress.fleet.get(&id).is_some_and(|fleet| fleet.is_dead)
+            {
+                return Err(invalid("duplicated purchased FleetShip must be live and in reserve"));
+            }
+        }
+        for &(id, kind) in authored {
+            if id <= 0 || !seen.insert(id) ||
+                !progress.authored_roster.get(&id).is_some_and(|owner|
+                    owner.side == squad.side && owner.current_saved_squad_id == 0 &&
+                    owner.ship_type.is_none_or(|old| old == kind)) ||
+                progress.fleet.get(&id).is_some_and(|fleet|
+                    fleet.is_dead || fleet.ship_type.is_some_and(|old| old != kind))
+            {
+                return Err(invalid("duplicated source FleetShip must be owned and in reserve"));
+            }
+        }
+        commit_sequenced_edit(output, campaign, CampaignSequencedEdit::Duplicate {
+            squad, purchased_ids: purchased_ids.to_vec(),
+            authored: authored.to_vec(), tactics,
+        })
+    }
+
     /// Retire a vacant user-created or earned squad without rewriting
     /// previous battles. Its stable ID remains reserved for all time.
     /// Physical ships must first be moved into another squad or reserve
