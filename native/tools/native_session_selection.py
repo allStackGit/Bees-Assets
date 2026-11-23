@@ -265,8 +265,10 @@ def _rank_evaluation_suites(round_number, checkpoint, primary,
                 baseline.get("source_run_config_sha256") != source["sha256"] or
                 result.get("source_run_config_sha256") != source["sha256"] or
                 baseline.get("episodes") != result.get("episodes") or
-                baseline.get("learner_side") != primary["learner_side"] or
-                result.get("learner_side") != primary["learner_side"] or
+                baseline.get("learner_side") !=
+                    source.get("side", primary["learner_side"]) or
+                result.get("learner_side") !=
+                    source.get("side", primary["learner_side"]) or
                 baseline.get("policy_sampling_seed") != primary["policy_sampling_seed"] or
                 result.get("policy_sampling_seed") != primary["policy_sampling_seed"]):
             raise ValueError(f"native checkpoint selection has incomparable suite {suite_id}")
@@ -277,6 +279,7 @@ def _rank_evaluation_suites(round_number, checkpoint, primary,
         all_suites.append({
             "suite_id": suite_id,
             "source_run_config_sha256": source["sha256"],
+            "learner_side": result["learner_side"],
             "wins": candidate["wins"],
             "episodes": candidate["episodes"],
             "win_rate": candidate["win_rate"],
