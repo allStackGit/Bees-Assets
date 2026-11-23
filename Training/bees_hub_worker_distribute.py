@@ -197,11 +197,19 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
         not 1 <= len(machines["machines"]) <= 32
     ):
         raise ValueError("Bees Unity machine inventory must have a bounded machine list.")
-    machine_rows = [remote_identity(entry) for entry in machines["machines"]]
-    if len({entry["machine_id"] for entry in machine_rows}) != len(machine_rows):
+    # A targeted rollout should not depend on local SSH credentials for
+    # unrelated machines, but inventory IDs must remain unique and valid.
+    rows = machines["machines"]
+    if any(not isinstance(entry, dict) or
+           not ID.fullmatch(str(entry.get("machine_id", ""))) for entry in rows):
+        raise ValueError("Bees Unity machine inventory contains an invalid machine ID.")
+    ids = [entry["machine_id"] for entry in rows]
+    if len(set(ids)) != len(ids):
         raise ValueError("Bees Unity machine inventory contains duplicate machine IDs.")
-    if selected and not selected.issubset({entry["machine_id"] for entry in machine_rows}):
+    if selected and not selected.issubset(set(ids)):
         raise ValueError("Selected Bees Unity machine is absent from the operator inventory.")
+    machine_rows = [remote_identity(entry) for entry in rows
+                    if not selected or entry["machine_id"] in selected]
     source_dir = manifest.parent
     scripts = [
         absolute_local(str(Path(__file__).resolve().with_name(name)),
