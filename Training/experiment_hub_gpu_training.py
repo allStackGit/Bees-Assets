@@ -1824,6 +1824,7 @@ class PersistentGpuForwardPool:
         self.calls = 0
         self.prepared_calls = 0
         self.owner_inline_prepared_calls = 0
+        self.owner_inline_direct_calls = 0
         self._pending_device_timings = deque()
         self._device_work_rates = {device:deque(maxlen=8)
                                    for device in self.devices}
@@ -1847,7 +1848,10 @@ class PersistentGpuForwardPool:
         # short on-policy updates may not contain three samples on their
         # own, and clearing every update prevented adaptation entirely.
         self._collect_device_timings()
-        self._pending_device_timings.clear()
+        # A slow secondary card may finish its forward timing event after
+        # GPU 0's PPO completion boundary. Keep the bounded unfinished
+        # events so the next update can learn its true service rate rather
+        # than silently discarding the slower card's samples.
         self._admitted_capacity_weights.clear()
         self.training_updates += 1
         if self.training_updates % 8 == 0:
@@ -1916,7 +1920,8 @@ class PersistentGpuForwardPool:
         metrics = dict(
             gpu_forward_capacity_pending_events=len(self._pending_device_timings),
             gpu_forward_capacity_timing_samples=self.device_timing_samples,
-            gpu_forward_primary_inline_dispatches=self.owner_inline_prepared_calls)
+            gpu_forward_primary_inline_dispatches=self.owner_inline_prepared_calls,
+            gpu_forward_direct_inline_dispatches=self.owner_inline_direct_calls)
         rates = []
         for slot, device in enumerate(self.devices):
             samples = self._device_work_rates[device]
@@ -1952,15 +1957,33 @@ class PersistentGpuForwardPool:
         grad_enabled = torch.is_grad_enabled()
         autocast_enabled = torch.is_autocast_enabled("cuda")
         autocast_dtype = torch.get_autocast_dtype("cuda")
-        futures = [self._workers.submit(
-            self._forward, model, parts, device, stream,
-            grad_enabled, autocast_enabled, autocast_dtype)
-            for model,parts,device,stream in zip(models,inputs,ordinals,streams)]
-        # Join *all* GPUs even if one model fails, matching parallel_apply's
-        # exception boundary and protecting subsequent parameter updates.
-        wait(futures)
+        if len(ordinals)==2:
+            # The learner owner can enqueue its own GPU work while GPU 1's
+            # persistent worker runs concurrently. Do not submit and then
+            # block waiting for a second worker just to launch GPU 0.
+            peer=self._workers.submit(
+                self._forward,models[1],inputs[1],ordinals[1],streams[1],
+                grad_enabled,autocast_enabled,autocast_dtype)
+            try:
+                primary=self._forward(
+                    models[0],inputs[0],ordinals[0],streams[0],
+                    grad_enabled,autocast_enabled,autocast_dtype)
+            except BaseException:
+                wait((peer,))
+                raise
+            outputs=[primary,peer.result()]
+            self.owner_inline_direct_calls += 1
+        else:
+            futures = [self._workers.submit(
+                self._forward, model, parts, device, stream,
+                grad_enabled, autocast_enabled, autocast_dtype)
+                for model,parts,device,stream in zip(
+                    models,inputs,ordinals,streams)]
+            # Join every dispatched GPU even if one model failed.
+            wait(futures)
+            outputs=[future.result() for future in futures]
         self.calls += 1
-        return [future.result() for future in futures]
+        return outputs
 
     @staticmethod
     def _prepared_forward(model, factory, device, stream, producer_event,
