@@ -93,8 +93,11 @@ class LocalExecution {
                     :typeof this.supervisor.adapters?.[project]?.gpu_verify_args==='function')),
             gpu_shared_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
-                this.supervisor.adapters?.[project]?.gpu_execution==='cuda'&&
+                (!this.supervisor.gpuProjects||this.supervisor.gpuProjects.includes(project))&&
                 this.supervisor.adapters?.[project]?.gpu_sharing==='cooperative-pytorch'&&
+                (this.supervisor.gpuExecution==='cuda'
+                    ?this.supervisor.adapters?.[project]?.gpu_execution==='cuda'
+                    :typeof this.supervisor.adapters?.[project]?.gpu_verify_args==='function')&&
                 (this.supervisor.gpuExecution==='cuda'||
                     this.supervisor instanceof LinuxSupervisor||
                     dockerCapable(this.supervisor)))};
