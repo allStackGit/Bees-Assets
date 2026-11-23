@@ -13,6 +13,8 @@ const {unityWorkerTreeSha256}=require('./experiment_hub_bees_worker_identity');
 
 const UUID=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 const SHA=/^[0-9a-f]{64}$/;
+const TAILNET=/^100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.(?:0|[1-9][0-9]{0,2})\.(?:0|[1-9][0-9]{0,2})$/;
+const SSH_USER=/^[a-z_][a-z0-9_-]{0,31}$/;
 const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const SAFE=/^[a-zA-Z0-9_./:@=+\-,]+$/;
 
@@ -29,7 +31,7 @@ function trustedFile(raw,label,executable=false) {
 }
 function createBeesRolloutAdapter({
     projectRoot,pythonPath,workerExecutable,artifactRoot,
-    keyPath,forwardPort,
+    keyPath,forwardPort,sshForward=null,
 }) {
     if(process.platform!=='linux')
         throw Error('This Bees Hub remote actor adapter uses the Linux systemd owner.');
@@ -46,6 +48,43 @@ function createBeesRolloutAdapter({
         throw Error('Bees WAN remote rollout requires a Linux dedicated Unity worker.');
     const secret=privateKey(keyPath);
     const tunnelPort=brokerPort(forwardPort);
+    // Machine operator owns SSH enrollment; no Hub job can select remote
+    // peers, credentials, transport flags, broker ports, or executable.
+    let approvedForward=null;
+    if(sshForward!==null) {
+        if(!sshForward||typeof sshForward!=='object'||Array.isArray(sshForward)||
+            Object.keys(sshForward).some(k=>![
+                'learnerMachineId','tailnetIp','sshUser','identityFile',
+                'knownHostsFile','sshPort','brokerPort',
+            ].includes(k))||
+            !/^[a-z][a-z0-9_-]{0,47}$/.test(String(sshForward.learnerMachineId||''))||
+            !TAILNET.test(String(sshForward.tailnetIp||''))||
+            sshForward.tailnetIp.split('.').some(x=>Number(x)>255)||
+            !SSH_USER.test(String(sshForward.sshUser||''))||
+            !Number.isSafeInteger(sshForward.sshPort)||
+            sshForward.sshPort<1||sshForward.sshPort>65535)
+            throw Error('Bees WAN SSH forward must target a pinned Tailnet learner and approved login identity.');
+        const ssh=trustedFile('/usr/bin/ssh','System OpenSSH',true);
+        const keyFile=trustedFile(sshForward.identityFile,'Private SSH identity');
+        const hostFile=trustedFile(sshForward.knownHostsFile,'Pinned SSH known_hosts');
+        const privateStat=fs.statSync(keyFile);
+        const hostStat=fs.statSync(hostFile);
+        if(!fs.statSync(keyFile).isFile()||privateStat.size<16||
+            privateStat.size>32768||(privateStat.mode&0o077)!==0||
+            typeof process.getuid==='function'&&privateStat.uid!==process.getuid()||
+            hostStat.size<40||hostStat.size>1048576)
+            throw Error('Bees WAN SSH credentials must be local pinned files; private key must be owned and mode 0600.');
+        approvedForward=Object.freeze({
+            learner_machine_id:sshForward.learnerMachineId,
+            tailnet_ip:sshForward.tailnetIp,
+            ssh_user:sshForward.sshUser,
+            ssh_identity_file:keyFile,
+            ssh_known_hosts_file:hostFile,
+            ssh_port:sshForward.sshPort,
+            remote_broker_port:brokerPort(sshForward.brokerPort),
+            ssh_executable:ssh,
+        });
+    }
     const pinned=prepareImmutableRuntime({
         project,python,artifactRoot:artifacts,workerSha:fileHash(worker),
     });
@@ -85,6 +124,10 @@ function createBeesRolloutAdapter({
             trainer_sha256:approved.trainer_sha256,
             runtime_version:approved.runtime_version,
             wan_key_fingerprint:approved.wan_key_fingerprint,
+            wan_forward_managed:Boolean(approvedForward),
+            ...(approvedForward?{
+                wan_target_machine_id:approvedForward.learner_machine_id,
+            }:{}),
         }},
         bees_rollout_versions:{...approved},
         gpu_verify_args(parameters,context) {
@@ -162,6 +205,7 @@ function createBeesRolloutAdapter({
                 auth_token_file:secret.path,
                 auth_token_fingerprint:secret.fingerprint,
                 broker_port:tunnelPort,
+                ...(approvedForward?{ssh_forward:approvedForward}:{}),
             };
             const frozen=path.join(root,'job.json');
             fs.writeFileSync(frozen,JSON.stringify(job,null,2)+'\n',{
