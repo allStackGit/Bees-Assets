@@ -4,11 +4,13 @@
 import argparse
 import http.client
 import json
+import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
-from experiment_hub_eval_io import read_bounded
+from experiment_hub_eval_io import read_bounded, SHA256, suite_digest
 from experiment_hub_eval_poll import final_checkpoint, poll_checkpoint, poll_batch
 from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate_with_metrics, read_suite, suite_trials
 from experiment_hub_tinybrains_runtime import configure_engine
@@ -78,6 +80,43 @@ def latest_numbered_checkpoint(artifact_root, job):
     return latest
 
 
+def publish_map_breakdown(root, job, checkpoint_digest, suite, details):
+    """Atomically retain observation-only per-board outcomes beside the receipt.
+
+    A map report is never scoring, Stop, or checkpoint-promotion authority.
+    Readers must compare every identity against the current accepted receipt,
+    because monitoring can replace a dispatch's latest checkpoint.
+    """
+    dispatch = job.get("dispatch_id")
+    if (not isinstance(dispatch, str) or not UUID.fullmatch(dispatch)
+            or not SHA256.fullmatch(checkpoint_digest)
+            or details["trials"] != suite_trials(suite)
+            or not isinstance(details.get("maps"), list)
+            or len(details["maps"]) != len(suite["maps"])):
+        raise ValueError("Incomplete historical TinyBrains per-map identity.")
+    report = {
+        "schema_version": 1, "job_id": job["job_id"],
+        "dispatch_id": dispatch, "suite_id": suite["suite_id"],
+        "suite_sha256": suite_digest(suite),
+        "checkpoint_sha256": checkpoint_digest,
+        "trials": details["trials"], "successes": details["successes"],
+        "maps": details["maps"],
+    }
+    encoded = (json.dumps(report, separators=(",", ":"), allow_nan=False) + "\n").encode()
+    if len(encoded) > 16384:
+        raise ValueError("TinyBrains per-map evaluation report exceeds 16 KiB.")
+    destination = root / f"{dispatch}.{suite['suite_id']}.maps.json"
+    fd, pending = tempfile.mkstemp(prefix=".tinybrains-map-results-", dir=root)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(pending, destination)
+    finally:
+        Path(pending).unlink(missing_ok=True)
+
+
 def poll(args, suites):
     def verify_frozen(file, checkpoint):
         # Terminal snapshots already have a final-model SHA-256 pin.
@@ -87,7 +126,10 @@ def poll(args, suites):
             raise ValueError("TinyBrains checkpoint advanced during private copy; retry a stable snapshot.")
 
     def evaluated(job, file, digest, work, suite):
-        return evaluate_with_metrics(file, digest, suite, work, current_runtime=True)
+        return evaluate_with_metrics(
+            file, digest, suite, work, current_runtime=True,
+            on_breakdown=lambda details: publish_map_breakdown(
+                args.receipt_root, job, digest, suite, details))
 
     def find_checkpoint(job):
         if "final_checkpoint_sha256" in job:
