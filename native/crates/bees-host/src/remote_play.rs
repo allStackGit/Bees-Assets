@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+use crate::notification_file::NativeDiagnosticMeasurements;
 use crate::player_trace::NativePlayerInput;
 use crate::remote_tls::{server_tls_from_environment, RemoteSocket};
 use crate::presentation::{NativeFogFade, NativeRenderWorldView};
@@ -683,6 +684,10 @@ pub struct NativeRemotePlay {
     // Immutable authored session length, used only to annotate physical
     // episode revisions in Fish Tank snapshots. The Level owns resets.
     spectator_series_episodes: u32,
+    // Cached presentation-only projection of the original durable
+    // EpisodeFinal sink; not command authority or game result ownership.
+    // [finished, Bees wins, Human wins, draws]
+    spectator_series_results: [u64; 4],
     /// A graphical local host already owns its own briefing pacing.
     /// Only dedicated LAN hosting needs remote viewer acknowledgment.
     dedicated_briefing_gate: bool,
@@ -851,7 +856,8 @@ impl NativeRemotePlay {
         Ok(Some(Self {
             listener, tls, host_session_id, recovered_session: false,
             archive_only: false, spectator_only_host: false,
-            spectator_series_episodes: 1, dedicated_briefing_gate: dedicated,
+            spectator_series_episodes: 1,
+            spectator_series_results: [0; 4], dedicated_briefing_gate: dedicated,
             side_tokens, spectator_tokens,
             archived_receipts: HashMap::new(), peers: Vec::new(),
             next_peer: 1, last_state: None, force_initial_state: false,
@@ -1156,6 +1162,29 @@ impl NativeRemotePlay {
                 "Fish Tank series needs 1..64 episodes and spectator-only authority"));
         }
         self.spectator_series_episodes = episodes;
+        Ok(())
+    }
+
+    /// Rehydrate/reconcile the Fish Tank score directly from committed
+    /// EpisodeFinal counters, including after durable host recovery.
+    /// No score prediction, separate tally, or per-client game state.
+    pub fn refresh_spectator_series_results(
+        &mut self, observed: &NativeDiagnosticMeasurements,
+    ) -> io::Result<()> {
+        if !self.spectator_only_host { return Ok(()); }
+        let bees = observed.victories_by_side.get(&1).copied().unwrap_or(0);
+        let humans = observed.victories_by_side.get(&2).copied().unwrap_or(0);
+        let draws = observed.draws;
+        if observed.episodes_finished > u64::from(self.spectator_series_episodes) ||
+            observed.victories_by_side.keys().any(|&side| !matches!(side, 1 | 2)) ||
+            bees.checked_add(humans).and_then(|wins| wins.checked_add(draws))
+                != Some(observed.episodes_finished)
+        {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,
+                "Fish Tank progress disagrees with the authoritative EpisodeFinal ledger"));
+        }
+        self.spectator_series_results =
+            [observed.episodes_finished, bees, humans, draws];
         Ok(())
     }
 
@@ -2349,6 +2378,7 @@ impl NativeRemotePlay {
         let game_speed = self.actual_game_speed();
         let spectator_only_host = self.spectator_only_host;
         let spectator_series_episodes = self.spectator_series_episodes;
+        let spectator_series_results = self.spectator_series_results;
         let two_sided = self.dedicated_briefing_gate &&
             self.side_tokens.len() == 2 && !self.archive_only && !self.spectator_only_host;
         let mut connected_commander_sides = Vec::new();
@@ -2511,6 +2541,10 @@ impl NativeRemotePlay {
                         "episode": (view.episode_revision.saturating_add(1))
                             .min(u64::from(spectator_series_episodes)),
                         "total": spectator_series_episodes,
+                        "completed": spectator_series_results[0],
+                        "bees_wins": spectator_series_results[1],
+                        "human_wins": spectator_series_results[2],
+                        "draws": spectator_series_results[3],
                     });
                 }
                 if two_sided {
