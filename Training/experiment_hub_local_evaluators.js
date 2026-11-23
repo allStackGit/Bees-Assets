@@ -405,8 +405,39 @@ async function properties(unit) {
     return Object.fromEntries(output.trim().split(/\r?\n/)
         .map(line=>[line.slice(0,line.indexOf('=')),line.slice(line.indexOf('=')+1)]));
 }
-function definitionsForStatus(options) {
-    return definitions(options);
+function expensiveEvaluation(id) {
+    return Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-');
+}
+function evaluationCapacity(hub,options) {
+    const snapshot=hub.snapshot();
+    const machine=snapshot.machines.find(item=>item.id===options.machine);
+    if(!machine||machine.status!=='connected'||
+        !Number.isSafeInteger(machine.cpus)||!Number.isSafeInteger(machine.ram_mb))
+        return {ready:false,reason:'A fresh authenticated capacity report is required.'};
+    const leases=(snapshot.reservations||[]).filter(lease=>
+        lease.machine_id===options.machine&&
+        ['active','offered','acknowledged'].includes(lease.status));
+    if(leases.some(lease=>!Number.isSafeInteger(lease.resources?.cpus)||
+        !Number.isSafeInteger(lease.resources?.ram_mb)))
+        return {ready:false,reason:'Unknown active Hub CPU/RAM reservations.'};
+    const running=(machine.evaluator_services||[]).filter(service=>
+        service.service_state==='running');
+    // Independent evaluators are outside Hub job leases. Include their
+    // authenticated running-service quotas as additional committed capacity.
+    if(running.some(service=>!Number.isSafeInteger(service.evaluator_cpus)||
+        !Number.isSafeInteger(service.evaluator_ram_mb)))
+        return {ready:false,reason:'Unknown independent evaluator resource usage.'};
+    const cpuReserved=leases.reduce((n,lease)=>n+lease.resources.cpus,0)+
+        running.reduce((n,service)=>n+service.evaluator_cpus,0);
+    const ramReserved=leases.reduce((n,lease)=>n+lease.resources.ram_mb,0)+
+        running.reduce((n,service)=>n+service.evaluator_ram_mb,0);
+    const cpus=machine.cpus-cpuReserved,ramMb=machine.ram_mb-ramReserved;
+    const available=machine.available_ram_mb;
+    if(cpus<2||ramMb<4096||
+        (Number.isSafeInteger(available)&&available<5120))
+        return {ready:false,cpus,ram_mb:ramMb,
+            reason:'At least two unreserved CPUs and 4 GiB RAM (plus 1 GiB live headroom) are required before starting a full-season evaluator.'};
+    return {ready:true,cpus,ram_mb:ramMb,reason:null};
 }
 async function status(hub) {
     let options;
@@ -435,7 +466,7 @@ async function status(hub) {
         }catch(error){statusError=error;}
     }
     let definitions=null,definitionError=null;
-    if(installed.length)try {definitions=definitionsForStatus(options);}
+    if(installed.length)try {definitions=definitions(options);}
     catch(error){definitionError=error;}
     for(const id of ids) {
         const names=unitFiles(options,id);
@@ -474,6 +505,7 @@ async function status(hub) {
             active,running,last_result:lastResult,last_error:lastError,reason});
     }
     return {available:true,machine:options.machine,entries,
+        evaluation_capacity:evaluationCapacity(hub,options),
         mini_candidates:miniCandidates(hub,options).map(({id,updates})=>({id,updates})),
         historical_candidates:historicalCandidates(hub,options)
             .map(({id,updates,batch_size})=>({id,updates,batch_size}))};
@@ -810,6 +842,12 @@ async function action(hub,value) {
     const o=localOptions(hub);
     const defs=definitions(o);
     const unit=approvedUnit(o,value.id,defs[value.id]);
+    if(['start','restart','run'].includes(value.action)&&
+        expensiveEvaluation(value.id)) {
+        const capacity=evaluationCapacity(hub,o);
+        if(!capacity.ready)
+            throw Error('Full-season evaluation admission deferred: '+capacity.reason);
+    }
     if(value.action==='run') {
         const current=await properties(unit.service);
         if(current.ActiveState==='active'||current.ActiveState==='activating')
