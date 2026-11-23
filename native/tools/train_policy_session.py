@@ -1825,7 +1825,7 @@ def main():
                         help="run a pinned holdout every N optimizer rounds and at the final target (default: 1)")
     parser.add_argument("--evaluation-physics-workers", type=int,
                         help="independent native CPU physics workers for each holdout; does not change rollout allocation")
-    parser.add_argument("--evaluation-inference-device", choices=("cpu", "cuda:0"),
+    parser.add_argument("--evaluation-inference-device", choices=("cpu", "cuda:0", "cuda:1", "cuda:2", "cuda:3"),
                         help="fixed PyTorch inference placement for identical evaluation suites")
     parser.add_argument("--early-stop-patience", type=int,
                         help="stop after this many evaluated rounds without significant wins or goal successes")
