@@ -12,7 +12,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
+use rustls::ClientConfig;
 
 use bees_gameplay::campaign_dialogue::CampaignCue;
 use bees_sim::collision::{Aabb, Pose, circle_overlaps_polygon, circles_overlap, polygons_overlap};
@@ -27,7 +28,7 @@ use super::minimap::MiniMapLayout;
 use super::tactical_hud::{HudAction, HudRect, ACTIONS, shooting_hit, shooting_rect};
 use bees_hivemind::protocol::SHOOTING_STRATEGIES;
 use crate::game_audio::NativeGameAudio;
-use crate::remote_tls::{client_tls_from_environment, RemoteSocket};
+use crate::remote_tls::{client_tls_from_environment, client_tls_from_file, RemoteSocket};
 use crate::unity_scene_snapshot::{NativeMusicLocation, NativeMapBackdrop};
 
 fn source_ship_catalog() -> &'static bees_sim::ship_assets::ShipAssetCatalog {
@@ -654,17 +655,14 @@ fn link_disconnected(error: &io::Error) -> bool {
 impl PeerClient {
     fn connect(address: &str, token: &str, side: i32,
         resume_session_id: Option<&str>, spectator: bool,
+        tls_config: Option<Arc<ClientConfig>>,
     ) -> Result<Self, Box<dyn Error>> {
-        // An explicit TLS endpoint is never allowed to fall back to
-        // plaintext if certificate validation or the handshake fails.
-        // Existing LAN host:port clients retain their prior behavior.
+        // TLS trust is pinned once by connect_remote before opening the
+        // first socket. Every reconnect reuses that exact verified root
+        // store rather than silently trusting a changed certificate file.
         let tls_endpoint = address.strip_prefix("tls://");
-        if tls_endpoint.is_none() &&
-            std::env::var_os("BEES_NATIVE_REMOTE_TLS_CA_DER").is_some()
-        {
-            return Err(invalid(
-                "trusted native TLS CA is configured; use a tls://host:port endpoint",
-            ).into());
+        if tls_endpoint.is_some() != tls_config.is_some() {
+            return Err(invalid("native TLS endpoint and verified CA configuration disagree").into());
         }
         let endpoint = tls_endpoint.unwrap_or(address);
         let mut connection = None;
@@ -687,7 +685,7 @@ impl PeerClient {
             tcp.set_read_timeout(Some(Duration::from_secs(5)))?;
             tcp.set_write_timeout(Some(Duration::from_secs(5)))?;
             let mut secured = RemoteSocket::client(
-                tcp, client_tls_from_environment()?, authority,
+                tcp, tls_config.expect("TLS endpoint requires verified trust"), authority,
             )?;
             secured.handshake_blocking()?;
             secured
@@ -3322,6 +3320,20 @@ pub fn connect_remote(
     session_file: Option<&Path>, audio_preferences: Option<&Path>,
     spectator: bool,
 ) -> Result<(), Box<dyn Error>> {
+    connect_remote_with_trust(
+        address, token_file, expected_side, session_file, audio_preferences,
+        spectator, None,
+    )
+}
+
+/// The desktop connection can supply a trusted DER CA directly, without
+/// setting a process-wide variable. CLI clients retain the environment
+/// interface. Trust is loaded once and reused across transport reconnects.
+pub fn connect_remote_with_trust(
+    address: &str, token_file: &Path, expected_side: i32,
+    session_file: Option<&Path>, audio_preferences: Option<&Path>,
+    spectator: bool, trusted_ca: Option<&Path>,
+) -> Result<(), Box<dyn Error>> {
     if !(1..=2).contains(&expected_side) {
         return Err(invalid("remote player side must be 1 or 2").into());
     }
@@ -3341,6 +3353,23 @@ pub fn connect_remote(
     if !(24..=256).contains(&token.len()) ||token.chars().any(char::is_control) {
         return Err(invalid("invalid native multiplayer token").into());
     }
+    let tls_config = if address.starts_with("tls://") {
+        Some(match trusted_ca {
+            Some(path) => client_tls_from_file(path)?,
+            None => client_tls_from_environment()?,
+        })
+    } else {
+        // Supplying a CA MUST NOT cause an implicit plaintext downgrade,
+        // even if the endpoint was edited after a previous encrypted game.
+        if trusted_ca.is_some() ||
+            std::env::var_os("BEES_NATIVE_REMOTE_TLS_CA_DER").is_some()
+        {
+            return Err(invalid(
+                "trusted native TLS CA is configured; use a tls://host:port endpoint",
+            ).into());
+        }
+        None
+    };
     let saved = session_file.map(|path|
         saved_remote_session(path, address, expected_side)
     ).transpose()?.flatten();
@@ -3370,6 +3399,7 @@ pub fn connect_remote(
     let mut last_persisted_session = original.clone();
     let mut peer=PeerClient::connect(
         address, token, expected_side, original.as_deref(), spectator,
+        tls_config.clone(),
     )?;
     let window_title = if spectator {
         "Bees | Native Spectator (Read Only)"
@@ -3832,10 +3862,12 @@ pub fn connect_remote(
             let original=original.map(str::to_owned);
             let address=address.to_owned();
             let token=token.to_owned();
+            let trust = tls_config.clone();
             let (sender,receiver)=mpsc::sync_channel(1);
             thread::spawn(move || {
                 let result=PeerClient::connect(
                     &address,&token,expected_side,original.as_deref(),spectator,
+                    trust,
                 ).map_err(|error|error.to_string());
                 let _=sender.send(result);
             });
