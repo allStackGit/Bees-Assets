@@ -700,6 +700,24 @@ def verify_bundle(path, job, orders):
                         device["model_forwards"] or
                     device_staging["device_rows_staged"] > device["gpu_agent_rows"]):
                 raise ValueError(f"native collector has invalid per-device GPU staging: {path}")
+    process_tree = metrics.get("windows_rollout_process_tree")
+    if process_tree is not None:
+        if (not isinstance(process_tree, dict) or
+                process_tree.get("scope") != "completed_jobs_this_invocation" or
+                type(process_tree.get("observed_jobs")) is not int or
+                not 1 <= process_tree["observed_jobs"] <= receipt["rollout_processes"] or
+                any(type(process_tree.get(key)) is not int or
+                    process_tree[key] < 0 for key in (
+                        "owned_processes_total",
+                        "owned_processes_active_after_host_exit",
+                    )) or
+                process_tree["owned_processes_total"] < process_tree["observed_jobs"] or
+                process_tree["owned_processes_active_after_host_exit"] >
+                    process_tree["owned_processes_total"] or
+                type(process_tree.get("owned_process_cpu_seconds")) not in (float, int) or
+                not math.isfinite(process_tree["owned_process_cpu_seconds"]) or
+                process_tree["owned_process_cpu_seconds"] < 0):
+            raise ValueError(f"collector supplied invalid Windows process-tree evidence: {path}")
     requested = metrics.get("requested_physics_worker_slots")
     capacity = receipt["rollout_processes"] * per_process
     # Historical bundles did not record model-step CPU limits. Their
@@ -829,6 +847,8 @@ def aggregate_collection_metrics(bundles):
             sum("parallel_physics_rounds" in row for row in rows),
         "collectors_with_resource_observations":
             sum(isinstance(row.get("resource_observations"), dict) for row in rows),
+        "collectors_with_windows_process_tree_observations":
+            sum(isinstance(row.get("windows_rollout_process_tree"), dict) for row in rows),
         "collector_world_steps_per_wall_second_min": min(collector_rates),
         "collector_world_steps_per_wall_second_max": max(collector_rates),
         "policy_worker_sha256": next(iter(worker_digests)),
@@ -850,6 +870,7 @@ def aggregate_collection_metrics(bundles):
                 ) if key in row} if "parallel_physics_rounds" in row else {}),
                 "worker_shards": row.get("worker_shards", []),
                 "resource_observations": row.get("resource_observations"),
+                "windows_rollout_process_tree": row.get("windows_rollout_process_tree"),
                 "sampled_model_timing": row.get("sampled_model_timing"),
                 "gpu_inference": row.get("gpu_inference"),
                 "reinforcement_arrivals": row.get("reinforcement_arrivals"),
@@ -869,6 +890,27 @@ def aggregate_collection_metrics(bundles):
             } for bundle, row in zip(bundles, rows)
         ],
     }
+    observed_trees = [row["windows_rollout_process_tree"] for row in rows
+                      if isinstance(row.get("windows_rollout_process_tree"), dict)]
+    if observed_trees:
+        # Job CPU time includes resident inference children; do not turn
+        # these partial, independently measured attempts into a claimed
+        # all-machine utilization or aggregated physical elapsed time.
+        result["windows_rollout_process_tree"] = {
+            "scope": "sum_of_observed_collector_process_tree_attempts",
+            "observed_collectors": len(observed_trees),
+            "observed_jobs": sum(row["observed_jobs"] for row in observed_trees),
+            "owned_processes_total": sum(
+                row["owned_processes_total"] for row in observed_trees
+            ),
+            "owned_processes_active_after_host_exit": sum(
+                row["owned_processes_active_after_host_exit"]
+                for row in observed_trees
+            ),
+            "owned_process_cpu_seconds": sum(
+                row["owned_process_cpu_seconds"] for row in observed_trees
+            ),
+        }
     if all("policy_observations" in row for row in rows):
         result["policy_observations"] = combined_policy_observations(
             [row["policy_observations"] for row in rows]
