@@ -46,6 +46,19 @@ class _ExtendedLimit(ctypes.Structure):
     ]
 
 
+class _BasicAccounting(ctypes.Structure):
+    _fields_ = [
+        ("TotalUserTime", ctypes.c_int64),
+        ("TotalKernelTime", ctypes.c_int64),
+        ("ThisPeriodTotalUserTime", ctypes.c_int64),
+        ("ThisPeriodTotalKernelTime", ctypes.c_int64),
+        ("TotalPageFaultCount", wintypes.DWORD),
+        ("TotalProcesses", wintypes.DWORD),
+        ("ActiveProcesses", wintypes.DWORD),
+        ("TotalTerminatedProcesses", wintypes.DWORD),
+    ]
+
+
 class NativeWindowsRolloutJob:
     """One OS-owned tree for a single native simulator and its descendants.
 
@@ -72,6 +85,11 @@ class NativeWindowsRolloutJob:
         kernel.AssignProcessToJobObject.restype = wintypes.BOOL
         kernel.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
         kernel.TerminateJobObject.restype = wintypes.BOOL
+        kernel.QueryInformationJobObject.argtypes = [
+            wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
+            wintypes.DWORD, ctypes.POINTER(wintypes.DWORD),
+        ]
+        kernel.QueryInformationJobObject.restype = wintypes.BOOL
         kernel.CloseHandle.argtypes = [wintypes.HANDLE]
         kernel.CloseHandle.restype = wintypes.BOOL
 
@@ -91,6 +109,29 @@ class NativeWindowsRolloutJob:
         except BaseException:
             self.close()
             raise
+
+    def accounting(self):
+        """Observed OS job CPU and process lifecycle, including descendants.
+
+        Sample before closing the job. Unsupported counters are absent
+        rather than misreported as zero or inferred from the Rust PID.
+        """
+        if self.handle is None:
+            return None
+        record = _BasicAccounting()
+        if not self.kernel.QueryInformationJobObject(
+            self.handle, 1, ctypes.byref(record), ctypes.sizeof(record), None
+        ):
+            return None
+        return {
+            "owned_processes_total": record.TotalProcesses,
+            "owned_processes_active": record.ActiveProcesses,
+            "owned_processes_terminated": record.TotalTerminatedProcesses,
+            "owned_process_cpu_seconds": (
+                record.TotalUserTime + record.TotalKernelTime
+            ) / 10_000_000.0,
+            "scope": "os_job_all_owned_processes_current_invocation",
+        }
 
     def terminate(self):
         if self.handle is None:
