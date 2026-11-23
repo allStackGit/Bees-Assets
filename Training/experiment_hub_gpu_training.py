@@ -349,7 +349,7 @@ class ImmutableGpuRowCache:
                 first,(len(views),*first.shape[1:]),stride)
         return None
 
-    def fetch(self, identifiers, boards):
+    def fetch(self, identifiers, boards, *, producer_stream=None):
         if (not isinstance(boards,torch.Tensor) or boards.ndim<1 or
                 boards.device.type!="cuda" or
                 len(identifiers)!=len(boards) or
@@ -401,9 +401,21 @@ class ImmutableGpuRowCache:
                 len(hit_indices)*row_bytes >= 512*1024):
             try:
                 # One compact source gather and one peer transfer replace
-                # the entire batch's data movement. No Python GPU readback.
-                source_rows = boards.index_select(
-                    0,torch.as_tensor(missing_indices,device=boards.device))
+                # the entire batch's data movement. The gather must run on
+                # the SOURCE GPU's producer stream, even when this call is
+                # launched by a secondary GPU's persistent Python worker.
+                # Otherwise per-thread default streams can race with the
+                # primary worker producing the observation tensor.
+                if producer_stream is None:
+                    source_rows = boards.index_select(
+                        0,torch.as_tensor(missing_indices,device=boards.device))
+                else:
+                    with torch.cuda.device(boards.device), torch.cuda.stream(producer_stream):
+                        source_rows = boards.index_select(
+                            0,torch.as_tensor(missing_indices,device=boards.device))
+                        ready = torch.cuda.Event()
+                        ready.record(producer_stream)
+                    torch.cuda.current_stream(self.device).wait_event(ready)
                 fresh = source_rows.to(self.device,non_blocking=True)
                 result = torch.empty(
                     boards.shape,device=self.device,dtype=boards.dtype)
@@ -418,6 +430,9 @@ class ImmutableGpuRowCache:
                 # residency rather than prevent the required PPO forward.
                 self.oom_evictions += 1
                 self.clear()
+                # Release temporary output/selection buffers before the
+                # authoritative full peer copy attempts its allocation.
+                source_rows = fresh = result = prior = None
             else:
                 fresh_bytes = fresh.numel()*fresh.element_size()
                 self.copied_bytes += fresh_bytes
