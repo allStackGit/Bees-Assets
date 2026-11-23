@@ -218,7 +218,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
     const port=brokerPort(wanBrokerPort);
     const release=releaseManifestPath?
         pinnedWorkerRelease(releaseManifestPath,worker):null;
-    const payload=key?unityWorkerTreeSha256(worker):null;
+    const payload=key?(release?.worker_payload_sha256??unityWorkerTreeSha256(worker)):null;
     const approved={
         ...(key?{wan_key_fingerprint:key.fingerprint}:{}),
         worker_payload_sha256:payload,
@@ -345,9 +345,12 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             const root=jobPath(artifacts,context);
             fs.mkdirSync(root,{mode:0o700});
             const wan=frozen.wanActors>0;
+            const currentRelease=wan&&release?
+                pinnedWorkerRelease(releaseManifestPath,worker):null;
             if(wan&&(privateKey(key.path).fingerprint!==key.fingerprint||
-                unityWorkerTreeSha256(worker)!==approved.worker_payload_sha256||
-                release&&pinnedWorkerRelease(releaseManifestPath,worker).release_sha256!==
+                (currentRelease?.worker_payload_sha256??unityWorkerTreeSha256(worker))!==
+                    approved.worker_payload_sha256||
+                currentRelease&&currentRelease.release_sha256!==
                     approved.wan_release_sha256))
                 throw Error('Bees WAN private key or complete Unity player changed after enrollment.');
             const job={
