@@ -198,6 +198,8 @@ class EventProgress:
         self.first=time.monotonic()
         self.last_step=0
         self.last_at=self.first
+        self.training_finished_at=None
+        self.evaluation_started_at=None
 
     def poll(self):
         training=self.root/"results"/self.job_id
@@ -231,7 +233,7 @@ class EventProgress:
         if self.steps<=0:
             return
         current=time.monotonic()
-        elapsed=max(0,current-self.first)
+        elapsed=max(0,(self.training_finished_at or current)-self.first)
         speed=0.0
         if self.steps>self.last_step and current>self.last_at:
             speed=(self.steps-self.last_step)/(current-self.last_at)
@@ -240,6 +242,10 @@ class EventProgress:
         metrics=dict(self.values)
         metrics["elapsed_training_seconds"]={"value":elapsed,"unit":"seconds"}
         metrics["training_steps"]={"value":self.steps,"unit":"count"}
+        if self.evaluation_started_at is not None:
+            metrics["evaluation_elapsed_seconds"]={
+                "value":max(0,current-self.evaluation_started_at),"unit":"seconds",
+            }
         if speed>0:
             metrics["environment_steps_per_second"]={"value":speed,"unit":"rate"}
         report={
@@ -425,6 +431,7 @@ def main():
             progress.poll()
         except (OSError,ValueError,RuntimeError):
             pass
+        progress.training_finished_at=time.monotonic()
         result=child.returncode
         if result!=0 or stopped:
             return 130 if stopped else result or 1
@@ -435,6 +442,7 @@ def main():
             model=json.loads((root/"model.json").read_text(encoding="utf-8"))
             observed=[]
             cases=evaluation_cases(job["evaluation_profile"])
+            progress.evaluation_started_at=time.monotonic()
             progress.values["evaluation_cases_total"]={
                 "value":len(cases),"unit":"count",
             }
