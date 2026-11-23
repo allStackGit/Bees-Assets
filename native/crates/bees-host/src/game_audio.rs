@@ -184,16 +184,13 @@ fn queue_frame_effect(
         *count += 1;
         return;
     }
-    if let Some(index) = effects.iter().position(|queued|
-        queued.is_some_and(|queued| queued.priority() < effect.priority())
-    ) {
-        // Prefer discarding the lowest priority, not just the first shot.
-        let lowest = effects.iter().enumerate()
-            .min_by_key(|(_, queued)| queued.expect("full effect queue").priority())
-            .expect("bounded queue has eight slots").0;
-        let index = if effects[lowest].expect("full effect queue").priority() <
-            effect.priority() { lowest } else { index };
-        effects[index] = Some(effect);
+    // The stack queue is full; replace only a strictly lower-priority
+    // cue. When equal, keep original source-event ordering.
+    let lowest = effects.iter().enumerate()
+        .min_by_key(|(_, queued)| queued.expect("full effect queue").priority())
+        .expect("bounded queue has eight slots").0;
+    if effects[lowest].expect("full effect queue").priority() < effect.priority() {
+        effects[lowest] = Some(effect);
         measurements.high_priority_frame_cues_preserved += 1;
     }
     measurements.sound_effects_dropped += 1;
@@ -710,20 +707,16 @@ impl NativeGameAudio {
         {
             return;
         }
-        if self.voices.len() >= MAX_EFFECT_VOICES {
-            let lowest = self.voices.iter().enumerate()
-                .min_by_key(|(_, (_, _, priority))| *priority)
-                .map(|(index, _)| index)
-                .expect("saturated audio has active voices");
-            if self.voices[lowest].2 >= effect.priority() {
-                self.measurements.sound_effects_dropped += 1;
-                return;
-            }
-            let (sink, _, _) = self.voices.swap_remove(lowest);
-            sink.stop();
-            self.measurements.high_priority_voice_preemptions += 1;
-        }
+        // Check the clip before taking a channel away from a running sound.
+        // A missing source MP3 must never silence an existing voice.
         let Some(data) = self.effects.get(&effect) else { return };
+        if self.voices.len() >= MAX_EFFECT_VOICES &&
+            self.voices.iter().all(|(_, _, priority)|
+                *priority >= effect.priority())
+        {
+            self.measurements.sound_effects_dropped += 1;
+            return;
+        }
         let Ok(source) = Decoder::new(Cursor::new(Arc::clone(data))) else {
             self.measurements.sound_effects_dropped += 1;
             return;
@@ -732,6 +725,15 @@ impl NativeGameAudio {
             self.measurements.sound_effects_dropped += 1;
             return;
         };
+        if self.voices.len() >= MAX_EFFECT_VOICES {
+            let lowest = self.voices.iter().enumerate()
+                .min_by_key(|(_, (_, _, priority))| *priority)
+                .map(|(index, _)| index)
+                .expect("saturated audio has active voices");
+            let (former, _, _) = self.voices.swap_remove(lowest);
+            former.stop();
+            self.measurements.high_priority_voice_preemptions += 1;
+        }
         let gain = if matches!(effect, Effect::Save | Effect::DeleteSquad) {
             0.5625 // Source UIAudioController.ReducedNotificationVolume.
         } else { 1.0 };
