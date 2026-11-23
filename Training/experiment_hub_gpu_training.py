@@ -924,6 +924,7 @@ class PersistentGpuForwardPool:
         self._device_work_rates = {device:deque(maxlen=8)
                                    for device in self.devices}
         self.device_timing_samples = 0
+        self._admitted_capacity_weights = {}
 
     def _collect_device_timings(self):
         if not self._pending_device_timings:
@@ -952,13 +953,22 @@ class PersistentGpuForwardPool:
         """
         self._collect_device_timings()
         ordinals = self.devices if devices is None else tuple(devices)
+        if ordinals in self._admitted_capacity_weights:
+            return self._admitted_capacity_weights[ordinals]
         if any(len(self._device_work_rates[device])<3 for device in ordinals):
             return None
         rates = [median(self._device_work_rates[device]) for device in ordinals]
         if min(rates) <= 0 or max(rates)/min(rates)<1.15:
             return None
         reference = median(rates)
-        return tuple(min(2.0,max(0.5,rate/reference)) for rate in rates)
+        # A rate derived from equal shares is NOT a stable measurement
+        # after assigning unequal shares: fixed GPU launch overhead makes
+        # pixels/ms depend on batch size. Freeze this PPO update's initial
+        # comparable split, rather than creating self-reinforcing imbalance
+        # and starving the slower card as the allocated rows shrink.
+        chosen = tuple(min(1.5,max(0.67,rate/reference)) for rate in rates)
+        self._admitted_capacity_weights[ordinals] = chosen
+        return chosen
 
     @staticmethod
     def _forward(model, parts, device, stream, grad_enabled,
