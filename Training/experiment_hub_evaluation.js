@@ -232,7 +232,7 @@ function verifiedSuiteDefinition(value) {
     if(value.suite_definition_canonical===undefined)return undefined;
     const canonical=value.suite_definition_canonical;
     if(typeof canonical!=='string'||
-        Buffer.byteLength(canonical,'utf8')>2048||
+        Buffer.byteLength(canonical,'utf8')>4096||
         !SHA256.test(String(value.suite_sha256||''))||
         crypto.createHash('sha256').update(canonical,'utf8').digest('hex')!==
             value.suite_sha256)

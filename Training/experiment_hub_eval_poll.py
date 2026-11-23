@@ -233,7 +233,7 @@ def receipt_with_suite_definition(receipt: dict, suite: dict) -> dict:
     This is inspection evidence, not additional Stop or ranking authority.
     """
     canonical = json.dumps(suite, sort_keys=True)
-    if len(canonical.encode("utf-8")) > 2048:
+    if len(canonical.encode("utf-8")) > 4096:
         return receipt
     enriched = {**receipt, "suite_definition_canonical": canonical}
     # The publication format appends one newline; native readers cap the
