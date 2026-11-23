@@ -262,31 +262,36 @@ class QualifiedPpoValueTerms:
                                     dynamic=True,fullgraph=True)
             results=[]
             for rows in (1,8,64,256):
-                inputs=self._sample(device,dtype,rows)
-                expected,expected_grad=self._forward_backward(
-                    ppo_value_terms,inputs,coefficients)
-                actual,actual_grad=self._forward_backward(
-                    candidate,inputs,coefficients)
-                if (any(not torch.allclose(a,b,rtol=2e-4,atol=2e-5)
-                        for a,b in zip(expected,actual)) or
-                    any(not torch.allclose(a,b,rtol=3e-4,atol=3e-5)
-                        for a,b in zip(expected_grad,actual_grad))):
+                try:
+                    inputs=self._sample(device,dtype,rows)
+                    expected,expected_grad=self._forward_backward(
+                        ppo_value_terms,inputs,coefficients)
+                    actual,actual_grad=self._forward_backward(
+                        candidate,inputs,coefficients)
+                    if (any(not torch.allclose(a,b,rtol=2e-4,atol=2e-5)
+                            for a,b in zip(expected,actual)) or
+                        any(not torch.allclose(a,b,rtol=3e-4,atol=3e-5)
+                            for a,b in zip(expected_grad,actual_grad))):
+                        results.append((rows,False,0.))
+                        continue
+                    eager_times=[]
+                    compiled_times=[]
+                    for round_index in range(4):
+                        options=((ppo_value_terms,eager_times),
+                                 (candidate,compiled_times))
+                        if round_index%2:
+                            options=options[::-1]
+                        for fn,times in options:
+                            times.append(self._seconds(
+                                fn,inputs,coefficients,device))
+                    eager=median(eager_times)
+                    compiled=median(compiled_times)
+                    gain=(1-compiled/eager if eager>0 else -1.)
+                    results.append((rows,gain>=self.min_speedup,gain))
+                except Exception:
+                    # Each shape independently retains the eager backend
+                    # if this HIP compiler lacks its specialization.
                     results.append((rows,False,0.))
-                    continue
-                eager_times=[]
-                compiled_times=[]
-                for round_index in range(4):
-                    options=((ppo_value_terms,eager_times),
-                             (candidate,compiled_times))
-                    if round_index%2:
-                        options=options[::-1]
-                    for fn,times in options:
-                        times.append(self._seconds(
-                            fn,inputs,coefficients,device))
-                eager=median(eager_times)
-                compiled=median(compiled_times)
-                gain=(1-compiled/eager if eager>0 else -1.)
-                results.append((rows,gain>=self.min_speedup,gain))
             wins={rows for rows,win,_ in results if win}
             if not wins:
                 return False
