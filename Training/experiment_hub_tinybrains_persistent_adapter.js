@@ -1314,7 +1314,7 @@ function createTinyBrainsPersistentDockerAdapter({
     // Check their actual installed files and seat counts BEFORE creating a
     // Hub job output or assigning GPU work. A successful profile alone does
     // not prove that a 2/4/6-player curriculum is runnable on this machine.
-    function verifyStageMaps(stage) {
+    function verifyStageMaps(stage,customSelection=false) {
         if(!stage)return;
         const sourcePrefix=sourceWindowsRoot.replace(/\\/g,'/').replace(/\/$/,'')+'/';
         const seats=new Set();
@@ -1339,7 +1339,8 @@ function createTinyBrainsPersistentDockerAdapter({
                 throw Error('TinyBrains stage map has an invalid board ID or player count: '+map);
             seats.add(board.players);
         }
-        if(stage.name==='full_multiplayer'&&![2,4,6].every(count=>seats.has(count)))
+        if(stage.name==='full_multiplayer'&&!customSelection&&
+            ![2,4,6].every(count=>seats.has(count)))
             throw Error('Full multiplayer training requires installed 2-, 4-, and 6-player maps.');
     }
     // Do not advertise editable hyperparameters unless the installed project
@@ -1841,7 +1842,7 @@ function createTinyBrainsPersistentDockerAdapter({
                 throw Error('Install the approved TinyBrains curriculum-capable runtime before selecting a map stage.');
             const stage=approvedStage(training_stage,
                 design_overrides?.['environment.max_turns'],training_map_ids);
-            verifyStageMaps(stage);
+            verifyStageMaps(stage,training_map_ids!==undefined);
             const item=approved.get(profile);
             const endpoints=approvedEndpointSubset(remote?.endpoints,rollout_endpoints);
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
