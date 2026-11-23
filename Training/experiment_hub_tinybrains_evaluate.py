@@ -167,6 +167,7 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
                 if on_result is not None:
                     on_result({"map": board, "seed": seed, "player_count": seats,
                                "candidate_seat": seat,
+                               "placement": 1 + sum(rank < ranks[seat] for rank in ranks),
                                "opponent": opponent, "outcome": outcome,
                                "ranks": ranks, "scores": replay.get("scores"),
                                "turns": replay.get("turns")})
@@ -180,13 +181,21 @@ def evaluate_with_metrics(checkpoint, digest, suite, work, *, current_runtime=Fa
     by_players = {2: {"win": 0, "loss": 0, "draw": 0},
                   4: {"win": 0, "loss": 0, "draw": 0},
                   6: {"win": 0, "loss": 0, "draw": 0}}
+    placements = {2: 0, 4: 0, 6: 0}
+    top_half = {2: 0, 4: 0, 6: 0}
 
     def observe(result):
         outcome = result.get("outcome")
         if outcome not in counts:
             raise ValueError("Invalid TinyBrains evaluation outcome.")
         counts[outcome] += 1
-        by_players[result["player_count"]][outcome] += 1
+        players = result["player_count"]
+        placement = result["placement"]
+        if players not in by_players or type(placement) is not int or not 1 <= placement <= players:
+            raise ValueError("Invalid native multiplayer placement in evaluator replay.")
+        by_players[players][outcome] += 1
+        placements[players] += placement
+        top_half[players] += int(placement <= players // 2)
 
     with pinned_runtime("tinybrains", suite, use_current=current_runtime) as runtime_sha256:
         wins, trials = _evaluate(checkpoint, digest, suite, work, on_result=observe)
@@ -207,6 +216,14 @@ def evaluate_with_metrics(checkpoint, digest, suite, work, *, current_runtime=Fa
                 "unit": "ratio",
             }
             metrics[f"trials_{players}p"] = {"value": total, "unit": "count"}
+            metrics[f"mean_placement_{players}p"] = {
+                "value": placements[players] / total, "unit": "scalar"}
+            metrics[f"top_half_rate_{players}p"] = {
+                "value": top_half[players] / total, "unit": "ratio"}
+    metrics["mean_placement"] = {
+        "value": sum(placements.values()) / trials, "unit": "scalar"}
+    metrics["top_half_rate"] = {
+        "value": sum(top_half.values()) / trials, "unit": "ratio"}
     return {"successes": wins, "metrics": metrics,
             **({"runtime_sha256": runtime_sha256} if current_runtime else {})}
 
