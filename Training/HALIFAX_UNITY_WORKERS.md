@@ -476,6 +476,24 @@ python3 -B Training/bees_hub_worker_distribute.py \
     --apply --activate
 ```
 
+For later Unity source changes, the build command can also compile, package,
+transfer and select its **own** newly built release in one operation on
+Halifax. This removes manual manifest selection without replacing the
+operator-controlled SSH inventory or the two-phase activation checks:
+
+```sh
+node Training/bees_build_workers.js --platform both \
+    --inventory /absolute/private/bees-machines.json \
+    --apply --activate
+```
+
+Omit `--apply --activate` to build and inspect the remote distribution
+plan without modifying machines; use `--apply` alone to install without
+changing their active release selectors. Repeat `--machine MACHINE_ID`
+to target a subset of the inventory. The one-command remote path requires
+Linux and cannot be combined with `--install-root` (local installation).
+It still does **not** restart Hub agents or interrupt existing training.
+
 The distributor validates the selected inventory and local artifacts first,
 then copies and verifies an immutable installation on **every selected machine**
 before activating any selector. If an upload or installation fails, all
