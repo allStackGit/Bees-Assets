@@ -95,6 +95,12 @@ pub struct RemoteSocket {
 impl RemoteSocket {
     pub fn is_tls(&self) -> bool { self.tls.is_some() }
 
+    /// A terminal result is not fully delivered just because its JSON
+    /// bytes entered the TLS writer. Drain the resulting ciphertext first.
+    pub fn has_pending_output(&self) -> bool {
+        self.tls.as_ref().is_some_and(|connection| connection.wants_write())
+    }
+
     pub fn plain(tcp: TcpStream) -> Self {
         Self { tcp, tls: None }
     }
