@@ -3933,6 +3933,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsThreads=document.createElement('input');
     const tinyBrainsDevice=document.createElement('select');
     const tinyBrainsStage=document.createElement('select');
+    const tinyBrainsCustomMaps=document.createElement('input');
+    const tinyBrainsMapSelect=document.createElement('select');
+    tinyBrainsCustomMaps.type='checkbox';
+    tinyBrainsMapSelect.multiple=true;
+    tinyBrainsMapSelect.size=10;
     tinyBrainsStage.append(
         new Option('Stage 5 — Full multiplayer maps (default)','full_multiplayer'),
         new Option('Stage 1 — Basic tiny, two players','basic_tiny'),
@@ -4044,6 +4049,9 @@ document.addEventListener('DOMContentLoaded', () => {
             ...(weights.length?{rollout_action_weights:weights}:{}),
             ...(stage?{training_stage:stage}:{}),
             ...(current.profile===profile&&current.profile_sha256===digest&&
+                Array.isArray(current.training_map_ids)
+                ?{training_map_ids:current.training_map_ids}:{}),
+            ...(current.profile===profile&&current.profile_sha256===digest&&
                 current.design_overrides?{design_overrides:current.design_overrides,
                     design_source_sha256:current.design_source_sha256}:{}),
             ...(sourceId&&sourceDigest?{
@@ -4111,6 +4119,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if(options.has(previous))tinyBrainsImport.value=previous;
     }
     tinyBrainsStage.addEventListener('change',()=>{
+        try {readDesignControls();feedback('hub-config-message','');}
+        catch(error){feedback('hub-config-message',error.message);}
+    });
+    tinyBrainsCustomMaps.addEventListener('change',()=>{
+        tinyBrainsMapSelect.disabled=!tinyBrainsCustomMaps.checked;
+        try {readDesignControls();feedback('hub-config-message','');}
+        catch(error){feedback('hub-config-message',error.message);}
+    });
+    tinyBrainsMapSelect.addEventListener('change',()=>{
         try {readDesignControls();feedback('hub-config-message','');}
         catch(error){feedback('hub-config-message',error.message);}
     });
@@ -4183,6 +4200,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tinyBrainsThreads.value=parameters.threads??'';
         tinyBrainsDevice.value=parameters.device||'';
         tinyBrainsStage.value=parameters.training_stage||'full_multiplayer';
+        tinyBrainsCustomMaps.checked=Array.isArray(parameters.training_map_ids);
         tinyBrainsRemote.checked=parameters.remote_rollouts===true;
         tinyBrainsWeights.value=(parameters.rollout_action_weights||[]).join(',');
         displayTinyBrainsImports();
@@ -4291,6 +4309,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 'all_two_player','full_multiplayer'].includes(stage))
                 throw Error('Select an approved TinyBrains map stage.');
             parameters.training_stage=stage;
+            if(tinyBrainsCustomMaps.checked) {
+                const allowed=choice.entry.map_catalog||[];
+                const selection=[...tinyBrainsMapSelect.selectedOptions]
+                    .map(option=>option.value);
+                if(!allowed.length||selection.length<1||
+                    selection.length>allowed.length||
+                    new Set(selection).size!==selection.length||
+                    selection.some(id=>!allowed.some(map=>map.id===id)))
+                    throw Error('Choose one or more verified training maps from the approved list.');
+                parameters.training_map_ids=selection;
+            }else delete parameters.training_map_ids;
         }
         for(const input of runControls) {
             const key=input.dataset.designRun;
@@ -4334,6 +4363,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return JSON.stringify({project,parameters,
             machine:chosen?.machine?.id||null,
             fields:chosen?.entry?.fields||null,
+            map_catalog:chosen?.entry?.map_catalog||null,
             config_sha256:chosen?.entry?.config_sha256||null,
             profile_sha256:chosen?.entry?.profile_sha256||null,
             training_schema_sha256:chosen?.entry?.training_schema_sha256||null,
@@ -4374,6 +4404,27 @@ document.addEventListener('DOMContentLoaded', () => {
             mapHint.textContent='Maps and 2/4/6 player counts are frozen with this Design, independent of GPU and CPU budgets.';
             mapLabel.append(mapHint);
             $('hub-design-environment').append(mapLabel);
+            const catalogue=entry.map_catalog||[];
+            const manual=document.createElement('label');
+            manual.className='hub-toggle-row';
+            tinyBrainsCustomMaps.checked=Array.isArray(parameters.training_map_ids);
+            tinyBrainsCustomMaps.disabled=!catalogue.length;
+            manual.append(tinyBrainsCustomMaps,
+                document.createTextNode(' Select individual training maps'));
+            const customLabel=document.createElement('label');
+            customLabel.textContent='Approved training boards (2-, 4- and 6-player)';
+            tinyBrainsMapSelect.replaceChildren(...catalogue.map(map=>
+                new Option(map.id+' · '+map.players+' players',map.id)));
+            const selected=new Set(parameters.training_map_ids||[]);
+            for(const option of tinyBrainsMapSelect.options)
+                option.selected=selected.has(option.value);
+            tinyBrainsMapSelect.disabled=!tinyBrainsCustomMaps.checked;
+            customLabel.append(tinyBrainsMapSelect);
+            const note=document.createElement('small');
+            note.textContent='Use Ctrl/Cmd-click to choose multiple. This subset is frozen in the training environment, not in CPU/GPU allocation. The selected stage must contain all chosen boards.';
+            customLabel.append(note);
+            customLabel.hidden=!catalogue.length;
+            $('hub-design-environment').append(manual,customLabel);
         }
         if(project==='courier') {
             const instructions=document.createElement('p');
