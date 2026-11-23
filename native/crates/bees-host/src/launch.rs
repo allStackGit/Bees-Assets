@@ -4655,8 +4655,8 @@ fn run_create_saved_squad(
 /// Retire a generated SavedSquad using the ordinary career transfer
 /// ledger. Its FleetShips return to reserve, never vanish or mint TSV.
 /// Every authored route is preflighted before the first durable mutation.
-/// If interrupted between per-ship receipts, those earlier reserve moves
-/// remain valid and the player can repeat deletion to complete the edit.
+/// The final reserve transfers and tombstone publish in one receipt:
+/// interrupted writes leave the original roster unchanged.
 fn run_retire_saved_squad(
     catalog_path: &Path, output_root: &Path, side: i32, saved_squad_id: i64,
 ) -> Result<(), Box<dyn Error>> {
@@ -4751,22 +4751,13 @@ fn run_retire_saved_squad(
         return Err(invalid("no authored campaign Level can own the deleted SavedSquad").into());
     }
 
-    // The current transfer and authored-assignment ledgers already own
-    // exactly these operations. Use them rather than inventing a second
-    // fleet roster or an alternative replay format for squad deletion.
-    for id in &purchased_to_reserve {
-        catalog.transfer_purchased_ship(&progress, output_root, *id, 0)?;
-    }
-    for id in &authored_to_reserve {
-        catalog.reassign_authored_ship(
-            &progress, output_root, side, *id, saved_squad_id, 0, None,
-        )?;
-    }
-    // Reconstruct the committed receipts under the same exclusive lease.
-    // Retirement is published only after none of the original owned ships
-    // still claims the removed SavedSquad.
-    let updated = catalog.load_progress(output_root)?;
-    catalog.retire_saved_squad(&updated, output_root, side, saved_squad_id)?;
+    // Commit the fully preflighted reserve roster and retirement as one
+    // immutable receipt. A crash before publication leaves the original
+    // squad and every FleetShip untouched; no partial deletion is visible.
+    catalog.retire_saved_squad_with_reserve(
+        &progress, output_root, side, saved_squad_id,
+        &purchased_to_reserve, &authored_to_reserve,
+    )?;
     println!("{}", json!({
         "kind": "native_campaign_saved_squad_deleted",
         "campaign_id": catalog.campaign_id,
