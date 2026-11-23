@@ -4491,8 +4491,8 @@ impl NativeSoftwareRenderer {
         );
     }
 
-    pub fn draw_controls_help(&mut self) {
-        const LINES: &[&str] = &[
+    pub fn draw_controls_help(&mut self, wasd_camera: bool) {
+        let lines = &[
             "BEES NATIVE  /  CONTROLS",
             "F1/Esc: close   F2: Fleet Codex   F5: editable hotkeys",
             "SELECTION",
@@ -4500,22 +4500,25 @@ impl NativeSoftwareRenderer {
             "Ctrl/Shift+click: add/remove   Ctrl+A: all   1-0: squads",
             "PgUp / PgDn: cycle squads   Tab: next world",
             "CAMERA / GAME",
-            "Right: move / attack   Middle-drag or arrows: pan   Wheel: zoom",
+            if wasd_camera { "WASD / arrows / middle-drag: pan   Wheel: zoom" }
+            else { "Right: move / attack   Middle-drag or arrows: pan   Wheel: zoom" },
             "F: fit map   I: minimap   B: weapon ranges   F6: edge pan",
             "Space: pause   N: single step   F12: game speed 1x/1.5x/2x   F4: surrender",
             "COMMANDS",
-            "C: hold   A: attack on sight   V: cease fire   E: chase",
+            "C: hold   Shift+W: attack on sight   V: cease fire   E: chase",
             "G: guard   P: patrol   M: mine   H: heal   R: retreat",
-            "S: shooting priority   O: lock on   Y: match speed   U: free speed",
-            "K: beacon   D: detonate   Q: charge",
-            "T: point fire   Hold J: fire   J+B or W: range+fire   X: stop",
+            if wasd_camera {
+                "Alt+S: shooting picker   Alt+A/S/D/W: conflicting native shortcuts"
+            } else { "S: shooting priority   O: lock on   Y: match speed   U: free speed" },
+            "K: beacon   Shift+I: detonate   Q: charge",
+            "T: point fire   Hold J: fire   J+B: range+fire   X: stop",
             "Backspace: cancel target   F9: change local commander",
             "AUDIO / PERFORMANCE",
             "F7: mute   Shift+F7: FreePlay fog   F10/F11: effect level",
             "F8: performance   Shift+letters: shooting 1-16 and source tactics",
         ];
         Self::draw_help_panel(&mut self.pixels, self.width, self.height,
-            LINES, &[2, 6, 10, 17]);
+            lines, &[2, 6, 10, 17]);
     }
 
     /// Source FogOfWarVision is already sampled by the renderer. Refresh

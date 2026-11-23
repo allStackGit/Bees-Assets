@@ -157,6 +157,7 @@ struct WireCounts {
     minimap_camera_moves: u64,
     /// Frames in which the actual window edge moved the presentation camera.
     camera_edge_pan_frames: u64,
+    keyboard_camera_pan_frames: u64,
     campaign_camera_follow_frames: u64,
     pluto_finale_camera_frames: u64,
     scout_alarm_frames: u64,
@@ -3800,7 +3801,7 @@ pub fn connect_remote_with_trust(
         if !show_controls_help && window.is_key_pressed(Key::F8, KeyRepeat::No) {
             show_diagnostics=!show_diagnostics;
         }
-        if window.is_key_pressed(Key::F7, KeyRepeat::No) {
+        if !controls_open && window.is_key_pressed(Key::F7, KeyRepeat::No) {
             peer.notice=if audio.toggle_muted() {
                 "Native audio muted".into()
             } else { "Native audio enabled".into() };
@@ -4420,6 +4421,7 @@ pub fn connect_remote_with_trust(
             let control=window.is_key_down(Key::LeftCtrl)||
                 window.is_key_down(Key::RightCtrl);
             for key in keys {
+                let base_binding = controls.base_binding_matches(&window, key);
                 if shooting_menu {
                     let current=usize::from(shooting_focus.saturating_sub(1));
                     let next=match key {
@@ -4440,7 +4442,7 @@ pub fn connect_remote_with_trust(
                             Err(error)=>peer.notice=error.to_string(),
                         }
                     } else if key==Key::Backspace ||
-                        key==controls.key("Shooting Priority") {
+                        (base_binding && key==controls.key("Shooting Priority")) {
                         shooting_menu=false;shooting_press=None;
                     }
                     continue;
@@ -4463,7 +4465,7 @@ pub fn connect_remote_with_trust(
                 }
                 // The unmodified I key is a display toggle, not a squad
                 // command; Shift+I remains the Circle tactical shortcut.
-                if key==controls.key("Mini Map") && !shift { continue; }
+                if base_binding && key==controls.key("Mini Map") { continue; }
                 let numbered=match key {
                     Key::Key1=>Some(1),Key::Key2=>Some(2),Key::Key3=>Some(3),
                     Key::Key4=>Some(4),Key::Key5=>Some(5),Key::Key6=>Some(6),
@@ -4504,7 +4506,7 @@ pub fn connect_remote_with_trust(
                 }
                 // Keyboard and on-screen buttons share one typed command
                 // dispatcher. Source local controls retain their meanings.
-                if key==controls.key("Fit Camera") && !shift {
+                if base_binding && key==controls.key("Fit Camera") {
                     if let Some(map)=peer.state.as_ref().and_then(bounds) {
                         cam=NativeCamera::fit(map,FIELD,HEIGHT);
                         cam.constrain_source_zoom(authored_zoom,HEIGHT);
@@ -4523,10 +4525,11 @@ pub fn connect_remote_with_trust(
                     }
                     continue;
                 }
-                // Shift tactical gestures retain their distinct source
-                // targeting meanings. Unmodified keys are user-bindable
-                // without changing the canonical HostPlayerInput protocol.
-                let shifted_action=if shift {
+                let shifted_tactic = (!control)
+                    .then(|| controls.shifted_tactical_for_key(key, shift)).flatten();
+                // Legacy targeting gestures are available when the chord
+                // is free in the source shooting and tactical bindings.
+                let shifted_action=if shift && !control && shifted_tactic.is_none() {
                     match key {
                         Key::T=>Some(HudAction::Attack),
                         Key::I=>Some(HudAction::Circle),
@@ -4564,7 +4567,8 @@ pub fn connect_remote_with_trust(
                         ("Shooting Priority",HudAction::Shooting),
                     ];
                     ACTIONS.iter().find_map(|&(name,action)|
-                        (key==controls.key(name)).then_some(action))
+                        (shifted_tactic == Some(name) || (base_binding && key==controls.key(name)))
+                            .then_some(action))
                 };
                 if let Some(action) = action.filter(|action|
                     !opening_hud_locked || *action != HudAction::Shooting)
@@ -4582,14 +4586,14 @@ pub fn connect_remote_with_trust(
             // Same source-native camera speed in physical pixels/second,
             // independent of the remote window's rendered frame rate.
             let pan=500.0*elapsed/cam.pixels_per_unit;
-            if window.is_key_down(Key::Up)||window.is_key_down(Key::Down)||
-                window.is_key_down(Key::Left)||window.is_key_down(Key::Right) {
-                spectator_follow=None;
+            if !shooting_menu {
+                let direction = controls.camera_direction(&window);
+                if direction != Vec2::ZERO {
+                    spectator_follow = None;
+                    cam.center += direction * pan;
+                    peer.metrics.keyboard_camera_pan_frames += 1;
+                }
             }
-            if window.is_key_down(Key::Up){cam.center.y+=pan;}
-            if window.is_key_down(Key::Down){cam.center.y-=pan;}
-            if window.is_key_down(Key::Left){cam.center.x-=pan;}
-            if window.is_key_down(Key::Right){cam.center.x+=pan;}
             let mouse=super::virtual_window_mouse(&window, WIDTH, HEIGHT);
             let minimap = minimap_visible.then(|| peer.state.as_ref().and_then(bounds)
                 .and_then(|map| MiniMapLayout::top_right(FIELD, HEIGHT, map))).flatten();
@@ -5162,7 +5166,8 @@ pub fn connect_remote_with_trust(
             let scope = (state["world_id"].as_u64().unwrap_or(0),
                 state["episode_revision"].as_u64().unwrap_or(0));
             let scout_moved = state["campaign_dialogue"]["scout_moved_from_start"].as_bool();
-            if let Some(hint) = pluto_scout_tutorial.update(scope, scout_moved, cam.center, now)
+            if let Some(hint) = pluto_scout_tutorial
+                .update(scope, scout_moved, cam.center, now, controls.wasd_camera())
                 .filter(|_| !briefing && peer.connected && peer.authenticated && !peer.spectator)
             {
                 super::campaign_dialogue::PlutoScoutTutorial::draw(&mut pixels, WIDTH, FIELD, hint);
@@ -5545,7 +5550,7 @@ pub fn connect_remote_with_trust(
                 &mut pixels,WIDTH,HEIGHT,&refs,&[1,2,4],
             );
         } else if show_controls_help {
-            const LINES: &[&str] = &[
+            let lines = &[
                 "BEES NATIVE / MULTIPLAYER CONTROLS",
                 "F1/Esc: close   F2: Codex   Shift+F5: hotkey settings",
                 "F9: inspect the authenticated committed campaign rewards",
@@ -5554,15 +5559,17 @@ pub fn connect_remote_with_trust(
                 "Ctrl+click: add/remove   Ctrl+A: all   1-0: numbered squads",
                 "Tab / PgUp / PgDn: cycle original squads",
                 "CAMERA / DISPLAY",
-                "Right: move / attack   Middle-drag or arrows: pan   Wheel: zoom",
+                if controls.wasd_camera() { "WASD / arrows / middle-drag: pan   Wheel: zoom" }
+                else { "Right: move / attack   Middle-drag or arrows: pan   Wheel: zoom" },
                 "F: fit   B: ranges   I: map   F6: art   Shift+F6: edge pan",
                 "Shift+wheel: horizontal pan   Ctrl+wheel: vertical pan",
                 "COMMANDS",
-                "C: hold   A: attack on sight   V: cease fire   E: chase",
+                "C: hold   Shift+W: attack on sight   V: cease fire   E: chase",
                 "G: guard   P: patrol   M: mine   H: heal   R: retreat",
-                "S: priority picker   Shift+letter: direct source priorities 1-16",
-                "K: beacon   D: detonate   Q: charge (queues during cooldown)",
-                "T: point fire   Hold J: fire   J+B or W: range+fire   X: stop",
+                if controls.wasd_camera() { "Alt+S: priority picker   Alt+A/S/D/W: native shortcuts" }
+                else { "S: priority picker   Shift+letter: direct source priorities 1-16" },
+                "K: beacon   Shift+I: detonate   Q: charge (queues during cooldown)",
+                "T: point fire   Hold J: fire   J+B: range+fire   X: stop",
                 "Shift+Q/W/E/R/T/Y/U/I/O/P: source tactical orders",
                 "NETWORK / AUDIO",
                 "F4: surrender   Shift+F4: claim forfeiture   F5: reconnect",
@@ -5575,13 +5582,14 @@ pub fn connect_remote_with_trust(
                 // The observer may navigate the native camera, artwork,
                 // local soundtrack and diagnostics, but no control exists
                 // to arm a source command or release a campaign briefing.
-                const OBSERVER_HELP: &[&str] = &[
+                let observer_help = &[
                     "AUTHENTICATED SPECTATOR - READ ONLY",
                     "Side-filtered battlefield and original fog of war",
                     "CAMERA / DISPLAY",
                     "Click a visible ship: follow it  |  Pan: stop following",
                     "Click or drag minimap: reposition camera",
-                    "Arrows: pan   Wheel: zoom   F: fit map",
+                    if controls.wasd_camera() { "WASD / arrows: pan   Wheel: zoom   F: fit map" }
+                    else { "Arrows: pan   Wheel: zoom   F: fit map" },
                     "Shift+wheel: horizontal pan   Ctrl+wheel: vertical pan",
                     "B: weapon ranges   F6: source art / fast view",
                     "NETWORK / AUDIO",
@@ -5592,11 +5600,11 @@ pub fn connect_remote_with_trust(
                     "Press F1 or Escape to close this panel",
                 ];
                 NativeSoftwareRenderer::draw_help_panel(
-                    &mut pixels, WIDTH, HEIGHT, OBSERVER_HELP, &[2,6,10],
+                    &mut pixels, WIDTH, HEIGHT, observer_help, &[2,6,10],
                 );
             } else {
                 NativeSoftwareRenderer::draw_help_panel(
-                    &mut pixels, WIDTH, HEIGHT, LINES, &[2, 6, 10, 17],
+                    &mut pixels, WIDTH, HEIGHT, lines, &[2, 6, 10, 17],
                 );
             }
         }
@@ -5695,6 +5703,7 @@ pub fn connect_remote_with_trust(
         "minimap_objective_markers":peer.metrics.minimap_objective_markers,
         "minimap_camera_moves":peer.metrics.minimap_camera_moves,
         "camera_edge_pan_frames":peer.metrics.camera_edge_pan_frames,
+        "keyboard_camera_pan_frames":peer.metrics.keyboard_camera_pan_frames,
         "campaign_camera_follow_frames":peer.metrics.campaign_camera_follow_frames,
         "pluto_finale_camera_frames":peer.metrics.pluto_finale_camera_frames,
         "scout_alarm_frames":peer.metrics.scout_alarm_frames,

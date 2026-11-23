@@ -119,6 +119,7 @@ struct StoredBindings {
 #[serde(default, deny_unknown_fields)]
 struct CameraPreferences {
     edge_scrolling: Option<bool>,
+    wasd_camera: Option<bool>,
 }
 
 impl CameraPreferences {
@@ -325,6 +326,10 @@ impl NativeControls {
         // Camera settings have their own file, so changing them from a
         // battle never republishes stale key bindings from that window.
         self.camera.edge_scrolling = enabled;
+        self.save_camera_preferences()
+    }
+
+    fn save_camera_preferences(&self) -> io::Result<()> {
         let path = self.path.with_extension("camera.json");
         match fs::symlink_metadata(&path) {
             Ok(metadata) if !metadata.file_type().is_file() =>
@@ -352,6 +357,42 @@ impl NativeControls {
         }
     }
 
+    pub(crate) fn wasd_camera(&self) -> bool {
+        self.camera.wasd_camera.unwrap_or(true)
+    }
+
+    fn uses_camera_letter(&self, key: Key) -> bool {
+        self.wasd_camera() && matches!(key, Key::W | Key::A | Key::S | Key::D)
+    }
+
+    fn control_held(window: &Window) -> bool {
+        window.is_key_down(Key::LeftCtrl) || window.is_key_down(Key::RightCtrl)
+    }
+
+    fn alt_held(window: &Window) -> bool {
+        window.is_key_down(Key::LeftAlt) || window.is_key_down(Key::RightAlt)
+    }
+
+    /// Bare WASD pans. Conflicting native bindings retain their saved
+    /// letters and have an Alt chord in this camera layout.
+    pub(crate) fn base_binding_matches(&self, window: &Window, key: Key) -> bool {
+        !Self::shift_held(window) && (!self.uses_camera_letter(key) ||
+            (Self::alt_held(window) && !Self::control_held(window)))
+    }
+
+    pub(crate) fn camera_direction(&self, window: &Window) -> Vec2 {
+        if !window.is_active() { return Vec2::ZERO; }
+        let use_letters = self.wasd_camera() && !Self::shift_held(window) &&
+            !Self::alt_held(window) && !Self::control_held(window);
+        let down = |arrow, letter| window.is_key_down(arrow) ||
+            (use_letters && window.is_key_down(letter));
+        let axis = |positive, negative| f32::from(u8::from(positive)) - f32::from(u8::from(negative));
+        Vec2::new(
+            axis(down(Key::Right, Key::D), down(Key::Left, Key::A)),
+            axis(down(Key::Up, Key::W), down(Key::Down, Key::S)),
+        )
+    }
+
     pub(crate) fn key(&self, action: &str) -> Key {
         let index = DEFAULTS.iter().position(|&(name,_)|name==action)
             .expect("code uses a declared native hotkey action");
@@ -366,12 +407,13 @@ impl NativeControls {
     pub(crate) fn pressed(
         &self, window: &Window, action: &str, repeat: KeyRepeat,
     ) -> bool {
-        !Self::shift_held(window) &&
-            window.is_key_pressed(self.key(action),repeat)
+        let key = self.key(action);
+        self.base_binding_matches(window, key) && window.is_key_pressed(key, repeat)
     }
 
     pub(crate) fn down(&self, window: &Window, action: &str) -> bool {
-        !Self::shift_held(window) && window.is_key_down(self.key(action))
+        let key = self.key(action);
+        self.base_binding_matches(window, key) && window.is_key_down(key)
     }
 
     /// Source UserSettingsData binds Show Ranges + Manual Fire as a chord
@@ -458,9 +500,10 @@ impl NativeControls {
             .expect("settings selection must be within the authored list").0
     }
 
-    fn display_key(index:usize,key:Key)->String {
-        if Self::is_shifted(index) {format!("Shift+{key:?}")}
-        else {format!("{key:?}")}
+    fn display_key(&self, index: usize, key: Key) -> String {
+        if Self::is_shifted(index) { format!("Shift+{key:?}") }
+        else if self.uses_camera_letter(key) { format!("Alt+{key:?}") }
+        else { format!("{key:?}") }
     }
 
     fn save(&self) -> io::Result<()> {
@@ -556,6 +599,17 @@ impl NativeControls {
                 Ok(()) => "Camera preference saved".into(),
                 Err(error) => format!("Could not save camera preference: {error}"),
             };
+        } else if window.is_key_pressed(Key::F7, KeyRepeat::No) {
+            let prior = self.camera.wasd_camera;
+            self.camera.wasd_camera = Some(!self.wasd_camera());
+            self.notice = match self.save_camera_preferences() {
+                Ok(()) if self.wasd_camera() => "Camera uses WASD and arrows".into(),
+                Ok(()) => "Camera uses arrow keys".into(),
+                Err(error) => {
+                    self.camera.wasd_camera = prior;
+                    format!("Could not save camera keys: {error}")
+                }
+            };
         } else if window.is_key_pressed(Key::Delete, KeyRepeat::No) {
             self.mode = EditMode::ConfirmReset;
             self.notice = "Replace saved bindings with defaults? Enter confirms, Esc cancels.".into();
@@ -595,11 +649,13 @@ impl NativeControls {
                 Some(true) => "On",
                 Some(false) => "Off",
             }),
+            format!("F7: camera keys [{}]",
+                if self.wasd_camera() { "WASD + arrows" } else { "Arrows" }),
         ];
         for i in start..(start + BINDINGS_PER_PAGE).min(self.keys.len()) {
             lines.push(format!("{} {:<23} : {}",
                 if i==self.selected {">"} else {" "},
-                Self::name(i),Self::display_key(i,self.keys[i])));
+                Self::name(i), self.display_key(i, self.keys[i])));
         }
         lines.push(" ".to_owned());
         lines.push(format!("{}",

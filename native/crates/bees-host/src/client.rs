@@ -1271,14 +1271,12 @@ impl NativeClient {
             self.input_feedback = self.controls.toggle_edge_scrolling(self.source_edge_scrolling);
         }
         let speed = 500.0 * elapsed / self.renderer.camera.pixels_per_unit;
-        let mut pan_x = 0.0;
-        let mut pan_y = 0.0;
-        if !self.show_controls_help {
-            if self.window.is_key_down(Key::Left) { pan_x -= speed; }
-            if self.window.is_key_down(Key::Right) { pan_x += speed; }
-            if self.window.is_key_down(Key::Up) { pan_y += speed; }
-            if self.window.is_key_down(Key::Down) { pan_y -= speed; }
-        }
+        let keyboard_pan = if self.show_controls_help || self.renderer.show_shooting_menu {
+            Vec2::ZERO
+        } else {
+            self.controls.camera_direction(&self.window) * speed
+        };
+        let (mut pan_x, mut pan_y) = (keyboard_pan.x, keyboard_pan.y);
         let mouse = self.window.get_mouse_pos(MouseMode::Discard);
         let camera_grab = self.window.is_active() && !self.show_controls_help &&
             !self.controls_open && !self.battle_menu_open && !self.codex_open &&
@@ -2057,7 +2055,8 @@ impl NativeClient {
         let scout_moved = view.player_authority.player_viewer_side()
             .and_then(|side| view.pluto_scout_tutorial_for(side));
         let scout_hint = self.pluto_scout_tutorial.update(
-            (view.world_id.0, view.episode_revision), scout_moved, self.renderer.camera.center, now,
+            (view.world_id.0, view.episode_revision), scout_moved, self.renderer.camera.center,
+            now, self.controls.wasd_camera(),
         );
         if let Some(hint) = scout_hint.filter(|_| !briefing) {
             self.renderer.draw_pluto_scout_hint(hint);
@@ -2119,7 +2118,7 @@ impl NativeClient {
         } else if self.codex_open {
             self.renderer.draw_fleet_codex(&view, self.codex_selected);
         } else if self.show_controls_help {
-            self.renderer.draw_controls_help();
+            self.renderer.draw_controls_help(self.controls.wasd_camera());
         } else if self.match_summary_visible && self.result_controls.is_some() {
             if let Some(result) = view.terminal_result {
                 let owner = view.player_authority.player_viewer_side().unwrap_or(0);

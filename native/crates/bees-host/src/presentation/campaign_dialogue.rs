@@ -69,7 +69,7 @@ enum ScoutCameraLesson {
 impl PlutoScoutTutorial {
     pub(crate) fn update(
         &mut self, scope: (u64, u64), scout_moved: Option<bool>,
-        center: bees_sim::geometry::Vec2, now: std::time::Instant,
+        center: bees_sim::geometry::Vec2, now: std::time::Instant, wasd_camera: bool,
     ) -> Option<&'static str> {
         let Some(scout_moved) = scout_moved else {
             self.opening = None;
@@ -94,7 +94,8 @@ impl PlutoScoutTutorial {
                     opening.camera = ScoutCameraLesson::Complete;
                     None
                 } else {
-                    Some("Use the arrow keys to move the camera.")
+                    Some(if wasd_camera { "Use WASD to move the camera." }
+                        else { "Use the arrow keys to move the camera." })
                 }
             }
             ScoutCameraLesson::Complete => None,
