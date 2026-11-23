@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using Assets.Scripts;
 using Assets.Scripts.Entities;
@@ -351,6 +352,32 @@ internal static class NativePhysicalSceneExporter
     {
         var selected = Selection.activeGameObject;
         var level = selected == null ? null : selected.GetComponent<Level>();
+        ExportLevel(level, contentAddressed: false);
+        AssetDatabase.Refresh();
+    }
+
+    // One native source exporter serves interactive capture and a complete
+    // collection of simultaneously initialized campaign/challenge Levels.
+    // Never move Selection while exporting; doing so changes user/editor
+    // state and can disturb the live Level or its selected units.
+    [MenuItem("Bees/Native/Export All Active Level Physical Scenes")]
+    private static void ExportAllActive()
+    {
+        var levels = UnityEngine.Object.FindObjectsByType<Level>(
+            FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        if (levels.Length == 0)
+            throw new InvalidOperationException("No active Level exists for native physical capture.");
+        Array.Sort(levels, (left, right) =>
+            StringComparer.Ordinal.Compare(left.gameObject.name, right.gameObject.name));
+        foreach (var level in levels)
+            ExportLevel(level, contentAddressed: true);
+        AssetDatabase.Refresh();
+        Debug.Log("Exported " + levels.Length +
+            " initialized native Level physical sources without overwriting previous captures.");
+    }
+
+    private static void ExportLevel(Level level, bool contentAddressed)
+    {
         if (level == null || level.Stage == null || level.State == null ||
             ConfigData.Configuration == null ||
             !IsFinite(level.MinX) || !IsFinite(level.MaxX) ||
@@ -842,7 +869,6 @@ internal static class NativePhysicalSceneExporter
         string safe = Sanitize(snapshot.level_name);
         string dir = Path.Combine(Application.dataPath, "native", "assets");
         Directory.CreateDirectory(dir);
-        string path = Path.Combine(dir, "unity-physical-" + safe + ".json");
         string json = JsonUtility.ToJson(snapshot, true);
         if (queenSpawns.Count != 0)
         {
@@ -856,8 +882,31 @@ internal static class NativePhysicalSceneExporter
             }
             json = document.ToString(Newtonsoft.Json.Formatting.Indented);
         }
-        File.WriteAllText(path, json + "\n", new UTF8Encoding(false));
-        AssetDatabase.Refresh();
+        string bytes = json + "\n";
+        string filename = "unity-physical-" + safe;
+        if (contentAddressed)
+        {
+            // Level names are reused across sessions and mission variants.
+            // Content-address the *actual physical snapshot*, including
+            // weapons, spawn geometry and source squad ownership, so a
+            // later campaign capture can never replace another variant.
+            byte[] digest;
+            using (var sha = SHA256.Create())
+                digest = sha.ComputeHash(Encoding.UTF8.GetBytes(bytes));
+            filename += "-" + BitConverter.ToString(digest, 0, 12)
+                .Replace("-", "").ToLowerInvariant();
+        }
+        string path = Path.Combine(dir, filename + ".json");
+        if (contentAddressed && File.Exists(path))
+        {
+            if (!string.Equals(File.ReadAllText(path, Encoding.UTF8),
+                    bytes, StringComparison.Ordinal))
+                throw new IOException("Existing native physical source has a hash collision: " + path);
+        }
+        else
+        {
+            File.WriteAllText(path, bytes, new UTF8Encoding(false));
+        }
         Debug.Log("Exported native physical Level source: " + path);
     }
 
