@@ -1893,6 +1893,7 @@ impl NativeRemotePlay {
         }
         let waiting_for_reconnect = two_sided && view.tick > 0 &&
             view.terminal_result.is_none() &&
+            view.combat.surrendered_side().is_none() &&
             connected_commander_sides.len() < self.side_tokens.len();
         let lobby_active = self.dedicated_briefing_gate &&
             self.side_tokens.len() == 2 && view.tick == 0 &&
