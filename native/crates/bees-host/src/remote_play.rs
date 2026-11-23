@@ -182,12 +182,14 @@ struct Peer {
     incoming: Vec<u8>,
     // At most one frame is on the socket. Reliable replies queue separately
     // and are never discarded, while stale unsent state is replaceable.
-    outgoing: Vec<u8>,
+    // Immutable bytes may be shared by all authorized peers receiving the
+    // same source view. Only the byte cursor belongs to this TCP seat.
+    outgoing: Arc<[u8]>,
     written: usize,
     writing_state: bool,
     reliable: VecDeque<Vec<u8>>,
     reliable_bytes: usize,
-    newest_state: Option<Vec<u8>>,
+    newest_state: Option<Arc<[u8]>>,
     // Ordered input receipts may be resolved later than later requests
     // because successful gameplay commands require a durable World checkpoint.
     // Hold each result behind its preceding unresolved input on THIS peer.
@@ -269,19 +271,18 @@ impl Peer {
     /// State is lossy presentation data. Preserve the current partially
     /// transmitted line (TCP framing), but replace any *unsent* old state
     /// with the latest tick. Reply messages never participate in coalescing.
-    fn enqueue_state(&mut self, state: &[u8]) -> bool {
-        if state.len() + 1 > MAX_PENDING {
+    fn enqueue_state(&mut self, state: Arc<[u8]>) -> bool {
+        // State is already newline-delimited and bounded by the producing
+        // side/privilege cache. No full-frame copy is required per peer.
+        if state.len() > MAX_PENDING {
             self.closed = true;
             return false;
         }
-        let mut data = Vec::with_capacity(state.len() + 1);
-        data.extend_from_slice(state);
-        data.push(b'\n');
         if self.writing_state && self.written == 0 {
-            self.outgoing = data;
+            self.outgoing = state;
             return true;
         }
-        self.newest_state.replace(data).is_some()
+        self.newest_state.replace(state).is_some()
     }
 
     /// Returns application state bytes admitted to the socket/TLS layer.
@@ -298,12 +299,12 @@ impl Peer {
         let mut budget = WRITE_BYTES_PER_FLUSH;
         while !self.closed && budget > 0 {
             if self.written == self.outgoing.len() {
-                self.outgoing.clear();
+                self.outgoing = Arc::default();
                 self.written = 0;
                 self.writing_state = false;
                 if let Some(message) = self.reliable.pop_front() {
                     self.reliable_bytes -= message.len();
-                    self.outgoing = message;
+                    self.outgoing = Arc::from(message);
                 } else if let Some(state) = self.newest_state.take() {
                     self.outgoing = state;
                     self.writing_state = true;
@@ -1160,7 +1161,7 @@ impl NativeRemotePlay {
                 compressed_world_state: false,
                 last_request_id: 0, incoming: Vec::new(),
                 weapon_overlay: None, inspect_requests: VecDeque::new(),
-                outgoing: Vec::new(), written: 0, writing_state: false,
+                outgoing: Arc::default(), written: 0, writing_state: false,
                 reliable: VecDeque::new(), reliable_bytes: 0,
                 newest_state: None, input_replies: VecDeque::new(),
                 archived_terminal: false, close_after_flush: false,
@@ -2292,6 +2293,9 @@ impl NativeRemotePlay {
         // Cache its optional compressed form once per unique authorized
         // projection rather than once for each cooperative TCP recipient.
         let mut compressed = HashMap::<(i32, bool), Option<Vec<u8>>>::new();
+        // The actual newline-terminated frame is allocated only once for
+        // each side/privilege/codec combination, regardless of peers.
+        let mut shared_frames = HashMap::<(i32, bool, bool), Arc<[u8]>>::new();
         let measurements = &mut self.measurements;
         for peer in &mut self.peers {
             let Some(side) = peer.side else { continue };
@@ -2434,7 +2438,15 @@ impl NativeRemotePlay {
                 measurements.compressed_state_raw_bytes_queued += encoded.len() as u64;
                 measurements.compressed_state_wire_bytes_queued += payload.len() as u64;
             }
-            if peer.enqueue_state(payload) {
+            let compressed_on_wire = payload.len() != encoded.len();
+            let key = (side, spectator, compressed_on_wire);
+            let frame = shared_frames.entry(key).or_insert_with(|| {
+                let mut bytes = Vec::with_capacity(payload.len() + 1);
+                bytes.extend_from_slice(payload);
+                bytes.push(b'\n');
+                Arc::<[u8]>::from(bytes)
+            });
+            if peer.enqueue_state(Arc::clone(frame)) {
                 measurements.states_superseded += 1;
             }
             if !peer.closed {
