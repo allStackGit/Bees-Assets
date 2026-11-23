@@ -30,26 +30,55 @@ U64 = 1 << 64
 
 def write_native_holdout(output: Path, training_run: dict,
                          worlds: int, seed: int, episodes: int) -> None:
-    """Create a fixed native Stage holdout independent of training seed shifts.
+    """Pin independent physical holdouts for every authored source Level.
 
-    The evaluator runs this identical physical scene with each checkpoint;
-    only model_manifest changes. No Unity snapshot or second simulation
-    implementation is needed.
+    Same Stage, CombatWorld, original ship/mission scene, group identity and
+    neural model as training. Only host World identities and explicitly
+    independent fixed evaluation seeds differ. A partial subset of original
+    maps is NOT silently presented as an exhaustive evaluation.
     """
     if not 1 <= worlds <= 1024 or not 1 <= episodes <= 10000 or not 0 <= seed < U64:
         raise ValueError("invalid native holdout worlds, episodes, or seed")
     run = json.loads(json.dumps(training_run))
-    if len(run.get("levels", [])) != 1:
-        raise ValueError("native bootstrap holdout requires one source scene")
-    original = run["levels"][0]
-    if not isinstance(original.get("seed"), int) or not isinstance(
-        original.get("world_id"), int
-    ) or not isinstance(original.get("level_id"), int):
-        raise ValueError("native holdout requires explicit source seed and Level identities")
-    if not 0 < original["world_id"] <= (1 << 64) - worlds or not (
-        0 < original["level_id"] <= (1 << 63) - worlds
-    ):
-        raise ValueError("native holdout would exhaust source Level identities")
+    sources = run.get("levels")
+    if not isinstance(sources, list) or not sources:
+        raise ValueError("fixed holdout requires authored physical source Levels")
+    count = len(sources)
+    if worlds < count or worlds % count != 0:
+        raise ValueError(
+            f"balanced native holdout must cover all {count} original physical "
+            "Levels an equal number of times; increase --holdout-worlds or "
+            "use an independent multi-Stage evaluation suite"
+        )
+    occupied = set()
+    original_seeds = set()
+    for source in sources:
+        if (not isinstance(source, dict) or
+                type(source.get("world_id")) is not int or
+                type(source.get("level_id")) is not int or
+                not 0 < source["world_id"] < U64 or
+                not 0 < source["level_id"] < (1 << 63) or
+                not isinstance(source.get("scene"), str) or
+                not source["scene"] or
+                source["world_id"] in occupied):
+            raise ValueError("source native holdout identities are incomplete or duplicated")
+        occupied.add(source["world_id"])
+        single = type(source.get("seed")) is int and source.get("episode_seeds") is None
+        series = (source.get("seed") is None and
+                  isinstance(source.get("episode_seeds"), list) and
+                  len(source["episode_seeds"]) == run["episodes_per_world"])
+        if not (single or series):
+            raise ValueError("source Level requires its actual independent seed plan")
+        values = [source["seed"]] if single else source["episode_seeds"]
+        if any(type(value) is not int or not 0 <= value < U64 for value in values):
+            raise ValueError("invalid training seed plan for native physical holdout")
+        original_seeds.update(values)
+    max_world = max(row["world_id"] for row in sources)
+    max_level = max(row["level_id"] for row in sources)
+    if (len({row["level_id"] for row in sources}) != count or
+            max_world >= U64 - (worlds - count) or
+            max_level >= (1 << 63) - (worlds - count)):
+        raise ValueError("native holdout World/Level identity allocation is exhausted")
     per_episode_budget, remainder = divmod(
         run["max_rounds"], run["episodes_per_world"],
     )
@@ -60,19 +89,29 @@ def write_native_holdout(output: Path, training_run: dict,
     run["episodes_per_world"] = episodes
     run["levels"] = []
     for index in range(worlds):
+        original = sources[index % count]
         level = dict(original)
-        level["world_id"] += index
-        level["level_id"] += index
-        # The odd golden-ratio stride provides unique seeds for every world
-        # over uint64 arithmetic. Unlike learner round seed offsets, these
-        # never change between holdout evaluations.
-        level["seed"] = (seed + index * 0x9E3779B97F4A7C15) % U64
-        if level["seed"] == original["seed"]:
-            raise ValueError("holdout seed must differ from the training source seed")
+        if index >= count:
+            level["world_id"] = max_world + index - count + 1
+            level["level_id"] = max_level + index - count + 1
+        # Each source map gets exactly worlds/count independent fixed
+        # initial seeds. The golden-ratio stride creates distinct 64-bit
+        # physical RNG streams without changing the actual game PRNG.
+        level_seed = (seed + index * 0x9E3779B97F4A7C15) % U64
+        # A holdout must not evaluate the exact seed used by the original
+        # training source. The trainer's later per-round shifting can
+        # generate new worlds; independent benchmark source seeds remain
+        # pinned regardless of that schedule.
+        if level_seed in original_seeds:
+            raise ValueError(
+                "native fixed evaluation seed overlaps a training source seed"
+            )
+        level["seed"] = level_seed
+        level.pop("episode_seeds", None)
         run["levels"].append(level)
-    with (output / "holdout-run.json").open("x", encoding="utf-8", newline="\n") as file:
+    with (output / "holdout-run.json").open("x", encoding="utf-8", newline="\\n") as file:
         json.dump(run, file, indent=2)
-        file.write("\n")
+        file.write("\\n")
         file.flush()
         os.fsync(file.fileno())
 
@@ -145,11 +184,6 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
                     raise ValueError("custom native Level scene must be an object")
                 immutable_scenes[physical_path] = physical
             source_scenes.append((physical_path, physical))
-        if len(source_scenes) > 1 and holdout_worlds is not None:
-            raise ValueError(
-                "joint original fleet bootstraps use separate authored fixed-seed "
-                "evaluation suites, not a duplicated single-map holdout"
-            )
 
     expected_slots = {
         "0": slots[0], "1": slots[1] if len(slots) > 1 else slots[0],
