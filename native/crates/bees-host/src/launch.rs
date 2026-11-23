@@ -10454,6 +10454,7 @@ fn run_battle(
         // Network co-op enters through precisely the same authoritative
         // command dispatcher as the local window and recorded input replay.
         // Process it at this fixed-tick boundary, never during physics.
+        let mut remote_lobby_waiting = false;
         if remote.is_some() {
             let world = host.simulation().world(0).expect("remote play has one Level");
             let world_id = world.id;
@@ -10464,17 +10465,24 @@ fn run_battle(
                 world_id, revision, &live_held_controllers,
                 if view { None } else { remote_briefing },
             );
+            remote_lobby_waiting = !view &&
+                remote.as_mut().expect("checked remote listener")
+                    .lobby_waiting(world_id, revision, world.tick());
             for order in orders {
                 // A story briefing blocks physical orders from both player
                 // sides until its authored viewer releases the real Level.
                 // End still frees an existing peer-owned held-fire gesture.
-                if remote_briefing.is_some() &&
+                if (remote_briefing.is_some() || remote_lobby_waiting) &&
                     !matches!(&order.action, NativePlayerInput::HeldFire(input)
                         if matches!(input.action,
                             bees_gameplay::player_inputs::NativeHeldFireAction::End)) {
                     remote.as_mut().expect("remote listener").reply(
                         order.peer, order.request_id,
-                        Err("campaign briefing is still being presented"));
+                        Err(if remote_lobby_waiting {
+                            "waiting for both authenticated commanders to ready"
+                        } else {
+                            "campaign briefing is still being presented"
+                        }));
                     continue;
                 }
                 if !remote_side_owns_input(&host, &order.action, order.side) {
@@ -10561,7 +10569,7 @@ fn run_battle(
             // The local window may still be displaying its own briefing;
             // deliver the initial paused state to newly authenticated LAN
             // peers without advancing physics to make a snapshot.
-            if remote_briefing.is_some() {
+            if remote_briefing.is_some() || remote_lobby_waiting {
                 if let Some(view) = host.render_world(0) {
                     remote.as_mut().expect("remote listener")
                         .broadcast_initial_if_pending(&view, client_bounds[0]);
@@ -10712,6 +10720,16 @@ fn run_battle(
                 Ok(bees_host::client::NativeClientAction::Quit) => { user_closed = true; break; },
                 Err(error) => { failed_window = Some(format!("native window: {error}")); break; },
             }
+        }
+        // A two-sided dedicated match must have one authenticated, ready
+        // commander from each side before its first physical tick. This
+        // admission is transport-only; the original World, input trace,
+        // source HiveMind clock and simulation checkpoint are unchanged.
+        // A disconnected or recovered peer must reauthenticate and ready.
+        if remote_lobby_waiting {
+            std::thread::sleep(Duration::from_millis(16));
+            remote_deadline = Instant::now();
+            continue 'battle;
         }
         // The dedicated LAN server has no local presentation tick.
         // While one or more connected story owners are reading the
