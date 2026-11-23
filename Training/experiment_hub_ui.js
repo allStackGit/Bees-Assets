@@ -4154,13 +4154,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // A worker supplies the defaults from its actual installed trainer;
     // the dashboard never invents hyperparameter values or environment rules.
     function designDefinition(parameters={}) {
-        // Cached authenticated TinyBrains metadata remains usable for Design
-        // editing while the agent restarts. It is not execution admission.
+        // The server persists previously authenticated TinyBrains authoring
+        // metadata separately from the live execution-capability snapshot.
         const machines=(state?.machines||[]).filter(machine=>
-            machine.local_executor_enabled===true&&
-            machine.installed_projects?.includes(project)&&
-            (machine.status==='connected'||project==='tinybrains'&&
-                machine.design_catalog?.tinybrains?.profiles))
+            machine.status==='connected'&&
+                machine.local_executor_enabled===true&&
+                machine.installed_projects?.includes(project)||
+            project==='tinybrains'&&machine.status==='offline'&&
+                machine.agent_enrolled===true&&
+                machine.trusted_design_catalog?.tinybrains?.profiles)
             .sort((a,b)=>Number(b.status==='connected')-
                 Number(a.status==='connected'));
         for(const machine of machines) {
@@ -4170,13 +4172,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     entry.config_sha256===parameters.config_sha256))
                     return {entry,machine};
             }else if(project==='tinybrains') {
-                const profiles=machine.design_catalog?.tinybrains?.profiles||{};
+                const catalog=machine.status==='connected'
+                    ?machine.design_catalog?.tinybrains
+                    :machine.trusted_design_catalog?.tinybrains;
+                const profiles=catalog?.profiles||{};
                 for(const [profile,pin] of Object.entries(profiles))
                     if((!parameters.profile||parameters.profile===profile)&&
                         (!parameters.profile_sha256||
                             parameters.profile_sha256===pin.profile_sha256))
-                        return {entry:{...machine.design_catalog.tinybrains,
-                            profile_sha256:pin.profile_sha256},machine,profile};
+                        return {entry:{...catalog,
+                            profile_sha256:pin.profile_sha256},
+                            machine:{...machine,design_catalog:{tinybrains:catalog}},
+                            profile};
             }
         }
         return null;
