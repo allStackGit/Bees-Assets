@@ -26,6 +26,31 @@ an explicit --unity-editor path or BEES_UNITY_EDITOR environment variable.
 Node.js, Python 3 and Git are required for the wrapper. No ML-Agents Python
 environment, ROCm learner, BeesServer or Hub service is needed to compile.
 
+## Transfer the complete Unity project metadata
+
+The Bees-Assets repository contains the Unity Assets tree, not the matching
+Packages/ and ProjectSettings/ folders. On the original Windows Unity machine,
+run this from the checked-out Assets directory to create a private bundle:
+
+```powershell
+python Training\bees_unity_project_metadata.py export --unity-root B:\Bees --output B:\Bees\unity-metadata.zip
+```
+
+Copy this ZIP privately to Halifax. After cloning the same Bees-Assets
+branch as Assets/ in the directory above, import the missing sibling folders:
+
+```sh
+python3 Assets/Training/bees_unity_project_metadata.py import \
+    --unity-root "$HOME/ai/projects/bees-unity" \
+    --bundle /path/to/unity-metadata.zip
+```
+
+This copies only Packages and ProjectSettings, validates individual file
+hashes and refuses to overwrite existing project metadata. Unity's Library,
+Temp, local user settings, build outputs, and the Git-managed Assets source
+are not part of the transfer. Use a private file transfer: project settings
+can contain project-specific identifiers or configuration.
+
 ## Compile without changing training state
 
 From the Unity project's Assets directory:
@@ -77,9 +102,10 @@ Bees run compatibility checks and compiled Windows environment validation,
 then stages/distributes the release using the existing Bees control plane.
 Use -NewRun only when an intentionally fresh training lineage is required.
 
-This is a transitional route using the existing Windows Bees learner and
-worker deployment. It does not register Bees execution in the separate
-Halifax native-only Hub, or make the ROCm Bees learner operational.
+This transitional route uses the existing Windows Bees learner and
+worker deployment. The separate Halifax ROCm learner is implemented as a
+configured Python environment option, but still requires runtime qualification.
+
 ## View and control Bees from the Halifax Experiment Hub
 
 The current native Hub remains the scheduler for TinyBrains and Courier. To
@@ -124,3 +150,32 @@ The native Hub does not acquire Bees leases or schedule Bees workers. Its own
 registry and current TinyBrains/Courier jobs remain unchanged. The bridge is
 disabled by default if the environment variable is absent.
 
+
+## Prepare the Halifax ROCm learner without Unity
+
+Use a dedicated **Python 3.10** environment with the matching
+\`mlagents==1.1.0\` and \`mlagents-envs==1.1.0\` Python packages, NumPy below 2,
+ONNX Runtime, psutil, and a ROCm-enabled PyTorch build compatible with the
+installed ROCm stack and Radeon GPUs. Refer to AMD's ROCm PyTorch installation
+matrix before selecting a torch wheel; do not apply the CUDA-only Windows
+requirements file to this environment.
+
+From Assets/:
+
+```sh
+export BEES_LEARNER_PYTHON=/absolute/path/to/rocm-python310/bin/python
+node Training/bees_learner_preflight.js --device cuda
+```
+
+The probe checks the ML-Agents package versions, Python version,
+required imports, NumPy compatibility, accelerator availability, and
+reports the PyTorch backend. ROCm appears as device `cuda` with backend
+`rocm` in PyTorch. A CPU-only preflight is available with `--device cpu`.
+
+Use `BEES_PYTHON` for a machine-local bootstrap Python override when the
+tracked cluster config's `python` command does not exist. The external
+learner environment is *never modified or pruned* by the Bees operator.
+The existing Windows CUDA learner environment remains managed as before.
+
+This is dependency preflight only; it does not assert successful PPO training,
+checkpoint export, two-GPU utilization, or distributed qualification.
