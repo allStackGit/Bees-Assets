@@ -17,6 +17,22 @@ from experiment_hub_tinybrains_runtime import configure_engine
 MAP = re.compile(r"[a-zA-Z0-9_-]{1,80}")
 
 
+def board_seats(board):
+    # The trusted installed cartridge, not a filename suffix or a browser
+    # supplied player count, defines the number of independent seats.
+    from ants_mapoca.season import board_path
+
+    definition = json.loads(read_bounded(board_path(board), 1024 * 1024))
+    seats = definition.get("players")
+    if definition.get("id") != board or type(seats) is not int or seats not in (2, 4, 6):
+        raise ValueError(f"Invalid approved TinyBrains board identity/seats: {board}")
+    return seats
+
+
+def suite_trials(suite):
+    return sum(board_seats(board) for board in suite["maps"]) * len(suite["seeds"])
+
+
 def read_suite(file):
     suite = json.loads(read_bounded(file, 8192))
     required = {"suite_id", "maps", "seeds", "max_turns"}
@@ -30,13 +46,13 @@ def read_suite(file):
     pins = ("opponent_model_sha256", "opponent_manifest_sha256")
     if (
         not isinstance(suite["suite_id"], str) or not SUITE_ID.fullmatch(suite["suite_id"])
-        or not isinstance(maps, list) or not 1 <= len(maps) <= 16
+        or not isinstance(maps, list) or not 1 <= len(maps) <= 128
         or any(not isinstance(board, str) or not MAP.fullmatch(board) for board in maps)
         or len(set(maps)) != len(maps)
         or not isinstance(seeds, list) or not 1 <= len(seeds) <= 128
         or any(type(seed) is not int or not 0 <= seed < 2**32 for seed in seeds)
         or len(set(seeds)) != len(seeds)
-        or len(maps) * len(seeds) * 2 > 256
+        or len(maps) * len(seeds) * 6 > 3072
         or type(turns) is not int or not 1 <= turns <= 1000
         or opponent not in ("nano", "micro", "mini")
         or (opponent in ("micro", "mini") and not all(key in suite for key in pins))
@@ -48,7 +64,7 @@ def read_suite(file):
                 Path(file).parent / "opponents" / suite["suite_id"])
             or not UUID.fullmatch(str(suite["opponent_source_job"]))
             or not SHA256.fullmatch(str(suite["opponent_checkpoint_sha256"]))
-            or not re.fullmatch(r"tinybrains_mini_batch128_v[1-9][0-9]*",
+            or not re.fullmatch(r"tinybrains_mini_batch128_(?:season_)?v[1-9][0-9]*",
                                 suite["suite_id"])))
         or (opponent != "mini" and any(key in suite for key in (
             "opponent_dir", "opponent_checkpoint_sha256", "opponent_source_job")))
@@ -58,6 +74,8 @@ def read_suite(file):
             for key in (*pins, "runtime_sha256"))
     ):
         raise ValueError("Invalid TinyBrains evaluation suite.")
+    if suite_trials(suite) > 1024:
+        raise ValueError("A TinyBrains all-map suite may run at most 1024 matches.")
     return suite
 
 
@@ -106,14 +124,18 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
     match_file = work / "match.json"
     wins = trials = 0
     for board in suite["maps"]:
+        seats = board_seats(board)
         for seed in suite["seeds"]:
-            for seat in (0, 1):
-                models = (candidate, fixed) if seat == 0 else (fixed, candidate)
+            # One independent trial for every possible candidate seat. All
+            # other seats use separate instances of the fixed opponent.
+            for seat in range(seats):
+                models = [candidate if index == seat else fixed
+                          for index in range(seats)]
                 match = f"heldout-{trials}"
                 dump(match_file, {
                     "game": "ants", "vars": {"max_turns": suite["max_turns"]},
                     "rows": [{
-                        "id": match, "seed": seed, "map": board, "seat_count": 2,
+                        "id": match, "seed": seed, "map": board, "seat_count": seats,
                         "seats": [{"seat": index, "weights": str(model / "model.onnx"),
                                    "manifest": str(model / "manifest.json"),
                                    "label": "candidate" if index == seat else opponent}
@@ -127,14 +149,17 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
                     raise ValueError("TinyBrains match reported an execution error.")
                 replay = json.loads(read_bounded(replay_root / f"{match}.json", 32 * 1024 * 1024))
                 ranks = replay["engine_ranks"]
-                if not isinstance(ranks, list) or len(ranks) != 2 or any(type(rank) is not int for rank in ranks):
+                if not isinstance(ranks, list) or len(ranks) != seats or any(
+                        type(rank) is not int for rank in ranks):
                     raise ValueError("TinyBrains replay has invalid engine ranks.")
-                outcome = "win" if ranks[seat] < ranks[1 - seat] else (
-                    "loss" if ranks[seat] > ranks[1 - seat] else "draw")
+                best = min(ranks)
+                outcome = ("win" if ranks[seat] == best and ranks.count(best) == 1
+                           else "draw" if ranks[seat] == best else "loss")
                 wins += outcome == "win"
                 trials += 1
                 if on_result is not None:
-                    on_result({"map": board, "seed": seed, "candidate_seat": seat,
+                    on_result({"map": board, "seed": seed, "player_count": seats,
+                               "candidate_seat": seat,
                                "opponent": opponent, "outcome": outcome,
                                "ranks": ranks, "scores": replay.get("scores"),
                                "turns": replay.get("turns")})
@@ -145,24 +170,38 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
 def evaluate_with_metrics(checkpoint, digest, suite, work, *, current_runtime=False):
     """Evaluate a frozen checkpoint and reconcile all independent outcomes."""
     counts = {"win": 0, "loss": 0, "draw": 0}
+    by_players = {2: {"win": 0, "loss": 0, "draw": 0},
+                  4: {"win": 0, "loss": 0, "draw": 0},
+                  6: {"win": 0, "loss": 0, "draw": 0}}
 
     def observe(result):
         outcome = result.get("outcome")
         if outcome not in counts:
             raise ValueError("Invalid TinyBrains evaluation outcome.")
         counts[outcome] += 1
+        by_players[result["player_count"]][outcome] += 1
 
     with pinned_runtime("tinybrains", suite, use_current=current_runtime) as runtime_sha256:
         wins, trials = _evaluate(checkpoint, digest, suite, work, on_result=observe)
-    expected = 2 * len(suite["maps"]) * len(suite["seeds"])
+    expected = suite_trials(suite)
     if trials != expected or wins != counts["win"] or sum(counts.values()) != trials:
         raise ValueError("Unexpected TinyBrains independent match trial counts.")
-    return {"successes": wins, "metrics": {
+    metrics = {
         "win_count": {"value": counts["win"], "unit": "count"},
         "loss_count": {"value": counts["loss"], "unit": "count"},
         "draw_count": {"value": counts["draw"], "unit": "count"},
         "score_rate": {"value": (wins + counts["draw"] / 2) / trials, "unit": "ratio"},
-    }, **({"runtime_sha256": runtime_sha256} if current_runtime else {})}
+    }
+    for players, outcomes in by_players.items():
+        total = sum(outcomes.values())
+        if total:
+            metrics[f"score_rate_{players}p"] = {
+                "value": (outcomes["win"] + outcomes["draw"] / 2) / total,
+                "unit": "ratio",
+            }
+            metrics[f"trials_{players}p"] = {"value": total, "unit": "count"}
+    return {"successes": wins, "metrics": metrics,
+            **({"runtime_sha256": runtime_sha256} if current_runtime else {})}
 
 
 def main():
@@ -187,7 +226,7 @@ def main():
         suite = read_suite(args.suite)
         with tempfile.TemporaryDirectory(prefix="tinybrains-eval-", dir=scratch) as work:
             outcome = evaluate_with_metrics(checkpoint, args.checkpoint_sha256, suite, Path(work))
-        trials = 2 * len(suite["maps"]) * len(suite["seeds"])
+        trials = suite_trials(suite)
         result = {
             "schema_version": 1, "suite_id": suite["suite_id"], "suite_sha256": suite_digest(suite),
             "dispatch_id": args.dispatch_id, "checkpoint_sha256": args.checkpoint_sha256,
