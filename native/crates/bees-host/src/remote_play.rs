@@ -473,6 +473,12 @@ pub struct RemotePlayMeasurements {
     /// Count one projection/JSON encoding per distinct authenticated
     /// (side, authority) seat, never once per cooperative peer.
     pub snapshot_unique_encoded_bytes: u64,
+    /// Recipients that reused an immutable side/privilege/codec frame
+    /// rather than allocating and copying an entire per-peer JSON line.
+    #[serde(default)]
+    pub snapshot_shared_frame_reuses: u64,
+    #[serde(default)]
+    pub snapshot_shared_payload_bytes_avoided: u64,
     /// Actual replacement frames submitted for compressed client seats.
     /// Original and encoded byte totals share the same frame denominator;
     /// superseded frames can be omitted before socket transmission.
@@ -2440,6 +2446,11 @@ impl NativeRemotePlay {
             }
             let compressed_on_wire = payload.len() != encoded.len();
             let key = (side, spectator, compressed_on_wire);
+            if shared_frames.contains_key(&key) {
+                measurements.snapshot_shared_frame_reuses += 1;
+                measurements.snapshot_shared_payload_bytes_avoided +=
+                    payload.len() as u64 + 1;
+            }
             let frame = shared_frames.entry(key).or_insert_with(|| {
                 let mut bytes = Vec::with_capacity(payload.len() + 1);
                 bytes.extend_from_slice(payload);
