@@ -661,7 +661,6 @@ function historicalCandidates(hub,o) {
     for(const job of hub.snapshot().jobs||[]) {
         if(job.project_id!=='tinybrains'||job.status!=='finished'||
             job.checkpoint_ready_verified!==true||
-            !job.capacity_released_at||
             !UUID.test(job.id)||!SHA256.test(job.checkpoint_model_sha256||''))
             continue;
         const dir=path.join(o.artifacts,job.id);
