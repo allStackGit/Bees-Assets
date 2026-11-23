@@ -133,6 +133,7 @@ class FrozenInferenceMicrobatcher:
                  *, max_pending=256, max_requests=32, max_batch_rows=4096,
                  max_batch_mb=64, max_pending_mb=256,
                  wait_ms=0.25, max_cohorts=8, max_workspace_mb=512,
+                 max_pinned_mb=128, allow_pinned_h2d=True,
                  allow_graphs=True):
         if (not isinstance(models, dict) or not models or
                 set(models) != set(versions) or
@@ -142,7 +143,9 @@ class FrozenInferenceMicrobatcher:
                 not 1 <= max_batch_mb <= max_pending_mb <= 16384 or
                 not 0 <= wait_ms <= 50 or
                 not 1 <= max_cohorts <= 256 or
-                not 16 <= max_workspace_mb <= 16384):
+                not 16 <= max_workspace_mb <= 16384 or
+                not 16 <= max_pinned_mb <= 8192 or
+                type(allow_pinned_h2d) is not bool):
             raise ValueError("Invalid frozen inference batcher configuration")
         self.models = dict(models)
         self.versions = dict(versions)
@@ -160,6 +163,8 @@ class FrozenInferenceMicrobatcher:
         self.max_batch_rows, self.wait_seconds = max_batch_rows, wait_ms/1000
         self.max_batch_bytes = int(max_batch_mb*1048576)
         self.max_pending_bytes = int(max_pending_mb*1048576)
+        self.max_pinned_bytes = int(max_pinned_mb*1048576)
+        self.allow_pinned_h2d = allow_pinned_h2d
         self.max_cohorts, self.allow_graphs = max_cohorts, allow_graphs
         # Cap each retained model cohort's graph/state residency. Every
         # cohort may retain eight independent shape profiles; reserve a
@@ -170,6 +175,8 @@ class FrozenInferenceMicrobatcher:
         self._active_group = []
         self._admission = OrderedDict()
         self._last_requal_group = 0
+        self._pinned_pending = deque()
+        self._pinned_bytes = 0
         self._condition = Condition()
         self._closed = False
         self._publishing = False
@@ -184,6 +191,7 @@ class FrozenInferenceMicrobatcher:
                               rejected_profiles=0, qualification_seconds=0.0,
                               profile_refreshes=0, bucketed_groups=0,
                               flat_groups=0, flat_packed_bytes=0,
+                              pinned_groups=0, pinned_h2d_bytes=0,
                               head_of_line_bypasses=0,
                               host_input_requests=0, host_input_bytes=0,
                               numpy_input_arrays=0,
@@ -399,6 +407,8 @@ class FrozenInferenceMicrobatcher:
                 # before the worker or its parent resource lease is released.
                 if self.device.type == "cuda":
                     torch.cuda.current_stream(self.device).synchronize()
+                    self._pinned_pending.clear()
+                    self._pinned_bytes = 0
         except BaseException as error:
             # An unexpected worker initialization/device failure must not
             # strand pending Futures forever. Deliver exceptions without
@@ -507,7 +517,12 @@ class FrozenInferenceMicrobatcher:
                 t.to(self.device,non_blocking=False) for t in item.inputs))
                 for item in group]
 
-    def _flat_model_inputs(self, owners, keys):
+    def _reap_pinned(self):
+        while self._pinned_pending and self._pinned_pending[0][1].query():
+            buffers,event,size = self._pinned_pending.popleft()
+            self._pinned_bytes -= size
+
+    def _flat_model_inputs(self, owners, keys, *, pinned=False):
         """Pack all compatible input tensors with one torch.cat per dtype.
 
         This avoids separate tiny GPU concatenation launches for every
@@ -542,12 +557,37 @@ class FrozenInferenceMicrobatcher:
         # model/argument. A blocking transfer here ensures pageable host
         # storage can be released safely once the worker submits inference.
         # GPU-origin inputs stay on the leased device without H2D copies.
-        banks = {origin:torch.cat(parts,dim=0).to(
+        buffers, banks = [], {}
+        if pinned and (not self.allow_pinned_h2d or self.device.type!="cuda" or
+                       not any(origin[1].type=="cpu" for origin in fragments)):
+            raise ValueError("Pinned host transfers are not available")
+        self._reap_pinned()
+        resident_bytes = sum(sum(t.numel()*t.element_size() for t in parts)
+                             for origin,parts in fragments.items()
+                             if pinned and origin[1].type=="cpu")
+        if pinned and resident_bytes+self._pinned_bytes>self.max_pinned_bytes:
+            raise MemoryError("Pinned host transfer memory exceeds its lease")
+        for origin,parts in fragments.items():
+            if pinned and origin[1].type=="cpu":
+                # One CPU-side consolidation into a pinned staging buffer,
+                # followed by one asynchronous H2D per dtype. Keep the
+                # staging allocation alive through a CUDA completion event.
+                buffer = torch.empty(sum(t.numel() for t in parts),
+                                     dtype=origin[0],device="cpu",pin_memory=True)
+                cursor = 0
+                for part in parts:
+                    width = part.numel()
+                    buffer.narrow(0,cursor,width).copy_(part)
+                    cursor += width
+                buffers.append(buffer)
+                banks[origin] = buffer.to(self.device,non_blocking=True)
+            else:
+                banks[origin] = torch.cat(parts,dim=0).to(
                     self.device,non_blocking=False)
-                 for origin,parts in fragments.items()}
-        return [tuple(banks[origin].narrow(0,start,count).view(shape)
-                      for origin,start,count,shape in fields)
-                for fields in descriptors]
+        values = [tuple(banks[origin].narrow(0,start,count).view(shape)
+                        for origin,start,count,shape in fields)
+                  for fields in descriptors]
+        return values,buffers
 
     def _dispatch(self, group):
         stream = (torch.cuda.current_stream(self.device)
@@ -581,10 +621,14 @@ class FrozenInferenceMicrobatcher:
                 self._executors.popitem(last=False)
         else:
             self._executors.move_to_end(keys)
-        def grouped(bucket=False, flat=False):
-            if bucket and flat:
-                raise ValueError("Flat GPU packing and stable padding are alternative strategies")
-            inputs = (self._flat_model_inputs(owners,keys) if flat else [])
+        def grouped(bucket=False, flat=False, pinned=False):
+            if bucket and flat or pinned and not flat:
+                raise ValueError("Pinned, flat and padded GPU strategies must be compatible")
+            if flat:
+                inputs, host_buffers = self._flat_model_inputs(
+                    owners,keys,pinned=pinned)
+            else:
+                inputs,host_buffers = [],[]
             original_rows, target_rows = [], []
             for index,key in enumerate(keys):
                 members = owners[key]
@@ -614,6 +658,13 @@ class FrozenInferenceMicrobatcher:
                         t, t.new_zeros((target-actual,*t.shape[1:]))
                     ], dim=0) for t in row)
             values = executor.run(inputs)
+            if host_buffers:
+                event = torch.cuda.Event()
+                event.record(torch.cuda.current_stream(self.device))
+                size = sum(buffer.numel()*buffer.element_size()
+                           for buffer in host_buffers)
+                self._pinned_bytes += size
+                self._pinned_pending.append((host_buffers,event,size))
             resolved = {}
             for idx,(key,value) in enumerate(zip(keys,values)):
                 members = owners[key]
@@ -679,6 +730,17 @@ class FrozenInferenceMicrobatcher:
                         except (ValueError,TypeError,RuntimeError,
                                 torch.OutOfMemoryError):
                             pass
+                        if self.allow_pinned_h2d:
+                            try:
+                                pinned_output = grouped(flat=True,pinned=True)
+                                if all(_equivalent(a,b,1e-5,1e-6)
+                                       for a,b in zip(reference,pinned_output)):
+                                    choices["pinned"] = lambda:grouped(
+                                        flat=True,pinned=True)
+                                    validated["pinned"] = pinned_output
+                            except (ValueError,TypeError,RuntimeError,
+                                    MemoryError,torch.OutOfMemoryError):
+                                pass
                     times = {name:[] for name in choices}
                     for _ in range(2):
                         # Interleaved timed trials reduce the chance of
@@ -707,11 +769,13 @@ class FrozenInferenceMicrobatcher:
             else:
                 self._admission.move_to_end(shape)
         if output is None:
-            if mode in ("exact","bucket","flat"):
+            if mode in ("exact","bucket","flat","pinned"):
                 try:
-                    output = grouped(bucket=mode=="bucket",flat=mode=="flat")
+                    output = grouped(bucket=mode=="bucket",
+                                     flat=mode in ("flat","pinned"),
+                                     pinned=mode=="pinned")
                 except (ValueError,TypeError,RuntimeError,
-                        torch.OutOfMemoryError):
+                        MemoryError,torch.OutOfMemoryError):
                     output = self._individual(group)
                     self._counters["fallbacks"] += 1
                     if eligible:
@@ -721,11 +785,16 @@ class FrozenInferenceMicrobatcher:
                 output = self._individual(group)
         if mode=="bucket":
             self._counters["bucketed_groups"] += 1
-        if mode=="flat":
+        if mode in ("flat","pinned"):
             self._counters["flat_groups"] += 1
             self._counters["flat_packed_bytes"] += sum(
                 item.input_bytes for item in group)
-        if mode in ("exact","bucket","flat"):
+        if mode=="pinned":
+            self._counters["pinned_groups"] += 1
+            self._counters["pinned_h2d_bytes"] += sum(
+                t.numel()*t.element_size() for item in group
+                for t in item.inputs if t.device.type=="cpu")
+        if mode in ("exact","bucket","flat","pinned"):
             self._counters["coalesced"] += len(group)-len(keys)
         resolved = {id(item):value for item,value in zip(group,output)}
         event = None
@@ -734,7 +803,7 @@ class FrozenInferenceMicrobatcher:
             event.record(stream)
         self._last_event = event
         self._counters["model_forwards"] += (
-            len(keys) if mode in ("exact","bucket","flat") else len(group))
+            len(keys) if mode in ("exact","bucket","flat","pinned") else len(group))
         for item in group:
             item.future.done_event = event
             item.future.set_result(resolved[id(item)])
@@ -744,6 +813,7 @@ class FrozenInferenceMicrobatcher:
             values = dict(self._counters, pending=self._outstanding,
                           cached_model_cohorts=len(self._executors),
                           pending_input_bytes=self._outstanding_bytes,
+                          pinned_pending_bytes=self._pinned_bytes,
                           calibrated_batch_shapes=len(self._admission),
                           multiple_producers=int(self._multi_producer),
                           active_producers=sum(
