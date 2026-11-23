@@ -33,7 +33,8 @@ FIELDS = {
     "training_script", "training_sha256", "trainer_source",
     "trainer_sha256", "runtime_version", "evaluator_script",
     "evaluator_core", "opponent_script", "actor_script",
-    "actor_sha256", "envs", "torch_threads", "device", "expected_gpu_pci",
+    "actor_sha256", "envs", "torch_threads", "device",
+    "expected_gpu_pci", "expected_gpu_cuda_uuid",
     "auth_token_file", "auth_token_fingerprint", "broker_port", "slot",
 }
 SSH_FIELDS = {
@@ -212,15 +213,22 @@ def inspect_job(filename: Path) -> dict:
     ):
         raise ValueError("Bees remote device or approved broker port is invalid.")
     if job["device"] == "cuda":
-        if os.name == "nt":
-            raise ValueError("Native Windows Bees WAN simulation actors are CPU-only.")
         if not isinstance(job["expected_gpu_pci"], str) or not re.fullmatch(
             r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]",
             job["expected_gpu_pci"],
         ):
-            raise ValueError("Bees remote ROCm actor needs a leased PCI identity.")
-    elif job["expected_gpu_pci"] is not None:
-        raise ValueError("Bees CPU-only actor cannot use a GPU.")
+            raise ValueError("Bees WAN CUDA/ROCm actor requires a physical GPU lease.")
+        if os.name == "nt":
+            if not isinstance(job["expected_gpu_cuda_uuid"], str) or not re.fullmatch(
+                r"GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
+                job["expected_gpu_cuda_uuid"], re.IGNORECASE,
+            ):
+                raise ValueError("Windows CUDA simulation needs the exact leased device UUID.")
+        elif job["expected_gpu_cuda_uuid"] is not None:
+            raise ValueError("Linux ROCm actor cannot claim a Windows CUDA UUID.")
+    elif (job["expected_gpu_pci"] is not None or
+          job["expected_gpu_cuda_uuid"] is not None):
+        raise ValueError("Bees CPU-only actor cannot claim GPU resources.")
     for key in ("game_sha256", "game_payload_sha256", "wan_release_sha256",
                 "trainer_sha256", "training_sha256",
                 "actor_sha256", "auth_token_fingerprint", "runtime_version"):
@@ -259,8 +267,21 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     job = inspect_job(Path(args.job).absolute())
     if job["device"] == "cuda":
-        from experiment_hub_tinybrains_rocm_verify import verify_runtime_device
-        verify_runtime_device(job["expected_gpu_pci"])
+        if os.name == "nt":
+            # The Windows native Job Object helper isolates exactly the
+            # lease UUID before launching this interpreter. Verify the
+            # inherited selector rather than silently using CUDA device 0.
+            selected = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+            if selected.lower() != job["expected_gpu_cuda_uuid"].lower():
+                raise RuntimeError("Windows Bees CUDA selector differs from the reserved GPU UUID.")
+            import torch
+            if not torch.version.cuda or not torch.cuda.is_available() or (
+                torch.cuda.device_count() != 1
+            ):
+                raise RuntimeError("Windows Bees CUDA actor cannot see exactly its leased GPU.")
+        else:
+            from experiment_hub_tinybrains_rocm_verify import verify_runtime_device
+            verify_runtime_device(job["expected_gpu_pci"])
 
     build, trainer, runtime = (
         job["wan_release_sha256"], job["trainer_sha256"], job["runtime_version"]
