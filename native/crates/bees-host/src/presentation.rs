@@ -39,7 +39,7 @@ pub use multiplayer_menu::{choose_multiplayer_host, choose_multiplayer_join, Mul
 #[cfg(feature = "client")]
 mod remote_window;
 #[cfg(feature = "client")]
-pub use remote_window::connect_remote;
+pub use remote_window::{connect_remote, connect_remote_with_trust};
 #[cfg(feature = "client")]
 pub(crate) use battle_menu::squad_name_key;
 pub use battle_menu::{
