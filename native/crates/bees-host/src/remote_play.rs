@@ -66,6 +66,9 @@ enum WireInput {
         #[serde(default)] spectator: bool,
     },
     Input { request_id: u64, action: NativePlayerInput },
+    /// Transport liveness only. Runs even during a paused World and never
+    /// occupies the gameplay request-ID or durable command stream.
+    Ping { nonce: u64 },
     /// Replaceable presentation interest, not a physical World input.
     WeaponOverlay { request_id: u64, world_id: u64,
         episode_revision: u64, squads: Vec<SquadLifetime> },
@@ -325,6 +328,9 @@ pub struct RemotePlayMeasurements {
     #[serde(default)]
     pub rejected_handshake_slots: u64,
     pub orders_received: u64,
+    /// Authenticated transport replies, independent of world snapshots.
+    #[serde(default)]
+    pub heartbeat_replies: u64,
     pub orders_processed: u64,
     pub orders_rejected: u64,
     /// Poll intervals that deferred at least one complete authenticated
@@ -1157,6 +1163,15 @@ impl NativeRemotePlay {
                             }));
                         } else {
                             peer.closed = true;
+                        }
+                    }
+                    Ok(WireInput::Ping { nonce }) if peer.side.is_some() => {
+                        // Reply through the bounded reliable queue. A stalled
+                        // client may drop an old state frame, never this pong.
+                        // No physical tick, source timer or command replay.
+                        peer_orders += 1;
+                        if peer.enqueue(&json!({"kind":"pong","nonce":nonce})).is_ok() {
+                            self.measurements.heartbeat_replies += 1;
                         }
                     }
                     Ok(WireInput::BriefingReady {
