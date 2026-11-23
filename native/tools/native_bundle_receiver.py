@@ -172,7 +172,10 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
                 return prior
         connection = None
         try:
-            offset = staged_offset() if attempt > 1 else 0
+            # Also query on the first attempt: a restarted collector worker
+            # can recover the learner's intact staged prefix without a
+            # process-local transfer cursor or replaying simulation.
+            offset = staged_offset()
             connection = connection_class(parts.hostname, parts.port, timeout=60)
             connection.putrequest("POST", endpoint)
             connection.putheader("Authorization", "Bearer " + auth)
