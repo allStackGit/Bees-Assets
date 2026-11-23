@@ -459,6 +459,63 @@ def resize_empty_arena(scene: dict, map_size: float) -> None:
         })
 
 
+
+def native_scripted_squad_orders(scene: dict, members: list[dict],
+                                 squad_index: int, ai_tactics: str,
+                                 has_beehive: bool) -> list[dict]:
+    """Select existing native gameplay commands for an untrained AI squad.
+
+    This is authoring only: actual target selection, movement, weapons,
+    mining, healing, scouting and command lifetimes remain in the same
+    Level/CombatWorld that the player and policy-controlled ships use.
+    Used by both ordinary games and mixed-fleet policy games.
+    """
+    if not members:
+        raise ValueError("scripted native squad requires physical ships")
+    example = members[0]
+    special = example.get("special") or {}
+    if example["base_speed"] == 0:
+        return [{"kind": "hold"}]
+    if example["ship_type"] == 18 and special.get("kind") == "scout":
+        sights = [ship["sight"]["source_sight"] for ship in members]
+        if any(not isinstance(value, (int, float)) or
+               not math.isfinite(value) or value < 0 for value in sights):
+            raise ValueError("scouting AI requires authored finite member sight ranges")
+        return [{"kind": "scouting", "max_sight": max(sights),
+                 "human_side": scene["human_side"]}]
+    if example["ship_type"] in (5, 17):
+        # Carrier rearm and Queen spawn are already autonomous physical
+        # lifecycles; a generic attack order would move the platform.
+        return [{"kind": "hold"}]
+    if (example["ship_type"] in (4, 9) and
+            scene.get("activate_mining") and scene.get("mining_asteroids")):
+        return [{"kind": "mining_nearest"}]
+    if example.get("turrets") or example.get("special_weapon"):
+        if example.get("special_weapon") and example["ship_type"] == 0:
+            combat_order = "charge_nearest"
+        elif example.get("special_weapon") and example["ship_type"] in (10, 19, 22):
+            combat_order = "bombing_nearest"
+        else:
+            tactics = {
+                "aggressive": "aggressive_nearest",
+                "circle": "circle_nearest",
+                "right-swipe": "right_swipe_nearest",
+                "left-swipe": "left_swipe_nearest",
+                "in-and-out": "in_and_out_nearest",
+            }
+            if ai_tactics == "mixed":
+                combat_order = tuple(tactics.values())[squad_index % len(tactics)]
+            else:
+                combat_order = tactics[ai_tactics]
+        orders = []
+        if example["ship_type"] != 2 and has_beehive:
+            orders.append({"kind": "heal_available"})
+        orders.append({"kind": combat_order})
+        return orders
+    return [{"kind": "move_to_point",
+             "destination": scene["starting_positions"][2 - example["side"]]}]
+
+
 def author(args) -> tuple[dict, dict, dict]:
     scene = load_json(args.source_scene)
     # Keep one immutable source resource archetype lookup before empty-map
@@ -1085,71 +1142,11 @@ def author(args) -> tuple[dict, dict, dict]:
         for squad_index, squad in enumerate(by_side_squads[side]):
             members = [ship for ship in by_side[side]
                        if ship["entity_id"] in squad["members"]]
-            example = members[0]
-            if example["base_speed"] == 0:
-                orders = [{"kind": "hold"}]
-            elif example["ship_type"] == 18 and example.get("special", {}).get("kind") == "scout":
-                # ScoutingRun alone owns source exploration, discovery and
-                # ten-second Scout Beacon timers. Derive Squad.MaxSight from
-                # the actual authored members, never from nominal ship type.
-                sights = [ship["sight"]["source_sight"] for ship in members]
-                if any(not isinstance(value, (int, float)) or
-                       not math.isfinite(value) or value < 0 for value in sights):
-                    raise ValueError("scouting AI requires authored finite member sight ranges")
-                orders = [{"kind": "scouting",
-                           "max_sight": max(sights),
-                           "human_side": scene["human_side"]}]
-            elif example["ship_type"] in (5, 17):
-                # A Carrier is a live return/rearm platform for its Striker
-                # children, while the Queen owns a timed minion wave. Neither
-                # should suicide into the enemy start when it has no weapon.
-                # Their real specials continue updating in CombatWorld.
-                orders = [{"kind": "hold"}]
-            elif (example["ship_type"] in (4, 9) and
-                  scene.get("activate_mining") and scene.get("mining_asteroids")):
-                # The source Mining command already owns real ore extraction,
-                # timed contact, fleet credit, and command completion. Select
-                # a new live asteroid when the previous one is exhausted.
-                orders = [{"kind": "mining_nearest"}]
-            elif example.get("turrets") or example.get("special_weapon"):
-                # One native command selects the nearest presently deployed
-                # enemy through the real Level roster. Its authenticated
-                # Aggressive lifetime ends on target death, then repeat
-                # selects another; don't author O(own * enemy) JSON orders
-                # or target ships reserved for a later reinforcement wave.
-                orders = []
-                if (example.get("special_weapon") and example["ship_type"] == 0):
-                    combat_order = "charge_nearest"
-                elif (example.get("special_weapon") and
-                      example["ship_type"] in (10, 19, 22)):
-                    combat_order = "bombing_nearest"
-                else:
-                    chosen = getattr(args, "ai_tactics", "aggressive")
-                    tactics = {
-                        "aggressive": "aggressive_nearest",
-                        "circle": "circle_nearest",
-                        "right-swipe": "right_swipe_nearest",
-                        "left-swipe": "left_swipe_nearest",
-                        "in-and-out": "in_and_out_nearest",
-                    }
-                    if chosen == "mixed":
-                        # Stable authored squad order; do not consume the
-                        # environment's training/gameplay RNG when assigning
-                        # cosmetic or scripted tactical doctrine.
-                        combat_order = tuple(tactics.values())[squad_index % 5]
-                    else:
-                        combat_order = tactics[chosen]
-                if (example["ship_type"] != 2 and
-                        any(kind == 2 for kind, _ in requested[side])):
-                    # Between source combat lifetimes, repair injured
-                    # members at actual same-side Beehive healing zones.
-                    # If everyone is healthy, Heal is unavailable and the
-                    # ordinary attack starts on the following fixed tick.
-                    orders.append({"kind": "heal_available"})
-                orders.append({"kind": combat_order})
-            else:
-                orders = [{"kind": "move_to_point",
-                           "destination": scene["starting_positions"][2 - side]}]
+            orders = native_scripted_squad_orders(
+                scene, members, squad_index,
+                getattr(args, "ai_tactics", "aggressive"),
+                any(kind == 2 for kind, _ in requested[side]),
+            )
             plan = {
                 "squad_item_id": squad["item_id"],
                 "repeat": False if orders[0]["kind"] == "hold" else True,
@@ -2156,52 +2153,44 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
         order for order in run["levels"][0].get("scripted_queues", [])
         if order["squad_item_id"] not in policy_squads
     ]
-    # A player's authentic Barge and Yellow Jacket can be playable
-    # without having a v26 policy archetype. In a trainable battle they
-    # still need real combat commands. Give ONLY verified special-weapon
-    # squads the native game's exact Charge/BombingRun scripted fallback;
-    # neither invent a policy nor turn nonlearners into frozen obstacles.
-    # The same commands are used by ordinary native AI skirmishes.
+    # A policy session must not leave the original player's untrained
+    # ships immobilized merely because those classes have no matching v26
+    # policy. Give every non-policy squad the same native command orders
+    # as an ordinary AI skirmish; trained squads retain exclusive control.
+    # A pre-existing authored queue (including deferred/event activation)
+    # always wins over default behavior.
     ships_by_id = {ship["entity_id"]: ship for ship in scene["ships"]}
     already_scripted = {
         queue["squad_item_id"] for queue in run["levels"][0]["scripted_queues"]
         if queue.get("orders")
     }
-    for squad in scene["squads"]:
+    has_beehive = {
+        side: any(ship["side"] == side and ship["ship_type"] == 2
+                  for ship in scene["ships"])
+        for side in (1, 2)
+    }
+    for squad_index, squad in enumerate(scene["squads"]):
         squad_id = squad["item_id"]
         if squad_id in already_scripted or squad_id in policy_squads:
             continue
-        members = [ships_by_id[id] for id in squad["members"]]
+        members = [ships_by_id[ship_id] for ship_id in squad["members"]]
         if not members or any("policy" in ship for ship in members):
             continue
-        kinds = {ship["ship_type"] for ship in members}
-        command = None
-        if kinds == {0} and all(
-                isinstance(ship.get("special"), dict) and
-                ship["special"].get("kind") == "barge" and
-                isinstance(ship.get("special_weapon"), dict) and
-                isinstance(ship["special_weapon"].get("charge_range"), dict)
-                for ship in members):
-            command = "charge_nearest"
-        elif kinds == {22} and all(
-                isinstance(ship.get("special"), dict) and
-                ship["special"].get("kind") == "yellow_jacket" and
-                isinstance(ship.get("special_weapon"), dict) and
-                isinstance(ship["special_weapon"].get("proximity"), dict)
-                for ship in members):
-            command = "bombing_nearest"
-        if command is None:
-            continue
+        orders = native_scripted_squad_orders(
+            scene, members, squad_index,
+            getattr(args, "ai_tactics", "aggressive"),
+            has_beehive[squad["side"]],
+        )
         queue = {
             "squad_item_id": squad_id,
-            "repeat": True,
-            "orders": [{"kind": command}],
+            "repeat": orders[0]["kind"] != "hold",
+            "orders": orders,
         }
         if any(ship["entity_id"] in deferred_reinforcement_ships
                for ship in members):
             if not all(ship["entity_id"] in deferred_reinforcement_ships
                        for ship in members):
-                raise ValueError("specialist squad cannot mix deployed and deferred hulls")
+                raise ValueError("scripted squad cannot mix deployed and deferred hulls")
             queue["activation"] = {"kind": "on_deployment"}
         run["levels"][0]["scripted_queues"].append(queue)
 
