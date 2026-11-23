@@ -110,7 +110,9 @@ class _Request:
 class FrozenInferenceMicrobatcher:
     """Collect compatible frozen-model requests into bounded GPU forward groups.
 
-    submit() never synchronizes the GPU or waits for other collectors. Use its
+    submit() accepts CPU or leased-GPU observation tensors without forcing
+    each CPU collector to upload its own tiny network input. The common
+    worker can batch host inputs before their GPU transfer. Use its
     Future.result() from the consuming thread: it inserts a CUDA stream wait,
     not a device-wide barrier. Input tensors must remain unmodified until the
     returned Future completes. The batcher retains their storage and records
@@ -177,7 +179,9 @@ class FrozenInferenceMicrobatcher:
                               rejected_profiles=0, qualification_seconds=0.0,
                               profile_refreshes=0, bucketed_groups=0,
                               flat_groups=0, flat_packed_bytes=0,
-                              head_of_line_bypasses=0, policy_refreshes=0,
+                              head_of_line_bypasses=0,
+                              host_input_requests=0, host_input_bytes=0,
+                              policy_refreshes=0,
                               policy_refresh_seconds=0.0,
                               policy_refresh_bytes=0)
         self._worker = Thread(target=self._serve, name="hub-gpu-microbatch", daemon=True)
@@ -203,8 +207,10 @@ class FrozenInferenceMicrobatcher:
                 raise ValueError("Frozen model membership changed")
             args = inputs if isinstance(inputs, tuple) else (inputs,)
             if not args or any(not isinstance(x, torch.Tensor) or x.ndim < 1
-                               or x.device != self.device for x in args):
-                raise ValueError("Frozen inference inputs must be device tensors with a batch axis")
+                               or x.requires_grad or
+                               x.device not in (self.device,torch.device("cpu"))
+                               for x in args):
+                raise ValueError("Frozen inputs must be non-grad CPU or leased-GPU tensors")
             rows = args[0].shape[0]
             if not 1 <= rows <= self.max_batch_rows or any(x.shape[0] != rows for x in args):
                 raise ValueError("Input rows exceed the fixed GPU batch envelope")
@@ -212,7 +218,8 @@ class FrozenInferenceMicrobatcher:
             if byte_count > self.max_batch_bytes:
                 raise ValueError("One inference request exceeds the GPU batch byte envelope")
             checked.append((model_id,args,rows,byte_count,version))
-        if self.device.type == "cuda":
+        if self.device.type == "cuda" and any(
+                t.device.type=="cuda" for _,args,_,_,_ in checked for t in args):
             ready = torch.cuda.Event()
             ready.record(torch.cuda.current_stream(self.device))
         futures = [BatchFuture(self.device) for _ in checked]
@@ -250,6 +257,11 @@ class FrozenInferenceMicrobatcher:
             self._outstanding += len(checked)
             self._outstanding_bytes += sum(row[3] for row in checked)
             self._counters["submitted"] += len(checked)
+            self._counters["host_input_requests"] += sum(
+                any(t.device.type=="cpu" for t in args) for _,args,_,_,_ in checked)
+            self._counters["host_input_bytes"] += sum(
+                t.numel()*t.element_size() for _,args,_,_,_ in checked
+                for t in args if t.device.type=="cpu")
             self._counters["max_queue_depth"] = max(
                 self._counters["max_queue_depth"], self._outstanding)
             self._condition.notify()
@@ -413,7 +425,7 @@ class FrozenInferenceMicrobatcher:
                                len(group) < self.max_requests):
                             item = self._pending.popleft()
                             inspected += 1
-                            shape = tuple((x.shape[1:], x.dtype)
+                            shape = tuple((x.shape[1:], x.dtype, x.device)
                                           for x in item.inputs)
                             fits = (item.model_id not in blocked and
                                     rows+item.rows <= self.max_batch_rows and
@@ -472,10 +484,11 @@ class FrozenInferenceMicrobatcher:
 
     def _individual(self, group):
         with torch.inference_mode():
-            return [self.models[item.model_id](*item.inputs) for item in group]
+            return [self.models[item.model_id](*tuple(
+                t.to(self.device,non_blocking=False) for t in item.inputs))
+                for item in group]
 
-    @staticmethod
-    def _flat_model_inputs(owners, keys):
+    def _flat_model_inputs(self, owners, keys):
         """Pack all compatible input tensors with one torch.cat per dtype.
 
         This avoids separate tiny GPU concatenation launches for every
@@ -491,24 +504,30 @@ class FrozenInferenceMicrobatcher:
             for position in range(len(members[0].inputs)):
                 chunks = [item.inputs[position] for item in members]
                 if any(not t.is_contiguous() for t in chunks):
-                    raise ValueError("Flat pack requires contiguous GPU tensors")
+                    raise ValueError("Flat pack requires contiguous input tensors")
                 dtype = chunks[0].dtype
                 if any(t.dtype!=dtype for t in chunks):
                     raise ValueError("Frozen model inputs changed dtype")
                 shape = (sum(item.rows for item in members),*chunks[0].shape[1:])
                 count = sum(t.numel() for t in chunks)
-                start = offsets.get(dtype,0)
-                offsets[dtype] = start+count
-                fragments.setdefault(dtype,[]).extend(t.reshape(-1) for t in chunks)
-                fields.append((dtype,start,count,shape))
+                origin = (dtype,chunks[0].device)
+                start = offsets.get(origin,0)
+                offsets[origin] = start+count
+                fragments.setdefault(origin,[]).extend(t.reshape(-1) for t in chunks)
+                fields.append((origin,start,count,shape))
                 total_inputs += len(chunks)
             descriptors.append(fields)
         if total_inputs<2:
             raise ValueError("No small input launches available to consolidate")
-        banks = {dtype:torch.cat(parts,dim=0)
-                 for dtype,parts in fragments.items()}
-        return [tuple(banks[dtype].narrow(0,start,count).view(shape)
-                      for dtype,start,count,shape in fields)
+        # One H2D transfer per dtype instead of a separate transfer per
+        # model/argument. A blocking transfer here ensures pageable host
+        # storage can be released safely once the worker submits inference.
+        # GPU-origin inputs stay on the leased device without H2D copies.
+        banks = {origin:torch.cat(parts,dim=0).to(
+                    self.device,non_blocking=False)
+                 for origin,parts in fragments.items()}
+        return [tuple(banks[origin].narrow(0,start,count).view(shape)
+                      for origin,start,count,shape in fields)
                 for fields in descriptors]
 
     def _dispatch(self, group):
@@ -521,7 +540,8 @@ class FrozenInferenceMicrobatcher:
                 stream.wait_event(item.ready)
             if stream is not None:
                 for tensor in item.inputs:
-                    tensor.record_stream(stream)
+                    if tensor.device.type=="cuda":
+                        tensor.record_stream(stream)
         # Arrival order across unrelated collectors is not a different
         # execution graph. Canonicalize cohort membership to reuse one
         # set of GPU weights/streams/captures independent of submit order.
@@ -551,8 +571,9 @@ class FrozenInferenceMicrobatcher:
                 members = owners[key]
                 if not flat:
                     inputs.append(tuple(
-                        torch.cat([item.inputs[i] for item in members], dim=0)
-                        if len(members)>1 else members[0].inputs[i]
+                        (torch.cat([item.inputs[i] for item in members], dim=0)
+                         if len(members)>1 else members[0].inputs[i])
+                        .to(self.device,non_blocking=False)
                         for i in range(len(members[0].inputs))))
                 rows = sum(item.rows for item in members)
                 target = _stable_batch_rows(rows, self.max_batch_rows) if bucket else rows
@@ -594,7 +615,7 @@ class FrozenInferenceMicrobatcher:
             shape = tuple(
                 (key, sum(item.rows for item in members).bit_length(),
                  len(members).bit_length(),
-                 tuple((tuple(t.shape[1:]),str(t.dtype))
+                 tuple((tuple(t.shape[1:]),str(t.dtype),str(t.device))
                        for t in members[0].inputs))
                 for key in keys for members in (owners[key],))
             mode = self._admission.get(shape)
