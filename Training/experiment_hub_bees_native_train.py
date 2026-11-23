@@ -56,6 +56,62 @@ def require_file(filename: Path, expected: str, executable: bool = False) -> Pat
         raise ValueError("Unity worker entrypoint is not executable: " + str(filename))
     return filename
 
+def verify_pinned_runtime(job: dict) -> None:
+    source_root=Path(job["training_script"]).parent
+    if not source_root.is_absolute() or source_root.is_symlink():
+        raise ValueError("Bees runtime installation must be an absolute real directory.")
+    version_file=source_root/"bees-runtime-version.txt"
+    manifest_file=source_root/"bees-runtime-manifest.json"
+    if version_file.is_symlink() or manifest_file.is_symlink() or not (
+        version_file.is_file() and manifest_file.is_file()
+    ):
+        raise ValueError("Immutable Bees Python runtime metadata is missing or redirected.")
+    version=job["runtime_version"]
+    if not isinstance(version,str) or len(version)!=64 or any(
+        digit not in "0123456789abcdef" for digit in version
+    ):
+        raise ValueError("Invalid pinned Bees Python runtime version.")
+    if version_file.read_text(encoding="ascii").strip()!=version:
+        raise ValueError("Pinned Bees Python runtime version marker changed.")
+    manifest=json.loads(manifest_file.read_text(encoding="utf-8"))
+    if manifest.get("schema_version")!=1 or manifest.get("runtime_version")!=version:
+        raise ValueError("Pinned Bees Python runtime manifest differs.")
+    entries=manifest.get("files")
+    if not isinstance(entries,list) or not 1<=len(entries)<=2000:
+        raise ValueError("Pinned Bees runtime file inventory is invalid.")
+    canonical=json.dumps(
+        {"files":entries},sort_keys=True,separators=(",",":"),ensure_ascii=True
+    ).encode("utf-8")
+    if hashlib.sha256(canonical).hexdigest()!=version:
+        raise ValueError("Pinned Bees runtime file inventory hash differs.")
+    names=set()
+    for entry in entries:
+        if not isinstance(entry,dict) or set(entry)!={"path","size","sha256"}:
+            raise ValueError("Pinned runtime file record has unexpected fields.")
+        name=entry["path"]
+        if not isinstance(name,str) or name!=Path(name).name or (
+            name in names or not name or "/" in name or "\\\\" in name
+        ):
+            raise ValueError("Unsafe or duplicated Bees Python runtime member.")
+        names.add(name)
+        file=source_root/name
+        expected=entry["sha256"]
+        size=entry["size"]
+        if type(size) is not int or size<0 or size>128*1024*1024 or (
+            not isinstance(expected,str) or len(expected)!=64 or
+            any(digit not in "0123456789abcdef" for digit in expected)
+        ):
+            raise ValueError("Invalid Bees runtime source manifest metadata.")
+        if file.is_symlink() or not file.is_file() or (
+            file.stat().st_size!=size or sha256_file(file)!=expected
+        ):
+            raise ValueError("Pinned Bees runtime file differs from captured bytes: "+name)
+    for key in ("training_script","trainer_source","evaluator_script",
+                "evaluator_core","opponent_script"):
+        candidate=Path(job[key])
+        if candidate.parent!=source_root or candidate.name not in names:
+            raise ValueError("Training or evaluation source escaped the pinned runtime.")
+
 def inspect_job(filename: Path) -> dict:
     if not filename.is_absolute() or filename.is_symlink() or filename.stat().st_size > 65536:
         raise ValueError("Job definition must be a small regular private file.")
@@ -65,6 +121,7 @@ def inspect_job(filename: Path) -> dict:
         "training_script","training_sha256","trainer_source",
         "trainer_sha256","output_root","num_envs","max_steps",
         "device","seed","hyperparameters","expected_gpu_pci","environment_args",
+        "runtime_version",
         "evaluation_profile","evaluation_matches","batch_inference","evaluator_script","evaluator_sha256",
         "evaluator_core","evaluator_core_sha256","opponent_script","opponent_script_sha256",
     }
@@ -106,6 +163,7 @@ def inspect_job(filename: Path) -> dict:
         not 1 <= job["evaluation_matches"] <= 100
     ):
         raise ValueError("Unsupported frozen post-training evaluation profile.")
+    verify_pinned_runtime(job)
     pci = job["expected_gpu_pci"]
     if job["device"] == "cuda":
         if not isinstance(pci,str):
