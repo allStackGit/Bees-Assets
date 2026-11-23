@@ -6878,6 +6878,11 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
             tokens.contains_key(&(index + 1).to_string())
         ).map(|index| save_root.join(GENERATED_SINGLE_SIDE_SPECTATOR_MAPS[index]))
     };
+    // A spectator-only native match must have actual view-only credentials
+    // before any new source archive or recovery checkpoint is created.
+    let spectator_available = generated_viewers.is_some() ||
+        env::var_os("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS_FILE").is_some() ||
+        env::var_os("BEES_NATIVE_REMOTE_SPECTATOR_SIDE_TOKENS").is_some();
     // Recovery of a terminal result is a different lifecycle from
     // launching a new battle. Offer the same saved multiplayer host and
     // side-token configuration without allocating a new physical World.
@@ -7023,11 +7028,12 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
                         }
                         false
                     };
+                    if spectator_fleet && !spectator_available { return None; }
                     Some((recording.title, source, spectator_fleet))
                 }).collect::<Vec<_>>();
             if saved.is_empty() {
                 fleet_builder::choose_multiplayer(
-                    single_remote_side, save_root, original_queen, original_factory, sources)?
+                    single_remote_side, spectator_available, save_root, original_queen, original_factory, sources)?
             } else {
                 use bees_host::presentation::{select_library, BattleMenuRow};
                 // The replay catalog keeps up to 256 recent original fleets.
@@ -7075,7 +7081,7 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
                     match select_library(&rows, &mut selected, false)? {
                         None => break None,
                         Some(0) => break fleet_builder::choose_multiplayer(
-                            single_remote_side, save_root, original_queen, original_factory, sources)?,
+                            single_remote_side, spectator_available, save_root, original_queen, original_factory, sources)?,
                         Some(index) if index <= shown.len() => {
                             saved_host_fleet = Some(shown[index - 1].1.clone());
                             break None;
@@ -7089,7 +7095,7 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
             }
         } else {
             fleet_builder::choose_multiplayer(
-                single_remote_side, save_root, original_queen, original_factory, sources)?
+                single_remote_side, spectator_available, save_root, original_queen, original_factory, sources)?
         }
     } else { None };
     if custom_fleet && generated_recovery.is_none() &&
