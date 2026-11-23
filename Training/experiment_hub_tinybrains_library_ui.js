@@ -45,8 +45,17 @@
     function summary() {
         const value=$('hub-mixed-configuration').value;
         const c=library?.configurations?.find(x=>x.id+':'+x.revision===value);
+        const env=c?.environment;
+        const operational=Object.entries(env?.parameters||{})
+            .filter(([key])=>key!=='max_turns')
+            .map(([key,value])=>key+'='+String(value)).join(', ');
         $('hub-mixed-config-summary').textContent=c
-            ?'Source Design map stage: '+c.stage+'. The evaluator uses maps and maximum turns from the approved environment, with independent evaluation seeds. PPO/reward hyperparameters do not change native match rules.'
+            ?'Source Design: '+c.name+' (revision '+c.revision+'). Match rules: '+
+                c.stage+' map coverage, '+(env?.max_turns??'unavailable')+
+                ' maximum turns. Evaluation seeds and opponent rosters are configured below. '+
+                (operational?'Training-only/transport settings (recorded, not passed as match rules): '+
+                    operational+'. ':'')+
+                'Changing the map selection or maximum turns below deliberately overrides the saved match scenario.'
             :'Select an existing TinyBrains Design configuration.';
     }
     function draft(record,copy=false) {
