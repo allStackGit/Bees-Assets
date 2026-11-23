@@ -9,7 +9,8 @@ const {spawnSync}=require('node:child_process');
 const {prepare: prepareImmutableRuntime,fileHash}=
     require('./experiment_hub_bees_immutable_runtime');
 const {privateKey,brokerPort,identity}=require('./experiment_hub_bees_wan_identity');
-const {unityWorkerTreeSha256}=require('./experiment_hub_bees_worker_identity');
+const {unityWorkerTreeSha256,pinnedWorkerRelease}=
+    require('./experiment_hub_bees_worker_identity');
 
 const UUID=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 const SHA=/^[0-9a-f]{64}$/;
@@ -17,37 +18,47 @@ const TAILNET=/^100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.(?:0|[1-9][0-9]{0
 const SSH_USER=/^[a-z_][a-z0-9_-]{0,31}$/;
 const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const SAFE=/^[a-zA-Z0-9_./:@=+\-,]+$/;
+const safeLocal=value=>process.platform==='win32'
+    ?typeof value==='string'&&value.length>0&&value.length<=1024&&
+        !/[\x00-\x1f]/.test(value)
+    :SAFE.test(String(value||''));
 
 function trustedFile(raw,label,executable=false) {
-    if(typeof raw!=='string'||!path.isAbsolute(raw)||!SAFE.test(raw))
+    if(typeof raw!=='string'||!path.isAbsolute(raw)||!safeLocal(raw))
         throw Error(label+' must be an approved absolute Linux path.');
     const real=fs.realpathSync(raw);
-    if(real!==raw||!SAFE.test(real))
+    if(real!==raw||!safeLocal(real))
         throw Error(label+' may not be redirected.');
     const st=fs.statSync(raw);
-    if(!st.isFile()||executable&&(st.mode&0o111)===0)
+    if(!st.isFile()||executable&&process.platform!=='win32'&&
+        (st.mode&0o111)===0)
         throw Error(label+' is not a usable installed file.');
     return real;
 }
 function createBeesRolloutAdapter({
     projectRoot,pythonPath,workerExecutable,artifactRoot,
-    keyPath,forwardPort,sshForward=null,
+    keyPath,forwardPort,sshForward=null,releaseManifestPath=null,
 }) {
-    if(process.platform!=='linux')
-        throw Error('This Bees Hub remote actor adapter uses the Linux systemd owner.');
+    if(!['linux','win32'].includes(process.platform))
+        throw Error('Bees WAN remote actors require Linux or Windows native supervision.');
+    if(process.platform==='win32'&&sshForward!==null)
+        throw Error('Windows Bees WAN actors need a separately installed private loopback forward.');
     const project=fs.realpathSync(projectRoot);
     const artifacts=fs.realpathSync(artifactRoot);
-    if(!SAFE.test(project)||!SAFE.test(artifacts)||
+    if(!safeLocal(project)||!safeLocal(artifacts)||
         !fs.statSync(project).isDirectory()||
         !fs.statSync(artifacts).isDirectory()||
         project===artifacts||artifacts.startsWith(project+path.sep))
         throw Error('Bees remote actor artifacts must use a separate real local directory.');
     const python=trustedFile(pythonPath,'Bees remote Python',true);
     const worker=trustedFile(workerExecutable,'Bees Linux Unity worker',true);
-    if(path.basename(worker)!=='Bees RL Training.x86_64')
-        throw Error('Bees WAN remote rollout requires a Linux dedicated Unity worker.');
+    if(path.basename(worker)!==(process.platform==='win32'
+        ?'Bees RL Training.exe':'Bees RL Training.x86_64'))
+        throw Error('Bees WAN actor requires the dedicated Unity worker for this machine OS.');
     const secret=privateKey(keyPath);
     const tunnelPort=brokerPort(forwardPort);
+    const release=releaseManifestPath?
+        pinnedWorkerRelease(releaseManifestPath,worker):null;
     // Machine operator owns SSH enrollment; no Hub job can select remote
     // peers, credentials, transport flags, broker ports, or executable.
     let approvedForward=null;
@@ -91,6 +102,7 @@ function createBeesRolloutAdapter({
     const source=name=>trustedFile(path.join(pinned.root,name),'Frozen Bees '+name);
     const approved={
         worker_payload_sha256:unityWorkerTreeSha256(worker),
+        wan_release_sha256:release?.release_sha256??unityWorkerTreeSha256(worker),
         worker_sha256:fileHash(worker),
         trainer_sha256:fileHash(source('rl_1v1_config.yaml')),
         runtime_version:pinned.runtimeVersion,
@@ -121,6 +133,7 @@ function createBeesRolloutAdapter({
             version:1,fields:[],
             worker_sha256:approved.worker_sha256,
             worker_payload_sha256:approved.worker_payload_sha256,
+            wan_release_sha256:approved.wan_release_sha256,
             trainer_sha256:approved.trainer_sha256,
             runtime_version:approved.runtime_version,
             wan_key_fingerprint:approved.wan_key_fingerprint,
@@ -131,7 +144,8 @@ function createBeesRolloutAdapter({
         }},
         bees_rollout_versions:{...approved},
         gpu_verify_args(parameters,context) {
-            if(parameters?.device!=='cuda'||!PCI.test(String(context?.gpu_pci_address||'')))
+            if(process.platform!=='linux'||parameters?.device!=='cuda'||
+                !PCI.test(String(context?.gpu_pci_address||'')))
                 throw Error('Bees remote ROCm actor requires one exclusive physical GPU lease.');
             return ['-B',path.join(__dirname,'experiment_hub_tinybrains_rocm_verify.py'),
                 context.gpu_pci_address];
@@ -141,7 +155,7 @@ function createBeesRolloutAdapter({
                 Object.keys(parameters).some(key=>![
                     'learner_job_id','lineage_root_id','worker_sha256',
                     'trainer_sha256','runtime_version','wan_key_fingerprint',
-                    'worker_payload_sha256','envs','device','slot',
+                    'worker_payload_sha256','wan_release_sha256','envs','device','slot',
                 ].includes(key))||
                 !UUID.test(String(parameters.learner_job_id||''))||
                 !UUID.test(String(parameters.lineage_root_id||''))||
@@ -156,13 +170,15 @@ function createBeesRolloutAdapter({
                 parameters.envs>context.cpu_quota||
                 !['cpu','cuda'].includes(parameters.device)||
                 (parameters.device==='cuda'
-                    ?!PCI.test(String(context.gpu_pci_address||''))||
+                    ?process.platform!=='linux'||
+                        !PCI.test(String(context.gpu_pci_address||''))||
                         context.gpu_mode!=='exclusive'||context.gpu_pci_addresses!==undefined
                     :context.gpu_pci_address!==undefined||
                         context.gpu_pci_addresses!==undefined))
                 throw Error('Bees WAN rollout requires one frozen learner, exact CPU or exclusive GPU lease, and 1–64 local environments.');
             for(const key of ['worker_sha256','worker_payload_sha256',
-                'trainer_sha256','runtime_version','wan_key_fingerprint'])
+                'wan_release_sha256','trainer_sha256','runtime_version',
+                'wan_key_fingerprint'])
                 if(parameters[key]!==approved[key])
                     throw Error('Bees remote rollout source or private session key does not match its approved learner.');
             if(privateKey(secret.path).fingerprint!==secret.fingerprint||
@@ -170,16 +186,18 @@ function createBeesRolloutAdapter({
                 unityWorkerTreeSha256(worker)!==approved.worker_payload_sha256||
                 fileHash(runtime.trainer)!==approved.trainer_sha256||
                 fileHash(runtime.actor)!==approved.actor_sha256||
-                fileHash(runtime.runner)!==approved.runner_sha256)
+                fileHash(runtime.runner)!==approved.runner_sha256||
+                release&&pinnedWorkerRelease(releaseManifestPath,worker).release_sha256!==
+                    approved.wan_release_sha256)
                 throw Error('The approved Bees WAN actor installation changed after enrollment.');
             // This identity must equal the learner's, not the actor's Hub
             // lineage ID. Both sides use only SHA-pinned source identities.
-            identity(approved.worker_payload_sha256,approved.trainer_sha256,
+            identity(approved.wan_release_sha256,approved.trainer_sha256,
                 approved.runtime_version,parameters.lineage_root_id);
             const root=path.join(artifacts,context.job_id);
             fs.mkdirSync(root,{mode:0o700});
             if(fs.realpathSync(root)!==root||
-                fs.statSync(root).mode&0o077)
+                process.platform!=='win32'&&(fs.statSync(root).mode&0o077))
                 throw Error('Bees remote job artifact owner must be private and unredirected.');
             const job={
                 schema_version:approvedForward?2:1,job_id:context.job_id,
@@ -189,6 +207,7 @@ function createBeesRolloutAdapter({
                 output_root:root,
                 game_binary:worker,game_sha256:approved.worker_sha256,
                 game_payload_sha256:approved.worker_payload_sha256,
+                wan_release_sha256:approved.wan_release_sha256,
                 training_script:runtime.training,
                 training_sha256:fileHash(runtime.training),
                 trainer_source:runtime.trainer,
