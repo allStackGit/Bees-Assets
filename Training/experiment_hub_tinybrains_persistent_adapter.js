@@ -1466,6 +1466,68 @@ function createTinyBrainsPersistentDockerAdapter({
                     String(error.message||error).slice(0,160));
             }
         }
+        // Future self-play checkpoints may be frozen independently from the
+        // original Batch-128 baseline. Derive their expected suite IDs from
+        // the source job UUID; pin ONNX, manifest and checkpoint identities.
+        // Invalid optional opponents never prevent a training agent boot.
+        if(fs.existsSync(root)) {
+            const historyFiles=fs.readdirSync(root).filter(file=>
+                /^tinybrains_mini_[a-f0-9]{20}\.json$/.test(file)).sort();
+            if(historyFiles.length>32)
+                console.warn('[hub-evaluations] Historical opponent population exceeds the local approval cap.');
+            else for(const filename of historyFiles) {
+                const name=filename.slice(0,-5);
+                try {
+                    const file=path.join(root,filename);
+                    const stat=fs.lstatSync(file);
+                    const suite=JSON.parse(fs.readFileSync(file,'utf8'));
+                    const directory=path.join(root,'opponents',name);
+                    if(!stat.isFile()||stat.isSymbolicLink()||
+                        fs.realpathSync(file)!==file||stat.uid!==process.getuid()||
+                        stat.mode&0o077||stat.size<1||stat.size>8192||
+                        suite.suite_id!==name||suite.opponent!=='mini'||
+                        suite.opponent_dir!==directory||
+                        !UUID.test(String(suite.opponent_source_job||''))||
+                        'tinybrains_mini_'+suite.opponent_source_job
+                            .replace(/-/g,'').slice(0,20)!==name||
+                        !SHA.test(String(suite.opponent_checkpoint_sha256||''))||
+                        !SHA.test(String(suite.runtime_sha256||''))||
+                        !SHA.test(String(suite.opponent_model_sha256||''))||
+                        !SHA.test(String(suite.opponent_manifest_sha256||''))||
+                        suite.max_turns!==1000||
+                        !Array.isArray(suite.seeds)||suite.seeds.length!==1||
+                        suite.seeds[0]!==813101||
+                        !Array.isArray(suite.maps)||suite.maps.length!==76)
+                        throw Error('Historical Mini suite is not a trusted immutable full-season checkpoint.');
+                    const mapFiles=fs.readdirSync(boards)
+                        .filter(value=>value.endsWith('.json'))
+                        .map(value=>value.slice(0,-5)).sort();
+                    if(mapFiles.length!==76||
+                        [...suite.maps].sort().join(',')!==mapFiles.join(','))
+                        throw Error('Historical Mini suite does not cover the pinned season.');
+                    const dstat=fs.lstatSync(directory);
+                    if(!dstat.isDirectory()||dstat.isSymbolicLink()||
+                        dstat.uid!==process.getuid()||dstat.mode&0o077)
+                        throw Error('Historical Mini model directory is not private.');
+                    for(const [filename,key] of [
+                        ['model.onnx','opponent_model_sha256'],
+                        ['manifest.json','opponent_manifest_sha256'],
+                    ]) {
+                        const frozen=path.join(directory,filename);
+                        const item=fs.lstatSync(frozen);
+                        if(!item.isFile()||item.isSymbolicLink()||
+                            item.uid!==process.getuid()||item.mode&0o077||
+                            crypto.createHash('sha256')
+                                .update(fs.readFileSync(frozen)).digest('hex')!==suite[key])
+                            throw Error('Historical Mini model differs from its approved fingerprint.');
+                    }
+                    approvedEvaluationSuites=[...new Set([...approvedEvaluationSuites,name])];
+                }catch(error) {
+                    console.warn('[hub-evaluations] Ignoring invalid historical suite '+name+': '+
+                        String(error.message||error).slice(0,160));
+                }
+            }
+        }
     }
     return {
         executable,cwd:nativeWindows?project:PROJECT_IN,
