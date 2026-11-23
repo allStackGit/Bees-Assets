@@ -108,6 +108,26 @@ def training_activation_workspace_budget(free_bytes, *,
                       free_bytes-minimum_other_headroom))
 
 
+def discrete_action_logprob_entropy(logits, actions):
+    """Fused-softmax-friendly discrete PPO policy terms for any action count.
+
+    Avoid constructing a distribution and normalizing the same probabilities
+    again for separate log-probability/entropy paths. This is usable from
+    independent project trainers; it does not sample actions, apply clipping,
+    update weights or consume the global Torch RNG.
+    """
+    # log_softmax is a single native CUDA/HIP reduction-plus-pointwise
+    # kernel for the many small per-ant categorical distributions.
+    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+    chosen_logp = log_probs.gather(
+        -1, actions.unsqueeze(-1)).squeeze(-1)
+    # Clamp to the finite dtype bound so masked -inf logits retain zero
+    # entropy contribution instead of generating 0 * -inf = NaN.
+    bounded = log_probs.clamp(min=torch.finfo(log_probs.dtype).min)
+    entropy = -(log_probs.exp() * bounded).sum(dim=-1)
+    return chosen_logp, entropy
+
+
 class IndependentGpuTraining:
     """Measure-and-select execution for genuinely independent GPU learners.
 
