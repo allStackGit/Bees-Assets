@@ -3965,7 +3965,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const threads=hasThreads?tinyBrainsThreads.valueAsNumber:null;
         const cpuFallback=tinyBrainsDevice.value==='cpu';
         const dualGpu=tinyBrainsDevice.value==='dual';
-        const stage=tinyBrainsStage.value;
+        const stage=JSON.parse($('hub-config-json').value).training_stage||tinyBrainsStage.value;
         const multiGpu=tinyBrainsDevice.value==='multi';
         const remoteRollouts=tinyBrainsRemote.checked;
         const weightText=tinyBrainsWeights.value.trim();
@@ -4076,7 +4076,6 @@ document.addEventListener('DOMContentLoaded', () => {
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
         ['Updates ',tinyBrainsUpdates],['CPU threads (optional) ',tinyBrainsThreads],
         ['Execution device ',tinyBrainsDevice],
-        ['Learning curriculum map stage ',tinyBrainsStage],
         ['Use approved remote rollout collectors ',tinyBrainsRemote],
         ['Fixed rollout action weights (optional; local then remotes) ',tinyBrainsWeights],
         ['Approved checkpoint import (optional) ',tinyBrainsImport]]) {
@@ -4085,12 +4084,6 @@ document.addEventListener('DOMContentLoaded', () => {
             label.className='hub-toggle-row hub-tinybrains-remote';
             label.append(control,document.createTextNode(caption.trim()));
         }else label.append(caption,control);
-        if(control===tinyBrainsStage) {
-            const hint=document.createElement('small');
-            hint.className='muted';
-            hint.textContent='New training runs default to all approved 2-, 4-, and 6-player maps. Select a smaller stage explicitly for a focused curriculum. The selected stage is frozen when the job is queued.';
-            label.append(hint);
-        }
         tinyBrainsFields.append(label);
     }
     const tinyBrainsActions=document.createElement('div');
@@ -4117,6 +4110,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 .map(([key,label])=>new Option(label,key))]);
         if(options.has(previous))tinyBrainsImport.value=previous;
     }
+    tinyBrainsStage.addEventListener('change',()=>{
+        try {readDesignControls();feedback('hub-config-message','');}
+        catch(error){feedback('hub-config-message',error.message);}
+    });
     tinyBrainsSelect.addEventListener('change',displayTinyBrainsImports);
     function displayTinyBrainsProfiles() {
         tinyBrainsPicker.hidden=project!=='tinybrains';
@@ -4288,6 +4285,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if(effective.initial_energy>effective.max_energy)
                 throw Error('Initial energy cannot exceed maximum energy.');
         }
+        if(project==='tinybrains') {
+            const stage=tinyBrainsStage.value;
+            if(!['basic_tiny','tiny_two_player','small_two_player',
+                'all_two_player','full_multiplayer'].includes(stage))
+                throw Error('Select an approved TinyBrains map stage.');
+            parameters.training_stage=stage;
+        }
         for(const input of runControls) {
             const key=input.dataset.designRun;
             if(input.type==='checkbox') {
@@ -4360,6 +4364,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!chosen)return;
         const {entry,machine}=chosen;
         $('hub-design-run-panel').hidden=project!=='courier';
+        if(project==='tinybrains') {
+            // Map selection changes the simulated environment, not the CPU/GPU
+            // allocation. One form owns it and freezes it with the Design.
+            tinyBrainsStage.value=parameters.training_stage||'full_multiplayer';
+            const mapLabel=document.createElement('label');
+            mapLabel.append(document.createTextNode('Training map coverage'),tinyBrainsStage);
+            const mapHint=document.createElement('small');
+            mapHint.textContent='Maps and 2/4/6 player counts are frozen with this Design, independent of GPU and CPU budgets.';
+            mapLabel.append(mapHint);
+            $('hub-design-environment').append(mapLabel);
+        }
         if(project==='courier') {
             const instructions=document.createElement('p');
             instructions.className='muted hub-design-note';
