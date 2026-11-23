@@ -910,6 +910,65 @@ function mapReport(hub,id) {
     return {available:false,suite_id:suiteName,
         reason:'No current checkpoint receipt with a matching per-map report is available.'};
 }
+// Move unused immutable suite recipes out of the active timer namespace.
+// Never erase checkpoint imports or evaluator receipts. Archives are
+// deliberately not advertised as runnable suites until deliberately restored.
+async function archiveUnusedEvaluations(hub) {
+    const o=localOptions(hub);
+    const unused=custom.unusedVersions(o,hub);
+    if(!unused.length)return {message:'No unreferenced mixed evaluation versions need archiving.',
+        archived:0,blocked:[]};
+    const archive=privateDirectory(path.join(o.suites,'archived'),true);
+    let archived=0;
+    const blocked=[];
+    for(const suiteId of unused) {
+        const match=/^tinybrains_mix_([a-f0-9]{20})_v([1-9][0-9]*)$/.exec(suiteId);
+        if(!match)continue;
+        const origin=path.join(o.suites,suiteId+'.json');
+        const destination=path.join(archive,suiteId+'.json');
+        const unit=unitFiles(o,'mix-'+match[1]+'-v'+match[2]);
+        try {
+            if(fs.existsSync(destination))
+                throw Error('Archived immutable version already exists; no overwrite was attempted.');
+            const file=presentFile(origin),stat=fs.lstatSync(file);
+            if(stat.uid!==process.getuid()||(stat.mode&0o077)!==0)
+                throw Error('Frozen evaluation definition is not a private user-owned file.');
+            const serviceExists=fs.existsSync(unit.serviceFile);
+            const timerExists=fs.existsSync(unit.timerFile);
+            if(serviceExists!==timerExists)
+                throw Error('Evaluation service installation is partial; repair it before archiving.');
+            if(serviceExists) {
+                const approved=definitions(o);
+                approvedUnit(o,'mix-'+match[1]+'-v'+match[2],
+                    approved['mix-'+match[1]+'-v'+match[2]]);
+                const running=await properties(unit.service);
+                if(['active','activating','deactivating'].includes(running.ActiveState))
+                    throw Error('The evaluation service is still running.');
+                await systemctl(['stop',unit.timer]);
+                const afterward=await properties(unit.service);
+                if(['active','activating','deactivating'].includes(afterward.ActiveState))
+                    throw Error('The evaluation service started while retiring its timer.');
+                await systemctl(['disable',unit.timer]);
+            }
+            // Recheck live Hub references immediately before removing the
+            // approved suite from the discovery directory.
+            if(!custom.unusedVersions(o,hub).includes(suiteId))
+                throw Error('The evaluation became referenced by a saved job/configuration.');
+            fs.renameSync(origin,destination);
+            if(serviceExists) {
+                fs.unlinkSync(unit.timerFile);
+                fs.unlinkSync(unit.serviceFile);
+            }
+            archived++;
+        }catch(error) {
+            blocked.push({suite_id:suiteId,reason:String(error.message||error).slice(0,180)});
+        }
+    }
+    if(archived)await systemctl(['daemon-reload']);
+    return {archived,blocked,message:'Archived '+archived+
+        ' unused mixed evaluation version(s); frozen recipes and prior receipts remain intact.'+
+        (blocked.length?' '+blocked.length+' version(s) need attention; see archive details.':'')};
+}
 async function action(hub,value) {
     if(!value||value.confirm_action!==true)
         throw Error('Explicit evaluator action confirmation is required.');
@@ -918,6 +977,8 @@ async function action(hub,value) {
     if(value.action==='setup-mini'&&value.id===undefined&&
         (value.source_job_id===undefined||UUID.test(value.source_job_id)))
         return setupMini(hub,value.source_job_id);
+    if(value.action==='archive-unused-custom'&&value.id===undefined)
+        return archiveUnusedEvaluations(hub);
     if(value.action==='save-custom') {
         const o=localOptions(hub);
         const previous=value.id==null?null:
@@ -934,19 +995,18 @@ async function action(hub,value) {
                 String(error.message||error).slice(0,180)+
                 '. Use Set up TinyBrains evaluations to reconcile it.'};
         }
-        // Editing must not leave an obsolete six-hour timer evaluating every
-        // archived checkpoint forever. Preserve it when an already queued
-        // or completed job still needs its exact immutable revision.
-        if(previous) {
-            const referenced=hub.snapshot().jobs.some(job=>
-                job.status!=='cancelled'&&
-                [job.evaluation_monitor,job.evaluation_stop].some(policy=>
-                    (policy?.all_of||[policy]).some(rule=>
-                        rule?.suite_id===previous.suite_id)));
-            if(!referenced) {
-                const old=unitFiles(o,'mix-'+previous.id+'-v'+previous.revision);
-                if(fs.existsSync(old.timerFile))
-                    await systemctl(['stop',old.timer]);
+        // The previous revision may still be selected by another saved
+        // Design or a running job. Leave its schedule alone in that case.
+        // A failed optional timer stop must not turn a committed Save into
+        // an apparent failure that causes the user to duplicate a revision.
+        if(previous&&!custom.referencedSuites(hub).has(previous.suite_id)) {
+            const old=unitFiles(o,'mix-'+previous.id+'-v'+previous.revision);
+            if(fs.existsSync(old.timerFile))try {
+                await systemctl(['stop',old.timer]);
+            }catch(error) {
+                return {...saved,installed:true,message:saved.message+
+                    ' The prior revision was saved but its timer could not be stopped: '+
+                    String(error.message||error).slice(0,170)};
             }
         }
         return saved;
@@ -956,12 +1016,7 @@ async function action(hub,value) {
         const current=custom.read(o).templates.find(row=>row.id===value.id);
         if(!current||current.revision!==value.expected_revision)
             throw Error('Saved evaluation revision changed; reload before deletion.');
-        const referenced=hub.snapshot().jobs.some(job=>{
-            if(job.status==='cancelled')return false;
-            return [job.evaluation_monitor,job.evaluation_stop].some(policy=>
-                (policy?.all_of||[policy]).some(rule=>
-                    rule?.suite_id===current.suite_id));
-        });
+        const referenced=custom.referencedSuites(hub).has(current.suite_id);
         // A prequeued/running/terminal job may still require its pinned final
         // suite. Never disarm its scheduler merely because a saved template
         // was deleted. Old immutable service files and receipts are retained.
