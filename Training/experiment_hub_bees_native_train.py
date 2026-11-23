@@ -23,6 +23,7 @@ import uuid
 import yaml
 from tensorboard.backend.event_processing.event_file_loader import EventFileLoader
 from bees_unity_port_reservation import reserve_base_port
+from bees_unity_worker_runtime import StagedUnityPlayer
 
 MAX_EVENT_FILES = 64
 MAX_METRIC_BYTES = 32768
@@ -815,7 +816,13 @@ def main():
     signal.signal(signal.SIGINT,stop)
     signal.signal(signal.SIGTERM,stop)
     progress=EventProgress(root,job["job_id"],job["lineage_root_id"])
+    player=None
     try:
+        player=StagedUnityPlayer(Path(job["game_binary"]),root)
+        live_binary=player.start(
+            job["game_payload_sha256"] if native_wan else None
+        )
+        command[4]="--env="+str(live_binary)
         child=subprocess.Popen(command,cwd=str(Path(job["training_script"]).parent.parent),
                                env=child_env,start_new_session=True)
         telemetry_error = False
@@ -894,7 +901,7 @@ def main():
                     "--candidate",model["model"],
                     "--candidate-sha256",model["sha256"],
                     "--opponent","scripted:"+opponent,
-                    "--env",job["game_binary"],
+                    "--env",str(live_binary),
                     "--build-id",job["game_sha256"],
                     "--run-id",job["job_id"],
                     "--output-root",str(evaluation_root),
@@ -948,7 +955,11 @@ def main():
             child.send_signal(signal.SIGINT)
             try: child.wait(timeout=60)
             except subprocess.TimeoutExpired: child.terminate()
-        port_lock.close()
+        try:
+            if player is not None:
+                player.close()
+        finally:
+            port_lock.close()
 
 if __name__=="__main__":
     try:
