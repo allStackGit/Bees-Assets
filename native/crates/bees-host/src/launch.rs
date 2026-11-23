@@ -7016,37 +7016,67 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
                         false
                     };
                     Some((recording.title, source, spectator_fleet))
-                }).take(32).collect::<Vec<_>>();
+                }).collect::<Vec<_>>();
             if saved.is_empty() {
                 fleet_builder::choose_multiplayer(
                     single_remote_side, save_root, original_queen, original_factory, sources)?
             } else {
                 use bees_host::presentation::{select_library, BattleMenuRow};
-                let mut rows = Vec::with_capacity(saved.len() + 1);
-                rows.push(BattleMenuRow {
-                    title: "Build new LAN fleet",
-                    status: "  [New source-authored physical match]",
-                    unlocked: true,
-                });
-                rows.extend(saved.iter().map(|(title, _, spectators)| BattleMenuRow {
-                    title, status: if *spectators {
-                        "  [Watch both authentic scripted factions]"
-                    } else if single_remote_side.is_some() {
-                        "  [Reuse commander and scripted-AI squads]"
-                    } else {
-                        "  [Reuse two player-controlled factions]"
-                    },
-                    unlocked: true,
-                }));
-                let mut selected = 0;
-                match select_library(&rows, &mut selected, false)? {
-                    None => None,
-                    Some(0) => fleet_builder::choose_multiplayer(
-                    single_remote_side, save_root, original_queen, original_factory, sources)?,
-                    Some(index) => {
-                        saved_host_fleet = Some(saved[index - 1].1.clone());
-                        None
-                    },
+                // The replay catalog keeps up to 256 recent original fleets.
+                // Page the *eligible* recordings instead of silently
+                // discarding older ones or building an unbounded menu.
+                const PAGE_SIZE: usize = 32;
+                let mut page = 0_usize;
+                loop {
+                    let first = page * PAGE_SIZE;
+                    let last = (first + PAGE_SIZE).min(saved.len());
+                    let shown = &saved[first..last];
+                    let mut rows = Vec::with_capacity(shown.len() + 3);
+                    rows.push(BattleMenuRow {
+                        title: "Build new LAN fleet",
+                        status: "  [New source-authored physical match]",
+                        unlocked: true,
+                    });
+                    rows.extend(shown.iter().map(|(title, _, spectators)| BattleMenuRow {
+                        title, status: if *spectators {
+                            "  [Watch both authentic scripted factions]"
+                        } else if single_remote_side.is_some() {
+                            "  [Reuse commander and scripted-AI squads]"
+                        } else {
+                            "  [Reuse two player-controlled factions]"
+                        },
+                        unlocked: true,
+                    }));
+                    let newer = first > 0;
+                    let older = last < saved.len();
+                    if newer {
+                        rows.push(BattleMenuRow {
+                            title: "Newer recorded fleets",
+                            status: "  [Previous page of eligible fleets]",
+                            unlocked: true,
+                        });
+                    }
+                    if older {
+                        rows.push(BattleMenuRow {
+                            title: "Older recorded fleets",
+                            status: "  [Next page of eligible fleets]",
+                            unlocked: true,
+                        });
+                    }
+                    let mut selected = 0;
+                    match select_library(&rows, &mut selected, false)? {
+                        None => break None,
+                        Some(0) => break fleet_builder::choose_multiplayer(
+                            single_remote_side, save_root, original_queen, original_factory, sources)?,
+                        Some(index) if index <= shown.len() => {
+                            saved_host_fleet = Some(shown[index - 1].1.clone());
+                            break None;
+                        }
+                        Some(index) if newer && index == shown.len() + 1 => page -= 1,
+                        Some(index) if older &&
+                            index == shown.len() + 1 + usize::from(newer) => page += 1,
+                        _ => return Err(invalid("invalid recorded fleet page selection").into()),
+                    }
                 }
             }
         } else {
