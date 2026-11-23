@@ -1250,7 +1250,7 @@ fn choose_original_composition(
                 counts[choice]
             };
             remaining -= count;
-            roster[side].extend(std::iter::repeat_with(|| (*source).clone()).take(count));
+            roster[side].extend(std::iter::repeat_with(|| (**source).clone()).take(count));
         }
         if remaining != 0 || roster[side].len() != sizes[side] {
             return Err(invalid("original mixed fleet lost its authored physical ship count").into());
