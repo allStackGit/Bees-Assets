@@ -105,6 +105,7 @@ fn connection_form(
     let typed = Rc::new(RefCell::new(String::new()));
     window.set_input_callback(Box::new(TypedText(Rc::clone(&typed))));
     let mut focus = 0;
+    let mut cursors = std::array::from_fn::<_, 4, _>(|index| fields[index].len());
     let mut mouse_down = false;
     let mut show_error = false;
     let mut remember = false;
@@ -114,17 +115,37 @@ fn connection_form(
             return Ok(None);
         }
         if let Some(field) = fields.get_mut(focus).filter(|_| focus < field_count) {
+            let cursor = &mut cursors[focus];
             let limit = if focus == 0 { 255 } else { 4096 };
             for ch in typed.borrow().chars() {
                 if field.len() + ch.len_utf8() <= limit {
-                    field.push(ch);
+                    field.insert(*cursor, ch);
+                    *cursor += ch.len_utf8();
                 }
             }
-            if window.is_key_pressed(Key::Backspace, KeyRepeat::Yes) {
-                field.pop();
+            if window.is_key_pressed(Key::Home, KeyRepeat::No) {
+                *cursor = 0;
+            } else if window.is_key_pressed(Key::End, KeyRepeat::No) {
+                *cursor = field.len();
+            } else if window.is_key_pressed(Key::Left, KeyRepeat::Yes) {
+                *cursor = field[..*cursor].char_indices()
+                    .next_back().map_or(0, |(index, _)| index);
+            } else if window.is_key_pressed(Key::Right, KeyRepeat::Yes) {
+                if *cursor < field.len() {
+                    *cursor += field[*cursor..].chars().next()
+                        .expect("cursor is on a character boundary").len_utf8();
+                }
             }
-            if window.is_key_pressed(Key::Delete, KeyRepeat::No) {
-                field.clear();
+            if window.is_key_pressed(Key::Backspace, KeyRepeat::Yes) && *cursor > 0 {
+                let previous = field[..*cursor].char_indices()
+                    .next_back().map_or(0, |(index, _)| index);
+                field.drain(previous..*cursor);
+                *cursor = previous;
+            }
+            if window.is_key_pressed(Key::Delete, KeyRepeat::No) && *cursor < field.len() {
+                let next = *cursor + field[*cursor..].chars().next()
+                    .expect("cursor is on a character boundary").len_utf8();
+                field.drain(*cursor..next);
             }
         }
         typed.borrow_mut().clear();
@@ -204,8 +225,25 @@ fn connection_form(
             } else {
                 &fields[row]
             };
-            text::draw_at(&mut pixels, WIDTH, 91, top + 25,
-                text::fit_tail(value, 610), 1, TEXT);
+            if active && row < field_count {
+                // Keep the edit point visible even when a server address
+                // or certificate path is wider than the field. The glyph
+                // renderer and Unicode byte boundaries are shared with all
+                // other native menus; no second text widget is introduced.
+                let caret = cursors[row];
+                let before = text::fit_tail(&value[..caret], 310);
+                let available = 610 - text::width(before, 1).min(610);
+                let after = text::fit(&value[caret..], available);
+                text::draw_at(&mut pixels, WIDTH, 91, top + 25, before, 1, TEXT);
+                let caret_x = 91 + text::width(before, 1);
+                text::draw_at(&mut pixels, WIDTH, caret_x, top + 25, after, 1, TEXT);
+                for y in top + 22..top + 42 {
+                    pixels[y * WIDTH + caret_x] = 0xe8f0fa;
+                }
+            } else {
+                text::draw_at(&mut pixels, WIDTH, 91, top + 25,
+                    text::fit_tail(value, 610), 1, TEXT);
+            }
         }
         for line in action_top..action_top + 34 {
             pixels[line * WIDTH + 80..line * WIDTH + 305]
@@ -225,9 +263,9 @@ fn connection_form(
         } else if show_error {
             "Enter host:port and either both TLS server files or neither."
         } else if joining {
-            "Tab move   Left / Right change role   Space toggle   Enter connect   Esc return"
+            "Tab fields   Arrows edit / change role   Enter connect   Esc return"
         } else {
-            "Tab move   Space toggle   Enter continue   Esc return"
+            "Tab fields   Left / Right edit   Enter continue   Esc return"
         };
         text::draw_centered(&mut pixels, WIDTH, footer_top, footer, 1, MUTED);
         window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
