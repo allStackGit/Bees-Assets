@@ -1864,7 +1864,7 @@ impl NativePhysicalScene {
     /// replacement with no playable reinforcement.
     fn pluto_anomaly_handoff_is_authored(
         &self, player_side: i32, scout_id: i64,
-        honeybee_id: i64, gunship_id: i64,
+        honeybee_id: i64, gunship_id: i64, gunship_briefing_after_entry: bool,
         waves: &[crate::reinforcements::NativeReinforcementPlan],
         queues: &[crate::policy_only_metadata::NativeScriptedQueuePlan],
     ) -> bool {
@@ -1878,6 +1878,13 @@ impl NativePhysicalScene {
         ));
         let Some(wave) = gunship_waves.next() else { return false };
         if gunship_waves.next().is_some() || wave.squad_item_ids.len() != 1 {
+            return false;
+        }
+        if gunship_briefing_after_entry && !self.starting_positions.is_some_and(|homes| {
+            let home = homes[(player_side - 1) as usize];
+            wave.spawn.is_some_and(|spawn| spawn.unity_equal(home - Vec2::new(0.0, 100.0))) &&
+                wave.entry.is_some_and(|entry| entry.unity_equal(home + Vec2::new(0.0, 40.0)))
+        }) {
             return false;
         }
         let gunship_squad = self.source_squads.iter().find(|squad|
@@ -3998,6 +4005,7 @@ impl NativePhysicalScene {
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::PlutoAnomaly {
                 player_side, scout_id, honeybee_id, gunship_id, withdrawal_before_report,
+                gunship_briefing_after_entry,
             }) if player_side != human_side || scout_id <= 0 ||
                 (withdrawal_before_report && !self.source_squads.iter().any(|squad|
                     squad.side == player_side && squad.members.as_slice() == [scout_id])) ||
@@ -4017,7 +4025,7 @@ impl NativePhysicalScene {
                         !ship.vitals.is_dead()
                 )) ||
                 !self.pluto_anomaly_handoff_is_authored(
-                    player_side, scout_id, honeybee_id, gunship_id,
+                    player_side, scout_id, honeybee_id, gunship_id, gunship_briefing_after_entry,
                     &setup.reinforcements, &setup.scripted_queues,
                 ) ||
                 // This encounter is an ordinary source combat Level, not

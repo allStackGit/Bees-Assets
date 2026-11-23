@@ -23,6 +23,8 @@ pub enum CampaignDialogueSpec {
         gunship_id: i64,
         #[serde(default, skip_serializing_if = "is_false")]
         withdrawal_before_report: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        gunship_briefing_after_entry: bool,
     },
     /// Original Pluto II: the first real Scout must be selected before
     /// the campaign permits the rest of the fleet and the Bee encounter.
@@ -214,6 +216,8 @@ enum DialogueMode {
         #[serde(default, skip_serializing_if = "is_false")]
         withdrawal_before_report: bool,
         #[serde(default, skip_serializing_if = "is_false")]
+        gunship_briefing_after_entry: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
         scout_report_started: bool,
         #[serde(default, skip_serializing_if = "is_false")]
         scout_withdrawal_arrived: bool,
@@ -337,10 +341,12 @@ impl CampaignDialogue {
     pub fn new(spec: CampaignDialogueSpec) -> Self {
         let (mode, cue) = match spec {
             CampaignDialogueSpec::PlutoAnomaly {
-                scout_id, honeybee_id, gunship_id, withdrawal_before_report, ..
+                scout_id, honeybee_id, gunship_id, withdrawal_before_report,
+                gunship_briefing_after_entry, ..
             } => (
                 DialogueMode::PlutoAnomaly {
                     scout_id, honeybee_id, gunship_id, withdrawal_before_report,
+                    gunship_briefing_after_entry,
                     spotted: false, scout_report_started: false, scout_withdrawal_arrived: false,
                     scout_alarm_until_tick: None, report_completed: false, gunship_arrived: false, gunship_briefed: false,
                     honeybee_destroyed: false,
@@ -426,6 +432,8 @@ impl CampaignDialogue {
     /// Tom during his Gunship briefing. The next story cue releases it.
     pub fn camera_subject(&self) -> Option<i64> {
         match (self.mode, self.cue) {
+            (DialogueMode::PlutoAnomaly { gunship_id, gunship_briefing_after_entry: true, .. },
+                CampaignCue::PlutoAnomalyScoutReportComplete) => Some(gunship_id),
             (DialogueMode::PlutoAnomaly { scout_id, .. },
                 CampaignCue::PlutoAnomalyHoneybeeSpotted | CampaignCue::PlutoAnomalyScoutWithdrawing |
                 CampaignCue::PlutoAnomalyScoutReportComplete) =>
@@ -466,10 +474,13 @@ impl CampaignDialogue {
         }
         let same_authored_story = match (&mode, &self.mode) {
             (DialogueMode::PlutoAnomaly {
-                scout_id: a, honeybee_id: b, gunship_id: e, withdrawal_before_report: saved, ..
+                scout_id: a, honeybee_id: b, gunship_id: e, withdrawal_before_report: saved,
+                gunship_briefing_after_entry: saved_gunship, ..
             }, DialogueMode::PlutoAnomaly {
-                scout_id: c, honeybee_id: d, gunship_id: f, withdrawal_before_report: authored, ..
-            }) => a == c && b == d && e == f && saved == authored,
+                scout_id: c, honeybee_id: d, gunship_id: f, withdrawal_before_report: authored,
+                gunship_briefing_after_entry: authored_gunship, ..
+            }) => a == c && b == d && e == f && saved == authored &&
+                saved_gunship == authored_gunship,
             (DialogueMode::PlutoReinforcements { scout_id: a, .. },
                 DialogueMode::PlutoReinforcements { scout_id: b, .. }) => a == b,
             (DialogueMode::Minesweeper { .. }, DialogueMode::Minesweeper { .. }) =>
@@ -823,12 +834,24 @@ impl CampaignDialogue {
     pub fn pluto_anomaly_input_permissions(&self) -> [Option<(i64, bool)>; 2] {
         match self.mode {
             DialogueMode::PlutoAnomaly {
-                scout_id, gunship_id, spotted, gunship_arrived, gunship_briefed, ..
+                scout_id, gunship_id, spotted, report_completed, gunship_arrived,
+                gunship_briefed, gunship_briefing_after_entry, ..
             } => [
                 spotted.then_some((scout_id, false)),
-                gunship_arrived.then_some((gunship_id, gunship_briefed)),
+                (gunship_arrived || (gunship_briefing_after_entry && report_completed))
+                    .then_some((gunship_id, gunship_briefed)),
             ],
             _ => [None, None],
+        }
+    }
+
+    pub fn pluto_gunship_under_briefing(&self) -> Option<i64> {
+        match self.mode {
+            DialogueMode::PlutoAnomaly {
+                gunship_id, gunship_briefing_after_entry: true, report_completed: true,
+                gunship_briefed: false, ..
+            } => Some(gunship_id),
+            _ => None,
         }
     }
 
@@ -1150,7 +1173,7 @@ impl CampaignDialogue {
         if let DialogueMode::PlutoAnomaly {
             scout_id, honeybee_id, gunship_id, spotted, withdrawal_before_report,
             scout_report_started, report_completed, gunship_arrived, gunship_briefed,
-            honeybee_destroyed, ..
+            gunship_briefing_after_entry, honeybee_destroyed, ..
         } = &mut self.mode {
             if !*spotted && source_pluto_honeybee_spotted {
                 *spotted = true;
@@ -1177,8 +1200,9 @@ impl CampaignDialogue {
                 return Some(CampaignCue::PlutoAnomalyScoutReportComplete);
             }
             if *report_completed && !*gunship_arrived &&
-                world.ship(*gunship_id)
-                    .is_some_and(|ship| !ship.vitals.is_dead())
+                world.ship(*gunship_id).is_some_and(|ship| !ship.vitals.is_dead()) &&
+                world.ship_body(*gunship_id).is_some_and(|body| body.active) &&
+                (!*gunship_briefing_after_entry || !world.ship_has_pending_game_movement(*gunship_id))
             {
                 *gunship_arrived = true;
                 return Some(CampaignCue::PlutoAnomalyGunshipArrived);

@@ -10,6 +10,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -1120,10 +1121,20 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     "an original nine-slot Bee counterattack at Gunship handoff, "
                     "and a source attack on pluto_gunship_briefing_complete"
                 )
+            gunship_home = homes[args.player_side - 1]
+            if isinstance(gunship_home, dict):
+                gunship_home = [gunship_home.get("x"), gunship_home.get("y")]
+            if (not isinstance(gunship_home, list) or len(gunship_home) != 2 or
+                    any(type(value) not in (int, float) or not math.isfinite(value)
+                        for value in gunship_home)):
+                raise ValueError("Pluto Anomaly requires a finite Human starting position")
+            gunship_waves[0]["spawn"] = [gunship_home[0], gunship_home[1] - 100]
+            gunship_waves[0]["entry"] = [gunship_home[0], gunship_home[1] + 40]
             level["campaign_dialogue"] = {
                 "pluto_anomaly": {
                     "player_side": args.player_side,
                     "withdrawal_before_report": True,
+                    "gunship_briefing_after_entry": True,
                     "scout_id": scouts[0]["entity_id"],
                     "honeybee_id": honeybees[0]["entity_id"],
                     "gunship_id": gunship_id,

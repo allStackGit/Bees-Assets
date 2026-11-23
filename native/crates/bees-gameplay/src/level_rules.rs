@@ -1762,6 +1762,15 @@ where
             state.metadata.deploy_reinforcements(&mut state.combat, &mut state.events, completed_tick)?;
             if state.events.last_reinforcement_tick() == Some(completed_tick) {
                 if let Some(dialogue) = &mut state.campaign_dialogue {
+                    // The deferred Gunship has just registered its real
+                    // hull and squad. Apply the source cease-fire before the
+                    // next physical tick can fire an automatic weapon.
+                    if let Some(gunship) = dialogue.pluto_gunship_under_briefing()
+                        .filter(|&id| state.combat.ship_body(id).is_some_and(|body| body.active))
+                    {
+                        state.combat.set_ship_cease_fire(gunship, true)?;
+                        state.metadata.sync_campaign_player_permissions(dialogue, state.events.roster());
+                    }
                     let seconds = f64::from(dt_seconds) * completed_tick as f64;
                     let choice = dialogue.reinforcement_choice_count(seconds)
                         .map(|total| world.random.next_below(total));
