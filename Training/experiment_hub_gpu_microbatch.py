@@ -831,10 +831,15 @@ class FrozenInferenceMicrobatcher:
                     # groups, not necessarily on the first isolated call.
                     # Measure sustained batch service, including host pack
                     # and device transfer, with two queued groups per sample.
-                    # Two groups fit the bounded default pinned staging
-                    # budget; unsupported pinned paths never reach this
-                    # selection because their equivalence trial failed.
-                    burst = 2 if "pinned" in choices else 1
+                    # Only queue two groups if both pinned staging banks
+                    # fit the caller's configured memory lease. Otherwise
+                    # preserve isolated timing rather than rejecting a valid
+                    # inference request during strategy qualification.
+                    host_bytes = sum(
+                        t.numel()*t.element_size() for item in group
+                        for t in item.inputs if t.device.type=="cpu")
+                    burst = (2 if "pinned" in choices and
+                             2*host_bytes<=self.max_pinned_bytes else 1)
                     for _ in range(2):
                         # Interleaved timed trials reduce the chance of
                         # choosing a GPU path merely because a different
@@ -848,7 +853,7 @@ class FrozenInferenceMicrobatcher:
                                     median(v)<baseline*0.95)
                     mode = faster[0][1] if faster else "individual"
                     output = validated.get(mode)
-                except (ValueError,TypeError,RuntimeError,
+                except (ValueError,TypeError,RuntimeError,MemoryError,
                         torch.OutOfMemoryError):
                     mode = "individual"
                     output = self._individual(group)
