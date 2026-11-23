@@ -12,8 +12,38 @@ import os
 from queue import SimpleQueue
 import shlex
 import socket
+import ssl
+from pathlib import Path
 import threading
 import time
+
+
+def open_remote_transport(host, port, ca_der=None):
+    """Connect to the same native host with optional verified TLS.
+
+    The connection is never downgraded: a configured private CA requires
+    successful certificate-chain and server-hostname verification BEFORE
+    the player token is transmitted. Both the Tk window and terminal
+    client use this one transport entry point.
+    """
+    ca_der = ca_der or os.environ.get("BEES_NATIVE_REMOTE_TLS_CA_DER")
+    connection = socket.create_connection((host, port), timeout=10)
+    try:
+        if ca_der:
+            authority = Path(ca_der)
+            if authority.is_symlink() or not authority.is_file():
+                raise ValueError("native multiplayer trusted TLS CA must be a regular DER file")
+            raw = authority.read_bytes()
+            if not 0 < len(raw) <= 65536:
+                raise ValueError("invalid native TLS CA file length")
+            context = ssl.create_default_context(cadata=raw)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            connection = context.wrap_socket(connection, server_hostname=host)
+        connection.settimeout(None)
+        return connection
+    except BaseException:
+        connection.close()
+        raise
 
 
 def remote_token(side, spectator=False):
@@ -1519,14 +1549,15 @@ def main():
                         help="authenticated faction for commanders or spectators")
     parser.add_argument("--spectator", action="store_true",
                         help="join with a separate read-only faction spectator credential")
+    parser.add_argument("--tls-ca-der", type=Path,
+                        help="trusted DER CA; require verified encrypted native multiplayer")
     args = parser.parse_args()
     try:
         token = remote_token(args.side, spectator=args.spectator)
     except (ValueError, json.JSONDecodeError) as error:
         parser.error(str(error))
     def connect(expected_session_id=None):
-        connection = socket.create_connection((args.host, args.port), timeout=10)
-        connection.settimeout(None)
+        connection = open_remote_transport(args.host, args.port, args.tls_ca_der)
         try:
             console = RemoteConsole(
                 connection, expected_side=args.side,
