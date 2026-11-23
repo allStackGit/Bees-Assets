@@ -10,6 +10,8 @@ use std::io::{self, ErrorKind, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::time::{Duration, Instant};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::thread;
 use std::sync::OnceLock;
 
 use bees_gameplay::campaign_dialogue::CampaignCue;
@@ -3229,6 +3231,11 @@ pub fn connect_remote(
     let mut shooting_press:Option<u8>=None;
     let started=Instant::now();
     let mut previous_frame=started;
+    // A slow DNS lookup or host restart must not freeze the battle window.
+    // The worker only opens a TCP transport; gameplay ownership remains on
+    // the authoritative host and no unacknowledged order is replayed.
+    let mut reconnect_task: Option<Receiver<Result<PeerClient, String>>> = None;
+    let mut next_reconnect_at = started;
 
     while window.is_open() {
         let now=Instant::now();
@@ -3531,23 +3538,55 @@ pub fn connect_remote(
         // Dropping the previous socket makes the authoritative host release
         // the old peer's held-fire weapons at its next fixed-tick boundary.
         let mut rejoined=false;
-        if surrender_confirmation.is_none() && !show_controls_help && window.is_key_pressed(Key::F5, KeyRepeat::No) {
-            peer.metrics.reconnect_attempts+=1;
-            let original = peer.host_session_id.as_deref()
-                .or(peer.expected_host_session_id.as_deref());
-            match PeerClient::connect(
-                address, token, expected_side, original, spectator,
-            ) {
-                Ok(mut replacement) => {
+        if let Some(receiver) = reconnect_task.as_ref() {
+            match receiver.try_recv() {
+                Ok(Ok(mut replacement)) => {
                     replacement.metrics=std::mem::take(&mut peer.metrics);
                     replacement.metrics.reconnect_transports_opened+=1;
                     peer=replacement;
                     rejoined=true;
-                },
-                Err(error) => {
+                    reconnect_task=None;
+                }
+                Ok(Err(error)) => {
                     peer.notice=format!("Reconnect unavailable: {error}");
-                },
+                    next_reconnect_at=now+Duration::from_secs(5);
+                    reconnect_task=None;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    peer.notice="Reconnect transport failed".into();
+                    next_reconnect_at=now+Duration::from_secs(5);
+                    reconnect_task=None;
+                }
+                Err(TryRecvError::Empty) => {}
             }
+        }
+        // Retry only the previously authenticated physical session. Never
+        // join a replacement battle automatically, and never resurrect
+        // commands, held fire, selection, or the old World projection.
+        let original=peer.host_session_id.as_deref()
+            .or(peer.expected_host_session_id.as_deref());
+        let auto_reconnect=!peer.connected && original.is_some() &&
+            peer.battle_result_receipt.is_none() &&
+            peer.notice!="Host restarted: original battle cannot be resumed";
+        let requested_reconnect=surrender_confirmation.is_none() &&
+            !show_controls_help && window.is_key_pressed(Key::F5, KeyRepeat::No);
+        if reconnect_task.is_none() &&
+            (requested_reconnect || auto_reconnect && now>=next_reconnect_at)
+        {
+            let original=original.map(str::to_owned);
+            let address=address.to_owned();
+            let token=token.to_owned();
+            let (sender,receiver)=mpsc::sync_channel(1);
+            thread::spawn(move || {
+                let result=PeerClient::connect(
+                    &address,&token,expected_side,original.as_deref(),spectator,
+                ).map_err(|error|error.to_string());
+                let _=sender.send(result);
+            });
+            reconnect_task=Some(receiver);
+            next_reconnect_at=now+Duration::from_secs(5);
+            peer.metrics.reconnect_attempts+=1;
+            peer.notice="Reconnecting to original native battle".into();
         }
         let was_connected=peer.connected;
         // Snapshot-scoped UI identity. Keep only selected lifetimes, not a
