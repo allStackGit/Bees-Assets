@@ -6952,6 +6952,7 @@ class ExperimentHub {
             (resources.gpu_count>0&&!learnerMachine.gpu_projects?.includes('tinybrains'))||
             !supportsTinyBrainsProfile(learnerMachine,{
                 project_id:'tinybrains',frozen_parameters:{...parameters,
+                    training_stage:parameters.training_stage??'full_multiplayer',
                     device:tinyBrainsDeviceForLease(parameters,resources),
                     ...(byMachine?{rollout_endpoints:endpoints}:{})},
                 resources,
