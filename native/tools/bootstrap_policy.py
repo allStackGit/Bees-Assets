@@ -50,8 +50,10 @@ def write_native_holdout(output: Path, training_run: dict,
             "Levels an equal number of times; increase --holdout-worlds or "
             "use an independent multi-Stage evaluation suite"
         )
+    from bisect import bisect_left
     occupied = set()
-    original_seeds = set()
+    training_seed_ranges = []
+    training_episode_seed_points = set()
     for source in sources:
         if (not isinstance(source, dict) or
                 type(source.get("world_id")) is not int or
@@ -72,7 +74,16 @@ def write_native_holdout(output: Path, training_run: dict,
         values = [source["seed"]] if single else source["episode_seeds"]
         if any(type(value) is not int or not 0 <= value < U64 for value in values):
             raise ValueError("invalid training seed plan for native physical holdout")
-        original_seeds.update(values)
+        if single:
+            # LevelConfig.episode_seed(n) derives seed + n (wrapping
+            # uint64), so a single source seed represents its ENTIRE
+            # sequence of original training episodes, not only episode 0.
+            training_seed_ranges.append((
+                values[0], run["episodes_per_world"],
+            ))
+        else:
+            training_episode_seed_points.update(values)
+    fixed_training_seed_points = sorted(training_episode_seed_points)
     max_world = max(row["world_id"] for row in sources)
     max_level = max(row["level_id"] for row in sources)
     if (len({row["level_id"] for row in sources}) != count or
@@ -88,6 +99,7 @@ def write_native_holdout(output: Path, training_run: dict,
     run["max_rounds"] = per_episode_budget * episodes
     run["episodes_per_world"] = episodes
     run["levels"] = []
+    holdout_seed_ranges = []
     for index in range(worlds):
         original = sources[index % count]
         level = dict(original)
@@ -98,14 +110,36 @@ def write_native_holdout(output: Path, training_run: dict,
         # initial seeds. The golden-ratio stride creates distinct 64-bit
         # physical RNG streams without changing the actual game PRNG.
         level_seed = (seed + index * 0x9E3779B97F4A7C15) % U64
-        # A holdout must not evaluate the exact seed used by the original
-        # training source. The trainer's later per-round shifting can
-        # generate new worlds; independent benchmark source seeds remain
-        # pinned regardless of that schedule.
-        if level_seed in original_seeds:
-            raise ValueError(
-                "native fixed evaluation seed overlaps a training source seed"
+        # Entire holdout episode streams must be disjoint from original
+        # physical training streams, not just their first RNG seed. Unity
+        # native World implements seed + episode offset with uint64 wrap.
+        # The fixed 64-bit sampler seed is independent of this World RNG.
+        def overlaps(first, first_count, second, second_count):
+            return (
+                (first - second) % U64 < second_count or
+                (second - first) % U64 < first_count
             )
+        if (any(overlaps(level_seed, episodes, start, count)
+                for start, count in training_seed_ranges) or
+                any(overlaps(level_seed, episodes, start, episodes)
+                    for start in holdout_seed_ranges)):
+            raise ValueError(
+                "fixed native evaluation RNG stream overlaps another "
+                "evaluation or the original training episode plan"
+            )
+        if fixed_training_seed_points:
+            final = (level_seed + episodes - 1) % U64
+            index_of_seed = bisect_left(fixed_training_seed_points, level_seed)
+            overlap = (
+                index_of_seed < len(fixed_training_seed_points) and
+                fixed_training_seed_points[index_of_seed] <= final
+                if level_seed <= final else
+                fixed_training_seed_points[0] <= final or
+                fixed_training_seed_points[-1] >= level_seed
+            )
+            if overlap:
+                raise ValueError("fixed holdout RNG overlaps a source training episode")
+        holdout_seed_ranges.append(level_seed)
         level["seed"] = level_seed
         level.pop("episode_seeds", None)
         run["levels"].append(level)
