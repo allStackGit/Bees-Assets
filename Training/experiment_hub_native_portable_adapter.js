@@ -8,6 +8,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const http = require('node:http');
+const https = require('node:https');
 const {validateProgress} = require('./experiment_hub_progress');
 const {capturePaths} = require('./experiment_hub_native_bundle_transfer');
 
@@ -55,6 +57,55 @@ function trustedReceiver(endpoint) {
         !['','/'].includes(url.pathname))
         throw Error('Native collector receiver must be an HTTP(S) origin without credentials.');
     return url.origin;
+}
+
+function completedNativeLearnerReceipt(endpoint, token) {
+    // This is only a read-only reconciliation of a previously uploaded,
+    // immutable native collector receipt. Respect the same private CA
+    // setting as the Python archive transfer; never disable TLS checking.
+    const options={
+        method:'GET',
+        timeout:6000,
+        headers:{Authorization:'Bearer '+token},
+    };
+    if(endpoint.protocol==='https:'&&process.env.BEES_NATIVE_BUNDLE_CA_FILE) {
+        const ca=trustedFile(process.env.BEES_NATIVE_BUNDLE_CA_FILE);
+        options.ca=fs.readFileSync(ca);
+    }
+    const transport=endpoint.protocol==='https:'?https:http;
+    return new Promise((resolve,reject)=>{
+        const request=transport.request(endpoint,options,response=>{
+            if(response.statusCode===404) {
+                response.resume();
+                resolve(null);
+                return;
+            }
+            if(response.statusCode!==200) {
+                response.resume();
+                reject(Error('Native learner delivery lookup failed: HTTP '+response.statusCode));
+                return;
+            }
+            const buffers=[];
+            let bytes=0;
+            response.on('data',chunk=>{
+                bytes+=chunk.length;
+                if(bytes>8192) {
+                    request.destroy(Error('Native learner delivery response exceeds the bounded receipt.'));
+                    return;
+                }
+                buffers.push(chunk);
+            });
+            response.on('end',()=>{
+                try { resolve(JSON.parse(Buffer.concat(buffers).toString('utf8'))); }
+                catch(error) { reject(error); }
+            });
+            response.on('error',reject);
+        });
+        request.on('timeout',()=>request.destroy(
+            Error('Native learner delivery request exceeded six seconds.')));
+        request.on('error',reject);
+        request.end();
+    });
 }
 
 function createNativeBeesPortableCollectorAdapter({
@@ -269,20 +320,8 @@ function createNativeBeesPortableCollectorAdapter({
             /[^\x21-\x7e]/.test(credentialBytes))
             throw Error('Native learner delivery credential has an invalid format.');
         const endpoint=new URL('/v1/bundles/'+frozen.collector_id,receiver);
-        const response=await fetch(endpoint,{
-            method:'GET',redirect:'error',
-            headers:{Authorization:'Bearer '+credentialBytes},
-            signal:AbortSignal.timeout(6000),
-        });
-        if(response.status===404)return false;
-        if(!response.ok)throw Error('Native learner delivery lookup failed: HTTP '+response.status);
-        let body='',size=0;
-        for await(const chunk of response.body) {
-            size+=chunk.length;
-            if(size>8192)throw Error('Native learner delivery response exceeds the bounded receipt.');
-            body+=Buffer.from(chunk).toString('utf8');
-        }
-        const accepted=JSON.parse(body);
+        const accepted=await completedNativeLearnerReceipt(endpoint,credentialBytes);
+        if(accepted===null)return false;
         const receiptFile=path.join(jobRoot(context),'rollout-bundle.json');
         const bundleSha=sha256(fs.readFileSync(receiptFile));
         if(!accepted||accepted.kind!=='native_bundle_received'||
