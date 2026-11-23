@@ -125,6 +125,15 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
         "side_victories": victories, "draws": draws,
         "side_win_rate": victories / episodes,
         "draw_rate": draws / episodes,
+        # A macro rate gives each original authored scenario one vote,
+        # unlike the pooled episode rate. Publish both; unequal episode
+        # counts must not conceal failure on a smaller campaign map.
+        "mean_scenario_win_rate": sum(
+            row["side_win_rate"] for row in receipts
+        ) / len(receipts),
+        "worst_scenario_win_rate": min(
+            row["side_win_rate"] for row in receipts
+        ),
         "world_steps": steps, "policy_rows": policy_rows,
         "measured_simulation_wall_seconds": measured,
         "measured_simulation_wall_scope": "sum_of_sequential_native_evaluation_wall_seconds",
@@ -142,13 +151,22 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
             "episodes": row["result"]["episodes"],
             "side_win_rate": row["result"]["side_win_rate"],
             "draw_rate": row["result"]["draw_rate"],
+            "by_scene_sha256": row["result"]["by_scene_sha256"],
+            "world_steps": row["result"]["world_steps"],
+            "measured_simulation_wall_seconds": row["result"]["wall_seconds"],
             **({"learner_mission_success_rate": row["result"]["learner_mission_success_rate"]}
                if "learner_mission_success_rate" in row["result"] else {}),
         } for row in results],
         **({"mission_outcomes": mission_totals} if mission_totals else {}),
         **({"mission_attempts": episodes,
             "learner_mission_successes": mission_successes,
-            "learner_mission_success_rate": mission_successes / episodes}
+            "learner_mission_success_rate": mission_successes / episodes,
+            "mean_scenario_mission_success_rate": sum(
+                row["learner_mission_success_rate"] for row in receipts
+            ) / len(receipts),
+            "worst_scenario_mission_success_rate": min(
+                row["learner_mission_success_rate"] for row in receipts
+            )}
            if all_attributed else {}),
     }
     # Publication marker is LAST. An interrupted source or failed native
