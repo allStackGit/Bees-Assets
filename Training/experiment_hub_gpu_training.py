@@ -15,6 +15,7 @@ Resource leases and GPU device identity remain the Hub agent's authority.
 from __future__ import annotations
 
 from collections import deque
+from contextlib import contextmanager
 from math import isfinite
 from concurrent.futures import ThreadPoolExecutor, wait
 from threading import current_thread
@@ -513,17 +514,42 @@ class PinnedGpuStaging:
         self.async_copies += 1
         return destination
 
+    def finish_update(self):
+        """Finish one immutable GPU upload generation, retaining host buffers.
+
+        Source tensors, shape banks and observations change each PPO update,
+        but the pinned host *capacity* and copy stream can be reused. Drain
+        all outstanding reads before a new rollout can overwrite any data.
+        One stream synchronization per immutable upload generation replaces
+        many per-chunk host waits; no model/optimizer state survives here.
+        """
+        if self._closed:
+            return
+        if self._copy_stream is not None:
+            self._copy_stream.synchronize()
+        while self._pending:
+            pinned,event,size = self._pending.popleft()
+            self._pending_bytes -= size
+            self._free_pinned.append(pinned)
+        self._pending_bytes = 0
+        self._known_banks.clear()
+
+    @contextmanager
+    def update(self):
+        if self._closed:
+            raise RuntimeError("GPU pinned staging pool has been closed")
+        try:
+            yield self
+        finally:
+            self.finish_update()
+
     def finish(self):
         if self._closed:
             return
+        self.finish_update()
         self._closed = True
-        if self._copy_stream is not None:
-            self._copy_stream.synchronize()
-        self._pending.clear()
-        self._pending_bytes = 0
         self._free_pinned.clear()
         self._pinned_total_bytes = 0
-        self._known_banks.clear()
         self._copy_stream = None
 
     def __enter__(self):
