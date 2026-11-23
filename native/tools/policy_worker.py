@@ -21,7 +21,7 @@ from time import perf_counter_ns
 
 import numpy as np
 
-from native_gpu_allocation import rocm_visible_gpu_pci
+from native_gpu_allocation import rocm_visible_gpu_pci, cuda_visible_gpu_uuid
 
 OBS_FLOATS = 7743
 CONTINUOUS = 16
@@ -880,14 +880,18 @@ def main() -> None:
     output_buffers = InferenceOutputBuffers()
     forward_timings = {} if os.environ.get("BEES_NATIVE_EVALUATION_SEED") is not None else None
     gpu_pci_address = None
+    gpu_cuda_uuid = None
 
     def report_model_residency(*, final=False):
-        nonlocal gpu_pci_address
-        if measurements["gpu_forward_calls"] and gpu_pci_address is None:
-            # HIP is already initialized by a successfully completed GPU
-            # model forward. Record the actual physical card, not merely
-            # the requested ROCr visibility mask or logical cuda ordinal.
+        nonlocal gpu_pci_address, gpu_cuda_uuid
+        if measurements["gpu_forward_calls"] and (
+                gpu_pci_address is None and gpu_cuda_uuid is None):
+            # Hardware identity is sampled only after a real model forward:
+            # HIP reports a physical PCI bus, CUDA reports a physical UUID.
+            # Neither value comes from a supervisor-requested visibility mask.
             gpu_pci_address = rocm_visible_gpu_pci()
+            if gpu_pci_address is None:
+                gpu_cuda_uuid = cuda_visible_gpu_uuid()
         # JSON on stderr is deliberately outside the binary model protocol.
         # At fixed low frequency it reports actual model calls, avoided
         # passes and retained weights without timing the Python hot loop.
@@ -899,6 +903,7 @@ def main() -> None:
                if final and forward_timings is not None else {}),
             **measurements,
             **({"gpu_pci_address": gpu_pci_address} if gpu_pci_address else {}),
+            **({"gpu_cuda_uuid": gpu_cuda_uuid} if gpu_cuda_uuid else {}),
             "model_forwards_saved":
                 measurements["slot_forwards_without_sharing"] -
                 measurements["actual_model_forwards"],
