@@ -522,6 +522,50 @@ function config(value) {
 // Validate the persisted capability pin at configuration save and job freeze,
 // not only during placement. A stale Design page must not queue jobs that can
 // never be admitted by a worker supporting the requested PPO overrides.
+function validateBeesNativeDefinition(projectId,parameters,resources=null) {
+    if(projectId!=='bees_native')return;
+    const keys=new Set(['max_steps','envs','seed','device','hyperparameters',
+        'environment_args','worker_sha256','trainer_sha256']);
+    if(!object(parameters)||Object.keys(parameters).some(key=>!keys.has(key))||
+        !SHA256.test(String(parameters.worker_sha256||''))||
+        !SHA256.test(String(parameters.trainer_sha256||''))||
+        !Number.isSafeInteger(parameters.max_steps)||
+        parameters.max_steps<1000||parameters.max_steps>100000000000||
+        !Number.isSafeInteger(parameters.envs)||
+        parameters.envs<1||parameters.envs>64||
+        !Number.isSafeInteger(parameters.seed)||
+        parameters.seed<0||parameters.seed>2147483647||
+        !['cpu','cuda'].includes(parameters.device))
+        throw Error('Bees native jobs require a pinned Unity worker and MA-POCA trainer, 1,000–100 billion steps, 1–64 environments, a seed and a CPU/ROCm device.');
+    const args=parameters.environment_args??[];
+    if(!Array.isArray(args)||args.length>32||
+        args.some(arg=>typeof arg!=='string'||arg.length>256||
+            !/^--rl-[a-z0-9-]+(?:=[^\\r\\n\\x00]{0,192})?$/i.test(arg)))
+        throw Error('Bees native environment arguments must contain approved --rl- options only.');
+    const overrides=parameters.hyperparameters??{};
+    const ranges={
+        batch_size:[1,65536,true],buffer_size:[64,4194304,true],
+        learning_rate:[0.000001,0.1,false],beta:[0,0.5,false],
+        epsilon:[0.01,0.5,false],lambd:[0.7,1,false],
+        num_epoch:[1,32,true],
+    };
+    if(!object(overrides)||Object.entries(overrides).some(([key,value])=>{
+        const bounds=ranges[key];
+        return !bounds||typeof value!=='number'||!Number.isFinite(value)||
+            value<bounds[0]||value>bounds[1]||
+            bounds[2]&&!Number.isSafeInteger(value);
+    }))throw Error('Bees native PPO hyperparameters contain an unsupported or out-of-range value.');
+    const batch=overrides.batch_size??4096,buffer=overrides.buffer_size??65536;
+    if(buffer<batch||buffer%batch!==0)
+        throw Error('Bees native PPO buffer size must be a positive multiple of minibatch size.');
+    if(resources!==null) {
+        if(parameters.envs>resources.cpus||
+            (parameters.device==='cuda'
+                ?resources.gpu_count!==1||resources.gpu_mode!=='exclusive'
+                :resources.gpu_count!==0))
+            throw Error('Bees native environment count must fit the CPU claim, with exactly one exclusive GPU for ROCm or no GPU for CPU.');
+    }
+}
 function requireCourierTrainingPin(projectId,parameters) {
     if(projectId!=='courier')return;
     const changes=parameters?.design_overrides;
@@ -6204,6 +6248,7 @@ class ExperimentHub {
         const project = this.project(value.project_id);
         if(project.id==='ants')throw Error('Ants-v2 Hub integration is retired.');
         const params = config(value.parameters);
+        validateBeesNativeDefinition(project.id,params);
         requireCourierTrainingPin(project.id,params);
         if(project.id==='tinybrains'&&Object.hasOwn(params,'rollout_endpoints'))
             throw Error('Select TinyBrains rollout machines when reserving the group.');
@@ -7692,6 +7737,7 @@ class ExperimentHub {
             frozen.training_stage='full_multiplayer';
         requireCourierTrainingPin(project.id,frozen);
         const resources = resourceRequest(value.resources);
+        validateBeesNativeDefinition(project.id,frozen,resources);
         const runName=value.run_name==null||value.run_name===''
             ?null:name(value.run_name,'Run name');
         if(project.id==='tinybrains') {
