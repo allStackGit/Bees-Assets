@@ -579,6 +579,17 @@ def export(spec: dict, output: Path) -> dict:
                 })
         def scan_directory(folder: Path, name_prefix: str, job_id: str,
                            counts_as_trainer: bool = True) -> None:
+            if project == "bees_native":
+                candidate = folder / "policy-candidate"
+                metadata = candidate / "manifest.json"
+                model = candidate / "model.onnx"
+                if metadata.is_file() and not metadata.is_symlink() and (
+                    model.is_symlink() or not model.is_file()
+                ):
+                    missing_sources.append({
+                        "job_id": job_id, "label": "policy-candidate",
+                        "reason": "onnx_model_not_available_in_export_source",
+                    })
             if not spec.get("include_replays", False) and any(
                 part.lower() == "replays" for part in folder.parts
             ):
