@@ -512,6 +512,41 @@ function config(value) {
 // Validate the persisted capability pin at configuration save and job freeze,
 // not only during placement. A stale Design page must not queue jobs that can
 // never be admitted by a worker supporting the requested PPO overrides.
+// Preserve only worker-advertised, approved environment scalar defaults when
+// a TinyBrains Design is saved. Evaluation authoring can then resolve the
+// identical saved environment while the agent is temporarily disconnected.
+// Never accept environment defaults supplied in a browser request.
+function approvedTinyBrainsEnvironment(parameters,machines) {
+    const catalog=(machines||[]).find(machine=>
+        machine.status==='connected'&&
+        machine.design_catalog?.tinybrains?.profiles?.[parameters.profile]
+            ?.profile_sha256===parameters.profile_sha256)
+        ?.design_catalog?.tinybrains;
+    if(!catalog||!Array.isArray(catalog.fields)||catalog.fields.length>128||
+        !SHA256.test(String(catalog.source_sha256||'')))return null;
+    if(parameters.design_source_sha256&&
+        parameters.design_source_sha256!==catalog.source_sha256)return null;
+    const fields=catalog.fields.filter(field=>
+        typeof field.key==='string'&&field.key.startsWith('environment.')&&
+        field.section==='environment'&&field.default!==undefined);
+    const values={};
+    for(const field of fields) {
+        const key=field.key.slice('environment.'.length);
+        const value=parameters.design_overrides?.[field.key]??field.default;
+        if(!/^[a-z][a-z0-9_]{0,63}$/.test(key)||
+            !['number','boolean','string'].includes(typeof value)||
+            typeof value==='number'&&!Number.isFinite(value))
+            return null;
+        values[key]=value;
+    }
+    if(!Number.isSafeInteger(values.max_turns)||values.max_turns<1||
+        values.max_turns>1000)return null;
+    return {parameters_sha256:crypto.createHash('sha256')
+        .update(JSON.stringify(parameters)).digest('hex'),
+        source_sha256:catalog.source_sha256,
+        profile_sha256:parameters.profile_sha256,
+        parameters:values};
+}
 function requireCourierTrainingPin(projectId,parameters) {
     if(projectId!=='courier')return;
     const changes=parameters?.design_overrides;
@@ -6229,6 +6264,13 @@ class ExperimentHub {
         if(monitor)item.evaluation_monitor=monitor;
         else if(Object.hasOwn(value,'evaluation_monitor'))delete item.evaluation_monitor;
         compatibleMonitoringStop(item.evaluation_monitor,item.evaluation_stop);
+        if(project.id==='tinybrains') {
+            const frozen=approvedTinyBrainsEnvironment(params,next.machines);
+            if(frozen)item.environment_snapshot=frozen;
+            else if(item.environment_snapshot?.parameters_sha256!==
+                    crypto.createHash('sha256').update(JSON.stringify(params)).digest('hex'))
+                delete item.environment_snapshot;
+        }
         this.commit(next);
         return copy(item);
     }
