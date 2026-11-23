@@ -320,7 +320,12 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     run.update({
         "run_id": f"native-{scenario}-bootstrap-{seed}",
         "stage_name": scene["stage_name"],
-        "python": str(Path(sys.executable).resolve()),
+        # Preserve the activated interpreter executable. Resolving a
+        # venv's bin/python symlink to /usr/bin/python bypasses the venv,
+        # changing Torch, ROCm and MA-POCA dependencies during later
+        # policy-collection subprocesses. A caller can still explicitly
+        # relocate this command when packaging a Windows/Linux run.
+        "python": str(Path(sys.executable).absolute()),
         "policy_worker": str(ROOT / "native" / "tools" / "policy_worker.py"),
         "model_manifest": "manifest.json",
     })
