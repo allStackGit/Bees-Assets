@@ -4182,6 +4182,100 @@ fn preflight_native_fleet_edit_with_squads_and_tactics(
     Ok(highest_fleet_id)
 }
 
+/// Build a mixed source-authored fleet under one account transaction.
+/// This performs the very same physical Stage/squad capacity preflight as
+/// ordinary purchases, but against the COMPLETE projected requisition.
+fn run_build_fleet(
+    catalog_path: &Path, output_root: &Path, side: i32,
+    requisition: &[(u8, i64, u32)],
+) -> Result<(), Box<dyn Error>> {
+    if !matches!(side, 1 | 2) || requisition.is_empty() ||
+        requisition.len() > 256 {
+        return Err(invalid("fleet requisition requires a valid side and 1..256 lines").into());
+    }
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: battle_catalog::BattleCatalog =
+        serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
+    let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
+    let progress = catalog.load_progress(output_root)?;
+    if !progress.bank_history_complete() {
+        return Err(invalid("fleet requisition requires complete historical mineral banking").into());
+    }
+    let mut projected = progress.purchases_for_side(side);
+    let mut total_hulls = 0u32;
+    let mut total_price = 0u64;
+    for &(kind, destination, count) in requisition {
+        if destination < 0 || progress.is_retired_saved_squad(destination) ||
+            count == 0 {
+            return Err(invalid("fleet requisition includes an invalid destination or quantity").into());
+        }
+        let shop = catalog.buildable_ships.iter().find(|row|
+            row.player_side == side && row.ship_type == kind && row.purchasable &&
+            progress.is_ship_unlocked(row))
+            .ok_or_else(|| invalid("fleet requisition contains a locked or unavailable ship type"))?;
+        total_hulls = total_hulls.checked_add(count)
+            .filter(|value| *value <= 256)
+            .ok_or_else(|| invalid("fleet requisition exceeds 256 hulls"))?;
+        total_price = total_price.checked_add(
+            shop.price_tsv.checked_mul(u64::from(count))
+                .ok_or_else(|| invalid("fleet requisition mineral cost overflow"))?
+        ).ok_or_else(|| invalid("fleet requisition price overflow"))?;
+        let prior = projected.len();
+        for index in 0..count {
+            let offset = i64::try_from(prior)
+                .ok().and_then(|offset| offset.checked_add(i64::from(index)))
+                .ok_or_else(|| invalid("fleet requisition preview identity overflow"))?;
+            let id = i64::MAX.checked_sub(offset)
+                .ok_or_else(|| invalid("fleet requisition preview identity exhausted"))?;
+            if projected.iter().any(|ship| ship.fleet_ship_id == id) {
+                return Err(invalid("fleet requisition preview collides with a persistent FleetShip").into());
+            }
+            projected.push(NativePurchasedShip {
+                fleet_ship_id: id, saved_squad_id: destination,
+                ship_type: kind, price_tsv: shop.price_tsv,
+            });
+        }
+    }
+    if progress.unspent_minerals()? < total_price {
+        return Err(invalid("insufficient mined TSV for entire fleet requisition").into());
+    }
+    let root = catalog_path.parent()
+        .ok_or_else(|| invalid("missing native fleet catalog parent"))?;
+    let preflight_started = Instant::now();
+    // Check every owned SavedSquad, not merely the last requested target:
+    // one mixed order can fill several independent physical formations.
+    let highest_authored = preflight_native_fleet_edit(
+        &catalog, root, &progress, side, &projected,
+        &progress.authored_roster_for_side(side), 0,
+    )?;
+    let preflight_wall_seconds = preflight_started.elapsed().as_secs_f64();
+    let first_id = highest_authored.max(progress.highest_fleet_id())
+        .checked_add(1)
+        .ok_or_else(|| invalid("fleet requisition identity space exhausted"))?;
+    let receipt_started = Instant::now();
+    let ships = catalog.buy_fleet(
+        &progress, output_root, side, first_id, requisition,
+    )?;
+    let receipt_wall_seconds = receipt_started.elapsed().as_secs_f64();
+    println!("{}", json!({
+        "kind": "native_campaign_fleet_requisition_complete",
+        "campaign_id": catalog.campaign_id,
+        "player_side": side,
+        "lines": requisition.iter().map(|&(kind, squad, count)| json!({
+            "ship_type": kind, "saved_squad_id": squad, "count": count,
+        })).collect::<Vec<_>>(),
+        "fleet_ship_ids": ships.iter().map(|ship| ship.fleet_ship_id).collect::<Vec<_>>(),
+        "ships_purchased": total_hulls,
+        "spent_tsv": total_price,
+        "remaining_mined_tsv": progress.unspent_minerals()? - total_price,
+        "preflight_wall_seconds": preflight_wall_seconds,
+        "receipt_wall_seconds": receipt_wall_seconds,
+    }));
+    Ok(())
+}
+
 /// Buy a chosen number of source-authored hulls in a single bank
 /// transaction. Preflight the aggregate physical roster first: independently
 /// valid purchases can jointly exceed a SavedSquad's deployable capacity.
