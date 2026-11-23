@@ -238,6 +238,9 @@ pub struct NativeAudioMeasurements {
     /// Actual important source events admitted after displacing an
     /// ordinary shot in the same bounded rendered-frame sound budget.
     pub high_priority_frame_cues_preserved: u64,
+    /// A high-priority ship death, warp, or notification displaced an
+    /// already-playing lower-priority source sound at the 16-voice cap.
+    pub high_priority_voice_preemptions: u64,
     /// Real source WarpGate activation and ChangeSpriteLoop playback.
     pub warp_gate_openings_started: u64,
     pub warp_gate_loops_started: u64,
@@ -263,7 +266,9 @@ pub struct NativeGameAudio {
     handle: Option<OutputStreamHandle>,
     root: Option<PathBuf>,
     effects: HashMap<Effect, Arc<[u8]>>,
-    voices: Vec<(Sink, f32)>,
+    // Gain and priority stay with the original source clip for both live
+    // volume changes and selective admission under 16-voice saturation.
+    voices: Vec<(Sink, f32, u8)>,
     music: Vec<Sink>,
     level_intro_active: bool,
     level_intro_voice: Option<Sink>,
@@ -436,7 +441,7 @@ impl NativeGameAudio {
             voice.set_volume(self.level_intro_volume());
         }
         for sink in &self.music { sink.set_volume(self.music_volume()); }
-        for (sink, gain) in &self.voices { sink.set_volume(self.effect_volume() * *gain); }
+        for (sink, gain, _) in &self.voices { sink.set_volume(self.effect_volume() * *gain); }
         for sink in self.warp_gate_openings.values()
             .chain(self.warp_gate_loops.values()) {
             sink.set_volume(self.effect_volume());
@@ -653,7 +658,7 @@ impl NativeGameAudio {
     pub fn reset_remote_session(&mut self) {
         self.set_level_intro_ambience(false);
         self.reset_warp_gate_audio();
-        for (sink, _) in self.voices.drain(..) { sink.stop(); }
+        for (sink, _, _) in self.voices.drain(..) { sink.stop(); }
         self.current_episode = None;
         self.last_tick = None;
         self.seen_projectiles.clear();
@@ -663,12 +668,12 @@ impl NativeGameAudio {
     /// Authentic game UI click; completely separate from gameplay
     /// commands and the durable player-input trace.
     pub fn click_ui(&mut self) {
-        self.voices.retain(|(sink, _)| !sink.empty());
+        self.voices.retain(|(sink, _, _)| !sink.empty());
         self.play(Effect::Button);
     }
 
     pub fn play_ui_feedback(&mut self, feedback: NativeUiFeedback) {
-        self.voices.retain(|(sink, _)| !sink.empty());
+        self.voices.retain(|(sink, _, _)| !sink.empty());
         self.play(match feedback {
             NativeUiFeedback::Saved => Effect::Save,
             NativeUiFeedback::SquadDeleted => Effect::DeleteSquad,
@@ -681,12 +686,12 @@ impl NativeGameAudio {
     /// It is a local user-command sound, never a fabricated CombatEvent
     /// or a headless training cost. Bound the burst for large selections.
     pub fn campaign_dialogue_presented(&mut self) {
-        self.voices.retain(|(sink, _)| !sink.empty());
+        self.voices.retain(|(sink, _, _)| !sink.empty());
         self.play(Effect::Intercom);
     }
 
     pub fn click_fire_barge_detonation(&mut self, count: usize) {
-        self.voices.retain(|(sink, _)| !sink.empty());
+        self.voices.retain(|(sink, _, _)| !sink.empty());
         self.measurements.sound_effects_dropped +=
             count.saturating_sub(MAX_NEW_EFFECTS_PER_FRAME) as u64;
         for _ in 0..count.min(MAX_NEW_EFFECTS_PER_FRAME) {
@@ -706,8 +711,17 @@ impl NativeGameAudio {
             return;
         }
         if self.voices.len() >= MAX_EFFECT_VOICES {
-            self.measurements.sound_effects_dropped += 1;
-            return;
+            let lowest = self.voices.iter().enumerate()
+                .min_by_key(|(_, (_, _, priority))| *priority)
+                .map(|(index, _)| index)
+                .expect("saturated audio has active voices");
+            if self.voices[lowest].2 >= effect.priority() {
+                self.measurements.sound_effects_dropped += 1;
+                return;
+            }
+            let (sink, _, _) = self.voices.swap_remove(lowest);
+            sink.stop();
+            self.measurements.high_priority_voice_preemptions += 1;
         }
         let Some(data) = self.effects.get(&effect) else { return };
         let Ok(source) = Decoder::new(Cursor::new(Arc::clone(data))) else {
@@ -723,7 +737,7 @@ impl NativeGameAudio {
         } else { 1.0 };
         sink.set_volume(self.effect_volume() * gain);
         sink.append(source);
-        self.voices.push((sink, gain));
+        self.voices.push((sink, gain, effect.priority()));
         self.measurements.sound_effects_started += 1;
     }
 
@@ -851,7 +865,7 @@ impl NativeGameAudio {
                 tick.saturating_sub(previous).saturating_sub(1);
         }
         self.last_tick = Some(tick);
-        self.voices.retain(|(sink, _)| !sink.empty());
+        self.voices.retain(|(sink, _, _)| !sink.empty());
         // At most eight sounds can be admitted per frame: keep the
         // mixing queue on the stack, including during large battles.
         let mut effects = [None; MAX_NEW_EFFECTS_PER_FRAME];
@@ -972,7 +986,7 @@ impl NativeGameAudio {
                 tick.saturating_sub(previous).saturating_sub(1);
         }
         self.last_tick = Some(tick);
-        self.voices.retain(|(sink, _)| !sink.empty());
+        self.voices.retain(|(sink, _, _)| !sink.empty());
         let mut new_effects = [None; MAX_NEW_EFFECTS_PER_FRAME];
         let mut new_effects_len = 0;
         // Source Weapon.PlaySoundEffect runs on the firing command, not on
