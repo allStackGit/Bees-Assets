@@ -1159,7 +1159,7 @@ fn choose_sizes() -> Result<Option<[usize; 2]>, Box<dyn Error>> {
     for (index, title) in ["Bees fleet", "Humans fleet"].into_iter().enumerate() {
         let descriptions = FLEET_SIZES.iter().map(|&size|
             format!("{size} ships  |  {title}{}",
-                if size > 64 { "  |  Fighters only" } else { "" })
+                if size > 64 { "  |  Original classes on large maps" } else { "" })
         ).collect::<Vec<_>>();
         let rows = descriptions.iter().map(|description| BattleMenuRow {
             title: description, status: "  [Physical ships]", unlocked: true,
@@ -1186,7 +1186,7 @@ fn choose_original_composition(
             ship["ship_type"].as_u64().is_some_and(|kind|
                 original_regular_class(side, kind as u8))
         ).collect::<Vec<_>>();
-        if available.len() < 2 || sizes[side] < 2 || sizes[side] > 64 {
+        if available.len() < 2 || sizes[side] < 2 || sizes[side] > 128 {
             return Err(invalid("source original mix has no valid physical class selection").into());
         }
         let mut remaining = sizes[side];
@@ -1196,7 +1196,7 @@ fn choose_original_composition(
             } else if remaining == 0 {
                 0
             } else {
-                let mut counts = vec![0_usize, 1, 2, 4, 8, 16, 32, 64,
+                let mut counts = vec![0_usize, 1, 2, 4, 8, 16, 32, 64, 128,
                     remaining / (available.len() - index), remaining];
                 counts.retain(|count| *count <= remaining);
                 counts.sort_unstable();
@@ -1249,7 +1249,9 @@ fn choose_mix(
         // and Gunship sprites. Its 12-unit grid cannot fit the source
         // Beehive's 34-unit sprite or a 19-unit Fire Barge without
         // physical overlap. Keep that benchmark honest and deterministic.
-        if total > 64 { continue; }
+        if total > 64 && !arena_size.is_some_and(|size| size >= 512) {
+            continue;
+        }
         let support_name = if side == 0 { "Beehives" } else { "Carriers" };
         let mut options = vec![
             (FleetMix::Fighters, format!("{total} fighters  |  No support")),
@@ -1270,8 +1272,8 @@ fn choose_mix(
                 FleetMix::Specialists.support_count(total),
             )),
         ];
-        if total == 1 { options.truncate(1); }
-        if total <= 64 {
+        if total == 1 || total > 64 { options.truncate(1); }
+        if total <= 128 {
             let codex: Value = serde_json::from_str(include_str!(
                 "../../../assets/ship-codex.json"
             ))?;
@@ -1299,10 +1301,13 @@ fn choose_mix(
                 ));
             }
         }
-        if total == 1 {
+        if total == 1 || total > 64 {
             // A 1v1 is still an original playable game. The single
             // source-authored combat class never needs dummy support
             // vessels, wave slots or a different physics implementation.
+            // Similarly, 128 authentic hulls use their real geometry on
+            // large maps, without making 128 Carriers or Beehives fit
+            // inside a historical compact Source Stage.
             let rows = options.iter().map(|(_, title)| BattleMenuRow {
                 title, status: "  [Original physical ship]", unlocked: true,
             }).collect::<Vec<_>>();
