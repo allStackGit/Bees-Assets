@@ -165,6 +165,8 @@ class FrozenInferenceMicrobatcher:
         self._last_requal_group = 0
         self._condition = Condition()
         self._closed = False
+        self._publishing = False
+        self._last_event = None
         self._outstanding = 0
         self._outstanding_bytes = 0
         self._first_producer = None
@@ -174,7 +176,9 @@ class FrozenInferenceMicrobatcher:
                               max_queue_depth=0, admitted_profiles=0,
                               rejected_profiles=0, qualification_seconds=0.0,
                               profile_refreshes=0, bucketed_groups=0,
-                              head_of_line_bypasses=0)
+                              head_of_line_bypasses=0, policy_refreshes=0,
+                              policy_refresh_seconds=0.0,
+                              policy_refresh_bytes=0)
         self._worker = Thread(target=self._serve, name="hub-gpu-microbatch", daemon=True)
         self._worker.start()
 
@@ -194,8 +198,8 @@ class FrozenInferenceMicrobatcher:
         ready = None
         checked = []
         for model_id, inputs, version in requests:
-            if model_id not in self.models or self.versions[model_id] != version:
-                raise ValueError("Frozen model version/membership changed")
+            if model_id not in self.models:
+                raise ValueError("Frozen model membership changed")
             args = inputs if isinstance(inputs, tuple) else (inputs,)
             if not args or any(not isinstance(x, torch.Tensor) or x.ndim < 1
                                or x.device != self.device for x in args):
@@ -206,14 +210,22 @@ class FrozenInferenceMicrobatcher:
             byte_count = sum(t.numel()*t.element_size() for t in args)
             if byte_count > self.max_batch_bytes:
                 raise ValueError("One inference request exceeds the GPU batch byte envelope")
-            checked.append((model_id,args,rows,byte_count))
+            checked.append((model_id,args,rows,byte_count,version))
         if self.device.type == "cuda":
             ready = torch.cuda.Event()
             ready.record(torch.cuda.current_stream(self.device))
         futures = [BatchFuture(self.device) for _ in checked]
         with self._condition:
+            while self._publishing and not self._closed:
+                self._condition.wait()
             if self._closed:
                 raise RuntimeError("Frozen inference batcher was closed")
+            # Capture a single atomic policy generation for the whole
+            # submission. A blocked submitter cannot enqueue stale weights
+            # after publication completes.
+            if any(self.versions[model_id] != version for
+                   model_id,_,_,_,version in checked):
+                raise ValueError("Frozen inference policy version changed")
             if (self._outstanding+len(checked)>self.max_pending or
                     self._outstanding_bytes+sum(row[3] for row in checked) >
                     self.max_pending_bytes):
@@ -225,7 +237,7 @@ class FrozenInferenceMicrobatcher:
             elif producer != self._first_producer:
                 self._multi_producer = True
             self._pending.extend(_Request(model_id,args,rows,byte_count,future,ready)
-                                 for (model_id,args,rows,byte_count),future
+                                 for (model_id,args,rows,byte_count,_),future
                                  in zip(checked,futures))
             self._outstanding += len(checked)
             self._outstanding_bytes += sum(row[3] for row in checked)
@@ -324,6 +336,7 @@ class FrozenInferenceMicrobatcher:
                     self._outstanding -= len(group)
                     self._outstanding_bytes -= sum(item.input_bytes for item in group)
                     self._active_group = []
+                    self._condition.notify_all()
                     self._counters["dispatched"] += len(group)
                     self._counters["groups"] += 1
 
@@ -503,6 +516,7 @@ class FrozenInferenceMicrobatcher:
         if stream is not None:
             event = torch.cuda.Event()
             event.record(stream)
+        self._last_event = event
         self._counters["model_forwards"] += (
             len(keys) if mode in ("exact","bucket") else len(group))
         for item in group:
@@ -522,6 +536,8 @@ class FrozenInferenceMicrobatcher:
     def close(self, *, cancel_pending=False):
         cancelled = []
         with self._condition:
+            while self._publishing and not self._closed:
+                self._condition.wait()
             self._closed = True
             if cancel_pending:
                 cancelled = list(self._pending)
