@@ -120,6 +120,23 @@ def validate_mixed_suite(file, suite):
                                            "small_two_player", "all_two_player",
                                            "full_multiplayer")):
             raise ValueError("Invalid evaluation environment source identity.")
+    if "environment_parameters" in suite:
+        # Provenance of the selected Design's effective native environment.
+        # Only maps and max_turns affect the match CLI. The remaining keys
+        # (including timeout_seconds) are engine transport / training
+        # scheduling settings; keeping their values must not silently alter
+        # the frozen referee's match contract.
+        parameters = suite["environment_parameters"]
+        if (not isinstance(parameters, dict) or len(parameters) > 32
+                or any(not isinstance(key, str)
+                       or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", key)
+                       or isinstance(value, (list, dict))
+                       or type(value) not in (bool, int, float, str, type(None))
+                       or isinstance(value, (int, float))
+                       and (not -1_000_000_000 <= value <= 1_000_000_000)
+                       or isinstance(value, str) and len(value) > 128
+                       for key, value in parameters.items())):
+            raise ValueError("Invalid frozen TinyBrains source environment.")
     games = sum(board_seats(board) for board in maps) * len(seeds) * suite["rotations"]
     if games > MIXED_MAX_GAMES:
         raise ValueError("Mixed suite exceeds 2048 games; reduce seeds or rotations.")
