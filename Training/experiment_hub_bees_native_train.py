@@ -379,8 +379,9 @@ def scalar_value(record):
     return None
 
 class EventProgress:
-    def __init__(self, root: Path, job_id: str):
+    def __init__(self, root: Path, job_id: str, lineage_root_id: str):
         self.root,self.job_id=root,job_id
+        self.lineage_root_id=lineage_root_id
         self.loaders={}
         self.steps=0
         self.values={}
@@ -391,7 +392,7 @@ class EventProgress:
         self.evaluation_started_at=None
 
     def poll(self):
-        training=self.root/"results"/self.job_id
+        training=self.root/"results"/self.lineage_root_id
         files=sorted(training.rglob("events.out.tfevents.*"))[:MAX_EVENT_FILES] if training.is_dir() else []
         rows=0
         for filename in files:
@@ -454,8 +455,9 @@ class EventProgress:
         finally:
             temp.unlink(missing_ok=True)
 
-def record_model(root: Path, job_id: str):
-    run_root = root / "results" / job_id
+def record_model(root: Path, job: dict):
+    job_id = job["job_id"]
+    run_root = root / "results" / job["lineage_root_id"]
     models = sorted(run_root.rglob("*.onnx"))
     checkpoints = sorted(run_root.glob("*/checkpoint.pt"))
     if not models or not checkpoints:
@@ -468,11 +470,21 @@ def record_model(root: Path, job_id: str):
             not model.is_file() or not checkpoint.is_file()
             or model.stat().st_size < 1 or checkpoint.stat().st_size < 1):
         raise RuntimeError("Bees completed model or optimizer checkpoint is missing or redirected.")
+    checkpoint_sha = sha256_file(checkpoint)
+    if job["continuation_of_job_id"] is not None and (
+        checkpoint_sha == job["expected_parent_checkpoint_sha256"]
+    ):
+        raise RuntimeError(
+            "Resumed Bees optimizer checkpoint did not advance beyond its parent."
+        )
     receipt = {
-        "schema_version": 1, "job_id": job_id,
+        "schema_version": 1 if job["schema_version"] == 1 else 2,
+        "job_id": job_id,
+        **({"lineage_root_id": job["lineage_root_id"],
+            "continuation_of_job_id": job["continuation_of_job_id"]}
+           if job["schema_version"] == 2 else {}),
         "model": str(model), "sha256": sha256_file(model),
-        "checkpoint": str(checkpoint),
-        "checkpoint_sha256": sha256_file(checkpoint),
+        "checkpoint": str(checkpoint), "checkpoint_sha256": checkpoint_sha,
         "completed_at": datetime.now(timezone.utc).isoformat(),
     }
     with (root / "model.json").open("x", encoding="utf-8") as handle:
@@ -576,17 +588,18 @@ def main():
     if job["device"]=="cuda":
         from experiment_hub_tinybrains_rocm_verify import verify_runtime_device
         verify_runtime_device(job["expected_gpu_pci"])
+    resume=stage_parent_checkpoint(root,job)
     trainer=freeze_trainer(job,root)
     port,port_lock=reserve_base_port(root,job["job_id"],job["num_envs"])
     command=[
         sys.executable,"-B",job["training_script"],str(trainer),
         "--env="+job["game_binary"],
-        "--run-id="+job["job_id"],
+        "--run-id="+job["lineage_root_id"],
         "--results-dir="+str(root/"results"),
         "--num-envs="+str(job["num_envs"]),
         "--base-port="+str(port),
         "--seed="+str(job["seed"]),
-        "--no-graphics","--force",
+        "--no-graphics","--resume" if resume else "--force",
         *(["--bees-batch-inference"] if job["batch_inference"] else []),
         *(["--env-args",*job["environment_args"]] if job["environment_args"] else []),
     ]
@@ -600,7 +613,7 @@ def main():
             child.send_signal(signal.SIGINT)
     signal.signal(signal.SIGINT,stop)
     signal.signal(signal.SIGTERM,stop)
-    progress=EventProgress(root,job["job_id"])
+    progress=EventProgress(root,job["job_id"],job["lineage_root_id"])
     try:
         child=subprocess.Popen(command,cwd=str(Path(job["training_script"]).parent.parent),
                                start_new_session=True)
@@ -624,7 +637,7 @@ def main():
         result=child.returncode
         if result!=0 or stopped:
             return 130 if stopped else result or 1
-        record_model(root,job["job_id"])
+        record_model(root,job)
         if job["evaluation_profile"] in ("scripted-maps-v1","scripted-coverage-v2"):
             evaluation_root=root/"evaluations"
             evaluation_root.mkdir(mode=0o700)
