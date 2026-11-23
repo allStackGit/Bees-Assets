@@ -6865,7 +6865,7 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
         Some(save_root.join("multiplayer-invites/host-spectator-tokens.json"))
     } else {
         GENERATED_SINGLE_SIDE_TOKEN_MAPS.iter().position(|path|
-            settings.tokens_file == Path::new(path)
+            settings.tokens_file == Path::new(*path)
         ).filter(|&index| tokens.len() == 1 &&
             tokens.contains_key(&(index + 1).to_string())
         ).map(|index| save_root.join(GENERATED_SINGLE_SIDE_SPECTATOR_MAPS[index]))
