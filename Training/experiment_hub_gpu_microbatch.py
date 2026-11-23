@@ -359,14 +359,15 @@ class FrozenInferenceMicrobatcher:
                 self._condition.notify_all()
 
     def _serve(self):
-        context = torch.cuda.device(self.device) if self.device.type == "cuda" else nullcontext()
         try:
+            context = (torch.cuda.device(self.device)
+                       if self.device.type=="cuda" else nullcontext())
             with context:
                 self._drain()
                 # close() is an ownership boundary: finish GPU submissions
                 # before the worker or its parent resource lease is released.
                 if self.device.type == "cuda":
-                    torch.cuda.synchronize(self.device)
+                    torch.cuda.current_stream(self.device).synchronize()
         except BaseException as error:
             # An unexpected worker initialization/device failure must not
             # strand pending Futures forever. Deliver exceptions without
@@ -442,7 +443,12 @@ class FrozenInferenceMicrobatcher:
                         self._condition.wait(remaining)
             try:
                 self._dispatch(group)
-            except BaseException as error:
+            except Exception as error:
+                # An unsupported kernel can fail after queuing work.
+                # Join only our GPU stream before marking its snapshot
+                # safe to replace or releasing the associated lease.
+                if self.device.type=="cuda":
+                    torch.cuda.current_stream(self.device).synchronize()
                 for item in group:
                     if not item.future.done():
                         item.future.set_exception(error)
@@ -457,11 +463,11 @@ class FrozenInferenceMicrobatcher:
 
     def _time(self, action):
         if self.device.type == "cuda":
-            torch.cuda.synchronize(self.device)
+            torch.cuda.current_stream(self.device).synchronize()
         start = perf_counter()
         output = action()
         if self.device.type == "cuda":
-            torch.cuda.synchronize(self.device)
+            torch.cuda.current_stream(self.device).synchronize()
         return perf_counter()-start, output
 
     def _individual(self, group):
