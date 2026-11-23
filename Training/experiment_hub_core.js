@@ -7712,8 +7712,8 @@ class ExperimentHub {
             const job=this.queueIn(next,{
                 ...stage,continuation_of_job_id:predecessor,
             });
-            if(!['tinybrains','courier'].includes(job.project_id))
-                throw Error('Checkpoint pipelines require the TinyBrains or Courier adapter.');
+            if(!['tinybrains','courier','bees_native'].includes(job.project_id))
+                throw Error('Checkpoint pipelines require a compatible checkpoint-capable adapter.');
             jobs.push(copy(job));
             predecessor=job.id;
         }
