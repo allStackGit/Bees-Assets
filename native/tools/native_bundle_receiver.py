@@ -503,7 +503,14 @@ class BundleReceiver:
             published = self.input_archives.get(collector_id)
             if published is None:
                 raise LookupError("collector inputs have not been exported")
-            return published
+            file, digest, expected_size = published
+        file = Path(file)
+        if (file.is_symlink() or not file.is_file() or
+                file.stat().st_size != expected_size or
+                not 0 < expected_size <= MAX_ARCHIVE_BYTES or
+                not DIGEST_RE.fullmatch(digest)):
+            raise ValueError("published collector input archive was redirected or changed")
+        return file, digest, expected_size
 
     def completed_upload(self, collector_id):
         with self.lock:
@@ -657,6 +664,27 @@ def _receiver_handler(owner):
                     self.headers.get("Authorization", ""), "Bearer " + owner.token):
                 self.respond(401, {"error": "unauthorized"})
                 return
+            input_prefix = "/v1/inputs/"
+            if self.path.startswith(input_prefix):
+                collector_id = self.path[len(input_prefix):]
+                try:
+                    if not BUNDLE_NAME.fullmatch(collector_id):
+                        raise LookupError("unknown collector input")
+                    _, digest, total = owner.prepared_input(collector_id)
+                    self.send_response(200)
+                    self.send_header("X-Archive-SHA256", digest)
+                    self.send_header("Accept-Ranges", "bytes")
+                    self.send_header("Content-Length", str(total))
+                except LookupError:
+                    self.send_response(404)
+                    self.send_header("Content-Length", "0")
+                except (OSError, ValueError, TypeError, KeyError):
+                    self.send_response(409)
+                    self.send_header("Content-Length", "0")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.close_connection = True
+                return
             prefix = "/v1/bundles/"
             collector_id = self.path[len(prefix):] if self.path.startswith(prefix) else ""
             if not BUNDLE_NAME.fullmatch(collector_id):
@@ -714,12 +742,6 @@ def _receiver_handler(owner):
                 return
             try:
                 file, digest, expected_size = owner.prepared_input(collector_id)
-                file = Path(file)
-                if file.is_symlink() or not file.is_file() or (
-                        file.stat().st_size != expected_size or
-                        not 0 < expected_size <= MAX_ARCHIVE_BYTES or
-                        not DIGEST_RE.fullmatch(digest)):
-                    raise ValueError("published collector input archive was redirected or changed")
                 offset = 0
                 requested = self.headers.get("Range")
                 if requested is not None:
