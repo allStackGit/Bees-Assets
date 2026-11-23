@@ -265,7 +265,7 @@ fn append_training_arguments(
         command.arg("--early-stop-patience").arg(patience.to_string());
     }
     let evaluation_every = recipe["evaluation_every"].as_u64().unwrap_or(1);
-    if ![1, 2, 5, 10].contains(&evaluation_every) ||
+    if ![1, 2, 5, 10, 25, 50, 100, 250, 500, 1000].contains(&evaluation_every) ||
         evaluation_every > rounds
     {
         return Err(invalid("invalid native fixed-holdout evaluation cadence").into());
@@ -666,7 +666,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         None
     };
     let evaluation_every = if rounds >= 10 {
-        let choices = [1, 2, 5, 10].into_iter()
+        let choices = [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000].into_iter()
             .filter(|&interval| interval <= rounds).collect::<Vec<_>>();
         let Some(interval) = choose_count(
             "Fixed-seed holdout every N optimizer rounds", &choices,
