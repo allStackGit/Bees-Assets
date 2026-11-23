@@ -1916,12 +1916,6 @@ class PersistentGpuForwardPool:
               torch.autocast("cuda", enabled=autocast_enabled,
                              dtype=autocast_dtype)):
             started = finished = None
-            if sampled_pixels:
-                try:
-                    started = torch.cuda.Event(enable_timing=True)
-                    started.record(stream)
-                except (RuntimeError,NotImplementedError,AttributeError):
-                    started = None
             # Per-device input factories may copy tensors produced on GPU 0
             # during the current optimizer minibatch. The producer event
             # establishes a proper cross-device dependency without waiting
@@ -1934,6 +1928,18 @@ class PersistentGpuForwardPool:
                     # event waits. Block only this worker, not GPU 1's
                     # independent forward, while preserving input ordering.
                     producer_event.synchronize()
+            # Measure only this device's actual input-copy and forward
+            # service time. Starting the timer BEFORE waiting on GPU 0
+            # misattributes unrelated producer backlog to GPU 1/2, causing
+            # measured capacity weights to send extra work to the already
+            # busy producer and leave the second GPU idle. The event itself
+            # is enqueued after the dependency, without any CPU sync.
+            if sampled_pixels:
+                try:
+                    started = torch.cuda.Event(enable_timing=True)
+                    started.record(stream)
+                except (RuntimeError,NotImplementedError,AttributeError):
+                    started = None
             result = model(*factory())
             if started is not None:
                 try:
