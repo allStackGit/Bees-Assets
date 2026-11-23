@@ -128,6 +128,51 @@ def discrete_action_logprob_entropy(logits, actions):
     return chosen_logp, entropy
 
 
+def allocate_gpu_work_rows(rows, pixel_area, device_pixel_budgets):
+    """Partition same-shape training rows across independently leased GPUs.
+
+    Return contiguous row counts, preserving observation/action order.
+    A small-memory GPU receives only the rows it can safely hold; the
+    optimizer's primary GPU retains any surplus. This avoids rejecting
+    useful parallel work simply because an equal split would not fit.
+    Returns None if fewer than two GPUs can execute the group.
+    """
+    if (type(rows) is not int or rows < 1 or
+            type(pixel_area) is not int or pixel_area < 1 or
+            not isinstance(device_pixel_budgets,(tuple,list)) or
+            not 1 <= len(device_pixel_budgets) <= 16 or
+            any(type(n) is not int or n < 0 for n in device_pixel_budgets)):
+        raise ValueError("Invalid bounded GPU row-partition request")
+    if rows < 2 or len(device_pixel_budgets) < 2:
+        return None
+    capacity = [min(rows, budget//pixel_area)
+                for budget in device_pixel_budgets[:min(rows,len(device_pixel_budgets))]]
+    if (not capacity or capacity[0] < 1 or
+            sum(capacity) < rows or sum(n>0 for n in capacity)<2):
+        return None
+    last = max(i for i,available in enumerate(capacity) if available > 0)
+    capacity = capacity[:last+1]
+    if any(n == 0 for n in capacity):
+        # Keep device ordinals a prefix so PyTorch's replica and gradient
+        # reduction machinery never needs sparse/non-contiguous device maps.
+        return None
+    remaining = rows
+    result = []
+    for i, limit in enumerate(capacity):
+        future = capacity[i+1:]
+        # Do not allocate so much to this GPU that later GPUs are left
+        # idle, but use extra headroom here if later leases cannot hold
+        # their nominal balanced share.
+        necessary = max(0, remaining-sum(future))
+        even = (remaining+len(future))//(len(future)+1)
+        assigned = min(limit,max(necessary,even))
+        if assigned < 1:
+            return None
+        result.append(assigned)
+        remaining -= assigned
+    return tuple(result) if remaining == 0 and len(result) > 1 else None
+
+
 class IndependentGpuTraining:
     """Measure-and-select execution for genuinely independent GPU learners.
 
