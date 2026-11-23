@@ -8167,39 +8167,6 @@ fn run_campaign_game_menu(
                     unit_price_tsv: ship.price_tsv,
                 });
             }
-            // A whole purchase has one bank debit and one complete fleet
-            // deployment preflight. Present commonly useful quantities but
-            // let the CLI retain the full 1..256 range.
-            for quantity in [2_u32, 5, 10] {
-                let Some(cost) = ship.price_tsv.checked_mul(u64::from(quantity))
-                    else { continue };
-                for destination in std::iter::once(0).chain(
-                    squad_destinations.get(&ship.player_side)
-                        .into_iter().flatten().copied()
-                ) {
-                    let in_source = reservable.contains(&(ship.player_side, ship.ship_type));
-                    let destination_label = if destination == 0 {
-                        "Reserve".to_string()
-                    } else { progress.squad_label(destination) };
-                    shop_rows.push(NativeShopMenuRow {
-                        title: format!(
-                            "Type {} x{} -> {}   TSV {}{}",
-                            ship.ship_type, quantity, destination_label, cost,
-                            if !unlocked { "  [Locked]" }
-                            else if available < cost { "  [Insufficient]" }
-                            else if !in_source { "  [Unavailable in source routes]" }
-                            else { "" },
-                        ),
-                        unlocked: unlocked && progress.bank_history_complete() &&
-                            available >= cost && in_source,
-                        side: ship.player_side,
-                        ship_type: ship.ship_type,
-                        saved_squad_id: destination,
-                        quantity,
-                        unit_price_tsv: ship.price_tsv,
-                    });
-                }
-            }
         }
         let mut transfer_rows = Vec::new();
         // The shop can contain classes from both player sides. Build the
