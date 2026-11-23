@@ -520,6 +520,8 @@ async function status(hub) {
         mini_candidates:miniCandidates(hub,options).map(({id,updates})=>({id,updates})),
         historical_candidates:historicalCandidates(hub,options)
             .map(({id,updates,batch_size})=>({id,updates,batch_size})),
+        checkpoint_candidates:checkpointCandidates(hub,options)
+            .map(({id,updates,batch_size})=>({id,updates,batch_size})),
         custom_library:library,custom_library_issue:library_issue};
 }
 async function setup(hub) {
@@ -685,6 +687,46 @@ function historicalCandidates(hub,o) {
 }
 function miniCandidates(hub,o) {
     return historicalCandidates(hub,o).filter(source=>source.batch_size===128);
+}
+// All retained, bounded update-N checkpoints of a verified finished job can
+// become named opponents. A browser chooses only an opaque candidate ID;
+// the server derives the private file path from its own job inventory.
+function checkpointCandidates(hub,o) {
+    const candidates=[];
+    for(const job of hub.snapshot().jobs||[]) {
+        if(job.project_id!=='tinybrains'||job.status!=='finished'||
+            job.checkpoint_ready_verified!==true||!UUID.test(job.id)||
+            !SHA256.test(String(job.checkpoint_model_sha256||'')))continue;
+        try {
+            const root=path.join(o.artifacts,job.id);
+            const dir=presentDirectory(path.join(root,'self-play'));
+            const status=JSON.parse(fs.readFileSync(path.join(root,'status.json'),'utf8'));
+            if(!Number.isSafeInteger(status.ppo_updates)||status.ppo_updates<1)continue;
+            const overrides=path.join(root,'hub-design-overrides.json');
+            const configured=fs.existsSync(overrides)
+                ?JSON.parse(fs.readFileSync(overrides,'utf8')):{};
+            const batchSize=configured['training.colony_batch_size']??null;
+            const retained=fs.readdirSync(dir).filter(name=>
+                /^update-[0-9]{6,8}\\.pt$/.test(name)).sort().slice(-32);
+            for(const file of ['latest.pt',...retained]) {
+                const checkpoint=path.join(dir,file);
+                if(!fs.existsSync(checkpoint))continue;
+                const stat=fs.lstatSync(checkpoint);
+                if(!stat.isFile()||stat.isSymbolicLink()||
+                    fs.realpathSync(checkpoint)!==checkpoint||
+                    stat.size<1||stat.size>1073741824)continue;
+                const updates=file==='latest.pt'?status.ppo_updates:
+                    Number(file.slice(7,-3));
+                if(!Number.isSafeInteger(updates)||updates<1)continue;
+                candidates.push({id:job.id+':'+file,
+                    job_id:job.id,file,updates,batch_size:batchSize,
+                    checkpoint,final_sha256:file==='latest.pt'
+                        ?job.checkpoint_model_sha256:null});
+            }
+        }catch { /* An incomplete old job is not an approved source. */ }
+    }
+    return candidates.sort((a,b)=>b.updates-a.updates||
+        a.id.localeCompare(b.id)).slice(0,256);
 }
 
 function verifyFrozenMini(options,source,suite,name=MINI_SUITE) {
