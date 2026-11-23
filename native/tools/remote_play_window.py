@@ -758,8 +758,7 @@ class RemoteBattleWindow:
             not self.console.spectator and self.console.alive and
             state is not None and state.get("can_surrender") is True and
             state.get("briefing_paused") is not True and
-            state.get("terminal_outcome") is None and not reconnect_waiting and
-            not self.held_drag and
+            state.get("terminal_outcome") is None and not self.held_drag and
             self.console.surrender_requested_episode != (
                 state["world_id"], state["episode_revision"]
             )
