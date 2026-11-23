@@ -6785,11 +6785,21 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         });
         let audio_settings_index = rows.len();
         rows.push(BattleMenuRow { title: "Audio Settings", status: "", unlocked: true });
+        let control_settings_index = rows.len();
+        rows.push(BattleMenuRow { title: "Controls", status: "", unlocked: true });
         menu_audio.load_preferences(audio_preferences.clone());
         menu_audio.play_menu_music();
         let Some(index) = select_library(&rows, &mut selected, launch_failed)? else { break };
         if index == audio_settings_index {
             bees_host::presentation::show_audio_settings(&mut menu_audio)?;
+            continue;
+        }
+        if index == control_settings_index {
+            let result = bees_host::presentation::show_control_settings();
+            launch_failed = result.is_err();
+            if let Err(error) = result {
+                eprintln!("Could not open native control settings: {error}");
+            }
             continue;
         }
         menu_audio.set_paused(true);

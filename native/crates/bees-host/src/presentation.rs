@@ -27,6 +27,8 @@ mod controls;
 #[cfg(feature = "client")]
 pub(crate) use controls::NativeControls;
 #[cfg(feature = "client")]
+pub use controls::show_control_settings;
+#[cfg(feature = "client")]
 mod codex;
 #[cfg(feature = "client")]
 mod battle_menu;

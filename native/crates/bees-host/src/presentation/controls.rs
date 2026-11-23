@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use minifb::{Key, KeyRepeat, Window};
+use minifb::{Key, KeyRepeat, ScaleMode, Window, WindowOptions};
 use serde::{Deserialize, Serialize};
 use super::NativeSoftwareRenderer;
 
@@ -88,6 +88,32 @@ const LETTERS: &[Key] = &[
 struct StoredBindings {
     schema_version: u32,
     bindings: BTreeMap<String,String>,
+}
+
+const BINDINGS_PER_PAGE: usize = 13;
+
+pub fn show_control_settings() -> Result<(), Box<dyn std::error::Error>> {
+    const WIDTH: usize = 800;
+    const HEIGHT: usize = 496;
+    let mut controls = NativeControls::load()?;
+    let mut window = Window::new("Bees | Controls", WIDTH, HEIGHT, WindowOptions {
+        resize: true,
+        scale_mode: ScaleMode::AspectRatioStretch,
+        ..WindowOptions::default()
+    })?;
+    window.set_target_fps(30);
+    let mut pixels = vec![0; WIDTH * HEIGHT];
+    while window.is_open() {
+        if window.is_key_pressed(Key::F5, KeyRepeat::No) ||
+            (!controls.editing && window.is_key_pressed(Key::Escape, KeyRepeat::No)) {
+            break;
+        }
+        controls.edit(&window);
+        pixels.fill(0x080e19);
+        controls.draw(&mut pixels, WIDTH, HEIGHT);
+        window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
+    }
+    Ok(())
 }
 
 pub(crate) struct NativeControls {
@@ -371,6 +397,14 @@ impl NativeControls {
                 self.editing=false;
                 return;
             }
+        } else if window.is_key_pressed(Key::Home, KeyRepeat::No) {
+            self.selected = 0;
+        } else if window.is_key_pressed(Key::End, KeyRepeat::No) {
+            self.selected = self.keys.len() - 1;
+        } else if window.is_key_pressed(Key::PageUp, KeyRepeat::Yes) {
+            self.selected = self.selected.saturating_sub(BINDINGS_PER_PAGE);
+        } else if window.is_key_pressed(Key::PageDown, KeyRepeat::Yes) {
+            self.selected = (self.selected + BINDINGS_PER_PAGE).min(self.keys.len() - 1);
         } else if window.is_key_pressed(Key::Up,KeyRepeat::Yes) {
             self.selected=self.selected.saturating_sub(1);
         } else if window.is_key_pressed(Key::Down,KeyRepeat::Yes) {
@@ -385,15 +419,14 @@ impl NativeControls {
     }
 
     pub(crate) fn draw(&self,pixels:&mut [u32],width:usize,height:usize) {
-        const ROWS:usize=13;
-        let start=(self.selected/ROWS)*ROWS;
+        let start = (self.selected / BINDINGS_PER_PAGE) * BINDINGS_PER_PAGE;
         let mut lines=vec![
             "NATIVE GAMEPLAY HOTKEY SETTINGS".to_owned(),
             "Up/Down: choose   Enter: rebind   F5: close".to_owned(),
-            "Esc cancels; assigned letters swap; Ctrl+A selects all".to_owned(),
+            "Page Up/Down: jump   Esc: cancel rebind   Assigned letters swap".to_owned(),
             " ".to_owned(),
         ];
-        for i in start..(start+ROWS).min(self.keys.len()) {
+        for i in start..(start + BINDINGS_PER_PAGE).min(self.keys.len()) {
             lines.push(format!("{} {:<23} : {}",
                 if i==self.selected {">"} else {" "},
                 Self::name(i),Self::display_key(i,self.keys[i])));
