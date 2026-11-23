@@ -4005,7 +4005,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if(stage&&!(state?.machines||[]).some(machine=>
-            machine.status==='connected'&&machine.agent_platform==='linux'&&
+            machine.status==='connected'&&
+            ['linux','win32'].includes(machine.agent_platform)&&
             machine.tinybrains_profiles?.[profile]===digest&&
             machine.tinybrains_curriculum_stages?.includes(stage))) {
             feedback('hub-config-message',
