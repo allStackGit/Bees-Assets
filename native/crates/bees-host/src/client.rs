@@ -260,6 +260,7 @@ pub struct NativeClient {
     pub weapon_range_candidates_culled: u64,
     pub viewport_resizes: u64,
     pub minimap_markers_drawn: u64,
+    pub minimap_terrain_markers: u64,
     pub numbered_squad_rows_drawn: u64,
     pub striker_bomb_indicators_drawn: u64,
     pub minimap_camera_moves: u64,
@@ -356,7 +357,8 @@ impl NativeClient {
             culled_projectile_draws: 0, culled_piece_draws: 0,
             weapon_geometry_queries: 0, weapon_range_candidates_culled: 0,
             viewport_resizes: 0,
-            minimap_markers_drawn: 0, numbered_squad_rows_drawn: 0,
+            minimap_markers_drawn: 0, minimap_terrain_markers: 0,
+            numbered_squad_rows_drawn: 0,
             striker_bomb_indicators_drawn: 0,
             minimap_camera_moves: 0, camera_pan_frames: 0,
             camera_wheel_pans: 0, camera_boundary_clamps: 0,
@@ -2253,6 +2255,8 @@ impl NativeClient {
         self.culled_projectile_draws = self.culled_projectile_draws.saturating_add(counts.culled_projectiles as u64);
         self.culled_piece_draws = self.culled_piece_draws.saturating_add(counts.culled_pieces as u64);
         self.minimap_markers_drawn = self.minimap_markers_drawn.saturating_add(counts.minimap_ship_markers as u64);
+        self.minimap_terrain_markers = self.minimap_terrain_markers
+            .saturating_add(counts.minimap_terrain_markers as u64);
         self.numbered_squad_rows_drawn = self.numbered_squad_rows_drawn.saturating_add(counts.numbered_squad_rows as u64);
         self.striker_bomb_indicators_drawn = self.striker_bomb_indicators_drawn
             .saturating_add(counts.striker_bomb_indicators as u64);

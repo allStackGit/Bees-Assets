@@ -5,6 +5,10 @@
 use bees_sim::collision::Aabb;
 use bees_sim::geometry::Vec2;
 
+pub(super) fn terrain_color(mining: bool) -> u32 {
+    if mining { 0xffd57a } else { 0x8195a9 }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(super) struct MiniMapLayout {
     pub left: usize,
@@ -92,6 +96,20 @@ impl MiniMapLayout {
             self.plot_left + (point.x - self.bounds.min.x) * self.scale,
             self.plot_top + (self.bounds.max.y - point.y) * self.scale,
         )
+    }
+
+    /// Return a clipped outline only when the hull is large enough on
+    /// screen to be readable. Smaller hulls use a center pixel.
+    pub fn terrain_outline(self, hull: Aabb) -> Option<(i32, i32, i32, i32)> {
+        if !hull.min.is_finite() || !hull.max.is_finite() { return None; }
+        let (left, top) = self.project_unbounded(Vec2::new(hull.min.x, hull.max.y));
+        let (right, bottom) = self.project_unbounded(Vec2::new(hull.max.x, hull.min.y));
+        let left = left.max(self.plot_left).round() as i32;
+        let top = top.max(self.plot_top).round() as i32;
+        let right = right.min(self.plot_right).round() as i32;
+        let bottom = bottom.min(self.plot_bottom).round() as i32;
+        (right.saturating_sub(left) >= 4 && bottom.saturating_sub(top) >= 4)
+            .then_some((left, top, right, bottom))
     }
 
     pub fn camera_rect(self, bottom_left: Vec2, top_right: Vec2) ->

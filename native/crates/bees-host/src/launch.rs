@@ -12095,6 +12095,7 @@ fn run_battle(
             "window_update_wall_seconds": client.window_update_wall_seconds,
             "viewport_resizes": client.viewport_resizes,
             "minimap_markers_drawn": client.minimap_markers_drawn,
+            "minimap_terrain_markers": client.minimap_terrain_markers,
             "numbered_squad_rows_drawn": client.numbered_squad_rows_drawn,
             "striker_bomb_indicators_drawn": client.striker_bomb_indicators_drawn,
             "minimap_camera_moves": client.minimap_camera_moves,

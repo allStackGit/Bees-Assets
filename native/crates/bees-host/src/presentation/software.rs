@@ -182,6 +182,7 @@ pub struct NativeRenderCounts {
     pub missing_range_data: usize,
     pub minimap_ship_markers: usize,
     pub minimap_visible_enemy_markers: usize,
+    pub minimap_terrain_markers: usize,
     pub minimap_extraction_exit_markers: usize,
     pub numbered_squad_rows: usize,
     pub special_ready_ships: usize,
@@ -3498,10 +3499,7 @@ impl NativeSoftwareRenderer {
             }
         }
         if self.show_minimap {
-            let (ships, enemies, escort_exits) = self.draw_minimap(view, bounds);
-            counts.minimap_ship_markers = ships;
-            counts.minimap_visible_enemy_markers = enemies;
-            counts.minimap_extraction_exit_markers = escort_exits;
+            self.draw_minimap(view, bounds, &mut counts);
         }
         counts.numbered_squad_rows = self.draw_squad_shortcuts(view);
         counts.special_ready_ships = self.draw_special_readiness(view);
@@ -3572,13 +3570,12 @@ impl NativeSoftwareRenderer {
     /// limits enemy markers using the same live player masks and fading
     /// vision used by the main viewport. When source fog is OFF, all live
     /// ships are visible as in the unmasked tactical battlefield.
-    fn draw_minimap(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb)
-        -> (usize, usize, usize)
-    {
+    fn draw_minimap(
+        &mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb,
+        counts: &mut NativeRenderCounts,
+    ) {
         let Some(layout) = MiniMapLayout::new(self.width, self.height, bounds)
-            else { return (0, 0, 0) };
-        let mut markers = 0usize;
-        let mut enemies = 0usize;
+            else { return };
         for y in layout.top..layout.bottom {
             self.pixels[y * self.width + layout.left
                 ..y * self.width + layout.right].fill(0x101c2e);
@@ -3619,6 +3616,28 @@ impl NativeSoftwareRenderer {
             }
         }
 
+        for (obstacle, body) in view.combat.render_obstacles() {
+            let Some((x, y)) = layout.project(body.pose.position) else { continue };
+            let index = y.round() as usize * self.width + x.round() as usize;
+            if fog && self.fog_coverage[index] == 0 { continue; }
+            let mining = obstacle.kind == bees_sim::obstacle::ObstacleKind::MiningAsteroid;
+            let color = super::minimap::terrain_color(mining);
+            if let Some((left, top, right, bottom)) = body.primary_bounds()
+                .and_then(|hull| layout.terrain_outline(hull))
+            {
+                let (left, top, right, bottom) =
+                    (left as f32, top as f32, right as f32, bottom as f32);
+                self.line(left, top, right, top, color);
+                self.line(right, top, right, bottom, color);
+                self.line(right, bottom, left, bottom, color);
+                self.line(left, bottom, left, top, color);
+            } else {
+                if self.pixels[index] == color { continue; }
+                self.pixels[index] = color;
+            }
+            counts.minimap_terrain_markers += 1;
+        }
+
         // Mark only source-authored objectives that are actually visible
         // through the same fog filter as ordinary ship markers. The three
         // rescue Barge identities are private to the campaign commander.
@@ -3641,12 +3660,12 @@ impl NativeSoftwareRenderer {
                 // unrelated player's units in a masked local viewport.
                 continue;
             }
-            markers += 1;
+            counts.minimap_ship_markers += 1;
             // Non-commandable same-side escorts remain friendly; only
             // opposite-side units count as tactical enemy sightings.
             if view.player_authority.player_viewer_side()
                 .is_some_and(|side| ship.side != side) {
-                enemies += 1;
+                counts.minimap_visible_enemy_markers += 1;
             }
             let selected = controlled && owner.is_some_and(|owner|
                 if self.selection.squads().len() > 8 {
@@ -3702,7 +3721,6 @@ impl NativeSoftwareRenderer {
         // The exit is a known authored mission destination, not a
         // hidden enemy unit. Show it before physics activates its trigger
         // so the player can actually command the convoy across the map.
-        let mut escort_exits = 0usize;
         if let Some((_, exit, _)) = view.combat.extraction_objective()
             .filter(|_| view.campaign_objective != Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaMinesweeper) ||
                 view.combat.active_extraction_bounds().is_some())
@@ -3715,7 +3733,7 @@ impl NativeSoftwareRenderer {
                 self.line(x1, y1, x1, y0, color);
                 self.line(x1, y0, x0, y0, color);
                 self.line(x0, y0, x0, y1, color);
-                escort_exits = 1;
+                counts.minimap_extraction_exit_markers += 1;
             }
         }
         let bottom_left = self.camera.screen_to_world(
@@ -3729,7 +3747,6 @@ impl NativeSoftwareRenderer {
             self.line(x1, y1, x0, y1, color);
             self.line(x0, y1, x0, y0, color);
         }
-        (markers, enemies, escort_exits)
     }
 
     /// A lightweight source-squad tab strip. Shortcut numbers come from the

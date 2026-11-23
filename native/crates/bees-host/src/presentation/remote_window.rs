@@ -1779,25 +1779,17 @@ fn draw_remote_minimap(
         let Some(point) = visual.position(object, 2, fraction) else { continue };
         let Some((x,y)) = layout.project(point) else { continue };
         let mining = object["mining"] == true;
-        let color = if mining {GOLD} else {0x8195a9};
-        let bounds = object["collider_bounds"].as_array()
-            .filter(|bounds|bounds.len()==2)
-            .and_then(|bounds|Some((
-                point_from_wire(&bounds[0])?,
-                point_from_wire(&bounds[1])?,
-            )));
-        if let Some((min,max))=bounds {
-            let a=layout.project_unbounded(Vec2::new(min.x,max.y));
-            let b=layout.project_unbounded(Vec2::new(max.x,min.y));
-            let left=a.0.max(layout.plot_left).round() as i32;
-            let top=a.1.max(layout.plot_top).round() as i32;
-            let right=b.0.min(layout.plot_right).round() as i32;
-            let bottom=b.1.min(layout.plot_bottom).round() as i32;
-            if right-left>=4 && bottom-top>=4 {
-                outline(pixels,left,top,right-left,bottom-top,color);
-                terrain_markers+=1;
-                continue;
-            }
+        let color = super::minimap::terrain_color(mining);
+        let outline_bounds = object["collider_bounds"].as_array()
+            .filter(|bounds| bounds.len() == 2)
+            .and_then(|bounds| layout.terrain_outline(Aabb {
+                min: point_from_wire(&bounds[0])?,
+                max: point_from_wire(&bounds[1])?,
+            }));
+        if let Some((left, top, right, bottom)) = outline_bounds {
+            outline(pixels, left, top, right - left, bottom - top, color);
+            terrain_markers += 1;
+            continue;
         }
         let cell=(x.round() as i32,y.round() as i32,mining);
         if cells.insert(cell) {
