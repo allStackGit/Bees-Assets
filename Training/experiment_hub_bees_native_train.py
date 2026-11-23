@@ -90,7 +90,7 @@ def verify_pinned_runtime(job: dict) -> None:
             raise ValueError("Pinned runtime file record has unexpected fields.")
         name=entry["path"]
         if not isinstance(name,str) or name!=Path(name).name or (
-            name in names or not name or "/" in name or "\\\\" in name
+            name in names or not name or "/" in name or chr(92) in name
         ):
             raise ValueError("Unsafe or duplicated Bees Python runtime member.")
         names.add(name)
@@ -106,6 +106,10 @@ def verify_pinned_runtime(job: dict) -> None:
             file.stat().st_size!=size or sha256_file(file)!=expected
         ):
             raise ValueError("Pinned Bees runtime file differs from captured bytes: "+name)
+    allowed=names|{"bees-runtime-version.txt","bees-runtime-manifest.json"}
+    installed={item.name for item in source_root.iterdir() if item.is_file()}
+    if installed!=allowed:
+        raise ValueError("Pinned Bees runtime directory contains unapproved file additions or omissions.")
     for key in ("training_script","trainer_source","evaluator_script",
                 "evaluator_core","opponent_script"):
         candidate=Path(job[key])
