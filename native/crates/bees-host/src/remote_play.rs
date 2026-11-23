@@ -79,6 +79,10 @@ enum WireInput {
     /// UI acknowledgment only, without an alternative gameplay clock.
     BriefingReady { request_id: u64, world_id: u64,
         episode_revision: u64, sequence: u32 },
+    /// Per-connection commander admission to a two-sided dedicated match.
+    /// The existing World is held at tick zero until both sides are ready.
+    LobbyReady { request_id: u64, world_id: u64,
+        episode_revision: u64 },
     /// An authenticated commander's time-control vote. Not a gameplay
     /// order: the one authoritative World simply stops advancing ticks.
     Pause { request_id: u64, world_id: u64,
@@ -366,6 +370,12 @@ pub struct RemotePlayMeasurements {
     #[serde(default)]
     pub briefing_wait_polls: u64,
     #[serde(default)]
+    pub lobby_ready_acks: u64,
+    #[serde(default)]
+    pub lobby_ready_rejections: u64,
+    #[serde(default)]
+    pub lobby_wait_polls: u64,
+    #[serde(default)]
     pub commander_pause_requests: u64,
     #[serde(default)]
     pub commander_pause_rejections: u64,
@@ -556,6 +566,11 @@ pub struct NativeRemotePlay {
     pending_releases: Vec<RemoteOrder>,
     /// Per-connection source briefing acknowledgment, never gameplay.
     briefing_ready: HashMap<u64,(u64,u64,u32)>,
+    /// Pure transport admission for the current World episode. Readiness
+    /// belongs to authenticated live peer IDs and is never replayed or
+    /// persisted as gameplay; restart requires both sides to rejoin.
+    lobby_episode: Option<(u64, u64)>,
+    lobby_ready_peers: HashSet<u64>,
     /// Cooperative human peers pause the same World, never its renderer
     /// or an independent simulation. Their votes expire on episode change
     /// and disconnect, with no durable replay/gameplay side effects.
@@ -669,6 +684,7 @@ impl NativeRemotePlay {
             camera_edge_scrolling: None,
             held_fire: HashMap::new(), pending_releases: Vec::new(),
             briefing_ready: HashMap::new(),
+            lobby_episode: None, lobby_ready_peers: HashSet::new(),
             pause_episode: None, pause_peers: HashSet::new(),
             paused_step_owner: None,
             source_game_speed: 1.0, game_speed_override: None,
@@ -860,6 +876,8 @@ impl NativeRemotePlay {
         // The recovered World retains its authored cue. The old TCP
         // peers cannot acknowledge on behalf of newly authenticated ones.
         self.briefing_ready.clear();
+        self.lobby_episode = None;
+        self.lobby_ready_peers.clear();
         self.pause_peers.clear();
         self.pause_episode = None;
         self.paused_step_owner = None;
@@ -905,6 +923,11 @@ impl NativeRemotePlay {
     pub fn poll(&mut self, world_id: WorldId, revision: u64,
                 live_controllers: &[u64], briefing: Option<(i32,u32)>) -> Vec<RemoteOrder> {
         let poll_started = Instant::now();
+        if self.lobby_episode != Some((world_id.0, revision)) {
+            self.lobby_episode = Some((world_id.0, revision));
+            self.lobby_ready_peers.clear();
+            self.force_initial_state = true;
+        }
         if self.pause_episode != Some((world_id.0, revision)) {
             self.pause_episode = Some((world_id.0, revision));
             self.pause_peers.clear();
@@ -1233,6 +1256,40 @@ impl NativeRemotePlay {
                             } else { "Stale or unauthorized campaign briefing" },
                         }));
                     }
+                    Ok(WireInput::LobbyReady {
+                        request_id, world_id: claimed_world,
+                        episode_revision: claimed_revision,
+                    }) if peer.side.is_some() => {
+                        if request_id <= peer.last_request_id {
+                            self.measurements.lobby_ready_rejections += 1;
+                            peer.closed = true;
+                            break;
+                        }
+                        peer.last_request_id = request_id;
+                        peer_orders += 1;
+                        let accepted = self.dedicated_briefing_gate &&
+                            self.side_tokens.len() == 2 && !self.archive_only &&
+                            !peer.spectator && claimed_world == world_id.0 &&
+                            claimed_revision == revision;
+                        if accepted {
+                            if self.lobby_ready_peers.insert(peer.id) {
+                                self.force_initial_state = true;
+                            }
+                            self.measurements.lobby_ready_acks += 1;
+                        } else {
+                            self.measurements.lobby_ready_rejections += 1;
+                        }
+                        let _ = peer.enqueue(&json!({
+                            "kind": "lobby_ready_result",
+                            "request_id": request_id,
+                            "processed": accepted,
+                            "feedback": if accepted {
+                                "Commander ready for the current match"
+                            } else {
+                                "Two-sided dedicated lobby unavailable or stale"
+                            },
+                        }));
+                    }
                     Ok(WireInput::Pause {
                         request_id, world_id: claimed_world,
                         episode_revision: claimed_revision, paused,
@@ -1544,6 +1601,27 @@ impl NativeRemotePlay {
     /// Only the already-authenticated campaign viewers can release the
     /// original physical World from its source briefing. A disconnected
     /// viewer cannot hold up the mission after their socket is reaped.
+    /// A two-sided dedicated match cannot begin while a player is still
+    /// joining or deciding whether to start. One authenticated live
+    /// commander per configured side is sufficient; spectators never count.
+    /// Called after poll(), so disconnected peers have already been reaped.
+    pub fn lobby_waiting(&mut self, world_id: WorldId, revision: u64,
+        tick: u64) -> bool
+    {
+        if tick != 0 || !self.dedicated_briefing_gate ||
+            self.side_tokens.len() != 2 || self.archive_only {
+            return false;
+        }
+        let ready = self.lobby_episode == Some((world_id.0, revision)) &&
+            self.side_tokens.keys().all(|&side|
+                self.peers.iter().any(|peer|
+                    !peer.closed && !peer.spectator &&
+                    peer.side == Some(side) &&
+                    self.lobby_ready_peers.contains(&peer.id)));
+        if !ready { self.measurements.lobby_wait_polls += 1; }
+        !ready
+    }
+
     pub fn briefing_waiting(&mut self, world_id: WorldId, revision: u64,
         owner_side: i32, sequence: u32) -> bool
     {
@@ -1779,6 +1857,25 @@ impl NativeRemotePlay {
         let camera_edge_scrolling = self.camera_edge_scrolling;
         let commander_paused = !self.pause_peers.is_empty();
         let game_speed = self.actual_game_speed();
+        let lobby_active = self.dedicated_briefing_gate &&
+            self.side_tokens.len() == 2 && view.tick == 0 &&
+            view.terminal_result.is_none() && !self.archive_only;
+        let mut lobby_required_sides = Vec::new();
+        let mut lobby_ready_sides = Vec::new();
+        if lobby_active {
+            lobby_required_sides.extend(self.side_tokens.keys().copied());
+            lobby_required_sides.sort_unstable();
+            for peer in &self.peers {
+                if !peer.closed && !peer.spectator &&
+                    self.lobby_ready_peers.contains(&peer.id) {
+                    if let Some(side) = peer.side {
+                        lobby_ready_sides.push(side);
+                    }
+                }
+            }
+            lobby_ready_sides.sort_unstable();
+            lobby_ready_sides.dedup();
+        }
         // The source's introductory and mid-mission briefings prevent
         // either side issuing physical orders. Local windows pace their
         // source dialogue; dedicated servers require authenticated ACKs
@@ -1867,6 +1964,13 @@ impl NativeRemotePlay {
                 );
                 state["commander_paused"] = json!(commander_paused);
                 state["game_speed"] = json!(game_speed);
+                if lobby_active {
+                    state["lobby"] = json!({
+                        "required_sides": lobby_required_sides,
+                        "ready_sides": lobby_ready_sides,
+                        "waiting": lobby_ready_sides.len() < lobby_required_sides.len(),
+                    });
+                }
                 if spectator {
                     measurements.spectator_snapshots_encoded += 1;
                     // Objective-specific tactical story fields are still
@@ -2081,6 +2185,13 @@ impl NativeRemotePlay {
         self.peers.retain(|peer| !peer.closed);
         self.briefing_ready.retain(|peer,_|
             self.peers.iter().any(|client| client.id==*peer));
+        let ready_before = self.lobby_ready_peers.len();
+        self.lobby_ready_peers.retain(|peer|
+            self.peers.iter().any(|client| client.id == *peer &&
+                client.side.is_some() && !client.spectator));
+        if ready_before != self.lobby_ready_peers.len() {
+            self.force_initial_state = true;
+        }
         let paused_before = self.pause_peers.len();
         self.pause_peers.retain(|peer|
             self.peers.iter().any(|client| client.id==*peer &&
