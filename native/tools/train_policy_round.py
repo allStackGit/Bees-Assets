@@ -783,6 +783,7 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
     started = time.perf_counter()
     processes = [None] * len(shards)
     windows_jobs = {}
+    windows_job_stats = {}
     metrics = {}
     gpu_proofs = {}
     gpu_requested = gpu_ids is not None or leased_gpu_inference
@@ -851,7 +852,11 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     if os.name == "nt":
                         # Closing an owned completed Job also retires any
                         # lingering Python inference descendants.
-                        windows_jobs.pop(processes[index].pid).close()
+                        job = windows_jobs.pop(processes[index].pid)
+                        observed = job.accounting()
+                        if observed is not None:
+                            windows_job_stats[index] = observed
+                        job.close()
                     else:
                         stop_parallel_rollout_workers([processes[index]])
                     settled.add(index)
@@ -979,6 +984,28 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     **({"gpu_device_identities": sorted(identities)} if identities else {}),
                     **({"per_device": [by_device[identity] for identity in sorted(by_device)]}
                        if by_device else {}),
+                }
+            if windows_job_stats:
+                # Real OS-owned tree counters, including resident policy
+                # children, are not inferred from the simulator parent PID.
+                # A retried collection reports only workers spawned during
+                # this invocation; previous completed shards are not
+                # fabricated into the new measurements.
+                result["windows_rollout_process_tree"] = {
+                    "scope": "completed_jobs_this_invocation",
+                    "observed_jobs": len(windows_job_stats),
+                    "owned_processes_total": sum(
+                        row["owned_processes_total"]
+                        for row in windows_job_stats.values()
+                    ),
+                    "owned_processes_active_after_host_exit": sum(
+                        row["owned_processes_active"]
+                        for row in windows_job_stats.values()
+                    ),
+                    "owned_process_cpu_seconds": sum(
+                        row["owned_process_cpu_seconds"]
+                        for row in windows_job_stats.values()
+                    ),
                 }
             return result
         except BaseException:
