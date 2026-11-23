@@ -145,18 +145,26 @@ def source_frames(path: Path, animation: bool, *, large_static: bool = False):
     source_ppu = re.search(r"^  spritePixelsToUnits: (\d+)$", metadata, re.MULTILINE)
     if source_ppu is None or not (1 <= int(source_ppu[1]) <= 65535):
         raise ValueError(f"Missing valid Unity pixels-per-unit: {path}")
-    rects = re.findall(
-        r"^      rect:\n        serializedVersion: 2\n"
-        r"        x: (\d+)\n        y: (\d+)\n"
-        r"        width: (\d+)\n        height: (\d+)$",
-        metadata, re.MULTILINE,
-    )
-    if len(rects) > (64 if animation else 1):
-        raise ValueError(f"Too many sprite slices: {path}")
+    mode = re.search(r"^  spriteMode: ([12])$", metadata, re.MULTILINE)
+    if mode is None:
+        raise ValueError(f"Missing supported Unity sprite import mode: {path}")
     with Image.open(path) as image:
         rgba = image.convert("RGBA")
+    if mode[1] == "1":
+        # Unity imports the whole current texture in Single mode. The
+        # legacy sprite table can still describe a pre-resize PNG.
+        rects = [(0, 0, rgba.width, rgba.height)]
+    else:
+        rects = re.findall(
+            r"^      rect:\n        serializedVersion: 2\n"
+            r"        x: (\d+)\n        y: (\d+)\n"
+            r"        width: (\d+)\n        height: (\d+)$",
+            metadata, re.MULTILINE,
+        )
+        if not 1 <= len(rects) <= (64 if animation else 1):
+            raise ValueError(f"Invalid Unity sprite slice count: {path}")
     frames = []
-    for x, y, width, height in (rects or [(0, 0, rgba.width, rgba.height)]):
+    for x, y, width, height in rects:
         x, y, width, height = map(int, (x, y, width, height))
         top = rgba.height - y - height
         if x < 0 or top < 0 or width <= 0 or height <= 0 or (
@@ -182,7 +190,7 @@ def source_frames(path: Path, animation: bool, *, large_static: bool = False):
         while largest // divisor > 2048 and ppu % (2 * divisor) == 0:
             divisor *= 2
         if largest // divisor > 2048:
-            raise ValueError(f"Queen sprite cannot fit the native atlas: {path}")
+            raise ValueError(f"Source sprite cannot fit the native atlas: {path}")
     if divisor > 1:
         frames = [
             frame.resize((max(1, frame.width // divisor),
