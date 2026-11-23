@@ -1935,9 +1935,14 @@ impl BattleCatalog {
                         .is_some_and(|fleet| fleet.is_dead &&
                             transfer.to_saved_squad_id != 0) ||
                     (transfer.to_saved_squad_id > 0 &&
-                        progress.created_squads.iter().any(|squad|
+                        (progress.squads.get(&transfer.to_saved_squad_id)
+                            .is_some_and(|squad| squad.side != transfer.player_side) ||
+                         progress.created_squads.iter().any(|squad|
                             squad.saved_squad_id == transfer.to_saved_squad_id &&
-                            squad.side != transfer.player_side))
+                            squad.side != transfer.player_side) ||
+                         progress.tactics.iter().any(|entry|
+                            entry.saved_squad_id == transfer.to_saved_squad_id &&
+                            entry.side != transfer.player_side)))
                 {
                     return Err(invalid("invalid or stale sequenced purchased FleetShip transfer"));
                 }
@@ -1954,6 +1959,12 @@ impl BattleCatalog {
                          progress.authored_roster.contains_key(&edit.fleet_ship_id))) ||
                     progress.purchased_ship(edit.fleet_ship_id).is_some() ||
                     progress.is_retired_saved_squad(edit.to_saved_squad_id) ||
+                    (edit.to_saved_squad_id > 0 &&
+                        (progress.squads.get(&edit.to_saved_squad_id)
+                            .is_some_and(|squad| squad.side != edit.player_side) ||
+                         progress.created_squads.iter().any(|squad|
+                            squad.saved_squad_id == edit.to_saved_squad_id &&
+                            squad.side != edit.player_side))) ||
                     progress.fleet.get(&edit.fleet_ship_id)
                         .is_some_and(|fleet| fleet.side != edit.player_side ||
                             (fleet.is_dead && edit.to_saved_squad_id != 0))
@@ -1993,7 +2004,12 @@ impl BattleCatalog {
                     !entry.placements_valid() ||
                     progress.tactics_for_squad(entry.side, entry.saved_squad_id).as_ref() == Some(&entry) ||
                     progress.tactics.iter().any(|other| other.saved_squad_id ==
-                        entry.saved_squad_id && other.side != entry.side)
+                        entry.saved_squad_id && other.side != entry.side) ||
+                    progress.squads.get(&entry.saved_squad_id)
+                        .is_some_and(|squad| squad.side != entry.side) ||
+                    progress.created_squads.iter().any(|squad|
+                        squad.saved_squad_id == entry.saved_squad_id &&
+                        squad.side != entry.side)
                 {
                     return Err(invalid("invalid sequenced SavedSquad tactics"));
                 }
@@ -2006,7 +2022,12 @@ impl BattleCatalog {
                 if !matches!(edit.side, 1 | 2) || edit.saved_squad_id <= 0 ||
                     progress.is_retired_saved_squad(edit.saved_squad_id) ||
                     !valid_saved_squad_name(&edit.name) ||
-                    progress.squad_name(edit.saved_squad_id) == Some(edit.name.as_str())
+                    progress.squad_name(edit.saved_squad_id) == Some(edit.name.as_str()) ||
+                    progress.squads.get(&edit.saved_squad_id)
+                        .is_some_and(|squad| squad.side != edit.side) ||
+                    progress.created_squads.iter().any(|squad|
+                        squad.saved_squad_id == edit.saved_squad_id &&
+                        squad.side != edit.side)
                 {
                     return Err(invalid("invalid sequenced SavedSquad rename"));
                 }
@@ -2046,7 +2067,10 @@ impl BattleCatalog {
                 progress.created_squads.push(squad);
             }
             CampaignSequencedEdit::Retire(edit) => {
-                if !progress.can_retire_saved_squad(edit.side, edit.saved_squad_id) {
+                if !progress.can_retire_saved_squad(edit.side, edit.saved_squad_id) ||
+                    edit.purchased_fleet_ids.len() > 32768 ||
+                    edit.authored_fleet_ids.len() > 32768
+                {
                     return Err(invalid("invalid sequenced SavedSquad retirement"));
                 }
                 let purchased = progress.purchases.iter().filter_map(|&(side, ship)|
