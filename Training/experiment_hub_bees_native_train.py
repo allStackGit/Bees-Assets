@@ -23,7 +23,7 @@ import uuid
 import yaml
 from tensorboard.backend.event_processing.event_file_loader import EventFileLoader
 from bees_unity_port_reservation import reserve_base_port
-from bees_unity_worker_runtime import StagedUnityPlayer
+from bees_unity_worker_runtime import StagedUnityPlayer, clone_or_copy
 
 MAX_EVENT_FILES = 64
 MAX_METRIC_BYTES = 32768
@@ -327,11 +327,15 @@ def stage_parent_checkpoint(root: Path, job: dict) -> bool:
                 if count > 100000 or total > 128 * 1024 ** 3:
                     raise ValueError("Parent Bees training state exceeds bounded copy capacity.")
     temporary = root / ("resume-state-" + uuid.uuid4().hex)
+    began = time.monotonic()
     try:
+        # Reflink into independent copy-on-write inodes on supporting Linux
+        # filesystems. Never hard-link an optimizer checkpoint: the resumed
+        # trainer must not mutate its parent's frozen state.
         # Event logs are observations, not checkpoint state. Avoid copying
         # large old TensorBoard files or re-reporting the parent's metrics.
         shutil.copytree(
-            source, temporary, copy_function=shutil.copy2,
+            source, temporary, copy_function=clone_or_copy,
             ignore=lambda directory, names: {
                 name for name in names if name.startswith("events.out.tfevents.")
             },
@@ -344,6 +348,9 @@ def stage_parent_checkpoint(root: Path, job: dict) -> bool:
             require_file(item, job[digest])
         target.parent.mkdir(mode=0o700, parents=True, exist_ok=False)
         os.replace(temporary, target)
+        print("[Bees native Hub] Verified checkpoint continuation staging in "+
+              f"{time.monotonic()-began:.2f}s; "+
+              f"{count} source files checked.", flush=True)
     finally:
         if temporary.exists():
             shutil.rmtree(temporary)
