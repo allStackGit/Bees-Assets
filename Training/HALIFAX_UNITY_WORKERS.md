@@ -316,7 +316,10 @@ mixed-platform groups require the shared two-platform manifest.
 **Repeatable install and distribution.** After compiling both targets,
 the builder prints the absolute directory containing
 \`worker-build-manifest.json\`, \`rl-linux.zip\` and \`rl-windows.zip\`.
-Only built, hash-verified archives are installed. The builder records a
+The same directory now contains a pinned `bees-runtime.zip` with
+the exact Python trainer, WAN actor code, evaluator and trainer YAML.
+The installer and distributor verify that runtime as part of the same
+build manifest. The builder records a
 source snapshot (including uncommitted Assets changes plus Package and
 ProjectSettings contents) and rejects a two-platform release if the source
 changes during compilation. Example on Halifax (adjust
@@ -341,8 +344,8 @@ EXPERIMENT_HUB_BEES_WORKER_INSTALL_ROOT=/absolute/bees-unity-workers
 
 On Windows, use an absolute local path such as
 \`C:/ProgramData/BeesUnityWorkers\`. Once this variable is set,
-the agent selects its local worker executable and exact copied manifest
-from the activated release. You do not need separate
+the agent selects its local Unity executable, frozen Python
+training runtime, and exact copied manifest from the activated release. You do not need separate
 \`EXPERIMENT_HUB_BEES_LINUX_WORKER\`,
 \`EXPERIMENT_HUB_BEES_WINDOWS_WORKER\` or
 \`EXPERIMENT_HUB_BEES_WORKER_MANIFEST\` values. Existing explicit-path
@@ -404,10 +407,11 @@ python3 -B Training/bees_hub_worker_distribute.py \
     --apply --activate
 \`\`\`
 
-The distributor copies only the platform-specific ZIP, manifest, and
-two small installer/identity scripts. Each remote machine verifies the
-ZIP and extracted Unity player against the shared manifest before
-activation. It does not change passwords, install Unity/Python,
+The distributor copies the platform-specific ZIP, shared frozen
+Python runtime ZIP, manifest, and installation helpers. Each machine
+verifies both archives and the extracted Unity player against that
+manifest before activation; the exact trainer and actor sources no longer
+depend on the remote checkout's revision. It does not change passwords, install Unity/Python,
 configure Hub enrollment, edit running agent services, or restart
 active jobs. On an enrolled machine you can inspect its selected
 release with \`python -B Training/bees_hub_worker_install.py current
