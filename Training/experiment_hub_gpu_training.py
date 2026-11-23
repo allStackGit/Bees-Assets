@@ -87,6 +87,40 @@ def immutable_training_input_budget(free_bytes, desired_bytes, reuse_passes, *,
                       free_bytes - minimum_compute_bytes))
 
 
+def cached_training_compute_dtype(source_dtype, source_bytes, cache_budget,
+                                  reuse_passes, *,
+                                  exact_fp32_consumer=False,
+                                  secondary_cache_budget=None):
+    """Choose reusable FP32 inputs only when all originals fit in VRAM.
+
+    Integer-encoded training observations are often converted to FP32
+    separately by actor and critic every epoch. If both consumers ALWAYS
+    convert integer values to FP32, int8/uint8/int16 values are exactly
+    representable and a preconverted GPU bank removes those repeated cast
+    kernels. Never trade full input-cache coverage for a larger dtype:
+    every byte of the complete converted dataset must fit the primary
+    cache budget, and optionally half the secondary peer-cache budget.
+    """
+    if (type(source_bytes) is not int or source_bytes < 0 or
+            type(cache_budget) is not int or cache_budget < 0 or
+            type(reuse_passes) is not int or reuse_passes < 0 or
+            type(exact_fp32_consumer) is not bool or
+            (secondary_cache_budget is not None and
+             (type(secondary_cache_budget) is not int or
+              secondary_cache_budget < 0))):
+        raise ValueError("Invalid immutable training input dtype budget")
+    if (not exact_fp32_consumer or reuse_passes < 2 or source_bytes == 0 or
+            source_dtype not in (torch.int8,torch.uint8,torch.int16)):
+        return None
+    multiplier = 4 // torch.empty((),dtype=source_dtype).element_size()
+    converted_bytes = source_bytes*multiplier
+    if converted_bytes > cache_budget or (
+            secondary_cache_budget is not None and
+            converted_bytes > secondary_cache_budget//2):
+        return None
+    return torch.float32
+
+
 def training_activation_workspace_budget(free_bytes, *,
                                          max_bytes=4 * 1024**3,
                                          free_fraction=0.16,
