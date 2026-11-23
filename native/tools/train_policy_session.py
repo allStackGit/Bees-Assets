@@ -718,6 +718,21 @@ def verify_evaluation(directory, manifest_sha, source_sha, learner_side, policy_
             )) or
             result.get("rollout_summary_sha256") != file_sha256(summary_path)):
         raise ValueError(f"holdout evaluation does not match its pinned inputs: {directory}")
+    # A completed GPU-labelled receipt must also prove where model forwards
+    # actually occurred. This remains enforced on interrupted-session
+    # recovery: matching requested device strings are insufficient.
+    if inference_device is not None:
+        from evaluate_policy import verified_evaluation_device
+        placement = verified_evaluation_device(
+            result.get("policy_execution"), inference_device,
+        )
+        if inference_device != "cpu" and (
+                placement is None or placement != result.get("verified_inference_placement")):
+            raise ValueError(f"GPU holdout has no matching completed inference attestation: {directory}")
+        if (inference_device == "cpu" and
+                "verified_inference_placement" in result and
+                placement != result["verified_inference_placement"]):
+            raise ValueError(f"CPU holdout inference attestation changed: {directory}")
     # New standalone evaluation receipts carry the same pinned physical
     # dependencies as a training session. Completed holdouts reused after
     # interruption must still refer to that original scene and policy code,
