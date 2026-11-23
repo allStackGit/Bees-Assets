@@ -9,6 +9,7 @@ const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
 const {prepare: prepareImmutableRuntime}=require('./experiment_hub_bees_immutable_runtime');
+const {privateKey,brokerPort}=require('./experiment_hub_bees_wan_identity');
 
 const UUID=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 const SHA=/^[0-9a-f]{64}$/;
@@ -62,6 +63,7 @@ function normalize(parameters,context,approved) {
     const allowed=new Set([
         'max_steps','envs','device','seed','hyperparameters','environment_args',
         'worker_sha256','trainer_sha256','runtime_version','evaluation_profile','evaluation_matches','batch_inference',
+        'wan_actors',
     ]);
     if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
         Object.keys(parameters).some(key=>!allowed.has(key)))
@@ -103,12 +105,16 @@ function normalize(parameters,context,approved) {
     const batching=parameters.batch_inference??true;
     if(typeof batching!=='boolean')
         throw Error('Bees batched cross-worker inference must be a boolean.');
+    const wanActors=parameters.wan_actors??0;
+    if(!Number.isSafeInteger(wanActors)||wanActors<0||wanActors>8||
+        (wanActors>0&&!approved.wan_key_fingerprint))
+        throw Error('Bees native WAN actors require an approved private broker key and 1–8 remote actors.');
     const profile=parameters.evaluation_profile??'off';
     const matches=parameters.evaluation_matches??8;
     if(!['off','scripted-maps-v1','scripted-coverage-v2'].includes(profile)||
         !Number.isSafeInteger(matches)||matches<1||matches>100)
         throw Error('Bees evaluation profile must be off, scripted-maps-v1 or scripted-coverage-v2, with 1–100 matches per scenario.');
-    return {maxSteps,envs,seed,device,profile,matches,batching,
+    return {maxSteps,envs,seed,device,profile,matches,batching,wanActors,
         environmentArgs:envArgs.slice(),hyperparameters:{...overrides}};
 }
 
@@ -137,6 +143,8 @@ const DESIGN_FIELDS=Object.freeze([
         type:'integer',default:3,min:1,max:32},
     {key:'batch_inference',label:'Batch policy inference across Unity environments',
         section:'training',type:'boolean',default:true},
+    {key:'wan_actors',label:'Remote WAN simulation actor machines',
+        section:'environment',type:'integer',default:0,min:0,max:8},
     {key:'evaluation_profile',label:'Post-training evaluation profile',section:'training',
         type:'enum',default:'off',options:['off','scripted-maps-v1','scripted-coverage-v2']},
     {key:'evaluation_matches',label:'Matches per evaluation scenario',section:'training',
@@ -161,7 +169,8 @@ const METRICS=Object.freeze(['training_steps','elapsed_training_seconds',
     ]),
     'evaluation_score_rate_pursuit','evaluation_score_rate_strafe']);
 
-function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifactRoot}) {
+function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifactRoot,
+    wanKeyPath=null,wanBrokerPort=55051}) {
     if(process.platform!=='linux')
         throw Error('The first native Bees Unity training adapter requires the Linux ROCm supervisor.');
     const project=fs.realpathSync(projectRoot);
@@ -197,7 +206,10 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         {cwd:project,timeout:20000,encoding:'utf8',windowsHide:true,maxBuffer:16384});
     if(probe.error||probe.status!==0)
         throw Error('Bees native adapter requires an installed Python 3.10 ML-Agents 1.1.0 learner with PyTorch and TensorBoard.');
+    const key=wanKeyPath?privateKey(wanKeyPath):null;
+    const port=brokerPort(wanBrokerPort);
     const approved={
+        ...(key?{wan_key_fingerprint:key.fingerprint}:{}),
         worker_sha256:fileHash(worker),
         runtime_version:pinned.runtimeVersion,
         trainer_sha256:fileHash(trainer),
@@ -312,8 +324,11 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             const parent=continuation(context,frozen);
             const root=jobPath(artifacts,context);
             fs.mkdirSync(root,{mode:0o700});
+            const wan=frozen.wanActors>0;
+            if(wan&&privateKey(key.path).fingerprint!==key.fingerprint)
+                throw Error('Bees WAN private key changed after trusted adapter enrollment.');
             const job={
-                schema_version:2,job_id:context.job_id,
+                schema_version:wan?3:2,job_id:context.job_id,
                 lineage_root_id:context.artifact_lineage_root_id,
                 continuation_of_job_id:parent.parent_id,
                 expected_parent_model_sha256:parent.model_sha256,
@@ -327,6 +342,10 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 hyperparameters:frozen.hyperparameters,
                 environment_args:frozen.environmentArgs,
                 expected_gpu_pci:context.gpu_pci_address??null,
+                ...(wan?{wan_actors:frozen.wanActors,
+                    wan_broker_port:port,
+                    wan_key_file:key.path,
+                    wan_key_fingerprint:key.fingerprint}:{}),
                 evaluation_profile:frozen.profile,
                 evaluation_matches:frozen.matches,
                 batch_inference:frozen.batching,
