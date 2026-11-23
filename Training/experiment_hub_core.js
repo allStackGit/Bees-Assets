@@ -241,8 +241,8 @@ function boundedReport(value) {
         curriculumStages.some(stage=>!knownStages.includes(stage))||
         new Set(curriculumStages).size!==curriculumStages.length||
         (curriculumStages.length&&
-            (value.platform!=='linux'||!Object.keys(profiles).length)))
-        throw Error('TinyBrains curriculum stages require an approved native Linux runner.');
+            (!['linux','win32'].includes(value.platform)||!Object.keys(profiles).length)))
+        throw Error('TinyBrains curriculum stages require an approved native training runner.');
     const cpuFallback=value.tinybrains_cpu_fallback_profiles??[];
     if(!Array.isArray(cpuFallback)||cpuFallback.length>cudaProfiles.length||
         cpuFallback.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
@@ -6775,6 +6775,7 @@ class ExperimentHub {
             !supportsTinyBrainsProfile(learner,{
                 project_id:'tinybrains',resources:learnerBudget,
                 frozen_parameters:{...config.parameters,
+                    training_stage:config.parameters.training_stage??'full_multiplayer',
                     device:tinyBrainsDeviceForLease(config.parameters,learnerBudget),
                     rollout_endpoints:[endpoint]},
                 continuation_of_job_id:value.learner.continuation_of_job_id??null,
@@ -6951,6 +6952,7 @@ class ExperimentHub {
             (resources.gpu_count>0&&!learnerMachine.gpu_projects?.includes('tinybrains'))||
             !supportsTinyBrainsProfile(learnerMachine,{
                 project_id:'tinybrains',frozen_parameters:{...parameters,
+                    training_stage:parameters.training_stage??'full_multiplayer',
                     device:tinyBrainsDeviceForLease(parameters,resources),
                     ...(byMachine?{rollout_endpoints:endpoints}:{})},
                 resources,
@@ -7669,6 +7671,12 @@ class ExperimentHub {
         // Freeze the exact input and resources. No executable, shell snippet,
         // directory, or process arguments can be supplied in the job request.
         const frozen = config(selected.parameters);
+        // New TinyBrains jobs must freeze the complete map/player-count stage.
+        // Older saved designs omitted it and silently inherited basic-tiny-2p
+        // from their checkpoints, even when the run was labeled Full Maps.
+        // The operator can still explicitly select a narrower stage.
+        if(project.id==='tinybrains'&&!Object.hasOwn(frozen,'training_stage'))
+            frozen.training_stage='full_multiplayer';
         requireCourierTrainingPin(project.id,frozen);
         const resources = resourceRequest(value.resources);
         const runName=value.run_name==null||value.run_name===''
