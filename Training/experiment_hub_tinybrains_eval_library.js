@@ -14,7 +14,7 @@ const MIX=/^tinybrains_mix_([a-f0-9]{20})_v([1-9][0-9]*)$/;
 const HISTORY=/^tinybrains_mini_[a-f0-9]{20}$/;
 const STAGES=new Set(['basic_tiny','tiny_two_player','small_two_player',
     'all_two_player','full_multiplayer']);
-const MODES=new Set(['configuration','all_77','season_76']);
+const MODES=new Set(['configuration','all_77','season_76','custom']);
 const CATALOG='mixed-evaluations-catalog.json';
 
 function label(value,what='Name') {
@@ -141,10 +141,17 @@ function boards(o) {
         throw Error('Installed season maps have changed.');
     return mapIds;
 }
-function mapsForStage(o,stage,mode) {
+function mapsForStage(o,stage,mode,selectedMaps) {
     const all=['basic-tiny-2p',...boards(o)];
     if(mode==='season_76')return all.slice(1);
     if(mode==='all_77')return all;
+    if(mode==='custom') {
+        if(!Array.isArray(selectedMaps)||!selectedMaps.length||selectedMaps.length>77||
+            selectedMaps.some(id=>typeof id!=='string'||!all.includes(id))||
+            new Set(selectedMaps).size!==selectedMaps.length)
+            throw Error('Choose 1–77 distinct installed evaluation maps.');
+        return all.filter(id=>selectedMaps.includes(id));
+    }
     const two=id=>id==='basic-tiny-2p'||/-2p(?:-|$)/.test(id);
     const tiny=id=>id==='basic-tiny-2p'||/^tiny(?:wide)?-/.test(id);
     const small=id=>tiny(id)||/^small(?:wide)?-/.test(id);
@@ -175,7 +182,7 @@ function saveEvaluation(o,hub,value) {
     if(!value||typeof value!=='object'||Array.isArray(value)||
         Object.keys(value).some(key=>!['action','confirm_action','id',
             'expected_revision','name','configuration_id','configuration_revision',
-            'map_mode','max_turns','seeds','rotations','opponent_ids'].includes(key)))
+            'map_mode','map_ids','max_turns','seeds','rotations','opponent_ids'].includes(key)))
         throw Error('Unexpected custom evaluation fields.');
     const name=label(value.name,'Evaluation name');
     if(!UUID.test(String(value.configuration_id||''))||
@@ -197,7 +204,7 @@ function saveEvaluation(o,hub,value) {
     const turns=value.max_turns??environment.max_turns;
     if(!Number.isSafeInteger(turns)||turns<1||turns>1000)
         throw Error('Evaluation max turns must be a whole number from 1 to 1000.');
-    const maps=mapsForStage(o,environment.stage,value.map_mode);
+    const maps=mapsForStage(o,environment.stage,value.map_mode,value.map_ids);
     if(!maps.length)
         throw Error('The selected training environment contains no approved maps.');
     const catalog=read(o),available=new Map(
@@ -251,7 +258,9 @@ function saveEvaluation(o,hub,value) {
     fs.writeFileSync(file,raw,{flag:'wx',mode:0o600});
     const record={id,revision,name,suite_id:suiteId,
         configuration_id:config.id,configuration_revision:config.revision,
-        map_mode:value.map_mode,max_turns:turns,seeds:value.seeds,
+        map_mode:value.map_mode,
+        ...(value.map_mode==='custom'?{map_ids:maps}:{}),
+        max_turns:turns,seeds:value.seeds,
         rotations:value.rotations,opponent_ids:value.opponent_ids,
         games,created_at:current?.created_at||new Date().toISOString(),
         updated_at:new Date().toISOString()};
@@ -309,6 +318,7 @@ function library(o,hub) {
     return {templates:read(o).templates,
         opponents:availableOpponents(o).map(({id,label,source_job_id,checkpoint_sha256})=>
             ({id,label,source_job_id,checkpoint_sha256})),
-        configurations:candidates(hub)};
+        configurations:candidates(hub),
+        maps:['basic-tiny-2p',...boards(o)]};
 }
 module.exports={read,library,customSuites,saveEvaluation,deleteEvaluation,nameOpponent};
