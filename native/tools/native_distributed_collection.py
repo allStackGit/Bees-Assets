@@ -586,7 +586,7 @@ def verify_bundle(path, job, orders):
     count = receipt.get("leased_gpu_count", 1) if receipt.get("leased_gpu_inference") else None
     if receipt.get("leased_gpu_inference"):
         # Previous single-device receipts predate the explicit count field.
-        # Only dual leases require its recorded identity and PCI evidence.
+        # Dual leases require actual physical GPU identity and completed work.
         if (type(count) is not int or count not in (1, 2) or
                 count > receipt["rollout_processes"]):
             raise ValueError(f"GPU collector declared an impossible leased-device count: {path}")
@@ -594,15 +594,34 @@ def verify_bundle(path, job, orders):
         raise ValueError(f"collector supplied a GPU device count without a verified lease: {path}")
     if receipt.get("gpu_allocation") is not None or receipt.get("leased_gpu_inference"):
         proof = metrics.get("gpu_inference")
-        if count == 2 and (
-                not isinstance(proof, dict) or
-                not isinstance(proof.get("gpu_pci_addresses"), list) or
-                len(proof["gpu_pci_addresses"]) != 2 or
-                len(set(proof["gpu_pci_addresses"])) != 2 or
-                any(not isinstance(pci, str) or
-                    re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", pci) is None
-                    for pci in proof["gpu_pci_addresses"])):
-            raise ValueError(f"GPU collector did not verify both physical HIP devices: {path}")
+        if count == 2:
+            if not isinstance(proof, dict):
+                raise ValueError(f"dual-GPU collection has no physical execution proof: {path}")
+            identities = proof.get("gpu_device_identities")
+            pci_addresses = proof.get("gpu_pci_addresses")
+            # Old, already completed ROCm receipts recorded real PCI
+            # addresses before common physical CUDA/HIP identities existed.
+            # Accept those exact PCI proofs, never requested GPU ordinals.
+            if identities is None and isinstance(pci_addresses, list):
+                identities = [f"hip_pci:{pci}" for pci in pci_addresses
+                              if isinstance(pci, str)]
+            pci_pattern = r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]"
+            uuid_pattern = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
+            def valid_identity(value):
+                if not isinstance(value, str):
+                    return False
+                if value.startswith(("hip_pci:", "cuda_pci:")):
+                    return re.fullmatch(pci_pattern, value.split(":", 1)[1]) is not None
+                if value.startswith("cuda_uuid:"):
+                    return re.fullmatch(uuid_pattern, value.split(":", 1)[1]) is not None
+                return False
+            if (not isinstance(identities, list) or len(identities) != 2 or
+                    sorted(identities) != identities or
+                    len(set(identities)) != 2 or
+                    not all(valid_identity(item) for item in identities)):
+                raise ValueError(
+                    f"GPU collector did not prove two distinct physical devices: {path}"
+                )
         if (not isinstance(proof, dict) or
                 type(proof.get("verified_workers")) is not int or
                 proof["verified_workers"] != receipt["rollout_processes"] or
@@ -614,10 +633,25 @@ def verify_bundle(path, job, orders):
             raise ValueError(f"GPU collector has no verified model forward evidence: {path}")
     if count == 2:
         device_rows = proof.get("per_device")
-        if (not isinstance(device_rows, list) or len(device_rows) != 2 or
-                [item.get("gpu_pci_address") for item in device_rows
-                 if isinstance(item, dict)] != sorted(proof["gpu_pci_addresses"])):
-            raise ValueError(f"dual-GPU collector did not attribute actual work to both physical devices: {path}")
+        if not isinstance(device_rows, list) or len(device_rows) != 2:
+            raise ValueError(f"dual-GPU collector has no complete physical work attribution: {path}")
+        device_ids = [
+            row.get("gpu_device_identity",
+                    "hip_pci:" + row["gpu_pci_address"]
+                    if isinstance(row, dict) and
+                        isinstance(row.get("gpu_pci_address"), str) else None)
+            if isinstance(row, dict) else None
+            for row in device_rows
+        ]
+        if device_ids != identities:
+            raise ValueError(
+                f"dual-GPU collector work does not match its physically attested devices: {path}"
+            )
+        pci_rows = sorted(row["gpu_pci_address"] for row in device_rows
+                          if "gpu_pci_address" in row)
+        if (proof.get("gpu_pci_addresses") is not None and
+                proof["gpu_pci_addresses"] != pci_rows):
+            raise ValueError(f"dual-GPU collector PCI work attribution differs from proof: {path}")
         for row in device_rows:
             if any(type(row.get(key)) is not int or row[key] <= 0
                    for key in ("rollout_processes", "model_forwards",
