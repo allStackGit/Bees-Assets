@@ -285,6 +285,15 @@ internal static class NativePhysicalSceneExporter
     }
 
     [Serializable]
+    private sealed class SourceCollisionAsteroidTimer
+    {
+        // The source Level samples ONE interval once and repeats it.
+        // Minimum is inclusive and maximum exclusive, exactly matching
+        // the existing native NativeCollisionAsteroidTimerSpec.
+        public float minimum_seconds, maximum_seconds;
+    }
+
+    [Serializable]
     private sealed class SourceCombatActivity
     {
         public bool enabled, active;
@@ -330,6 +339,10 @@ internal static class NativePhysicalSceneExporter
         public bool has_policy_episode;
         public SourcePolicyEpisode policy_episode = new SourcePolicyEpisode();
         public Vector2 min, max;
+        // The original source's Map dimensions, not an estimate inferred
+        // from a camera viewport or the ship confinement bounds.
+        public Vector2 half_map_extents;
+        public SourceCollisionAsteroidTimer collision_asteroid_timer;
         // Source Level.StartingPositions[Side-1] for a squad returning
         // in bounds before requesting its next HiveMind target.
         public Vector2[] starting_positions;
@@ -383,6 +396,7 @@ internal static class NativePhysicalSceneExporter
             !IsFinite(level.MinX) || !IsFinite(level.MaxX) ||
             !IsFinite(level.MinY) || !IsFinite(level.MaxY) ||
             level.MinX >= level.MaxX || level.MinY >= level.MaxY ||
+            level.HalfMapWidth <= 0 || level.HalfMapHeight <= 0 ||
             !IsFinite(level.Stage.FixedDeltaTime) ||
             level.Stage.FixedDeltaTime <= 0 ||
             !IsFinite(level.Stage.TimeScale) ||
@@ -447,6 +461,8 @@ internal static class NativePhysicalSceneExporter
             beehive_size_pixels = ConfigData.ShipSizes[ConfigData.ShipTypes.Beehive],
             min = new Vector2(level.MinX, level.MinY),
             max = new Vector2(level.MaxX, level.MaxY),
+            half_map_extents = new Vector2(level.HalfMapWidth, level.HalfMapHeight),
+            collision_asteroid_timer = CaptureCollisionAsteroidTimer(level),
             starting_positions = (Vector2[])level.StartingPositions.Clone(),
             original_squad_counts = (int[])level.State.OriginalSquadCounts.Clone(),
             navigation_map_width = level.MapWidth,
@@ -908,6 +924,44 @@ internal static class NativePhysicalSceneExporter
             File.WriteAllText(path, bytes, new UTF8Encoding(false));
         }
         Debug.Log("Exported native physical Level source: " + path);
+    }
+
+    private static SourceCollisionAsteroidTimer CaptureCollisionAsteroidTimer(Level level)
+    {
+        if (!level.ActivateCollisionAsteroids)
+            return null;
+        if (RlOneVsOneTrainingBootstrap.IsActiveFor(level.Stage))
+        {
+            float seconds = RlOneVsOneTrainingBootstrap.CurrentCollisionAsteroidSpawnSeconds;
+            return seconds > 0f && IsFinite(seconds)
+                ? new SourceCollisionAsteroidTimer {
+                    minimum_seconds = seconds, maximum_seconds = seconds
+                } : null;
+        }
+
+        // Mirror the ORIGINAL Level.Environment initial timer setup:
+        // LevelOptions 2 and 3 change spawn cadence, not asteroid physics.
+        // Unity's RandomInt receives an exclusive upper range and the
+        // timer reuses its first sampled interval for every later spawn.
+        if (level.CurrentLevelOptions == null)
+            throw new InvalidOperationException(
+                "Cannot export original asteroid cadence without LevelOptions.");
+        int minimum = Math.Max(1, level.Stage.AsteroidMinimumSpawnRate);
+        int maximum = Math.Max(minimum, level.Stage.AsteroidMaxSpawnRate);
+        if (level.CurrentLevelOptions.AsteroidOption == 2)
+        {
+            minimum = Math.Max(1, minimum / 2);
+            maximum = Math.Max(minimum, maximum / 2);
+        }
+        else if (level.CurrentLevelOptions.AsteroidOption == 3)
+        {
+            minimum = 1;
+            maximum = Math.Max(minimum, maximum / 2);
+        }
+        int span = Math.Max(1, maximum - minimum);
+        return new SourceCollisionAsteroidTimer {
+            minimum_seconds = minimum, maximum_seconds = (float)minimum + span,
+        };
     }
 
     private static bool IsLivePhysicalObstacle(Obstacle obstacle)
