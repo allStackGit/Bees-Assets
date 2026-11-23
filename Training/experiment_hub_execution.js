@@ -429,7 +429,25 @@ function fromEnvironment(env=process.env,options={}) {
         throw Error('Specify absolute local adapter module and supervisor state directory.');
     // This module path is chosen by the machine administrator in local
     // environment configuration, never by the Hub, a job or a heartbeat.
-    const adapters=(options.loadAdapters||require)(adapterFile);
+    let adapters=(options.loadAdapters||require)(adapterFile);
+    // Add Bees Unity to a machine's existing trusted adapter map without
+    // replacing its TinyBrains/Courier owners or their approved profiles.
+    // The optional roles are chosen only in the machine-local environment;
+    // no Hub job can provide a module path or install a new adapter.
+    if(env.EXPERIMENT_HUB_BEES_ADDON_ROLES!==undefined) {
+        const roles=env.EXPERIMENT_HUB_BEES_ADDON_ROLES.split(',');
+        if(!roles.length||roles.length>2||
+            roles.some(role=>!['bees_native','bees_rollout'].includes(role))||
+            new Set(roles).size!==roles.length)
+            throw Error('Bees additive adapters must select one or both approved Unity roles.');
+        const addon=(options.loadBeesAdapters||require)('./experiment_hub_worker_adapters');
+        if(!addon||typeof addon!=='object'||Array.isArray(addon)||
+            Object.keys(addon).length!==roles.length||
+            roles.some(role=>!Object.hasOwn(addon,role))||
+            adapters&&roles.some(role=>Object.hasOwn(adapters,role)))
+            throw Error('Bees Unity additive adapter roles conflict with the installed machine adapters.');
+        adapters={...adapters,...addon};
+    }
     if(!adapters||typeof adapters!=='object'||Array.isArray(adapters)||
         Object.entries(adapters).some(([project,adapter])=>
             !ID.test(project)||project==='bees'||
