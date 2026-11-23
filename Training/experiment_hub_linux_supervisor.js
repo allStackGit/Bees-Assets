@@ -234,6 +234,40 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         gpu:cpuOnly?null:{...(single?{binding}:{}),
             bindings:bindings.slice(),...runtimeProof}};
 }
+function sharedGpuAdmission(records, gpuPlan, requested, knownVramMb) {
+    // The coordinator has issued a physical GPU lease, but a native
+    // supervisor must re-check its own durable process ownership before
+    // starting another systemd unit. Old/unknown native GPU records are
+    // exclusive: an absent explicit shared budget cannot authorize overlap.
+    const requestedPcis=new Set(gpuPlan?.selected?.map(g=>g.pci_address)||[]);
+    const coTenants=records.filter(record=>
+        !['finished','stopped','failed'].includes(record.state)&&
+        (record.gpu_pci_addresses||(
+            record.gpu_pci_address?[record.gpu_pci_address]:[]))
+            .some(pci=>requestedPcis.has(pci)));
+    if(!coTenants.length)return {peers:0,compute_pct:0,vram_mb:0};
+    if(!gpuPlan||gpuPlan.selected.length!==1||
+        requested?.gpu_mode!=='shared'||
+        !Number.isSafeInteger(requested.gpu_vram_mb)||requested.gpu_vram_mb<1||
+        !Number.isSafeInteger(requested.gpu_compute_pct)||
+        requested.gpu_compute_pct<1||requested.gpu_compute_pct>100||
+        !Number.isSafeInteger(knownVramMb)||knownVramMb<1)
+        throw Error('Native GPU is already owned; exclusive or unverified sharing is not permitted.');
+    const pci=gpuPlan.selected[0].pci_address;
+    let vram=requested.gpu_vram_mb, compute=requested.gpu_compute_pct;
+    for(const record of coTenants) {
+        if(record.gpu_mode!=='shared'||record.gpu_pci_address!==pci||
+            !Number.isSafeInteger(record.gpu_vram_mb)||record.gpu_vram_mb<1||
+            !Number.isSafeInteger(record.gpu_compute_pct)||
+            record.gpu_compute_pct<1||record.gpu_compute_pct>100)
+            throw Error('A colliding native GPU owner does not have an explicit verified cooperative budget.');
+        vram+=record.gpu_vram_mb;
+        compute+=record.gpu_compute_pct;
+    }
+    if(vram>knownVramMb||compute>100)
+        throw Error('Native GPU co-tenant reservations exceed available VRAM or compute capacity.');
+    return {peers:coTenants.length,compute_pct:compute,vram_mb:vram};
+}
 function verifyUnconfinedDeviceAccess(plan,fsApi) {
     for(const device of [plan.kfd,...plan.selected,...plan.unselected]) {
         let fd;
@@ -893,15 +927,11 @@ class LinuxSupervisor {
         const availableRam=availableMemoryMb(this.hostOs,this.fs);
         const ramBlock=startHeadroom(job.resources,availableRam);
         if(ramBlock)throw Error(ramBlock);
-        const selectedPcis=new Set(gpuPlan?.selected.map(g=>g.pci_address)||[]);
-        if(gpuPlan&&(
-            this.gpuProbeCleanupPending()||
-            this.state.records.some(record=>
-                !['finished','stopped','failed'].includes(record.state)&&
-                (record.gpu_pci_addresses||(
-                    record.gpu_pci_address?[record.gpu_pci_address]:[]))
-                    .some(pci=>selectedPcis.has(pci)))))
-            throw Error('GPU launch requires unambiguous exclusive PCI ownership and completed device qualification.');
+        if(gpuPlan&&this.gpuProbeCleanupPending())
+            throw Error('GPU launch requires completed device qualification.');
+        if(gpuPlan)
+            sharedGpuAdmission(this.state.records,gpuPlan,job.resources,
+                Math.min(...invocation.gpu.bindings.map(binding=>binding.vram_mb)));
         if(gpuPlan)verifyUnconfinedDeviceAccess(gpuPlan,this.fs);
         if(gpuPlan) {
             const physical=discoverAmdGpus({fsApi:this.fs}).find(device=>
@@ -914,6 +944,15 @@ class LinuxSupervisor {
             ...(gpuPlan?(gpuPlan.selected.length===1
                 ?{gpu_pci_address:gpuPlan.selected[0].pci_address}
                 :{gpu_pci_addresses:gpuPlan.selected.map(g=>g.pci_address)}):{}),
+            // Persist cooperative GPU ownership just like CPU/RAM limits.
+            // After an agent restart, another launch may share this PCI
+            // device only when every active ledger record attests its
+            // own exact VRAM and compute fraction.
+            ...(gpuPlan&&job.resources.gpu_mode==='shared'
+                ?{gpu_mode:'shared',
+                    gpu_vram_mb:job.resources.gpu_vram_mb,
+                    gpu_compute_pct:job.resources.gpu_compute_pct}
+                :{}),
             continuation_of_job_id:job.continuation_of_job_id||null,
             artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
             unit:unitFor(job.id),state:'launch_requested',
