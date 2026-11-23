@@ -116,6 +116,15 @@ struct WireCounts {
     reconnect_transports_opened: u64,
     heartbeat_pings_sent: u64,
     heartbeat_pongs_received: u64,
+    /// Client monotonic RTT from authenticated ping submission through
+    /// matching pong. Unlike input acknowledgments this excludes gameplay
+    /// validation and durable input checkpoint latency.
+    heartbeat_rtt_samples: u64,
+    heartbeat_rtt_sum_seconds: f64,
+    heartbeat_rtt_max_seconds: f64,
+    /// Absolute change between consecutive completed RTT measurements.
+    heartbeat_rtt_jitter_sum_seconds: f64,
+    heartbeat_rtt_jitter_samples: u64,
     heartbeat_timeouts: u64,
     handshake_timeouts: u64,
     /// Render-only smoothing; no simulation or network side-effects.
@@ -581,6 +590,7 @@ struct PeerClient {
     last_heartbeat_sent: Instant,
     next_heartbeat_nonce: u64,
     heartbeat_pending: Option<(u64, Instant)>,
+    last_heartbeat_rtt: Option<f64>,
     /// Only pending INPUT order IDs are timed. A FIFO permits amortized
     /// constant-time reconciliation with host's ordered response sequence.
     pending_order_times: VecDeque<(u64, Instant)>,
@@ -701,6 +711,7 @@ impl PeerClient {
             connected_at: Instant::now(),
             last_heartbeat_sent: Instant::now(),
             next_heartbeat_nonce: 0, heartbeat_pending: None,
+            last_heartbeat_rtt: None,
             pending_order_times: VecDeque::new(),
             briefing_pending: None, briefing_approved: None, fleet_practice_pending: None,
             briefing_rejected: None,
@@ -830,7 +841,18 @@ impl PeerClient {
                     {
                         return Err(invalid("unexpected native host heartbeat").into());
                     }
-                    self.heartbeat_pending=None;
+                    let (_, sent_at) = self.heartbeat_pending.take()
+                        .expect("authenticated pong has matched outstanding nonce");
+                    let rtt = sent_at.elapsed().as_secs_f64();
+                    self.metrics.heartbeat_rtt_samples += 1;
+                    self.metrics.heartbeat_rtt_sum_seconds += rtt;
+                    self.metrics.heartbeat_rtt_max_seconds =
+                        self.metrics.heartbeat_rtt_max_seconds.max(rtt);
+                    if let Some(previous) = self.last_heartbeat_rtt {
+                        self.metrics.heartbeat_rtt_jitter_samples += 1;
+                        self.metrics.heartbeat_rtt_jitter_sum_seconds += (rtt - previous).abs();
+                    }
+                    self.last_heartbeat_rtt = Some(rtt);
                     self.metrics.heartbeat_pongs_received+=1;
                 }
                 Some("world_state") => {
@@ -5777,6 +5799,14 @@ pub fn connect_remote_with_trust(
                 format!("{:.1}",peer.metrics.order_ack_latency_sum_seconds*1000.0/
                     peer.metrics.order_ack_latency_samples as f64)
             } else {"n/a".to_owned()};
+            let rtt=if peer.metrics.heartbeat_rtt_samples>0 {
+                format!("{:.1}",peer.metrics.heartbeat_rtt_sum_seconds*1000.0/
+                    peer.metrics.heartbeat_rtt_samples as f64)
+            } else {"n/a".to_owned()};
+            let jitter=if peer.metrics.heartbeat_rtt_jitter_samples>0 {
+                format!("{:.1}",peer.metrics.heartbeat_rtt_jitter_sum_seconds*1000.0/
+                    peer.metrics.heartbeat_rtt_jitter_samples as f64)
+            } else {"n/a".to_owned()};
             let lines=[
                 format!("F8 metrics | {:.1} FPS | {:.1} KiB/s",frames/uptime,
                     peer.metrics.bytes_received as f64/1024.0/uptime),
@@ -5787,6 +5817,7 @@ pub fn connect_remote_with_trust(
                 format!("Network poll {:.2} ms | order ack {} ms | pending {}",
                     peer.metrics.network_poll_seconds*1000.0/polls,latency,
                     peer.pending_order_times.len()),
+                format!("Network RTT {} ms | RTT variation {} ms", rtt, jitter),
             ];
             for (index,line) in lines.iter().enumerate() {
                 text::draw_at(&mut pixels,WIDTH,12,14+index*16,
@@ -5944,6 +5975,16 @@ pub fn connect_remote_with_trust(
         "reconnect_transports_opened":peer.metrics.reconnect_transports_opened,
         "heartbeat_pings_sent":peer.metrics.heartbeat_pings_sent,
         "heartbeat_pongs_received":peer.metrics.heartbeat_pongs_received,
+        "heartbeat_rtt_samples":peer.metrics.heartbeat_rtt_samples,
+        "heartbeat_rtt_mean_milliseconds":if peer.metrics.heartbeat_rtt_samples>0 {
+            Some(peer.metrics.heartbeat_rtt_sum_seconds*1000.0/
+                peer.metrics.heartbeat_rtt_samples as f64)
+        } else {None},
+        "heartbeat_rtt_max_milliseconds":peer.metrics.heartbeat_rtt_max_seconds*1000.0,
+        "heartbeat_rtt_variation_mean_milliseconds":if peer.metrics.heartbeat_rtt_jitter_samples>0 {
+            Some(peer.metrics.heartbeat_rtt_jitter_sum_seconds*1000.0/
+                peer.metrics.heartbeat_rtt_jitter_samples as f64)
+        } else {None},
         "heartbeat_timeouts":peer.metrics.heartbeat_timeouts,
         "handshake_timeouts":peer.metrics.handshake_timeouts,
         "connection_closed":!peer.connected,
