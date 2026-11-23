@@ -355,6 +355,16 @@ async function main() {
         !['finished','failed','stopped'].includes(entry.state)));
     const poll=async(expedite=false)=>{
         if(stopping)return;
+        if(executor) {
+            // Suite setup is independent of the long-lived agent process.
+            // The adapter checks local immutable approvals, not Hub requests.
+            try {
+                advertisement.evaluation_suites=executor.refreshEvaluationSuites();
+            }catch(error) {
+                console.error('[experiment-hub-agent] Evaluation capabilities: '+
+                    String(error.message||error).slice(0,180));
+            }
+        }
         if(active) {
             if(executingNative&&!busyHeartbeat) {
                 // The existing interval must maintain machine liveness while
