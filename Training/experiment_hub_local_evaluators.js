@@ -752,6 +752,14 @@ async function freezeCheckpointOpponent(hub,candidateId,opponentName) {
     if(known) {
         if(known.checkpoint_sha256!==expected)
             throw Error('Saved frozen model ID differs from the selected checkpoint.');
+        const retained=path.join(o.suites,'opponents',id,'checkpoint.pt');
+        if(!fs.existsSync(retained)) {
+            fs.copyFileSync(input,retained,fs.constants.COPYFILE_EXCL);
+            fs.chmodSync(retained,0o600);
+        }
+        if(crypto.createHash('sha256').update(fs.readFileSync(retained))
+            .digest('hex')!==expected)
+            throw Error('Retained training opponent checkpoint differs from the frozen model.');
         return custom.registerFrozenOpponent(o,{...known,label:opponentName});
     }
     const root=privateDirectory(path.join(o.suites,'opponents'),true);
@@ -800,8 +808,16 @@ async function freezeCheckpointOpponent(hub,candidateId,opponentName) {
             fs.renameSync(prepared,destination);
             prepared=null;
         }
-        if(crypto.createHash('sha256').update(fs.readFileSync(input)).digest('hex')!==expected)
-            throw Error('Source checkpoint changed after the frozen export.');
+        const retained=path.join(destination,'checkpoint.pt');
+        if(!fs.existsSync(retained)) {
+            fs.copyFileSync(input,retained,fs.constants.COPYFILE_EXCL);
+            fs.chmodSync(retained,0o600);
+        }
+        if(crypto.createHash('sha256').update(fs.readFileSync(retained))
+            .digest('hex')!==expected||
+            crypto.createHash('sha256').update(fs.readFileSync(input))
+                .digest('hex')!==expected)
+            throw Error('Frozen source checkpoint changed or retained copy differs.');
         return custom.registerFrozenOpponent(o,{
             id,label:opponentName,
             source_job_id:source.job_id,source_file:source.file,
