@@ -14,8 +14,11 @@ collection, stale-actor leases, and capacity diagnostics.
 from __future__ import annotations
 
 import collections
+import json
 import math
 import os
+from pathlib import Path
+import secrets
 import queue
 import time
 from dataclasses import dataclass
@@ -553,6 +556,7 @@ class ElasticWanBroker(base.WanActorBroker):
         self._learning_team_epoch = 0
         self._pipeline_snapshot: Dict[str, int] = {}
         self._last_pipeline_report = 0.0
+        self._last_hub_wan_report = 0.0
         self._trainer_step = 0
         self._optimizer_busy_seconds_total = 0.0
         self._fair_drain_cursor = 0
@@ -1448,6 +1452,54 @@ class ElasticWanBroker(base.WanActorBroker):
                 if changed:
                     self._condition.notify_all()
 
+    def _write_hub_wan_snapshot(self, active: Mapping[int, int]) -> None:
+        """Publish bounded observational broker evidence for the native Hub.
+
+        The broker owns this data and a private job directory; it never
+        accepts a checkpoint, session authority or command from the reader.
+        Non-Hub trainer sessions are unchanged unless explicitly configured.
+        """
+        raw_path = os.environ.get("BEES_HUB_WAN_STATUS_PATH", "")
+        job_id = os.environ.get("BEES_HUB_WAN_JOB_ID", "")
+        if not raw_path or not job_id:
+            return
+        current = time.monotonic()
+        if current - self._last_hub_wan_report < 10:
+            return
+        self._last_hub_wan_report = current
+        target = Path(raw_path)
+        if not target.is_absolute() or target.name != "wan-status.json" or (
+            target.parent.is_symlink() or not target.parent.is_dir() or
+            target.parent.stat().st_mode & 0o077
+        ):
+            raise RuntimeError("Managed Bees WAN telemetry needs a private real job directory.")
+        remote_sps = self.diagnostics.remote_rate(current)
+        trainer_sps = self.diagnostics.trainer_rate(current)
+        backpressure_recent, _ = self.diagnostics.backpressure_recent(current)
+        value = {
+            "schema_version": 1,
+            "job_id": job_id,
+            "reported_at_unix_ms": int(time.time() * 1000),
+            "active_actors": len(active),
+            "active_environments": sum(active.values()),
+            "remote_steps_per_second": remote_sps,
+            "trainer_steps_per_second": trainer_sps or 0.0,
+            "trajectory_queue_batches": self._trajectory_batches.qsize(),
+            "trajectory_queue_capacity": self.options.max_queued_batches,
+            "backpressure_last_minute": backpressure_recent,
+        }
+        raw = json.dumps(value, separators=(",", ":"), allow_nan=False)
+        if len(raw) > 2048:
+            raise RuntimeError("Bees WAN broker status record exceeded its bound.")
+        pending = target.parent / ("wan-status." + secrets.token_hex(8) + ".tmp")
+        try:
+            with pending.open("x", encoding="utf-8") as stream:
+                os.chmod(pending, 0o600)
+                stream.write(raw + "\n")
+            os.replace(pending, target)
+        finally:
+            pending.unlink(missing_ok=True)
+
     def report_capacity(self) -> None:
         with self._condition:
             active = self._active_snapshot_locked()
@@ -1458,6 +1510,7 @@ class ElasticWanBroker(base.WanActorBroker):
             self._trajectory_batches.qsize(),
             self.options.max_queued_batches,
         )
+        self._write_hub_wan_snapshot(active)
         now = time.monotonic()
         if now - self._last_pipeline_report >= DIAGNOSTIC_INTERVAL_SECONDS:
             self._last_pipeline_report = now
