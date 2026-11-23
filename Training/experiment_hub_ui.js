@@ -4946,7 +4946,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('hub-local-services-status',event=>{
         const library=event.detail?.evaluators?.custom_library;
         savedLocalEvaluationSuites=new Map(
-            project!=='tinybrains'||!Array.isArray(library?.templates)?[]:
+            !Array.isArray(library?.templates)?[]:
                 library.templates.filter(item=>
                     /^tinybrains_mix_[a-f0-9]{20}_v[1-9][0-9]*$/.test(
                         String(item.suite_id||''))&&
