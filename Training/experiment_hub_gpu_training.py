@@ -330,6 +330,8 @@ class ImmutableGpuRowCache:
         self.admitted_buffers = 0
         self.oom_evictions = 0
         self.contiguous_view_hits = 0
+        self.partial_hits = 0
+        self.partial_bytes_saved = 0
 
     @staticmethod
     def _contiguous_cached_view(views):
@@ -379,6 +381,56 @@ class ImmutableGpuRowCache:
                 self.hits += len(keys)
                 self.bytes_saved += boards.numel()*boards.element_size()
                 return result
+        # Most PPO epochs reshuffle the same immutable observations, so
+        # groups frequently contain both previously copied and new rows.
+        # Reassemble on the destination only when the saved peer transfer
+        # is large enough to amortize extra index/cat kernels. Sparse or
+        # tiny batches retain the original direct-copy path.
+        cached = [
+            key in self.rows and
+            self.rows[key].shape[1:] == boards.shape[1:] and
+            self.rows[key].dtype == boards.dtype
+            for key in keys
+        ]
+        hit_indices = [index for index,present in enumerate(cached) if present]
+        missing_indices = [index for index,present in enumerate(cached) if not present]
+        row_bytes = (boards[0].numel()*boards.element_size()
+                     if len(boards) else 0)
+        if (hit_indices and missing_indices and
+                len(hit_indices)*2 >= len(keys) and
+                len(hit_indices)*row_bytes >= 512*1024):
+            try:
+                # One compact source gather and one peer transfer replace
+                # the entire batch's data movement. No Python GPU readback.
+                source_rows = boards.index_select(
+                    0,torch.as_tensor(missing_indices,device=boards.device))
+                fresh = source_rows.to(self.device,non_blocking=True)
+                result = torch.empty(
+                    boards.shape,device=self.device,dtype=boards.dtype)
+                prior = torch.cat(
+                    [self.rows[keys[i]] for i in hit_indices],dim=0)
+                result.index_copy_(
+                    0,torch.as_tensor(hit_indices,device=self.device),prior)
+                result.index_copy_(
+                    0,torch.as_tensor(missing_indices,device=self.device),fresh)
+            except torch.OutOfMemoryError:
+                # This is an optional optimization. Discard cached
+                # residency rather than prevent the required PPO forward.
+                self.oom_evictions += 1
+                self.clear()
+            else:
+                fresh_bytes = fresh.numel()*fresh.element_size()
+                self.copied_bytes += fresh_bytes
+                self.hits += len(hit_indices)
+                self.partial_hits += 1
+                self.bytes_saved += len(hit_indices)*row_bytes
+                self.partial_bytes_saved += len(hit_indices)*row_bytes
+                if self.resident_bytes+fresh_bytes <= self.max_bytes:
+                    for index,key in enumerate(missing_indices):
+                        self.rows[keys[key]] = fresh[index:index+1]
+                    self.resident_bytes += fresh_bytes
+                    self.admitted_buffers += 1
+                return result
         self.misses += 1
         try:
             copied = boards.to(self.device,non_blocking=True)
@@ -415,7 +467,9 @@ class ImmutableGpuRowCache:
             cached_peer_copied_bytes=self.copied_bytes,
             cached_peer_buffer_allocations=self.admitted_buffers,
             cached_peer_oom_evictions=self.oom_evictions,
-            cached_peer_contiguous_view_hits=self.contiguous_view_hits)
+            cached_peer_contiguous_view_hits=self.contiguous_view_hits,
+            cached_peer_partial_hits=self.partial_hits,
+            cached_peer_partial_bytes_saved=self.partial_bytes_saved)
 
 
 class IndependentGpuTraining:
