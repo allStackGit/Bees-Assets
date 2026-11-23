@@ -5778,7 +5778,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 j.assigned_machine_id&&j.dispatch_id&&(
                     (j.status==='finished'&&
                         (j.checkpoint_ready_verified===true||
-                         j.checkpoint_proof_required!==true))||
+                         j.project_id!=='bees_native'&&
+                            j.checkpoint_proof_required!==true))||
                     (j.status==='stopped'&&
                         j.checkpoint_stop_verified===true&&j.capacity_released_at)||
                     ['start_requested','launch_requested','running'].includes(j.status))||
