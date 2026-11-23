@@ -293,5 +293,5 @@ async function evaluatorAction(hub,value) {
 function evaluatorMapReport(hub,id) {
     return localEvaluators.mapReport(hub,id);
 }
-module.exports={status,scheduleRestart,unitStatus,evaluatorAction,
+module.exports={status,scheduleRestart,unitStatus,restartActivity,evaluatorAction,
     evaluatorMapReport,configureTinyBrainsCollectors};
