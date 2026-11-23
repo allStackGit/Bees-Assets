@@ -10,7 +10,7 @@ const {safeLogPath,MAX_CHUNK,MAX_FILE}=
     require('./experiment_hub_artifact_sync');
 const TERMINAL=new Set(['finished','failed','stopped']);
 const MAX_CYCLE=32*1024*1024;
-function filesForJob(folder) {
+function filesForJob(folder,allowBeesCandidate=false) {
     const root=path.resolve(folder);
     const stat=fs.lstatSync(root);
     if(!stat.isDirectory()||stat.isSymbolicLink()||fs.realpathSync(root)!==root)
@@ -27,12 +27,12 @@ function filesForJob(folder) {
             const relative=next.prefix+item.name;
             if(item.isSymbolicLink())continue;
             if(item.isDirectory()&&next.depth<7) {
-                if(safeLogPath(relative+'/ignored.log')&&
+                if(safeLogPath(relative+'/ignored.log',allowBeesCandidate)&&
                     fs.realpathSync(path.join(next.folder,item.name))===
                         path.join(next.folder,item.name))
                     queue.push({folder:path.join(next.folder,item.name),
                         prefix:relative+'/',depth:next.depth+1});
-            }else if(item.isFile()&&safeLogPath(relative))names.push(relative);
+            }else if(item.isFile()&&safeLogPath(relative,allowBeesCandidate))names.push(relative);
             if(names.length>256)throw Error('Job has too many eligible log files.');
         }
     }
@@ -125,7 +125,7 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map()) 
         const root=adapter.artifact_export_dir(record.job_id);
         if(typeof root!=='string'||!path.isAbsolute(root))continue;
         if(!fs.existsSync(root))continue;
-        for(const relative of filesForJob(root)) {
+        for(const relative of filesForJob(root,project==='bees_native')) {
             const file=path.join(root,...relative.split('/'));
             let st;
             try{st=fs.lstatSync(file);}catch{continue;}
