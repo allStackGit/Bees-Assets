@@ -276,12 +276,31 @@ class OnnxPolicy:
                 raise ValueError("ONNX intra_op_threads must be a positive int32")
             options = ort.SessionOptions()
             options.intra_op_num_threads = intra_op_threads
+        device_id = config.get("provider_device_id")
+        gpu_providers = ("CUDAExecutionProvider", "ROCMExecutionProvider")
+        if device_id is not None:
+            if type(device_id) is not int or not 0 <= device_id <= 3:
+                raise ValueError("native ONNX provider device index must be 0..3")
+            providers_with_options = [
+                (provider, {"device_id": str(device_id)})
+                if provider in gpu_providers else provider
+                for provider in providers
+            ]
+        else:
+            providers_with_options = providers
         self.session = ort.InferenceSession(
-            str(model_file), sess_options=options, providers=providers
+            str(model_file), sess_options=options, providers=providers_with_options
         )
-        # Fail rather than silently claiming an unavailable accelerator.
+        # Fail rather than silently claiming an unavailable accelerator,
+        # or reporting GPU N while ONNX Runtime actually selected GPU 0.
         if providers[0] not in self.session.get_providers():
             raise ValueError("requested primary ONNX provider is not available")
+        if device_id is not None:
+            actual_options = self.session.get_provider_options()
+            for provider in providers:
+                if provider in gpu_providers and provider in self.session.get_providers():
+                    if actual_options.get(provider, {}).get("device_id") != str(device_id):
+                        raise ValueError("native ONNX runtime did not bind requested GPU")
         actual_inputs = {item.name: item for item in self.session.get_inputs()}
         actual_outputs = {item.name for item in self.session.get_outputs()}
         if obs_input == mask_input or not {obs_input, mask_input}.issubset(actual_inputs):
@@ -509,13 +528,16 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None,
                 raise ValueError("unsupported native inference device override")
             if backend in ("torchscript", "mlagents"):
                 config = {**config, "device": runtime_device}
-            elif backend == "onnx" and runtime_device == "cpu":
-                # Explicit host-local CPU selection is also valid for a
-                # portable ONNX opponent. Preserve the immutable manifest,
-                # checkpoint digest, input/output ABI and source identity.
-                # No implicit accelerator fallback: GPU jobs retain their
-                # approved provider order and report actual GPU forwards.
-                config = {**config, "providers": ["CPUExecutionProvider"]}
+            elif backend == "onnx":
+                if runtime_device == "cpu":
+                    # Preserve immutable artifact, ABI and model identity;
+                    # explicitly force the portable CPU execution provider.
+                    config = {**config, "providers": ["CPUExecutionProvider"]}
+                elif any(provider in ("CUDAExecutionProvider", "ROCMExecutionProvider")
+                         for provider in config.get("providers", [])):
+                    # ONNX provider choice is manifest-owned. Only its
+                    # runtime GPU ordinal changes; never choose a new backend.
+                    config = {**config, "provider_device_id": int(runtime_device.split(":")[1])}
         settings = {
             key: value for key, value in config.items()
             if key not in ("slot", "path", "sha256")
@@ -916,7 +938,8 @@ def main() -> None:
                 str(slot): (
                     {"device": str(model.device)}
                     if isinstance(model, (TorchScriptPolicy, MlagentsPolicy))
-                    else {"providers": model.session.get_providers()}
+                    else {"providers": model.session.get_providers(),
+                          "provider_options": model.session.get_provider_options()}
                 )
                 for slot, model in policy_map.items()
             },
