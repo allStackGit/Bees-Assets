@@ -8,7 +8,11 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
 
 const MIN_COMPRESS_BYTES: usize = 8 * 1024;
-const MAX_WORLD_BYTES: usize = 4 * 1024 * 1024;
+// Existing network framing remains capped at 4 MiB. Large battles may
+// project more than that before compression, but never decompress beyond
+// a fixed 16 MiB resource ceiling on a client.
+const MAX_WIRE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_WORLD_BYTES: usize = 16 * 1024 * 1024;
 const MIN_SAVINGS_BYTES: usize = 256;
 
 fn invalid(description: &'static str) -> io::Error {
@@ -29,7 +33,8 @@ pub fn compress_world_state(raw: &[u8]) -> Option<Vec<u8>> {
         "kind": "world_state_lz4",
         "payload": payload,
     })).ok()?;
-    (encoded.len() + MIN_SAVINGS_BYTES < raw.len()).then_some(encoded)
+    (encoded.len() + 1 <= MAX_WIRE_BYTES &&
+        encoded.len() + MIN_SAVINGS_BYTES < raw.len()).then_some(encoded)
 }
 
 /// Decode at most one bounded frame. Validate the claimed size BEFORE LZ4
@@ -43,7 +48,7 @@ pub fn decompress_world_state(frame: &Value) -> io::Result<(Value, usize)> {
     }
     let encoded = frame["payload"].as_str()
         .ok_or_else(|| invalid("compressed native state has no payload"))?;
-    if encoded.len() > MAX_WORLD_BYTES {
+    if encoded.len() > MAX_WIRE_BYTES {
         return Err(invalid("compressed native state exceeds transport limit"));
     }
     let compressed = STANDARD.decode(encoded)
