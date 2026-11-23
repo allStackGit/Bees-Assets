@@ -3496,10 +3496,18 @@ fn archived_native_remote_receipts_from_root(
             }
             Some(types)
         };
+        let spectator_only = match summary["remote_spectator_only"].as_bool() {
+            Some(value) => value,
+            None if summary["remote_spectator_only"].is_null() => false,
+            None => return Err(invalid(
+                "archived remote spectator-only authority is malformed",
+            ).into()),
+        };
         receipts.push(bees_host::remote_play::NativeArchivedBattleReceipt {
             session_id: id.to_owned(),
             authorized_sides: sides,
             legacy_credentials_sha256,
+            spectator_only,
             battle_result: result.clone(),
             campaign_outcome: campaign,
             banked_minerals: summary["campaign_banked_minerals"].as_u64(),
@@ -12889,11 +12897,13 @@ fn run_battle(
         .and_then(|_| battle_terminal_receipt.clone());
     let remote_session_id = remote.as_ref().map(|server| server.session_id().to_owned());
     let remote_authorized_sides = remote.as_ref().map(|server| server.authorized_sides());
+    let remote_spectator_only = remote.as_ref().map(|server| server.spectator_only());
     let mut final_summary = json!({
         "kind": "run_final",
         "resident_policy_exit_clean": resident_policy_exit_clean,
         "remote_session_id": remote_session_id,
         "remote_authorized_sides": remote_authorized_sides,
+        "remote_spectator_only": remote_spectator_only,
         "remote_terminal_receipt": remote_terminal_receipt,
         // Exactly one committed native World result, shared by LAN and
         // local score projections. Match history is derived from these
