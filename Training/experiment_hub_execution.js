@@ -99,7 +99,8 @@ class LocalExecution {
             tinybrains_imports:{...this.supervisor.adapters?.tinybrains?.tinybrains_imports},
             linux_single_gpu_qualification:this.supervisor.gpuEnabled===true&&
                 (this.supervisor instanceof LinuxSupervisor||
-                    this.supervisor instanceof DockerSupervisor),
+                    this.supervisor instanceof DockerSupervisor||
+                    this.supervisor instanceof MixedLinuxSupervisor),
             gpu_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
                 (!this.supervisor.gpuProjects||this.supervisor.gpuProjects.includes(project))&&
