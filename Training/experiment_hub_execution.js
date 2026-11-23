@@ -326,6 +326,7 @@ class LocalExecution {
                     continuation_of_job_id:job.continuation_of_job_id||null,
                     frozen_parameters:job.frozen_parameters,
                     state,final_checkpoint_sha256:job.final_checkpoint_sha256||null,
+                    evaluation_archive_ack:job.evaluation_archive_ack||null,
                     dispatch_id:order.dispatch_id,suite_id:rule.suite_id,
                 });
                 try {

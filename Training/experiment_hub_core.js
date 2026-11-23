@@ -5659,6 +5659,15 @@ class ExperimentHub {
                         ?{reverify_checkpoint:true}:{}),
                     ...(job.evaluation_stop?{evaluation_stop:copy(job.evaluation_stop)}:{}),
                     ...(job.evaluation_monitor?{evaluation_monitor:copy(job.evaluation_monitor)}:{}),
+                    ...(job.project_id==='bees_native'&&activeEvaluation(job)?{
+                        evaluation_archive_ack:(()=>{
+                            try {
+                                return this.evaluationHistory.latestAccepted(job,
+                                    evaluationRules(activeEvaluation(job))[0].suite_id)
+                                    ?.checkpoint_sha256||null;
+                            }catch {return null;}
+                        })(),
+                    }:{}),
                     ...(lease.status==='released'?{final_checkpoint_sha256:job.checkpoint_model_sha256}:{}),
                     ...(job.expected_parent_model_sha256
                         ?{expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),

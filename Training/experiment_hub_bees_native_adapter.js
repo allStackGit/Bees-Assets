@@ -348,56 +348,107 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         evaluation_suites:Object.values(BEES_FINAL_SUITES),
         readEvaluation(context) {
             if(context?.project_id!=='bees_native'||
-                !UUID.test(String(context.job_id||''))||
                 !UUID.test(String(context.dispatch_id||''))||
                 !Object.values(BEES_FINAL_SUITES).includes(context.suite_id))
-                throw Error('Invalid Bees final evaluation dispatch or suite.');
+                throw Error('Invalid Bees evaluation dispatch or suite.');
             const root=jobPath(artifacts,context);
-            const summary=path.join(root,'evaluations','summary.json');
-            if(!fs.existsSync(summary))return null;
-            if(fs.realpathSync(summary)!==summary||
-                fs.statSync(summary).size>32768||
-                !fs.statSync(summary).isFile())
-                throw Error('Bees final evaluation receipt is redirected or oversized.');
             const input=path.join(root,'job.json');
-            if(fs.realpathSync(input)!==input||
-                fs.statSync(input).size>65536)
-                throw Error('Frozen Bees final evaluation job is unavailable.');
+            if(fs.realpathSync(input)!==input||fs.statSync(input).size>65536)
+                throw Error('Frozen Bees evaluation job is unavailable.');
             const job=JSON.parse(fs.readFileSync(input,'utf8'));
             const suite=BEES_FINAL_SUITES[job.evaluation_profile];
-            if(job.job_id!==context.job_id||suite!==context.suite_id)
-                throw Error('Bees final evaluation suite differs from its frozen job.');
-            const digest=fileHash(summary);
-            // Reuse the strict per-case, opponent and total accounting already
-            // enforced by readProgress. No raw JSON observation may create a
-            // success claim independently of that existing verified summary.
-            const progress=this.readProgress(context);
-            // Do not publish a final evaluation stop signal while the runner
-            // is still packaging its immutable policy candidate. It would
-            // interrupt the final artifact step of an otherwise finished run.
-            if(progress?.metrics?.policy_candidate_ready?.value!==1)return null;
-            if(fileHash(summary)!==digest)
-                throw Error('Bees final evaluation changed while being verified.');
-            const report=JSON.parse(fs.readFileSync(summary,'utf8'));
-            const matches=progress.metrics?.evaluation_matches?.value;
-            const wins=progress.metrics?.evaluation_win_rate?.value;
-            const score=progress.metrics?.evaluation_score_rate?.value;
-            const timeout=progress.metrics?.evaluation_timeout_rate?.value;
-            if(!Number.isSafeInteger(matches)||matches<1||
-                !Number.isSafeInteger(report.total_wins)||
-                matches!==report.total_matches||
-                !Number.isFinite(wins)||Math.abs(wins-report.total_wins/matches)>1e-10||
-                !Number.isFinite(score)||!Number.isFinite(timeout))
-                throw Error('Bees final evaluation accounting differs from its verified progress.');
-            const receipt=checkpoint(context);
-            if(report.model_sha256!==receipt.sha256||
-                fileHash(summary)!==digest)
-                throw Error('Bees final evaluation does not belong to the final model.');
+            if(job.job_id!==context.job_id||suite!==context.suite_id||
+                job.runtime_version!==context.frozen_parameters?.runtime_version||
+                job.game_sha256!==context.frozen_parameters?.worker_sha256)
+                throw Error('Bees evaluation suite differs from its frozen job.');
+            const complete=path.join(root,'checkpoint-evaluations','completed');
+            const snapshots=()=>{
+                if(!fs.existsSync(complete))return [];
+                if(fs.realpathSync(complete)!==complete)
+                    throw Error('Bees checkpoint evaluation directory is redirected.');
+                return fs.readdirSync(complete,{withFileTypes:true}).filter(entry=>
+                    entry.isDirectory()&&!entry.isSymbolicLink()&&SHA.test(entry.name))
+                    .map(entry=>{
+                        const dir=path.join(complete,entry.name);
+                        const file=path.join(dir,'summary.json');
+                        return {dir,sha:entry.name,time:fs.statSync(file).mtimeMs};
+                    }).sort((a,b)=>a.time-b.time||a.sha.localeCompare(b.sha));
+            };
+            let chosen,receipt;
+            if(context.state==='running') {
+                const rows=snapshots();
+                const prior=rows.findIndex(row=>row.sha===context.evaluation_archive_ack);
+                // The next result is not presented until the preceding
+                // observation has reached the durable Hub evaluation archive.
+                chosen=rows[prior+1];
+                if(!chosen)return null;
+            }else {
+                receipt=checkpoint(context);
+                if(receipt.sha256!==context.final_checkpoint_sha256)return null;
+                chosen=snapshots().find(row=>row.sha===receipt.sha256)||
+                    {dir:path.join(root,'evaluations'),sha:receipt.sha256};
+            }
+            const summary=path.join(chosen.dir,'summary.json');
+            if(!fs.existsSync(summary))return null;
+            if(fs.realpathSync(summary)!==summary||
+                !fs.statSync(summary).isFile()||fs.statSync(summary).size>32768)
+                throw Error('Bees evaluation summary is redirected or oversized.');
+            const summaryHash=fileHash(summary);
+            const data=JSON.parse(fs.readFileSync(summary,'utf8'));
+            const model=chosen.dir===path.join(root,'evaluations')
+                ?receipt.model:path.join(chosen.dir,'model.onnx');
+            if(fs.realpathSync(model)!==model||fileHash(model)!==chosen.sha)
+                throw Error('Bees evaluation model bytes differ from the selected checkpoint.');
+            const cases=job.evaluation_profile==='scripted-maps-v1'
+                ?[['small_1v1_pursuit','pursuit'],['medium_2v2_strafe','strafe'],
+                  ['large_4v4_pursuit','pursuit'],['wide_6v6_strafe','strafe']]
+                :[1,2,3,4,5,6].flatMap(players=>[32,64,128,256].flatMap(size=>
+                    ['pursuit','strafe'].map(opponent=>[
+                        'p'+players+'_map'+size+'_'+opponent,opponent])));
+            if(data.schema_version!==1||data.job_id!==job.job_id||
+                data.profile!==job.evaluation_profile||data.model_sha256!==chosen.sha||
+                data.case_count!==cases.length||!Array.isArray(data.cases)||
+                data.cases.length!==cases.length)
+                throw Error('Bees checkpoint evaluation inventory is inconsistent.');
+            const totals={matches:0,wins:0,draws:0,losses:0,timeouts:0};
+            for(const [index,[label,opponent]] of cases.entries()) {
+                const item=data.cases[index];
+                if(item?.case!==label||item.opponent!==opponent||
+                    !SHA.test(String(item.report_sha256||''))||
+                    !/^[A-Za-z0-9_-]+\.json$/.test(String(item.report_file||'')))
+                    throw Error('Bees checkpoint evaluation case is not the frozen scenario.');
+                const file=path.join(chosen.dir,item.report_file);
+                if(fs.realpathSync(file)!==file||!fs.statSync(file).isFile()||
+                    fs.statSync(file).size>4194304||fileHash(file)!==item.report_sha256)
+                    throw Error('Bees benchmark case report changed.');
+                const proof=JSON.parse(fs.readFileSync(file,'utf8'));
+                if(proof.schema_version!==1||proof.run_id!==job.job_id||
+                    proof.candidate_sha256!==chosen.sha||
+                    proof.environment_executable_sha256!==job.game_sha256||
+                    proof.evaluation_code_sha256!==job.evaluator_core_sha256||
+                    proof.opponent_script_sha256!==job.opponent_script_sha256||
+                    proof.opponent_path!=='scripted:'+opponent||
+                    proof.benchmark?.id!=='bees-native-'+label.replaceAll('_','-')||
+                    proof.benchmark?.seed!==(job.seed+131071+index*65537)%2147483648||
+                    item.matches!==job.evaluation_matches)
+                    throw Error('Bees benchmark proof differs from its frozen model, runtime or scenario.');
+                for(const key of Object.keys(totals)) {
+                    if(!Number.isSafeInteger(item[key])||item[key]<0||
+                        item[key]>item.matches||proof.metrics?.[key]!==item[key])
+                        throw Error('Bees checkpoint evaluation outcome is invalid.');
+                    totals[key]+=item[key];
+                }
+                if(item.wins+item.draws+item.losses!==item.matches||item.timeouts>item.draws)
+                    throw Error('Bees checkpoint evaluation outcome totals differ.');
+            }
+            for(const key of Object.keys(totals))
+                if(data['total_'+key]!==totals[key])
+                    throw Error('Bees checkpoint evaluation summary does not match case receipts.');
+            if(fileHash(summary)!==summaryHash||fileHash(model)!==chosen.sha)
+                throw Error('Bees evaluation files changed during verification.');
             const definition=JSON.stringify({
-                suite_id:suite,
-                profile:job.evaluation_profile,
-                matches_per_case:job.evaluation_matches,
-                seed:job.seed,
+                suite_id:suite,profile:job.evaluation_profile,
+                matches_per_case:job.evaluation_matches,seed:job.seed,
                 game_sha256:job.game_sha256,
                 evaluator_sha256:job.evaluator_sha256,
                 evaluator_core_sha256:job.evaluator_core_sha256,
@@ -408,15 +459,16 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 schema_version:1,suite_id:suite,
                 suite_sha256:crypto.createHash('sha256').update(definition,'utf8').digest('hex'),
                 suite_definition_canonical:definition,
-                dispatch_id:context.dispatch_id,
-                checkpoint_sha256:receipt.sha256,
-                trials:matches,successes:report.total_wins,
+                dispatch_id:context.dispatch_id,checkpoint_sha256:chosen.sha,
+                trials:totals.matches,successes:totals.wins,
                 runtime_sha256:job.runtime_version,
                 evaluated_at:fs.statSync(summary).mtime.toISOString(),
+                ...(Number.isSafeInteger(data.steps_completed)?
+                    {steps_completed:data.steps_completed}:{}),
                 metrics:{
-                    score_rate:{value:score,unit:'ratio'},
-                    timeout_rate:{value:timeout,unit:'ratio'},
-                    draw_count:{value:report.total_draws,unit:'count'},
+                    score_rate:{value:(totals.wins+0.5*(totals.draws-totals.timeouts))/totals.matches,unit:'ratio'},
+                    timeout_rate:{value:totals.timeouts/totals.matches,unit:'ratio'},
+                    draw_count:{value:totals.draws,unit:'count'},
                 },
             };
         },
