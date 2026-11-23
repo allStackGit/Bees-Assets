@@ -134,6 +134,9 @@
                         item.id==='micro-season'?'TinyBrains Micro · all 76 season maps (2/4/6 players)':
                         item.id==='mini-season'?'TinyBrains Frozen Mini · all 76 season maps (2/4/6 players)':
                         item.id.startsWith('history-')?'TinyBrains Frozen checkpoint '+item.id.slice(-10)+' · all 76 maps':
+                        item.id.startsWith('mix-')?('TinyBrains Mixed · '+(
+                            info.custom_library?.templates?.find(t=>t.suite_id===item.suite_id)?.name||
+                            item.suite_id)):
                             'TinyBrains Nano + Micro (same checkpoint)';
             const status=document.createElement('span');
             status.textContent=!item.installed?(item.reason||'Not installed'):
@@ -144,7 +147,7 @@
                         ?' · last result: '+item.last_result:'')+
                     (item.last_error?' · '+item.last_error:'');
             const expensive=item.project==='tinybrains'&&
-                (item.id.endsWith('-season')||item.id.startsWith('history-'));
+                (item.id.endsWith('-season')||item.id.startsWith('history-')||item.id.startsWith('mix-'));
             const admissionBlocked=expensive&&
                 !info.evaluation_capacity?.ready;
             if(admissionBlocked&&!item.running)
@@ -152,7 +155,7 @@
                     (info.evaluation_capacity?.reason||'local resource capacity unavailable');
             line.append(title,status);
             if(item.managed&&item.project==='tinybrains'&&
-                (item.id.endsWith('-season')||item.id.startsWith('history-'))) {
+                (item.id.endsWith('-season')||item.id.startsWith('history-')||item.id.startsWith('mix-'))) {
                 const details=document.createElement('button');
                 details.type='button';
                 details.textContent='Map results';
@@ -406,6 +409,7 @@
             state=data;
             renderEvaluators(data.evaluators);
             renderRemoteEvaluators(data.remote_evaluators);
+            document.dispatchEvent(new CustomEvent('hub-local-services-status',{detail:data}));
             const workerOptions=(data.tinybrains_collectors||[]);
             if(tinyWorker) {
                 const former=tinyWorker.value;
