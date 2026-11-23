@@ -560,21 +560,27 @@ def original_audio_paths() -> list[tuple[Path, Path]]:
 
 
 def write_launchers(output: Path, binary_name: str) -> None:
+    windows_start = (
+        "@echo off\n"
+        "setlocal EnableExtensions DisableDelayedExpansion\n"
+        # pushd maps an installation on a Windows network share for the
+        # lifetime of the launcher, including relative game/tool paths.
+        'pushd "%~dp0" || exit /b 1\n'
+        'if defined LOCALAPPDATA (set "BEES_SAVE=%LOCALAPPDATA%\\BeesNative") '
+        'else (set "BEES_SAVE=%USERPROFILE%\\BeesNative")\n'
+    )
+    windows_finish = 'set "BEES_STATUS=%ERRORLEVEL%"\npopd\nexit /b %BEES_STATUS%\n'
     for name in EXAMPLES:
         if not (output / "examples" / f"{name}.run.json").is_file():
             continue
         if binary_name.endswith(".exe"):
             launcher = output / f"play-{name}.cmd"
             launcher.write_text(
-                "@echo off\n"
-                "setlocal\n"
-                'cd /d "%~dp0"\n'
-                'if defined LOCALAPPDATA (set "BEES_SAVE=%LOCALAPPDATA%\\BeesNative") '
-                'else (set "BEES_SAVE=%USERPROFILE%\\BeesNative")\n'
+                windows_start +
                 'if not exist "%BEES_SAVE%\\battles" mkdir "%BEES_SAVE%\\battles"\n'
                 f'set "BEES_RUN=%BEES_SAVE%\\battles\\{name}-%RANDOM%-%RANDOM%"\n'
-                f'"%~dp0{binary_name}" play "examples\\{name}.run.json" '
-                '--output-dir "%BEES_RUN%" %*\n',
+                f'".\\{binary_name}" play "examples\\{name}.run.json" '
+                '--output-dir "%BEES_RUN%" %*\n' + windows_finish,
                 encoding="utf-8", newline="\r\n",
             )
         else:
@@ -596,14 +602,10 @@ def write_launchers(output: Path, binary_name: str) -> None:
     if binary_name.endswith(".exe"):
         launcher = output / "play-bees.cmd"
         launcher.write_text(
-            "@echo off\n"
-            "setlocal\n"
-            'cd /d "%~dp0"\n'
-            'if defined LOCALAPPDATA (set "BEES_SAVE=%LOCALAPPDATA%\\BeesNative") '
-            'else (set "BEES_SAVE=%USERPROFILE%\\BeesNative")\n'
+            windows_start +
             'if not exist "%BEES_SAVE%" mkdir "%BEES_SAVE%"\n'
-            f'"%~dp0{binary_name}" library "examples\\native-library.json" '
-            '--output-dir "%BEES_SAVE%" %*\n',
+            f'".\\{binary_name}" library "examples\\native-library.json" '
+            '--output-dir "%BEES_SAVE%" %*\n' + windows_finish,
             encoding="utf-8", newline="\r\n",
         )
     else:
