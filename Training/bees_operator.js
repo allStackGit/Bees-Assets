@@ -30,7 +30,7 @@ const COMMANDS = new Set([
 function usage() {
     return [
         'Usage:',
-        '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run | --new-run]',
+        '  node Training/bees_operator.js build [--full-game] [--force] [--preserve-run | --new-run] [--offline-workers ABSOLUTE_MANIFEST_PATH]',
         '  node Training/bees_operator.js runtime [--threaded [--policy-lag N]] [--backpressure-queue N] [--local-training] [--learner-device cpu|cuda] [--local-only] [--local-envs N] [--skip-evaluation | --enable-evaluation] [--no-worker-diagnostics] [--log-categories LIST] [--ppo-control | PPO optimization flags]',
         '  node Training/bees_operator.js server',
         '  node Training/bees_operator.js start [--new-run | --resume-run ID] [--env-arg VALUE ...]',
@@ -83,6 +83,7 @@ function parseArgs(argv = process.argv.slice(2)) {
         preserveRun: false,
         newRun: false,
         resumeRunId: '',
+        offlineWorkers: '',
         threaded: false,
         policyLag: null,
         explicitPolicyLag: false,
@@ -127,6 +128,11 @@ function parseArgs(argv = process.argv.slice(2)) {
             options.fullGame = true;
         } else if (arg === '--force') {
             options.force = true;
+        } else if (arg === '--offline-workers') {
+            options.offlineWorkers = String(requireValue(argv, index, arg));
+            index++;
+        } else if (arg.startsWith('--offline-workers=')) {
+            options.offlineWorkers = arg.slice('--offline-workers='.length);
         } else if (arg === '--preserve-run') {
             options.preserveRun = true;
         } else if (arg === '--new-run') {
@@ -300,6 +306,12 @@ function parseArgs(argv = process.argv.slice(2)) {
         }
     }
 
+    if (options.offlineWorkers && command !== 'build') {
+        throw new Error('--offline-workers is only valid with the build command.');
+    }
+    if (options.offlineWorkers && options.fullGame) {
+        throw new Error('--offline-workers cannot be combined with --full-game.');
+    }
     if (options.preserveRun && command !== 'build') {
         throw new Error('--preserve-run is only valid with the build command.');
     }
