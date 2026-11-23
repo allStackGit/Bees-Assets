@@ -49,11 +49,14 @@ function trustedFile(raw,description,executable=false) {
     return resolved;
 }
 function jobPath(artifacts,context) {
-    if(context.project_id!=='bees_native'||!UUID.test(context.job_id)||
-        context.artifact_lineage_root_id!==context.job_id||
-        context.continuation_of_job_id)
-        throw Error('Independent Bees native job requires a fresh Hub-owned lineage.');
-    return path.join(artifacts,context.job_id);
+    const id=context?.job_id,root=context?.artifact_lineage_root_id;
+    const parent=context?.continuation_of_job_id||null;
+    if(context?.project_id!=='bees_native'||!UUID.test(String(id||''))||
+        !UUID.test(String(root||''))||
+        (parent!==null&&(!UUID.test(String(parent))||parent===id||root===id))||
+        (parent===null&&root!==id))
+        throw Error('Bees native job requires a verified immutable Hub-owned checkpoint lineage.');
+    return path.join(artifacts,id);
 }
 function normalize(parameters,context,approved) {
     const allowed=new Set([
@@ -203,14 +206,17 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         opponent_script_sha256:fileHash(opponentScript),
     };
 
-    function checkpoint(context) {
-        const root=jobPath(artifacts,context);
+    function checkpointForJob(jobId,expectedRoot) {
+        if(!UUID.test(String(jobId||''))||!UUID.test(String(expectedRoot||'')))
+            throw Error('Invalid Bees checkpoint ancestry.');
+        const root=path.join(artifacts,jobId);
         const metadata=path.join(root,'model.json');
         if(fs.realpathSync(metadata)!==metadata||
             fs.statSync(metadata).size>4096)
             throw Error('Bees checkpoint receipt is missing or redirected.');
         const receipt=JSON.parse(fs.readFileSync(metadata,'utf8'));
-        if(receipt.schema_version!==1||receipt.job_id!==context.job_id||
+        if(![1,2].includes(receipt.schema_version)||receipt.job_id!==jobId||
+            (receipt.schema_version===1?jobId:receipt.lineage_root_id)!==expectedRoot||
             !SHA.test(String(receipt.sha256||''))||
             !SHA.test(String(receipt.checkpoint_sha256||''))||
             typeof receipt.model!=='string'||!path.isAbsolute(receipt.model)||
@@ -229,6 +235,34 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             fileHash(optimizer)!==receipt.checkpoint_sha256)
             throw Error('Native Bees model or optimizer checkpoint differs from committed bytes.');
         return receipt;
+    }
+    function checkpoint(context) {
+        jobPath(artifacts,context);
+        return checkpointForJob(context.job_id,context.artifact_lineage_root_id);
+    }
+    function continuation(context) {
+        const parentId=context.continuation_of_job_id||null;
+        if(!parentId)return {parent_id:null,model_sha256:null,checkpoint_sha256:null};
+        if(!SHA.test(String(context.expected_parent_model_sha256||'')))
+            throw Error('Bees checkpoint continuation lacks a pinned parent model digest.');
+        const receipt=checkpointForJob(parentId,context.artifact_lineage_root_id);
+        if(receipt.sha256!==context.expected_parent_model_sha256)
+            throw Error('Bees parent checkpoint model changed since the Hub recorded it.');
+        const source=path.join(artifacts,parentId,'job.json');
+        if(fs.realpathSync(source)!==source||fs.statSync(source).size>65536)
+            throw Error('Bees parent frozen job definition is missing or redirected.');
+        const parent=JSON.parse(fs.readFileSync(source,'utf8'));
+        if(parent.job_id!==parentId||
+            (parent.lineage_root_id||parent.job_id)!==context.artifact_lineage_root_id||
+            parent.game_sha256!==approved.worker_sha256||
+            parent.trainer_sha256!==approved.trainer_sha256||
+            parent.runtime_version!==approved.runtime_version)
+            throw Error('Bees parent Unity binary or learner runtime differs from the approved continuation.');
+        return {
+            parent_id:parentId,
+            model_sha256:receipt.sha256,
+            checkpoint_sha256:receipt.checkpoint_sha256,
+        };
     }
 
     return {
@@ -266,10 +300,15 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 fileHash(evaluatorCore)!==approved.evaluator_core_sha256||
                 fileHash(opponentScript)!==approved.opponent_script_sha256)
                 throw Error('Installed Bees Unity worker or trainer changed after native adapter enrollment.');
+            const parent=continuation(context);
             const root=jobPath(artifacts,context);
             fs.mkdirSync(root,{mode:0o700});
             const job={
-                schema_version:1,job_id:context.job_id,
+                schema_version:2,job_id:context.job_id,
+                lineage_root_id:context.artifact_lineage_root_id,
+                continuation_of_job_id:parent.parent_id,
+                expected_parent_model_sha256:parent.model_sha256,
+                expected_parent_checkpoint_sha256:parent.checkpoint_sha256,
                 game_binary:worker,game_sha256:approved.worker_sha256,
                 runtime_version:approved.runtime_version,
                 training_script:training,training_sha256:approved.training_sha256,
