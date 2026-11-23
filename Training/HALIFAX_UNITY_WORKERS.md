@@ -95,6 +95,15 @@ existing loopback-only Bees manager on TCP 7148:
 ssh -N -L 127.0.0.1:7158:127.0.0.1:7148 <Exeter-SSH-hostname>
 ```
 
+To allow a browser on Halifax to open the full original Bees manager UI
+through this tunnel, also set `BEES_EXPERIMENTS_FORWARDED_PORT=7158`
+on the **Windows Bees manager** before its next safe service start/restart.
+The manager still binds only to its original loopback listener on 7148;
+the forwarded Host and Origin are allowlisted explicitly. The Hub's Bees
+panel then provides a link to the original experiment designer, queue,
+evaluation controls, and logs. Without this optional setting, the Hub's
+embedded Bees status and control bridge still works.
+
 Configure `EXPERIMENT_HUB_BEES_BRIDGE_PORT=7158` in Halifax's **standalone
 Hub systemd service environment**, then restart the coordinator during a
 safe idle window. Port 7158 is the local SSH listener, not a public web port.
