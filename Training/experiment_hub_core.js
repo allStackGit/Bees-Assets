@@ -7893,6 +7893,14 @@ class ExperimentHub {
                     if(parent.frozen_parameters?.[key]!==frozen[key])
                         throw Error('Bees checkpoint continuation must preserve the approved Unity executable, learner runtime, trainer and seed: '+key);
                 }
+                // An inherited optimizer can retain its previous effective
+                // learning-rate and momentum state. Do not advertise a new
+                // PPO configuration as an exact checkpoint continuation.
+                const previous=parent.frozen_parameters?.hyperparameters||{};
+                const current=frozen.hyperparameters||{};
+                const hyperKeys=new Set([...Object.keys(previous),...Object.keys(current)]);
+                if([...hyperKeys].some(key=>previous[key]!==current[key]))
+                    throw Error('Bees checkpoint continuation must preserve PPO hyperparameters. Queue a new independent trial to change optimizer settings.');
             }
             if(project.id==='courier'&&(
                 (parent.frozen_parameters?.shared_policy===true)!==(frozen.shared_policy===true)||
