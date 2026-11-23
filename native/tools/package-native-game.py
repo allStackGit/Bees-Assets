@@ -635,6 +635,41 @@ def write_launchers(output: Path, binary_name: str,
         launcher.chmod(0o755)
 
 
+    # A remote commander or view-only spectator uses the SAME graphical
+    # Rust client and private token-file contract, not the optional Python
+    # administration tools. Never copy or embed a player's credential.
+    if binary_name.endswith(".exe"):
+        launcher = output / "join-bees.cmd"
+        launcher.write_text(
+            windows_start +
+            'if "%~1"=="" (echo Usage: %~nx0 HOST:PORT TOKEN_FILE SIDE [--spectate] 1>&2 & popd & exit /b 2)\n' +
+            'if not exist "%~2" (echo A private player token file is required 1>&2 & popd & exit /b 2)\n' +
+            'if not "%~3"=="1" if not "%~3"=="2" (echo SIDE must be 1 or 2 1>&2 & popd & exit /b 2)\n' +
+            'if "%~4"=="--spectate" (\n' +
+            f'  ".\\{binary_name}" connect "%~1" --token-file "%~2" --side "%~3" --spectate\n' +
+            ') else (\n' +
+            f'  ".\\{binary_name}" connect "%~1" --token-file "%~2" --side "%~3"\n' +
+            ')\n' + windows_finish,
+            encoding="utf-8", newline="\r\n",
+        )
+    else:
+        launcher = output / "join-bees.sh"
+        launcher.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            'cd "$(dirname "$0")"\n'
+            'if [ "$#" -lt 3 ]; then\n'
+            '  echo "Usage: $0 HOST:PORT TOKEN_FILE SIDE [--spectate]" >&2\n'
+            '  exit 2\n'
+            'fi\n'
+            'address="$1"; token="$2"; side="$3"; shift 3\n'
+            f'exec "./{binary_name}" connect "$address" '
+            '--token-file "$token" --side "$side" "$@"\n',
+            encoding="utf-8", newline="\n",
+        )
+        launcher.chmod(0o755)
+
+
     if server_binary is not None:
         # Stable save directories permit the existing authoritative
         # checkpoint/session-recovery owner to re-open the SAME battle.
