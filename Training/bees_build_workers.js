@@ -96,7 +96,7 @@ function projectVersion() {
 }
 
 function dirtySource() {
-    const result = runSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+    const result = runSync('git', ['status', '--porcelain', '--untracked-files=normal'], {
         cwd: paths.assetsRoot,
         timeout: 30000,
         maxBuffer: 2 * 1024 * 1024,
@@ -168,6 +168,7 @@ async function build(argv = process.argv.slice(2)) {
         source_commit: commit,
         source_dirty: sourceDirty,
         unity_version: version,
+        packages_manifest_sha256: await sha256(path.join(paths.beesRoot, 'Packages', 'manifest.json')),
         artifacts,
     };
     const manifestPath = path.join(root, 'worker-build-manifest.json');
