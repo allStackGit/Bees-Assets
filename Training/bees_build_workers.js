@@ -98,7 +98,8 @@ function projectVersion() {
 }
 
 function dirtySource() {
-    const result = runSync('git', ['status', '--porcelain', '--untracked-files=normal'], {
+    const result = runSync('git', ['status', '--porcelain', '--untracked-files=normal','--',
+        '.',...protectedExclusions()], {
         cwd: paths.assetsRoot,
         timeout: 30000,
         maxBuffer: 2 * 1024 * 1024,
@@ -119,11 +120,16 @@ async function sha256(file) {
 // project-settings trees before and after both target builds.
 const PROTECTED=new Set(['results','.results','Demonstrations','Logs','TrainingHistory~']);
 const protectedPath=name=>name.split(/[\\/]/).some(part=>PROTECTED.has(part));
+const protectedExclusions=()=>[...PROTECTED].flatMap(name=>[
+    ':(exclude)'+name+'/**',
+    ':(exclude)**/'+name+'/**',
+]);
 async function sourceSnapshot() {
     const names=new Set();
     for(const args of [
-        ['diff','--name-only','-z','HEAD','--','.'],
-        ['ls-files','--others','--exclude-standard','-z','--','.'],
+        ['diff','--name-only','-z','HEAD','--','.',...protectedExclusions()],
+        ['ls-files','--others','--exclude-standard','-z','--',
+            '.',...protectedExclusions()],
     ]) {
         const result=runSync('git',args,{
             cwd:paths.assetsRoot,timeout:60000,maxBuffer:16*1024*1024,
