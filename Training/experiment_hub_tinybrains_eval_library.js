@@ -116,8 +116,17 @@ function availableOpponents(o) {
 }
 function candidates(hub) {
     return hub.snapshot().configurations.filter(c=>c.project_id==='tinybrains')
-        .map(c=>({id:c.id,revision:c.revision,name:c.name,
-            stage:c.parameters.training_stage||'full_multiplayer'}));
+        .map(c=>{
+            // Explain the actual saved training environment without treating
+            // concurrency/transport settings as match gameplay rules.
+            let environment=null;
+            try { environment=sourceDefaults(hub,c); }
+            catch { /* An offline/older worker may not advertise defaults. */ }
+            return {id:c.id,revision:c.revision,name:c.name,
+                stage:c.parameters.training_stage||'full_multiplayer',
+                ...(environment?{environment}:{}),
+            };
+        });
 }
 function boards(o) {
     const root=path.join(o.project,'maps/hive-minds/boards');
@@ -175,8 +184,17 @@ function sourceDefaults(hub,config) {
     const cap={basic_tiny:300,tiny_two_player:300,small_two_player:500,
         all_two_player:750,full_multiplayer:sourceTurn}[p.training_stage||'full_multiplayer'];
     if(!cap)throw Error('Saved configuration has an unknown training map stage.');
+    const environmentFields=(host.design_catalog.tinybrains.fields||[])
+        .filter(item=>item.key.startsWith('environment.')&&
+            item.section==='environment'&&
+            item.default!==undefined);
+    const parameters=Object.fromEntries(environmentFields.map(field=>[
+        field.key.slice('environment.'.length),
+        p.design_overrides?.[field.key]??field.default,
+    ]));
     return {stage:p.training_stage||'full_multiplayer',
-        max_turns:Math.min(sourceTurn,cap)};
+        max_turns:Math.min(sourceTurn,cap),
+        parameters};
 }
 function saveEvaluation(o,hub,value) {
     if(!value||typeof value!=='object'||Array.isArray(value)||
@@ -237,6 +255,14 @@ function saveEvaluation(o,hub,value) {
         throw Error('Evaluation revision changed. Reload before editing.');
     if(catalog.templates.length>=100&&!current)
         throw Error('Saved evaluation library is full.');
+    // The installed independent evaluator has a bounded service namespace.
+    // Refuse a new immutable revision BEFORE publishing it when that
+    // namespace is full, rather than writing a suite which later makes
+    // every evaluator's setup/status fail.
+    const currentSuites=fs.readdirSync(o.suites).filter(file=>
+        file.endsWith('.json')&&MIX.test(file.slice(0,-5)));
+    if(currentSuites.length>=20)
+        throw Error('The current evaluator service limit (20 mixed suite revisions) is reached. Existing evaluations remain available; archive old revisions before adding more.');
     const id=current?current.id:crypto.randomBytes(10).toString('hex');
     const revision=current?current.revision+1:1;
     const suiteId='tinybrains_mix_'+id+'_v'+revision;
@@ -247,6 +273,10 @@ function saveEvaluation(o,hub,value) {
         maps,seeds:value.seeds,max_turns:turns,rotations:value.rotations,
         environment_source:{configuration_id:config.id,revision:config.revision,
             sha256:configurationSha,stage:environment.stage},
+        // Full visible source-environment snapshot for reproducibility.
+        // Maps/max_turns are the match rules above. Other native engine
+        // fields are training-worker settings, not CLI match overrides.
+        environment_parameters:environment.parameters,
         opponents:pool,
     };
     const raw=JSON.stringify(suite,null,2)+'\n';
