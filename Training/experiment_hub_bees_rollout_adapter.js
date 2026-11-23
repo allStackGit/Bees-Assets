@@ -95,11 +95,13 @@ function createBeesRolloutAdapter({
                 Object.keys(parameters).some(key=>![
                     'learner_job_id','lineage_root_id','worker_sha256',
                     'trainer_sha256','runtime_version','wan_key_fingerprint',
-                    'envs','device',
+                    'envs','device','slot',
                 ].includes(key))||
                 !UUID.test(String(parameters.learner_job_id||''))||
                 !UUID.test(String(parameters.lineage_root_id||''))||
                 parameters.learner_job_id===context.job_id||
+                !Number.isSafeInteger(parameters.slot)||
+                parameters.slot<0||parameters.slot>7||
                 !UUID.test(String(context.job_id||''))||
                 context.project_id!=='bees_rollout'||
                 !Number.isSafeInteger(parameters.envs)||parameters.envs<1||
@@ -136,6 +138,7 @@ function createBeesRolloutAdapter({
                 schema_version:1,job_id:context.job_id,
                 learner_job_id:parameters.learner_job_id,
                 lineage_root_id:parameters.lineage_root_id,
+                slot:parameters.slot,
                 output_root:root,
                 game_binary:worker,game_sha256:approved.worker_sha256,
                 training_script:runtime.training,
