@@ -6,11 +6,11 @@
     const $=id=>document.getElementById(id);
     const existing=$('hub-config-evaluation');
     if(!existing)return;
-    const panel=document.createElement('fieldset');
+    const panel=document.createElement('details');
     panel.className='wide';
     panel.id='hub-saved-mixed-evaluations';
     panel.innerHTML=[
-        '<legend>Saved mixed-opponent evaluations</legend>',
+        '<summary>Saved mixed-opponent evaluations and checkpoint opponents</summary>',
         '<p class="muted">Select a saved training environment, then choose independently verified frozen opponents. Editing publishes a new immutable suite revision; old runs and receipts stay unchanged.</p>',
         '<div class="formgrid">',
         '<label>Evaluation name<input id="hub-mixed-name" maxlength="80" placeholder="All-map mixed opponents"></label>',
