@@ -702,6 +702,10 @@ def verified_gpu_forwards(log_path):
             ):
                 pci = row.get("gpu_pci_address")
                 uuid = row.get("gpu_cuda_uuid")
+                backend = row.get("gpu_pci_backend", "hip" if pci else None)
+                if backend not in (None, "hip", "cuda") or (
+                        backend is not None and pci is None):
+                    continue
                 if pci is not None and (
                         not isinstance(pci, str) or
                         not re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", pci)):
@@ -717,14 +721,14 @@ def verified_gpu_forwards(log_path):
                 if pci is not None and uuid is not None:
                     continue
                 identity = (
-                    f"hip_pci:{pci}" if pci is not None else
+                    f"{backend}_pci:{pci}" if pci is not None else
                     f"cuda_uuid:{uuid}" if uuid is not None else None
                 )
                 evidence = {
                     "model_forwards": calls,
                     "agent_rows": processed,
                     "final_counters": row.get("final") is True,
-                    **({"gpu_pci_address": pci} if pci else {}),
+                    **({"gpu_pci_address": pci, "gpu_pci_backend": backend} if pci else {}),
                     **({"gpu_cuda_uuid": uuid} if uuid else {}),
                     **({"gpu_device_identity": identity} if identity else {}),
                 }
@@ -879,7 +883,8 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                         continue  # Single GPU without a hardware identity.
                     work = by_device.setdefault(identity, {
                         "gpu_device_identity": identity,
-                        **({"gpu_pci_address": proof["gpu_pci_address"]}
+                        **({"gpu_pci_address": proof["gpu_pci_address"],
+                             "gpu_pci_backend": proof["gpu_pci_backend"]}
                            if "gpu_pci_address" in proof else {}),
                         **({"gpu_cuda_uuid": proof["gpu_cuda_uuid"]}
                            if "gpu_cuda_uuid" in proof else {}),
