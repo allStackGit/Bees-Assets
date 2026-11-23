@@ -83,6 +83,12 @@ pub trait NativeLevelRewardMetadata {
         &mut self, _cue: crate::campaign_dialogue::CampaignCue,
     ) {}
 
+    /// Apply durable story-owned permission changes from the same live roster.
+    fn sync_campaign_player_permissions(
+        &mut self, _dialogue: &crate::campaign_dialogue::CampaignDialogue,
+        _roster: &crate::squads::NativeSquadRoster,
+    ) {}
+
     /// Read-only scoreboard supplied by the source Level, with its
     /// authorized player side. Non-campaign training need not store one.
     fn campaign_score_snapshot(&self) -> Option<(i32, i64)> { None }
@@ -1714,6 +1720,7 @@ where
             ) {
                 dialogue.set_cue(cue);
                 state.metadata.observe_campaign_cue(cue);
+                state.metadata.sync_campaign_player_permissions(dialogue, state.events.roster());
                 state.events.queue_campaign_dialogue(completed_tick, cue)?;
             }
             if let Some(finalized) = state.events.latest_finalized_episode() {

@@ -1029,7 +1029,8 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                                if len(gunship_waves) == 1 else None)
             gunship_squad = source_squads.get(gunship_squad_id)
             gunship_members = (squad_members(gunship_squad)
-                               if gunship_squad is not None else [])
+                               if gunship_squad is not None and
+                               gunship_squad.get("user_controlled") is True else [])
             gunship_id = gunship_members[0] if len(gunship_members) == 1 else None
             honeybee_owners = [
                 squad for squad in source_squads.values()

@@ -414,7 +414,8 @@ impl CampaignDialogue {
     /// Tom during his Gunship briefing. The next story cue releases it.
     pub fn camera_subject(&self) -> Option<i64> {
         match (self.mode, self.cue) {
-            (DialogueMode::PlutoAnomaly { scout_id, .. }, CampaignCue::PlutoAnomalyHoneybeeSpotted) =>
+            (DialogueMode::PlutoAnomaly { scout_id, .. },
+                CampaignCue::PlutoAnomalyHoneybeeSpotted | CampaignCue::PlutoAnomalyScoutReportComplete) =>
                 Some(scout_id),
             (DialogueMode::PlutoAnomaly { gunship_id, .. }, CampaignCue::PlutoAnomalyGunshipArrived) =>
                 Some(gunship_id),
@@ -768,6 +769,21 @@ impl CampaignDialogue {
                 scout_selected, combat_released, ..
             } => Some((scout_selected, combat_released)),
             _ => None,
+        }
+    }
+
+    /// Source Anomaly control transitions for the two authored ships.
+    /// Reflect current story state so a restored campaign gets the same
+    /// permissions even when the triggering cue has already passed.
+    pub fn pluto_anomaly_input_permissions(&self) -> [Option<(i64, bool)>; 2] {
+        match self.mode {
+            DialogueMode::PlutoAnomaly {
+                scout_id, gunship_id, spotted, gunship_arrived, gunship_briefed, ..
+            } => [
+                spotted.then_some((scout_id, false)),
+                gunship_arrived.then_some((gunship_id, gunship_briefed)),
+            ],
+            _ => [None, None],
         }
     }
 

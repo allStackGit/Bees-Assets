@@ -1346,6 +1346,23 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
         }
     }
 
+    fn sync_campaign_player_permissions(
+        &mut self, dialogue: &bees_gameplay::campaign_dialogue::CampaignDialogue,
+        roster: &bees_gameplay::squads::NativeSquadRoster,
+    ) {
+        for (ship_id, enabled) in dialogue.pluto_anomaly_input_permissions().into_iter().flatten() {
+            let Some(owner) = roster.owning_squad(ship_id) else { continue };
+            if !roster.get(owner).is_some_and(|squad| squad.side == dialogue.player_side()) {
+                continue;
+            }
+            if let Some(permission) = self.player.squads.get_mut(&owner)
+                .filter(|permission| permission.user_controlled)
+            {
+                permission.can_accept_input = enabled;
+            }
+        }
+    }
+
     fn observe_fleet_combat_tick(&mut self, world: &CombatWorld) {
         self.fleet.record_combat_events(world);
     }

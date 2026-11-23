@@ -604,6 +604,11 @@ where
                 .expect("validated registered world index");
             world.state.commit_recovery_owners(level);
             world.state.metadata.commit_metadata_recovery(metadata);
+            if let Some(dialogue) = world.state.campaign_dialogue.as_ref() {
+                world.state.metadata.sync_campaign_player_permissions(
+                    dialogue, world.state.events.roster(),
+                );
+            }
             // Original Pluto II HiveMind is activated only when the
             // checkpointed Scout-selection tutorial releases its real
             // enemy squad wave. Re-derive this transition from the one

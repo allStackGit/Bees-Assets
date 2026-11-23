@@ -1882,7 +1882,8 @@ impl NativePhysicalScene {
         }
         let gunship_squad = self.source_squads.iter().find(|squad|
             squad.item_id == wave.squad_item_ids[0] &&
-            squad.side == player_side && squad.members.as_slice() == [gunship_id]
+            squad.side == player_side && squad.player_permissions.user_controlled &&
+            squad.members.as_slice() == [gunship_id]
         );
         let gunship = gunship_squad.is_some() && self.entities.iter()
             .any(|entity| matches!(entity,
