@@ -517,8 +517,12 @@ function config(value) {
 // identical saved environment while the agent is temporarily disconnected.
 // Never accept environment defaults supplied in a browser request.
 function approvedTinyBrainsEnvironment(parameters,machines) {
-    const catalog=(machines||[]).find(machine=>
-        machine.status==='connected'&&
+    // These catalogues were validated from authenticated agent reports and
+    // retained in the Hub ledger. Design authoring must not require the agent
+    // to be online; actual job admission still requires fresh verification.
+    const catalog=[...(machines||[])].sort((a,b)=>
+        Number(b.status==='connected')-Number(a.status==='connected'))
+        .find(machine=>
         machine.design_catalog?.tinybrains?.profiles?.[parameters.profile]
             ?.profile_sha256===parameters.profile_sha256)
         ?.design_catalog?.tinybrains;
@@ -560,13 +564,14 @@ function pinTinyBrainsOpponents(parameters,machines) {
         new Set(ids).size!==ids.length||
         ids.some(id=>typeof id!=='string'||id.length>64))
         throw Error('Select 1–16 distinct approved training opponents.');
-    const host=(machines||[]).find(machine=>
-        machine.status==='connected'&&
+    const host=[...(machines||[])].sort((a,b)=>
+        Number(b.status==='connected')-Number(a.status==='connected'))
+        .find(machine=>
         machine.design_catalog?.tinybrains?.profiles?.[parameters.profile]
             ?.profile_sha256===parameters.profile_sha256&&
         Array.isArray(machine.design_catalog.tinybrains.opponent_catalog));
     if(!host)
-        throw Error('Saving a selected training opponent pool requires a connected, trusted TinyBrains worker.');
+        throw Error('No previously authenticated TinyBrains worker catalog matches this profile. Reconnect a trusted worker to refresh its approved opponents.');
     const catalog=host.design_catalog.tinybrains.opponent_catalog;
     parameters.training_opponent_pins=ids.map(id=>{
         const row=catalog.find(item=>item.id===id);
