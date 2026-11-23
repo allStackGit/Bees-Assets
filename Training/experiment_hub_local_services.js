@@ -12,6 +12,7 @@ const {promisify}=require('node:util');
 const localEvaluators=require('./experiment_hub_local_evaluators');
 const courierEvaluators=require('./experiment_hub_local_courier_evaluators');
 const run=promisify(execFile);
+const {activeEvaluation,evaluationRules}=require('./experiment_hub_evaluation');
 
 const SYSTEMCTL='/usr/bin/systemctl';
 const UNITS=Object.freeze({
@@ -245,6 +246,7 @@ async function status(hub) {
             evaluation_capacity:tinybrains.evaluation_capacity||null,
             courier_available:courier.available,
             courier_reason:courier.reason||null,
+            automatic_schedule_issues:Object.fromEntries(automaticScheduleIssues),
             entries:[...tinybrains.entries.map(row=>({project:'tinybrains',...row})),
                 ...courier.entries]}};
 }
@@ -271,6 +273,44 @@ async function scheduleRestart(kind,hub,res) {
         message:'Restart requested from the local user systemd manager.'};
 }
 const activeEvaluatorActions=new Set();
+const automaticScheduleIssues=new Map();
+async function ensureJobEvaluationSchedules(hub) {
+    const machine=await enrolledLocalAgentMachine(hub);
+    if(!machine)return;
+    const snapshot=hub.snapshot();
+    const host=snapshot.machines.find(m=>m.id===machine);
+    if(host?.status!=='connected')return;
+    for(const [project,manager] of [['tinybrains',localEvaluators],
+        ['courier',courierEvaluators]]) {
+        if(activeEvaluatorActions.has(project))continue;
+        // Use the same authenticated dispatch and final-checkpoint worklist
+        // as the evaluator itself. Stale running records and drafts must not
+        // authorize an evaluator service start.
+        const suites=[...new Set(snapshot.jobs.filter(job=>
+            job.project_id===project&&job.assigned_machine_id===machine&&
+            (job.status==='running'||job.capacity_released_at&&
+                ['finished','stopped'].includes(job.status)))
+            .flatMap(job=>evaluationRules(activeEvaluation(job)).map(rule=>rule.suite_id)))]
+            .filter(suite=>hub.evaluationTargets(project,machine,suite).length>0);
+        if(!suites.length) {
+            automaticScheduleIssues.delete(project);
+            continue;
+        }
+        activeEvaluatorActions.add(project);
+        let issues;
+        try {issues=await manager.ensureJobSchedules(hub,machine,suites);}
+        catch(error){issues=[String(error.message||error).slice(0,220)];}
+        finally{activeEvaluatorActions.delete(project);}
+        const previous=automaticScheduleIssues.get(project)||[];
+        if(JSON.stringify(previous)!==JSON.stringify(issues)) {
+            if(issues.length)console.warn('[hub-evaluations] '+project+
+                ' automatic scheduler: '+issues.join('; '));
+            else console.log('[hub-evaluations] '+project+' required schedules active.');
+        }
+        if(issues.length)automaticScheduleIssues.set(project,issues);
+        else automaticScheduleIssues.delete(project);
+    }
+}
 async function evaluatorAction(hub,value) {
     // All suites within a project share an approval manifest. Serialize only
     // that project's local UI operations so overlapping requests cannot
@@ -294,4 +334,4 @@ function evaluatorMapReport(hub,id) {
     return localEvaluators.mapReport(hub,id);
 }
 module.exports={status,scheduleRestart,unitStatus,restartActivity,evaluatorAction,
-    evaluatorMapReport,configureTinyBrainsCollectors};
+    evaluatorMapReport,configureTinyBrainsCollectors,ensureJobEvaluationSchedules};
