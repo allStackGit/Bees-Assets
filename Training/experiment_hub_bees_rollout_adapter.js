@@ -100,9 +100,10 @@ function createBeesRolloutAdapter({
         project,python,artifactRoot:artifacts,workerSha:fileHash(worker),
     });
     const source=name=>trustedFile(path.join(pinned.root,name),'Frozen Bees '+name);
+    const payload=release?.worker_payload_sha256??unityWorkerTreeSha256(worker);
     const approved={
-        worker_payload_sha256:unityWorkerTreeSha256(worker),
-        wan_release_sha256:release?.release_sha256??unityWorkerTreeSha256(worker),
+        worker_payload_sha256:payload,
+        wan_release_sha256:release?.release_sha256??payload,
         worker_sha256:fileHash(worker),
         trainer_sha256:fileHash(source('rl_1v1_config.yaml')),
         runtime_version:pinned.runtimeVersion,
@@ -181,13 +182,16 @@ function createBeesRolloutAdapter({
                 'wan_key_fingerprint'])
                 if(parameters[key]!==approved[key])
                     throw Error('Bees remote rollout source or private session key does not match its approved learner.');
+            const checkedRelease=release?
+                pinnedWorkerRelease(releaseManifestPath,worker):null;
             if(privateKey(secret.path).fingerprint!==secret.fingerprint||
                 fileHash(worker)!==approved.worker_sha256||
-                unityWorkerTreeSha256(worker)!==approved.worker_payload_sha256||
+                (checkedRelease?.worker_payload_sha256??unityWorkerTreeSha256(worker))!==
+                    approved.worker_payload_sha256||
                 fileHash(runtime.trainer)!==approved.trainer_sha256||
                 fileHash(runtime.actor)!==approved.actor_sha256||
                 fileHash(runtime.runner)!==approved.runner_sha256||
-                release&&pinnedWorkerRelease(releaseManifestPath,worker).release_sha256!==
+                checkedRelease&&checkedRelease.release_sha256!==
                     approved.wan_release_sha256)
                 throw Error('The approved Bees WAN actor installation changed after enrollment.');
             // This identity must equal the learner's, not the actor's Hub
