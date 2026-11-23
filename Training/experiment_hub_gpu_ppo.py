@@ -101,51 +101,43 @@ class QualifiedPpoActionTerms:
             return self.selected[key] is not None
         self.selected[key]=None
         try:
-            inputs=self._sample(device,dtype,action_count,sample_rows)
             candidate=torch.compile(ppo_action_terms,
                                     backend="inductor",
                                     dynamic=True,fullgraph=True)
-            reference,reference_grad=self._forward_backward(
-                ppo_action_terms,inputs,clip)
-            trial,trial_grad=self._forward_backward(candidate,inputs,clip)
-            if (not torch.allclose(reference,trial,rtol=2e-4,atol=2e-5) or
-                    not torch.allclose(reference_grad,trial_grad,
-                                       rtol=3e-4,atol=3e-5)):
-                return False
-            # PPO has many tiny shape groups as well as large battles.
-            # Qualified execution is selected by actual action count,
-            # not a fixed 256-action cutoff that leaves small workloads
-            # forever eager. Use dynamic code generation but compare
-            # real forward + backward work at four representative sizes.
+            # PPO has many tiny groups as well as large battles. Each
+            # sample size is independently checked; one unsupported HIP
+            # specialization must not disable faster kernels for every
+            # other valid map or ant population.
             results=[]
             sizes=sorted(set((16,64,256,sample_rows)))
             for rows in sizes:
-                case=(inputs if rows==sample_rows else
-                      self._sample(device,dtype,action_count,rows))
-                if rows!=sample_rows:
-                    small_reference,small_grad=self._forward_backward(
+                try:
+                    case=self._sample(device,dtype,action_count,rows)
+                    reference,reference_grad=self._forward_backward(
                         ppo_action_terms,case,clip)
-                    small_trial,small_trial_grad=self._forward_backward(
+                    trial,trial_grad=self._forward_backward(
                         candidate,case,clip)
                     if (not torch.allclose(
-                            small_reference,small_trial,rtol=2e-4,atol=2e-5)
+                            reference,trial,rtol=2e-4,atol=2e-5)
                         or not torch.allclose(
-                            small_grad,small_trial_grad,
+                            reference_grad,trial_grad,
                             rtol=3e-4,atol=3e-5)):
                         results.append((rows,False,0.))
                         continue
-                eager_times,compiled_times=[],[]
-                for order in range(4):
-                    options=((ppo_action_terms,eager_times),
-                             (candidate,compiled_times))
-                    if order%2:
-                        options=options[::-1]
-                    for fn,times in options:
-                        times.append(self._seconds(fn,case,clip,device))
-                eager=median(eager_times)
-                fused=median(compiled_times)
-                gain=(1-fused/eager if eager>0 else -1.)
-                results.append((rows,gain>=self.min_speedup,gain))
+                    eager_times,compiled_times=[],[]
+                    for order in range(4):
+                        options=((ppo_action_terms,eager_times),
+                                 (candidate,compiled_times))
+                        if order%2:
+                            options=options[::-1]
+                        for fn,times in options:
+                            times.append(self._seconds(fn,case,clip,device))
+                    eager=median(eager_times)
+                    fused=median(compiled_times)
+                    gain=(1-fused/eager if eager>0 else -1.)
+                    results.append((rows,gain>=self.min_speedup,gain))
+                except Exception:
+                    results.append((rows,False,0.))
             admitted={row for row,winning,_ in results if winning}
             if not admitted:
                 return False
