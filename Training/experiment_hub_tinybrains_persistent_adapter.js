@@ -104,6 +104,10 @@ const TINYBRAINS_METRIC_CATALOG={
         'rollout_board_packed_bank_reuses',
         'ppo_pinned_upload_reuses',
         'ppo_gpu_index_uploads_saved','ppo_gpu_index_upload_bytes',
+        'gpu_execution_shared_inference_calls',
+        'gpu_execution_shared_inference_selected',
+        'gpu_execution_shared_inference_calibrations',
+        'gpu_execution_shared_inference_fallbacks',
     ],
     remote_rollouts:[
         'remote_policy_snapshot_seconds','remote_opponent_snapshot_seconds',
@@ -363,7 +367,13 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_onnx_batches','rollout_onnx_batched_states','rollout_onnx_states',
         'automatic_collector_allocation','collector_allocation_rebalanced',
         'rollout_inference_batches','rollout_inference_boards',
-        'rollout_inference_max_batch'])
+        'rollout_inference_max_batch',
+        // These counters are emitted for completed, correctly ordered
+        // frozen-opponent groups regardless of detailed PPO profiling.
+        'gpu_execution_shared_inference_calls',
+        'gpu_execution_shared_inference_selected',
+        'gpu_execution_shared_inference_calibrations',
+        'gpu_execution_shared_inference_fallbacks'])
         add(name,row[name],'count');
     add('local_gpu_pending_at_local_end',
         row.local_gpu_collectors_pending_at_local_end,'count');
@@ -646,6 +656,11 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_grouped_padding,'count');
         add('collector_'+i+'_opp_group_fallbacks',
             worker.rollout_opponent_grouped_fallbacks,'count');
+        for(const name of ['gpu_execution_shared_inference_calls',
+            'gpu_execution_shared_inference_selected',
+            'gpu_execution_shared_inference_calibrations',
+            'gpu_execution_shared_inference_fallbacks'])
+            add('collector_'+i+'_'+name,worker[name],'count');
         add('collector_'+i+'_opp_gpu_stream_seconds',
             worker.rollout_opponent_gpu_stream_seconds,'seconds');
         // A mixed frozen/learner forward cannot be assigned exclusively
