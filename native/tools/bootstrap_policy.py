@@ -121,7 +121,7 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
             not isinstance(scene.get("stage_name"), str) or
             not scene["stage_name"] or
             not isinstance(run.get("levels"), list) or not run["levels"] or
-            len(run["levels"]) > (64 if scenario == "custom" else 1) or
+            len(run["levels"]) > (16384 if scenario == "custom" else 1) or
             not isinstance(run.get("native_stage"), dict)):
         raise ValueError("native bootstrap requires complete native physical Levels")
     if not isinstance(scene.get("ships"), list):
@@ -131,17 +131,19 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         if run.get("model_manifest") or run.get("hivemind"):
             raise ValueError("custom bootstrap cannot inherit a live model or HiveMind session")
         source_scenes = []
+        immutable_scenes = {source_scene: scene}
         for index, level in enumerate(run["levels"]):
             if not isinstance(level, dict) or not isinstance(level.get("scene"), str):
                 raise ValueError("each custom Level needs its physical scene")
             physical_path = (source_run.parent / level["scene"]).resolve(strict=True)
             if index == 0 and physical_path != source_scene:
                 raise ValueError("first custom Level scene differs from --source-scene")
-            physical = scene if index == 0 else json.loads(
-                physical_path.read_text(encoding="utf-8")
-            )
-            if not isinstance(physical, dict):
-                raise ValueError("custom native Level scene must be an object")
+            physical = immutable_scenes.get(physical_path)
+            if physical is None:
+                physical = json.loads(physical_path.read_text(encoding="utf-8"))
+                if not isinstance(physical, dict):
+                    raise ValueError("custom native Level scene must be an object")
+                immutable_scenes[physical_path] = physical
             source_scenes.append((physical_path, physical))
         if len(source_scenes) > 1 and holdout_worlds is not None:
             raise ValueError(
@@ -250,9 +252,12 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
                 bound != {item[0] for item in members} or
                 len(bound) != len(members)):
             raise ValueError("original source group has unowned or repeated bound actors")
-    source_scene_digests = [
-        file_sha256(path) for path, _ in source_scenes
-    ]
+    physical_hashes = {}
+    source_scene_digests = []
+    for physical_path, _ in source_scenes:
+        if physical_path not in physical_hashes:
+            physical_hashes[physical_path] = file_sha256(physical_path)
+        source_scene_digests.append(physical_hashes[physical_path])
     source_scene_digest = file_sha256(source_scene)
     source_run_digest = file_sha256(source_run)
     trainer_config_digest = file_sha256(trainer_config)
@@ -299,13 +304,18 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     # and Squad permissions are not rebased; only the enclosing host world
     # identities and scene paths were authored earlier by the suite.
     scene_outputs = []
-    for index, ((original_path, _), digest) in enumerate(
-        zip(source_scenes, source_scene_digests)
+    staged_scene_templates = {}
+    for (original_path, _), digest in zip(
+        source_scenes, source_scene_digests
     ):
-        name = "scene.json" if index == 0 else f"scene-{index + 1:04d}.json"
-        shutil.copyfile(original_path, output / name)
-        if file_sha256(output / name) != digest:
-            raise ValueError("native physical source changed while initializing the model")
+        name = staged_scene_templates.get(digest)
+        if name is None:
+            index = len(staged_scene_templates)
+            name = "scene.json" if index == 0 else f"scene-{index + 1:04d}.json"
+            shutil.copyfile(original_path, output / name)
+            if file_sha256(output / name) != digest:
+                raise ValueError("native physical source changed while initializing the model")
+            staged_scene_templates[digest] = name
         scene_outputs.append(name)
     run.update({
         "run_id": f"native-{scenario}-bootstrap-{seed}",
@@ -409,9 +419,10 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         **({
             "source_scene_sha256": source_scene_digest,
             "source_run_sha256": source_run_digest,
+            "physical_scene_templates": len(staged_scene_templates),
             "source_scenes": [
                 {"source_path": str(source_path), "source_sha256": digest,
-                 "scene": name, "scene_sha256": file_sha256(output / name)}
+                 "scene": name, "scene_sha256": digest}
                 for (source_path, _), digest, name in zip(
                     source_scenes, source_scene_digests, scene_outputs,
                 )
@@ -476,10 +487,14 @@ def verified_existing_bootstrap(output: Path, seed: int, slots: list[int],
                     source_receipts[0].get("source_path") != str(first_scene)):
                 raise ValueError("resumed native source Level collection identity changed")
             for index, (row, level) in enumerate(zip(source_receipts, source_levels)):
-                name = "scene.json" if index == 0 else f"scene-{index + 1:04d}.json"
+                if not isinstance(row, dict):
+                    raise ValueError("resumed native source Level receipt is malformed")
+                name = row.get("scene")
+                if (not isinstance(name, str) or not name or
+                        name != Path(name).name):
+                    raise ValueError("resumed native physical template path is unsafe")
                 expected_source = (original_run.parent / level["scene"]).resolve(strict=True)
-                if (not isinstance(row, dict) or
-                        row.get("scene") != name or
+                if (not (output / name).is_file() or
                         row.get("source_path") != str(expected_source) or
                         row.get("source_sha256") != file_sha256(expected_source) or
                         row.get("scene_sha256") != file_sha256(output / name)):

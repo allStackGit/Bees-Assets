@@ -79,6 +79,9 @@ def assemble(output: Path, source_paths: list[Path],
     if len(set(source_paths)) != len(source_paths):
         raise ValueError("evaluation cannot double-count one authored source run")
     runs = [load(path) for path in source_paths]
+    total_worlds = sum(len(run["levels"]) for run in runs) * worlds_per_source
+    if total_worlds > 16384:
+        raise ValueError("joint native training/evaluation exceeds 16384 physical Worlds")
     shared = physical_contract(runs[0])
     for path, run in zip(source_paths[1:], runs[1:]):
         if physical_contract(run) != shared:
