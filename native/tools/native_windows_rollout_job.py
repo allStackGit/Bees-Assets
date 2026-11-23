@@ -149,6 +149,29 @@ class NativeWindowsRolloutJob:
             if not self.kernel.CloseHandle(handle):
                 raise ctypes.WinError(ctypes.get_last_error())
 
+def stop_unassigned_windows_process(process):
+    """Best-effort cleanup only when a Windows Job attachment failed.
+
+    Unlike the successful Job Object path, taskkill can lose a child when
+    its Rust parent has already exited. Callers must abort the collection
+    on this fallback, never publish a successful worker receipt.
+    """
+    if os.name != "nt":
+        raise OSError("unassigned Windows process cancellation is Windows-only")
+    if process.poll() is None:
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False, timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        if process.poll() is None:
+            process.kill()
+    process.wait()
+
+
 def run_owned_native_process(command, **kwargs):
     """Run one native host and own every descendant until it is reaped.
 
@@ -188,10 +211,7 @@ def run_owned_native_process(command, **kwargs):
         job = NativeWindowsRolloutJob(process)
     except BaseException:
         # Attachment failure cannot be treated as successfully supervised.
-        # Stop the still-owned process before propagating the error.
-        if process.poll() is None:
-            process.kill()
-        process.wait()
+        stop_unassigned_windows_process(process)
         raise
     try:
         returncode = process.wait()
