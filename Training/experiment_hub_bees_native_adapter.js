@@ -300,21 +300,77 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                         draws=data.total_draws,timeouts=data.total_timeouts,
                         losses=data.total_losses;
                     if(data.schema_version!==1||data.job_id!==context.job_id||
-                        data.profile!=='scripted-maps-v1'||
+                        !['scripted-maps-v1','scripted-coverage-v2'].includes(data.profile)||
                         data.model_sha256!==receipt.sha256||
                         ![trials,wins,draws,timeouts,losses].every(x=>
                             Number.isSafeInteger(x)&&x>=0)||
                         !trials||wins+draws+losses!==trials||timeouts>draws)
                         throw Error('Bees native evaluation totals are inconsistent.');
+                    const cases=data.cases;
+                    const requiredCases=data.profile==='scripted-coverage-v2'?48:4;
+                    if(data.case_count!==requiredCases||!Array.isArray(cases)||
+                        cases.length!==requiredCases)
+                        throw Error('Bees evaluation case inventory is incomplete.');
+                    const unique=new Set();
+                    const totals={matches:0,wins:0,draws:0,losses:0,timeouts:0};
+                    const byPlayers=new Map();
+                    for(const item of cases) {
+                        if(!item||typeof item!=='object'||
+                            typeof item.case!=='string'||unique.has(item.case)||
+                            !['pursuit','strafe'].includes(item.opponent)||
+                            !Number.isSafeInteger(item.matches)||
+                            item.matches<1||item.matches>100)
+                            throw Error('Malformed or duplicated Bees evaluation case.');
+                        unique.add(item.case);
+                        for(const key of Object.keys(totals)) {
+                            if(!Number.isSafeInteger(item[key])||
+                                item[key]<0||item[key]>item.matches)
+                                throw Error('Invalid Bees evaluation case accounting.');
+                            totals[key]+=item[key];
+                        }
+                        if(item.wins+item.draws+item.losses!==item.matches||
+                            item.timeouts>item.draws)
+                            throw Error('Bees evaluation case outcomes are inconsistent.');
+                        if(data.profile==='scripted-coverage-v2') {
+                            const match=/^p([1-6])_map(32|64|128|256)_(pursuit|strafe)$/
+                                .exec(item.case);
+                            if(!match||item.opponent!==match[3])
+                                throw Error('Bees coverage case identity is invalid.');
+                            const players=Number(match[1]);
+                            const bucket=byPlayers.get(players)||{matches:0,wins:0,draws:0,timeouts:0};
+                            bucket.matches+=item.matches;
+                            bucket.wins+=item.wins;
+                            bucket.draws+=item.draws;
+                            bucket.timeouts+=item.timeouts;
+                            byPlayers.set(players,bucket);
+                        }
+                    }
+                    for(const key of Object.keys(totals))
+                        if(totals[key]!==data['total_'+key])
+                            throw Error('Bees evaluation case totals do not agree with the summary.');
+                    if(data.profile==='scripted-coverage-v2'&&
+                        (byPlayers.size!==6||
+                         [...byPlayers.values()].some(x=>x.matches<1)))
+                        throw Error('Bees evaluation player-count coverage is incomplete.');
                     const rate=(wins+0.5*(draws-timeouts))/trials;
-                    value.source_modified_at=fs.statSync(summary).mtime.toISOString();
-                    value.metrics={
-                        ...value.metrics,
+                    const measured={
                         evaluation_matches:{value:trials,unit:'count'},
+                        evaluation_cases:{value:requiredCases,unit:'count'},
                         evaluation_win_rate:{value:wins/trials,unit:'ratio'},
                         evaluation_timeout_rate:{value:timeouts/trials,unit:'ratio'},
                         evaluation_score_rate:{value:rate,unit:'ratio'},
                     };
+                    for(const [players,item] of byPlayers) {
+                        measured['evaluation_score_rate_'+players+'p']={
+                            value:(item.wins+0.5*(item.draws-item.timeouts))/item.matches,
+                            unit:'ratio',
+                        };
+                        measured['evaluation_timeout_rate_'+players+'p']={
+                            value:item.timeouts/item.matches,unit:'ratio',
+                        };
+                    }
+                    value.source_modified_at=fs.statSync(summary).mtime.toISOString();
+                    value.metrics={...value.metrics,...measured};
                 }catch(error) {
                     if(error.code!=='ENOENT')throw error;
                 }
