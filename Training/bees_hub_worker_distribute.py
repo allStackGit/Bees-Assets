@@ -233,7 +233,8 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
             "/bees_hub_worker_install.py install --root " +
             machine["install_root"] + " --manifest " + staging +
             "/worker-build-manifest.json --archive " + staging + "/" +
-            archive_name + (" --activate" if activate else "")
+            archive_name + (" --activate" if activate else "") +
+            " --cleanup-staging"
         )
         output = run(ssh_base(machine, install), "Install verified Unity player on " +
                      machine["machine_id"], timeout=1800)
@@ -246,6 +247,7 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
             remote.get("player_tree_sha256") != match["player_tree_sha256"] or
             activate and remote.get("activated") is not True):
             raise RuntimeError("Remote Bees Unity installation receipt does not match built release.")
+        plan[-1]["staging_cleaned"] = remote.get("staging_cleaned") is True
     return plan
 
 
