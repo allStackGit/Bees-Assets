@@ -511,6 +511,9 @@ async function main(argv=process.argv.slice(2)) {
             // after the requested release set has remained identical across
             // two publisher polls. This coalesces back-to-back commits into
             // one coordinated activation instead of repeated disconnects.
+            const simulationSourcePending=Object.entries(releases.latest)
+                .some(([name,entry])=>name!=='worker'&&
+                    entry.source_commit!==releases.bootVersions[name]);
             const signature=JSON.stringify({
                 worker:candidate||null,
                 components:Object.entries(releases.latest)
@@ -519,8 +522,9 @@ async function main(argv=process.argv.slice(2)) {
             });
             if(signature!==observedReleaseSignature) {
                 observedReleaseSignature=signature;
-                if(frontend.backendPending||frontend.agentPending) {
-                    frontend.activationReason='Waiting for a stable release revision before activating.';
+                if(frontend.backendPending||frontend.agentPending||
+                    simulationSourcePending) {
+                    frontend.activationReason='Waiting for a stable software release revision before activating.';
                     // Coalesce consecutive commits, without an unnecessary
                     // two-minute wait once the release has settled.
                     if(followupTimer)clearTimeout(followupTimer);
@@ -587,7 +591,7 @@ async function main(argv=process.argv.slice(2)) {
             }
             localOperations.activating=true;
             hub.softwareMaintenance=true;
-            const result=await releases.applyLocalWhenIdle(hub,override);
+            const result=await releases.applyLocalWhenIdle(hub,override,localSafe);
             // Compare with the running coordinator's commit, not merely
             // against the previous release. If an earlier restart failed,
             // the same unloaded code still needs activation.
