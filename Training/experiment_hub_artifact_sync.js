@@ -21,7 +21,7 @@ const DENIED_NAMES=['token','secret','password','credential','checkpoint','rollo
     'key_file','key-file','keyfile','id_rsa','id_ed25519',
     'service_account','service-account','connection_string',
     'connection-string','connectionstring','bearer','authorization','authentication'];
-function safeLogPath(relative) {
+function safeLogPath(relative,allowBeesCandidate=false) {
     if(typeof relative!=='string'||relative.length>320||
         relative.includes('\\'))return false;
     const parts=relative.split('/');
@@ -30,7 +30,8 @@ function safeLogPath(relative) {
         DENIED.has(s.toLowerCase())||
         DENIED_NAMES.some(name=>s.toLowerCase().includes(name))||
         s==='.'||s==='..'))return false;
-    return SUFFIXES.has(path.posix.extname(relative).toLowerCase());
+    return SUFFIXES.has(path.posix.extname(relative).toLowerCase())||
+        (allowBeesCandidate&&relative==='policy-candidate/model.onnx');
 }
 function fail(message,status=400) {
     const error=Error(message);
@@ -112,7 +113,8 @@ class ArtifactMirror {
             job.project_id==='bees'||!job.lease_id||
             job.start_first_offered_at==null)
             fail('Artifact job is not owned by this machine.',409);
-        if(!safeLogPath(relative)||!SHA.test(String(sha||''))||
+        if(!safeLogPath(relative,job.project_id==='bees_native')||
+            !SHA.test(String(sha||''))||
             !Number.isSafeInteger(size)||size<1||size>MAX_FILE)
             fail('Invalid artifact snapshot.',400);
         const root=path.dirname(hub.file);
