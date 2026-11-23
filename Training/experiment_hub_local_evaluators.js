@@ -923,8 +923,17 @@ async function action(hub,value) {
         const previous=value.id==null?null:
             custom.read(o).templates.find(t=>t.id===value.id);
         const saved=custom.saveEvaluation(o,hub,value);
-        // Immutable suite files survive incomplete service installation.
-        await setup(hub);
+        // The immutable definition is already committed; a failed service
+        // install must not masquerade as a failed save and prompt another
+        // revision. Set up can reconcile the original installation later.
+        try {
+            await setup(hub);
+        }catch(error) {
+            return {...saved,installed:false,message:saved.message+
+                ' The evaluation is saved but its service is not installed: '+
+                String(error.message||error).slice(0,180)+
+                '. Use Set up TinyBrains evaluations to reconcile it.'};
+        }
         // Editing must not leave an obsolete six-hour timer evaluating every
         // archived checkpoint forever. Preserve it when an already queued
         // or completed job still needs its exact immutable revision.
