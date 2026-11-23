@@ -112,6 +112,28 @@ impl MiniMapLayout {
             .then_some((left, top, right, bottom))
     }
 
+    pub fn draw_briefing_mining_marker(self, pixels: &mut [u32], stride: usize, point: Vec2)
+        -> bool
+    {
+        let Some((x, y)) = self.project(point) else { return false };
+        let x = x.round() as usize;
+        let y = y.round() as usize;
+        // The plot inset leaves room for the ring even at the map edge.
+        const ROWS: [u16; 9] = [
+            0b000111000, 0b011000110, 0b010000010, 0b100000001, 0b100000001,
+            0b100000001, 0b010000010, 0b011000110, 0b000111000,
+        ];
+        for (row, mask) in ROWS.into_iter().enumerate() {
+            let start = (y + row - 4) * stride + x - 4;
+            for column in 0..9 {
+                if mask & (1 << column) != 0 {
+                    pixels[start + column] = 0xff493c;
+                }
+            }
+        }
+        true
+    }
+
     pub fn camera_rect(self, bottom_left: Vec2, top_right: Vec2) ->
         Option<(f32, f32, f32, f32)>
     {

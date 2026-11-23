@@ -3081,6 +3081,8 @@ fn current_state(
                 "sequence": sequence,
                 "cue": cue,
                 "line_count": crate::presentation::campaign_dialogue::line_count(cue),
+                "mining_sites": view.briefing_mining_sites(side)
+                    .map(|site| [site.x, site.y]).collect::<Vec<_>>(),
                 "lines": crate::presentation::campaign_dialogue::
                     displayed_lines(cue).collect::<Vec<_>>(),
             }))

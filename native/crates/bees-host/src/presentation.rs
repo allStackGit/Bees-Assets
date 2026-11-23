@@ -266,6 +266,23 @@ pub struct NativeRenderWorldView<'a> {
 }
 
 impl<'a> NativeRenderWorldView<'a> {
+    /// Neptune's briefing explicitly reveals its five mine sites to the
+    /// campaign commander. Use their physical positions for the duration
+    /// of the cue, including when reopening a checkpoint in the briefing.
+    pub(crate) fn briefing_mining_sites(&self, viewer_side: i32)
+        -> impl Iterator<Item = Vec2> + '_
+    {
+        use bees_gameplay::campaign_dialogue::CampaignCue;
+        use bees_sim::obstacle::ObstacleKind;
+
+        let visible = self.campaign_dialogue_side == Some(viewer_side) &&
+            matches!(self.campaign_dialogue, Some((_, CampaignCue::NeptuneProductionBriefing)));
+        visible.then_some(()).into_iter()
+            .flat_map(move |()| self.combat.render_obstacles())
+            .filter_map(|(obstacle, body)| (obstacle.kind == ObstacleKind::MiningAsteroid)
+                .then_some(body.pose.position))
+    }
+
     /// Source Beacon.SetBeaconStatus reads ProximityCollider.NearbyEnemyShips.
     /// The trigger is a circle of radius Sight (MaxRange if Sight == 0),
     /// identical to this Level's authored fog vision radius. Check it

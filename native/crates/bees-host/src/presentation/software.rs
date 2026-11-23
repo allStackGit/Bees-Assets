@@ -183,6 +183,7 @@ pub struct NativeRenderCounts {
     pub minimap_ship_markers: usize,
     pub minimap_visible_enemy_markers: usize,
     pub minimap_terrain_markers: usize,
+    pub minimap_briefing_mining_markers: usize,
     pub minimap_extraction_exit_markers: usize,
     pub numbered_squad_rows: usize,
     pub special_ready_ships: usize,
@@ -3734,6 +3735,13 @@ impl NativeSoftwareRenderer {
                 self.line(x1, y0, x0, y0, color);
                 self.line(x0, y0, x0, y1, color);
                 counts.minimap_extraction_exit_markers += 1;
+            }
+        }
+        if let Some(side) = view.player_authority.player_viewer_side() {
+            for site in view.briefing_mining_sites(side) {
+                if layout.draw_briefing_mining_marker(&mut self.pixels, self.width, site) {
+                    counts.minimap_briefing_mining_markers += 1;
+                }
             }
         }
         let bottom_left = self.camera.screen_to_world(

@@ -1856,6 +1856,13 @@ fn draw_remote_minimap(
             }
         }
     }
+    for site in state["campaign_dialogue"]["mining_sites"].as_array().into_iter().flatten()
+        .filter_map(point_from_wire)
+    {
+        if layout.draw_briefing_mining_marker(pixels, WIDTH, site) {
+            objective_markers += 1;
+        }
+    }
     let bottom_left = camera.screen_to_world(0.0, HEIGHT as f32, FIELD, HEIGHT);
     let top_right = camera.screen_to_world(FIELD as f32, 0.0, FIELD, HEIGHT);
     if let Some((x0, y0, x1, y1)) = layout.camera_rect(bottom_left, top_right) {
