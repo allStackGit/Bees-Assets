@@ -56,15 +56,23 @@ pub fn server_tls_from_environment() -> io::Result<Option<Arc<ServerConfig>>> {
         }
         return Ok(None);
     };
-    let certificate = CertificateDer::from(private_file(Path::new(&certificate), false)?);
+    Ok(Some(server_tls_from_files(Path::new(&certificate), Path::new(&key))?))
+}
+
+/// The same authenticated server TLS parser is used when desktop hosting
+/// validates its selected files BEFORE committing a new campaign battle.
+pub fn server_tls_from_files(
+    certificate: &Path, key: &Path,
+) -> io::Result<Arc<ServerConfig>> {
+    let certificate = CertificateDer::from(private_file(certificate, false)?);
     let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
-        private_file(Path::new(&key), true)?,
+        private_file(key, true)?,
     ));
     let config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(vec![certificate], key)
         .map_err(invalid)?;
-    Ok(Some(Arc::new(config)))
+    Ok(Arc::new(config))
 }
 
 /// A TLS client requires an explicitly trusted DER CA. No insecure local-
