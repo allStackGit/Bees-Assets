@@ -3812,6 +3812,7 @@ pub fn connect_remote(
         // A newly delivered campaign cue resets this presentation-only
         // dialogue cursor BEFORE K's meaning is determined.
         let mut dialogue_skip_key=false;
+        let mut level_intro_visible = false;
         if let Some(state)=peer.state.as_ref() {
             let cue=state["campaign_dialogue"]["sequence"].as_u64().map(|sequence|(
                 state["world_id"].as_u64().unwrap_or(0),
@@ -3823,6 +3824,9 @@ pub fn connect_remote(
             }
             let count=state["campaign_dialogue"]["line_count"]
                 .as_u64().unwrap_or(0).min(100) as usize;
+            let authored_cue = (count > 0).then(|| serde_json::from_value::<CampaignCue>(
+                state["campaign_dialogue"]["cue"].clone(),
+            ).ok()).flatten();
             if count>0 {
                 if let Some(key) = dialogue_key.filter(|_| dialogue_line < count) {
                     if dialogue_reveal_scope != Some((key, dialogue_line)) {
@@ -3841,9 +3845,7 @@ pub fn connect_remote(
                     (window.is_key_pressed(Key::L,KeyRepeat::No) ||
                     window.is_key_pressed(Key::Enter,KeyRepeat::No)) {
                     let incomplete = !dialogue_reveal_forced &&
-                        serde_json::from_value::<CampaignCue>(
-                            state["campaign_dialogue"]["cue"].clone(),
-                        ).ok().and_then(|cue|
+                        authored_cue.and_then(|cue|
                             super::campaign_dialogue::visible_line(cue,dialogue_line))
                             .is_some_and(|(_,message)|
                                 now.saturating_duration_since(dialogue_reveal_started)
@@ -3860,9 +3862,7 @@ pub fn connect_remote(
                 {
                     dialogue_line=dialogue_line.saturating_sub(1);
                 }
-                let pause = serde_json::from_value::<CampaignCue>(
-                    state["campaign_dialogue"]["cue"].clone(),
-                ).ok().and_then(|cue|
+                let pause = authored_cue.and_then(|cue|
                     super::campaign_dialogue::pause_seconds(cue, dialogue_line));
                 if let (Some(key),Some(seconds))=(dialogue_key,pause) {
                     match dialogue_pause_started {
@@ -3885,6 +3885,8 @@ pub fn connect_remote(
                     audio.campaign_dialogue_presented();
                 }
             }
+            level_intro_visible = dialogue_line < count &&
+                authored_cue.is_some_and(CampaignCue::is_level_intro);
             if let Some(key) = dialogue_key.filter(|_| dialogue_line < count) {
                 if dialogue_reveal_scope != Some((key, dialogue_line)) {
                     dialogue_reveal_scope = Some((key, dialogue_line));
@@ -3945,6 +3947,7 @@ pub fn connect_remote(
                 last_audio_snapshot=Some(key);
             }
         }
+        audio.set_level_intro_ambience(level_intro_visible);
         // Keep the roster viewport valid after physical squad losses.
         let friendly_count=peer.state.as_ref().and_then(|state|state["squads"].as_array())
             .map_or(0,|squads|squads.iter().filter(|s|s["owned"]==true).count());

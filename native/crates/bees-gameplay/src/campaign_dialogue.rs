@@ -165,18 +165,20 @@ pub enum CampaignCue {
 }
 
 impl CampaignCue {
-    pub fn is_briefing(self) -> bool {
+    pub fn is_level_intro(self) -> bool {
         matches!(self, Self::PlutoAnomalyBriefing |
-            Self::PlutoAnomalyHoneybeeSpotted |
-            Self::PlutoAnomalyGunshipArrived |
             Self::PlutoReinforcementsBriefing |
-            Self::PlutoReinforcementsScoutSelected |
             Self::MinesweeperBriefing | Self::BeenocularsBriefing { .. } |
             Self::PlutoPushbackBriefing { .. } |
             Self::NeptunePressingForwardBriefing | Self::NeptuneSeizeBriefing |
             Self::PlutoEvacuationBriefing { .. } | Self::NeptuneProductionBriefing |
             Self::UranusNewThreatBriefing | Self::UranusDefensiveBriefing |
             Self::UranusOffensiveBriefing)
+    }
+
+    pub fn is_briefing(self) -> bool {
+        self.is_level_intro() || matches!(self, Self::PlutoAnomalyHoneybeeSpotted |
+            Self::PlutoAnomalyGunshipArrived | Self::PlutoReinforcementsScoutSelected)
     }
 }
 

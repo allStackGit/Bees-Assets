@@ -1031,6 +1031,9 @@ impl NativeClient {
             self.dialogue_reveal_forced = false;
         }
         self.dialogue_visible = dialogue.is_some();
+        self.audio.set_level_intro_ambience(
+            dialogue.is_some_and(|(cue, _, _)| cue.is_level_intro()),
+        );
         // Hiding the owner's story from the opposite hot-seat must not
         // advance the authoritative mission before the owner has read it.
         let briefing = if dialogue_for_viewer {

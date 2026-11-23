@@ -46,11 +46,11 @@ enum Effect {
     BigLaser, BigLaserAlt, BeamCannon, FlagshipLaser, QueenLaser,
     RocketLaunch, StrikerBomb, Explosion, SmallExplosion, MediumExplosion,
     LargeExplosion, HugeExplosion, Warp, WarpGateStarting, WarpGateLoop,
-    Button, FireBargeClick, Intercom,
+    Button, FireBargeClick, Intercom, LevelIntro,
 }
 
 impl Effect {
-    const ALL: [Self; 22] = [
+    const ALL: [Self; 23] = [
         Self::LightLaser, Self::LightLaserAlt,
         Self::SmallLaser, Self::SmallLaserAlt,
         Self::BigLaser, Self::BigLaserAlt,
@@ -58,7 +58,7 @@ impl Effect {
         Self::StrikerBomb, Self::Explosion, Self::SmallExplosion,
         Self::MediumExplosion, Self::LargeExplosion, Self::HugeExplosion,
         Self::Warp, Self::WarpGateStarting, Self::WarpGateLoop,
-        Self::Button, Self::FireBargeClick, Self::Intercom,
+        Self::Button, Self::FireBargeClick, Self::Intercom, Self::LevelIntro,
     ];
 
     fn file(self) -> &'static str {
@@ -85,6 +85,7 @@ impl Effect {
             Self::Button => "Beez Button Click.mp3",
             Self::FireBargeClick => "Fire Barge Detonation Click.mp3",
             Self::Intercom => "Intercom Notification Sound Effect.mp3",
+            Self::LevelIntro => "Engine Hum Sound Effect.mp3",
         }
     }
 
@@ -193,6 +194,7 @@ pub struct NativeAudioMeasurements {
     pub warp_gate_loops_started: u64,
     pub warp_gate_voices_stopped: u64,
     pub warp_gate_voices_dropped: u64,
+    pub level_intro_loops_started: u64,
     pub music_tracks_started: u64,
     pub music_tracks_missing: u64,
     pub missed_visualized_ticks: u64,
@@ -207,6 +209,8 @@ pub struct NativeGameAudio {
     effects: HashMap<Effect, Arc<[u8]>>,
     voices: Vec<Sink>,
     music: Vec<Sink>,
+    level_intro_active: bool,
+    level_intro_voice: Option<Sink>,
     location: Option<NativeMusicLocation>,
     current_episode: Option<(WorldId, u64)>,
     last_tick: Option<u64>,
@@ -255,6 +259,7 @@ impl NativeGameAudio {
         Self {
             handle, root, effects,
             voices: Vec::new(), music: Vec::new(), location: None,
+            level_intro_active: false, level_intro_voice: None,
             current_episode: None, last_tick: None,
             seen_projectiles: HashMap::new(),
             seen_warp_gates: HashMap::new(),
@@ -366,7 +371,14 @@ impl NativeGameAudio {
         if self.muted { 0.0 } else { EFFECT_VOLUME * self.effects_level }
     }
 
+    fn level_intro_volume(&self) -> f32 {
+        if self.muted { 0.0 } else { 0.35 * self.music_level }
+    }
+
     fn apply_levels(&self) {
+        if let Some(voice) = &self.level_intro_voice {
+            voice.set_volume(self.level_intro_volume());
+        }
         for sink in &self.music { sink.set_volume(self.music_volume()); }
         for sink in &self.voices { sink.set_volume(self.effect_volume()); }
         for sink in self.warp_gate_openings.values()
@@ -542,10 +554,30 @@ impl NativeGameAudio {
         }
     }
 
+    /// The original LevelIntro runs a separate loop while its story is
+    /// visible, even while physical gameplay and its soundtrack are paused.
+    pub fn set_level_intro_ambience(&mut self, active: bool) {
+        if self.level_intro_active == active { return; }
+        self.level_intro_active = active;
+        if !active {
+            if let Some(voice) = self.level_intro_voice.take() { voice.stop(); }
+            return;
+        }
+        let Some(handle) = self.handle.as_ref() else { return };
+        let Some(bytes) = self.effects.get(&Effect::LevelIntro) else { return };
+        let Ok(source) = Decoder::new(Cursor::new(Arc::clone(bytes))) else { return };
+        let Ok(voice) = Sink::try_new(handle) else { return };
+        voice.set_volume(self.level_intro_volume());
+        voice.append(source.repeat_infinite());
+        self.level_intro_voice = Some(voice);
+        self.measurements.level_intro_loops_started += 1;
+    }
+
     /// A remote TCP seat change retires all sounds belonging to the old
     /// authoritative presentation, even when the new session uses the same
     /// world ID or the map has no soundtrack location.
     pub fn reset_remote_session(&mut self) {
+        self.set_level_intro_ambience(false);
         self.reset_warp_gate_audio();
         for sink in self.voices.drain(..) { sink.stop(); }
         self.current_episode = None;
