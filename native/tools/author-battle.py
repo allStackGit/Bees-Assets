@@ -2104,6 +2104,61 @@ def original_ordinary_policy_reference(ship: dict, policies: dict,
     return policies.get((side, 21 if side == 1 else 13))
 
 
+def original_yellow_jacket_policy_reference(ship: dict, source: dict,
+                                             codex: dict) -> dict | None:
+    """Enroll authentic original Yellow Jackets using Queen minion Bomb data.
+
+    A Queen already trains and deploys this EXACT physical Bomb and
+    observation/action vocabulary via CombatWorld. Only borrow the Bomb
+    observation, never a Queen's hull, minion capacity, timing, position,
+    rewards or policy decision output. The original standalone Yellow
+    Jacket's own physical special is authoritative.
+    """
+    if ship.get("side") != 2 or ship.get("ship_type") != 22:
+        return None
+    original = next(
+        (entry for entry in codex.get("ships", [])
+         if entry.get("ship_type") == 22), None,
+    )
+    if not isinstance(original, dict) or any(
+        ship.get(field) != original.get(codex_field)
+        for field, codex_field in (
+            ("health", "health"), ("max_health", "health"),
+            ("original_health", "health"), ("max_tsv", "tsv"),
+            ("base_speed", "speed"),
+        )
+    ) or (ship.get("sight") or {}).get("source_sight") != original.get("sight"):
+        return None
+    special, weapon = ship.get("special"), ship.get("special_weapon")
+    if (not isinstance(special, dict) or
+            special.get("kind") != "yellow_jacket" or
+            not isinstance(weapon, dict) or
+            special.get("power") != weapon.get("power") or
+            ship.get("drone_carrier_id") is not None or
+            ship.get("turrets")):
+        return None
+    queen = next(
+        (entry for entry in source.get("ships", [])
+         if entry.get("side") == 2 and entry.get("ship_type") == 17
+         and isinstance(entry.get("policy"), dict) and
+         isinstance(entry.get("special"), dict) and
+         entry["special"].get("kind") == "queen"),
+        None,
+    )
+    if queen is None:
+        return None
+    minion = (queen["special"].get("spawn") or {}).get("minion") or {}
+    bomb = minion.get("special_weapon")
+    if (not isinstance(bomb, dict) or
+            minion.get("ship_type_letter") != 22 or
+            minion.get("observed_weapon_type") != 0 or
+            not isinstance(bomb.get("observation"), dict)):
+        return None
+    # The shared author performs the same full Bomb physical-slot check
+    # against this reference before copying its observation below.
+    return {"special_weapon": bomb}
+
+
 def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
     """Use source-authored v26 policy identities with this same CombatWorld."""
     source = load_json(args.policy_archetypes)
@@ -2154,8 +2209,9 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
                 ship.get("mined_cargo", 0)):
             raise ValueError("custom native policy starting ships must be at full health with no cargo")
         source_ship = (None if ship["entity_id"] in scripted_reinforcement_ships
-                       else policies.get((ship["side"], ship["ship_type"])) or
-                            original_ordinary_policy_reference(ship, policies, codex))
+                       else (policies.get((ship["side"], ship["ship_type"])) or
+                             original_ordinary_policy_reference(ship, policies, codex) or
+                             original_yellow_jacket_policy_reference(ship, source, codex)))
         if source_ship is None:
             ship.pop("policy", None)
             continue
