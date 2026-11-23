@@ -109,9 +109,9 @@ def write_native_holdout(output: Path, training_run: dict,
         level["seed"] = level_seed
         level.pop("episode_seeds", None)
         run["levels"].append(level)
-    with (output / "holdout-run.json").open("x", encoding="utf-8", newline="\\n") as file:
+    with (output / "holdout-run.json").open("x", encoding="utf-8", newline="\n") as file:
         json.dump(run, file, indent=2)
-        file.write("\\n")
+        file.write("\n")
         file.flush()
         os.fsync(file.fileno())
 
