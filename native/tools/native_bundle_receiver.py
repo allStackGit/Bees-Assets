@@ -247,11 +247,11 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
 
 
 def download_input_archive(base_url, collector_id, destination, token=None):
-    """Fetch immutable collector inputs with bounded memory and ranged resume.
+    """Fetch immutable inputs, resuming a SHA-pinned prefix across restarts.
 
-    Partial bytes stay private until the whole SHA-pinned archive is verified.
-    A resumed response must match the first response's exact byte identity,
-    so changing issued rounds cannot silently combine unrelated archives.
+    The published archive is never made visible before full verification.
+    Older learners lacking input HEAD continue using temporary, in-process
+    ranged downloads without relying on any new wire schema.
     """
     if not BUNDLE_NAME.fullmatch(collector_id):
         raise ValueError("invalid native collector identity")
@@ -268,19 +268,90 @@ def download_input_archive(base_url, collector_id, destination, token=None):
     endpoint = parts.path.rstrip("/") + "/v1/inputs/" + collector_id
     auth = bundle_token() if token is None else token
     started = time.perf_counter()
+    size = digest = None
+
+    # The authoritative issued archive is immutable. Discover its physical
+    # SHA and length before looking up any surviving local prefix.
+    query = None
+    try:
+        query = connection_class(parts.hostname, parts.port, timeout=60)
+        query.request("HEAD", endpoint, headers={"Authorization": "Bearer " + auth})
+        answer = query.getresponse()
+        if answer.status == 200:
+            size = int(answer.getheader("Content-Length", "0"))
+            digest = answer.getheader("X-Archive-SHA256", "")
+            if not 0 < size <= MAX_ARCHIVE_BYTES or not DIGEST_RE.fullmatch(digest):
+                raise ValueError("learner input archive HEAD has invalid identity")
+        elif answer.status == 404:
+            raise LookupError("collector input archive has no issued work order")
+        elif answer.status not in (405, 501, 503):
+            raise ValueError(f"collector input identity rejected: HTTP {answer.status}")
+    except (OSError, http.client.HTTPException):
+        # HEAD discovery is optional for interoperability. Existing GET
+        # retries still diagnose offline receivers and incomplete streams.
+        size = digest = None
+    finally:
+        if query is not None:
+            query.close()
+
     temporary = None
-    size = None
-    digest = None
+    persistent = size is not None
+    discard_partial = False
+    successful = False
+    initial_prefix = 0
+    attempts = 0
+    resumed_prefix_bytes = 0
+    prefix_rehash_bytes = 0
     hasher = hashlib.sha256()
     received = 0
-    resumed_prefix_bytes = 0
-    attempts = 0
     try:
-        with tempfile.NamedTemporaryFile(mode="w+b", dir=parent,
-                prefix=".native-input-download-", suffix=".partial",
-                delete=False) as output:
-            temporary = Path(output.name)
+        if persistent:
+            seed = f"{collector_id}:{digest}:{size}"
+            name = hashlib.sha256(seed.encode("ascii")).hexdigest()
+            temporary = parent / (".native-input-download-" + name + ".partial")
+            if temporary.is_symlink():
+                raise ValueError("native collector input staging file is a symlink")
+            if temporary.exists():
+                stat = temporary.stat()
+                if not temporary.is_file() or (
+                        os.name == "posix" and stat.st_mode & 0o077):
+                    raise ValueError("native collector input stage must be a private regular file")
+                if stat.st_size > size:
+                    temporary.unlink()
+                else:
+                    with temporary.open("rb") as stream:
+                        while block := stream.read(CHUNK):
+                            hasher.update(block)
+                            received += len(block)
+                    initial_prefix = received
+                    prefix_rehash_bytes = received
+            if not temporary.exists():
+                fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                os.close(fd)
+        else:
+            with tempfile.NamedTemporaryFile(mode="w+b", dir=parent,
+                    prefix=".native-input-download-", suffix=".partial",
+                    delete=False) as output:
+                temporary = Path(output.name)
+
+        with temporary.open("r+b") as output:
+            output.seek(received)
             for attempt in range(MAX_DOWNLOAD_ATTEMPTS):
+                if size is not None and received == size:
+                    if hasher.hexdigest() == digest:
+                        break
+                    if initial_prefix and attempt + 1 < MAX_DOWNLOAD_ATTEMPTS:
+                        # A crash may have left a malformed local prefix.
+                        # Discard it once and fetch a clean immutable copy.
+                        output.seek(0)
+                        output.truncate()
+                        output.flush()
+                        hasher = hashlib.sha256()
+                        received = 0
+                        initial_prefix = 0
+                    else:
+                        discard_partial = True
+                        raise ValueError("collector input archive checksum differs from learner receipt")
                 attempts = attempt + 1
                 connection = None
                 try:
@@ -295,6 +366,7 @@ def download_input_archive(base_url, collector_id, destination, token=None):
                     if response.status == 503:
                         raise ConnectionError("learner input receiver is at its connection limit")
                     if response.status != expected_status:
+                        discard_partial = True
                         reason = response.read(4096)
                         raise ValueError(
                             f"collector input download rejected: HTTP {response.status}: {reason!r}"
@@ -303,12 +375,14 @@ def download_input_archive(base_url, collector_id, destination, token=None):
                     response_digest = response.getheader("X-Archive-SHA256", "")
                     if size is None:
                         if not 0 < length <= MAX_ARCHIVE_BYTES or not DIGEST_RE.fullmatch(response_digest):
+                            discard_partial = True
                             raise ValueError("learner returned an invalid collector archive identity")
                         size, digest = length, response_digest
                     elif (response_digest != digest or
                             length != size - received or
                             (received and response.getheader("Content-Range") !=
                              f"bytes {received}-{size - 1}/{size}")):
+                        discard_partial = True
                         raise ValueError("learner changed collector inputs during resumed download")
                     while received < size:
                         block = response.read(min(CHUNK, size - received))
@@ -317,7 +391,7 @@ def download_input_archive(base_url, collector_id, destination, token=None):
                         output.write(block)
                         hasher.update(block)
                         received += len(block)
-                    if received == size:
+                    if received == size and hasher.hexdigest() == digest:
                         break
                 except (OSError, http.client.HTTPException):
                     if attempt + 1 == MAX_DOWNLOAD_ATTEMPTS:
@@ -328,13 +402,18 @@ def download_input_archive(base_url, collector_id, destination, token=None):
             if size is None or received != size:
                 raise ValueError("learner returned truncated collector inputs after bounded retries")
             if hasher.hexdigest() != digest:
+                discard_partial = True
                 raise ValueError("collector input archive checksum differs from learner receipt")
             output.flush()
             os.fsync(output.fileno())
         os.link(temporary, target)
         sync_directory(parent)
+        successful = True
     finally:
-        if temporary is not None:
+        # Preserve a private SHA-named prefix after transient network errors;
+        # reject changed identities and remove only completed or invalid
+        # staging. The learner's issued work order is still authoritative.
+        if temporary is not None and (successful or discard_partial or not persistent):
             temporary.unlink(missing_ok=True)
     return {
         "kind": "native_collector_inputs_downloaded",
@@ -343,6 +422,7 @@ def download_input_archive(base_url, collector_id, destination, token=None):
         "wall_seconds": time.perf_counter() - started,
         "download_attempts": attempts,
         "resumed_prefix_bytes": resumed_prefix_bytes,
+        "recovered_prefix_rehash_bytes": prefix_rehash_bytes,
     }
 
 
