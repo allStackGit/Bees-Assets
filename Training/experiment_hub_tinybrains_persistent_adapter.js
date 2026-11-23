@@ -108,6 +108,10 @@ const TINYBRAINS_METRIC_CATALOG={
         'gpu_execution_shared_inference_selected',
         'gpu_execution_shared_inference_calibrations',
         'gpu_execution_shared_inference_fallbacks',
+        'gpu_execution_shared_learner_calls',
+        'gpu_execution_shared_learner_selected',
+        'gpu_execution_shared_learner_calibrations',
+        'gpu_execution_shared_learner_fallbacks',
     ],
     remote_rollouts:[
         'remote_policy_snapshot_seconds','remote_opponent_snapshot_seconds',
@@ -373,7 +377,11 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'gpu_execution_shared_inference_calls',
         'gpu_execution_shared_inference_selected',
         'gpu_execution_shared_inference_calibrations',
-        'gpu_execution_shared_inference_fallbacks'])
+        'gpu_execution_shared_inference_fallbacks',
+        'gpu_execution_shared_learner_calls',
+        'gpu_execution_shared_learner_selected',
+        'gpu_execution_shared_learner_calibrations',
+        'gpu_execution_shared_learner_fallbacks'])
         add(name,row[name],'count');
     add('local_gpu_pending_at_local_end',
         row.local_gpu_collectors_pending_at_local_end,'count');
@@ -659,7 +667,11 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         for(const name of ['gpu_execution_shared_inference_calls',
             'gpu_execution_shared_inference_selected',
             'gpu_execution_shared_inference_calibrations',
-            'gpu_execution_shared_inference_fallbacks'])
+            'gpu_execution_shared_inference_fallbacks',
+            'gpu_execution_shared_learner_calls',
+            'gpu_execution_shared_learner_selected',
+            'gpu_execution_shared_learner_calibrations',
+            'gpu_execution_shared_learner_fallbacks'])
             add('collector_'+i+'_'+name,worker[name],'count');
         add('collector_'+i+'_opp_gpu_stream_seconds',
             worker.rollout_opponent_gpu_stream_seconds,'seconds');
