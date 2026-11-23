@@ -729,8 +729,8 @@ function testPythonCode(python, code) {
     return result.status === 0;
 }
 
-function invokePythonJson(python, args, cwd = paths.assetsRoot) {
-    const result = runSync(python, args, { cwd });
+function invokePythonJson(python, args, cwd = paths.assetsRoot, env = process.env) {
+    const result = runSync(python, args, { cwd, env });
     const output = String(result.stdout || '').trim();
     if (!output) throw new Error(python + ' produced no JSON output for ' + args[0] + '.');
     try {
