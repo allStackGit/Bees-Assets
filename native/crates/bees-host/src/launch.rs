@@ -6379,7 +6379,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 library.games.iter().enumerate().find(|(_, game)|
                     game.id == *id && game.kind == "campaign"
                 ).and_then(|(index, _)| match
-                    fleet_builder::original_campaign_fighters(&games[index])
+                    fleet_builder::original_campaign_hulls(&games[index])
                 {
                     Ok(classes) => Some(classes),
                     Err(error) => {
@@ -6389,21 +6389,12 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 })
             ).unwrap_or([Vec::new(), Vec::new()])
         } else { [Vec::new(), Vec::new()] };
-        let original_factory = if freeplay_unlocked {
-            original_freeplay_finales.iter().find_map(|(id, _)|
-                library.games.iter().enumerate().find(|(_, game)|
-                    game.id == *id && game.kind == "campaign"
-                ).and_then(|(index, _)| {
-                    match fleet_builder::original_campaign_factory(&games[index]) {
-                        Ok(source) => source,
-                        Err(error) => {
-                            eprintln!("Original Factory source is not ready: {error}");
-                            None
-                        },
-                    }
-                })
-            )
-        } else { None };
+        // The same source traversal collected production hulls, fighter
+        // classes, genuine specialist abilities, and Carrier children.
+        // Do not reparse the entire campaign for one Factory or let a
+        // synthetic example override the canonical original assets.
+        let original_factory = original_fighters[1].iter()
+            .find(|ship| ship["ship_type"] == 9).cloned();
         let unlocked_games = library.games.iter().map(|game| -> io::Result<bool> {
             if let Some(gate) = game.unlock_after_playtime.as_ref() {
                 return read_fish_tank_unlocked(&fish_tank_unlock_file(
