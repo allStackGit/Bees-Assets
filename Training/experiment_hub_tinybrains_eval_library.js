@@ -389,7 +389,7 @@ function saveEvaluation(o,hub,value) {
     else catalog.templates.push(record);
     saveCatalog(o,catalog);
     return {record,message:'Saved immutable mixed evaluation '+name+
-        ' revision '+revision+' ('+games+' matches). Install its evaluator service and restart the idle local agent before selecting the suite in Design.'};
+        ' revision '+revision+' ('+games+' matches). You can attach it to Design monitoring now; install its evaluator service and restart the idle local agent before running jobs that require the suite.'};
 }
 function deleteEvaluation(o,value) {
     const catalog=read(o);
