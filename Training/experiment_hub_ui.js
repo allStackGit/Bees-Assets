@@ -5770,7 +5770,7 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .map(j=>j.continuation_of_job_id||j.after_job_id));
         const availableParents=(state.jobs||[]).filter(j=>
-            ['tinybrains','courier'].includes(project)&&j.project_id===project&&
+            ['tinybrains','courier','bees_native'].includes(project)&&j.project_id===project&&
             (!successors.has(j.id)||(j.status==='finished'&&
                 Boolean(j.capacity_released_at)&&
                 j.checkpoint_ready_verified===true&&
@@ -5862,16 +5862,16 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshSelectOptions(kind, [
             new Option('Fresh jobs in sequence (wait for predecessor)','independent'),
             new Option('Independent trials (can run concurrently)','batch'),
-            ...(['tinybrains','courier'].includes(project)
-                ?[new Option('Checkpoint continuation (sequential, inherited model)','continuation')]
+            ...(['tinybrains','courier','bees_native'].includes(project)
+                ?[new Option('Checkpoint continuation (sequential, inherited optimizer)','continuation')]
                 :[])]);
         if(pipelineKindProject===project&&
             ['independent','batch','continuation'].includes(oldKind)&&
-            (oldKind!=='continuation'||['tinybrains','courier'].includes(project)))
+            (oldKind!=='continuation'||['tinybrains','courier','bees_native'].includes(project)))
             kind.value=oldKind;
-        else kind.value=['tinybrains','courier'].includes(project)?'batch':'independent';
+        else kind.value=['tinybrains','courier','bees_native'].includes(project)?'batch':'independent';
         pipelineKindProject=project;
-        const checkpointPipeline=['tinybrains','courier'].includes(project)&&kind.value==='continuation';
+        const checkpointPipeline=['tinybrains','courier','bees_native'].includes(project)&&kind.value==='continuation';
         const trialBatch=kind.value==='batch';
         $('hub-pipeline-add').textContent=trialBatch?'Add trial':'Add stage';
         $('hub-pipeline-queue').textContent=trialBatch?'Queue all trials':'Queue entire pipeline';
@@ -5879,7 +5879,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ?'Prequeue checkpoint-continuation stages'
             :trialBatch?'Queue independent trials together':'Queue fresh project jobs in sequence';
         $('hub-pipeline-description').textContent=checkpointPipeline
-            ?'Two to sixteen stages with the same approved base configuration digest, on the original worker. Courier curriculum transitions may change compatible environment difficulty, food availability, energy and map dimensions while preserving the policy architecture. Natural completion advances only with a verified saved checkpoint; evaluation-triggered Stop additionally requires native checkpoint-preserving shutdown. Manual Stops and failures hold later stages for review.'
+            ?'Two to sixteen stages on the original worker. Bees preserves the Unity executable, learner runtime, trainer and random seed while resuming the optimizer; training step targets may increase. Courier curriculum stages may change compatible environment settings. Every stage requires a verified durable checkpoint and released capacity. Manual Stops and failures hold queued successors for review.'
             :trialBatch?'Two to sixteen fresh jobs with separate artifact lineages. Select saved configurations for each seed or parameter variant. The jobs are eligible independently as qualified capacity becomes available.':
                 'Two to sixteen fresh, independent jobs from any non-Bees project. Each job gets its own artifact lineage and may use a different machine. No checkpoint, optimizer or qualification result is inherited. A verified finish or an evaluation-driven Stop can advance the next job after capacity release. Manual Stops and failures do not advance. Queueing never starts training.';
         $('hub-pipeline-predecessor-label').textContent=checkpointPipeline
@@ -8238,7 +8238,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-pipeline-queue').addEventListener('click',async()=>{
         if(project==='bees'||!state)return;
         try {
-            const checkpointPipeline=['tinybrains','courier'].includes(project)&&
+            const checkpointPipeline=['tinybrains','courier','bees_native'].includes(project)&&
                 $('hub-pipeline-kind').value==='continuation';
             const trialBatch=$('hub-pipeline-kind').value==='batch';
             const configs=state.configurations.filter(c=>checkpointPipeline
