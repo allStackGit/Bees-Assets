@@ -1510,7 +1510,14 @@ class ElasticWanBroker(base.WanActorBroker):
             self._trajectory_batches.qsize(),
             self.options.max_queued_batches,
         )
-        self._write_hub_wan_snapshot(active)
+        try:
+            self._write_hub_wan_snapshot(active)
+        except (OSError, ValueError, RuntimeError) as exc:
+            # Observational Hub chart delivery is not optimizer authority.
+            # Keep the authenticated trajectory broker running if the
+            # local status file becomes temporarily unwritable.
+            log_category("wan-capacity",
+                         f"[Bees WAN] Hub observation unavailable: {exc}")
         now = time.monotonic()
         if now - self._last_pipeline_report >= DIAGNOSTIC_INTERVAL_SECONDS:
             self._last_pipeline_report = now
