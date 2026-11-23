@@ -659,6 +659,13 @@ impl PeerClient {
         // plaintext if certificate validation or the handshake fails.
         // Existing LAN host:port clients retain their prior behavior.
         let tls_endpoint = address.strip_prefix("tls://");
+        if tls_endpoint.is_none() &&
+            std::env::var_os("BEES_NATIVE_REMOTE_TLS_CA_DER").is_some()
+        {
+            return Err(invalid(
+                "trusted native TLS CA is configured; use a tls://host:port endpoint",
+            ).into());
+        }
         let endpoint = tls_endpoint.unwrap_or(address);
         let mut connection = None;
         for candidate in endpoint.to_socket_addrs()? {
