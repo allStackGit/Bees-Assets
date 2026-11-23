@@ -200,6 +200,44 @@ def pack_immutable_gpu_scalar_columns(columns):
     return torch.stack(tuple(columns),dim=1)
 
 
+def sum_consecutive_training_segments(terms, counts, owner, *,
+                                      denominator_dtype, min_parallel_rows=2048):
+    """Reduce grouped training contributions without scatter atomics.
+
+    When per-entity contributions are already packed in contiguous,
+    board-owned segments, a CUDA/HIP segmented sum can avoid repeated
+    atomic index_add operations into the same small number of board rows.
+    The caller explicitly guarantees owner order and exact segment counts.
+    For small groups or unsupported backends, retain the original
+    differentiable index_add implementation and its numerical behavior.
+    """
+    if (not isinstance(terms,torch.Tensor) or terms.ndim!=2 or
+            not isinstance(owner,torch.Tensor) or
+            owner.device!=terms.device or owner.numel()!=len(terms) or
+            not isinstance(counts,(list,tuple)) or
+            sum(counts)!=len(terms) or any(
+                type(c) is not int or c<0 for c in counts)):
+        raise ValueError("Training segment sizes do not match ordered contributions")
+    use_segment = (terms.device.type=='cuda' and
+                   len(terms)>=min_parallel_rows and
+                   len(counts)>1 and
+                   hasattr(torch,'segment_reduce'))
+    if use_segment:
+        try:
+            lengths = torch.as_tensor(
+                counts,device=terms.device,dtype=torch.int64)
+            reduced = torch.segment_reduce(
+                terms,reduce='sum',lengths=lengths,axis=0)
+        except (RuntimeError,NotImplementedError,TypeError,AttributeError):
+            pass
+        else:
+            return reduced,lengths.clamp_min(1).to(dtype=denominator_dtype)
+    reduced = terms.new_zeros((len(counts),terms.shape[1]))
+    reduced.index_add_(0,owner,terms)
+    denominator = terms.new_tensor(counts,dtype=denominator_dtype).clamp_min(1)
+    return reduced,denominator
+
+
 def allocate_gpu_work_rows(rows, pixel_area, device_pixel_budgets, *, weights=None):
     """Partition same-shape training rows across independently leased GPUs.
 
