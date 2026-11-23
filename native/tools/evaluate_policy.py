@@ -104,7 +104,7 @@ def expected_scene_episodes(config):
     Count every fixed-seed episode separately but hash each source scene
     only once; the check runs outside the physical simulation loop.
     """
-    episodes = config["episodes_per_world"]
+    episodes = config.get("episodes_per_world", 1)
     levels = config["levels"]
     scene_hashes = {}
     expected = Counter()
