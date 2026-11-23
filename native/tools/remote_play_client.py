@@ -55,6 +55,9 @@ HELP = """Commands:
   surrender confirm    Concede the battle (irreversible after host commits)
   activate-retreat     Open your side's authored retreat exit
   rejoin               Reconnect to the SAME recovered native host session
+  pause|resume         Hold or release your own dedicated-host pause vote
+  step                 Advance one authoritative tick while you own a pause
+  speed                Cycle the dedicated host's 1x, 1.5x, 2x game speed
   ships                List currently visible ships and their positions
   inspect ID           Inspect your ship's actual battle career counters
   squads               List friendly and visible target squads
@@ -127,6 +130,9 @@ class RemoteConsole:
         # transient transport failure. Never auto-rejoin after an identity
         # mismatch or untrusted server payload.
         self.protocol_failure = None
+        self.time_controls_available = False
+        self.pause_owned = False
+        self.pending_time_controls = {}
         self.notifications = SimpleQueue()
         self.lock = threading.Lock()
         # A periodic liveness probe shares the real TCP stream with
@@ -226,6 +232,7 @@ class RemoteConsole:
                                 self.selected.clear()
                                 self.held_scope = None
                                 self.held_begin_request = None
+                                self.pause_owned = False
                                 self.weapon_overlay_enabled = False
                                 self.seen_ship_classes.clear()
                                 # A first world snapshot may arrive after
@@ -347,6 +354,10 @@ class RemoteConsole:
                         with self.lock:
                             self.host_session_id = session
                             self.authenticated_side = side
+                            self.time_controls_available = (
+                                not self.spectator and
+                                message.get("hosted_time_control") is True
+                            )
                         self._start_heartbeat()
                         note = ("Rejoined recovered native host"
                                 if message.get("recovered_host") is True
@@ -369,6 +380,42 @@ class RemoteConsole:
                             self.heartbeat_pongs += 1
                             self.heartbeat_outstanding = None
                             self.heartbeat_sent_at = None
+                    elif kind in ("pause_result", "step_result", "speed_result"):
+                        request_id = message.get("request_id")
+                        with self.lock:
+                            pending = self.pending_time_controls.pop(request_id, None)
+                            if (pending is None or pending[0] != kind or
+                                    type(message.get("processed")) is not bool):
+                                raise ValueError("unexpected native host clock receipt")
+                            accepted = message["processed"]
+                            # A delayed reply from an earlier World must not
+                            # claim pause ownership in the new episode.
+                            if kind == "pause_result":
+                                if (type(message.get("owned")) is not bool or
+                                        type(message.get("paused")) is not bool):
+                                    raise ValueError("invalid native pause receipt")
+                                if pending[1] == self.selected_scope:
+                                    self.pause_owned = message["owned"]
+                            if kind == "speed_result":
+                                speed = message.get("speed")
+                                if (type(speed) not in (int, float) or
+                                        not math.isfinite(speed) or speed <= 0):
+                                    raise ValueError("invalid native speed receipt")
+                        if kind == "pause_result":
+                            note = ("Your pause is active" if message["owned"] else
+                                    "Your pause was released") if accepted else (
+                                        "Host rejected the pause request"
+                                    )
+                            if accepted and message["paused"] and not message["owned"]:
+                                note += "; another commander is still paused"
+                        elif kind == "step_result":
+                            note = message.get("feedback", "Native step request completed")
+                        else:
+                            note = (f"Native host speed: {message['speed']:g}x"
+                                    if accepted else "Host rejected the speed change")
+                        self.notifications.put(note)
+                        if not self.silent:
+                            print(note)
                     elif kind == "held_fire_released":
                         self.held_scope = None
                         self.held_begin_request = None
@@ -808,6 +855,54 @@ class RemoteConsole:
         self.next_request += 1
         return packet["request_id"]
 
+    def time_control(self, command, state=None):
+        """Request the source host's actual clock, not a local simulation.
+
+        Only dedicated hosts advertise these controls. A reconnect creates
+        a fresh RemoteConsole: never replay a pause, step or speed request.
+        """
+        if self.spectator or not self.time_controls_available:
+            raise ValueError("dedicated native host time controls are unavailable")
+        if not self.alive or self.host_session_id is None:
+            raise ValueError("not authenticated to an active native host")
+        if command not in ("pause", "resume", "step", "speed"):
+            raise ValueError("unknown native host time control")
+        if state is None:
+            state = self.snapshot()
+        if (state is None or state.get("terminal_outcome") is not None or
+                self.battle_receipt_snapshot() is not None):
+            raise ValueError("no active authoritative battle to control")
+        scope = (state["world_id"], state["episode_revision"])
+        if command == "step" and not self.pause_owned:
+            raise ValueError("pause this battle with your own vote before stepping")
+        kind = "pause" if command in ("pause", "resume") else (
+            "step" if command == "step" else "cycle_speed"
+        )
+        with self.lock:
+            if len(self.pending_time_controls) >= 64:
+                raise ValueError("too many unacknowledged native clock commands")
+            request_id = self.next_request
+            self.next_request += 1
+            self.pending_time_controls[request_id] = (
+                f"{kind}_result".replace("cycle_speed_result", "speed_result"),
+                scope,
+            )
+        packet = {
+            "kind": kind, "request_id": request_id,
+            "world_id": scope[0], "episode_revision": scope[1],
+        }
+        if kind == "pause":
+            packet["paused"] = command == "pause"
+        try:
+            self._send_wire(
+                (json.dumps(packet, separators=(",", ":")) + "\n").encode("utf-8")
+            )
+        except OSError:
+            with self.lock:
+                self.pending_time_controls.pop(request_id, None)
+            raise
+        return request_id
+
     def request_ship_inspection(self, state, ship_id):
         """Query one owned physical ship on the host; never expose enemy careers."""
         if self.spectator or not any(
@@ -990,6 +1085,12 @@ class RemoteConsole:
                   f" tick {state['tick']} side {state['viewer_side']}"
                   f" ships visible {len(state['ships'])}"
                   f" squads selected {[owner['squad_id'] for owner in self.selected]}")
+            if self.time_controls_available:
+                print(f"Host clock: {state.get('game_speed', 1):g}x"
+                      f", paused: {state.get('commander_paused') is True}"
+                      f", your pause: {self.pause_owned}")
+            if self.heartbeat_rtt_ms is not None:
+                print(f"Native LAN round-trip: {self.heartbeat_rtt_ms:.1f} ms")
             final = self.battle_receipt_snapshot()
             outcome = state.get("terminal_outcome")
             if final is not None:
@@ -1013,6 +1114,12 @@ class RemoteConsole:
                 delta = receipt.get("campaign_score_delta")
                 if delta is not None:
                     print(f"Committed campaign score delta: {delta:+d}")
+            return
+        if cmd in ("pause", "resume", "step", "speed"):
+            if argv:
+                raise ValueError(f"{cmd} takes no arguments")
+            self.time_control(cmd, state)
+            print(f"Native {cmd} request submitted; awaiting host acknowledgement")
             return
         if cmd == "activate-retreat":
             if argv:
