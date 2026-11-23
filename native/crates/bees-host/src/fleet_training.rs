@@ -1125,6 +1125,15 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
         ("Request Graceful Stop".to_string(),
          "  [Finish current optimizer round, preserve checkpoint]".to_string(),
          !done && !job.join("stop.request").exists()),
+        ("Evaluate Latest Checkpoint".to_string(),
+         "  [Independent native fixed-source evaluation]".to_string(),
+         job.join("model").join("session").join("latest-playable.json").is_file()),
+        ("Evaluate Best Holdout Checkpoint".to_string(),
+         "  [Independent native fixed-source evaluation]".to_string(),
+         job.join("model").join("session").join("best-evaluated.json").is_file()),
+        ("Inspect Standalone Evaluations".to_string(),
+         "  [Completed verified results and pending attempts]".to_string(),
+         job.join("evaluations").is_dir()),
     ];
     if let Some(message) = diagnostic {
         details.push((
@@ -1325,6 +1334,9 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
                 .open(job.join("stop.request"))?;
             println!("Graceful native training stop requested; the current round may finish before the learner exits.");
         }
+        Some(3) => evaluate_training_checkpoint(job, false)?,
+        Some(4) => evaluate_training_checkpoint(job, true)?,
+        Some(5) => inspect_training_evaluations(job)?,
         _ => {},
     }
     Ok(())
