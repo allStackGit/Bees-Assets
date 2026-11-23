@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
 name = "bees-gameplay"
 version = "0.1.0"
 dependencies = [
@@ -23,11 +29,13 @@ dependencies = [
 name = "bees-host"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bees-gameplay",
  "bees-hivemind",
  "bees-sim",
  "bytemuck",
  "getrandom",
+ "lz4_flex",
  "minifb",
  "rustls",
  "serde",
@@ -359,6 +367,12 @@ name = "log"
 version = "0.4.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
+
+[[package]]
+name = "lz4_flex"
+version = "0.11.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08ab2867e3eeeca90e844d1940eab391c9dc5228783db2ed999acbc0a9ed375a"
 
 [[package]]
 name = "memchr"
