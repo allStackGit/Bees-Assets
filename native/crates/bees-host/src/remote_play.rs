@@ -1123,6 +1123,7 @@ impl NativeRemotePlay {
                                     "spectator": spectator, "side": side,
                                     "host_session_id": original,
                                     "recovered_host": true,
+                                    "hosted_time_control": false,
                                 }));
                                 if let Some(outcome) = receipt.campaign_outcome.as_ref()
                                     .filter(|outcome| !spectator &&
@@ -1182,6 +1183,7 @@ impl NativeRemotePlay {
                                 "spectator": spectator, "side": side,
                                 "host_session_id": self.host_session_id,
                                 "recovered_host": self.recovered_session,
+                                "hosted_time_control": self.dedicated_briefing_gate && !spectator,
                             }));
                         } else {
                             peer.closed = true;
