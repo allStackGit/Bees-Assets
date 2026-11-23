@@ -279,7 +279,10 @@ class OnnxPolicy:
             options = ort.SessionOptions()
             options.intra_op_num_threads = intra_op_threads
         device_id = config.get("provider_device_id")
-        gpu_providers = ("CUDAExecutionProvider", "ROCMExecutionProvider")
+        gpu_providers = (
+            "CUDAExecutionProvider", "ROCMExecutionProvider",
+            "MIGraphXExecutionProvider",
+        )
         if device_id is not None:
             if type(device_id) is not int or not 0 <= device_id <= 3:
                 raise ValueError("native ONNX provider device index must be 0..3")
@@ -535,8 +538,10 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None,
                     # Preserve immutable artifact, ABI and model identity;
                     # explicitly force the portable CPU execution provider.
                     config = {**config, "providers": ["CPUExecutionProvider"]}
-                elif any(provider in ("CUDAExecutionProvider", "ROCMExecutionProvider")
-                         for provider in config.get("providers", [])):
+                elif any(provider in (
+                        "CUDAExecutionProvider", "ROCMExecutionProvider",
+                        "MIGraphXExecutionProvider",
+                    ) for provider in config.get("providers", [])):
                     # ONNX provider choice is manifest-owned. Only its
                     # runtime GPU ordinal changes; never choose a new backend.
                     config = {**config, "provider_device_id": int(runtime_device.split(":")[1])}
