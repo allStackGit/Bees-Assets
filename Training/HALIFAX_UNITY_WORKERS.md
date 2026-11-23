@@ -184,3 +184,40 @@ The existing Windows CUDA learner environment remains managed as before.
 
 This is dependency preflight only; it does not assert successful PPO training,
 checkpoint export, two-GPU utilization, or distributed qualification.
+
+## Two-GPU learner and local actor on Halifax
+
+Bees has separate managed processes for PPO updates (central learner) and
+local simulation/inference rollouts (local actor). For the two Radeon GPUs,
+assign them to different process owners in the operator environment:
+
+```sh
+export BEES_LEARNER_PYTHON=/absolute/path/to/rocm-python310/bin/python
+export BEES_GPU_BACKEND=rocm
+export BEES_LEARNER_GPU_INDEX=0
+export BEES_LOCAL_ACTOR_GPU_INDEX=1
+export BEES_LOCAL_ACTOR_TORCH_DEVICE=cuda
+node Training/bees_learner_preflight.js --device cuda --gpu-index 0
+node Training/bees_learner_preflight.js --device cuda --gpu-index 1
+```
+
+With a canonical Bees training release already staged, enable its existing
+managed local actor using `node Training/bees_operator.js runtime
+--local-training --learner-device cuda` from Assets/. Use the normal
+`bees_operator.js start` command to start a stopped run. Do not run two
+independent Bees coordinators against the same release/run state.
+
+Each process receives one GPU through `ROCR_VISIBLE_DEVICES` (or
+`CUDA_VISIBLE_DEVICES` for an explicitly selected NVIDIA backend).
+Bindings are part of the managed process configuration hash: a changed
+assignment requires normal graceful replacement rather than silent reuse.
+The local-actor GPU and the learner GPU are both checked with a real
+matrix operation before a new pinned process starts. Keep these variables
+in the persistent operator service environment; a shell export does not
+affect an already-running service.
+
+This separates PPO training from local actor GPU inference. It does not
+replicate the PPO optimizer across both GPUs or guarantee a throughput
+increase when rollout inference is CPU- or communication-bound. The
+native Hub still needs admission of these GPU claims before co-scheduling
+other projects on Halifax.
