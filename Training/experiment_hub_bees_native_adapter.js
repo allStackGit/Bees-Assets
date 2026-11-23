@@ -514,6 +514,8 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                         published.model_sha256!==receipt.sha256||
                         published.optimizer_checkpoint_sha256!==receipt.checkpoint_sha256||
                         published.unity_worker_sha256!==approved.worker_sha256||
+                        (published.unity_worker_payload_sha256!==undefined&&
+                            published.unity_worker_payload_sha256!==approved.worker_payload_sha256)||
                         published.runtime_version!==approved.runtime_version)
                         throw Error('Native Bees policy candidate identity differs from its training job.');
                     const model=path.join(candidateDir,'model.onnx');
