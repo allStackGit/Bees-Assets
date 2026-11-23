@@ -665,6 +665,7 @@ fn select_battle_inner(
     // A local, unpublished shop selection, not another career inventory.
     // Only the resulting BuyFleet action can reach the native ledger.
     let mut shop_cart = Vec::<(i32, u8, i64, u32, u64)>::new();
+    let mut shop_quantity = 1u32;
     let mut fleet_selected = 0_usize;
     let mut fleet_first = 0_usize;
     while window.is_open() {
@@ -1057,10 +1058,22 @@ fn select_battle_inner(
                 fleet_first = 0;
             }
         }
-        if !show_shop && !shop_cart.is_empty() {
+        if !show_shop {
             shop_cart.clear();
+            shop_quantity = 1;
         }
         if show_shop || show_transfer || show_create || show_tactics || show_delete {
+            if show_shop {
+                if window.is_key_pressed(Key::Left, KeyRepeat::No) {
+                    shop_quantity = match shop_quantity {
+                        1 => 10, 2 => 1, 5 => 2, _ => 5,
+                    };
+                } else if window.is_key_pressed(Key::Right, KeyRepeat::No) {
+                    shop_quantity = match shop_quantity {
+                        1 => 2, 2 => 5, 5 => 10, _ => 1,
+                    };
+                }
+            }
             let count = if show_transfer { transfer_rows.len() }
                 else if show_create { create_rows.len() }
                 else if show_delete { delete_rows.len() }
@@ -1132,12 +1145,14 @@ fn select_battle_inner(
                         } else { row.placements.clone() },
                     })
                 } else {
-                    shop_rows.get(index).filter(|row| row.unlocked)
+                    shop_rows.get(index).filter(|row| row.unlocked &&
+                        row.unit_price_tsv.checked_mul(u64::from(shop_quantity))
+                            .is_some_and(|total| total <= banked_tsv))
                         .map(|row| NativeBattleMenuAction::Buy {
                             side: row.side,
                             ship_type: row.ship_type,
                             saved_squad_id: row.saved_squad_id,
-                            quantity: row.quantity,
+                            quantity: shop_quantity,
                         })
                 }
             };
@@ -1280,13 +1295,13 @@ fn select_battle_inner(
                         let spent = shop_cart.iter().try_fold(0u64, |sum, entry|
                             entry.4.checked_mul(u64::from(entry.3))
                                 .and_then(|price| sum.checked_add(price)));
-                        let next = row.unit_price_tsv.checked_mul(u64::from(row.quantity))
+                        let next = row.unit_price_tsv.checked_mul(u64::from(shop_quantity))
                             .and_then(|price| spent.and_then(|sum| sum.checked_add(price)));
-                        if same_side && hulls.checked_add(row.quantity)
+                        if same_side && hulls.checked_add(shop_quantity)
                             .is_some_and(|total| total <= 256) &&
                             next.is_some_and(|total| total <= banked_tsv) {
                             shop_cart.push((row.side, row.ship_type,
-                                row.saved_squad_id, row.quantity, row.unit_price_tsv));
+                                row.saved_squad_id, shop_quantity, row.unit_price_tsv));
                         }
                     }
                 }
@@ -1418,10 +1433,10 @@ fn select_battle_inner(
                     sum.saturating_add(entry.4.saturating_mul(u64::from(entry.3))));
                 let hulls = shop_cart.iter().map(|entry| entry.3).sum::<u32>();
                 text::draw_centered(&mut pixels, WIDTH, 94,
-                    &format!("TSV {banked_tsv} | Cart: {} lines, {hulls} hulls, TSV {cart_total}",
+                    &format!("TSV {banked_tsv} | Quantity x{shop_quantity} | Cart: {} lines, {hulls} hulls, TSV {cart_total}",
                         shop_cart.len()), 1, MUTED);
                 text::draw_centered(&mut pixels, WIDTH, 441,
-                    "Space: add to cart | Backspace: undo | Enter: purchase cart / selected row",
+                    "Left/Right: quantity | Space: add | Backspace: undo | Enter: purchase",
                     1, MUTED);
             }
             if count == 0 {
