@@ -1387,7 +1387,7 @@ function createTinyBrainsPersistentDockerAdapter({
                 const sourceFile=record?.source_file||'latest.pt';
                 const job=opponent.source_job_id;
                 if(!UUID.test(String(job||''))||
-                    !/^(?:latest|update-[0-9]{6,8})\\.pt$/.test(sourceFile))
+                    !/^(?:latest|update-[0-9]{6,8})\.pt$/.test(sourceFile))
                     continue;
                 const candidate=path.join(artifacts,job,'self-play',sourceFile);
                 try {
@@ -1449,7 +1449,7 @@ function createTinyBrainsPersistentDockerAdapter({
         if(!selected)return;
         const doc={pool:selected.pool,fixed:selected.fixed};
         const manifest=path.join(out,'hub-opponents.json');
-        const raw=JSON.stringify(doc)+'\\n';
+        const raw=JSON.stringify(doc)+'\n';
         if(fs.existsSync(manifest)) {
             if(fs.readFileSync(manifest,'utf8')!==raw)
                 throw Error('Frozen training opponent manifest differs from this job.');
@@ -1467,7 +1467,7 @@ function createTinyBrainsPersistentDockerAdapter({
     function checkpointTrainingOpponents(out,ids,pins) {
         if(ids===undefined)return;
         const selection=approvedTrainingOpponents(ids,pins);
-        const raw=JSON.stringify({pool:selection.pool,fixed:selection.fixed})+'\\n';
+        const raw=JSON.stringify({pool:selection.pool,fixed:selection.fixed})+'\n';
         const file=path.join(out,'hub-opponents.json');
         if(fs.readFileSync(file,'utf8')!==raw)
             throw Error('Training checkpoint opponent roster differs from its frozen Design.');
@@ -2110,7 +2110,7 @@ function createTinyBrainsPersistentDockerAdapter({
                     path.join(nativeWindows?out:JOBS_IN+'/'+context.job_id,'hub-opponents.json'),
                     '--hub-opponents-sha256',
                     crypto.createHash('sha256')
-                        .update(JSON.stringify({pool:opponents.pool,fixed:opponents.fixed})+'\\n')
+                        .update(JSON.stringify({pool:opponents.pool,fixed:opponents.fixed})+'\n')
                         .digest('hex')]:[]),
                 ...(stage?['--hub-stage-file',
                     path.join(nativeWindows?out:JOBS_IN+'/'+context.job_id,
