@@ -714,6 +714,53 @@ def write_launchers(output: Path, binary_name: str,
             )
             launcher.chmod(0o755)
 
+        # The original headless mission command owns the career ledger,
+        # FleetShips, unlocks, source worlds and authoritative battle receipt.
+        # A stable per-catalog output path retains progression after a
+        # finished mission or a recovered interrupted match.
+        if binary_name.endswith(".exe"):
+            launcher = output / "serve-bees-campaign.cmd"
+            launcher.write_text(
+                windows_start +
+                'if not defined BEES_NATIVE_REMOTE_LISTEN (echo Set BEES_NATIVE_REMOTE_LISTEN 1>&2 & popd & exit /b 2)\n' +
+                'if not defined BEES_NATIVE_REMOTE_SIDE_TOKENS if not defined BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE (echo Set commander credentials 1>&2 & popd & exit /b 2)\n' +
+                'if "%~1"=="" (echo Usage: %~nx0 PACKAGED-CAMPAIGN-JSON MISSION-ID 1>&2 & popd & exit /b 2)\n' +
+                'if "%~2"=="" (echo A campaign mission ID is required 1>&2 & popd & exit /b 2)\n' +
+                'if not "%~3"=="" (echo Expected one catalog and mission ID 1>&2 & popd & exit /b 2)\n' +
+                'if not exist "%~1" (echo Native campaign catalog not found 1>&2 & popd & exit /b 2)\n' +
+                'if not defined BEES_NATIVE_SERVER_OUTPUT_DIR set "BEES_NATIVE_SERVER_OUTPUT_DIR=%BEES_SAVE%\\campaigns\\%~n1"\n' +
+                'if not exist "%BEES_NATIVE_SERVER_OUTPUT_DIR%" mkdir "%BEES_NATIVE_SERVER_OUTPUT_DIR%"\n' +
+                f'".\\{server_binary}" campaign "%~1" ' +
+                '--output-dir "%BEES_NATIVE_SERVER_OUTPUT_DIR%" --mission "%~2" --serve\n' +
+                windows_finish,
+                encoding="utf-8", newline="\r\n",
+            )
+        else:
+            launcher = output / "serve-bees-campaign.sh"
+            launcher.write_text(
+                "#!/bin/sh\n"
+                "set -eu\n"
+                'cd "$(dirname "$0")"\n'
+                ': "\${BEES_NATIVE_REMOTE_LISTEN:?Set native LAN listen address}"\n'
+                'if [ -z "\${BEES_NATIVE_REMOTE_SIDE_TOKENS:-}" ] && [ -z "\${BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE:-}" ]; then\n'
+                '  echo "Set native commander credential JSON or private token file" >&2\n'
+                '  exit 2\n'
+                'fi\n'
+                'if [ "$#" -ne 2 ] || [ ! -f "$1" ]; then\n'
+                '  echo "Usage: $0 PACKAGED-CAMPAIGN-JSON MISSION-ID" >&2\n'
+                '  exit 2\n'
+                'fi\n'
+                'catalog="$1"; mission="$2"\n'
+                'save="\${XDG_DATA_HOME:-$HOME/.local/share}/bees-native"\n'
+                'default="$save/campaigns/$(basename "$catalog" .json)"\n'
+                'run="\${BEES_NATIVE_SERVER_OUTPUT_DIR:-$default}"\n'
+                'mkdir -p "$run"\n'
+                f'exec "./{server_binary}" campaign "$catalog" ' +
+                '--output-dir "$run" --mission "$mission" --serve\n',
+                encoding="utf-8", newline="\n",
+            )
+            launcher.chmod(0o755)
+
 
 def create_manifest(
     output: Path, *, include_training: bool = False, audio_paths: list[Path] | None = None,
@@ -900,6 +947,10 @@ def verify_native_package(directory: Path) -> dict:
                          else "serve-bees.sh")
         if launcher_name not in expected:
             raise ValueError("native release has no restartable dedicated host launcher")
+        campaign_launcher = ("serve-bees-campaign.cmd" if binary_suffix
+                             else "serve-bees-campaign.sh")
+        if campaign_launcher not in expected:
+            raise ValueError("native release lacks headless campaign hosting entry point")
         if compiled_sha256(game) == compiled_sha256(headless):
             raise ValueError("dedicated server must be a separately compiled native binary")
     if manifest.get("training_runtime", False) not in (True, False):
