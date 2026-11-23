@@ -48,6 +48,30 @@ pub use selection::{NativeSquadSelection, NativeSupportMode};
 pub use tactical_hud::HudAction;
 pub(crate) use tactical_hud::retreat_button_rect;
 
+/// Inverse of the minifb aspect-preserving viewport transform. Share this
+/// between native menu and remote-game windows so pointer targeting remains
+/// aligned with the existing virtual framebuffer at every desktop size.
+#[cfg(feature = "client")]
+pub(crate) fn virtual_window_mouse(
+    window: &minifb::Window, width: usize, height: usize,
+) -> Option<(f32, f32)> {
+    use minifb::MouseMode;
+    let (actual_width, actual_height) = window.get_size();
+    if actual_width == 0 || actual_height == 0 || width == 0 || height == 0 {
+        return None;
+    }
+    let scale = (actual_width as f32 / width as f32)
+        .min(actual_height as f32 / height as f32);
+    if !scale.is_finite() || scale <= 0.0 { return None; }
+    let offset_x = (actual_width as f32 - width as f32 * scale) * 0.5;
+    let offset_y = (actual_height as f32 - height as f32 * scale) * 0.5;
+    let (x, y) = window.get_mouse_pos(MouseMode::Discard)?;
+    let x = (x - offset_x) / scale;
+    let y = (y - offset_y) / scale;
+    (x >= 0.0 && x < width as f32 && y >= 0.0 && y < height as f32)
+        .then_some((x, y))
+}
+
 /// Exact original four-stage FireTank sprite selection. Remote players may
 /// see the visible smoke/damage stage without receiving undiscovered HP.
 pub(crate) fn fire_tank_sprite_stage(health: i32, max_health: i32) -> Option<u8> {
