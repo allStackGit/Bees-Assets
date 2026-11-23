@@ -292,8 +292,13 @@ def gather_training_columns_once(columns, index_groups, *,
                 for group in index_groups)):
         return None
     total=sum(group.numel() for group in index_groups)
-    if (not total or total*sum(column.element_size()
-                              for column in columns)>max_output_bytes):
+    # Account for BOTH the selected columns and the transient concatenated
+    # index tensor. The original group index views cost no new allocation,
+    # but torch.cat does. This preserves the shared lease for integer- or
+    # byte-valued inputs whose indices may exceed their payload size.
+    index_bytes=total*max(group.element_size() for group in index_groups)
+    output_bytes=total*sum(column.element_size() for column in columns)
+    if not total or index_bytes+output_bytes>max_output_bytes:
         return None
     indices=torch.cat(tuple(index_groups))
     result=tuple(column.index_select(0,indices) for column in columns)
