@@ -694,16 +694,21 @@ def main() -> None:
     parser.add_argument("output", type=Path, help="new directory; existing paths are never overwritten")
     parser.add_argument("--trainer-config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--slots", nargs="+", type=int, default=[0, 1],
-                        help="model slots sharing the initial checkpoint (default: 0 1)")
+    parser.add_argument("--slots", nargs="+", type=int,
+                        help="model slots sharing the initial checkpoint "
+                             "(default: 0 1 or the exact source collection slot pair)")
     parser.add_argument("--inference-device", default="cpu",
                         help="resident model device, e.g. cpu or cuda")
     parser.add_argument("--scenario", choices=("duel", "skirmish", "custom"), default="duel",
                         help="copy a shipped or explicit native policy scene/run template")
     parser.add_argument("--source-scene", type=Path,
-                        help="custom native_game_schema 1 policy scene")
+                        help="custom original physical or native-game policy scene")
     parser.add_argument("--source-run", type=Path,
-                        help="paired custom native stage and run configuration")
+                        help="paired custom native Stage and run configuration")
+    parser.add_argument("--source-policy-collection", type=Path,
+                        help="complete original multi-map policy collection: pin all "
+                             "source Levels and automatically select its bootstrap, "
+                             "rotated curriculum and fixed holdouts")
     parser.add_argument("--episodes-per-world", type=int,
                         help="explicit per-arena episode override; defaults to "
                              "the authored native source Run's full episode plan")
@@ -792,6 +797,46 @@ def main() -> None:
     parser.add_argument("--library-game-title",
                         help="native game gallery title (default: native run ID)")
     args = parser.parse_args()
+    if args.source_policy_collection is not None:
+        from author_original_policy_collection import verified_training_collection
+        try:
+            collection, root = verified_training_collection(
+                args.source_policy_collection,
+            )
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            parser.error(f"original multi-map fleet training source is invalid: {error}")
+        if (args.source_run is not None or args.source_scene is not None or
+                args.scenario not in ("duel", "custom")):
+            parser.error(
+                "--source-policy-collection replaces --source-scene/--source-run "
+                "and always uses the captured original native game"
+            )
+        source_slots = [
+            collection["model_slots"]["0"],
+            collection["model_slots"]["1"],
+        ]
+        if args.slots is not None and args.slots != source_slots:
+            parser.error("native original source model slots cannot change at bootstrap")
+        args.slots = source_slots
+        args.scenario = "custom"
+        args.source_run = root / collection["bootstrap_run"]
+        args.source_scene = root / collection["bootstrap_scene"]
+        if args.train_rounds is not None:
+            if "curriculum_plan" in collection:
+                approved = root / collection["curriculum_plan"]
+                if args.curriculum_plan is not None and (
+                    args.curriculum_plan.resolve(strict=True) != approved
+                ):
+                    parser.error(
+                        "original fleet collection must retain its pinned Stage rotation"
+                    )
+                args.curriculum_plan = approved
+            if (args.evaluation_side is not None and
+                    args.evaluation_run_config is None and
+                    "primary_evaluation_run" in collection):
+                args.evaluation_run_config = root / collection["primary_evaluation_run"]
+    elif args.slots is None:
+        args.slots = [0, 1]
     if (args.library_save_root is None) != (args.library_game_id is None):
         parser.error("--library-save-root and --library-game-id must be used together")
     if args.library_game_title is not None and args.library_game_id is None:
