@@ -914,7 +914,7 @@ function mapReport(hub,id) {
 // Never erase checkpoint imports or evaluator receipts. Archives are
 // deliberately not advertised as runnable suites until deliberately restored.
 async function archiveUnusedEvaluations(hub) {
-    const o=localOptions(hub);
+    const o=localOptions(hub,{observationOnly:true});
     const unused=custom.unusedVersions(o,hub);
     if(!unused.length)return {message:'No unreferenced mixed evaluation versions need archiving.',
         archived:0,blocked:[]};
@@ -984,10 +984,18 @@ async function action(hub,value) {
     if(value.action==='archive-unused-custom'&&value.id===undefined)
         return archiveUnusedEvaluations(hub);
     if(value.action==='save-custom') {
-        const o=localOptions(hub);
+        // Suite authoring is a filesystem/catalog transaction. It does not
+        // need a live training agent; service activation does. This keeps
+        // transient disconnects from losing an otherwise valid Design.
+        const o=localOptions(hub,{observationOnly:true});
         const previous=value.id==null?null:
             custom.read(o).templates.find(t=>t.id===value.id);
         const saved=custom.saveEvaluation(o,hub,value);
+        const machine=hub.snapshot().machines.find(m=>m.id===o.machine);
+        if(machine?.status!=='connected'||
+            !machine.installed_projects?.includes('tinybrains'))
+            return {...saved,installed:false,message:saved.message+
+                ' The local TinyBrains agent is not connected; the immutable evaluation was saved. Set up evaluators after the agent reconnects.'};
         // The immutable definition is already committed; a failed service
         // install must not masquerade as a failed save and prompt another
         // revision. Set up can reconcile the original installation later.
@@ -1016,7 +1024,7 @@ async function action(hub,value) {
         return saved;
     }
     if(value.action==='delete-custom') {
-        const o=localOptions(hub);
+        const o=localOptions(hub,{observationOnly:true});
         const current=custom.read(o).templates.find(row=>row.id===value.id);
         if(!current||current.revision!==value.expected_revision)
             throw Error('Saved evaluation revision changed; reload before deletion.');
