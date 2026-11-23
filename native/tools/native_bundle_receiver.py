@@ -132,6 +132,34 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
                 "upload_wall_seconds": time.perf_counter() - started,
                 "upload_attempts": attempt, "receiver": base_url}
 
+    def staged_offset():
+        # Only this exact issued collector artifact can be resumed. Older
+        # receiver builds return 501 and continue using ordinary full POST.
+        query = connection_class(parts.hostname, parts.port, timeout=60)
+        try:
+            query.request("HEAD", endpoint, headers={
+                "Authorization": "Bearer " + auth,
+                "X-Archive-SHA256": sha256, "X-Archive-Bytes": str(size),
+            })
+            answer = query.getresponse()
+            if answer.status in (404, 405, 501):
+                return 0
+            if answer.status in (409, 503):
+                raise ConnectionError("previous collector upload is still active")
+            if answer.status != 200:
+                raise ValueError(f"collector resume rejected: HTTP {answer.status}")
+            try:
+                offset = int(answer.getheader("X-Received-Bytes", "-1"))
+                remote_size = int(answer.getheader("X-Archive-Bytes", "-1"))
+            except ValueError as exc:
+                raise ValueError("collector resume had invalid byte counters") from exc
+            if (not 0 <= offset <= size or remote_size != size or
+                    answer.getheader("X-Archive-SHA256") != sha256):
+                raise ValueError("collector resume has a different immutable artifact")
+            return offset
+        finally:
+            query.close()
+
     prior = confirmed(0)
     if prior is not None:
         return prior
@@ -144,14 +172,18 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
                 return prior
         connection = None
         try:
+            offset = staged_offset() if attempt > 1 else 0
             connection = connection_class(parts.hostname, parts.port, timeout=60)
             connection.putrequest("POST", endpoint)
             connection.putheader("Authorization", "Bearer " + auth)
             connection.putheader("Content-Type", "application/x-native-rollout-tar")
-            connection.putheader("Content-Length", str(size))
+            connection.putheader("Content-Length", str(size - offset))
             connection.putheader("X-Archive-SHA256", sha256)
+            connection.putheader("X-Archive-Bytes", str(size))
+            connection.putheader("X-Resume-Offset", str(offset))
             connection.endheaders()
             with archive.open("rb") as stream:
+                stream.seek(offset)
                 while True:
                     chunk = stream.read(CHUNK)
                     if not chunk:
@@ -177,9 +209,13 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
                     payload.get("archive_sha256") != sha256 or
                     payload.get("archive_bytes") != size):
                 raise ValueError("receiver did not confirm this exact collector archive")
+            if ("resumed_prefix_bytes" in payload and
+                    payload["resumed_prefix_bytes"] != offset):
+                raise ValueError("receiver did not confirm the requested resume offset")
             return {
                 **payload, "upload_wall_seconds": time.perf_counter() - started,
                 "upload_attempts": attempt, "receiver": base_url,
+                "upload_resumed_prefix_bytes": offset,
             }
         except (OSError, http.client.HTTPException):
             prior = confirmed(attempt)
