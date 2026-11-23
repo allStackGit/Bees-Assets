@@ -547,6 +547,40 @@ function approvedTinyBrainsEnvironment(parameters,machines) {
         profile_sha256:parameters.profile_sha256,
         parameters:values};
 }
+// Resolve browser-selected opponent IDs exclusively against a connected,
+// trusted worker's pinned model catalogue. Persist hashes with the Design
+// so a later model replacement cannot silently alter queued training jobs.
+function pinTinyBrainsOpponents(parameters,machines) {
+    if(parameters.training_opponent_ids===undefined) {
+        delete parameters.training_opponent_pins;
+        return;
+    }
+    const ids=parameters.training_opponent_ids;
+    if(!Array.isArray(ids)||!ids.length||ids.length>16||
+        new Set(ids).size!==ids.length||
+        ids.some(id=>typeof id!=='string'||id.length>64))
+        throw Error('Select 1–16 distinct approved training opponents.');
+    const host=(machines||[]).find(machine=>
+        machine.status==='connected'&&
+        machine.design_catalog?.tinybrains?.profiles?.[parameters.profile]
+            ?.profile_sha256===parameters.profile_sha256&&
+        Array.isArray(machine.design_catalog.tinybrains.opponent_catalog));
+    if(!host)
+        throw Error('Saving a selected training opponent pool requires a connected, trusted TinyBrains worker.');
+    const catalog=host.design_catalog.tinybrains.opponent_catalog;
+    parameters.training_opponent_pins=ids.map(id=>{
+        const row=catalog.find(item=>item.id===id);
+        if(!row)throw Error('Selected opponent '+id+' is not installed and verified on the TinyBrains worker.');
+        if(!['current','frozen'].includes(id)&&
+            !SHA256.test(String(row.model_sha256||'')))
+            throw Error('Selected training model has no valid frozen fingerprint.');
+        if(!['current','frozen','nano','micro'].includes(id)&&
+            !SHA256.test(String(row.checkpoint_sha256||'')))
+            throw Error('Selected frozen network requires its original checkpoint SHA-256.');
+        return {id,...(row.model_sha256?{model_sha256:row.model_sha256}:{}),
+            ...(row.checkpoint_sha256?{checkpoint_sha256:row.checkpoint_sha256}:{})};
+    });
+}
 function requireCourierTrainingPin(projectId,parameters) {
     if(projectId!=='courier')return;
     const changes=parameters?.design_overrides;
@@ -6226,6 +6260,8 @@ class ExperimentHub {
         const project = this.project(value.project_id);
         if(project.id==='ants')throw Error('Ants-v2 Hub integration is retired.');
         const params = config(value.parameters);
+        if(project.id==='tinybrains')
+            pinTinyBrainsOpponents(params,this.state.machines);
         requireCourierTrainingPin(project.id,params);
         if(project.id==='tinybrains'&&Object.hasOwn(params,'rollout_endpoints'))
             throw Error('Select TinyBrains rollout machines when reserving the group.');
