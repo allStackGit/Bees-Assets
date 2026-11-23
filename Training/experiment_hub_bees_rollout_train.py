@@ -8,9 +8,14 @@ an executable, network address, port, or authentication key.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import hashlib
 import json
 import os
+import signal
+import socket
+import subprocess
+import time
 from pathlib import Path
 import re
 import sys
@@ -30,6 +35,142 @@ FIELDS = {
     "actor_sha256", "envs", "torch_threads", "device", "expected_gpu_pci",
     "auth_token_file", "auth_token_fingerprint", "broker_port", "slot",
 }
+SSH_FIELDS = {
+    "learner_machine_id", "tailnet_ip", "ssh_user", "ssh_identity_file",
+    "ssh_known_hosts_file", "ssh_port", "remote_broker_port", "ssh_executable",
+}
+
+
+def inspect_forward(job: dict) -> dict | None:
+    plan = job.get("ssh_forward")
+    if job["schema_version"] == 1:
+        return None
+    if job["schema_version"] != 2 or not isinstance(plan, dict) or (
+        set(plan) != SSH_FIELDS
+    ):
+        raise ValueError("Bees native managed WAN forwarding has an unexpected schema.")
+    if not re.fullmatch(r"[a-z][a-z0-9_-]{0,47}", str(plan["learner_machine_id"])) or (
+        not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", str(plan["ssh_user"]))
+    ):
+        raise ValueError("Bees managed WAN forward needs pinned machine and SSH identities.")
+    try:
+        address = ipaddress.ip_address(plan["tailnet_ip"])
+        if address not in ipaddress.ip_network("100.64.0.0/10") or (
+            str(address) != plan["tailnet_ip"]
+        ):
+            raise ValueError("Not a canonical Tailnet IPv4.")
+    except (ValueError, TypeError) as error:
+        raise ValueError("Bees WAN SSH endpoint must be a canonical Tailnet IPv4.") from error
+    for key in ("ssh_port", "remote_broker_port"):
+        value = plan[key]
+        if type(value) is not int or not 1 <= value <= 65535 or (
+            key == "remote_broker_port" and value < 1024
+        ):
+            raise ValueError("Invalid pinned SSH or WAN broker port.")
+    for key in ("ssh_executable", "ssh_identity_file", "ssh_known_hosts_file"):
+        value = plan[key]
+        if not isinstance(value, str):
+            raise ValueError("Invalid private WAN SSH file path.")
+        file = Path(value)
+        if not file.is_absolute() or file.is_symlink() or (
+            file.resolve() != file or not file.is_file()
+        ):
+            raise ValueError("WAN SSH requires a pinned real absolute file.")
+        stat = file.stat()
+        if key == "ssh_identity_file":
+            if not 16 <= stat.st_size <= 32768 or stat.st_mode & 0o077 or (
+                stat.st_uid != os.getuid()
+            ):
+                raise ValueError("WAN SSH identity must be an owner-private installed key.")
+        elif key == "ssh_known_hosts_file":
+            if not 40 <= stat.st_size <= 1048576:
+                raise ValueError("WAN SSH pinned host keys are missing.")
+        elif not os.access(file, os.X_OK):
+            raise ValueError("Approved system OpenSSH executable is not usable.")
+    return plan
+
+
+def owned_forward(job: dict, plan: dict, argv: list[str]) -> int:
+    """Own both the OpenSSH forward and actor in one OS-enforced Hub job."""
+    port = job["broker_port"]
+    # A preexisting socket might be some other learner's broker. Refuse to
+    # reuse it, even if it happens to accept the expected HMAC secret.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", port))
+    command = [
+        plan["ssh_executable"],
+        "-F", "/dev/null", "-N", "-T",
+        "-o", "BatchMode=yes",
+        "-o", "IdentitiesOnly=yes",
+        "-o", "StrictHostKeyChecking=yes",
+        "-o", "ExitOnForwardFailure=yes",
+        "-o", "ServerAliveInterval=15",
+        "-o", "ServerAliveCountMax=3",
+        "-o", "ConnectTimeout=10",
+        "-o", "PasswordAuthentication=no",
+        "-o", "KbdInteractiveAuthentication=no",
+        "-o", "UserKnownHostsFile=" + plan["ssh_known_hosts_file"],
+        "-i", plan["ssh_identity_file"],
+        "-p", str(plan["ssh_port"]),
+        "-L", "127.0.0.1:" + str(port) + ":127.0.0.1:" +
+            str(plan["remote_broker_port"]),
+        plan["ssh_user"] + "@" + plan["tailnet_ip"],
+    ]
+    directory = Path(job["output_root"])
+    log = directory / "wan-forward-stderr.log"
+    child = None
+    with log.open("x", encoding="utf-8") as output:
+        os.chmod(log, 0o600)
+        tunnel = subprocess.Popen(
+            command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=output, cwd=str(directory),
+        )
+        try:
+            deadline = time.monotonic() + 20.0
+            while time.monotonic() < deadline:
+                if tunnel.poll() is not None:
+                    raise RuntimeError("WAN SSH forward exited before its local listener became ready.")
+                try:
+                    with socket.create_connection(("127.0.0.1", port), timeout=0.3):
+                        break
+                except OSError:
+                    time.sleep(0.25)
+            else:
+                raise RuntimeError("WAN SSH forward did not establish its approved local listener.")
+            # The adapter passed the exact immutable actor-script path.
+            # Run it as a child so that a failed forward tears down the
+            # simulation before a stale learner can trust its trajectories.
+            child = subprocess.Popen(
+                [sys.executable, "-B", job["actor_script"], *argv],
+                cwd=str(Path(job["training_script"]).parent),
+            )
+            while child.poll() is None:
+                if tunnel.poll() is not None:
+                    child.terminate()
+                    try:
+                        child.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        child.kill()
+                        child.wait(timeout=10)
+                    raise RuntimeError("WAN SSH forward terminated during an active Bees rollout.")
+                time.sleep(1)
+            return int(child.returncode or 0)
+        finally:
+            if child is not None and child.poll() is None:
+                child.terminate()
+                try:
+                    child.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait(timeout=10)
+            if tunnel.poll() is None:
+                tunnel.terminate()
+                try:
+                    tunnel.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    tunnel.kill()
+                    tunnel.wait(timeout=5)
+
 
 
 def inspect_job(filename: Path) -> dict:
@@ -38,8 +179,13 @@ def inspect_job(filename: Path) -> dict:
     ):
         raise ValueError("Bees remote job definition must be a small immutable file.")
     job = json.loads(filename.read_text(encoding="utf-8"))
-    if not isinstance(job, dict) or set(job) != FIELDS or job["schema_version"] != 1:
+    if not isinstance(job, dict) or (
+        job.get("schema_version") == 1 and set(job) != FIELDS
+    ) or (
+        job.get("schema_version") == 2 and set(job) != FIELDS | {"ssh_forward"}
+    ) or job.get("schema_version") not in (1, 2):
         raise ValueError("Unexpected Bees remote job schema.")
+    inspect_forward(job)
     for field in ("job_id", "learner_job_id", "lineage_root_id"):
         item = job[field]
         if not isinstance(item, str) or str(uuid.UUID(item)) != item:
@@ -122,8 +268,7 @@ def main(argv=None) -> int:
     root = Path(job["output_root"])
     base_port, port_lock = reserve_base_port(root, job["job_id"], job["envs"])
     try:
-        from bees_elastic_wan_actor_worker import main as run_actor
-        return run_actor([
+        actor_argv = [
             "--actor-key", "hub-" + job["learner_job_id"] + "-" + str(job["slot"]),
             "--envs", str(job["envs"]),
             "--broker-host", "127.0.0.1",
@@ -133,7 +278,13 @@ def main(argv=None) -> int:
             "--local-base-port", str(base_port),
             "--torch-device", job["device"],
             "--torch-threads", str(job["torch_threads"]),
-        ])
+        ]
+        managed = inspect_forward(job)
+        if managed is not None:
+            return owned_forward(job, managed, actor_argv)
+        # Existing manually provisioned private forward remains supported.
+        from bees_elastic_wan_actor_worker import main as run_actor
+        return run_actor(actor_argv)
     finally:
         port_lock.close()
 
