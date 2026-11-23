@@ -6970,7 +6970,7 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
                 }).collect::<Vec<_>>();
             if saved.is_empty() {
                 fleet_builder::choose_multiplayer(
-                    None, save_root, original_queen, original_factory, sources)?
+                    single_remote_side, save_root, original_queen, original_factory, sources)?
             } else {
                 use bees_host::presentation::{select_library, BattleMenuRow};
                 let mut rows = Vec::with_capacity(saved.len() + 1);
