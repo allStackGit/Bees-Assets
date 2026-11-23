@@ -4242,11 +4242,15 @@ fn run_transfer_ships(
     }
     let root = catalog_path.parent()
         .ok_or_else(|| invalid("missing native campaign catalog root"))?;
+    let preflight_started = Instant::now();
     preflight_native_fleet_edit(
         &catalog, root, &progress, side, &projected,
         &progress.authored_roster_for_side(side), destination_squad_id,
     )?;
+    let preflight_wall_seconds = preflight_started.elapsed().as_secs_f64();
+    let commit_started = Instant::now();
     let count = catalog.transfer_purchased_ships(&progress, output_root, side, &moves)?;
+    let receipt_wall_seconds = commit_started.elapsed().as_secs_f64();
     println!("{}", json!({
         "kind": "native_campaign_fleet_batch_transferred",
         "campaign_id": catalog.campaign_id,
@@ -4254,6 +4258,8 @@ fn run_transfer_ships(
         "fleet_ship_ids": fleet_ship_ids,
         "to_saved_squad_id": destination_squad_id,
         "ships_transferred": count,
+        "preflight_wall_seconds": preflight_wall_seconds,
+        "receipt_wall_seconds": receipt_wall_seconds,
         "cost_tsv": 0,
     }));
     Ok(())
@@ -4409,11 +4415,15 @@ fn run_reassign_authored_ships(
         }
         moves.push((id, from_squad, to_squad, source_type));
     }
+    let preflight_started = Instant::now();
     preflight_native_fleet_edit(
         &catalog, root, &progress, side,
         &progress.purchases_for_side(side), &projected, to_squad,
     )?;
+    let preflight_wall_seconds = preflight_started.elapsed().as_secs_f64();
+    let commit_started = Instant::now();
     let count = catalog.reassign_authored_ships(&progress, output_root, side, &moves)?;
+    let receipt_wall_seconds = commit_started.elapsed().as_secs_f64();
     println!("{}", json!({
         "kind": "native_campaign_original_fleet_batch_reassigned",
         "campaign_id": catalog.campaign_id,
@@ -4422,6 +4432,8 @@ fn run_reassign_authored_ships(
         "from_saved_squad_id": from_squad,
         "to_saved_squad_id": to_squad,
         "ships_reassigned": count,
+        "preflight_wall_seconds": preflight_wall_seconds,
+        "receipt_wall_seconds": receipt_wall_seconds,
         "cost_tsv": 0,
     }));
     Ok(())
