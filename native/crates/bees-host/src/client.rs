@@ -568,6 +568,13 @@ impl NativeClient {
         self.allow_new_squads=allowed;
     }
 
+    pub fn campaign_briefing_completed(&self, view: &NativeRenderWorldView<'_>) -> bool {
+        let Some((sequence, cue)) = view.campaign_dialogue else { return false; };
+        self.selection_owner == Some((view.world_id, view.episode_revision)) &&
+            self.dialogue_sequence == Some(sequence) &&
+            self.dialogue_line >= crate::presentation::campaign_dialogue::line_count(cue)
+    }
+
     pub fn result_action(&self) -> Option<NativeResultAction> {
         if self.dialogue_visible { return None; }
         let controls = self.result_controls?;

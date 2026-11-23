@@ -11274,54 +11274,51 @@ fn run_battle(
             std::thread::sleep(Duration::from_millis(1));
             continue 'battle;
         }
-        // Both graphical and dedicated LAN hosts withhold orders
-        // through original opening AND mid-mission dialogue breaks.
-        // The player's existing authenticated briefing acknowledgment
-        // authorizes the next fixed tick; physics never runs during the
-        // Scout report, even though the encounter occurs after tick zero.
-        let remote_briefing = if remote.is_some() {
-            host.render_world(0).filter(|view|
-                view.terminal_result.is_none()).and_then(|view|
-                view.campaign_dialogue
-                    .filter(|(_,cue)|cue.is_briefing())
-                    .and_then(|(sequence,_)|
-                        view.campaign_dialogue_side.map(|side|(side,sequence))))
-        } else { None };
         // Network co-op enters through precisely the same authoritative
         // command dispatcher as the local window and recorded input replay.
         // Process it at this fixed-tick boundary, never during physics.
         let mut remote_lobby_waiting = false;
         let mut remote_reconnect_waiting = false;
+        let mut remote_briefing_waiting = false;
         if remote.is_some() {
             let world = host.simulation().world(0).expect("remote play has one Level");
             let world_id = world.id;
             let revision = world.episode_revision();
             let live_held_controllers: Vec<_> =
                 world.state.live_held_fire_controllers().collect();
-            let orders = remote.as_mut().expect("checked remote listener").poll(
+            let battle_view = host.render_world(0).expect("remote presentation Level");
+            let remote_briefing = battle_view.active_campaign_briefing();
+            let server = remote.as_mut().expect("checked remote listener");
+            #[cfg(feature = "client")]
+            if let Some(client) = &client {
+                server.sync_local_campaign_briefing(
+                    &battle_view, client.campaign_briefing_completed(&battle_view),
+                );
+            }
+            let orders = server.poll(
                 world_id, revision, &live_held_controllers,
                 if view { None } else { remote_briefing },
             );
-            remote_lobby_waiting = !view &&
-                remote.as_mut().expect("checked remote listener")
-                    .lobby_waiting(world_id, revision, world.tick());
+            // A cue can remain current after its briefing has been read.
+            // The same acknowledgment releases fixed steps and orders.
+            remote_briefing_waiting = server.campaign_briefing_waiting(&battle_view);
+            remote_lobby_waiting = !view && server.lobby_waiting(world_id, revision, world.tick());
             remote_reconnect_waiting = !view &&
                 !world.is_failed() && !world.state.events.completed() &&
                 !world.state.events.was_aborted() &&
                 world.state.combat.surrendered_side().is_none() &&
-                remote.as_mut().expect("checked remote listener")
-                    .reconnect_waiting(world.tick());
+                server.reconnect_waiting(world.tick());
             for order in orders {
                 // A story briefing blocks physical orders from both player
                 // sides until its authored viewer releases the real Level.
                 // End still frees an existing peer-owned held-fire gesture.
-                if (remote_briefing.is_some() ||
+                if (remote_briefing_waiting ||
                     remote_lobby_waiting || remote_reconnect_waiting) &&
                     !matches!(&order.action, NativePlayerInput::HeldFire(input)
                         if matches!(input.action,
                             bees_gameplay::player_inputs::NativeHeldFireAction::End)) &&
                     !(remote_reconnect_waiting && !remote_lobby_waiting &&
-                        remote_briefing.is_none() &&
+                        !remote_briefing_waiting &&
                         matches!(&order.action, NativePlayerInput::Surrender { .. })) {
                     remote.as_mut().expect("remote listener").reply(
                         order.peer, order.request_id,
@@ -11604,17 +11601,10 @@ fn run_battle(
         // While one or more connected story owners are reading the
         // briefing, keep polling its normal nonblocking network transport
         // but do not step a shadow World or change the fixed-step clock.
-        if let (Some(server),Some((owner,sequence))) =
-            (remote.as_mut().filter(|_| !view),remote_briefing)
-        {
-            let world=host.simulation().world(0).expect("hosted briefing Level");
-            if server.briefing_waiting(world.id,world.episode_revision(),
-                owner,sequence)
-            {
-                std::thread::sleep(std::time::Duration::from_millis(16));
-                remote_deadline=Instant::now();
-                continue 'battle;
-            }
+        if !view && remote_briefing_waiting {
+            std::thread::sleep(Duration::from_millis(16));
+            remote_deadline = Instant::now();
+            continue 'battle;
         }
         // Authenticated remote commanders can pause the ONE playable
         // World. Keep polling sockets and local UI at the same boundary;

@@ -420,6 +420,8 @@ pub struct RemotePlayMeasurements {
     #[serde(default)]
     pub briefing_wait_polls: u64,
     #[serde(default)]
+    pub briefing_release_snapshots: u64,
+    #[serde(default)]
     pub lobby_ready_acks: u64,
     #[serde(default)]
     pub lobby_ready_rejections: u64,
@@ -637,6 +639,8 @@ pub struct NativeRemotePlay {
     peers: Vec<Peer>,
     next_peer: u64,
     last_state: Option<(u64, u64)>,
+    last_published_briefing: Option<(i32, u32)>,
+    local_briefing_ack: Option<(WorldId, u64, u32)>,
     // A newly authenticated player needs the next authoritative snapshot
     // immediately, even if the fixed tick is between normal state pulses.
     force_initial_state: bool,
@@ -797,6 +801,7 @@ impl NativeRemotePlay {
             side_tokens, spectator_tokens,
             archived_receipts: HashMap::new(), peers: Vec::new(),
             next_peer: 1, last_state: None, force_initial_state: false,
+            last_published_briefing: None, local_briefing_ack: None,
             pending_audio: HashMap::new(), last_audio_tick: None,
             fog_by_side: HashMap::new(),
             music_location: None, map_background: None, camera_zoom: None,
@@ -996,6 +1001,8 @@ impl NativeRemotePlay {
         // The recovered World retains its authored cue. The old TCP
         // peers cannot acknowledge on behalf of newly authenticated ones.
         self.briefing_ready.clear();
+        self.local_briefing_ack = None;
+        self.last_published_briefing = None;
         self.lobby_episode = None;
         self.lobby_ready_peers.clear();
         self.forfeit_absence = None;
@@ -1886,21 +1893,32 @@ impl NativeRemotePlay {
         waiting
     }
 
-    pub fn briefing_waiting(&mut self, world_id: WorldId, revision: u64,
-        owner_side: i32, sequence: u32) -> bool
-    {
-        let required=(world_id.0,revision,sequence);
-        let mut viewers=0usize;
-        let mut waiting=false;
-        for peer in self.peers.iter().filter(|peer|
-            !peer.closed && !peer.spectator && peer.side==Some(owner_side)) {
-            viewers+=1;
-            if self.briefing_ready.get(&peer.id)!=Some(&required) {
-                waiting=true;
-            }
+    pub fn sync_local_campaign_briefing(&mut self, view: &NativeRenderWorldView<'_>, complete: bool) {
+        self.local_briefing_ack = view.active_campaign_briefing().filter(|_| complete)
+            .map(|(_, sequence)| (view.world_id, view.episode_revision, sequence));
+    }
+
+    fn pending_campaign_briefing(&self, view: &NativeRenderWorldView<'_>) -> Option<(i32, u32)> {
+        let briefing @ (owner, sequence) = view.active_campaign_briefing()?;
+        if !self.dedicated_briefing_gate {
+            return (self.local_briefing_ack != Some((view.world_id, view.episode_revision, sequence)))
+                .then_some(briefing);
         }
-        let waiting=waiting||viewers==0;
-        if waiting { self.measurements.briefing_wait_polls+=1; }
+
+        let required = (view.world_id.0, view.episode_revision, sequence);
+        let mut owner_peers = self.peers.iter()
+            .filter(|peer| !peer.closed && !peer.spectator && peer.side == Some(owner))
+            .peekable();
+        (owner_peers.peek().is_none() ||
+            owner_peers.any(|peer| self.briefing_ready.get(&peer.id) != Some(&required)))
+            .then_some(briefing)
+    }
+
+    pub fn campaign_briefing_waiting(&mut self, view: &NativeRenderWorldView<'_>) -> bool {
+        let waiting = self.pending_campaign_briefing(view).is_some();
+        if waiting && self.dedicated_briefing_gate {
+            self.measurements.briefing_wait_polls += 1;
+        }
         waiting
     }
 
@@ -1909,7 +1927,11 @@ impl NativeRemotePlay {
     pub fn broadcast_initial_if_pending(&mut self,
         view: &NativeRenderWorldView<'_>, bounds: Aabb)
     {
-        if self.force_initial_state { self.broadcast(view,bounds); }
+        if self.force_initial_state ||
+            self.last_published_briefing != self.pending_campaign_briefing(view)
+        {
+            self.broadcast(view, bounds);
+        }
     }
 
     pub fn held_fire_active(&self) -> bool { !self.held_fire.is_empty() }
@@ -2048,7 +2070,9 @@ impl NativeRemotePlay {
             );
         }
         let has_events = !view.combat.events().is_empty();
-        let force_view = self.last_state != Some(episode) ||
+        let pending_briefing = self.pending_campaign_briefing(view);
+        let briefing_changed = self.last_published_briefing != pending_briefing;
+        let force_view = self.last_state != Some(episode) || briefing_changed ||
             view.terminal_result.is_some() || self.force_initial_state;
         let publish_frame = force_view ||
             view.tick % STATE_EVERY_TICKS == 0;
@@ -2149,7 +2173,13 @@ impl NativeRemotePlay {
             }
         }
         if !publish_frame { return; }
+        if self.last_state == Some(episode) && self.last_published_briefing.is_some() &&
+            pending_briefing.is_none()
+        {
+            self.measurements.briefing_release_snapshots += 1;
+        }
         self.last_state = Some(episode);
+        self.last_published_briefing = pending_briefing;
         self.force_initial_state = false;
         // Audio is lossy presentation; authoritative orders and replies keep
         // their existing reliable, bounded channel.
@@ -2205,9 +2235,8 @@ impl NativeRemotePlay {
         // either side issuing physical orders. Local windows pace their
         // source dialogue; dedicated servers require authenticated ACKs
         // before the same single physical game can advance.
-        let briefing_paused=view.terminal_result.is_none() &&
-            view.campaign_dialogue.is_some_and(|(_,cue)|cue.is_briefing());
-        let requires_briefing_ack=self.dedicated_briefing_gate && briefing_paused;
+        let briefing_paused = pending_briefing.is_some();
+        let requires_briefing_ack = self.dedicated_briefing_gate && briefing_paused;
         // Cooperative peers share one encoded side snapshot. Union only
         // currently requested, authorized squad lifetimes; no per-peer
         // collision pass and no retained gameplay state.

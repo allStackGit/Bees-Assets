@@ -271,6 +271,13 @@ pub struct NativeRenderWorldView<'a> {
 }
 
 impl<'a> NativeRenderWorldView<'a> {
+    pub fn active_campaign_briefing(&self) -> Option<(i32, u32)> {
+        if self.terminal_result.is_some() { return None; }
+        let (sequence, cue) = self.campaign_dialogue?;
+        let owner = self.campaign_dialogue_side?;
+        cue.is_briefing().then_some((owner, sequence))
+    }
+
     pub(crate) fn campaign_camera_subject_for(&self, viewer_side: i32) -> Option<(i64, Vec2)> {
         if self.campaign_dialogue_side != Some(viewer_side) || self.terminal_result.is_some() {
             return None;
