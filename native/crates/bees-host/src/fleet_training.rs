@@ -1346,7 +1346,65 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
 /// Run an independent fixed-source evaluation of a verified native
 /// checkpoint. Gameplay and the Python evaluator still share the one
 /// CombatWorld and policy manifest; no second learner or scoring engine.
-fn evaluate_training_checkpoint(job: &Path, best: bool) -> Result<(), Box<dyn Error>> {
+enum NativeEvaluationCheckpoint {
+    Latest,
+    Best,
+    Historical(PathBuf),
+}
+
+fn choose_historical_checkpoint(job: &Path) -> Result<(), Box<dyn Error>> {
+    let home = job.join("model").join("session");
+    let mut choices = Vec::new();
+    for entry in fs::read_dir(&home)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() { continue; }
+        let name = entry.file_name();
+        let Some(rest) = name.to_str().and_then(|name|
+            name.strip_prefix("round-")) else { continue };
+        let Some((number, attempt)) = rest.split_once("-attempt-")
+            else { continue };
+        if number.len() != 5 || attempt.len() != 3 ||
+            !number.bytes().all(|value| value.is_ascii_digit()) ||
+            !attempt.bytes().all(|value| value.is_ascii_digit()) {
+            continue;
+        }
+        let receipt = entry.path().join("round-result.json");
+        if fs::symlink_metadata(&receipt).is_ok_and(|meta|
+            meta.file_type().is_file() && meta.len() <= 4 * 1024 * 1024) {
+            let value: Value = serde_json::from_slice(&fs::read(&receipt)?)?;
+            if value["schema_version"].as_u64() != Some(1) ||
+                value["kind"].as_str() != Some("native_training_round_complete") {
+                return Err(invalid("historical native training round receipt is invalid").into());
+            }
+            let round = number.parse::<u32>()?;
+            let ordinal = attempt.parse::<u32>()?;
+            choices.push((round, ordinal, receipt, value));
+        }
+    }
+    choices.sort_unstable_by_key(|(round, attempt, _, _)| (*round, *attempt));
+    if choices.is_empty() {
+        println!("No committed historical optimizer rounds can be evaluated.");
+        return Ok(());
+    }
+    let titles = choices.iter().map(|(round, attempt, _, record)| {
+        let steps = record["learner_metrics"]["optimizer_input_steps"].as_u64()
+            .unwrap_or(0);
+        format!("Round {round:05} (attempt {attempt:03}) | {steps} optimizer input steps")
+    }).collect::<Vec<_>>();
+    let rows = titles.iter().map(|title| BattleMenuRow {
+        title, status: "  [Immutable round receipt]", unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut selected = choices.len() - 1;
+    if let Some(index) = select_library(&rows, &mut selected, false)? {
+        evaluate_training_checkpoint(job,
+            NativeEvaluationCheckpoint::Historical(choices[index].2.clone()))?;
+    }
+    Ok(())
+}
+
+fn evaluate_training_checkpoint(
+    job: &Path, checkpoint_choice: NativeEvaluationCheckpoint,
+) -> Result<(), Box<dyn Error>> {
     let session = job.join("model").join("session");
     let config: Value = serde_json::from_slice(
         &fs::read(session.join("session-config.json"))?
@@ -1359,25 +1417,61 @@ fn evaluate_training_checkpoint(job: &Path, best: bool) -> Result<(), Box<dyn Er
     if sha256_file(&source)? != source_sha {
         return Err(invalid("native evaluation source changed since training").into());
     }
-    let receipt_name = if best { "best-evaluated.json" } else { "latest-playable.json" };
-    let selection: Value = serde_json::from_slice(&fs::read(session.join(receipt_name))?)?;
-    let expected_kind = if best {
-        "native_training_best_evaluated"
-    } else {
-        "native_training_latest_playable"
+    let (selection, selection_name) = match checkpoint_choice {
+        NativeEvaluationCheckpoint::Latest => {
+            let selection: Value = serde_json::from_slice(
+                &fs::read(session.join("latest-playable.json"))?)?;
+            if selection["schema_version"].as_u64() != Some(1) ||
+                selection["kind"].as_str() != Some("native_training_latest_playable") {
+                return Err(invalid("latest native checkpoint selection is invalid").into());
+            }
+            (selection, "latest_checkpoint")
+        }
+        NativeEvaluationCheckpoint::Best => {
+            let selected: Value = serde_json::from_slice(
+                &fs::read(session.join("best-evaluated.json"))?)?;
+            if selected["schema_version"].as_u64() != Some(1) ||
+                selected["kind"].as_str() != Some("native_training_best_evaluated") {
+                return Err(invalid("best native checkpoint selection is invalid").into());
+            }
+            (selected, "best_fixed_holdout")
+        }
+        NativeEvaluationCheckpoint::Historical(receipt) => {
+            if !receipt.starts_with(&session) || receipt.file_name()
+                .is_none_or(|file| file != "round-result.json") {
+                return Err(invalid("historical checkpoint is outside its native session").into());
+            }
+            let selected: Value = serde_json::from_slice(&fs::read(&receipt)?)?;
+            if selected["schema_version"].as_u64() != Some(1) ||
+                selected["kind"].as_str() != Some("native_training_round_complete") {
+                return Err(invalid("historical native training receipt is invalid").into());
+            }
+            let learner = receipt.parent()
+                .ok_or_else(|| invalid("historical round directory missing"))?
+                .join("learner");
+            for (key, file) in [
+                ("next_manifest", "manifest.json"),
+                ("next_checkpoint", "checkpoint.pt"),
+            ] {
+                let path = selected[key].as_str()
+                    .ok_or_else(|| invalid("historical optimizer omitted its selected artifact"))?;
+                if Path::new(path).canonicalize()? != learner.join(file).canonicalize()? {
+                    return Err(invalid("historical model artifact left its original committed round").into());
+                }
+            }
+            (selected, "historical_verified_round")
+        }
     };
-    if selection["schema_version"].as_u64() != Some(1) ||
-        selection["kind"].as_str() != Some(expected_kind) {
-        return Err(invalid("selected native training checkpoint has an invalid receipt").into());
-    }
+    let best = selection_name == "best_fixed_holdout";
+    let historical = selection_name == "historical_verified_round";
     let model = if best { &selection["selected"] } else { &selection };
-    let manifest = model["manifest"].as_str()
+    let manifest = model[if historical { "next_manifest" } else { "manifest" }].as_str()
         .ok_or_else(|| invalid("selected checkpoint lacks its verified model manifest"))?;
-    let manifest_sha = model["manifest_sha256"].as_str()
+    let manifest_sha = model[if historical { "next_manifest_sha256" } else { "manifest_sha256" }].as_str()
         .ok_or_else(|| invalid("selected checkpoint lacks its model manifest digest"))?;
-    let checkpoint = model["checkpoint"].as_str()
+    let checkpoint = model[if historical { "next_checkpoint" } else { "checkpoint" }].as_str()
         .ok_or_else(|| invalid("selected checkpoint lacks its physical policy artifact"))?;
-    let checkpoint_sha = model["checkpoint_sha256"].as_str()
+    let checkpoint_sha = model[if historical { "next_checkpoint_sha256" } else { "checkpoint_sha256" }].as_str()
         .ok_or_else(|| invalid("selected checkpoint lacks its artifact digest"))?;
     if sha256_file(Path::new(manifest))? != manifest_sha ||
         sha256_file(Path::new(checkpoint))? != checkpoint_sha {
@@ -1480,7 +1574,7 @@ fn evaluate_training_checkpoint(job: &Path, best: bool) -> Result<(), Box<dyn Er
     println!("{}", json!({
         "kind": "native_fleet_evaluation_started",
         "job": job,
-        "selection": if best { "best_fixed_holdout" } else { "latest_checkpoint" },
+        "selection": selection_name,
         "policy_seed": seed,
         "candidate_physical_side": side,
         "candidate_slot": matchup.map(|(candidate, _)| candidate),
