@@ -763,7 +763,7 @@ def main():
         "--no-graphics","--resume" if resume else "--force",
         *(["--bees-batch-inference"] if job["batch_inference"] else []),
         *(["--bees-wan-actors",str(job["wan_actors"]),
-            "--bees-wan-min-actors","0",
+            "--bees-wan-min-actors",str(job["wan_actors"]),
             "--bees-wan-broker-port",str(job["wan_broker_port"]),
             "--bees-wan-auth-token-file",job["wan_key_file"]] if native_wan else []),
         *(["--env-args",*job["environment_args"]] if job["environment_args"] else []),
