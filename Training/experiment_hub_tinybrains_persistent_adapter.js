@@ -1381,6 +1381,19 @@ function createTinyBrainsPersistentDockerAdapter({
         {id:'frozen',label:'Adaptive frozen self-play snapshots'},
         {id:'current',label:'Current policy self-play'},
     ];
+    if(opponentSupport)for(const id of ['nano','micro']) {
+        const folder=path.join(project,'upstream/ants-starter/models',id+'-bc');
+        try {
+            const model=path.join(folder,'model.onnx');
+            const stats=fs.lstatSync(model);
+            if(!stats.isFile()||stats.isSymbolicLink()||
+                fs.realpathSync(model)!==model)continue;
+            const model_sha256=modelFileSha256(model);
+            const row={id,label:id==='nano'?'Nano':'Micro',model_sha256};
+            trainingOpponentSources.set(id,{...row,model_dir:folder});
+            opponentCatalog.push(row);
+        }catch { /* A missing optional built-in model is never advertised. */ }
+    }
     if(opponentSupport)try {
         const suites=path.join(os.homedir(),'evaluation-audits/tinybrains/suites');
         const o={suites,project};
