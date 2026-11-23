@@ -582,7 +582,12 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     } else {
         false
     };
-    let Some(rounds) = choose_count("MA-POCA optimizer rounds", &[1, 3, 10, 25, 100])?
+    // Production-length sessions use the same resumable checkpoint lineage
+    // as short experiments. A player can request a graceful round-boundary
+    // stop from the existing training gallery instead of being limited to
+    // the previous 100-round menu ceiling.
+    let Some(rounds) = choose_count("MA-POCA optimizer rounds",
+        &[1, 3, 10, 25, 100, 250, 500, 1000, 2500, 5000, 10000])?
         else { return Ok(()); };
     let Some(trainer_source) = choose_trainer_config(save_root)? else {
         return Ok(());
