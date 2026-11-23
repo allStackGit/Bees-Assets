@@ -5200,7 +5200,7 @@ struct NativeLibraryUnlock {
 /// separately protected token file; no credentials belong to the shared
 /// package or library JSON.
 #[cfg(feature = "client")]
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct NativeSavedNetwork {
     address: String,
@@ -5212,7 +5212,7 @@ struct NativeSavedNetwork {
 }
 
 #[cfg(feature = "client")]
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct NativeSavedHost {
     game_id: String,
@@ -6883,9 +6883,17 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                         Err(error) => return Err(error.into()),
                     }
                 };
-                let Some(connection) = choose_multiplayer_join(initial)? else {
+                let Some((connection, remember)) = choose_multiplayer_join(initial)? else {
                     return Ok(());
                 };
+                if remember {
+                    bees_host::checkpoint_file::persist_atomic_json(&saved_network, &NativeSavedNetwork {
+                        address: connection.address.clone(),
+                        token_file: connection.token_file.clone(),
+                        side: connection.side,
+                        spectator: connection.spectator,
+                    })?;
+                }
                 let token_file = save_root.join(&connection.token_file);
                 let session_name = if connection.spectator {
                     "multiplayer-spectator-session.json"
@@ -6940,11 +6948,14 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 let tokens_file = saved.as_ref().map_or_else(
                     || Path::new("host-side-tokens.json"), |settings| settings.tokens_file.as_path(),
                 );
-                let Some((listen, tokens_file)) = choose_multiplayer_host(listen, tokens_file)?
+                let Some((listen, tokens_file, remember)) = choose_multiplayer_host(listen, tokens_file)?
                     else { return Ok(()) };
                 let settings = NativeSavedHost {
                     game_id: game_ids[game_index].to_owned(), listen, tokens_file,
                 };
+                if remember {
+                    bees_host::checkpoint_file::persist_atomic_json(&saved_host, &settings)?;
+                }
                 let result = run_library_host(&settings, save_root, &library, &games, &trained,
                     playable_freeplay, original_queen.as_ref(), original_factory.as_ref(),
                     &original_fighters);

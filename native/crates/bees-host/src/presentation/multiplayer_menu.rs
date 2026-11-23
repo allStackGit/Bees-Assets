@@ -35,7 +35,7 @@ pub struct MultiplayerJoin {
 
 pub fn choose_multiplayer_join(
     initial: Option<MultiplayerJoin>,
-) -> Result<Option<MultiplayerJoin>, minifb::Error> {
+) -> Result<Option<(MultiplayerJoin, bool)>, minifb::Error> {
     let (fields, role) = match initial {
         Some(initial) => (
             [initial.address, initial.token_file.to_string_lossy().into_owned()],
@@ -43,27 +43,28 @@ pub fn choose_multiplayer_join(
         ),
         None => ([String::new(), String::new()], 0),
     };
-    Ok(connection_form(fields, Some(role))?.map(|([address, file], role)| {
+    Ok(connection_form(fields, Some(role))?.map(|([address, file], role, remember)| {
         let role = role.expect("join form has a role");
-        MultiplayerJoin {
+        (MultiplayerJoin {
             address,
             token_file: PathBuf::from(file),
             side: if role % 2 == 0 { 1 } else { 2 },
             spectator: role >= 2,
-        }
+        }, remember)
     }))
 }
 
 pub fn choose_multiplayer_host(
     listen: String, tokens_file: &std::path::Path,
-) -> Result<Option<(String, PathBuf)>, minifb::Error> {
+) -> Result<Option<(String, PathBuf, bool)>, minifb::Error> {
     let fields = [listen, tokens_file.to_string_lossy().into_owned()];
-    Ok(connection_form(fields, None)?.map(|([listen, file], _)| (listen, PathBuf::from(file))))
+    Ok(connection_form(fields, None)?
+        .map(|([listen, file], _, remember)| (listen, PathBuf::from(file), remember)))
 }
 
 fn connection_form(
     mut fields: [String; 2], mut role: Option<usize>,
-) -> Result<Option<([String; 2], Option<usize>)>, minifb::Error> {
+) -> Result<Option<([String; 2], Option<usize>, bool)>, minifb::Error> {
     let joining = role.is_some();
     let (title, hint, labels, action) = if joining {
         ("Join Multiplayer", "Enter host:port and the path to the token file from your host.",
@@ -72,8 +73,9 @@ fn connection_form(
         ("Host Multiplayer", "Use an address on your private network or VPN.",
             ["Listen address", "Private side-token map file", ""], "Start host")
     };
-    let button = if joining { 3 } else { 2 };
-    let row_tops = &ROW_TOPS[..button];
+    let remember_row = if joining { 3 } else { 2 };
+    let button = remember_row + 1;
+    let row_tops = &ROW_TOPS[..remember_row];
     let mut window = Window::new(&format!("Bees | {title}"), WIDTH, HEIGHT, WindowOptions {
         resize: true,
         scale_mode: ScaleMode::AspectRatioStretch,
@@ -86,6 +88,7 @@ fn connection_form(
     let mut focus = 0;
     let mut mouse_down = false;
     let mut show_error = false;
+    let mut remember = false;
 
     while window.is_open() {
         if window.is_key_pressed(Key::Escape, KeyRepeat::No) {
@@ -120,6 +123,9 @@ fn connection_form(
                 *role = (*role + 1) % ROLES.len();
             }
         }
+        if focus == remember_row && window.is_key_pressed(Key::Space, KeyRepeat::No) {
+            remember = !remember;
+        }
         let mut submit = window.is_key_pressed(Key::Enter, KeyRepeat::No);
         let pressed = window.get_mouse_down(MouseButton::Left);
         if pressed && !mouse_down {
@@ -132,6 +138,9 @@ fn connection_form(
                         if let Some(role) = role.as_mut().filter(|_| row == 2) {
                             *role = (*role + 1) % ROLES.len();
                         }
+                    } else if (80.0..305.0).contains(&x) && (310.0..344.0).contains(&y) {
+                        focus = remember_row;
+                        remember = !remember;
                     } else if (310.0..490.0).contains(&x) && (310.0..344.0).contains(&y) {
                         submit = true;
                     }
@@ -149,7 +158,7 @@ fn connection_form(
                 !file.trim().is_empty()
             {
                 fields[0] = address.to_owned();
-                return Ok(Some((fields, role)));
+                return Ok(Some((fields, role, remember)));
             }
             show_error = true;
         }
@@ -170,16 +179,24 @@ fn connection_form(
                 text::fit_tail(value, 610), 1, TEXT);
         }
         for line in 310..344 {
+            pixels[line * WIDTH + 80..line * WIDTH + 305]
+                .fill(if focus == remember_row { 0x35557d } else { 0x263c59 });
             pixels[line * WIDTH + 310..line * WIDTH + 490]
                 .fill(if focus == button { 0x35557d } else { 0x263c59 });
         }
+        let remember_label = if remember {
+            "[x] Remember settings"
+        } else {
+            "[ ] Remember settings"
+        };
+        text::draw_at(&mut pixels, WIDTH, 91, 319, remember_label, 1, TEXT);
         text::draw_centered(&mut pixels, WIDTH, 319, action, 1, TEXT);
         let footer = if show_error {
             "Enter an address with a port and a token file path."
         } else if joining {
-            "Tab change field   Left / Right change side or role   Enter connect   Esc return"
+            "Tab move   Left / Right change role   Space toggle   Enter connect   Esc return"
         } else {
-            "Tab change field   Enter start host   Esc return"
+            "Tab move   Space toggle   Enter start host   Esc return"
         };
         text::draw_centered(&mut pixels, WIDTH, 365, footer, 1, MUTED);
         window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;

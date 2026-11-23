@@ -1335,8 +1335,8 @@ the server address with its port, the path to your private token file,
 and your side or spectator role. An optional `multiplayer.json` in the
 player's save directory (`~/.local/share/bees-native` on Linux or
 `%LOCALAPPDATA%\\BeesNative` on Windows) supplies the initial values. The
-game remembers edits while the library is open. The settings file stores
-the token path only:
+game remembers edits while the library is open. Select **Remember settings**
+to keep them for future launches. The settings file stores the token path:
 
 ```json
 {
@@ -1355,8 +1355,8 @@ or battle completion. A missing configuration never blocks offline play.
 
 Select **Host Multiplayer** in the packaged game library, pick an
 available game, and enter the listen address and path to the host's
-private side-token map. An optional `multiplayer-host.json` in the same
-save directory supplies the initial game, address and file path:
+private side-token map. **Remember settings** saves those selections in
+`multiplayer-host.json` in the same save directory:
 
 ```json
 {
