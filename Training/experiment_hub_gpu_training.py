@@ -143,6 +143,21 @@ def training_activation_workspace_budget(free_bytes, *,
                       free_bytes-minimum_other_headroom))
 
 
+def shared_fp32_training_input(observations, *, consumers_use_float32):
+    """Convert one immutable batch ONCE for independent FP32-only networks.
+
+    Many actor/critic pairs each perform boards.float() inside their
+    forward(). An explicit exact-value consumer contract allows the caller
+    to share the same FP32 tensor across both models, avoiding duplicated
+    device cast kernels and allocations. This does not change gradients,
+    optimizer steps, sampling, or observation values seen by those models.
+    """
+    if (not isinstance(observations,torch.Tensor) or
+            type(consumers_use_float32) is not bool):
+        raise ValueError("Shared PPO inputs require tensor and FP32 consumer contract")
+    return observations.float() if consumers_use_float32 else observations
+
+
 def discrete_action_logprob_entropy(logits, actions):
     """Fused-softmax-friendly discrete PPO policy terms for any action count.
 
