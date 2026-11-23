@@ -51,7 +51,7 @@ HELP = """Commands:
   objective            Show the authored mission and reinforcement status
   codex                Show genuinely unlocked campaign ship classes
   rewards              Show exact committed campaign awards and retirements
-  ready                Acknowledge the current hosted campaign briefing
+  ready                Join the two-player lobby or acknowledge a briefing
   surrender confirm    Concede the battle (irreversible after host commits)
   activate-retreat     Open your side's authored retreat exit
   rejoin               Reconnect to the SAME recovered native host session
@@ -159,6 +159,8 @@ class RemoteConsole:
         self.last_campaign_receipt = None
         self.last_battle_receipt = None
         self.briefing_acknowledgments = {}
+        self.lobby_ready_request = None
+        self.lobby_ready_owned = False
         self.seen_ship_classes = {}
 
     def _send_wire(self, encoded):
@@ -239,6 +241,8 @@ class RemoteConsole:
                                 self.selected.clear()
                                 self.held_scope = None
                                 self.held_begin_request = None
+                                self.lobby_ready_request = None
+                                self.lobby_ready_owned = False
                                 self.pause_owned = False
                                 self.weapon_overlay_enabled = False
                                 self.seen_ship_classes.clear()
@@ -326,6 +330,20 @@ class RemoteConsole:
                         self.notifications.put(notice)
                         if not self.silent:
                             print(notice)
+                    elif kind == "lobby_ready_result":
+                        request_id = message.get("request_id")
+                        with self.lock:
+                            requested = self.lobby_ready_request
+                            if (requested is None or requested[0] != request_id or
+                                    type(message.get("processed")) is not bool):
+                                raise ValueError("unsolicited native multiplayer lobby receipt")
+                            self.lobby_ready_request = None
+                            if requested[1] == self.selected_scope:
+                                self.lobby_ready_owned = message["processed"]
+                        note = message.get("feedback", "Lobby readiness updated")
+                        self.notifications.put(note)
+                        if not self.silent:
+                            print(note)
                     elif kind == "briefing_result":
                         with self.lock:
                             pending = next((
@@ -543,6 +561,42 @@ class RemoteConsole:
     def battle_receipt_snapshot(self):
         with self.lock:
             return self.last_battle_receipt
+
+    def acknowledge_lobby(self):
+        """Admit this authenticated peer to the original dedicated match.
+
+        Joining is a transport vote, not a gameplay order; a new TCP peer
+        after crash recovery must explicitly ready again.
+        """
+        if self.spectator:
+            raise ValueError("spectators cannot ready a multiplayer match")
+        state = self.snapshot()
+        lobby = state.get("lobby") if state else None
+        if not isinstance(lobby, dict) or lobby.get("waiting") is not True:
+            return False
+        if not self.alive or self.host_session_id is None:
+            raise ValueError("not connected to the authoritative match")
+        scope = (state["world_id"], state["episode_revision"])
+        with self.lock:
+            if self.lobby_ready_owned or self.lobby_ready_request is not None:
+                return False
+            request_id = self.next_request
+            self.next_request += 1
+            self.lobby_ready_request = (request_id, scope)
+        packet = {
+            "kind": "lobby_ready", "request_id": request_id,
+            "world_id": scope[0], "episode_revision": scope[1],
+        }
+        try:
+            self._send_wire(
+                (json.dumps(packet, separators=(",", ":")) + "\n").encode("utf-8")
+            )
+        except OSError:
+            with self.lock:
+                if self.lobby_ready_request == (request_id, scope):
+                    self.lobby_ready_request = None
+            raise
+        return True
 
     def acknowledge_briefing(self):
         """Release the real hosted Level after this viewer finishes its cue.
@@ -1093,6 +1147,12 @@ class RemoteConsole:
                   f" tick {state['tick']} side {state['viewer_side']}"
                   f" ships visible {len(state['ships'])}"
                   f" squads selected {[owner['squad_id'] for owner in self.selected]}")
+            lobby = state.get("lobby")
+            if isinstance(lobby, dict) and lobby.get("waiting"):
+                ready = lobby.get("ready_sides", [])
+                required = lobby.get("required_sides", [])
+                print(f"Multiplayer lobby: sides ready {ready} / {required}"
+                      f"; enter 'ready' to join the match")
             if self.time_controls_available:
                 print(f"Host clock: {state.get('game_speed', 1):g}x"
                       f", paused: {state.get('commander_paused') is True}"
@@ -1147,8 +1207,13 @@ class RemoteConsole:
             print("Surrender submitted; awaiting the host's durable battle result")
             return
         if cmd == "ready":
-            print("Briefing acknowledgment sent" if self.acknowledge_briefing()
-                  else "No unacknowledged hosted campaign briefing")
+            lobby = state.get("lobby")
+            if isinstance(lobby, dict) and lobby.get("waiting") is True:
+                print("Match readiness submitted" if self.acknowledge_lobby()
+                      else "Already ready or awaiting the host's acknowledgement")
+            else:
+                print("Briefing acknowledgment sent" if self.acknowledge_briefing()
+                      else "No unacknowledged hosted campaign briefing")
             return
         if cmd == "objective":
             objective = self.objective_summary(state)
