@@ -285,7 +285,19 @@ def main(argv=None) -> int:
         managed = inspect_forward(job)
         if managed is not None:
             return owned_forward(job, managed, actor_argv)
-        # Existing manually provisioned private forward remains supported.
+        # An operator-provisioned forward must already exist at Start.
+        # Without this gate a missing Windows/manual tunnel leaves an actor
+        # appearing to run while never producing a single trajectory.
+        try:
+            with socket.create_connection(
+                ("127.0.0.1", job["broker_port"]), timeout=2
+            ):
+                pass
+        except OSError as exc:
+            raise RuntimeError(
+                "The approved private WAN forward is not listening on "
+                f"127.0.0.1:{job['broker_port']}; establish it before Hub Start."
+            ) from exc
         from bees_elastic_wan_actor_worker import main as run_actor
         return run_actor(actor_argv)
     finally:
