@@ -13,7 +13,7 @@ import json
 import math
 from pathlib import Path
 
-from evaluate_policy import evaluate
+from evaluate_policy import evaluate, terminal_matchup
 from native_training_artifacts import (
     atomic_json, file_sha256, native_manifest_model_dependencies,
     native_input_dependencies,
@@ -45,96 +45,6 @@ def pinned_model(manifest, checkpoint, slot):
         raise ValueError("native comparison model does not match its authenticated artifact")
     model["path"] = str(artifact)
     return source, model
-
-
-def terminal_matchup(directory, result, candidate_slot, incumbent_slot):
-    """Read only the terminal records; reconcile them with the verified summary."""
-    journal = directory / "events.jsonl"
-    counts = Counter()
-    by_scene = {}
-    physical_wins = Counter()
-    episodes = set()
-    with journal.open("r", encoding="utf-8") as stream:
-        for line in stream:
-            event = json.loads(line)
-            if event.get("kind") not in ("episode_final", "episode_aborted"):
-                continue
-            if (event.get("kind") != "episode_final" or
-                    event.get("run_id") != result["run_id"]):
-                raise ValueError("native champion evaluation has an aborted or unrelated episode")
-            identity = (event["world_id"], event["episode_revision"])
-            if identity in episodes:
-                raise ValueError("repeated native champion terminal episode")
-            episodes.add(identity)
-            context = event["evaluation_context"]
-            if context.get("policy_manifest_sha256") != result["model_manifest_sha256"]:
-                raise ValueError("native champion terminal policy identity mismatch")
-            bee, human = context["bee_side"], context["human_side"]
-            if bee == human:
-                raise ValueError("invalid native champion factions")
-            # Authored routes describe the real policy controller slots even
-            # on non-group Levels. Group routing also alternates by episode.
-            routes = context["authored_policy_slots_by_side"]
-            actual = {side: routes.get(str(side)) for side in (bee, human)}
-            if any(not isinstance(slots, list) or len(slots) != 1
-                   for slots in actual.values()):
-                raise ValueError("champion matches require one policy slot per faction")
-            owners = {side: slots[0] for side, slots in actual.items()}
-            if set(owners.values()) != {candidate_slot, incumbent_slot}:
-                raise ValueError("champion match did not use both distinct model slots")
-            if context.get("group_episode_number") is not None:
-                teams = context["group_team_by_side"]
-                slots = context["model_slots_by_team"]
-                if any(slots[str(teams[str(side)])] != owner
-                       for side, owner in owners.items()):
-                    raise ValueError("champion group routes disagree with authored ownership")
-            candidate_side = next(side for side, owner in owners.items()
-                                  if owner == candidate_slot)
-            payload = event["payload"]
-            winner, timeout = payload["winner_side"], payload["timed_out"]
-            if winner not in (0, bee, human) or type(timeout) is not bool:
-                raise ValueError("invalid native champion outcome")
-            behavior = payload.get("faction_behavior")
-            if not isinstance(behavior, list) or len(behavior) != 2:
-                raise ValueError("native champion terminal lacks physical behavior evidence")
-            candidate_behavior = behavior[0 if candidate_side == bee else 1]
-            for field in ("starting_tsv", "final_tsv", "shots", "hits", "damage"):
-                value = candidate_behavior.get(field)
-                if type(value) is not int or value < 0:
-                    raise ValueError("invalid native champion physical behavior counter")
-                counts["candidate_" + field] += value
-            if (candidate_behavior["starting_tsv"] <= 0 or
-                    (candidate_behavior["hits"] == 0) != (candidate_behavior["damage"] == 0)):
-                raise ValueError("inconsistent native champion physical behavior evidence")
-            scene = context["scene_sha256"]
-            scene_counts = by_scene.setdefault(scene, Counter())
-            for row in (counts, scene_counts):
-                row["matches"] += 1
-                row["candidate_as_bee" if candidate_side == bee else
-                    "candidate_as_human"] += 1
-                row["wins" if winner == candidate_side else
-                    "draws" if winner == 0 else "losses"] += 1
-                row["timeouts"] += int(timeout)
-                row["non_timeout_draws"] += int(winner == 0 and not timeout)
-            if winner:
-                physical_wins[str(winner)] += 1
-    totals = result["evaluation"]
-    if (counts["matches"] != result["episodes"] or
-            counts["draws"] != totals["draws"] or
-            counts["timeouts"] != totals["episodes_timed_out"] or
-            any(physical_wins.get(side, 0) != wins
-                for side, wins in totals["victories_by_side"].items()) or
-            any(totals["victories_by_side"].get(side, 0) != wins
-                for side, wins in physical_wins.items()) or
-            set(by_scene) != set(result["by_scene_sha256"])):
-        raise ValueError("native champion terminal counts disagree with verified evaluation")
-    for scene, row in by_scene.items():
-        expected = result["by_scene_sha256"][scene]
-        if (row["matches"] != expected["episodes"] or
-                row["draws"] != expected["draws"] or
-                row["timeouts"] != expected["timed_out"]):
-            raise ValueError("native champion scene counts disagree with verified evaluation")
-    return counts, by_scene
 
 
 def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
