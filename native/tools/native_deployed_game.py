@@ -135,6 +135,58 @@ def install_deployment(source, target):
     return pointer
 
 
+def freeze_playable_physics(playable):
+    """Give identical physical templates one local filename per publication."""
+    assets = {}
+    by_source = {}
+
+    def freeze(value):
+        source = Path(value)
+        if source not in by_source:
+            digest = file_sha256(source)
+            name = f"physical-{digest}.json"
+            by_source[source] = name
+            assets.setdefault(name, (source, digest))
+        return by_source[source]
+
+    for level in playable["levels"]:
+        level["scene"] = freeze(level["scene"])
+    for field in ("collision_matrix", "stage_palette"):
+        if playable.get(field) is not None:
+            playable[field] = freeze(playable[field])
+    return assets
+
+
+def publish_playable_version(version, manifest, playable, assets):
+    """Commit all immutable game inputs before advancing the gallery pointer."""
+    if not version.exists():
+        with tempfile.TemporaryDirectory(prefix=".champion-game-", dir=version.parent) as temp:
+            staging = Path(temp) / "game"
+            staging.mkdir()
+            for name, (source, digest) in assets.items():
+                target = staging / name
+                with source.open("rb") as stream, target.open("xb") as sink:
+                    shutil.copyfileobj(stream, sink, 1024 * 1024)
+                    sink.flush()
+                    os.fsync(sink.fileno())
+                if file_sha256(target) != digest:
+                    raise ValueError("champion physical input changed during publication")
+            atomic_json(staging / "manifest.json", manifest)
+            atomic_json(staging / "run.json", playable)
+            sync_directory(staging)
+            try:
+                os.rename(staging, version)
+            except OSError:
+                if not version.is_dir():
+                    raise
+            sync_directory(version.parent)
+    if (version.is_symlink() or document(version / "manifest.json") != manifest or
+            document(version / "run.json") != playable or any(
+                (version / name).is_symlink() or file_sha256(version / name) != digest
+                for name, (_, digest) in assets.items())):
+        raise ValueError("previous champion gameplay publication changed")
+
+
 def bind_game(deployment_root, run_path, output, save_root=None, game_id=None):
     """Bind every authored policy route to one approved current champion.
 
@@ -147,9 +199,7 @@ def bind_game(deployment_root, run_path, output, save_root=None, game_id=None):
     run_path = run_path.resolve(strict=True)
     source_digest = file_sha256(run_path)
     output = output.resolve()
-    version = output / (record["deployment_id"] + "-" + source_digest[:16])
-    version.mkdir(parents=True, exist_ok=True)
-    manifest_path = version / "manifest.json"
+    output.mkdir(parents=True, exist_ok=True)
     checkpoint = Path(policy["learner_checkpoint"])
     native_manifest = document(Path(policy["manifest"]))
     selected = native_manifest["models"][0]
@@ -157,8 +207,19 @@ def bind_game(deployment_root, run_path, output, save_root=None, game_id=None):
         raise ValueError("champion deployment must contain one policy")
     playable = _playable_run(run_path, {
         "checkpoint_sha256": identity["checkpoint_sha256"],
-        "manifest": str(manifest_path),
+        "manifest": "manifest.json",
     })
+    assets = freeze_playable_physics(playable)
+    # A source run can reference mutable filenames. Include the complete
+    # ordered physical binding, so a new map cannot reuse a prior version.
+    physical_identity = hashlib.sha256(json.dumps(
+        [source_digest, [level["scene"] for level in playable["levels"]],
+         playable.get("collision_matrix"), playable.get("stage_palette")],
+        separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
+    version = output / f"{record['deployment_id']}-{physical_identity[:24]}"
+    manifest_path = version / "manifest.json"
+    playable["model_manifest"] = str(manifest_path)
     routes = set()
     for level in playable["levels"]:
         slots = level.get("model_slots")
@@ -172,12 +233,7 @@ def bind_game(deployment_root, run_path, output, save_root=None, game_id=None):
     ]
     playable["host_recovery_checkpoint"] = None
     config_path = version / "run.json"
-    for path, value in ((manifest_path, native_manifest), (config_path, playable)):
-        if path.exists():
-            if document(path) != value:
-                raise ValueError("previous champion gameplay publication changed")
-        else:
-            atomic_json(path, value)
+    publish_playable_version(version, native_manifest, playable, assets)
     if file_sha256(run_path) != source_digest:
         raise ValueError("champion gameplay source changed during publication")
     receipt = {
@@ -190,6 +246,7 @@ def bind_game(deployment_root, run_path, output, save_root=None, game_id=None):
         "manifest": str(manifest_path), "manifest_sha256": file_sha256(manifest_path),
         "source_run_config": str(run_path), "source_run_config_sha256": source_digest,
         "playable_run": str(config_path), "playable_run_sha256": file_sha256(config_path),
+        "physical_assets_sha256": {name: digest for name, (_, digest) in assets.items()},
     }
     # One stable gallery registration follows the current deployment.
     # A running/archived battle retains the earlier immutable run/manifest.

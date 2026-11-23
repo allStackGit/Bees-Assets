@@ -220,9 +220,35 @@ impl TrainedGame {
         if !selected {
             return Err(invalid("trained checkpoint does not match its model manifest").into());
         }
-        // The gameplay runner performs the remaining scene, worker, policy
-        // route and asset validation on the SAME original authored Levels.
-        let _: RunConfig = serde_json::from_slice(&fs::read(&run)?)?;
+        let config: RunConfig = serde_json::from_slice(&fs::read(&run)?)?;
+        if let Some(inventory) = receipt.get("physical_assets_sha256") {
+            let inventory = inventory.as_object()
+                .ok_or_else(|| invalid("invalid trained game physical inventory"))?;
+            let root = run.parent().ok_or_else(|| invalid("trained run has no directory"))?;
+            let mut names = HashSet::new();
+            for asset in config.levels.iter().map(|level| &level.scene)
+                .chain(config.collision_matrix.iter()).chain(config.stage_palette.iter())
+            {
+                let name = asset.to_str()
+                    .filter(|name| name.strip_prefix("physical-").and_then(|value|
+                        value.strip_suffix(".json")).is_some_and(|digest|
+                            digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())))
+                    .ok_or_else(|| invalid("invalid trained game physical asset name"))?;
+                if names.insert(name) {
+                    let sha = inventory.get(name).and_then(Value::as_str)
+                        .ok_or_else(|| invalid("trained game physical asset is missing from its inventory"))?;
+                    let path = root.join(name);
+                    if fs::symlink_metadata(&path)?.file_type().is_symlink() {
+                        return Err(invalid("trained game physical asset cannot be a symlink").into());
+                    }
+                    let path = path.to_str().ok_or_else(|| invalid("invalid trained game asset path"))?;
+                    verified_file(path, sha)?;
+                }
+            }
+            if names.len() != inventory.len() {
+                return Err(invalid("trained game physical assets differ from its inventory").into());
+            }
+        }
         let _ = checkpoint; // explicit verification is the model identity.
         Ok(run)
     }
