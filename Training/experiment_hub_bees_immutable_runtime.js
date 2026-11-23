@@ -49,7 +49,8 @@ function pythonJson(executable,args,cwd) {
     }
 }
 
-function prepare({project,python,artifactRoot,workerSha}) {
+function prepare({project,python,artifactRoot,workerSha,
+    runtimeArchive=null,runtimeSha256=null,runtimeVersion=null,runtimeBuildId=null}) {
     if(!['linux','win32'].includes(process.platform))
         throw Error('Bees immutable Python runtime requires Linux or Windows native ownership.');
     if(!SHA.test(String(workerSha||'')))
@@ -59,28 +60,44 @@ function prepare({project,python,artifactRoot,workerSha}) {
     if(fs.realpathSync(packager)!==packager||!fs.statSync(packager).isFile())
         throw Error('Trusted Bees Python runtime packager is unavailable.');
     const packageHash=fileHash(packager);
-    const source=command('git',['rev-parse','HEAD'],resolved);
-    if(!GIT.test(source))
+    const fromRelease=runtimeArchive!==null;
+    if(fromRelease&&(
+        typeof runtimeArchive!=='string'||!path.isAbsolute(runtimeArchive)||
+        fs.realpathSync(runtimeArchive)!==runtimeArchive||
+        !fs.statSync(runtimeArchive).isFile()||
+        !SHA.test(String(runtimeSha256||''))||
+        !SHA.test(String(runtimeVersion||''))||
+        !/^[A-Za-z0-9._-]{1,160}$/.test(String(runtimeBuildId||''))))
+        throw Error('Frozen Bees training runtime must have an operator-installed source archive and release digest.');
+    const id=fromRelease?runtimeBuildId:'hub-native-'+workerSha.slice(0,24);
+    const source=fromRelease?null:command('git',['rev-parse','HEAD'],resolved);
+    if(!fromRelease&&!GIT.test(source))
         throw Error('The Bees-Assets training checkout needs an exact Git revision.');
-    const id='hub-native-'+workerSha.slice(0,24);
     const cache=path.join(storage,'_immutable_runtime');
     fs.mkdirSync(cache,{recursive:true,mode:0o700});
     if(fs.realpathSync(cache)!==cache||
         process.platform!=='win32'&&(fs.statSync(cache).mode&0o077))
         throw Error('Immutable Bees runtime cache must be private and non-redirected.');
-    const archive=path.join(cache,'runtime.zip');
-    const packaged=pythonJson(python,[
+    const archive=fromRelease?runtimeArchive:path.join(cache,'runtime.zip');
+    const packaged=pythonJson(python,fromRelease?[
+        '-B',packager,'verify','--archive',archive,
+        '--expected-sha256',runtimeSha256,
+        '--expected-version',runtimeVersion,
+        '--expected-build-id',id,
+    ]:[
         '-B',packager,'package','--assets-root',resolved,
         '--output',archive,'--build-id',id,'--source-commit',source,
     ],resolved);
     if(fileHash(packager)!==packageHash||
         packaged.build_id!==id||
-        packaged.source_commit!==source||
+        (!fromRelease&&packaged.source_commit!==source)||
         !SHA.test(String(packaged.runtime_version||''))||
         !SHA.test(String(packaged.archive_sha256||''))||
         packaged.archive!==archive||
-        fileHash(archive)!==packaged.archive_sha256)
-        throw Error('Bees immutable runtime packaging changed its inputs or identity.');
+        fileHash(archive)!==packaged.archive_sha256||
+        fromRelease&&(packaged.archive_sha256!==runtimeSha256||
+            packaged.runtime_version!==runtimeVersion))
+        throw Error('Bees immutable runtime source archive changed or failed its pinned release identity.');
     const installed=pythonJson(python,[
         '-B',packager,'install','--archive',archive,
         '--destination-root',path.join(cache,'installed'),
@@ -103,7 +120,7 @@ function prepare({project,python,artifactRoot,workerSha}) {
     return {
         root,
         runtimeVersion:packaged.runtime_version,
-        sourceCommit:source,
+        sourceCommit:fromRelease?packaged.source_commit:source,
         archiveSha256:packaged.archive_sha256,
         training:file('bees_mlagents_learn.py'),
         trainer:file('rl_1v1_config.yaml'),
