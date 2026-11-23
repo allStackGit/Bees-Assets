@@ -244,6 +244,8 @@ function launchEnvironment(config, workerToken, adminToken) {
         BEES_TRAINING_CONTROL_TOKEN: workerToken,
         BEES_TRAINING_CONTROL_ADMIN_TOKEN: adminToken,
         BEES_TRAINING_ENVIRONMENT_VALIDATION_SECRET: environmentValidationSecret,
+        BEES_TRAINING_ENVIRONMENT_VALIDATION_PLATFORM:
+            process.platform === 'linux' ? 'LinuxPlayer' : 'WindowsPlayer',
         BEES_TRAINING_CONTROL_HOST: String(config.controlHost),
         BEES_TRAINING_CONTROL_PORT: String(config.controlPort),
         BEES_TRAINING_CONTROL_STATE: path.join(paths.trainingRoot, 'Control', 'state.json'),
@@ -263,6 +265,8 @@ function getBeesServerLaunchConfigHash(config, workerToken, adminToken) {
         worker_token_sha256: sha256Text(workerToken),
         admin_token_sha256: sha256Text(adminToken),
         environment_validation_secret_sha256: sha256Text(environmentValidationSecret),
+        environment_validation_platform:
+            process.platform === 'linux' ? 'LinuxPlayer' : 'WindowsPlayer',
         control_state: path.join(paths.trainingRoot, 'Control', 'state.json'),
         artifact_root: path.join(paths.trainingRoot, 'Control', 'Artifacts'),
         log_root: path.join(paths.trainingRoot, 'TrainerLogs'),
