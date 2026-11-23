@@ -75,6 +75,7 @@ fn original_special_class(side: usize, kind: u8) -> bool {
 pub(super) struct OriginalGameSources {
     pub(super) ships: [Vec<Value>; 2],
     pub(super) mining_asteroid: Option<Value>,
+    pub(super) map_object: Option<Value>,
 }
 
 pub(super) fn original_campaign_hulls(
@@ -117,6 +118,15 @@ pub(super) fn original_campaign_hulls(
                         ore["layer"].as_u64().is_some_and(|layer| layer < 32) &&
                         ore["local_vertices"].as_array()
                             .is_some_and(|points| points.len() >= 3)
+                    ).cloned();
+            }
+            if result.map_object.is_none() {
+                result.map_object = scene["map_objects"].as_array()
+                    .into_iter().flatten().find(|object|
+                        object["kind"] == "generic" &&
+                        object["max_health"].as_i64().is_some_and(|hp| hp > 0) &&
+                        object["collider"].is_object() &&
+                        object["layer"].as_u64().is_some_and(|layer| layer < 32)
                     ).cloned();
             }
             for ship in scene["ships"].as_array().into_iter().flatten()
@@ -658,6 +668,7 @@ pub(super) struct FleetChoice {
     /// and starter ships; demo archetypes remain only for sandbox games.
     original_hulls: [Vec<Value>; 2],
     original_mining_asteroid: Option<Value>,
+    original_map_object: Option<Value>,
     carrier_deck: usize,
     terrain: Terrain,
     map_background: NativeMapBackdrop,
@@ -847,6 +858,7 @@ pub(super) fn choose_for_preferred_side(
         original_fighters: original_roster,
         original_hulls: fighters.clone(),
         original_mining_asteroid: sources.mining_asteroid.clone(),
+        original_map_object: sources.map_object.clone(),
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: matches!(mode, 3 | 6), benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
@@ -947,6 +959,7 @@ pub(super) fn choose_multiplayer(
         original_fighters: original_roster,
         original_hulls: fighters.clone(),
         original_mining_asteroid: sources.mining_asteroid.clone(),
+        original_map_object: sources.map_object.clone(),
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: false,
         benchmark: false,
@@ -1041,6 +1054,7 @@ pub(super) fn choose_benchmark(
         original_fighters: original_roster,
         original_hulls: fighters.clone(),
         original_mining_asteroid: sources.mining_asteroid.clone(),
+        original_map_object: sources.map_object.clone(),
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: true,
         benchmark: true,
