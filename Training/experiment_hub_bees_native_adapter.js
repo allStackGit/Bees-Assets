@@ -326,7 +326,15 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                         throw Error('Bees evaluation case inventory is incomplete.');
                     const unique=new Set();
                     const totals={matches:0,wins:0,draws:0,losses:0,timeouts:0};
-                    const byPlayers=new Map();
+                    const byPlayers=new Map(),byMaps=new Map(),byOpponents=new Map();
+                    const addBucket=(buckets,key,item)=>{
+                        const bucket=buckets.get(key)||{matches:0,wins:0,draws:0,timeouts:0};
+                        bucket.matches+=item.matches;
+                        bucket.wins+=item.wins;
+                        bucket.draws+=item.draws;
+                        bucket.timeouts+=item.timeouts;
+                        buckets.set(key,bucket);
+                    };
                     for(const item of cases) {
                         if(!item||typeof item!=='object'||
                             typeof item.case!=='string'||unique.has(item.case)||
@@ -349,21 +357,18 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                                 .exec(item.case);
                             if(!match||item.opponent!==match[3])
                                 throw Error('Bees coverage case identity is invalid.');
-                            const players=Number(match[1]);
-                            const bucket=byPlayers.get(players)||{matches:0,wins:0,draws:0,timeouts:0};
-                            bucket.matches+=item.matches;
-                            bucket.wins+=item.wins;
-                            bucket.draws+=item.draws;
-                            bucket.timeouts+=item.timeouts;
-                            byPlayers.set(players,bucket);
+                            addBucket(byPlayers,Number(match[1]),item);
+                            addBucket(byMaps,Number(match[2]),item);
+                            addBucket(byOpponents,match[3],item);
                         }
                     }
                     for(const key of Object.keys(totals))
                         if(totals[key]!==data['total_'+key])
                             throw Error('Bees evaluation case totals do not agree with the summary.');
                     if(data.profile==='scripted-coverage-v2'&&
-                        (byPlayers.size!==6||
-                         [...byPlayers.values()].some(x=>x.matches<1)))
+                        (byPlayers.size!==6||byMaps.size!==4||byOpponents.size!==2||
+                         [...byPlayers.values(),...byMaps.values(),...byOpponents.values()]
+                             .some(x=>x.matches<1)))
                         throw Error('Bees evaluation player-count coverage is incomplete.');
                     const rate=(wins+0.5*(draws-timeouts))/trials;
                     const measured={
@@ -380,6 +385,21 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                         };
                         measured['evaluation_timeout_rate_'+players+'p']={
                             value:item.timeouts/item.matches,unit:'ratio',
+                        };
+                    }
+                    const score=item=>
+                        (item.wins+0.5*(item.draws-item.timeouts))/item.matches;
+                    for(const [size,item] of byMaps) {
+                        measured['evaluation_score_rate_map'+size]={
+                            value:score(item),unit:'ratio',
+                        };
+                        measured['evaluation_timeout_rate_map'+size]={
+                            value:item.timeouts/item.matches,unit:'ratio',
+                        };
+                    }
+                    for(const [opponent,item] of byOpponents) {
+                        measured['evaluation_score_rate_'+opponent]={
+                            value:score(item),unit:'ratio',
                         };
                     }
                     value.source_modified_at=fs.statSync(summary).mtime.toISOString();
