@@ -25,6 +25,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -104,6 +105,42 @@ def copy_binary(target: Path, location: Path, name: str, triple: str | None) -> 
     return published
 
 
+def archive_release(directory: Path, archive: Path) -> None:
+    """Publish a portable, deterministic ZIP only after packaging succeeds.
+
+    This archive contains the exact already-verified release; the release
+    manifest remains the source of truth for every asset's SHA-256 digest.
+    """
+    if archive.exists() or archive.is_symlink():
+        raise ValueError(f"native release archive already exists: {archive}")
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=".bees-native-archive-", suffix=".zip", dir=archive.parent,
+    )
+    os.close(descriptor)
+    try:
+        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED,
+                             compresslevel=6, allowZip64=True) as output:
+            for source in sorted(directory.rglob("*")):
+                if source.is_symlink():
+                    raise ValueError(f"native release has a symbolic link: {source}")
+                if not source.is_file():
+                    continue
+                name = source.relative_to(directory).as_posix()
+                info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.create_system = 3
+                # Preserve POSIX launcher executable bits when extracted on
+                # Linux; Windows ignores these bits and runs its .cmd files.
+                mode = 0o755 if source.stat().st_mode & 0o111 else 0o644
+                info.external_attr = (0o100000 | mode) << 16
+                with source.open("rb") as payload, output.open(info, "w", force_zip64=True) as member:
+                    shutil.copyfileobj(payload, member, 1024 * 1024)
+        os.replace(temporary, archive)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True,
@@ -116,6 +153,8 @@ def main(argv: list[str] | None = None) -> None:
                         help="persistent Cargo cache location, shared across client/server builds")
     parser.add_argument("--include-training", action="store_true",
                         help="also compile and include the canonical native rollout and model ABI")
+    parser.add_argument("--archive", action="store_true",
+                        help="also publish a transferable ZIP alongside the verified directory")
     parser.add_argument("--without-server", action="store_true",
                         help="build a graphical-only release without dedicated multiplayer")
     try:
@@ -134,6 +173,9 @@ def main(argv: list[str] | None = None) -> None:
     output = args.output.resolve()
     if output.exists() or output.is_symlink():
         parser.error("native release destination already exists")
+    archive = output.with_name(output.name + ".zip")
+    if args.archive and (archive.exists() or archive.is_symlink()):
+        parser.error("native release archive destination already exists")
     output.parent.mkdir(parents=True, exist_ok=True)
     target = (
         args.target_dir or Path(os.environ.get("CARGO_TARGET_DIR", WORKSPACE / "target"))
@@ -180,6 +222,10 @@ def main(argv: list[str] | None = None) -> None:
         package.extend(extra)
         print("Native package:", " ".join(package), flush=True)
         subprocess.run(package, cwd=ROOT, check=True)
+
+    if args.archive:
+        archive_release(output, archive)
+        print(f"Native release archive published: {archive}", flush=True)
 
     # The packager independently verifies the complete asset/model inventory
     # before publishing. Do not claim runtime qualification or launch a game.
