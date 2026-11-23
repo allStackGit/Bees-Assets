@@ -452,7 +452,7 @@ def policy_author():
         raise ValueError("native battle policy author is unavailable")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.author_policy_scene
+    return module
 
 
 def physical_scene_identity(scene: dict) -> str:
