@@ -589,16 +589,16 @@ def write_launchers(output: Path, binary_name: str) -> None:
         if binary_name.endswith(".exe"):
             launcher = output / f"play-{name}.cmd"
             launcher.write_text(
-                "@echo off\r\n"
-                "setlocal\r\n"
-                'cd /d "%~dp0"\r\n'
+                "@echo off\n"
+                "setlocal\n"
+                'cd /d "%~dp0"\n'
                 'if defined LOCALAPPDATA (set "BEES_SAVE=%LOCALAPPDATA%\\BeesNative") '
-                'else (set "BEES_SAVE=%USERPROFILE%\\BeesNative")\r\n'
-                'if not exist "%BEES_SAVE%\\battles" mkdir "%BEES_SAVE%\\battles"\r\n'
-                f'set "BEES_RUN=%BEES_SAVE%\\battles\\{name}-%RANDOM%-%RANDOM%"\r\n'
+                'else (set "BEES_SAVE=%USERPROFILE%\\BeesNative")\n'
+                'if not exist "%BEES_SAVE%\\battles" mkdir "%BEES_SAVE%\\battles"\n'
+                f'set "BEES_RUN=%BEES_SAVE%\\battles\\{name}-%RANDOM%-%RANDOM%"\n'
                 f'"%~dp0{binary_name}" play "examples\\{name}.run.json" '
-                '--output-dir "%BEES_RUN%" %*\r\n',
-                encoding="utf-8",
+                '--output-dir "%BEES_RUN%" %*\n',
+                encoding="utf-8", newline="\r\n",
             )
         else:
             launcher = output / f"play-{name}.sh"
@@ -611,7 +611,7 @@ def write_launchers(output: Path, binary_name: str) -> None:
                 f'run="$save/battles/{name}-$(date +%Y%m%d-%H%M%S)-$$"\n'
                 f'exec "./{binary_name}" play "examples/{name}.run.json" '
                 '--output-dir "$run" "$@"\n',
-                encoding="utf-8",
+                encoding="utf-8", newline="\n",
             )
             launcher.chmod(0o755)
     # Primary entry point: persistent player saves live outside the
@@ -619,15 +619,15 @@ def write_launchers(output: Path, binary_name: str) -> None:
     if binary_name.endswith(".exe"):
         launcher = output / "play-bees.cmd"
         launcher.write_text(
-            "@echo off\r\n"
-            "setlocal\r\n"
-            'cd /d "%~dp0"\r\n'
+            "@echo off\n"
+            "setlocal\n"
+            'cd /d "%~dp0"\n'
             'if defined LOCALAPPDATA (set "BEES_SAVE=%LOCALAPPDATA%\\BeesNative") '
-            'else (set "BEES_SAVE=%USERPROFILE%\\BeesNative")\r\n'
-            'if not exist "%BEES_SAVE%" mkdir "%BEES_SAVE%"\r\n'
+            'else (set "BEES_SAVE=%USERPROFILE%\\BeesNative")\n'
+            'if not exist "%BEES_SAVE%" mkdir "%BEES_SAVE%"\n'
             f'"%~dp0{binary_name}" library "examples\\native-library.json" '
-            '--output-dir "%BEES_SAVE%" %*\r\n',
-            encoding="utf-8",
+            '--output-dir "%BEES_SAVE%" %*\n',
+            encoding="utf-8", newline="\r\n",
         )
     else:
         launcher = output / "play-bees.sh"
@@ -639,7 +639,7 @@ def write_launchers(output: Path, binary_name: str) -> None:
             'mkdir -p "$save"\n'
             f'exec "./{binary_name}" library "examples/native-library.json" '
             '--output-dir "$save" "$@"\n',
-            encoding="utf-8",
+            encoding="utf-8", newline="\n",
         )
         launcher.chmod(0o755)
 
