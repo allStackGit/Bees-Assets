@@ -791,6 +791,27 @@ class MeasuredGpuExecution:
         self.weight_refreshes = self.refresh_validations = self.refresh_invalidations = 0
         self._pending_fused_validation = False
         self._pending_graph_validation = set()
+        self.graph_profiles_released = 0
+
+    def release_graph_profile(self, batches):
+        """Release a captured graph rejected by an adapter's faster baseline.
+
+        Graph outputs must be owned or consumed before release. Synchronize
+        the executor's device stream to drain the last replay, then release
+        the graph pool without touching the original frozen model weights.
+        A rejected graph becomes eager for this MGE shape; external callers
+        retain their authoritative specialized baseline independently.
+        """
+        signature = self._signature(batches)
+        if self.graphs.profiles.get(signature) is None:
+            return False
+        torch.cuda.current_stream(self.graphs.device).synchronize()
+        self.graphs.profiles.pop(signature, None)
+        self._pending_graph_validation.discard(signature)
+        if self.choices.get(signature) == "graph":
+            self.choices[signature] = "eager"
+        self.graph_profiles_released += 1
+        return True
 
     def refresh_frozen_weights(self, changed_indices=None):
         """Refresh existing GPU storage without rebuilding captured graphs.
@@ -878,6 +899,11 @@ class MeasuredGpuExecution:
                     if profile is not None and self.graphs.last_graph_seconds < best_seconds:
                         choice = "graph"
                         best_seconds = self.graphs.last_graph_seconds
+            if choice != "graph" and self.graphs.profiles.pop(signature, None) is not None:
+                # Graph qualification already completed the device timings.
+                # Do not retain graph memory for shapes actually served by
+                # a faster stream, fused or eager path.
+                self.graph_profiles_released += 1
             self.choices[signature] = choice
             if len(self.choices) > self.max_profiles:
                 self.choices.popitem(last=False)
@@ -951,6 +977,7 @@ class MeasuredGpuExecution:
             gpu_execution_weight_refreshes=self.weight_refreshes,
             gpu_execution_refresh_validations=self.refresh_validations,
             gpu_execution_refresh_invalidations=self.refresh_invalidations,
+            gpu_execution_graph_profiles_released=self.graph_profiles_released,
             **self.fusion.metrics(),
             **self.streams.metrics(),
             **self.graphs.metrics(),
