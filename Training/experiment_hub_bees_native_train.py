@@ -822,9 +822,17 @@ def main():
         live_binary=player.start(
             job["game_payload_sha256"] if native_wan else None
         )
+        # A Stop can arrive while a large Unity player is being staged.
+        # Never launch a new learner after its owner has withdrawn Start.
+        if stopped or observe_stop_marker():
+            return 130
         command[4]="--env="+str(live_binary)
         child=subprocess.Popen(command,cwd=str(Path(job["training_script"]).parent.parent),
                                env=child_env,start_new_session=True)
+        # Also close the narrow signal race between the prelaunch check and
+        # assignment of the newly spawned child process.
+        if stopped and child.poll() is None:
+            child.send_signal(signal.SIGINT)
         telemetry_error = False
         while child.poll() is None:
             if not stopped:
