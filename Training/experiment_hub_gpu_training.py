@@ -243,12 +243,80 @@ def _gpu_segment_backward_supported(device, dtype):
         return False
 
 
+# Qualified outside timed PPO work, never on a real loss graph.
+_SEGMENT_THRESHOLDS = {}
+
+
 def prepare_training_segment_reduction(device, *, dtype=torch.float32):
-    """Admit a GPU's optional segment-sum kernel outside timed PPO updates."""
+    """Admit a faster differentiable segmented reduction on a leased GPU.
+
+    Compare the complete indexed/scatter versus segmented forward+backward
+    with deterministic synthetic data at small and large entity counts.
+    Retain the ordinary kernel when segmentation is unsupported or loses;
+    this admission does not read a learner weight or mutate an optimizer.
+    """
     if (not isinstance(device,torch.device) or device.type!='cuda' or
             not isinstance(dtype,torch.dtype)):
         raise ValueError("Expected a leased CUDA/HIP device and tensor dtype")
-    return _gpu_segment_backward_supported(device,dtype)
+    key=(str(device),dtype)
+    if key in _SEGMENT_THRESHOLDS:
+        return _SEGMENT_THRESHOLDS[key] is not None
+    _SEGMENT_THRESHOLDS[key]=None
+    if not _gpu_segment_backward_supported(device,dtype):
+        return False
+    try:
+        for rows in (2048,8192):
+            groups=64
+            lengths=torch.full((groups,),rows//groups,
+                               device=device,dtype=torch.int64)
+            owner=torch.repeat_interleave(
+                torch.arange(groups,device=device,dtype=torch.int64),lengths)
+            sample=torch.linspace(-1.,1.,rows*4,device=device,
+                                  dtype=dtype).reshape(rows,4)
+            sample=sample.detach().requires_grad_(True)
+
+            def indexed():
+                out=sample.new_zeros((groups,4))
+                return out.index_add_(0,owner,sample)
+
+            def segmented():
+                return torch.segment_reduce(
+                    sample,reduce='sum',lengths=lengths,axis=0)
+
+            baseline=indexed()
+            candidate=segmented()
+            baseline_grad,=torch.autograd.grad(baseline.sum(),sample)
+            candidate_grad,=torch.autograd.grad(candidate.sum(),sample)
+            if (not torch.allclose(baseline,candidate,
+                                   rtol=3e-4,atol=5e-4) or
+                not torch.allclose(baseline_grad,candidate_grad,
+                                   rtol=1e-5,atol=1e-5)):
+                continue
+
+            def seconds(operation):
+                torch.cuda.synchronize(device)
+                begun=perf_counter()
+                for _ in range(2):
+                    output=operation()
+                    torch.autograd.grad(output.square().sum(),sample)
+                torch.cuda.synchronize(device)
+                return (perf_counter()-begun)/2
+
+            ordinary,optimized=[],[]
+            for repeat in range(3):
+                pair=((indexed,ordinary),(segmented,optimized))
+                if repeat%2:
+                    pair=pair[::-1]
+                for operation,measurements in pair:
+                    measurements.append(seconds(operation))
+            if (median(ordinary)>0 and
+                median(optimized)<=median(ordinary)*.92):
+                _SEGMENT_THRESHOLDS[key]=rows
+                return True
+    except (RuntimeError,TypeError,NotImplementedError,ValueError,
+            torch.OutOfMemoryError):
+        return False
+    return False
 
 
 def sum_consecutive_training_segments(terms, counts, owner, *,
@@ -269,10 +337,10 @@ def sum_consecutive_training_segments(terms, counts, owner, *,
             sum(counts)!=len(terms) or any(
                 not isinstance(c,Integral) or c<0 for c in counts)):
         raise ValueError("Training segment sizes do not match ordered contributions")
+    threshold = _SEGMENT_THRESHOLDS.get((str(terms.device),terms.dtype))
     use_segment = (terms.device.type=='cuda' and
-                   len(terms)>=min_parallel_rows and
-                   _gpu_segment_backward_supported(
-                       terms.device,terms.dtype))
+                   threshold is not None and
+                   len(terms)>=max(min_parallel_rows,threshold))
     if use_segment:
         try:
             lengths = torch.as_tensor(
