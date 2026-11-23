@@ -847,7 +847,7 @@ function mapReport(hub,id) {
                 const stat=fs.lstatSync(file);
                 return stat.isFile()&&!stat.isSymbolicLink()&&
                     fs.realpathSync(file)===file&&stat.uid===process.getuid()&&
-                    !(stat.mode&0o077)&&stat.size>0&&stat.size<=16384
+                    !(stat.mode&0o077)&&stat.size>0&&stat.size<=32768
                     ?{file,dispatch,at:stat.mtimeMs}:null;
             }catch {return null;}
         }).filter(Boolean).sort((a,b)=>b.at-a.at);
@@ -889,9 +889,10 @@ function mapReport(hub,id) {
             if(!valid||trials!==details.trials||wins!==details.successes)
                 continue;
             return {available:true,suite_id:suiteName,
-                dispatch_id:details.dispatch_id,job_id:details.job_id,
+                dispatch_id:details.dispatch_id,job_id:details.job,
                 checkpoint_sha256:details.checkpoint_sha256,
                 trials,successes:wins,maps:details.maps,
+                opponents:Array.isArray(details.opponents)?details.opponents:[],
                 recorded_at:new Date(item.at).toISOString()};
         }catch { /* Stale or incomplete reports do not replace a receipt. */ }
     }
