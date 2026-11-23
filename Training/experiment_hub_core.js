@@ -526,7 +526,7 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
     if(projectId!=='bees_native')return;
     const keys=new Set(['max_steps','envs','seed','device','hyperparameters',
         'environment_args','worker_sha256','trainer_sha256',
-        'evaluation_profile','evaluation_matches']);
+        'evaluation_profile','evaluation_matches','batch_inference']);
     if(!object(parameters)||Object.keys(parameters).some(key=>!keys.has(key))||
         !SHA256.test(String(parameters.worker_sha256||''))||
         !SHA256.test(String(parameters.trainer_sha256||''))||
@@ -538,6 +538,8 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
         parameters.seed<0||parameters.seed>2147483647||
         !['cpu','cuda'].includes(parameters.device))
         throw Error('Bees native jobs require a pinned Unity worker and MA-POCA trainer, 1,000–100 billion steps, 1–64 environments, a seed and a CPU/ROCm device.');
+    if(typeof (parameters.batch_inference??true)!=='boolean')
+        throw Error('Bees native batched inference preference must be a boolean.');
     if(!['off','scripted-maps-v1'].includes(parameters.evaluation_profile??'off')||
         !Number.isSafeInteger(parameters.evaluation_matches??8)||
         (parameters.evaluation_matches??8)<1||
