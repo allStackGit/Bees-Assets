@@ -131,7 +131,8 @@ def scp(machine: dict, files: list[Path], destination: str) -> None:
 
 
 def source_manifest(filename: Path) -> tuple[dict, str]:
-    if not filename.is_absolute() or filename.is_symlink() or (
+    if filename.name != "worker-build-manifest.json" or (
+        not filename.is_absolute() or filename.is_symlink() or
         not filename.is_file() or filename.stat().st_size > MAX_MANIFEST
     ):
         raise ValueError("Build manifest must be a small real absolute file.")
@@ -145,7 +146,10 @@ def source_manifest(filename: Path) -> tuple[dict, str]:
         not 1 <= len(record["artifacts"]) <= 2
     ):
         raise ValueError("Expected one offline Bees Unity worker build manifest.")
+    platforms = []
     for item in record["artifacts"]:
+        if isinstance(item, dict):
+            platforms.append(item.get("platform"))
         if not isinstance(item, dict) or (
             item.get("platform") not in ("LinuxPlayer", "WindowsPlayer") or
             not SHA.fullmatch(str(item.get("player_tree_sha256", ""))) or
@@ -154,6 +158,8 @@ def source_manifest(filename: Path) -> tuple[dict, str]:
             not 0 < item["archive_bytes"] <= MAX_ARCHIVE
         ):
             raise ValueError("Invalid Unity build archive in release manifest.")
+    if len(set(platforms)) != len(platforms):
+        raise ValueError("Offline worker manifest duplicates one Unity target.")
     return record, hashlib.sha256(raw).hexdigest()
 
 
