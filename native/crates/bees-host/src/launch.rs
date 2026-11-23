@@ -6532,6 +6532,12 @@ fn parse_host_side_tokens(token_map: &str) -> Result<HashMap<String, String>, Bo
 const GENERATED_HOST_TOKEN_MAP: &str = "multiplayer-invites/host-side-tokens.json";
 
 #[cfg(feature = "client")]
+const GENERATED_SINGLE_SIDE_TOKEN_MAPS: [&str; 2] = [
+    "multiplayer-invites/host-side-1-tokens.json",
+    "multiplayer-invites/host-side-2-tokens.json",
+];
+
+#[cfg(feature = "client")]
 fn prepare_multiplayer_invites(save_root: &Path) -> Result<PathBuf, Box<dyn Error>> {
     use bees_host::checkpoint_file::{persist_new_private_bytes, CheckpointFileError};
 
@@ -6586,6 +6592,31 @@ fn prepare_multiplayer_invites(save_root: &Path) -> Result<PathBuf, Box<dyn Erro
         }
         if read_private_multiplayer_file(&invite, 512)? != token.as_str() {
             return Err(invalid("existing multiplayer invitation does not match the host map").into());
+        }
+    }
+    // A single-commander hosted battle must not advertise a command
+    // credential for its AI faction. Publish derived one-side maps without
+    // rotating either original invitation, so future session recovery
+    // retains precisely the same authenticated human identity.
+    for (index, side) in ["1", "2"].into_iter().enumerate() {
+        let token = tokens.get(side)
+            .ok_or_else(|| invalid("generated native host has no source side token"))?;
+        let derived = directory.join(format!("host-side-{side}-tokens.json"));
+        if !derived.try_exists()? {
+            let single = std::collections::HashMap::from([
+                (side.to_owned(), token.to_owned()),
+            ]);
+            publish(&derived, &serde_json::to_vec(&single)?)?;
+        }
+        let saved = parse_host_side_tokens(
+            &read_private_multiplayer_file(&derived, 2048)?,
+        )?;
+        if saved.len() != 1 || saved.get(side) != Some(token) ||
+            save_root.join(GENERATED_SINGLE_SIDE_TOKEN_MAPS[index]) != derived
+        {
+            return Err(invalid(
+                "single-commander host mapping differs from durable multiplayer invitation",
+            ).into());
         }
     }
     // Read-only viewers have distinct credentials from commanders.
@@ -7823,15 +7854,25 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 {
                     let directory = prepare_multiplayer_invites(save_root)?;
                     let is_trained = (library.games.len()..join_index).contains(&game_index);
-                    if !is_trained {
+                    if is_trained {
+                        PathBuf::from(GENERATED_HOST_TOKEN_MAP)
+                    } else {
                         let folder = directory.display().to_string();
                         let invite_rows = [
                             BattleMenuRow {
-                                title: "Start hosting", status: "", unlocked: true,
+                                title: "Host two human commanders",
+                                status: "  [Share side-1.token and side-2.token]",
+                                unlocked: true,
                             },
                             BattleMenuRow {
-                                title: "Share only side-1.token or side-2.token with the matching player",
-                                status: "", unlocked: false,
+                                title: "Host one commander on side 1",
+                                status: "  [Share side-1.token; opposing faction is AI]",
+                                unlocked: true,
+                            },
+                            BattleMenuRow {
+                                title: "Host one commander on side 2",
+                                status: "  [Share side-2.token; opposing faction is AI]",
+                                unlocked: true,
                             },
                             BattleMenuRow {
                                 title: "Read-only viewers use spectator-1.token or spectator-2.token",
@@ -7840,11 +7881,14 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                             BattleMenuRow { title: &folder, status: "", unlocked: false },
                         ];
                         let mut selected = 0;
-                        if select_library(&invite_rows, &mut selected, false)?.is_none() {
-                            return Ok(());
+                        let Some(index) = select_library(&invite_rows, &mut selected, false)?
+                            else { return Ok(()) };
+                        match index {
+                            0 => PathBuf::from(GENERATED_HOST_TOKEN_MAP),
+                            1 | 2 => PathBuf::from(GENERATED_SINGLE_SIDE_TOKEN_MAPS[index - 1]),
+                            _ => return Err(invalid("invalid generated multiplayer invitation selection").into()),
                         }
                     }
-                    PathBuf::from(GENERATED_HOST_TOKEN_MAP)
                 } else {
                     tokens_file
                 };
