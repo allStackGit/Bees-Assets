@@ -706,7 +706,9 @@ class FrozenGpuGraphs:
             if graph_time < eager*(1-self.min_speedup):
                 return profile
         except (RuntimeError, MemoryError, ValueError, TypeError,
-                NotImplementedError) as error:
+                AttributeError, NotImplementedError) as error:
+            # Some older CUDA/HIP builds do not expose graph capture APIs.
+            # Unsupported acceleration never invalidates the eager policy.
             self.last_issue = str(error)[:220]
         return None
 
@@ -730,7 +732,7 @@ class FrozenGpuGraphs:
             try:
                 results = self._replay(profile, args)
             except (RuntimeError, ValueError, TypeError,
-                    NotImplementedError) as error:
+                    AttributeError, NotImplementedError) as error:
                 self.last_issue = str(error)[:220]
                 self.profiles[signature] = None
                 self.rejections += 1
