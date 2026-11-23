@@ -925,6 +925,24 @@ class PersistentGpuForwardPool:
                                    for device in self.devices}
         self.device_timing_samples = 0
         self._admitted_capacity_weights = {}
+        self.training_updates = 0
+
+    def begin_training_update(self):
+        """Requalify compute sharing after on-policy inputs are replaced.
+
+        The machine's independent background GPU work can change from one
+        PPO update to the next. Retain the expensive Python workers, but
+        discard per-update throughput weights and timing evidence. The
+        caller must have joined the previous update's backward/optimizer
+        work before this boundary.
+        """
+        if self._closed or current_thread() is not self._owner:
+            raise RuntimeError("GPU forward update requires its owner")
+        self._pending_device_timings.clear()
+        for rates in self._device_work_rates.values():
+            rates.clear()
+        self._admitted_capacity_weights.clear()
+        self.training_updates += 1
 
     def _collect_device_timings(self):
         if not self._pending_device_timings:
