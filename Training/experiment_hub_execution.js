@@ -253,7 +253,10 @@ class LocalExecution {
                     diagnostic='Missing local ownership record; inspect the native supervisor before recovery.';
                 }
             }else if(order.action==='stop') {
-                observed=await this.supervisor.stop(job.id);
+                observed=await this.supervisor.stop(job.id,
+                    job.project_id==='bees_native'&&job.evaluation_stop_checkpoint_sha256
+                        ?{evaluationCheckpointSha256:job.evaluation_stop_checkpoint_sha256}
+                        :undefined);
             }else {
                 observed=await this.supervisor.reconcile(job.id);
             }

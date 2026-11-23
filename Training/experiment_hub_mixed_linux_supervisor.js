@@ -146,10 +146,10 @@ class MixedLinuxSupervisor {
         if(!owner)throw Error('Mixed Linux job has no durable ownership record.');
         return owner.reconcile(jobId);
     }
-    async stop(jobId) {
+    async stop(jobId,options) {
         const owner=this.ownerForJob(jobId);
         if(!owner)throw Error('Mixed Linux job has no durable ownership record.');
-        return owner.stop(jobId);
+        return owner.stop(jobId,options);
     }
     async reconcileAbsent(jobId,projectId) {
         if(this.fs.existsSync(this.lock))

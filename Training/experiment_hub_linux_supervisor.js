@@ -808,6 +808,27 @@ class LinuxSupervisor {
             !record.quarantined_at&&result.active&&
             result.unit_exists===true) {
             try {
+                // Deliver evaluation-triggered Stop provenance before the
+                // normal empty marker. The runner verifies the exact local
+                // benchmark, then evaluates the final saved model separately.
+                if(record.project_id==='bees_native'&&
+                    /^[0-9a-f]{64}$/.test(String(record.evaluation_stop_checkpoint_sha256||''))) {
+                    const proof=path.join(path.dirname(record.checkpoint_stop_file),
+                        'evaluation-stop.json');
+                    const value=JSON.stringify({schema_version:1,
+                        checkpoint_sha256:record.evaluation_stop_checkpoint_sha256})+'\n';
+                    const temp=proof+'.tmp-'+crypto.randomUUID();
+                    try {
+                        if(!this.fs.existsSync(proof)) {
+                            this.fs.writeFileSync(temp,value,{flag:'wx',mode:0o600});
+                            this.fs.linkSync(temp,proof);
+                        }
+                        if(this.fs.readFileSync(proof,'utf8')!==value)
+                            throw Error('Conflicting Bees evaluation Stop provenance.');
+                    }finally {
+                        if(this.fs.existsSync(temp))this.fs.unlinkSync(temp);
+                    }
+                }
                 this.fs.writeFileSync(record.checkpoint_stop_file,'',
                     {flag:'wx',mode:0o600});
             }catch(error) {
@@ -1016,9 +1037,14 @@ class LinuxSupervisor {
         }
         return observed;
     }
-    async stop(jobId) {
+    async stop(jobId,options={}) {
         const record=this.state.records.find(r=>r.job_id===jobId);
         if(!record)throw Error('Unknown locally supervised job.');
+        const evaluated=options.evaluationCheckpointSha256;
+        if(evaluated!==undefined&&
+            (record.project_id!=='bees_native'||!record.checkpoint_stop_file||
+             !/^[0-9a-f]{64}$/.test(String(evaluated))))
+            throw Error('Invalid Bees evaluation-triggered checkpoint Stop identity.');
         // Re-check exact unit identity AND quota properties before stopping.
         // A service with failed/missing kernel limits must still be
         // stoppable by its owning agent. Exact unit identity and the
@@ -1030,7 +1056,8 @@ class LinuxSupervisor {
         // Persist the stop intent first. No automatic retry is safe if the
         // service-manager call or agent crashes while signal delivery is unknown.
         const updated={...record,state:'stop_requested',
-            stop_requested_at:new Date().toISOString()};
+            stop_requested_at:new Date().toISOString(),
+            ...(evaluated?{evaluation_stop_checkpoint_sha256:evaluated}:{})};
         this.commit(this.state.records.map(r=>r.job_id===jobId?updated:r));
         // A checkpoint-aware adapter receives a STOP marker instead of a
         // systemd SIGINT. Its normal successful exit is verified by the

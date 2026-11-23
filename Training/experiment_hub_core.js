@@ -5658,6 +5658,11 @@ class ExperimentHub {
                     ...(action==='inspect'&&job.checkpoint_reinspection_requested_at
                         ?{reverify_checkpoint:true}:{}),
                     ...(job.evaluation_stop?{evaluation_stop:copy(job.evaluation_stop)}:{}),
+                    ...(action==='stop'&&job.project_id==='bees_native'&&
+                        evaluationComplete(job.evaluation_stop_evidence,
+                            job.evaluation_stop,job.dispatch_id)?{
+                        evaluation_stop_checkpoint_sha256:job.evaluation_stop_evidence.checkpoint_sha256,
+                    }:{}),
                     ...(job.evaluation_monitor?{evaluation_monitor:copy(job.evaluation_monitor)}:{}),
                     ...(job.project_id==='bees_native'&&activeEvaluation(job)?{
                         evaluation_archive_ack:(()=>{
