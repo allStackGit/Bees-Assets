@@ -210,6 +210,14 @@ def main():
             find_spec("ants_mapoca.local_gpu_rollout") is None or
             args.ram_budget_mb is None):
         raise SystemExit("Multi-GPU TinyBrains requires persistent native pools and a fixed RAM lease.")
+    # Enable only the locally installed, versioned shared inference runtime
+    # for Hub-owned GPU jobs. Old TinyBrains installs, CPU runs and standalone
+    # jobs continue through their original execution path. Frozen policy
+    # cohorts choose the faster qualified runtime without changing PPO.
+    if (expected_count and
+            find_spec("ants_mapoca.shared_gpu_inference") is not None and
+            find_spec("experiment_hub_gpu_fusion") is not None):
+        os.environ["TINYBRAINS_SHARED_GPU_EXECUTION"] = "1"
     sys.argv = [
         "ants_mapoca.learning_path",
         "--config", str(spec),
