@@ -65,7 +65,7 @@ def inspect_job(filename: Path) -> dict:
         "training_script","training_sha256","trainer_source",
         "trainer_sha256","output_root","num_envs","max_steps",
         "device","seed","hyperparameters","expected_gpu_pci","environment_args",
-        "evaluation_profile","evaluation_matches","evaluator_script","evaluator_sha256",
+        "evaluation_profile","evaluation_matches","batch_inference","evaluator_script","evaluator_sha256",
         "evaluator_core","evaluator_core_sha256","opponent_script","opponent_script_sha256",
     }
     if not isinstance(job, dict) or set(job) != keys or job["schema_version"] != 1:
@@ -99,6 +99,8 @@ def inspect_job(filename: Path) -> dict:
         if not isinstance(value,str) or len(value)!=64 or any(c not in "0123456789abcdef" for c in value):
             raise ValueError("Invalid frozen input hash.")
         require_file(Path(job[source]),value,executable)
+    if type(job["batch_inference"]) is not bool:
+        raise ValueError("Cross-worker inference batching must be a boolean.")
     if job["evaluation_profile"] not in ("off","scripted-maps-v1") or (
         type(job["evaluation_matches"]) is not int or
         not 1 <= job["evaluation_matches"] <= 100
@@ -369,6 +371,7 @@ def main():
         "--base-port="+str(port),
         "--seed="+str(job["seed"]),
         "--no-graphics","--force",
+        *(["--bees-batch-inference"] if job["batch_inference"] else []),
         *(["--env-args",*job["environment_args"]] if job["environment_args"] else []),
     ]
     child=None
