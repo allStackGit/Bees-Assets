@@ -196,6 +196,12 @@ struct Peer {
 }
 
 impl Peer {
+    fn snapshot_backlogged(&self, tick: u64) -> bool {
+        self.writing_state && self.written > 0 &&
+            self.newest_state.is_some() &&
+            tick % CONGESTED_STATE_EVERY_TICKS != 0
+    }
+
     fn begin_input(&mut self, request_id: u64) -> bool {
         if self.input_replies.len() >= MAX_PENDING_INPUT_REPLIES {
             return false;
@@ -2054,6 +2060,28 @@ impl NativeRemotePlay {
             self.measurements.fog_query_views_skipped_no_output += sides.len() as u64;
             return;
         }
+        // When every authenticated viewer is blocked behind an unfinished
+        // TCP state plus one replaceable queued state, a quiet physical tick
+        // cannot deliver anything new. Skip even the fog-query index and
+        // JSON construction; authoritative sight above still advanced.
+        // Never defer first joins, terminal transitions, audio, or queued
+        // on-demand inspections. Those must remain visible while paused.
+        if !force_view && !has_events &&
+            self.pending_audio.values().all(Vec::is_empty) &&
+            self.peers.iter().filter(|peer|
+                !peer.closed && peer.side.is_some()).all(|peer|
+                peer.snapshot_backlogged(view.tick) ||
+                (peer.spectator &&
+                    view.tick % SPECTATOR_IDLE_STATE_EVERY_TICKS != 0)) &&
+            self.peers.iter().all(|peer| peer.inspect_requests.is_empty())
+        {
+            self.measurements.congested_snapshots_deferred +=
+                self.peers.iter().filter(|peer| !peer.closed &&
+                    peer.side.is_some() && peer.snapshot_backlogged(view.tick)
+                ).count() as u64;
+            self.measurements.fog_query_views_skipped_no_output += sides.len() as u64;
+            return;
+        }
         let fog_enabled = view.player_authority.player_fog_of_war_enabled();
         let mut vision = HashMap::<i32, RemoteFogSources>::new();
         for &side in &sides {
@@ -2220,9 +2248,7 @@ impl NativeRemotePlay {
             // CPU and memory bandwidth. Every fourth normal state pulse
             // refreshes that queued frame; first joins, terminal outcomes,
             // briefing/lobby transitions and audible events remain immediate.
-            if !force_view && view.tick % CONGESTED_STATE_EVERY_TICKS != 0 &&
-                peer.writing_state && peer.written > 0 &&
-                peer.newest_state.is_some() &&
+            if !force_view && peer.snapshot_backlogged(view.tick) &&
                 pending_audio.get(&side).is_none_or(Vec::is_empty)
             {
                 measurements.congested_snapshots_deferred += 1;
