@@ -3,6 +3,7 @@ param(
     [ValidateSet('build','runtime','server','start','stop','status','bundle','observe','qualify','repair-v24')]
     [string]$Command,
     [switch]$FullGame,
+    [string]$OfflineWorkers,
     [switch]$Force,
     [switch]$PreserveRun,
     [switch]$NewRun,
@@ -40,6 +41,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
+if($OfflineWorkers -and $Command -ne 'build'){
+    throw '-OfflineWorkers is only valid with the build command.'
+}
+if($OfflineWorkers -and $FullGame){
+    throw '-OfflineWorkers cannot be combined with -FullGame.'
+}
 if($PreserveRun -and $Command -ne 'build'){
     throw '-PreserveRun is only valid with the build command.'
 }
@@ -149,6 +156,7 @@ if(Test-Path -LiteralPath $nodeSetting -PathType Leaf){
 
 $arguments=@($operator,$Command)
 if($FullGame){$arguments+='--full-game'}
+if($OfflineWorkers){$arguments+=@('--offline-workers',[string]$OfflineWorkers)}
 if($Force){$arguments+='--force'}
 if($PreserveRun){$arguments+='--preserve-run'}
 if($NewRun){$arguments+='--new-run'}
