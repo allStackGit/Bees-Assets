@@ -4154,9 +4154,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // A worker supplies the defaults from its actual installed trainer;
     // the dashboard never invents hyperparameter values or environment rules.
     function designDefinition(parameters={}) {
+        // Cached authenticated TinyBrains metadata remains usable for Design
+        // editing while the agent restarts. It is not execution admission.
         const machines=(state?.machines||[]).filter(machine=>
-            machine.status==='connected'&&machine.local_executor_enabled===true&&
-            machine.installed_projects?.includes(project));
+            machine.local_executor_enabled===true&&
+            machine.installed_projects?.includes(project)&&
+            (machine.status==='connected'||project==='tinybrains'&&
+                machine.design_catalog?.tinybrains?.profiles))
+            .sort((a,b)=>Number(b.status==='connected')-
+                Number(a.status==='connected'));
         for(const machine of machines) {
             if(project==='courier') {
                 const entry=machine.design_catalog?.courier;
