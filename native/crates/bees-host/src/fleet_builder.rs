@@ -884,6 +884,9 @@ pub(super) fn choose_multiplayer(
             BattleMenuRow { title: "Remote commander vs HiveMind",
                 status: "  [Existing authenticated socket AI]",
                 unlocked: hive_available },
+            BattleMenuRow { title: "Watch native AI vs AI battles",
+                status: "  [Read-only authenticated spectators; source Fish Tank]",
+                unlocked: true },
         ];
         let mut selected = 0_usize;
         let Some(mode) = select_library(&rows, &mut selected, false)?
@@ -899,6 +902,7 @@ pub(super) fn choose_multiplayer(
     };
     let use_scripted_ai = opponent_mode == 1;
     let use_hivemind = opponent_mode == 2;
+    let watch_scripted_ai = opponent_mode == 3;
     let hivemind = if use_hivemind {
         let side = authenticated_side.expect("one authorized remote commander");
         Some(NativeHiveMindFleet {
@@ -922,17 +926,32 @@ pub(super) fn choose_multiplayer(
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(specialist_squad_sizes) =
         choose_specialist_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
-    let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
+    // The original Fish Tank displays the entire physical battle; it
+    // does not reveal faction-private information through an otherwise
+    // fog-filtered remote commander snapshot.
+    let fog_of_war = if watch_scripted_ai { false } else {
+        let Some(fog) = choose_visibility()? else { return Ok(None); };
+        fog
+    };
     let mut ai_tactics = [AiTactics::Aggressive; 2];
-    if use_scripted_ai {
-        let opposing_side = (3 - authenticated_side
-            .expect("scripted mode requires exactly one remote commander")) as usize - 1;
-        let Some(doctrine) = choose_ai_tactics(
-            opposing_side,
-            opposing_side == 0 && matches!(mix[opposing_side], FleetMix::Gate),
-        )? else { return Ok(None); };
-        ai_tactics[opposing_side] = doctrine;
+    for side in 0..2_usize {
+        let scripted = watch_scripted_ai || (
+            use_scripted_ai && authenticated_side != Some(side as i32 + 1)
+        );
+        if scripted {
+            let Some(doctrine) = choose_ai_tactics(
+                side, side == 0 && matches!(mix[side], FleetMix::Gate),
+            )? else { return Ok(None); };
+            ai_tactics[side] = doctrine;
+        }
     }
+    let spectator_episodes = if watch_scripted_ai {
+        let Some(count) = choose_resource(
+            "AI-vs-AI battles in this hosted spectator session",
+            &[1, 4, 16, 64],
+        )? else { return Ok(None); };
+        count
+    } else { 1 };
     let Some(objective) = choose_objective(mix, sources)? else { return Ok(None); };
     let objective_side = match objective {
         Objective::Elimination => None,
@@ -981,9 +1000,9 @@ pub(super) fn choose_multiplayer(
         original_mining_asteroid: sources.mining_asteroid.clone(),
         original_map_object: sources.map_object.clone(),
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
-        ai_both: false,
+        ai_both: watch_scripted_ai,
         benchmark: false,
-        spectator_episodes: 1,
+        spectator_episodes,
         ai_tactics,
         hivemind, objective, reinforcements, objective_side,
         benchmark_worlds: 1, benchmark_workers: 1,
