@@ -6752,6 +6752,18 @@ class ExperimentHub {
             throw Error('The selected Bees learner does not approve its frozen WAN Unity runtime and secret key.');
         const key=owner.design_catalog.bees_native.wan_key_fingerprint;
         for(const actor of value.actors) {
+            // The enrolled actor has one fixed loopback WAN-forward port.
+            // Even when CPU/GPU capacity remains, a second unreleased
+            // Bees actor on this host cannot bind an independent broker.
+            const existingActor=snapshot.jobs.find(job=>
+                job.project_id==='bees_rollout'&&
+                job.assigned_machine_id===actor.machine_id&&
+                (!job.capacity_released_at||
+                    !['finished','stopped','failed','cancelled'].includes(job.status)));
+            if(existingActor)
+                throw Error('Bees WAN actor '+actor.machine_id+
+                    ' still owns or may own its fixed forward port (job '+
+                    existingActor.id+'). Release the previous actor before reserving a new group.');
             const machine=machines.get(actor.machine_id);
             if(!eligible(machine)||!machine.installed_projects?.includes('bees_rollout')||
                 !machine.design_catalog?.bees_rollout||
