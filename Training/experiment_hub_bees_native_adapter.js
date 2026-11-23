@@ -135,7 +135,8 @@ const DESIGN_FIELDS=Object.freeze([
 const METRICS=Object.freeze(['training_steps','elapsed_training_seconds',
     'environment_steps_per_second','mean_reward','mean_episode_steps',
     'policy_loss','value_loss','policy_entropy','self_play_elo',
-    'self_play_win_rate']);
+    'self_play_win_rate','evaluation_matches','evaluation_win_rate',
+    'evaluation_timeout_rate','evaluation_score_rate']);
 
 function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifactRoot}) {
     if(process.platform!=='linux')
@@ -281,7 +282,36 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 const bytes=Buffer.alloc(stat.size);
                 if(fs.readSync(fd,bytes,0,bytes.length,0)!==bytes.length)
                     throw Error('Bees progress was modified during reading.');
-                return validateProgress(JSON.parse(bytes.toString('utf8')),'bees_native');
+                const value=JSON.parse(bytes.toString('utf8'));
+                const summary=path.join(root,'evaluations','summary.json');
+                try {
+                    if(fs.realpathSync(summary)!==summary||
+                        fs.statSync(summary).size>32768)
+                        throw Error('Bees evaluation summary was redirected or is too large.');
+                    const data=JSON.parse(fs.readFileSync(summary,'utf8'));
+                    const receipt=checkpoint(context);
+                    const trials=data.total_matches,wins=data.total_wins,
+                        draws=data.total_draws,timeouts=data.total_timeouts,
+                        losses=data.total_losses;
+                    if(data.schema_version!==1||data.job_id!==context.job_id||
+                        data.profile!=='scripted-maps-v1'||
+                        data.model_sha256!==receipt.sha256||
+                        ![trials,wins,draws,timeouts,losses].every(x=>
+                            Number.isSafeInteger(x)&&x>=0)||
+                        !trials||wins+draws+losses!==trials||timeouts>draws)
+                        throw Error('Bees native evaluation totals are inconsistent.');
+                    const rate=(wins+0.5*(draws-timeouts))/trials;
+                    value.metrics={
+                        ...value.metrics,
+                        evaluation_matches:{value:trials,unit:'count'},
+                        evaluation_win_rate:{value:wins/trials,unit:'ratio'},
+                        evaluation_timeout_rate:{value:timeouts/trials,unit:'ratio'},
+                        evaluation_score_rate:{value:rate,unit:'ratio'},
+                    };
+                }catch(error) {
+                    if(error.code!=='ENOENT')throw error;
+                }
+                return validateProgress(value,'bees_native');
             }catch(error) {
                 if(error.code==='ENOENT')return null;
                 throw error;
