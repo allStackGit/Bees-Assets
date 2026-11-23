@@ -1767,6 +1767,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id> --serve
        bees replay-campaign <campaign-replay-setup.json> --output-dir <new-dir> --replay-inputs <player-inputs.jsonl>
        bees build <catalog.json> --output-dir <battle-runs> --side <n> --ship-type <n> --squad <saved-id>
+       bees build-batch <catalog.json> --output-dir <battle-runs> --side <1|2> --ship-type <n> --squad <saved-id|0> --count <1-256>
        bees transfer <catalog.json> --output-dir <battle-runs> --ship <fleet-id> --squad <saved-id>
        bees transfer-batch <catalog.json> --output-dir <battle-runs> --side <1|2> --squad <saved-id|0> --ships <id,id,...>
        bees reassign <catalog.json> --output-dir <battle-runs> --side <n> --ship <fleet-id> --from <saved-id> --squad <saved-id>
@@ -2660,6 +2661,35 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             .to_string_lossy().parse()?;
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
         return run_transfer_ship(&catalog, &output, fleet_ship_id, to_saved_squad_id);
+    }
+    if first == "build-batch" {
+        let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--side") {
+            return Err(invalid(USAGE).into());
+        }
+        let side: i32 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--ship-type") {
+            return Err(invalid(USAGE).into());
+        }
+        let ship_type: u8 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--squad") {
+            return Err(invalid(USAGE).into());
+        }
+        let squad: i64 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--count") {
+            return Err(invalid(USAGE).into());
+        }
+        let count: u32 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_some() { return Err(invalid(USAGE).into()); }
+        return run_build_ships(&catalog, &output, side, ship_type, squad, count);
     }
     if first == "build" {
         let catalog_path = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
@@ -4150,6 +4180,84 @@ fn preflight_native_fleet_edit_with_squads_and_tactics(
         return Err(invalid("no native campaign Levels can deploy the purchased hull").into());
     }
     Ok(highest_fleet_id)
+}
+
+/// Buy a chosen number of source-authored hulls in a single bank
+/// transaction. Preflight the aggregate physical roster first: independently
+/// valid purchases can jointly exceed a SavedSquad's deployable capacity.
+fn run_build_ships(
+    catalog_path: &Path, output_root: &Path, side: i32,
+    ship_type: u8, saved_squad_id: i64, count: u32,
+) -> Result<(), Box<dyn Error>> {
+    if !matches!(side, 1 | 2) || count == 0 || count > 256 {
+        return Err(invalid("batch purchase requires 1..256 ships and a valid player faction").into());
+    }
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: battle_catalog::BattleCatalog =
+        serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
+    let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
+    let progress = catalog.load_progress(output_root)?;
+    let shop = catalog.buildable_ships.iter().find(|entry|
+        entry.player_side == side && entry.ship_type == ship_type &&
+        entry.purchasable)
+        .ok_or_else(|| invalid("unavailable source-authored ship class"))?;
+    let total = shop.price_tsv.checked_mul(u64::from(count))
+        .ok_or_else(|| invalid("batch FleetShip purchase cost overflow"))?;
+    if saved_squad_id < 0 || progress.is_retired_saved_squad(saved_squad_id) ||
+        !progress.bank_history_complete() || !progress.is_ship_unlocked(shop) ||
+        progress.unspent_minerals()? < total {
+        return Err(invalid("insufficient verified funds or invalid campaign shop destination").into());
+    }
+    let root = catalog_path.parent()
+        .ok_or_else(|| invalid("missing native campaign catalog parent"))?;
+    let mut projected = progress.purchases_for_side(side);
+    // The one-hull purchase preflight already uses i64::MAX as an
+    // ephemeral identity. Unique descending probe IDs allow the SAME
+    // physical scene builder to verify a whole purchase before any TSV
+    // is spent, without reserving durable IDs prematurely.
+    for index in 0..count {
+        let id = i64::MAX - i64::from(index);
+        if projected.iter().any(|ship| ship.fleet_ship_id == id) {
+            return Err(invalid("batch preview identity conflicts with an existing FleetShip").into());
+        }
+        projected.push(NativePurchasedShip {
+            fleet_ship_id: id, saved_squad_id,
+            ship_type, price_tsv: shop.price_tsv,
+        });
+    }
+    let preflight_started = Instant::now();
+    let highest_authored = preflight_native_fleet_edit(
+        &catalog, root, &progress, side, &projected,
+        &progress.authored_roster_for_side(side), saved_squad_id,
+    )?;
+    let preflight_wall_seconds = preflight_started.elapsed().as_secs_f64();
+    let first = highest_authored.max(progress.highest_fleet_id())
+        .checked_add(1).ok_or_else(||
+            invalid("native FleetShip identity space exhausted"))?;
+    if first.checked_add(i64::from(count) - 1).is_none() {
+        return Err(invalid("not enough native FleetShip identities for batch").into());
+    }
+    let commit_started = Instant::now();
+    let purchased = catalog.buy_ships(
+        &progress, output_root, side, ship_type, saved_squad_id, first, count,
+    )?;
+    let receipt_wall_seconds = commit_started.elapsed().as_secs_f64();
+    println!("{}", json!({
+        "kind": "native_campaign_fleet_batch_purchased",
+        "campaign_id": catalog.campaign_id,
+        "player_side": side,
+        "fleet_ship_ids": purchased.iter().map(|ship| ship.fleet_ship_id).collect::<Vec<_>>(),
+        "ship_type": ship_type,
+        "saved_squad_id": saved_squad_id,
+        "ships_purchased": purchased.len(),
+        "spent_tsv": total,
+        "remaining_mined_tsv": progress.unspent_minerals()? - total,
+        "preflight_wall_seconds": preflight_wall_seconds,
+        "receipt_wall_seconds": receipt_wall_seconds,
+    }));
+    Ok(())
 }
 
 fn run_build_ship(
