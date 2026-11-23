@@ -4149,7 +4149,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(entry&&(!parameters.worker_sha256||
                     entry.worker_sha256===parameters.worker_sha256)&&
                     (!parameters.trainer_sha256||
-                        entry.trainer_sha256===parameters.trainer_sha256))
+                        entry.trainer_sha256===parameters.trainer_sha256)&&
+                    (!parameters.runtime_version||
+                        entry.runtime_version===parameters.runtime_version))
                     return {entry,machine};
             }else if(project==='tinybrains') {
                 const profiles=machine.design_catalog?.tinybrains?.profiles||{};
@@ -4169,6 +4171,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(project==='bees_native')return {
             worker_sha256:choice.entry.worker_sha256,
             trainer_sha256:choice.entry.trainer_sha256,
+            runtime_version:choice.entry.runtime_version,
             max_steps:100000,envs:8,seed:42,device:'cuda',
             hyperparameters:{},
         };
@@ -4256,6 +4259,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(project==='bees_native') {
             parameters.worker_sha256??=choice.entry.worker_sha256;
             parameters.trainer_sha256??=choice.entry.trainer_sha256;
+            parameters.runtime_version??=choice.entry.runtime_version;
         }
         if(project==='courier'&&!parameters.config_sha256)
             parameters.config_sha256=choice.entry.config_sha256;
@@ -4361,6 +4365,7 @@ document.addEventListener('DOMContentLoaded', () => {
             config_sha256:chosen?.entry?.config_sha256||null,
             worker_sha256:chosen?.entry?.worker_sha256||null,
             trainer_sha256:chosen?.entry?.trainer_sha256||null,
+            runtime_version:chosen?.entry?.runtime_version||null,
             profile_sha256:chosen?.entry?.profile_sha256||null,
             training_schema_sha256:chosen?.entry?.training_schema_sha256||null,
             source_sha256:chosen?.machine?.design_catalog?.tinybrains?.source_sha256||null});
@@ -5486,7 +5491,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if(!entry)return false;
             return project==='bees_native'
                 ?entry.worker_sha256===params.worker_sha256&&
-                    entry.trainer_sha256===params.trainer_sha256
+                    entry.trainer_sha256===params.trainer_sha256&&
+                    entry.runtime_version===params.runtime_version
                 :project==='courier'
                 ?entry.config_sha256===params.config_sha256&&
                     (!params.training_schema_sha256||
