@@ -28,7 +28,7 @@ FIELDS = {
     "trainer_sha256", "runtime_version", "evaluator_script",
     "evaluator_core", "opponent_script", "actor_script",
     "actor_sha256", "envs", "torch_threads", "device", "expected_gpu_pci",
-    "auth_token_file", "auth_token_fingerprint", "broker_port",
+    "auth_token_file", "auth_token_fingerprint", "broker_port", "slot",
 }
 
 
@@ -49,7 +49,8 @@ def inspect_job(filename: Path) -> dict:
     if Path(job["output_root"]) != filename.parent or (
         not 1 <= job["envs"] <= 64 or
         not 1 <= job["torch_threads"] <= 64 or
-        job["torch_threads"] > job["envs"]
+        job["torch_threads"] > job["envs"] or
+        type(job["slot"]) is not int or not 0 <= job["slot"] <= 7
     ):
         raise ValueError("Bees remote simulation budget or output root changed.")
     if job["device"] not in ("cpu", "cuda") or (
@@ -120,7 +121,7 @@ def main(argv=None) -> int:
     try:
         from bees_elastic_wan_actor_worker import main as run_actor
         return run_actor([
-            "--actor-key", "hub-" + job["job_id"],
+            "--actor-key", "hub-" + job["learner_job_id"] + "-" + str(job["slot"]),
             "--envs", str(job["envs"]),
             "--broker-host", "127.0.0.1",
             "--broker-port", str(job["broker_port"]),
