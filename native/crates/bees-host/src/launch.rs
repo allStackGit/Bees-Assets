@@ -2124,6 +2124,19 @@ fn default_native_user_save_root(fallback: &Path) -> PathBuf {
     }
 }
 
+/// Both the graphical native invite generator and the headless server
+/// credential command issue the identical, independent CSPRNG secrets.
+fn new_multiplayer_side_tokens() -> io::Result<[String; 2]> {
+    let mut random = [[0_u8; 32]; 2];
+    for secret in &mut random {
+        getrandom::getrandom(secret).map_err(|error|
+            io::Error::new(ErrorKind::Other,
+                format!("native multiplayer credential entropy unavailable: {error}")))?;
+    }
+    Ok(random.map(|bytes| bytes.iter()
+        .map(|byte| format!("{byte:02x}")).collect::<String>()))
+}
+
 /// Generate host-owned, side-specific secrets with the OS CSPRNG.
 ///
 /// This produces ONE JSON credential file consumed by the existing
@@ -2157,14 +2170,7 @@ fn generate_server_credentials(path: &Path) -> io::Result<()> {
     // credential directory is never silently overwritten or rotated.
     builder.create(folder)?;
     let created = (|| -> io::Result<()> {
-        let mut random = [[0_u8; 32]; 2];
-        for secret in &mut random {
-            getrandom::getrandom(secret).map_err(|error|
-                io::Error::new(ErrorKind::Other,
-                    format!("native host credential entropy unavailable: {error}")))?;
-        }
-        let tokens = random.map(|secret| secret.iter()
-            .map(|byte| format!("{byte:02x}")).collect::<String>());
+        let tokens = new_multiplayer_side_tokens()?;
         let server = json!({"1": &tokens[0], "2": &tokens[1]}).to_string();
 
         fn write_private(file: &Path, contents: &[u8]) -> io::Result<()> {
@@ -2177,10 +2183,9 @@ fn generate_server_credentials(path: &Path) -> io::Result<()> {
             }
             let mut output = options.open(file)?;
             output.write_all(contents)?;
-            output.write_all(b"\n")?;
             output.sync_all()
         }
-        write_private(&folder.join("server-side-tokens.json"), server.as_bytes())?;
+        write_private(&folder.join("host-side-tokens.json"), server.as_bytes())?;
         write_private(&folder.join("side-1.token"), tokens[0].as_bytes())?;
         write_private(&folder.join("side-2.token"), tokens[1].as_bytes())?;
         #[cfg(unix)]
@@ -2195,7 +2200,7 @@ fn generate_server_credentials(path: &Path) -> io::Result<()> {
     created?;
     println!("{}", json!({
         "kind": "native_remote_credentials_created",
-        "host_credentials": folder.join("server-side-tokens.json"),
+        "host_credentials": folder.join("host-side-tokens.json"),
         "side_1_client_token": folder.join("side-1.token"),
         "side_2_client_token": folder.join("side-2.token"),
     }));
@@ -6081,12 +6086,9 @@ fn prepare_multiplayer_invites(save_root: &Path) -> Result<PathBuf, Box<dyn Erro
         }
     };
     if !map.try_exists()? {
-        let mut random = [0_u8; 64];
-        getrandom::getrandom(&mut random).map_err(CheckpointFileError::Entropy)?;
-        let to_token = |bytes: &[u8]| bytes.iter().map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
-        let tokens = json!({"1": to_token(&random[..32]), "2": to_token(&random[32..])});
-        publish(&map, &serde_json::to_vec(&tokens)?)?;
+        let tokens = new_multiplayer_side_tokens()?;
+        let value = json!({"1": tokens[0], "2": tokens[1]});
+        publish(&map, &serde_json::to_vec(&value)?)?;
     }
 
     // The map is the durable authority. If setup was interrupted, rebuild
