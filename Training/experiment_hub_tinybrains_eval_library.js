@@ -150,7 +150,7 @@ function boards(o) {
         throw Error('Installed season maps have changed.');
     return mapIds;
 }
-function mapsForStage(o,stage,mode,selectedMaps) {
+function mapsForStage(o,stage,mode,selectedMaps,configuredMapIds=undefined) {
     const all=['basic-tiny-2p',...boards(o)];
     if(mode==='season_76')return all.slice(1);
     if(mode==='all_77')return all;
@@ -169,6 +169,14 @@ function mapsForStage(o,stage,mode,selectedMaps) {
         small_two_player:id=>two(id)&&small(id),
         all_two_player:two,full_multiplayer:()=>true};
     if(!STAGES.has(stage))throw Error('Unknown configured TinyBrains map stage.');
+    if(mode==='configuration'&&configuredMapIds!==undefined) {
+        if(!Array.isArray(configuredMapIds)||configuredMapIds.length<1||
+            configuredMapIds.length>all.length||
+            new Set(configuredMapIds).size!==configuredMapIds.length||
+            configuredMapIds.some(id=>!all.includes(id)||!filters[stage](id)))
+            throw Error('Saved training Design contains an invalid custom map selection.');
+        return all.filter(id=>configuredMapIds.includes(id));
+    }
     return all.filter(filters[stage]);
 }
 function sourceDefaults(hub,config) {
@@ -210,7 +218,9 @@ function sourceDefaults(hub,config) {
         all_two_player:750,full_multiplayer:sourceTurn}[p.training_stage||'full_multiplayer'];
     if(!cap)throw Error('Saved configuration has an unknown training map stage.');
     return {stage:p.training_stage||'full_multiplayer',
-        max_turns:Math.min(sourceTurn,cap),parameters};
+        max_turns:Math.min(sourceTurn,cap),parameters,
+        ...(Array.isArray(p.training_map_ids)?{training_map_ids:p.training_map_ids}:{}),
+    };
 }
 function saveEvaluation(o,hub,value) {
     if(!value||typeof value!=='object'||Array.isArray(value)||
@@ -238,7 +248,8 @@ function saveEvaluation(o,hub,value) {
     const turns=value.max_turns??environment.max_turns;
     if(!Number.isSafeInteger(turns)||turns<1||turns>1000)
         throw Error('Evaluation max turns must be a whole number from 1 to 1000.');
-    const maps=mapsForStage(o,environment.stage,value.map_mode,value.map_ids);
+    const maps=mapsForStage(o,environment.stage,value.map_mode,value.map_ids,
+        environment.training_map_ids);
     if(!maps.length)
         throw Error('The selected training environment contains no approved maps.');
     const catalog=read(o),available=new Map(
