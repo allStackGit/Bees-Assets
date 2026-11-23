@@ -59,7 +59,8 @@ function usage() {
         'With --inventory, builds then previews distribution to selected machines.',
         '--apply installs on remote machines; --apply --activate also selects the',
         'release after every selected remote installation has been verified.',
-        'Local --install-root and remote --inventory are separate operations.',
+        'Local --install-root may be combined with --inventory --apply:',
+        'the local player is installed first, but activated last after remote success.',
     ].join('\n');
 }
 
@@ -102,8 +103,8 @@ function options(argv) {
         }
         i++;
     }
-    if (result.installRoot && result.inventory)
-        throw Error('Choose local --install-root OR remote --inventory, not both.');
+    if (result.installRoot && result.inventory && !result.apply)
+        throw Error('Local --install-root with remote --inventory requires --apply.');
     if (result.machines.length && !result.inventory)
         throw Error('--machine requires --inventory.');
     if (result.apply && !result.inventory)
@@ -381,28 +382,32 @@ async function build(argv = process.argv.slice(2)) {
     });
     console.log('Worker build completed. Manifest: ' + manifestPath);
     console.log('These artifacts have not been published to any training cluster.');
+    const releaseSha=await sha256(manifestPath);
     if (arg.installRoot) {
         const installer = path.join(paths.assetsRoot, 'Training',
             'bees_hub_worker_install.py');
+        // If distributing remotely as well, do not select the new Halifax
+        // worker until every remote machine has installed and activated it.
+        const activateLocalNow=arg.activate&&!arg.inventory;
         const command = [
             '-B', installer, 'install',
             '--root', arg.installRoot,
             '--manifest', manifestPath,
             '--archive', path.join(root, TARGETS[hostPlatform].archive),
-            ...(arg.activate ? ['--activate'] : []),
+            ...(activateLocalNow ? ['--activate'] : []),
         ];
         const receipt = JSON.parse(String(runSync(python, command, {
             cwd: paths.assetsRoot, timeout: 180000, maxBuffer: 1024 * 1024,
         }).stdout || '').trim());
         const matching = artifacts.find(artifact =>
             artifact.platform === TARGETS[hostPlatform].platform);
-        if (receipt.release_sha256 !== await sha256(manifestPath) ||
+        if (receipt.release_sha256 !== releaseSha ||
             receipt.platform !== matching.platform ||
             receipt.player_tree_sha256 !== matching.player_tree_sha256 ||
-            (arg.activate && receipt.activated !== true))
+            (activateLocalNow && receipt.activated !== true))
             throw Error('Local Unity worker installer did not return the expected verified release receipt.');
         console.log('Host worker release installed: ' + receipt.release_sha256);
-        if (arg.activate)
+        if (activateLocalNow)
             console.log('Host worker release activated for future idle Hub agent starts.');
     }
     if (arg.inventory) {
@@ -422,6 +427,18 @@ async function build(argv = process.argv.slice(2)) {
         console.log(arg.apply
             ?'Remote Unity release installed'+(arg.activate?' and activated.':'.')
             :'Remote Unity distribution plan completed; no machine changed.');
+    }
+    if (arg.installRoot && arg.inventory && arg.activate) {
+        const installer=path.join(paths.assetsRoot,'Training',
+            'bees_hub_worker_install.py');
+        const receipt=JSON.parse(String(runSync(python,[
+            '-B',installer,'activate',
+            '--root',arg.installRoot,'--release',releaseSha,
+        ],{cwd:paths.assetsRoot,timeout:180000,maxBuffer:1024*1024})
+            .stdout||'').trim());
+        if(receipt.release_sha256!==releaseSha||receipt.activated!==true)
+            throw Error('Local Unity activation did not confirm the remotely installed release.');
+        console.log('Halifax worker activated after verified remote distribution.');
     }
     return manifest;
 }
