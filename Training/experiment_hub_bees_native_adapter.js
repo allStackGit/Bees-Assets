@@ -240,7 +240,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         jobPath(artifacts,context);
         return checkpointForJob(context.job_id,context.artifact_lineage_root_id);
     }
-    function continuation(context) {
+    function continuation(context,frozen) {
         const parentId=context.continuation_of_job_id||null;
         if(!parentId)return {parent_id:null,model_sha256:null,checkpoint_sha256:null};
         if(!SHA.test(String(context.expected_parent_model_sha256||'')))
@@ -256,8 +256,13 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             (parent.lineage_root_id||parent.job_id)!==context.artifact_lineage_root_id||
             parent.game_sha256!==approved.worker_sha256||
             parent.trainer_sha256!==approved.trainer_sha256||
-            parent.runtime_version!==approved.runtime_version)
-            throw Error('Bees parent Unity binary or learner runtime differs from the approved continuation.');
+            parent.runtime_version!==approved.runtime_version||
+            parent.seed!==frozen.seed)
+            throw Error('Bees parent Unity binary, learner runtime or seed differs from the approved continuation.');
+        const previous=parent.hyperparameters||{};
+        if([...new Set([...Object.keys(previous),...Object.keys(frozen.hyperparameters)])]
+            .some(key=>previous[key]!==frozen.hyperparameters[key]))
+            throw Error('Bees optimizer hyperparameters changed across exact checkpoint continuation.');
         return {
             parent_id:parentId,
             model_sha256:receipt.sha256,
@@ -303,7 +308,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 fileHash(evaluatorCore)!==approved.evaluator_core_sha256||
                 fileHash(opponentScript)!==approved.opponent_script_sha256)
                 throw Error('Installed Bees Unity worker or trainer changed after native adapter enrollment.');
-            const parent=continuation(context);
+            const parent=continuation(context,frozen);
             const root=jobPath(artifacts,context);
             fs.mkdirSync(root,{mode:0o700});
             const job={
