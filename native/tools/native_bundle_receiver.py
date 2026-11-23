@@ -280,7 +280,8 @@ def download_input_archive(base_url, collector_id, destination, token=None):
         if answer.status == 200:
             size = int(answer.getheader("Content-Length", "0"))
             digest = answer.getheader("X-Archive-SHA256", "")
-            if not 0 < size <= MAX_ARCHIVE_BYTES or not DIGEST_RE.fullmatch(digest):
+            if (not 0 < size <= MAX_ARCHIVE_BYTES or
+                    not isinstance(digest, str) or not DIGEST_RE.fullmatch(digest)):
                 raise ValueError("learner input archive HEAD has invalid identity")
         elif answer.status == 404:
             raise LookupError("collector input archive has no issued work order")
