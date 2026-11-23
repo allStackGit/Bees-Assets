@@ -14,7 +14,7 @@ import math
 from pathlib import Path
 import time
 
-from evaluate_policy import evaluate, terminal_matchup
+from evaluate_policy import evaluate, terminal_matchup, verified_evaluation_device
 from native_training_artifacts import (
     atomic_json, check_native_input_dependencies, file_sha256,
     native_manifest_model_dependencies, native_headless_environment,
@@ -184,6 +184,14 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
                 result.get("policy_sampling_seed") != seed or
                 not result_path.is_file()):
             raise ValueError(f"heterogeneous holdout scenario {index} is unverified")
+        if selected_device is not None:
+            attested = verified_evaluation_device(
+                result.get("policy_execution"), selected_device,
+            )
+            if (selected_device != "cpu" and
+                    (attested is None or
+                     result.get("verified_inference_placement") != attested)):
+                raise ValueError(f"native scenario {index} did not complete on its allocated GPU")
         return ({
             "scenario": index,
             "source_run": str(source),
@@ -531,6 +539,20 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
                 check_native_input_dependencies({
                     "source_dependencies": receipt["source_dependencies"],
                 })
+                allocated = (
+                    scenario_devices[index % scenario_workers]
+                    if scenario_devices is not None else device
+                )
+                if allocated is not None:
+                    attested = verified_evaluation_device(
+                        receipt.get("policy_execution"), allocated,
+                    )
+                    if allocated != "cpu" and (
+                            attested is None or
+                            receipt.get("verified_inference_placement") != attested):
+                        raise ValueError(
+                            f"side {side} recovered scenario {index + 1} lacks its GPU attestation"
+                        )
                 actual, scenes = terminal_matchup(
                     receipt_path.parent, receipt, candidate_slot, reference_slot,
                 )
