@@ -1294,7 +1294,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const parsed=JSON.parse(sessionStorage.getItem(viewKey)||'{}');
         if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))savedView=parsed;
     }catch {}
-    const tabs=['design','train','monitor','compare','machines'];
+    const tabs=['design','evaluations','train','monitor','compare','machines'];
     let project=typeof savedView.project==='string'?
         savedView.project:document.documentElement.dataset.hubDefaultProject||'bees';
     let tab=tabs.includes(savedView.tab)?savedView.tab:'monitor';
