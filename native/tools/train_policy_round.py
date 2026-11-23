@@ -891,12 +891,14 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                         "rollout_processes": 0,
                         "model_forwards": 0, "gpu_agent_rows": 0,
                         "successful_world_steps": 0, "successful_policy_rows": 0,
+                        "summed_worker_wall_seconds": 0.0,
                     })
                     work["rollout_processes"] += 1
                     work["model_forwards"] += proof["model_forwards"]
                     work["gpu_agent_rows"] += proof["agent_rows"]
                     work["successful_world_steps"] += metrics[index]["successful_world_steps"]
                     work["successful_policy_rows"] += metrics[index]["successful_policy_rows"]
+                    work["summed_worker_wall_seconds"] += metrics[index]["wall_seconds"]
                     staging = proof.get("accelerator_input_staging")
                     if staging is not None:
                         observed = work.setdefault("accelerator_input_staging", {
@@ -915,6 +917,17 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     if forwards:
                         work["agent_rows_per_model_forward"] = (
                             work["gpu_agent_rows"] / forwards
+                        )
+                    # The sum of separate resident worker durations is not
+                    # physical device active time when workers overlap. Label
+                    # this conservative, directly measured rate explicitly.
+                    worker_seconds = work["summed_worker_wall_seconds"]
+                    if worker_seconds > 0:
+                        work["world_steps_per_summed_worker_second"] = (
+                            work["successful_world_steps"] / worker_seconds
+                        )
+                        work["policy_rows_per_summed_worker_second"] = (
+                            work["successful_policy_rows"] / worker_seconds
                         )
                 model_forwards = sum(p["model_forwards"] for p in gpu_proofs.values())
                 agent_rows = sum(p["agent_rows"] for p in gpu_proofs.values())
