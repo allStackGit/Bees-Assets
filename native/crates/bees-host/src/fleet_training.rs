@@ -1052,8 +1052,12 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
             .join("latest-playable.json").is_file();
         let finished = completed.zip(target)
             .is_some_and(|(done, total)| done >= total);
-        statuses.push(if job.join("stop.request").is_file() { 
-            "  [Graceful stop requested; last committed checkpoint retained]"
+        statuses.push(if job.join("stop.request").is_file() {
+            if exited == Some(true) {
+                "  [Stopped after completed optimizer round; resumable]"
+            } else {
+                "  [Stop requested; current optimizer round may finish]"
+            }
         } else if exited == Some(false) {
             if has_playable {
                 "  [Last attempt failed; playable checkpoint retained]"
@@ -1387,6 +1391,7 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
             return Err(invalid("native model bootstrap is incomplete; no valid model to resume").into());
         }
         command.arg(&bootstrap).arg(&model).arg("--resume")
+            .arg("--clear-stop-request")
             .arg("--scenario").arg("custom")
             .arg("--source-scene").arg(prepared.join("battle.policy.scene.json"))
             .arg("--source-run").arg(prepared.join("battle.policy.run.json"));
@@ -1421,17 +1426,6 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
     }
     let (stdout_path, stderr_path, stdout, stderr) =
         pair.ok_or_else(|| invalid("native training resume log identities exhausted"))?;
-    // An explicit resume clears only this job's cooperative stop marker.
-    // Keep it until all prerequisites and log ownership are validated;
-    // an unsuccessful resume attempt must not silently cancel the stop.
-    let stop_marker = job.join("stop.request");
-    if stop_marker.exists() {
-        let metadata = fs::symlink_metadata(&stop_marker)?;
-        if !metadata.file_type().is_file() {
-            return Err(invalid("native training stop request is not a regular file").into());
-        }
-        fs::remove_file(&stop_marker)?;
-    }
     let child = command.stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr))
