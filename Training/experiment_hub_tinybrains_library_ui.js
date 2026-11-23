@@ -27,6 +27,8 @@
         '<button id="hub-mixed-new" type="button">New evaluation</button></div>',
         '<p id="hub-mixed-status" class="hub-notice" role="status"></p>',
         '<h4>Saved evaluations</h4><div id="hub-mixed-saved"></div>',
+        '<button id="hub-mixed-archive" type="button" disabled>Archive unused evaluation versions</button>',
+        '<p class="muted">Archived versions free evaluator service slots. Only definitions with no saved Design, default policy or job reference qualify; prior evidence and opponent models are preserved.</p>',
         '<h4>Add a frozen network as an opponent</h4>',
         '<div class="formgrid"><label>Verified finished checkpoint<select id="hub-mixed-checkpoint"></select></label>',
         '<label>Opponent name<input id="hub-mixed-opponent-name" maxlength="80" placeholder="Batch 128 — 9570 updates"></label></div>',
@@ -93,6 +95,9 @@
     function render(data) {
         if(!data)return;
         library=data;
+        const obsolete=Number(data.archivable_count)||0;
+        $('hub-mixed-archive').textContent='Archive unused evaluation versions ('+obsolete+')';
+        $('hub-mixed-archive').disabled=busy||obsolete===0;
         const configs=JSON.stringify(data.configurations);
         if(configs!==configSignature) {
             configSignature=configs;
@@ -214,6 +219,14 @@
             expected_revision:record.revision});
         if(result&&editing?.id===record.id)clear();
     }
+    async function archiveUnused() {
+        if(!Number(library?.archivable_count))return;
+        if(!confirm('Archive unreferenced evaluation versions and retire their stopped timers? Saved Designs, active jobs, receipts and opponent models are preserved.'))return;
+        const result=await send({action:'archive-unused-custom'});
+        if(result?.blocked?.length)
+            notice(result.message+' '+result.blocked.map(item=>
+                item.suite_id+': '+item.reason).join('; ').slice(0,500));
+    }
     async function freeze() {
         const id=$('hub-mixed-checkpoint').value;
         const name=$('hub-mixed-opponent-name').value;
@@ -227,6 +240,7 @@
     $('hub-mixed-save').addEventListener('click',save);
     $('hub-mixed-new').addEventListener('click',clear);
     $('hub-mixed-freeze').addEventListener('click',freeze);
+    $('hub-mixed-archive').addEventListener('click',archiveUnused);
     $('hub-mixed-configuration').addEventListener('change',summary);
     $('hub-mixed-maps').addEventListener('change',()=>{
         $('hub-mixed-custom-maps-label').hidden=$('hub-mixed-maps').value!=='custom';
