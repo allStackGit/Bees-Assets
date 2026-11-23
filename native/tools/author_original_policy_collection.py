@@ -17,6 +17,7 @@ import tempfile
 from assemble_evaluation_suite import assemble, load, physical_contract
 from author_original_policy_episode import author as author_policy
 from native_training_artifacts import atomic_json, file_sha256, sync_directory
+from native_training_holdout import distinct_physical_scenarios, write_native_holdout
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -191,13 +192,6 @@ def author_collection(original_collection: Path, source_plan: Path,
                 "authored native Stage configurations per rotation"
             )
         fixed_holdout = config.get("fixed_holdout")
-        if fixed_holdout is not None:
-            # Import the canonical bootstrap holdout author only when the
-            # experiment explicitly requests evaluation. It retains the
-            # same original game physics and seeded episode schedule.
-            from bootstrap_policy import (
-                distinct_physical_scenarios, write_native_holdout,
-            )
         stages = []
         for index, (fingerprint, runs) in enumerate(grouped.items(), 1):
             if len(runs) > 1:
