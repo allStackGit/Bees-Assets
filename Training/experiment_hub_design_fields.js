@@ -247,6 +247,19 @@ function validateCatalog(raw,installed=[],approved={}) {
                 typeof map.id!=='string'||!/^[a-z0-9_-]{1,80}$/.test(map.id)||
                 ![2,4,6].includes(map.players)))
             throw Error('TinyBrains map choices must be a bounded trusted board catalogue.');
+        const opponentRows=raw.tinybrains.opponent_catalog??[];
+        if(!Array.isArray(opponentRows)||opponentRows.length>48||
+            new Set(opponentRows.map(row=>row?.id)).size!==opponentRows.length||
+            opponentRows.some(row=>!row||typeof row!=='object'||
+                typeof row.id!=='string'||typeof row.label!=='string'||
+                !row.label||row.label.length>100||
+                !/^(?:current|frozen|nano|micro|tinybrains_mini_batch128_v1|tinybrains_(?:mini|frozen)_[0-9a-f]{20})$/.test(row.id)||
+                (row.id==='current'||row.id==='frozen'
+                    ?row.model_sha256!==undefined||row.checkpoint_sha256!==undefined
+                    :!/^[0-9a-f]{64}$/.test(row.model_sha256||'')||
+                        row.checkpoint_sha256!==undefined&&
+                            !/^[0-9a-f]{64}$/.test(row.checkpoint_sha256))))
+            throw Error('Invalid approved training-opponent catalogue.');
         result.tinybrains={...validateFields(raw.tinybrains),
             source_sha256:raw.tinybrains.source_sha256,
             metric_catalog:metricCatalog(raw.tinybrains.metric_catalog),
