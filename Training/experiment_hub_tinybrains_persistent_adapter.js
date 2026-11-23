@@ -1661,10 +1661,24 @@ function createTinyBrainsPersistentDockerAdapter({
     const runner=nativeWindows
         ?path.join(hub,'Training/experiment_hub_tinybrains_persistent.py')
         :HUB_IN+'/Training/experiment_hub_tinybrains_persistent.py';
-    // A locally confirmed immutable suite upgrade can be advertised after
-    // the agent restarts even when its private adapter map still lists v3.
-    // The original local evaluation opt-in is required; no HTTP-controlled
-    // suite or path can enable evaluation implicitly.
+    // Evaluation files are installed after this adapter starts. Re-evaluate
+    // only when the private suite directory or systemd unit inventory changes;
+    // never trust browser-provided paths or allow a new model without checking
+    // its original immutable fingerprints.
+    const approvalRoot=path.join(os.homedir(),'evaluation-audits/tinybrains/suites');
+    const systemdRoot=path.join(os.homedir(),'.config/systemd/user');
+    function approvalRevision() {
+        if(nativeWindows||evaluationRoot==null||
+            !Array.isArray(evaluationSuites)||!evaluationSuites.length)
+            return null;
+        const stat=file=>{
+            try {const item=fs.statSync(file);return item.mtimeMs+':'+item.ctimeMs;}
+            catch {return 'missing';}
+        };
+        return [stat(approvalRoot),stat(path.join(approvalRoot,'hub-approved-latest.json')),
+            stat(systemdRoot)].join('|');
+    }
+    function discoverApprovedEvaluationSuites() {
     let approvedEvaluationSuites=evaluationSuites;
     if(!nativeWindows&&evaluationRoot!=null&&
         Array.isArray(evaluationSuites)&&evaluationSuites.length) {
@@ -1926,13 +1940,18 @@ function createTinyBrainsPersistentDockerAdapter({
             }
         }
     }
-    return {
+    return approvedEvaluationSuites;
+    }
+    let approvedEvaluationSuites=discoverApprovedEvaluationSuites();
+    let observedApprovalRevision=approvalRevision();
+    const protectedEvaluationRoots=[project,hub,artifacts,source,cache,
+        ...(remote?[remote.keyDirectory]:[])];
+    const adapter={
         executable,cwd:nativeWindows?project:PROJECT_IN,
         ...(docker?{docker}:{}),
         stop_policy:nativeWindows?'terminate-group':'interrupt-main',
         ...evaluationReader('tinybrains',evaluationRoot,approvedEvaluationSuites,
-            [project,hub,artifacts,source,cache,
-             ...(remote?[remote.keyDirectory]:[])]),
+            protectedEvaluationRoots),
         artifact_export_dir(jobId) {
             if(!UUID.test(String(jobId||'')))throw Error('Invalid TinyBrains job identity.');
             return path.join(artifacts,jobId);
@@ -2288,6 +2307,23 @@ function createTinyBrainsPersistentDockerAdapter({
             }
         },
     };
+    adapter.refreshEvaluationSuites=()=>{
+        const revision=approvalRevision();
+        if(revision===observedApprovalRevision)
+            return adapter.evaluation_suites||[];
+        const next=discoverApprovedEvaluationSuites();
+        const reader=evaluationReader('tinybrains',evaluationRoot,next,
+            protectedEvaluationRoots);
+        // Switch the advertised capability and its receipt reader together.
+        // A failed discovery retains the prior approved snapshot and can be
+        // retried without disconnecting an otherwise healthy training agent.
+        adapter.evaluation_suites=reader.evaluation_suites;
+        adapter.readEvaluation=reader.readEvaluation;
+        adapter.readEvaluationFailure=reader.readEvaluationFailure;
+        observedApprovalRevision=revision;
+        return reader.evaluation_suites||[];
+    };
+    return adapter;
 }
 // The same checkpoint, training metrics and PPO pipeline are native on
 // Windows; only the trusted process owner and physical CUDA selectors differ.
