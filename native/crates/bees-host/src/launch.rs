@@ -11767,6 +11767,20 @@ fn run_battle(
         }
         #[cfg(feature = "client")]
         if let Some(client) = &mut client {
+            if config.levels.len() == 1 && config.episodes_per_world > 1 &&
+                config.levels[0].game_timeout_seconds.is_some()
+            {
+                // Local Fish Tank observes the same durable EpisodeFinal
+                // counters as the hosted view. This only updates a window
+                // title; the score never influences the native World.
+                let ledger = host.sink_mut().measurements();
+                client.set_fish_tank_series(
+                    config.episodes_per_world, ledger.episodes_finished,
+                    ledger.victories_by_side.get(&1).copied().unwrap_or(0),
+                    ledger.victories_by_side.get(&2).copied().unwrap_or(0),
+                    ledger.draws,
+                );
+            }
             // Borrow the real native Level for rendering with precisely
             // this local commander's perspective. The override is cleared
             // BEFORE any world step, fingerprint or network delivery, so
