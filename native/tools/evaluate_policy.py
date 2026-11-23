@@ -411,7 +411,10 @@ def verified_evaluation_device(execution, requested):
         if requested != "cpu":
             raise ValueError("native GPU evaluation has no completed inference evidence")
         return None
-    gpu_providers = ("CUDAExecutionProvider", "ROCMExecutionProvider")
+    gpu_providers = (
+        "CUDAExecutionProvider", "ROCMExecutionProvider",
+        "MIGraphXExecutionProvider",
+    )
     seen_gpu = False
     for slot, model in execution["model_execution"].items():
         if "device" in model:
