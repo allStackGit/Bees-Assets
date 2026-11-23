@@ -262,6 +262,36 @@ increase when rollout inference is CPU- or communication-bound. The
 native Hub still needs admission of these GPU claims before co-scheduling
 other projects on Halifax.
 
+## Activate the merged Unity integration in Experiment Hub
+
+The Hub release publisher defaults to
+`feat/hub-resource-experiments-20261110`, **not** this Unity integration
+branch. GitHub commits alone do not change the running Halifax coordinator
+or its enrolled agents. After active jobs finish and native owners are safely
+idle, update the Halifax **Experiment Hub source checkout** to
+`feat/halifax-unity-workers-20261123` using a fetched, fast-forward Git
+checkout. Do not substitute the separate Unity Editor project checkout:
+the publisher must manage the repository containing its coordinator
+`Training/` source. Preserve machine-specific environment files, secrets
+and persistent Hub state outside the checkout.
+
+Merge the following `worker` entry into the existing
+`EXPERIMENT_HUB_RELEASE_SOURCES` JSON map in the private Hub coordinator
+environment:
+
+```text
+EXPERIMENT_HUB_RELEASE_SOURCES={"worker":{"path":"/home/halifax/ai/projects/experiment-hub/Assets","branch":"feat/halifax-unity-workers-20261123"}}
+```
+
+Adjust the path to the actual Hub source checkout. **Preserve** any existing
+`tinybrains`, `courier`, or other approved entries instead of replacing
+the entire map. This is an explicit branch opt-in; it does not authorize
+force-merging or restarting an agent while it owns active jobs. The Hub's
+authenticated release publisher then tracks the new source and applies
+updates at approved idle boundaries. Use the existing coordinator service
+procedure for any required safe restart. Confirm the reported coordinator,
+frontend and agent revisions before authorizing new Bees training.
+
 ## Run independent Bees jobs in the native Experiment Hub
 
 The first-class \`bees_native\` project uses the Hub's existing resource
