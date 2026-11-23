@@ -13,6 +13,19 @@ pub enum HudAction {
 
 pub(super) const CONTEXT_ATTACK_RADIUS_SQUARED: f32 = 100.0;
 
+pub(super) fn battle_marker_color(
+    custom_rgb: Option<[u8; 3]>, side: i32, human_side: Option<i32>, fallback: u32,
+) -> u32 {
+    if let Some([red, green, blue]) = custom_rgb {
+        return u32::from_be_bytes([0, red, green, blue]);
+    }
+    match human_side {
+        Some(human) if side == human => 0x277f5e,
+        Some(human) if matches!(human, 1 | 2) && matches!(side, 1 | 2) => 0xfbf236,
+        _ => fallback,
+    }
+}
+
 pub const ACTIONS: [HudAction; 24] = [
     HudAction::Attack, HudAction::Guard, HudAction::Patrol,
     HudAction::Mine, HudAction::Heal,

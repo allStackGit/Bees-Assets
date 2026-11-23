@@ -3108,7 +3108,9 @@ impl NativeSoftwareRenderer {
                 if let Some(destination) = view.combat.ship_game_destination(ship.entity_id) {
                     let (tx, ty) = self.project(destination);
                     self.line(x, y, tx, ty, 0x526a8a);
-                    self.cross(destination, 3.0, 0xddeaff);
+                    let color = tactical_hud::battle_marker_color(custom_rgb, ship.side,
+                        view.player_authority.player_human_side(), 0xddeaff);
+                    self.cross(destination, 3.0, color);
                 }
             }
         }
@@ -3682,6 +3684,7 @@ impl NativeSoftwareRenderer {
         let rescue_barges = view.rescue_barges.filter(|_|
             view.player_authority.player_viewer_side().is_some() &&
             view.player_authority.player_viewer_side() == view.campaign_dialogue_side);
+        let human_side = view.player_authority.player_human_side();
         for (ship, body) in view.combat.render_ships() {
             let owner = view.roster.owning_squad(ship.entity_id);
             let controlled = owner.is_some_and(|id| view.is_local_player_squad(id));
@@ -3712,7 +3715,12 @@ impl NativeSoftwareRenderer {
             let objective = objective_ship == Some(ship.entity_id) ||
                 rescue_barges.is_some_and(|ids| ids.contains(&ship.entity_id));
             let color = if objective { 0xffd57a }
-                else if selected { 0xffffff } else { side_color(ship.side) };
+                else if selected { 0xffffff }
+                else {
+                    let rgb = owner.and_then(|owner|
+                        view.player_authority.player_squad_color_rgb(owner));
+                    tactical_hud::battle_marker_color(rgb, ship.side, human_side, side_color(ship.side))
+                };
             let radius = if objective { 4 } else if selected { 3 } else { 1 };
             for yy in (py - radius)..=(py + radius) {
                 for xx in (px - radius)..=(px + radius) {

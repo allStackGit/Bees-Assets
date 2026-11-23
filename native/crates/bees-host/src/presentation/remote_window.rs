@@ -25,7 +25,7 @@ use serde_json::{json, Value};
 use super::{NativeCamera, NativeSoftwareRenderer, NativeControls, WorldMoveDrag, text};
 use super::codex::{native_codex, codex_lines};
 use super::minimap::MiniMapLayout;
-use super::tactical_hud::{HudAction, HudRect, ACTIONS, CONTEXT_ATTACK_RADIUS_SQUARED, shooting_hit, shooting_rect};
+use super::tactical_hud::{HudAction, HudRect, ACTIONS, CONTEXT_ATTACK_RADIUS_SQUARED, battle_marker_color, shooting_hit, shooting_rect};
 use bees_hivemind::protocol::SHOOTING_STRATEGIES;
 use crate::game_audio::NativeGameAudio;
 use crate::remote_tls::{client_tls_from_environment, client_tls_from_file, RemoteSocket};
@@ -361,13 +361,7 @@ impl RemoteArtwork {
                 ship["ship_type"].as_u64().and_then(|kind| u8::try_from(kind).ok()),
                 visual.position(ship, 0, fraction),
             ) else { continue };
-            let color_rgb = ship["color_rgb"].as_array()
-                .filter(|rgb| rgb.len() == 3)
-                .and_then(|rgb| Some([
-                    u8::try_from(rgb[0].as_u64()?).ok()?,
-                    u8::try_from(rgb[1].as_u64()?).ok()?,
-                    u8::try_from(rgb[2].as_u64()?).ok()?,
-                ]));
+            let color_rgb = rgb_from_wire(&ship["color_rgb"]);
             let animation = ship["animation_variant"].as_u64()
                 .and_then(|variant| u8::try_from(variant).ok())
                 .zip(ship["animation_seconds"].as_f64().map(|seconds| seconds as f32))
@@ -439,13 +433,7 @@ impl RemoteArtwork {
                 death["radius"].as_f64().map(|v| v as f32),
                 cue["tick"].as_u64(),
             ) else { continue };
-            let color = death["color_rgb"].as_array()
-                .filter(|rgb| rgb.len() == 3)
-                .and_then(|rgb| Some([
-                    u8::try_from(rgb[0].as_u64()?).ok()?,
-                    u8::try_from(rgb[1].as_u64()?).ok()?,
-                    u8::try_from(rgb[2].as_u64()?).ok()?,
-                ]));
+            let color = rgb_from_wire(&death["color_rgb"]);
             if kind == bees_sim::combat_world::BEEHIVE_TYPE {
                 self.raster.retire_beehive_healing_crosses(id);
             }
@@ -1712,8 +1700,21 @@ fn outline(pixels: &mut [u32], x: i32,y: i32, w: i32,h: i32,color: u32) {
     line(pixels,(x,y+h),(x,y),color);
 }
 
-/// Read only bounded wire geometry. The host supplied the real collider
-/// used by gameplay; the remote client only paints its contour.
+fn rgb_from_wire(value: &Value) -> Option<[u8; 3]> {
+    let rgb = value.as_array().filter(|rgb| rgb.len() == 3)?;
+    Some([
+        u8::try_from(rgb[0].as_u64()?).ok()?,
+        u8::try_from(rgb[1].as_u64()?).ok()?,
+        u8::try_from(rgb[2].as_u64()?).ok()?,
+    ])
+}
+
+fn wire_battle_marker_color(ship: &Value, human_side: Option<i32>, fallback: u32) -> u32 {
+    let side = ship["side"].as_i64().and_then(|side| i32::try_from(side).ok()).unwrap_or(0);
+    battle_marker_color(rgb_from_wire(&ship["color_rgb"]), side, human_side, fallback)
+}
+
+/// Read a finite coordinate from the host's authoritative snapshot.
 fn point_from_wire(value: &Value) -> Option<Vec2> {
     let coordinates = value.as_array()?;
     if coordinates.len() != 2 { return None; }
@@ -1937,6 +1938,7 @@ fn draw_remote_minimap(
     let objective_object = target["target_map_object_id"].as_i64();
     let mut ship_markers = 0_u64;
     let mut objective_markers = 0_u64;
+    let human_side = state["human_side"].as_i64().and_then(|side| i32::try_from(side).ok());
     for ship in state["ships"].as_array().into_iter().flatten() {
         let Some(position) = visual.position(ship, 0, fraction) else { continue };
         let Some((x, y)) = layout.project(position) else { continue };
@@ -1948,7 +1950,10 @@ fn draw_remote_minimap(
         let center = (x.round() as i32, y.round() as i32);
         let color = if objective { GOLD }
             else if selected { 0xffffff }
-            else if ship["friendly"] == true { GREEN } else { RED };
+            else {
+                let fallback = if ship["friendly"] == true { GREEN } else { RED };
+                wire_battle_marker_color(ship, human_side, fallback)
+            };
         circle(pixels, center, if objective { 4 } else if selected { 3 } else { 1 }, color);
         ship_markers += 1;
         objective_markers += u64::from(objective);
@@ -2414,6 +2419,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     text::draw_at(pixels, WIDTH, FIELD + 14, 76,
         "F1: controls and shortcuts", 1, MUTED);
     if let (Some(state), Some(camera)) = (state,camera) {
+        let human_side = state["human_side"].as_i64().and_then(|side| i32::try_from(side).ok());
         if let Some(map) = bounds(state) {
             let a=screen(camera,map.min);
             let b=screen(camera,map.max);
@@ -2630,12 +2636,14 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                         combat_hud_draws[2]+=1;
                     }
                 }
-                if let Some(destination)=ship["destination"].as_array() {
-                    if destination.len()==2 {
-                        if let (Some(x),Some(y))=(destination[0].as_f64(),destination[1].as_f64()) {
-                            let dest=Vec2::new(x as f32,y as f32);
-                            if dest.is_finite() {line(pixels,center,screen(camera,dest),0x2d6070);}
-                        }
+                if let Some(destination) = point_from_wire(&ship["destination"]) {
+                    let end = screen(camera, destination);
+                    line(pixels, center, end, 0x2d6070);
+                    let color = wire_battle_marker_color(ship, human_side, 0xddeaff);
+                    let radius = (3.0 * camera.pixels_per_unit).round().clamp(2.0, 24.0) as i32;
+                    if (0..FIELD as i32).contains(&end.0) && (0..HEIGHT as i32).contains(&end.1) {
+                        line(pixels, (end.0 - radius, end.1), (end.0 + radius, end.1), color);
+                        line(pixels, (end.0, end.1 - radius), (end.0, end.1 + radius), color);
                     }
                 }
             }

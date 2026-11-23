@@ -2080,6 +2080,10 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
             .map(|source| source.user_side))
     }
 
+    fn player_human_side(&self) -> Option<i32> {
+        matches!(self.player.human_side, 1 | 2).then_some(self.player.human_side)
+    }
+
     fn player_fog_vision_radius(&self, ship_id: i64) -> Option<f32> {
         // New source snapshots capture the Create-time mask radius
         // directly. Older snapshots have only the static effective sight,

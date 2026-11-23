@@ -3494,6 +3494,7 @@ fn current_state(
         "camera_zoom": camera_zoom,
         "camera_edge_scrolling": camera_edge_scrolling, "audio_events": audio_events,
         "viewer_side": viewer,
+        "human_side": view.player_authority.player_human_side(),
         // Only the authenticated side's live scoreboard, projected with
         // the same per-side privacy boundary as visible ships/commands.
         // No separate client-side tally or full-World event replay.

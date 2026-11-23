@@ -43,6 +43,8 @@ pub trait NativePlayerAuthority {
     /// Source Stage owner of the local player's tactical viewport.
     /// Unlike squad permission flags, this is one side per view.
     fn player_viewer_side(&self) -> Option<i32> { None }
+    /// Authored Human faction, independent of the current viewer.
+    fn player_human_side(&self) -> Option<i32> { None }
     /// Unity uses Range = 2 * (Sight or MaxRange) as a SpriteMask
     /// *diameter*, hence the visibility radius is Sight or MaxRange.
     /// This display-only value never replaces HiveMind perception.
