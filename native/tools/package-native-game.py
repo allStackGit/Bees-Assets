@@ -157,6 +157,14 @@ def executable_target(source: Path) -> tuple[str, str]:
     return platform, architectures[machine]
 
 
+def compiled_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def check_compiled_training_targets(
     game: Path, rollout: Path | None, manifest: Path | None,
     server: Path | None = None,
@@ -636,28 +644,28 @@ def write_launchers(output: Path, binary_name: str,
             launcher = output / "serve-native-two-player.cmd"
             launcher.write_text(
                 windows_start +
-                'if not defined BEES_NATIVE_REMOTE_LISTEN (echo Set BEES_NATIVE_REMOTE_LISTEN 1>&2 & popd & exit /b 2)\\n' +
-                'if not defined BEES_NATIVE_REMOTE_SIDE_TOKENS (echo Set BEES_NATIVE_REMOTE_SIDE_TOKENS 1>&2 & popd & exit /b 2)\\n' +
-                'if not defined BEES_NATIVE_SERVER_OUTPUT_DIR set "BEES_NATIVE_SERVER_OUTPUT_DIR=%BEES_SAVE%\\\\servers\\\\two-player"\\n' +
-                'if not exist "%BEES_SAVE%" mkdir "%BEES_SAVE%"\\n' +
-                f'".\\\\{server_binary}" serve "examples\\\\native-two-player.run.json" ' +
-                '--output-dir "%BEES_NATIVE_SERVER_OUTPUT_DIR%" %*\\n' + windows_finish,
-                encoding="utf-8", newline="\\r\\n",
+                'if not defined BEES_NATIVE_REMOTE_LISTEN (echo Set BEES_NATIVE_REMOTE_LISTEN 1>&2 & popd & exit /b 2)\n' +
+                'if not defined BEES_NATIVE_REMOTE_SIDE_TOKENS (echo Set BEES_NATIVE_REMOTE_SIDE_TOKENS 1>&2 & popd & exit /b 2)\n' +
+                'if not defined BEES_NATIVE_SERVER_OUTPUT_DIR set "BEES_NATIVE_SERVER_OUTPUT_DIR=%BEES_SAVE%\\servers\\two-player"\n' +
+                'if not exist "%BEES_SAVE%" mkdir "%BEES_SAVE%"\n' +
+                f'".\\{server_binary}" serve "examples\\\native-two-player.run.json" ' +
+                '--output-dir "%BEES_NATIVE_SERVER_OUTPUT_DIR%" %*\n' + windows_finish,
+                encoding="utf-8", newline="\r\n",
             )
         else:
             launcher = output / "serve-native-two-player.sh"
             launcher.write_text(
-                "#!/bin/sh\\n"
-                "set -eu\\n"
-                'cd "$(dirname "$0")"\\n'
-                ': "${BEES_NATIVE_REMOTE_LISTEN:?Set BEES_NATIVE_REMOTE_LISTEN to the host TCP address}"\\n'
-                ': "${BEES_NATIVE_REMOTE_SIDE_TOKENS:?Set BEES_NATIVE_REMOTE_SIDE_TOKENS to JSON side credentials}"\\n'
-                'save="${XDG_DATA_HOME:-$HOME/.local/share}/bees-native"\\n'
-                'run="${BEES_NATIVE_SERVER_OUTPUT_DIR:-$save/servers/two-player}"\\n'
-                'mkdir -p "$(dirname "$run")"\\n'
+                "#!/bin/sh\n"
+                "set -eu\n"
+                'cd "$(dirname "$0")"\n'
+                ': "${BEES_NATIVE_REMOTE_LISTEN:?Set BEES_NATIVE_REMOTE_LISTEN to the host TCP address}"\n'
+                ': "${BEES_NATIVE_REMOTE_SIDE_TOKENS:?Set BEES_NATIVE_REMOTE_SIDE_TOKENS to JSON side credentials}"\n'
+                'save="${XDG_DATA_HOME:-$HOME/.local/share}/bees-native"\n'
+                'run="${BEES_NATIVE_SERVER_OUTPUT_DIR:-$save/servers/two-player}"\n'
+                'mkdir -p "$(dirname "$run")"\n'
                 f'exec "./{server_binary}" serve "examples/native-two-player.run.json" ' +
-                '--output-dir "$run" "$@"\\n',
-                encoding="utf-8", newline="\\n",
+                '--output-dir "$run" "$@"\n',
+                encoding="utf-8", newline="\n",
             )
             launcher.chmod(0o755)
 
@@ -847,7 +855,7 @@ def verify_native_package(directory: Path) -> dict:
                          else "serve-native-two-player.sh")
         if launcher_name not in expected:
             raise ValueError("native release has no restartable two-player dedicated host launcher")
-        if file_sha256(game) == file_sha256(headless):
+        if compiled_sha256(game) == compiled_sha256(headless):
             raise ValueError("dedicated server must be a separately compiled native binary")
     if manifest.get("training_runtime", False) not in (True, False):
         raise ValueError("invalid native training distribution marker")
@@ -1064,7 +1072,7 @@ def main() -> None:
     check_compiled_training_targets(binary, rollout_binary, manifest_binary, server_binary)
     if server_binary is not None and (
             server_binary.name not in ("bees", "bees.exe") or
-            file_sha256(binary) == file_sha256(server_binary)):
+            compiled_sha256(binary) == compiled_sha256(server_binary)):
         parser.error("--server-binary requires a separate headless native bees build")
     if output.exists():
         parser.error("Output already exists; native releases are immutable")
