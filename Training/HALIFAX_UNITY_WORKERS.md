@@ -316,7 +316,10 @@ mixed-platform groups require the shared two-platform manifest.
 **Repeatable install and distribution.** After compiling both targets,
 the builder prints the absolute directory containing
 \`worker-build-manifest.json\`, \`rl-linux.zip\` and \`rl-windows.zip\`.
-Only built, hash-verified archives are installed. Example on Halifax (adjust
+Only built, hash-verified archives are installed. The builder records a
+source snapshot (including uncommitted Assets changes plus Package and
+ProjectSettings contents) and rejects a two-platform release if the source
+changes during compilation. Example on Halifax (adjust
 paths to match your actual builder output):
 
 \`\`\`sh
@@ -490,6 +493,13 @@ ssh -N -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=yes \
 \`\`\`
 
 Actor traffic must remain on private loopback and the authenticated broker.
+Each Hub training or evaluation job stages a private disposable copy of
+its installed Unity player. Unity/ML-Agents timer and player files therefore
+cannot mutate the pinned release. The copy is held outside exported job
+artifacts and is cleaned up on normal exit; the runner reports the startup
+copy/verification time. Allow enough temporary disk space for one Unity
+player copy per concurrently active job.
+
 The native learner now **requires all reserved actors to register before
 beginning training**. Hub Compare can chart `wan_active_actors`,
 `wan_active_environments`, `wan_remote_steps_per_second`,
