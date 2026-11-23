@@ -252,6 +252,8 @@ pub enum NativeBattleMenuAction {
     Transfer { fleet_ship_id: i64, to_saved_squad_id: i64 },
     TransferBatch { side: i32, fleet_ship_ids: Vec<i64>,
         to_saved_squad_id: i64 },
+    ReassignBatch { side: i32, fleet_ship_ids: Vec<i64>,
+        from_saved_squad_id: i64, to_saved_squad_id: i64 },
     Reassign { side: i32, fleet_ship_id: i64,
         from_saved_squad_id: i64, to_saved_squad_id: i64 },
 }
@@ -1062,7 +1064,14 @@ fn select_battle_inner(
                           placements: &[NativeSavedShipPlacement]| {
                 if show_transfer {
                     transfer_rows.get(index).map(|row| match (&row.batch, row.authored_from) {
-                        (Some((side, ids)), _) => NativeBattleMenuAction::TransferBatch {
+                        (Some((side, ids)), Some((_, from))) =>
+                            NativeBattleMenuAction::ReassignBatch {
+                                side: *side,
+                                fleet_ship_ids: ids.clone(),
+                                from_saved_squad_id: from,
+                                to_saved_squad_id: row.to_saved_squad_id,
+                            },
+                        (Some((side, ids)), None) => NativeBattleMenuAction::TransferBatch {
                             side: *side,
                             fleet_ship_ids: ids.clone(),
                             to_saved_squad_id: row.to_saved_squad_id,
