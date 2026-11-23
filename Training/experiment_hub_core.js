@@ -6451,6 +6451,113 @@ class ExperimentHub {
         this.commit(next);
         return copy(job);
     }
+    // Freeze one Bees MA-POCA learner and its complete WAN actor population in
+    // a single Hub transaction. ResourceBundle owns all starts/stops; workers
+    // own only Unity simulation and inference, never PPO or checkpoints.
+    queueBeesDistributedGroup(value) {
+        if(!object(value)||value.confirm_queue!==true||
+            Object.keys(value).some(key=>!['confirm_queue','learner','actors'].includes(key))||
+            !object(value.learner)||
+            Object.keys(value.learner).some(key=>![
+                'configuration_id','expected_revision','resources','machine_id',
+                'continuation_of_job_id','run_name',
+            ].includes(key))||
+            !ID.test(String(value.learner.machine_id||''))||
+            !Array.isArray(value.actors)||value.actors.length<1||
+            value.actors.length>8||
+            value.actors.some(item=>!object(item)||Object.keys(item).some(key=>
+                !['machine_id','resources','envs','device'].includes(key))||
+                !ID.test(String(item.machine_id||''))||
+                !Number.isSafeInteger(item.envs)||item.envs<1||item.envs>64||
+                !['cpu','cuda'].includes(item.device))||
+            new Set(value.actors.map(item=>item.machine_id)).size!==value.actors.length||
+            value.actors.some(item=>item.machine_id===value.learner.machine_id))
+            throw Error('Bees WAN group needs one native learner and 1–8 separately leased remote machines.');
+        const snapshot=this.snapshot();
+        const machines=new Map(snapshot.machines.map(machine=>[machine.id,machine]));
+        const owner=machines.get(value.learner.machine_id);
+        const eligible=machine=>machine&&machine.status==='connected'&&
+            machine.agent_platform==='linux'&&
+            machine.local_executor_enabled===true&&
+            machine.native_preflight_passed===true&&
+            machine.execution_capabilities?.cgroup_v2_detected===true&&
+            ['cpu','memory'].every(capability=>
+                machine.execution_capabilities.cgroup_controllers?.includes(capability))&&
+            machine.software_update_blocked!==true;
+        if(!eligible(owner))
+            throw Error('Bees distributed learner requires a connected enrolled Linux machine with native resource controls.');
+        const configRow=this.state.configurations.find(item=>
+            item.id===value.learner.configuration_id);
+        if(!configRow||configRow.project_id!=='bees_native'||
+            (configRow.parameters?.wan_actors??0)!==value.actors.length)
+            throw Error('Saved Bees native learner must request exactly the selected number of WAN actor machines.');
+        if(!supportsJobRuntime(owner,{
+            project_id:'bees_native',frozen_parameters:configRow.parameters,
+        })||!owner.design_catalog?.bees_native?.wan_key_fingerprint)
+            throw Error('The selected Bees learner does not approve its frozen WAN Unity runtime and secret key.');
+        const key=owner.design_catalog.bees_native.wan_key_fingerprint;
+        for(const actor of value.actors) {
+            const machine=machines.get(actor.machine_id);
+            if(!eligible(machine)||!machine.installed_projects?.includes('bees_rollout')||
+                !machine.design_catalog?.bees_rollout||
+                machine.design_catalog.bees_rollout.wan_key_fingerprint!==key||
+                ['worker_sha256','trainer_sha256','runtime_version'].some(field=>
+                    machine.design_catalog.bees_rollout[field]!==configRow.parameters[field]))
+                throw Error('Bees WAN actor '+actor.machine_id+
+                    ' does not approve the learner Unity, PPO runtime or private broker key.');
+        }
+        const next=copy(this.state);
+        const learner=this.queueIn(next,value.learner);
+        if(learner.project_id!=='bees_native'||learner.status!=='waiting_adapter'||
+            learner.frozen_parameters.wan_actors!==value.actors.length)
+            throw Error('Bees WAN learner is not an unstarted native Hub job.');
+        const learnerLease=this.claimJobIn(next,learner,owner.id,owner);
+        const bundleId=crypto.randomUUID(),jobs=[learner],leases=[learnerLease];
+        const root=learner.artifact_lineage_root_id||learner.id;
+        const timestamp=now();
+        for(const [index,actor] of value.actors.entries()) {
+            const machine=machines.get(actor.machine_id);
+            const budget=resourceRequest(actor.resources);
+            if(actor.envs>budget.cpus||
+                (actor.device==='cuda'
+                    ?budget.gpu_count!==1||budget.gpu_mode!=='exclusive'
+                    :budget.gpu_count!==0))
+                throw Error('Bees WAN actor environment count/GPU mode differs from its CPU and GPU resource lease.');
+            const roleConfig={
+                id:crypto.randomUUID(),project_id:'bees_rollout',
+                name:'Bees WAN actor '+(index+1)+' for '+learner.id.slice(-8),
+                parameters:{
+                    learner_job_id:learner.id,lineage_root_id:root,
+                    slot:index,envs:actor.envs,device:actor.device,
+                    worker_sha256:learner.frozen_parameters.worker_sha256,
+                    trainer_sha256:learner.frozen_parameters.trainer_sha256,
+                    runtime_version:learner.frozen_parameters.runtime_version,
+                    wan_key_fingerprint:key,
+                },
+                revision:1,created_at:timestamp,updated_at:timestamp,
+            };
+            next.configurations.push(roleConfig);
+            const job=this.queueIn(next,{
+                configuration_id:roleConfig.id,expected_revision:1,
+                resources:budget,
+            },undefined,true);
+            if(job.status!=='waiting_adapter')
+                throw Error('Bees WAN actor must be reserved before its first Start.');
+            const lease=this.claimJobIn(next,job,machine.id,machine);
+            jobs.push(job);leases.push(lease);
+        }
+        for(const [index,job] of jobs.entries())
+            job.resource_bundle={id:bundleId,index:index+1,size:jobs.length};
+        this.commit(next);
+        return {
+            bundle_id:bundleId,
+            members:jobs.map(copy),
+            leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
+            starts_authorized:0,
+            note:'All remote Bees actors and one authoritative PPO learner are now reserved. Use resource-bundle Start only after authenticated broker tunnels and lease receipts are ready.',
+        };
+    }
+
     // Atomically reserve fixed resources for independently executable jobs
     // across projects and machines. This is the common *control-plane*
     // foundation for distributed workloads, not a data-plane protocol or a
