@@ -3005,11 +3005,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 /// launched directly, from the battle library, or from a campaign catalog.
 /// Reject asynchronous systems whose scheduling is not in the input trace.
 fn require_replayable_remote_host(config: &RunConfig) -> io::Result<()> {
-    if config.levels.len() != 1 || config.episodes_per_world != 1 ||
+    if config.levels.len() != 1 ||
+        !(1..=64).contains(&config.episodes_per_world) ||
         !config.model_updates.is_empty() || config.navigation_workers.is_some()
     {
         return Err(invalid(
-            "remote hosting requires one Level/episode, a fixed model manifest, and no background navigation",
+            "remote hosting requires one Level, 1..64 episodes, a fixed model manifest, and no background navigation",
         ));
     }
     Ok(())
@@ -11011,7 +11012,17 @@ fn run_battle(
         );
         if !playable[0] && !playable[1] {
             server.require_spectator_only()?;
+            server.configure_spectator_series(config.episodes_per_world)?;
         } else {
+            // A human-commandeered LAN battle retains its original
+            // one-episode authority and deterministic input trace.
+            // Only an authored AI-only World may recycle the live Level
+            // into a view-only Fish Tank series.
+            if config.episodes_per_world != 1 {
+                return Err(invalid(
+                    "multiple hosted episodes require two AI-controlled factions and independent spectator credentials",
+                ).into());
+            }
             for side in server.configured_sides() {
                 if !playable[(side - 1) as usize] {
                     return Err(invalid(format!(
