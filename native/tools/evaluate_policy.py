@@ -6,6 +6,7 @@ independent authored scenarios, and publishes a verified completion receipt.
 """
 
 import argparse
+from collections import Counter
 import json
 import math
 import os
@@ -94,6 +95,25 @@ def setup_config(source_path, manifest, output, physics_workers=None):
     source["notifications"] = str(output / "events.jsonl")
     source["rollout_summary"] = str(output / "rollout-summary.json")
     return source, len(levels) * episodes
+
+
+def expected_scene_episodes(config):
+    """Exact authored map coverage for a complete native holdout.
+
+    Different Worlds may intentionally reference the same immutable scene.
+    Count every fixed-seed episode separately but hash each source scene
+    only once; the check runs outside the physical simulation loop.
+    """
+    episodes = config["episodes_per_world"]
+    levels = config["levels"]
+    scene_hashes = {}
+    expected = Counter()
+    for level in levels:
+        scene = Path(level["scene"])
+        if scene not in scene_hashes:
+            scene_hashes[scene] = file_sha256(scene)
+        expected[scene_hashes[scene]] += episodes
+    return dict(expected)
 
 
 def per_scene_results(score, learner_side, episodes):
@@ -393,6 +413,13 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
             type(draws) is not int or not 0 <= draws <= expected or wins + draws > expected):
         raise ValueError("native evaluation side outcomes are invalid")
     scenes = per_scene_results(score, learner_side, expected)
+    authored_scene_episodes = expected_scene_episodes(config)
+    if (set(scenes) != set(authored_scene_episodes) or
+            any(row["episodes"] != authored_scene_episodes[digest]
+                for digest, row in scenes.items())):
+        raise ValueError(
+            "native evaluation did not execute every authored map's pinned episode plan"
+        )
     authored_missions = any(level_has_goal(level) for level in config["levels"])
     observation_work = verified_policy_observations(
         summary.get("policy_observations"), require_goal=authored_missions,
@@ -481,6 +508,8 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
         "parallel_physics_rounds": throughput.get("parallel_physics_rounds", 0),
         "evaluation": score,
         "by_scene_sha256": scenes,
+        "authored_scene_expected_episodes": authored_scene_episodes,
+        "authored_distinct_scenes": len(authored_scene_episodes),
         **({"mission_outcomes": mission_totals}
            if all("mission_outcomes" in scene for scene in scenes.values()) else {}),
         **({
