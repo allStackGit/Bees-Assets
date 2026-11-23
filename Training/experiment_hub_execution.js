@@ -95,7 +95,9 @@ class LocalExecution {
                 this.supervisor.gpuEnabled===true&&
                 this.supervisor.adapters?.[project]?.gpu_execution==='cuda'&&
                 this.supervisor.adapters?.[project]?.gpu_sharing==='cooperative-pytorch'&&
-                (this.supervisor.gpuExecution==='cuda'||dockerCapable(this.supervisor)))};
+                (this.supervisor.gpuExecution==='cuda'||
+                    this.supervisor instanceof LinuxSupervisor||
+                    dockerCapable(this.supervisor)))};
     }
     async handle(order) {
         if(!order||!['start','stop','inspect','qualify_gpu'].includes(order.action)||
@@ -158,7 +160,8 @@ class LocalExecution {
                     job.status!=='waiting_adapter'||
                     !(dual||multi||single&&(job.resources?.gpu_mode==='exclusive'||
                         job.resources?.gpu_mode==='shared'&&
-                        dockerCapable(this.supervisor)&&
+                        (this.supervisor instanceof LinuxSupervisor||
+                            dockerCapable(this.supervisor))&&
                         localAdapter?.gpu_sharing==='cooperative-pytorch'))||
                     lease.resources?.gpu_mode!==job.resources?.gpu_mode||
                     lease.resources?.gpu_count!==count||
