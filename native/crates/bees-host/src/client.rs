@@ -598,19 +598,44 @@ impl NativeClient {
         if !self.window.is_open() {
             return Ok(NativeClientAction::Quit);
         }
+        let (window_width, window_height) = self.window.get_size();
+        let drawable = window_width > 0 && window_height > 0;
+        let resized = drawable && self.renderer.resize(window_width, window_height)?;
+        if resized || !drawable {
+            // Screen-space gestures belong to the layout on mouse-down.
+            // Consume buttons held through a resize or minimization so the
+            // next release cannot activate a moved control or battlefield.
+            self.left_was_down = self.window.get_mouse_down(MouseButton::Left);
+            self.right_was_down = self.window.get_mouse_down(MouseButton::Right);
+            self.battle_menu_press = None;
+            self.selection_drag = None;
+            self.renderer.selection_box = None;
+            self.middle_drag_last = None;
+            self.minimap_dragging = false;
+            self.hud_press = None;
+            self.squad_tab_press = None;
+            self.shooting_press = None;
+            self.renderer.show_shooting_menu = false;
+            self.right_press = None;
+            self.last_left_press = None;
+            self.double_left_press = false;
+            self.viewport_resizes += u64::from(resized);
+        }
+        if !drawable {
+            // A minimized window has no drawable surface.
+            self.window.update();
+            self.previous_frame = Instant::now();
+            return Ok(NativeClientAction::Wait);
+        }
         if let Some((world, revision, side)) = self.surrender_confirmation {
             if (world, revision) != (view.world_id, view.episode_revision) ||
                 view.player_authority.player_viewer_side() != Some(side) ||
                 !view.can_surrender(side) {
                 self.surrender_confirmation = None;
             } else {
-                let (width, height) = self.window.get_size();
-                if width > 0 && height > 0 {
-                    self.renderer.resize(width, height)?;
-                    self.renderer.render(&view, bounds);
-                    self.renderer.draw_surrender_confirmation();
-                    self.window.update_with_buffer(self.renderer.pixels(), width, height)?;
-                } else { self.window.update(); }
+                self.renderer.render(&view, bounds);
+                self.renderer.draw_surrender_confirmation();
+                self.window.update_with_buffer(self.renderer.pixels(), window_width, window_height)?;
                 self.next_step = Instant::now();
                 self.previous_frame = self.next_step;
                 if self.window.is_key_pressed(Key::Escape, KeyRepeat::No) ||
@@ -658,13 +683,9 @@ impl NativeClient {
                     }
                 }
             }
-            let (width,height)=self.window.get_size();
-            if width>0 && height>0 {
-                self.renderer.resize(width,height)?;
-                self.renderer.render(&view,bounds);
-                self.renderer.draw_save_level_name(name);
-                self.window.update_with_buffer(self.renderer.pixels(),width,height)?;
-            } else {self.window.update();}
+            self.renderer.render(&view,bounds);
+            self.renderer.draw_save_level_name(name);
+            self.window.update_with_buffer(self.renderer.pixels(), window_width, window_height)?;
             self.audio.set_paused(true);
             self.next_step=Instant::now();
             self.previous_frame=self.next_step;
@@ -729,13 +750,9 @@ impl NativeClient {
         if self.controls_open {
             self.audio.set_paused(true);
             self.controls.edit(&self.window);
-            let (width,height)=self.window.get_size();
-            if width>0 && height>0 {
-                self.renderer.resize(width,height)?;
-                self.renderer.render(&view,bounds);
-                self.renderer.draw_control_settings(&self.controls);
-                self.window.update_with_buffer(self.renderer.pixels(),width,height)?;
-            } else { self.window.update(); }
+            self.renderer.render(&view,bounds);
+            self.renderer.draw_control_settings(&self.controls);
+            self.window.update_with_buffer(self.renderer.pixels(), window_width, window_height)?;
             self.next_step=Instant::now();
             self.previous_frame=self.next_step;
             return Ok(NativeClientAction::Wait);
@@ -858,34 +875,6 @@ impl NativeClient {
                 self.minimap_dragging = false;
                 self.right_press = None;
             }
-        }
-        let (window_width, window_height) = self.window.get_size();
-        if window_width == 0 || window_height == 0 {
-            // Minimized windows have no drawable surface; pump OS events
-            // without trying to submit a zero-sized bitmap.
-            self.window.update();
-            self.right_press = None;
-            self.minimap_dragging = false;
-            self.hud_press = None;
-            self.squad_tab_press = None;
-            self.shooting_press = None;
-            self.renderer.show_shooting_menu = false;
-            self.previous_frame = Instant::now();
-            return Ok(NativeClientAction::Wait);
-        }
-        if self.renderer.resize(window_width, window_height)? {
-            // A drag's original screen coordinates no longer describe
-            // the same selection box after a window resize.
-            self.selection_drag = None;
-            self.minimap_dragging = false;
-            self.hud_press = None;
-            self.squad_tab_press = None;
-            self.shooting_press = None;
-            self.renderer.show_shooting_menu = false;
-            self.right_press = None;
-            self.last_left_press = None;
-            self.double_left_press = false;
-            self.viewport_resizes += 1;
         }
         let now = Instant::now();
         let elapsed = now.duration_since(self.previous_frame).as_secs_f32().min(0.1);
