@@ -57,6 +57,35 @@ def _storage_identity(tensor):
     return tensor.untyped_storage().data_ptr()
 
 
+def immutable_training_input_budget(free_bytes, desired_bytes, reuse_passes, *,
+                                    max_resident_bytes=2 * 1024**3,
+                                    free_fraction=0.18,
+                                    minimum_compute_bytes=2 * 1024**3):
+    """Bound reusable GPU input residency without reserving activation VRAM.
+
+    Intended for immutable rollout/input tensors consumed repeatedly during
+    one training update. Dynamic free_bytes should already honor an external
+    GPU memory lease (e.g., an allocator cap) when one exists. The cap is an
+    *allocation ceiling*, not a reservation. Callers allocate incrementally
+    and fall back to streamed inputs if device allocations fail.
+
+    A single use has no GPU cache benefit. Preserve both a fixed compute
+    reserve and at least 82% of reported free bytes for backprop, optimizer
+    state, inference and other co-located GPU jobs.
+    """
+    if (not all(type(x) is int and x >= 0 for x in
+                (free_bytes, desired_bytes, reuse_passes, max_resident_bytes,
+                 minimum_compute_bytes)) or
+            not isinstance(free_fraction, (int,float)) or
+            not 0 <= free_fraction <= 0.4):
+        raise ValueError("Invalid bounded GPU training input residency")
+    if reuse_passes < 2 or desired_bytes == 0:
+        return 0
+    return max(0, min(desired_bytes, max_resident_bytes,
+                      int(free_bytes * free_fraction),
+                      free_bytes - minimum_compute_bytes))
+
+
 class IndependentGpuTraining:
     """Measure-and-select execution for genuinely independent GPU learners.
 
