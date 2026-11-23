@@ -46,6 +46,8 @@ function usage() {
         'Usage: node Training/bees_build_workers.js [--platform linux|windows|both]',
         '       [--unity-editor /absolute/path/to/Editor/Unity] [--python EXECUTABLE]',
         '       [--install-root /absolute/worker/install/root] [--activate]',
+        '       [--inventory /absolute/private/machines.json] [--machine ID]...',
+        '       [--apply] [--activate]',
         '',
         'Builds one or both Unity RL simulation workers, packages ZIPs and writes',
         'an artifact manifest under ../Builds/OfflineWorkers/. No server, learner,',
@@ -54,11 +56,16 @@ function usage() {
         'Every build also packages the exact matching Bees Python learner/actor runtime.',
         'With --install-root, verifies and installs the host-platform player locally.',
         'Only an explicit --activate selects it for future Hub agent starts.',
+        'With --inventory, builds then previews distribution to selected machines.',
+        '--apply installs on remote machines; --apply --activate also selects the',
+        'release after every selected remote installation has been verified.',
+        'Local --install-root and remote --inventory are separate operations.',
     ].join('\n');
 }
 
 function options(argv) {
-    const result = { platform: 'linux', editor: '', python: '', installRoot: '', activate: false };
+    const result = { platform: 'linux', editor: '', python: '', installRoot: '',
+        inventory: '', machines: [], apply: false, activate: false };
     for (let i = 0; i < argv.length; i++) {
         if (argv[i] === '-h' || argv[i] === '--help') return { help: true };
         const name = argv[i], value = argv[i + 1];
@@ -75,6 +82,18 @@ function options(argv) {
         } else if (name === '--install-root' && value) {
             if (!path.isAbsolute(value)) throw Error('--install-root must be an absolute path.');
             result.installRoot = path.resolve(value);
+        } else if (name === '--inventory' && value) {
+            if (!path.isAbsolute(value)) throw Error('--inventory must be an absolute path.');
+            result.inventory = path.resolve(value);
+        } else if (name === '--machine' && value) {
+            if (!/^[a-z][a-z0-9_-]{0,47}$/.test(value))
+                throw Error('--machine requires an enrolled machine ID.');
+            if (result.machines.includes(value))
+                throw Error('--machine cannot be selected twice: '+value);
+            result.machines.push(value);
+        } else if (name === '--apply') {
+            result.apply = true;
+            continue;
         } else if (name === '--activate') {
             result.activate = true;
             continue;
@@ -83,8 +102,14 @@ function options(argv) {
         }
         i++;
     }
-    if (result.activate && !result.installRoot)
-        throw Error('--activate requires --install-root.');
+    if (result.installRoot && result.inventory)
+        throw Error('Choose local --install-root OR remote --inventory, not both.');
+    if (result.machines.length && !result.inventory)
+        throw Error('--machine requires --inventory.');
+    if (result.apply && !result.inventory)
+        throw Error('--apply requires --inventory.');
+    if (result.activate && !result.installRoot && !(result.inventory && result.apply))
+        throw Error('--activate requires --install-root or --inventory --apply.');
     return result;
 }
 
@@ -237,6 +262,8 @@ async function build(argv = process.argv.slice(2)) {
         console.log(usage());
         return null;
     }
+    if (arg.inventory && process.platform !== 'linux')
+        throw Error('Remote Unity distribution from the build command requires a Linux SSH operator host.');
     const version = projectVersion();
     const editor = resolveUnityEditor({ unityEditor: arg.editor });
     const python = arg.python
@@ -370,6 +397,24 @@ async function build(argv = process.argv.slice(2)) {
         console.log('Host worker release installed: ' + receipt.release_sha256);
         if (arg.activate)
             console.log('Host worker release activated for future idle Hub agent starts.');
+    }
+    if (arg.inventory) {
+        // Do not repackage or infer a release from an older build. The trusted
+        // distributor verifies this invocation's manifest and both archive
+        // identities, then stages ALL selected hosts before any activation.
+        const distributor=path.join(paths.assetsRoot,'Training',
+            'bees_hub_worker_distribute.py');
+        console.log('Distributing this verified Unity build to the approved machine inventory.');
+        runSync(python,['-B',distributor,
+            '--manifest',manifestPath,'--inventory',arg.inventory,
+            ...arg.machines.flatMap(machine=>['--machine',machine]),
+            ...(arg.apply?['--apply']:[]),
+            ...(arg.activate?['--activate']:[])],{
+            cwd:paths.assetsRoot,stdio:'inherit',
+        });
+        console.log(arg.apply
+            ?'Remote Unity release installed'+(arg.activate?' and activated.':'.')
+            :'Remote Unity distribution plan completed; no machine changed.');
     }
     return manifest;
 }
