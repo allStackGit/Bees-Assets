@@ -30,6 +30,7 @@ const SOURCE_SCENE: &str = include_str!("../../../examples/native-two-player.sce
 const SOURCE_RUN: &str = include_str!("../../../examples/native-two-player.run.json");
 const SOURCE_ARCHETYPES: &str = include_str!("../../../examples/native-skirmish.scene.json");
 const SOURCE_QUEEN: &str = include_str!("../../../examples/native-queen.scene.json");
+const SOURCE_FACTORY: &str = include_str!("../../../examples/native-queen.policy.scene.json");
 const FLEET_SIZES: [usize; 8] = [1, 2, 4, 8, 16, 32, 64, 128];
 pub(super) const GAME_ID: &str = "fleet-skirmish";
 
@@ -92,7 +93,7 @@ impl ReinforcementPattern {
 }
 
 #[derive(Clone, Copy)]
-enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Scouts, ReconMiners, Chargers, FireBarges, Siege, Gate, Detonators, Queen }
+enum FleetMix { Fighters, Balanced, SupportHeavy, Specialists, Miners, Scouts, ReconMiners, Chargers, FireBarges, Siege, Gate, Detonators, Queen, Factories }
 
 #[derive(Clone, Copy)]
 enum AiTactics {
@@ -257,6 +258,7 @@ impl FleetMix {
             Self::Gate => "warp-gate",
             Self::Detonators => "yellow-jackets",
             Self::Queen => "queen",
+            Self::Factories => "factories",
         }
     }
 
@@ -269,6 +271,8 @@ impl FleetMix {
             17
         } else if side == 0 {
             if matches!(self, Self::Gate) { 20 } else { 2 }
+        } else if matches!(self, Self::Factories) {
+            9
         } else {
             5
         }
@@ -299,6 +303,7 @@ impl FleetMix {
             Self::SupportHeavy => (total / 2).min(12),
             Self::Specialists => if total >= 4 { total.div_ceil(4).min(8) } else { 0 },
             Self::Gate | Self::Queen => usize::from(total >= 2),
+            Self::Factories => total.div_ceil(4).min(8),
             Self::Miners | Self::Scouts | Self::ReconMiners |
             Self::Chargers | Self::FireBarges | Self::Siege | Self::Detonators => 0,
         }).min(total.saturating_sub(1 + self.specialist_count(total)))
@@ -970,6 +975,11 @@ fn choose_mix(
                     total - 1,
                 )));
             }
+            let factories = FleetMix::Factories.support_count(total);
+            options.push((FleetMix::Factories, format!(
+                "{} fighters, {} Factories  |  Original human production hulls",
+                total - factories, factories,
+            )));
         }
         let rows = options.iter().map(|(_, title)| BattleMenuRow {
             title, status: "  [Real source hulls]", unlocked: true,
@@ -1828,7 +1838,24 @@ pub(super) fn archive(
             }
         }
     }
-    if support_count[1] > 0 && !matches!(selected.mix[1], FleetMix::Queen) {
+    if matches!(selected.mix[1], FleetMix::Factories) {
+        // The original Factory is an unarmed, immobile ship with no
+        // child lifecycle or weapon graph. Use its source physical hull
+        // and real visual asset, never invent a factory combat ability.
+        let physical: Value = serde_json::from_str(SOURCE_FACTORY)?;
+        let template = physical["ships"].as_array()
+            .and_then(|ships| ships.iter().find(|ship|
+                ship["side"] == 2 && ship["ship_type"] == 9))
+            .ok_or_else(|| invalid("native original Factory source hull missing"))?;
+        let mut factory = template.clone();
+        factory.as_object_mut()
+            .ok_or_else(|| invalid("native Factory source is not a ship object"))?
+            .remove("policy");
+        source_archetypes["ships"].as_array_mut()
+            .ok_or_else(|| invalid("native source archetypes have no physical ships"))?
+            .push(factory);
+    }
+    if support_count[1] > 0 && !matches!(selected.mix[1], FleetMix::Queen | FleetMix::Factories) {
         // The original Carrier carries both Drone and Striker combat
         // complements. Reuse the exact source-authored Drone hull and
         // weapon from the existing native game scene, discarding only
@@ -2889,7 +2916,7 @@ pub(super) fn archive(
             // this loop; a player's commander never loses input authority.
             let mission_owner = selected.objective_side == Some(side as i32 + 1);
             let orders = if supporting && mission_owner && side == 1 &&
-                !matches!(selected.mix[side], FleetMix::Queen) &&
+                !matches!(selected.mix[side], FleetMix::Queen | FleetMix::Factories) &&
                 matches!(selected.objective,
                     Objective::Extraction | Objective::Withdrawal)
             {
@@ -2900,7 +2927,7 @@ pub(super) fn archive(
                     -extraction_x, 0.0,
                 ]})]
             } else if supporting && mission_owner && side == 1 &&
-                !matches!(selected.mix[side], FleetMix::Queen) &&
+                !matches!(selected.mix[side], FleetMix::Queen | FleetMix::Factories) &&
                 matches!(selected.objective, Objective::Escort)
             {
                 // Mobile Carriers defend the moving command convoy with
