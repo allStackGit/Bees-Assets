@@ -188,6 +188,9 @@ pub struct NativeTransferMenuRow {
     /// Original hulls need source-faction and current SavedSquad
     /// provenance; purchased hulls use the existing transfer ledger.
     pub authored_from: Option<(i32, i64)>,
+    /// A complete purchased-hull squad move; individual rows leave this
+    /// absent and continue using their original one-hull command path.
+    pub batch: Option<(i32, Vec<i64>)>,
 }
 
 pub struct NativeCreateSquadMenuRow {
@@ -247,6 +250,8 @@ pub enum NativeBattleMenuAction {
         placements: Vec<NativeSavedShipPlacement> },
     Buy { side: i32, ship_type: u8, saved_squad_id: i64 },
     Transfer { fleet_ship_id: i64, to_saved_squad_id: i64 },
+    TransferBatch { side: i32, fleet_ship_ids: Vec<i64>,
+        to_saved_squad_id: i64 },
     Reassign { side: i32, fleet_ship_id: i64,
         from_saved_squad_id: i64, to_saved_squad_id: i64 },
 }
@@ -1056,14 +1061,19 @@ fn select_battle_inner(
                           formation: NativeSavedSquadFormation,
                           placements: &[NativeSavedShipPlacement]| {
                 if show_transfer {
-                    transfer_rows.get(index).map(|row| match row.authored_from {
-                        Some((side, from_saved_squad_id)) => NativeBattleMenuAction::Reassign {
+                    transfer_rows.get(index).map(|row| match (&row.batch, row.authored_from) {
+                        (Some((side, ids)), _) => NativeBattleMenuAction::TransferBatch {
+                            side: *side,
+                            fleet_ship_ids: ids.clone(),
+                            to_saved_squad_id: row.to_saved_squad_id,
+                        },
+                        (None, Some((side, from_saved_squad_id))) => NativeBattleMenuAction::Reassign {
                             side,
                             fleet_ship_id: row.fleet_ship_id,
                             from_saved_squad_id,
                             to_saved_squad_id: row.to_saved_squad_id,
                         },
-                        None => NativeBattleMenuAction::Transfer {
+                        (None, None) => NativeBattleMenuAction::Transfer {
                             fleet_ship_id: row.fleet_ship_id,
                             to_saved_squad_id: row.to_saved_squad_id,
                         },
