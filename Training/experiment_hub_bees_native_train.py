@@ -605,12 +605,26 @@ def main():
     ]
     child=None
     stopped=False
+    marker_stop=False
+    stop_file=root/"stop.request"
     def stop(_signum,_frame):
         nonlocal stopped
         if stopped: return
         stopped=True
         if child and child.poll() is None:
             child.send_signal(signal.SIGINT)
+    def observe_stop_marker():
+        nonlocal marker_stop
+        if not stop_file.exists() and not stop_file.is_symlink():
+            return False
+        if stop_file.is_symlink() or not stop_file.is_file() or (
+            stop_file.stat().st_size != 0
+        ):
+            raise RuntimeError("Bees cooperative Stop marker is not an empty regular file.")
+        marker_stop=True
+        if not stopped:
+            stop(signal.SIGINT,None)
+        return True
     signal.signal(signal.SIGINT,stop)
     signal.signal(signal.SIGTERM,stop)
     progress=EventProgress(root,job["job_id"],job["lineage_root_id"])
@@ -619,6 +633,8 @@ def main():
                                start_new_session=True)
         telemetry_error = False
         while child.poll() is None:
+            if not stopped:
+                observe_stop_marker()
             try:
                 progress.poll()
             except (OSError,ValueError,RuntimeError) as error:
@@ -647,7 +663,8 @@ def main():
             except (OSError,ValueError,RuntimeError) as error:
                 print("[Bees native Hub] Stop has no verified resumable checkpoint: "+str(error),
                       file=sys.stderr,flush=True)
-            return 130
+                return 130
+            return 0 if marker_stop else 130
         if result!=0:
             return result or 1
         record_model(root,job)
@@ -669,7 +686,9 @@ def main():
             }
             progress.poll()
             for index,case in enumerate(cases):
-                if stopped: return 130
+                if not stopped:
+                    observe_stop_marker()
+                if stopped: return 0 if marker_stop else 130
                 label,_,_,opponent=case
                 recipe=benchmark_recipe(evaluation_root,job,case,index)
                 for source,digest in (
@@ -695,8 +714,10 @@ def main():
                         cwd=str(Path(job["training_script"]).parent),
                         stdout=stream,start_new_session=True)
                     while child.poll() is None:
+                        if not stopped:
+                            observe_stop_marker()
                         time.sleep(0.25)
-                if stopped: return 130
+                if stopped: return 0 if marker_stop else 130
                 if child.returncode!=0:
                     raise RuntimeError("Independent Bees evaluation failed for "+label)
                 if output.stat().st_size>16384:
