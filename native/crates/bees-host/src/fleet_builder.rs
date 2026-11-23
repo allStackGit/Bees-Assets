@@ -1200,23 +1200,22 @@ fn choose_original_composition(
                 counts.dedup();
                 let kind = source["ship_type"].as_u64()
                     .ok_or_else(|| invalid("original mixed hull has no source class"))?;
-                let title = format!(
-                    "{} original class {kind} ships (side {}, {remaining} remaining)",
-                    if side == 0 { "Bee" } else { "Human" }, side + 1,
-                );
-                let rows = counts.iter().map(|count| BattleMenuRow {
-                    title: &title,
-                    status: if *count == 0 { "  [No ships of this class]" }
-                        else { "  [Use original physical hulls]" },
+                let codex: Value = serde_json::from_str(include_str!(
+                    "../../../assets/ship-codex.json"
+                ))?;
+                let name = codex["ships"][kind as usize]["name"].as_str()
+                    .ok_or_else(|| invalid("original mixed class has no native Codex entry"))?;
+                // Keep only a few meaningful count choices regardless of
+                // fleet size. The final class receives remaining capacity.
+                let names = counts.iter().map(|count| format!(
+                    "{count} {name}  |  {} slots remaining",
+                    remaining - count,
+                )).collect::<Vec<_>>();
+                let rows = names.iter().zip(&counts).map(|(name, count)| BattleMenuRow {
+                    title: name,
+                    status: if *count == 0 { "  [Do not include this class]" }
+                        else { "  [Real physical ships]" },
                     unlocked: true,
-                }).collect::<Vec<_>>();
-                // The native selector's row title must distinguish counts;
-                // use one menu per source class, bounded to a few choices.
-                let names = counts.iter().map(|count|
-                    format!("{count} ships  |  Original class {kind}")
-                ).collect::<Vec<_>>();
-                let rows = rows.iter().zip(&names).map(|(row, name)| BattleMenuRow {
-                    title: name, status: row.status, unlocked: true,
                 }).collect::<Vec<_>>();
                 let mut selected = counts.iter().position(|count|
                     *count == remaining / (available.len() - index)).unwrap_or(0);
