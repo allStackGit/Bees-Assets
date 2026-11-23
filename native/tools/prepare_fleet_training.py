@@ -146,7 +146,7 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
         raise ValueError("native layout must be an object")
     supported = {"clone_squads", "merge_squads", "number_squads",
                  "remove_static_ids", "add_static_boxes", "add_static_polygons",
-                 "add_map_borders", "translate_squads"}
+                 "add_map_borders", "translate_squads", "remove_squads"}
     if any(key not in supported and value not in ([], None)
            for key, value in layout.items()):
         raise ValueError("unsupported fleet layout operation; refusing a changed physical battle")
@@ -255,6 +255,43 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
                 raise ValueError("native translation requires distinct stationary ships")
             ship["position"] = move_source_position(ship["position"], offset, bounds)
             moved_ships.add(ship_id)
+
+    removals = layout.get("remove_squads", [])
+    if not isinstance(removals, list):
+        raise ValueError("native squad removals must be a list")
+    omitted_squads, omitted_ships = set(), set()
+    for squad_id in removals:
+        if (type(squad_id) is not int or squad_id <= 0 or
+                squad_id not in source_squads or squad_id in omitted_squads or
+                squad_id in moved_squads):
+            raise ValueError("invalid, repeated or translated native squad removal")
+        omitted_squads.add(squad_id)
+        for ship_id in source_squads[squad_id]["members"]:
+            ship = source_ships.get(ship_id)
+            if (ship is None or ship_id in omitted_ships or
+                    any(ship.get(key) is not None for key in
+                        ("policy", "special", "special_weapon", "drone_carrier_id"))):
+                raise ValueError("native squad removal requires distinct ordinary ships")
+            omitted_ships.add(ship_id)
+    if len(omitted_squads) == len(source_squads) and not clones:
+        raise ValueError("native layout would remove every playable squad")
+    if omitted_ships:
+        # Match native setup order. The original hull may still be used
+        # by a clone above, but surviving carrier relationships must resolve.
+        for ship in ships:
+            if ship["entity_id"] in omitted_ships:
+                continue
+            special = ship.get("special") or {}
+            if (ship.get("drone_carrier_id") in omitted_ships or
+                    special.get("kind") == "striker" and
+                    special.get("carrier_id") in omitted_ships):
+                raise ValueError("native squad removal would orphan a surviving carrier child")
+        ships[:] = [ship for ship in ships if ship["entity_id"] not in omitted_ships]
+        squads[:] = [squad for squad in squads if squad["item_id"] not in omitted_squads]
+        for ship_id in omitted_ships:
+            del ship_by_id[ship_id]
+        for squad_id in omitted_squads:
+            del squad_by_id[squad_id]
 
     # Convert the same source squad merge operation used by the live
     # Rust Level. No ship or fleet identity is added here; only command
