@@ -6133,6 +6133,34 @@ fn prepare_multiplayer_invites(save_root: &Path) -> Result<PathBuf, Box<dyn Erro
             return Err(invalid("existing multiplayer invitation does not match the host map").into());
         }
     }
+    // Read-only viewers have distinct credentials from commanders.
+    // Recover incomplete invitations from the one durable spectator map
+    // without rotating identities used by already-connected viewers.
+    let spectator_map = directory.join("host-spectator-tokens.json");
+    if !spectator_map.try_exists()? {
+        let viewers = new_multiplayer_side_tokens()?;
+        let map = json!({"1": viewers[0], "2": viewers[1]});
+        publish(&spectator_map, &serde_json::to_vec(&map)?)?;
+    }
+    let viewers = parse_host_side_tokens(
+        &read_private_multiplayer_file(&spectator_map, 2048)?,
+    )?;
+    if viewers.len() != 2 || viewers.values().any(|view_token|
+        tokens.values().any(|commander_token| commander_token == view_token))
+    {
+        return Err(invalid("read-only spectator identities must be complete and distinct from commanders").into());
+    }
+    for side in ["1", "2"] {
+        let token = viewers.get(side)
+            .ok_or_else(|| invalid("read-only spectator invite is missing a source side"))?;
+        let invite = directory.join(format!("spectator-{side}.token"));
+        if !invite.try_exists()? {
+            publish(&invite, token.as_bytes())?;
+        }
+        if read_private_multiplayer_file(&invite, 512)? != token.as_str() {
+            return Err(invalid("existing read-only invite differs from host spectator mapping").into());
+        }
+    }
     Ok(directory.to_path_buf())
 }
 
