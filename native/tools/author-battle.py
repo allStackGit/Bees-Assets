@@ -462,7 +462,8 @@ def resize_empty_arena(scene: dict, map_size: float) -> None:
 
 def native_scripted_squad_orders(scene: dict, members: list[dict],
                                  squad_index: int, ai_tactics: str,
-                                 has_beehive: bool) -> list[dict]:
+                                 has_beehive: bool,
+                                 level: dict | None = None) -> list[dict]:
     """Select existing native gameplay commands for an untrained AI squad.
 
     This is authoring only: actual target selection, movement, weapons,
@@ -476,6 +477,25 @@ def native_scripted_squad_orders(scene: dict, members: list[dict],
     special = example.get("special") or {}
     if example["base_speed"] == 0:
         return [{"kind": "hold"}]
+    mission = level or {}
+    exit_zone = mission.get("extraction")
+    escort = mission.get("escort")
+    if (isinstance(escort, dict) and
+            escort.get("escorting_side") == example["side"] and
+            any(ship["entity_id"] == escort.get("escorted_ship_id")
+                for ship in members)):
+        # An untrained original convoy still needs its real physical exit
+        # route, not a generic attack or scouting order. The canonical
+        # Level extraction collider decides delivery, not this author.
+        if (not isinstance(exit_zone, dict) or
+                exit_zone.get("player_side") != example["side"] or
+                not isinstance(exit_zone.get("center"), list) or
+                len(exit_zone["center"]) != 2 or
+                any(type(v) not in (int, float) or not math.isfinite(v)
+                    for v in exit_zone["center"])):
+            raise ValueError("original escort command needs a physical exit for its faction")
+        return [{"kind": "move_to_point",
+                 "destination": copy.deepcopy(exit_zone["center"])}]
     if example["ship_type"] == 18 and special.get("kind") == "scout":
         sights = [ship["sight"]["source_sight"] for ship in members]
         if any(not isinstance(value, (int, float)) or
@@ -512,8 +532,22 @@ def native_scripted_squad_orders(scene: dict, members: list[dict],
             orders.append({"kind": "heal_available"})
         orders.append({"kind": combat_order})
         return orders
+    if (isinstance(exit_zone, dict) and
+            exit_zone.get("player_side") == example["side"] and
+            isinstance(exit_zone.get("center"), list) and
+            len(exit_zone["center"]) == 2 and
+            all(type(v) in (int, float) and math.isfinite(v)
+                for v in exit_zone["center"])):
+        # Noncombatants evacuate through the real source exit when one
+        # exists, instead of blindly navigating toward the enemy home.
+        return [{"kind": "move_to_point",
+                 "destination": copy.deepcopy(exit_zone["center"])}]
+    homes = scene.get("starting_positions")
+    if (not isinstance(homes, list) or len(homes) != 2 or
+            not isinstance(homes[2 - example["side"]], list)):
+        raise ValueError("source mobile support requires an authored home or exit destination")
     return [{"kind": "move_to_point",
-             "destination": scene["starting_positions"][2 - example["side"]]}]
+             "destination": copy.deepcopy(homes[2 - example["side"]])}]
 
 
 def author(args) -> tuple[dict, dict, dict]:
@@ -1172,6 +1206,7 @@ def author(args) -> tuple[dict, dict, dict]:
                 scene, members, squad_index,
                 getattr(args, "ai_tactics", "aggressive"),
                 any(kind == 2 for kind, _ in requested[side]),
+                run["levels"][0],
             )
             plan = {
                 "squad_item_id": squad["item_id"],
@@ -2215,6 +2250,7 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
             scene, members, squad_index,
             getattr(args, "ai_tactics", "aggressive"),
             has_beehive[squad["side"]],
+            run["levels"][0],
         )
         queue = {
             "squad_item_id": squad_id,

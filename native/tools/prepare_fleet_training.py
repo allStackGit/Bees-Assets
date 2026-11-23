@@ -568,6 +568,7 @@ def verify_same_battle(scene: dict, run: dict,
         orders = scripted_orders(
             scene, members, squad_indices[squad_id], "aggressive",
             has_beehive[squad["side"]],
+            run["levels"][0],
         )
         allowed = {
             "squad_item_id": squad_id,
