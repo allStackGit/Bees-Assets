@@ -158,6 +158,7 @@ struct WireCounts {
     /// Frames in which the actual window edge moved the presentation camera.
     camera_edge_pan_frames: u64,
     campaign_camera_follow_frames: u64,
+    pluto_finale_camera_frames: u64,
     scout_alarm_frames: u64,
     ship_type_multiselections: u64,
     selection_drag_preview_frames: u64,
@@ -3524,6 +3525,7 @@ pub fn connect_remote_with_trust(
     let mut last_middle:Option<(f32,f32)>=None;
     let mut dialogue_key:Option<(u64,u64,u64)>=None;
     let mut dialogue_line=0usize;
+    let mut pluto_finale_camera = super::campaign_dialogue::PlutoFinaleCamera::default();
     let mut dialogue_pause_started:Option<((u64,u64,u64),usize,Instant)>=None;
     let mut dialogue_reveal_scope:Option<((u64,u64,u64),usize)>=None;
     let mut dialogue_reveal_started=Instant::now();
@@ -4100,6 +4102,8 @@ pub fn connect_remote_with_trust(
         // dialogue cursor BEFORE K's meaning is determined.
         let mut dialogue_skip_key=false;
         let mut level_intro_visible = false;
+        let finale_focus = peer.state.as_ref().and_then(|state|
+            point_from_wire(&state["campaign_dialogue"]["finale_focus"]));
         if let Some(state)=peer.state.as_ref() {
             let cue=state["campaign_dialogue"]["sequence"].as_u64().map(|sequence|(
                 state["world_id"].as_u64().unwrap_or(0),
@@ -4108,6 +4112,7 @@ pub fn connect_remote_with_trust(
             let first_presentation=cue.is_some()&&cue!=dialogue_key;
             if cue!=dialogue_key {
                 dialogue_key=cue;dialogue_line=0;dialogue_pause_started=None;
+                pluto_finale_camera = Default::default();
             }
             let count=state["campaign_dialogue"]["line_count"]
                 .as_u64().unwrap_or(0).min(100) as usize;
@@ -4140,7 +4145,7 @@ pub fn connect_remote_with_trust(
                                     message.chars().count() as f32);
                     if incomplete {
                         dialogue_reveal_forced = true;
-                    } else {
+                    } else if finale_focus.is_none() || !pluto_finale_camera.waiting_on_camera(dialogue_line) {
                         dialogue_line=(dialogue_line+1).min(count);
                     }
                 }
@@ -4379,6 +4384,7 @@ pub fn connect_remote_with_trust(
             hud_press=None;squad_tab_press=None;shooting_press=None;
             minimap_dragging=false;
         }
+        let finale_camera_before_input = camera;
         if !show_controls_help && surrender_confirmation.is_none() {
         if let Some(mut cam)=camera {
             let authored_zoom=peer.state.as_ref().and_then(camera_zoom_limits);
@@ -5071,10 +5077,24 @@ pub fn connect_remote_with_trust(
                 }
             }
         }
-        let finale_focus = peer.state.as_ref().and_then(|state|
-            point_from_wire(&state["campaign_dialogue"]["finale_focus"]));
         let finale_reveal = finale_focus.is_some() &&
             dialogue_line >= super::campaign_dialogue::PLUTO_FINALE_REVEAL_LINE;
+        if let (Some(focus), Some(cam), Some(state)) =
+            (finale_focus.filter(|_| finale_reveal), camera.as_mut(), peer.state.as_ref())
+        {
+            if let Some(map) = bounds(state) {
+                let count = state["campaign_dialogue"]["line_count"].as_u64().unwrap_or(0) as usize;
+                let skipped = dialogue_line >= count;
+                if let Some(prior) = finale_camera_before_input.filter(|_| !skipped) {
+                    *cam = prior;
+                }
+                if pluto_finale_camera.advance(cam, focus, map, (FIELD, HEIGHT), elapsed, skipped) {
+                    peer.metrics.pluto_finale_camera_frames += 1;
+                }
+            }
+        } else {
+            pluto_finale_camera = Default::default();
+        }
         let visual_fraction = peer.visual.fraction();
         if visual_fraction < 1.0 && !peer.visual.previous.is_empty() {
             peer.metrics.interpolated_draw_frames += 1;
@@ -5634,6 +5654,7 @@ pub fn connect_remote_with_trust(
         "minimap_camera_moves":peer.metrics.minimap_camera_moves,
         "camera_edge_pan_frames":peer.metrics.camera_edge_pan_frames,
         "campaign_camera_follow_frames":peer.metrics.campaign_camera_follow_frames,
+        "pluto_finale_camera_frames":peer.metrics.pluto_finale_camera_frames,
         "scout_alarm_frames":peer.metrics.scout_alarm_frames,
         "ship_type_multiselections":peer.metrics.ship_type_multiselections,
         "selection_drag_preview_frames":peer.metrics.selection_drag_preview_frames,

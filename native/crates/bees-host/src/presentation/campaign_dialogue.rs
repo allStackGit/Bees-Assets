@@ -5,6 +5,46 @@ use bees_gameplay::campaign_dialogue::{CampaignCue, UploadMilestone};
 // Tom's first sighting begins the source fleet reveal.
 pub(crate) const PLUTO_FINALE_REVEAL_LINE: usize = 2;
 
+#[cfg(feature = "client")]
+#[derive(Default)]
+pub(crate) struct PlutoFinaleCamera {
+    elapsed_seconds: f32,
+    reached_focus: bool,
+}
+
+#[cfg(feature = "client")]
+impl PlutoFinaleCamera {
+    // The last warning precedes the fleet reaction by one camera move.
+    pub(crate) fn waiting_on_camera(&self, line: usize) -> bool {
+        line == PLUTO_FINALE_REVEAL_LINE + 1 && !self.reached_focus
+    }
+
+    pub(crate) fn advance(
+        &mut self, camera: &mut super::NativeCamera, focus: bees_sim::geometry::Vec2,
+        bounds: bees_sim::collision::Aabb, viewport: (usize, usize),
+        elapsed: f32, skipped: bool,
+    ) -> bool {
+        if self.reached_focus { return false; }
+        let (width, height) = viewport;
+        let mut target = *camera;
+        target.center = focus;
+        target.constrain_to_map(bounds, width, height);
+
+        let before = camera.center;
+        let delta = target.center - before;
+        self.elapsed_seconds += elapsed;
+        if skipped || delta.length_squared() <= 1.0 || self.elapsed_seconds >= 10.0 {
+            camera.center = target.center;
+            self.reached_focus = true;
+        } else {
+            // Unity Stage uses a 0.5 * deltaTime interpolation step.
+            camera.center += delta * (0.5 * elapsed).clamp(0.0, 1.0);
+            camera.constrain_to_map(bounds, width, height);
+        }
+        camera.center != before
+    }
+}
+
 pub(super) fn gunship_attack_prompt(selected: bool) -> &'static str {
     if selected {
         "Choose Attack on Sight to let Tom fire"

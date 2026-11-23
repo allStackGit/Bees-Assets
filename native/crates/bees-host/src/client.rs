@@ -184,6 +184,7 @@ pub struct NativeClient {
     dialogue_reveal: Option<(u32, usize, Instant)>,
     dialogue_reveal_forced: bool,
     dialogue_visible: bool,
+    pluto_finale_camera: crate::presentation::campaign_dialogue::PlutoFinaleCamera,
     held_fire_target: Option<Vec2>,
     /// User-pinned range display; the source combined gesture adds only a
     /// transient overlay and cannot alter this independent preference.
@@ -257,6 +258,7 @@ pub struct NativeClient {
     pub minimap_camera_moves: u64,
     pub camera_pan_frames: u64,
     pub campaign_camera_follow_frames: u64,
+    pub pluto_finale_camera_frames: u64,
     pub scout_alarm_frames: u64,
     pub camera_wheel_pans: u64,
     pub camera_boundary_clamps: u64,
@@ -320,6 +322,7 @@ impl NativeClient {
             dialogue_line: 0,
             dialogue_pause_started: None, dialogue_reveal: None,
             dialogue_reveal_forced: false, dialogue_visible: false,
+            pluto_finale_camera: Default::default(),
             held_fire_target: None,
             range_overlay_pinned: false,
             selection_drag: None, minimap_dragging: false,
@@ -356,7 +359,7 @@ impl NativeClient {
             numbered_squad_rows_drawn: 0,
             striker_bomb_indicators_drawn: 0,
             minimap_camera_moves: 0, camera_pan_frames: 0, campaign_camera_follow_frames: 0,
-            scout_alarm_frames: 0,
+            scout_alarm_frames: 0, pluto_finale_camera_frames: 0,
             camera_wheel_pans: 0, camera_boundary_clamps: 0,
             camera_zoom_clamps: 0, numbered_shortcut_selections: 0,
             cycled_shortcut_selections: 0,
@@ -964,6 +967,8 @@ impl NativeClient {
         // opposing commander is currently inspecting the shared World.
         let dialogue_for_viewer = view.campaign_dialogue_side.is_none_or(|side|
             view.player_authority.player_viewer_side() == Some(side));
+        let finale_focus = view.player_authority.player_viewer_side()
+            .and_then(|side| view.pluto_finale_focus_for(side));
         let dialogue = view.campaign_dialogue
             .filter(|_| dialogue_for_viewer)
             .and_then(|(sequence, cue)| {
@@ -972,6 +977,7 @@ impl NativeClient {
                 self.dialogue_sequence = Some(sequence);
                 self.dialogue_line = 0;
                 self.dialogue_pause_started = None;
+                self.pluto_finale_camera = Default::default();
             }
             let count = crate::presentation::campaign_dialogue::line_count(cue);
             if self.dialogue_reveal.as_ref().is_none_or(|(prior, index, _)|
@@ -994,7 +1000,9 @@ impl NativeClient {
                     });
                 if incomplete {
                     self.dialogue_reveal_forced = true;
-                } else {
+                } else if finale_focus.is_none() ||
+                    !self.pluto_finale_camera.waiting_on_camera(self.dialogue_line)
+                {
                     self.dialogue_line += 1;
                 }
             }
@@ -1041,10 +1049,10 @@ impl NativeClient {
         self.dialogue_visible = dialogue.is_some();
         self.renderer.hide_terminal_banner = dialogue.is_some_and(|(cue, _, _)|
             cue == bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyVictory);
-        let finale_focus = view.player_authority.player_viewer_side()
-            .and_then(|side| view.pluto_finale_focus_for(side));
         self.renderer.pluto_finale_reveal = finale_focus.is_some() &&
             self.dialogue_line >= crate::presentation::campaign_dialogue::PLUTO_FINALE_REVEAL_LINE;
+        let finale_camera_before_input = (self.renderer.pluto_finale_reveal && self.dialogue_visible)
+            .then_some(self.renderer.camera);
         self.audio.set_level_intro_ambience(
             dialogue.is_some_and(|(cue, _, _)| cue.is_level_intro()),
         );
@@ -1349,6 +1357,18 @@ impl NativeClient {
                 self.camera_wheel_pans += 1;
             }
             }
+        }
+        if let Some(focus) = finale_focus.filter(|_| self.renderer.pluto_finale_reveal) {
+            if let Some(camera) = finale_camera_before_input {
+                self.renderer.camera = camera;
+            }
+            if self.pluto_finale_camera.advance(
+                &mut self.renderer.camera, focus, bounds, (width, height), elapsed, !self.dialogue_visible,
+            ) {
+                self.pluto_finale_camera_frames += 1;
+            }
+        } else {
+            self.pluto_finale_camera = Default::default();
         }
         if let Some((_, position)) = view.player_authority.player_viewer_side()
             .and_then(|side| view.campaign_camera_subject_for(side))
