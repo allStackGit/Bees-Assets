@@ -5363,12 +5363,12 @@ class ExperimentHub {
             j.project_id==='bees_native'&&j.frozen_parameters?.wan_actors>0&&
             j.resource_bundle?.index===1&&
             ['running','launch_requested','unverified'].includes(j.status))) {
-            const failed=next.jobs.find(child=>
+            const ended=next.jobs.find(child=>
                 child.project_id==='bees_rollout'&&
                 child.frozen_parameters?.learner_job_id===learner.id&&
                 child.resource_bundle?.id===learner.resource_bundle.id&&
-                child.status==='failed');
-            if(!failed)continue;
+                ['finished','stopped','failed'].includes(child.status));
+            if(!ended)continue;
             const lease=next.reservations.find(item=>
                 item.id===learner.lease_id&&item.job_id===learner.id&&
                 item.machine_id===learner.assigned_machine_id&&
@@ -5378,8 +5378,8 @@ class ExperimentHub {
             if(!lease||!learner.dispatch_id)continue;
             learner.status='stop_requested';
             learner.stop_requested_at=now();
-            learner.status_reason='Bees WAN actor '+failed.id.slice(-8)+
-                ' failed; saving the authoritative learner checkpoint and stopping the distributed group.';
+            learner.status_reason='Bees WAN actor '+ended.id.slice(-8)+
+                ' ended ('+ended.status+'); saving the authoritative checkpoint and stopping the incomplete distributed group.';
             changed=true;
         }
         if(this.reconcileDistributedAborts(next))changed=true;
