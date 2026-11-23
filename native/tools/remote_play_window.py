@@ -122,6 +122,21 @@ class RemoteBattleWindow:
             state="disabled",
         )
         self.rejoin_button.pack(side="left", padx=10)
+        self.pause_button = ttk.Button(
+            self.footer_controls, text="Pause", command=self.toggle_pause,
+            state="disabled",
+        )
+        self.step_button = ttk.Button(
+            self.footer_controls, text="Step tick", command=lambda:
+            self.request_host_clock("step"), state="disabled",
+        )
+        self.speed_button = ttk.Button(
+            self.footer_controls, text="Cycle speed", command=lambda:
+            self.request_host_clock("speed"), state="disabled",
+        )
+        if not console.spectator:
+            for button in (self.pause_button, self.step_button, self.speed_button):
+                button.pack(side="left", padx=3)
         self.surrender_button = ttk.Button(
             self.footer_controls, text="Concede battle", command=self.surrender,
             state="disabled",
@@ -364,6 +379,20 @@ class RemoteBattleWindow:
             self.surrender_button.state(["disabled"])
         except (ValueError, OSError) as error:
             self.notice(f"Surrender unavailable: {error}")
+
+    def request_host_clock(self, command):
+        if not self.console.time_controls_available:
+            self.notice("Dedicated native host clock controls are unavailable")
+            return
+        try:
+            self.console.time_control(command, self.state)
+        except (OSError, ValueError) as error:
+            self.notice(f"Host clock request rejected: {error}")
+
+    def toggle_pause(self):
+        self.request_host_clock(
+            "resume" if self.console.pause_owned else "pause"
+        )
 
     def rejoin(self):
         # A manual attempt can restart an expired recovery window. All
@@ -649,6 +678,31 @@ class RemoteBattleWindow:
                     self.status.set(
                         f"World {key[0]}, episode {key[1]}, tick {key[2]}{latency}"
                     )
+        can_host_clock = (
+            not self.console.spectator and self.console.alive and
+            self.console.time_controls_available and state is not None and
+            state.get("terminal_outcome") is None and
+            self.console.battle_receipt_snapshot() is None
+        )
+        self.pause_button.configure(
+            text="Resume" if self.console.pause_owned else "Pause"
+        )
+        self.pause_button.state(
+            ["!disabled"] if can_host_clock else ["disabled"]
+        )
+        self.step_button.state(
+            ["!disabled"] if can_host_clock and self.console.pause_owned
+            else ["disabled"]
+        )
+        speed = state.get("game_speed") if state else None
+        self.speed_button.configure(
+            text=f"Cycle speed ({speed:g}x)"
+            if isinstance(speed, (int, float)) and math.isfinite(speed)
+            else "Cycle speed"
+        )
+        self.speed_button.state(
+            ["!disabled"] if can_host_clock else ["disabled"]
+        )
         can_surrender = (
             not self.console.spectator and self.console.alive and
             state is not None and state.get("can_surrender") is True and
