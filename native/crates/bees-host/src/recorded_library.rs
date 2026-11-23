@@ -51,7 +51,7 @@ fn complete_trace(path: &Path) -> io::Result<bool> {
     let start = len.saturating_sub(4096);
     file.seek(SeekFrom::Start(start))?;
     let mut tail = Vec::new();
-    file.read_to_end(&mut tail)?;
+    file.take(len - start).read_to_end(&mut tail)?;
     // Read raw bytes because this bounded tail may begin in the middle
     // of a UTF-8 player chat/notice. The complete final JSON line is
     // parsed only after splitting on newline boundaries.
@@ -70,18 +70,20 @@ fn complete_trace(path: &Path) -> io::Result<bool> {
 /// the final replay footer is synced. Restore only that proven projection,
 /// through the same terminal host writer lease; never rerun the battle or
 /// alter campaign progress while scanning the saved replay library.
-fn complete_or_recover_trace(run: &Path) -> io::Result<bool> {
+fn complete_or_recover_trace(run: &Path) -> bool {
     let trace = run.join("player-inputs.jsonl");
-    if complete_trace(&trace).unwrap_or(false) { return Ok(true); }
+    if complete_trace(&trace).unwrap_or(false) { return true; }
     if run.join("rollout-summary.json").is_file() &&
         run.join("native-host-checkpoint.json").is_file()
     {
-        super::terminal_recording::complete_committed_recording(run)
-            .map_err(|error| io::Error::other(format!(
-                "native terminal replay finalization ({}): {error}", run.display(),
-            )))?;
+        if let Err(error) = super::terminal_recording::complete_committed_recording(run) {
+            // One interrupted or damaged battle must not hide the rest of
+            // the player's recordings. The terminal writer still owns recovery.
+            eprintln!("Native terminal replay finalization ({}): {error}", run.display());
+            return false;
+        }
     }
-    Ok(complete_trace(&trace).unwrap_or(false))
+    complete_trace(&trace).unwrap_or(false)
 }
 
 /// Enumerate one known game's numbered battle folders. Shared by
@@ -114,7 +116,7 @@ fn completed_quick_battles(directory: &Path)
         if !fs::symlink_metadata(&run_dir)
             .is_ok_and(|meta| meta.file_type().is_dir()) { continue; }
         let trace = run_dir.join("player-inputs.jsonl");
-        if complete_or_recover_trace(&run_dir)? {
+        if complete_or_recover_trace(&run_dir) {
             completed.push((number, folder, trace));
             if completed.len() == 256 { break; }
         }
@@ -194,15 +196,7 @@ pub(super) fn list_fleet_builds(save_root: &Path) -> io::Result<Vec<RecordedBatt
     let directory = save_root.join("battles").join(game_id);
     let mut clips = Vec::new();
     for (number, folder, trace) in completed_quick_battles(&directory)? {
-        let run = folder.join("replay-source-run.json");
-        let scene = folder.join("replay-source-scene.json");
-        if [(&run, 1024 * 1024_u64), (&scene, 4 * 1024 * 1024_u64)]
-            .iter().any(|(file, max_size)|
-                !fs::symlink_metadata(file).is_ok_and(|metadata|
-                    metadata.file_type().is_file() && metadata.len() <= *max_size))
-        {
-            continue;
-        }
+        let Some(run) = frozen_quick_battle_source(&folder) else { continue; };
         clips.push(RecordedBattle {
             title: format!("Fleet Skirmish  |  Battle {number:06}"),
             status: "  [Custom replay]".to_owned(),
@@ -294,7 +288,7 @@ fn list_career_replays(
             if !fs::symlink_metadata(&run)
                 .is_ok_and(|meta| meta.file_type().is_dir()) { continue; }
             let trace = run.join("player-inputs.jsonl");
-            if !complete_or_recover_trace(&run)? { continue; }
+            if !complete_or_recover_trace(&run) { continue; }
 
             let setup = battle_path.join("campaign-replay-setup.json");
             let Ok(metadata) = fs::symlink_metadata(&setup) else { continue };
