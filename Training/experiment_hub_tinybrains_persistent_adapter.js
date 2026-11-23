@@ -81,6 +81,9 @@ const TINYBRAINS_METRIC_CATALOG={
         'states_per_microbatch','learning_rate','gae_lambda','rss_mb',
         'training_wins','training_losses','training_draws',
         'training_completed_matches','training_win_rate','training_score_rate',
+        'training_matches_2p','training_matches_4p','training_matches_6p',
+        'training_share_2p','training_share_4p','training_share_6p',
+        'training_distinct_maps','training_map_coverage_ratio',
         'training_mean_score','training_mean_score_margin',
         'training_scored_matches','training_opponent_margin_matches',
         'training_mean_match_turns','food_gathered_exact',
@@ -121,6 +124,37 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     add('total_ppo_updates',row.update,'count');
     add('engine_steps',row.engine_steps,'count');
     add('simulation_match_steps',row.simulation_match_steps,'count');
+    // Actual completed learner matches across collectors, not map inventory.
+    // Old runs without these counters remain unchanged.
+    const classes=row.training_player_count_counts;
+    if(classes&&typeof classes==='object'&&!Array.isArray(classes)&&
+        Object.keys(classes).every(name=>['2p','4p','6p'].includes(name))&&
+        Object.values(classes).every(value=>Number.isSafeInteger(value)&&value>=0)) {
+        const total=Object.values(classes).reduce((sum,value)=>sum+value,0);
+        for(const name of ['2p','4p','6p']) {
+            const count=classes[name]||0;
+            add('training_matches_'+name,count,'count');
+            if(total)add('training_share_'+name,count/total,'ratio');
+        }
+    }
+    const maps=row.training_map_counts;
+    if(maps&&typeof maps==='object'&&!Array.isArray(maps)&&
+        Object.keys(maps).length<=128&&
+        Object.entries(maps).every(([id,value])=>
+            /^[a-z0-9_-]{1,48}$/.test(id)&&
+            Number.isSafeInteger(value)&&value>0)) {
+        add('training_distinct_maps',Object.keys(maps).length,'count');
+        const configured=Array.isArray(row.training_maps)?row.training_maps.length:0;
+        if(configured&&configured<=128)
+            add('training_map_coverage_ratio',
+                Object.keys(maps).length/configured,'ratio');
+        // Per-board fields are sparse: never invent zero for an unobserved
+        // board. Complete native history retains every individual match.
+        for(const [id,count] of Object.entries(maps)) {
+            const key='training_map_'+id.replace(/-/g,'_');
+            if(key.length<=64)add(key,count,'count');
+        }
+    }
     if(updateWall!==null&&updateWall>0) {
         add('update_wall_time',updateWall,'seconds');
         add('engine_steps_per_second',row.engine_steps/updateWall,'rate');

@@ -265,6 +265,14 @@ const HUB_METRIC_DESCRIPTIONS=Object.freeze({
     training_score_rate: "Wins plus half-weighted draws divided by completed matches. Tracks training outcomes, but opponent rotation can change difficulty.",
     training_win_rate: "Wins divided by wins, losses and draws. Use with match count and opponent difficulty; unlike score rate, draws earn no credit.",
     training_completed_matches: "Wins + losses + draws reported by the trainer. The denominator for win/score rates; small samples make rates unstable.",
+    training_matches_2p: "Completed 2-player learner matches in this PPO update, across all collectors. These are observed games, not configured boards.",
+    training_matches_4p: "Completed 4-player learner matches in this PPO update, across all collectors.",
+    training_matches_6p: "Completed 6-player learner matches in this PPO update, across all collectors.",
+    training_share_2p: "2-player share of completed matches in this update. Compare sustained values with the map inventory and throughput.",
+    training_share_4p: "4-player share of completed matches in this update.",
+    training_share_6p: "6-player share of completed matches in this update.",
+    training_distinct_maps: "Number of different maps represented by completed learner matches in this PPO update.",
+    training_map_coverage_ratio: "Distinct completed-match maps divided by configured maps in this PPO update; use multiple updates for cumulative exposure.",
     training_mean_score_margin: "Learner score minus the mean opponent score, averaged over matches with valid scores for both sides. Above zero indicates a scoring edge.",
     training_wins: "Won matches in the reported training update. Compare as a fraction of all completed matches, not as a standalone success count.",
     training_losses: "Lost matches in the reported update. A rise may reflect harder opponents or more matches, not necessarily worse play.",
@@ -564,6 +572,9 @@ function hubMetricDescription(name,units=[]) {
         return 'Project-reported independent evaluation measurement at a verified checkpoint. Compare only matching frozen suites and units.';
     }
     if(Object.hasOwn(HUB_METRIC_DESCRIPTIONS,name))return HUB_METRIC_DESCRIPTIONS[name];
+    if(/^training_map_[a-z0-9_]{1,48}$/.test(name))
+        return 'Completed learner matches on '+name.slice('training_map_'.length)
+            .replaceAll('_','-')+' in this PPO update. Missing samples are not measured zeros.';
     const gpu=/^host_gpu_(\d+)_(busy_pct|used_vram_mb|temperature_c|hotspot_temperature_c|power_w)$/.exec(name);
     if(gpu)return 'Physical GPU '+gpu[1]+': '+HUB_GPU_METRIC_SUFFIXES[gpu[2]];
     const collector=/^collector_(\d+)_(.+)$/.exec(name);
