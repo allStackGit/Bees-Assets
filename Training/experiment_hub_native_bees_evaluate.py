@@ -178,6 +178,7 @@ def source_inputs(suite_file: Path, suite: dict):
             if file_sha256(scene) != expected_scenes[name]:
                 raise ValueError(f"Native holdout physical scene changed: {name}")
     teams_by_scene = {}
+    original_groups_by_scene = {}
     for name, scene in scenes_by_name.items():
         snapshot = json.loads(read_bounded(scene, 8 * 1024 * 1024))
         if (not isinstance(snapshot, dict) or
@@ -198,18 +199,36 @@ def source_inputs(suite_file: Path, suite: dict):
                     "Original source holdout must have authentic or explicitly "
                     "native-authored episode and group provenance"
                 )
+            source_agents = set()
             for member in episode["group_participants"]:
                 if (not isinstance(member, dict) or
                         type(member.get("ship_id")) is not int or
                         type(member.get("side")) is not int or
                         type(member.get("team_id")) is not int or
                         type(member.get("agent_id")) is not int or
-                        member["agent_id"] <= 0):
-                    raise ValueError("Original source group contains an invalid policy Agent")
+                        member["agent_id"] <= 0 or
+                        member["agent_id"] in source_agents):
+                    raise ValueError("Original source group contains a duplicate or invalid Agent")
+                source_agents.add(member["agent_id"])
                 key = member["ship_id"]
+                if key == 0:
+                    # An actual captured Unity MA-POCA group can include
+                    # temporarily unbound Agent instances. The Rust source
+                    # importer preserves these legitimate participants
+                    # without assigning them a fabricated physical ship.
+                    # A native-authored episode never creates an unbound
+                    # placeholder in the first place.
+                    if snapshot.get("native_policy_authored_episode") is True:
+                        raise ValueError("Native-authored holdout group has an unbound Agent")
+                    continue
                 if key in source_members:
                     raise ValueError("Original source group has duplicate physical Agent ownership")
                 source_members[key] = member
+            original_groups_by_scene[name] = (
+                episode["episode_number"],
+                sorted((member["side"], member["agent_id"])
+                       for member in episode["group_participants"]),
+            )
         teams_by_side = {}
         bound_sources = set()
         for ship in snapshot["ships"]:
@@ -257,6 +276,22 @@ def source_inputs(suite_file: Path, suite: dict):
         routed = level.get("model_slots")
         if not isinstance(routed, dict):
             raise ValueError("Every native evaluation Level requires explicit model slots.")
+        if level["scene"] in original_groups_by_scene:
+            source_episode, agents = original_groups_by_scene[level["scene"]]
+            group = level.get("groups")
+            if (not isinstance(group, dict) or
+                    group.get("episode_number") != source_episode or
+                    not isinstance(group.get("participants"), list) or
+                    not all(isinstance(item, dict) and
+                            type(item.get("side")) is int and
+                            type(item.get("agent_id")) is int
+                            for item in group["participants"]) or
+                    sorted((item["side"], item["agent_id"])
+                           for item in group["participants"]) != agents):
+                raise ValueError(
+                    "Original source Level MA-POCA group does not match "
+                    "the frozen physical scene's registered Agent identities"
+                )
         for side, teams in teams_by_scene[level["scene"]].items():
             for team in teams:
                 model_slot = routed.get(str(team))
