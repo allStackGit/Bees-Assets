@@ -89,7 +89,79 @@ function pruneLearnerPythonRuntimes(extraExecutables = [], keepNewest = 3) {
     pruneDirectories(base, referencedLearnerRoots(extraExecutables), keepNewest);
 }
 
+function externalLearnerPython(config) {
+    // A ROCm torch install must be supplied by the Linux operator, not
+    // overwritten with the CUDA-only Windows requirements. Never modify this
+    // environment or add it to the managed runtime pruning set.
+    const supplied = String(process.env.BEES_LEARNER_PYTHON || config.learnerPython || '').trim();
+    if (!supplied) return '';
+    if (!path.isAbsolute(supplied)) {
+        throw Error('BEES_LEARNER_PYTHON / learnerPython must be an absolute Python executable path.');
+    }
+    const executable = path.resolve(supplied);
+    if (!exists(executable) || !fs.statSync(executable).isFile()) {
+        throw Error('Configured learner Python executable is missing: ' + executable);
+    }
+    return executable;
+}
+
+function preflightExternalLearner(executable, config) {
+    const device = String(config.learnerDevice || 'cuda').toLowerCase();
+    if (!['cpu', 'cuda'].includes(device)) throw Error('Bees learner device must be cpu or cuda.');
+    const probe = [
+        'import json,sys,importlib.metadata as metadata',
+        'import numpy,torch,mlagents,mlagents_envs,onnxruntime,psutil',
+        'if sys.version_info[:2]!=(3,10): raise RuntimeError("Bees ML-Agents learner requires Python 3.10")',
+        'version=metadata.version("mlagents")',
+        'if version!="1.1.0": raise RuntimeError("Bees requires mlagents==1.1.0, got "+version)',
+        'if int(numpy.__version__.split(".")[0])>=2: raise RuntimeError("Bees requires numpy<2")',
+        'gpu=torch.cuda.is_available()',
+        'if sys.argv[1]=="cuda" and not gpu: raise RuntimeError("Selected GPU learner has no accessible CUDA/ROCm PyTorch device")',
+        'backend="rocm" if getattr(torch.version,"hip",None) else ("cuda" if gpu else "cpu")',
+        'print(json.dumps({"python":sys.executable,"torch":torch.__version__,"mlagents":version,',
+        '  "numpy":numpy.__version__,"device":sys.argv[1],"backend":backend,',
+        '  "hip":getattr(torch.version,"hip",None),"gpus":torch.cuda.device_count() if gpu else 0}))',
+    ].join('\n');
+    let result;
+    try {
+        result = invokePythonJson(executable, ['-c', probe, device]);
+    } catch (error) {
+        throw Error(
+            'Configured Bees learner Python failed compatibility preflight: ' +
+            String(error.message || error) +
+            '. Use a dedicated Python 3.10 environment containing ML-Agents 1.1.0 ' +
+            'and a working ROCm-enabled PyTorch install; it will not be modified automatically.'
+        );
+    }
+    if (process.platform === 'linux' && device === 'cuda' && result.backend !== 'rocm') {
+        console.warn(
+            'Linux Bees learner uses a non-ROCm GPU backend (' + result.backend +
+            '); verify that the selected accelerator is intended.'
+        );
+    }
+    console.log(
+        'External Bees learner: Python ' + result.python +
+        ' torch=' + result.torch +
+        ' backend=' + result.backend +
+        ' device=' + result.device +
+        ' visible_gpus=' + result.gpus
+    );
+    return result;
+}
+
 function ensureLearnerPython(config, requirementsRoot = '') {
+    const external = externalLearnerPython(config);
+    if (external) {
+        preflightExternalLearner(external, config);
+        return external;
+    }
+    if (process.platform === 'linux') {
+        throw Error(
+            'Linux Bees learner requires an explicitly configured ROCm/CPU Python ' +
+            'environment. Set BEES_LEARNER_PYTHON to its absolute Python 3.10 executable; ' +
+            'the CUDA-pinned Windows learner requirements will not be installed on Linux.'
+        );
+    }
     const root = requirementsRoot ? path.resolve(requirementsRoot) : path.join(paths.assetsRoot, 'Training');
     const learnerRequirements = path.join(root, 'bees_learner_requirements.txt');
     const remoteRequirements = path.join(root, 'bees_remote_requirements.txt');
