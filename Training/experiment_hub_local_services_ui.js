@@ -163,6 +163,10 @@
             if(admissionBlocked&&!item.running)
                 status.textContent+=' · Admission deferred: '+
                     (info.evaluation_capacity?.reason||'local resource capacity unavailable');
+            const automaticIssue=(info.automatic_schedule_issues?.[item.project]||[])
+                .find(issue=>item.suite_id&&issue.startsWith(item.suite_id+': '));
+            if(automaticIssue&&!item.active)
+                status.textContent+=' · Automatic activation: '+automaticIssue.slice(item.suite_id.length+2);
             line.append(title,status);
             if(item.managed&&item.project==='tinybrains'&&
                 (item.id.endsWith('-season')||item.id.startsWith('history-')||item.id.startsWith('mix-'))) {

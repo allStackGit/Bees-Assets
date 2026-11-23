@@ -311,4 +311,23 @@ async function action(hub,value) {
     }else await systemctl([value.action,units.timer]);
     return {message:'Courier evaluation '+value.action+' accepted; training is unaffected.'};
 }
-module.exports={status,action};
+async function ensureJobSchedules(hub,machine,suiteIds) {
+    const o=configuration(hub);
+    if(o.machine!==machine)throw Error('Evaluator machine identity changed.');
+    const issues=[];
+    for(const suite of new Set(suiteIds)) {
+        try {
+            if(suite!==o.suiteId)throw Error('No installed approved Courier scheduler matches this frozen suite.');
+            const units=unitPaths(o);
+            const current=await state(units.timer);
+            if(current.LoadState==='loaded'&&current.ActiveState==='active')continue;
+            const approved=approvedUnits(o,definition(o));
+            if(!hub.evaluationTargets('courier',machine,suite).length)continue;
+            await systemctl(['start',approved.timer]);
+        }catch(error) {
+            issues.push(suite+': '+String(error.message||error).slice(0,200));
+        }
+    }
+    return issues;
+}
+module.exports={status,action,ensureJobSchedules};

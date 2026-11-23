@@ -876,6 +876,8 @@ class PinnedGpuStaging:
         self._pending = deque()
         self._pending_bytes = 0
         self._free_pinned = []
+        self._free_events = []
+        self.events_allocated = self.events_reused = 0
         self._pinned_total_bytes = 0
         self._known_banks = set()
         self._closed = False
@@ -906,6 +908,7 @@ class PinnedGpuStaging:
             self._pending.popleft()
             self._pending_bytes -= size
             self._free_pinned.append(pinned)
+            self._free_events.append(event)
 
     def _checkout(self, source):
         self._reap_completed()
@@ -933,6 +936,7 @@ class PinnedGpuStaging:
             pinned,event,size = self._pending.popleft()
             event.synchronize()
             self._pending_bytes -= size
+            self._free_events.append(event)
             if pinned.dtype==source.dtype and pinned.numel()==source.numel():
                 self.pinned_reuses += 1
                 if pinned.shape!=source.shape:
@@ -983,16 +987,24 @@ class PinnedGpuStaging:
         if identity not in self._known_banks:
             self._copy_stream.wait_stream(torch.cuda.current_stream(self.device))
             self._known_banks.add(identity)
+        event = None
         try:
             with torch.cuda.stream(self._copy_stream):
                 destination.copy_(pinned,non_blocking=True)
-                event = torch.cuda.Event()
+                if self._free_events:
+                    event = self._free_events.pop()
+                    self.events_reused += 1
+                else:
+                    event = torch.cuda.Event()
+                    self.events_allocated += 1
                 event.record(self._copy_stream)
             destination.record_stream(self._copy_stream)
         except (RuntimeError,NotImplementedError):
             # A partially submitted DMA must finish before its host
             # staging buffer is released or rewritten by another request.
             self._copy_stream.synchronize()
+            if event is not None:
+                self._free_events.append(event)
             self._free_pinned.append(pinned)
             destination.copy_(source)
             self.direct_bytes += nbytes
@@ -1046,6 +1058,7 @@ class PinnedGpuStaging:
             pinned,event,size = self._pending.popleft()
             self._pending_bytes -= size
             self._free_pinned.append(pinned)
+            self._free_events.append(event)
         self._pending_bytes = 0
         self._known_banks.clear()
 
@@ -1064,6 +1077,7 @@ class PinnedGpuStaging:
         self.finish_update()
         self._closed = True
         self._free_pinned.clear()
+        self._free_events.clear()
         self._pinned_total_bytes = 0
         self._copy_stream = None
 
@@ -1095,7 +1109,7 @@ class ImmutableGpuScalarBank:
         self._source=None
         self.rows=self.saved_bytes=self.gather_calls=0
 
-    def stage(self, record_keys, columns):
+    def stage(self, record_keys, columns, *, packed=None):
         if (not isinstance(record_keys,(list,tuple)) or
                 not isinstance(columns,(list,tuple)) or len(columns)<2 or
                 not all(isinstance(t,torch.Tensor) and t.ndim==1
@@ -1112,8 +1126,19 @@ class ImmutableGpuScalarBank:
         wanted=len(record_keys)*len(columns)*first.element_size()
         if wanted>self.max_bytes:
             return False
+        if packed is not None and (
+                not isinstance(packed,torch.Tensor) or packed.ndim!=2 or
+                packed.shape!=(len(record_keys),len(columns)) or
+                packed.device!=first.device or packed.dtype!=first.dtype or
+                not packed.is_contiguous() or packed.requires_grad):
+            return False
         try:
-            combined=torch.stack(columns,dim=1)
+            # The learner already keeps one immutable packed scalar bank
+            # for its own shape-group gathers. Reuse it as the peer-DMA
+            # source instead of launching a second full-rollout torch.stack.
+            # Column identity/order is the trusted trainer's contract.
+            combined=(packed if packed is not None else
+                      torch.stack(columns,dim=1))
             producer=torch.cuda.current_stream(first.device)
             # The copy is enqueued on the DESTINATION device's current
             # stream, which may differ from the stream later chosen by its
@@ -1838,6 +1863,12 @@ class PersistentGpuForwardPool:
         self.prepared_calls = 0
         self.owner_inline_prepared_calls = 0
         self.owner_inline_direct_calls = 0
+        # This pool is single-owner and every prepared call joins all
+        # worker submissions before returning. One producer event can be
+        # recorded repeatedly on the same primary stream; every queued
+        # peer wait observes the event generation at wait submission.
+        self._producer_event = torch.cuda.Event()
+        self._producer_event_records = 0
         self._pending_device_timings = deque()
         self._device_work_rates = {device:deque(maxlen=8)
                                    for device in self.devices}
@@ -1949,7 +1980,9 @@ class PersistentGpuForwardPool:
             gpu_forward_capacity_timing_samples=self.device_timing_samples,
             gpu_forward_all_shape_timing_samples=self.device_forward_timing_samples,
             gpu_forward_primary_inline_dispatches=self.owner_inline_prepared_calls,
-            gpu_forward_direct_inline_dispatches=self.owner_inline_direct_calls)
+            gpu_forward_direct_inline_dispatches=self.owner_inline_direct_calls,
+            gpu_forward_producer_event_reuses=max(
+                0,self._producer_event_records-1))
         rates = []
         for slot, device in enumerate(self.devices):
             # Heterogeneous-map forward durations are NOT directly
@@ -2088,8 +2121,12 @@ class PersistentGpuForwardPool:
                   any(type(n) is not int or n < 0 for n in pixel_work)))):
             raise ValueError("GPU prepared cohort must match its leased devices")
         streams = [torch.cuda.current_stream(device) for device in ordinals]
-        producer = torch.cuda.Event()
+        # Avoid allocating and destroying an inter-device ordering event
+        # for every small pair of PPO map shapes. Calls never overlap on
+        # this single-owner pool; workers enqueue all waits before return.
+        producer = self._producer_event
         producer.record(streams[0])
+        self._producer_event_records += 1
         grad_enabled = torch.is_grad_enabled()
         autocast_enabled = torch.is_autocast_enabled("cuda")
         autocast_dtype = torch.get_autocast_dtype("cuda")

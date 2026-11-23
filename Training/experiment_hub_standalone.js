@@ -763,6 +763,15 @@ async function main(argv=process.argv.slice(2)) {
             // A lost worker heartbeat is a durable observation, never a
             // native Stop or a reason to release its reserved capacity.
             hub.noteExpiredAgents();
+            // Required evaluators follow each authorized job's frozen
+            // schedule. Keep service changes serialized with Hub activation.
+            if(!closing&&!localOperations.activating&&!localOperations.active) {
+                localOperations.active++;
+                void localServices.ensureJobEvaluationSchedules(hub)
+                    .catch(error=>console.warn('[hub-evaluations] Scheduler reconciliation: '+
+                        String(error.message||error).slice(0,200)))
+                    .finally(()=>{localOperations.active--;});
+            }
             const current=hub.automationStatus();
             if(!current.enabled&&!current.restart_rearm_pending)return;
             const status=hub.tickAutomation();
