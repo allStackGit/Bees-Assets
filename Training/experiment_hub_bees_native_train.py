@@ -251,6 +251,8 @@ def stage_parent_checkpoint(root: Path, job: dict) -> bool:
     for field in ("game_sha256", "runtime_version", "trainer_sha256", "seed"):
         if previous.get(field) != job[field]:
             raise ValueError("Parent Bees runtime or trainer differs at continuation: " + field)
+    if previous.get("hyperparameters", {}) != job["hyperparameters"]:
+        raise ValueError("Parent Bees PPO hyperparameters changed across exact checkpoint continuation.")
     source = parent / "results" / lineage
     target = root / "results" / lineage
     if source.is_symlink() or not source.is_dir() or (
