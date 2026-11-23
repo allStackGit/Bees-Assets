@@ -3626,10 +3626,10 @@ pub fn connect_remote_with_trust(
             resize: true, scale_mode: ScaleMode::AspectRatioStretch,
             ..WindowOptions::default()
         })?;
-    window.set_target_fps(30);
     let mut pixels=vec![0;WIDTH*HEIGHT];
     // Shared local and remote preferences, no alternate game inputs.
     let mut controls=NativeControls::load()?;
+    window.set_target_fps(controls.render_fps(30));
     let mut controls_open=false;
     let mut artwork=RemoteArtwork::new()?;
     let mut audio=NativeGameAudio::new();
@@ -3737,7 +3737,10 @@ pub fn connect_remote_with_trust(
             last_left=window.get_mouse_down(MouseButton::Left);
             last_right=window.get_mouse_down(MouseButton::Right);
         }
-        if controls_open { controls.edit(&window); }
+        if controls_open {
+            controls.edit(&window);
+            window.set_target_fps(controls.render_fps(30));
+        }
         // The host must continue advancing for other commanders. This is
         // only an input-capturing local overlay, never a network pause.
         if show_battle_menu {
@@ -5854,6 +5857,7 @@ pub fn connect_remote_with_trust(
         "network_poll_max_milliseconds":peer.metrics.network_poll_max_seconds*1000.0,
         "snapshots_rendered":peer.metrics.snapshots,
         "frames_rendered":peer.metrics.frames_rendered,
+        "render_fps_cap":controls.render_fps(30),
         "ship_inspection_frames":inspection_frames,
         "ship_inspection_requests_sent":peer.metrics.inspection_requests_sent,
         "ship_inspection_receipts":peer.metrics.inspection_receipts,
