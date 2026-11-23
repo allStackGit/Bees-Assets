@@ -102,10 +102,11 @@ def publish_map_breakdown(root, job, checkpoint_digest, suite, details):
         "checkpoint_sha256": checkpoint_digest,
         "trials": details["trials"], "successes": details["successes"],
         "maps": details["maps"],
+        "opponents": details.get("opponents", []),
     }
     encoded = (json.dumps(report, separators=(",", ":"), allow_nan=False) + "\n").encode()
-    if len(encoded) > 16384:
-        raise ValueError("TinyBrains per-map evaluation report exceeds 16 KiB.")
+    if len(encoded) > 32768:
+        raise ValueError("TinyBrains per-map/opponent report exceeds 32 KiB.")
     destination = root / f"{dispatch}.{suite['suite_id']}.maps.json"
     fd, pending = tempfile.mkstemp(prefix=".tinybrains-map-results-", dir=root)
     try:
