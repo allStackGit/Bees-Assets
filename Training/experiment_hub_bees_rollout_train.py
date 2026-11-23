@@ -28,7 +28,8 @@ SHA = re.compile(r"^[0-9a-f]{64}$")
 FIELDS = {
     "schema_version", "job_id", "learner_job_id", "lineage_root_id",
     "output_root", "game_binary", "game_sha256",
-    "game_payload_sha256", "training_script", "training_sha256", "trainer_source",
+    "game_payload_sha256", "wan_release_sha256",
+    "training_script", "training_sha256", "trainer_source",
     "trainer_sha256", "runtime_version", "evaluator_script",
     "evaluator_core", "opponent_script", "actor_script",
     "actor_sha256", "envs", "torch_threads", "device", "expected_gpu_pci",
@@ -204,6 +205,8 @@ def inspect_job(filename: Path) -> dict:
     ):
         raise ValueError("Bees remote device or approved broker port is invalid.")
     if job["device"] == "cuda":
+        if os.name == "nt":
+            raise ValueError("Native Windows Bees WAN simulation actors are CPU-only.")
         if not isinstance(job["expected_gpu_pci"], str) or not re.fullmatch(
             r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]",
             job["expected_gpu_pci"],
@@ -211,7 +214,8 @@ def inspect_job(filename: Path) -> dict:
             raise ValueError("Bees remote ROCm actor needs a leased PCI identity.")
     elif job["expected_gpu_pci"] is not None:
         raise ValueError("Bees CPU-only actor cannot use a GPU.")
-    for key in ("game_sha256", "game_payload_sha256", "trainer_sha256", "training_sha256",
+    for key in ("game_sha256", "game_payload_sha256", "wan_release_sha256",
+                "trainer_sha256", "training_sha256",
                 "actor_sha256", "auth_token_fingerprint", "runtime_version"):
         if not isinstance(job[key], str) or SHA.fullmatch(job[key]) is None:
             raise ValueError("Invalid Bees remote SHA-256: " + key)
@@ -230,7 +234,7 @@ def inspect_job(filename: Path) -> dict:
         raise ValueError("Bees WAN actor escaped its frozen Python installation.")
     token = Path(job["auth_token_file"])
     if not token.is_absolute() or token.is_symlink() or not token.is_file() or (
-        token.stat().st_mode & 0o077 or
+        (os.name != "nt" and token.stat().st_mode & 0o077) or
         not 64 <= token.stat().st_size <= 128
     ):
         raise ValueError("Bees remote auth token is not a trusted private file.")
@@ -252,7 +256,7 @@ def main(argv=None) -> int:
         verify_runtime_device(job["expected_gpu_pci"])
 
     build, trainer, runtime = (
-        job["game_payload_sha256"], job["trainer_sha256"], job["runtime_version"]
+        job["wan_release_sha256"], job["trainer_sha256"], job["runtime_version"]
     )
     os.environ.update({
         "BEES_TRAINING_BUILD_ID": build,
