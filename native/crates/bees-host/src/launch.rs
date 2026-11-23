@@ -10472,6 +10472,7 @@ fn run_battle(
             remote_reconnect_waiting = !view &&
                 !world.is_failed() && !world.state.events.completed() &&
                 !world.state.events.was_aborted() &&
+                world.state.combat.surrendered_side().is_none() &&
                 remote.as_mut().expect("checked remote listener")
                     .reconnect_waiting(world.tick());
             for order in orders {
@@ -10482,7 +10483,10 @@ fn run_battle(
                     remote_lobby_waiting || remote_reconnect_waiting) &&
                     !matches!(&order.action, NativePlayerInput::HeldFire(input)
                         if matches!(input.action,
-                            bees_gameplay::player_inputs::NativeHeldFireAction::End)) {
+                            bees_gameplay::player_inputs::NativeHeldFireAction::End)) &&
+                    !(remote_reconnect_waiting && !remote_lobby_waiting &&
+                        remote_briefing.is_none() &&
+                        matches!(&order.action, NativePlayerInput::Surrender { .. })) {
                     remote.as_mut().expect("remote listener").reply(
                         order.peer, order.request_id,
                         Err(if remote_lobby_waiting {
@@ -10736,6 +10740,17 @@ fn run_battle(
         // admission is transport-only; the original World, input trace,
         // source HiveMind clock and simulation checkpoint are unchanged.
         // A disconnected or recovered peer must reauthenticate and ready.
+        // The remaining commander may explicitly concede while their
+        // opponent is missing. It is recorded and applied through the
+        // ordinary native player input path above. Allow the ONE World to
+        // advance and produce its canonical terminal result and campaign
+        // receipt; no synthetic network forfeit is needed.
+        if remote_reconnect_waiting &&
+            host.simulation().world(0).is_some_and(|world|
+                world.state.combat.surrendered_side().is_some())
+        {
+            remote_reconnect_waiting = false;
+        }
         if remote_lobby_waiting || remote_reconnect_waiting {
             // A returned commander resumes the exact checkpointed World
             // rather than racing a disconnected peer's physical decisions.
