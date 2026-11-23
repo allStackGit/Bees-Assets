@@ -20,7 +20,7 @@ def _try_lock(handle) -> None:
     if os.name == "nt":
         import msvcrt
         if handle.seek(0, os.SEEK_END) == 0:
-            handle.write(b"\\0")
+            handle.write(b"\0")
             handle.flush()
         handle.seek(0)
         msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
