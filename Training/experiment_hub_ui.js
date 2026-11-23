@@ -1801,7 +1801,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return fallback;
     }
     function selectTab(next) {
-        if (!['design','train','monitor','compare','machines'].includes(next)) return;
+        if (!['design','evaluations','train','monitor','compare','machines'].includes(next)) return;
         tab=next;
         saveView();
         for(const section of document.querySelectorAll('section[data-hub-tab]')) {
@@ -5727,6 +5727,20 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-job-reset-metric-defaults').addEventListener('click',()=>{
         saveMetricDefaults(null);
     });
+    function editSavedConfiguration(c) {
+        editing={id:c.id,revision:c.revision};
+        $('hub-config-name').value=c.name;
+        $('hub-config-json').value=JSON.stringify(c.parameters,null,2);
+        tinyBrainsThreads.value=c.parameters.threads??'';
+        tinyBrainsDevice.value=['cpu','dual'].includes(c.parameters.device)
+            ?c.parameters.device:'';
+        setEvaluationEditor(c.evaluation_monitor||c.evaluation_stop,
+            Boolean(c.evaluation_monitor),c.evaluation_monitor?c.evaluation_stop:null);
+        syncTinyBrainsEditor(c.parameters);
+        renderDesignEditor(true);
+        $('hub-config-save').textContent='Save revision';
+        feedback('hub-config-message','Editing revision '+c.revision);
+    }
     function display() {
         if(!state)return;
         const current=project;
@@ -5748,19 +5762,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,c.updated_at?.replace('T',' ').slice(0,19)||'');
             const actions=cell(tr,'');
             $('hub-config-rows').append(tr);
-            actions.append(button('Edit draft',()=>{
-                editing={id:c.id,revision:c.revision};
-                $('hub-config-name').value=c.name;
-                $('hub-config-json').value=JSON.stringify(c.parameters,null,2);
-                tinyBrainsThreads.value=c.parameters.threads??'';
-                tinyBrainsDevice.value=['cpu','dual'].includes(c.parameters.device)
-                    ?c.parameters.device:'';
-                setEvaluationEditor(c.evaluation_monitor||c.evaluation_stop,Boolean(c.evaluation_monitor),c.evaluation_monitor?c.evaluation_stop:null);
-                syncTinyBrainsEditor(c.parameters);
-                renderDesignEditor(true);
-                $('hub-config-save').textContent='Save revision';
-                feedback('hub-config-message','Editing revision '+c.revision);
-            }));
+            actions.append(button('Edit draft',()=>editSavedConfiguration(c)));
             actions.append(button('Duplicate',()=>{
                 resetEditor();
                 $('hub-config-name').value=(c.name+' copy').slice(0,100);
@@ -7905,6 +7907,43 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     $('hub-project').addEventListener('change',()=>{
         project=$('hub-project').value;saveView();resetEditor();display();selectTab(tab);
+    });
+    // Evaluation definitions are authored separately, then referenced by a
+    // saved Design revision. Never mutate the evaluation or queue a job here.
+    document.addEventListener('hub-use-saved-evaluation',event=>{
+        const selection=event.detail||{};
+        if(project!=='tinybrains')return;
+        const c=state?.configurations?.find(item=>
+            item.project_id==='tinybrains'&&
+            item.id===selection.configuration_id&&
+            item.revision===selection.configuration_revision);
+        if(!c) {
+            feedback('hub-config-message',
+                'The source Design revision has changed. Reopen or duplicate the evaluation against the latest saved Design.');
+            selectTab('design');
+            return;
+        }
+        editSavedConfiguration(c);
+        selectTab('design');
+        // Avoid silently discarding an existing multi-suite or Stop policy.
+        if(c.evaluation_monitor?.all_of||c.evaluation_stop) {
+            feedback('hub-config-message',
+                'This Design already has multi-suite or stopping rules. Review them before selecting the new evaluation; no monitoring policy was replaced.');
+            return;
+        }
+        const games=Number(selection.games);
+        if(!selection.suite_id||!Number.isSafeInteger(games)||games<1) {
+            feedback('hub-config-message','Saved evaluation is missing its suite ID or game count.');
+            return;
+        }
+        setEvaluationEditor({
+            ...(c.evaluation_monitor||{}),
+            suite_id:selection.suite_id,
+            min_trials:games,
+            every_n_checkpoints:c.evaluation_monitor?.every_n_checkpoints??10,
+        },true,null);
+        feedback('hub-config-message',
+            'Evaluation selected for monitoring. Review the cadence and trial count, then click Save revision. The source environment and saved evaluation remain unchanged.');
     });
     $('hub-config-cancel').addEventListener('click',resetEditor);
     $('hub-copy-bees-form').addEventListener('click',()=>{
