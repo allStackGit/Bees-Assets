@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import math
 from pathlib import Path
+import threading
 import time
 
 from evaluate_policy import evaluate, terminal_matchup, verified_evaluation_device
@@ -103,7 +104,11 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
         sync_directory(output)
         sync_directory(output.parent)
     begun = time.monotonic()
+    progress_lock = threading.Lock()
+    completed_progress = 0
+
     def evaluate_one(index, source):
+        nonlocal completed_progress
         selected_device = (
             scenario_devices[(index - 1) % scenario_workers]
             if scenario_devices is not None else device
@@ -192,6 +197,23 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
                     (attested is None or
                      result.get("verified_inference_placement") != attested)):
                 raise ValueError(f"native scenario {index} did not complete on its allocated GPU")
+        # Each scenario's receipt has been verified before progress is
+        # published; no guessed in-flight simulation steps or projected SPS.
+        # Lock only this very small event, never simulation or inference.
+        with progress_lock:
+            completed_progress += 1
+            print(json.dumps({
+                "kind": "native_evaluation_scenario_completed",
+                "learner_side": learner_side,
+                "scenario": index,
+                "scenarios_completed": completed_progress,
+                "scenarios_total": len(sources),
+                "resumed_scenario": reused,
+                "episodes": result["episodes"],
+                "world_steps": result["world_steps"],
+                "inference_device": selected_device,
+                "elapsed_wall_seconds": time.monotonic() - begun,
+            }, sort_keys=True), flush=True)
         return ({
             "scenario": index,
             "source_run": str(source),
