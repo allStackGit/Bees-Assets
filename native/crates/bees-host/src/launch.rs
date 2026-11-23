@@ -5824,8 +5824,14 @@ fn serve_native_archived_receipts(root: &Path) -> Result<(), Box<dyn Error>> {
 #[cfg(feature = "client")]
 fn run_library_host(settings_path: &Path, save_root: &Path,
     library: &NativeLibrary, games: &[PathBuf],
-    trained: &[trained_library::TrainedGame]) -> Result<(), Box<dyn Error>> {
+    trained: &[trained_library::TrainedGame],
+    freeplay_unlocked: bool) -> Result<(), Box<dyn Error>> {
     let settings:NativeSavedHost=serde_json::from_slice(&fs::read(settings_path)?)?;
+    if settings.game_id == fleet_builder::GAME_ID && !freeplay_unlocked {
+        return Err(invalid(
+            "original Bee FreePlay requires completion of the Uranus campaign finale",
+        ).into());
+    }
     if settings.listen.is_empty() || settings.listen.len()>255 ||
         settings.listen.chars().any(char::is_control) {
         return Err(invalid("native multiplayer host requires a private-network listen address").into());
@@ -6255,6 +6261,11 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         // Refresh only between menu selections, never in the render loop.
         trained = trained_library::load(save_root)?;
         let mut completed_by_campaign = HashMap::<String, HashSet<String>>::new();
+        // The source Uranus3Ending grants Bee FreePlay alongside Challenge
+        // and Fish Tank. This authoring cue exists only in a complete
+        // original campaign; standalone native sandbox libraries stay
+        // playable without pretending they have that career.
+        let mut original_freeplay_finales = Vec::<(String, String)>::new();
         let status = library.games.iter().zip(&games).map(|(item, config)| {
             // Challenge has the SAME durable career/mission model as
             // Campaign, under a separate account root. Only ordinary
@@ -6273,6 +6284,20 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 });
             }
             let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(&fs::read(config)?)?;
+            if item.kind == "campaign" {
+                for mission in catalog.battles.iter().filter_map(|battle|
+                    battle.mission.as_ref()
+                ) {
+                    if matches!(
+                        mission.preparation,
+                        Some(bees_host::presentation::NativeCampaignPreparation::UranusNewThreat)
+                    ) {
+                        original_freeplay_finales.push((
+                            item.id.clone(), mission.id.clone(),
+                        ));
+                    }
+                }
+            }
             // A Challenge is a full ten-level source career but has its
             // OWN permanent fleet, score and progression in the original.
             // Use the existing campaign ledger under an isolated save root;
@@ -6317,6 +6342,10 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             .get("original-human-challenge")
             .is_some_and(|completed| (0..10).all(|level|
                 completed.contains(&format!("challenge-{level:02}"))));
+        let freeplay_unlocked = original_freeplay_finales.is_empty() ||
+            original_freeplay_finales.iter().any(|(campaign, mission)|
+                completed_by_campaign.get(campaign)
+                    .is_some_and(|completed| completed.contains(mission)));
         let unlocked_games = library.games.iter().map(|game| -> io::Result<bool> {
             if let Some(gate) = game.unlock_after_playtime.as_ref() {
                 return read_fish_tank_unlocked(&fish_tank_unlock_file(
@@ -6397,7 +6426,12 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let fleet_builder_index = rows.len();
         rows.push(BattleMenuRow {
             title: "Build Fleet Skirmish",
-            status: "  [Custom native fleets]", unlocked: true,
+            status: if freeplay_unlocked {
+                "  [Custom native fleets]"
+            } else {
+                "  [Locked: finish the original Uranus campaign]"
+            },
+            unlocked: freeplay_unlocked,
         });
         let saved_fleet_sources = recordings.iter().filter(|recording|
             recording.game_id == fleet_builder::GAME_ID &&
@@ -6411,7 +6445,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             } else {
                 "  [New battle from prior physical fleet]"
             },
-            unlocked: !saved_fleet_sources.is_empty(),
+            unlocked: freeplay_unlocked && !saved_fleet_sources.is_empty(),
         });
         // Source FreePlay exposes previous authored Levels in its menu.
         // An archived quick battle is reusable only if its original start
@@ -6433,7 +6467,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             } else {
                 "  [New battle from original authored setup]"
             },
-            unlocked: !named_freeplay_levels.is_empty() || !saved_level_sources.is_empty(),
+            unlocked: freeplay_unlocked &&
+                (!named_freeplay_levels.is_empty() || !saved_level_sources.is_empty()),
         });
         let fleet_train_index = rows.len();
         let training_available = fleet_training::training_available();
@@ -6722,7 +6757,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 )
             })()
         } else if hosting {
-            run_library_host(&saved_host,save_root,&library,&games,&trained)
+            run_library_host(&saved_host,save_root,&library,&games,&trained,
+                freeplay_unlocked)
         } else if let Some(trained_index) = trained_index {
             // A selected trained model can still run the exact original
             // AI-vs-AI rollout, or become a human opponent on either
