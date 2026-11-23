@@ -356,7 +356,8 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
                         physics_workers: int | None, device: str | None,
                         resume: bool = False, scenario_workers: int = 1,
                         candidate_slot: int | None = None,
-                        reference_slot: int | None = None) -> dict:
+                        reference_slot: int | None = None,
+                        scenario_devices: tuple[str, ...] | None = None) -> dict:
     """Evaluate every authentic scenario from both faction perspectives.
 
     The existing single-side evaluator remains the only executor. Each side
@@ -396,6 +397,7 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
         "rollout_binary_sha256": file_sha256(binary) if binary else None,
         "physics_workers": physics_workers,
         "inference_device": device,
+        **({"inference_devices": list(scenario_devices)} if scenario_devices else {}),
         "learner_sides": [1, 2],
         "candidate_slot": candidate_slot,
         "reference_slot": reference_slot,
@@ -448,6 +450,8 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
                     pinned["rollout_binary_sha256"] or
                     side_request.get("physics_workers") != physics_workers or
                     side_request.get("inference_device") != device or
+                    side_request.get("inference_devices") != (
+                        list(scenario_devices) if scenario_devices is not None else None) or
                     side_request.get("parallel_scenario_workers", 1) != scenario_workers or
                     result.get("kind") != "native_heterogeneous_evaluation_complete" or
                     result.get("learner_side") != side or
@@ -505,6 +509,7 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
                 physics_workers, device, resume=destination.exists(),
                 scenario_workers=scenario_workers,
                 candidate_slot=candidate_slot, reference_slot=reference_slot,
+                scenario_devices=scenario_devices,
             )
         sides.append(result)
 
@@ -606,6 +611,8 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
         "scenarios": len(sources),
         "scenario_side_evaluations": len(sources) * 2,
         "requested_parallel_scenarios_per_side": scenario_workers,
+        **({"allocated_inference_devices": list(scenario_devices)}
+           if scenario_devices is not None else {}),
         "completed_sides_reused": reused_sides,
         "episodes": episodes, "side_victories": physical_side_victories,
         "candidate_slot_victories": total_candidate_wins,
@@ -680,12 +687,14 @@ def main():
     parser.add_argument("--rollout-binary", type=Path)
     parser.add_argument("--physics-workers", type=int)
     parser.add_argument("--inference-device", choices=("cpu", "cuda:0", "cuda:1", "cuda:2", "cuda:3"))
+    parser.add_argument("--inference-devices", nargs="+", choices=("cuda:0", "cuda:1", "cuda:2", "cuda:3"),
+                        help="one exclusive GPU per parallel scenario lane (requires --parallel-scenarios)")
     parser.add_argument("--resume", action="store_true",
                         help="continue unfinished scenarios from an unchanged pinned suite request")
     parser.add_argument("--parallel-scenarios", type=int, default=1,
-                        help="explicit CPU-only parallel native evaluation processes (1..16); "
-                             "requires --rollout-binary and --inference-device cpu")
+                        help="parallel CPU evaluation or independent explicitly allocated GPUs (1..16)")
     args = parser.parse_args()
+    scenario_devices = tuple(args.inference_devices) if args.inference_devices else None
     if args.both_sides:
         if args.learner_side is not None:
             parser.error("--both-sides and --learner-side are mutually exclusive")
@@ -697,6 +706,7 @@ def main():
             args.inference_device, resume=args.resume,
             scenario_workers=args.parallel_scenarios,
             candidate_slot=args.candidate_slot, reference_slot=args.reference_slot,
+            scenario_devices=scenario_devices,
         )
     else:
         if args.learner_side is None:
@@ -707,6 +717,7 @@ def main():
             args.inference_device, resume=args.resume,
             scenario_workers=args.parallel_scenarios,
             candidate_slot=args.candidate_slot, reference_slot=args.reference_slot,
+            scenario_devices=scenario_devices,
         )
     print(json.dumps(result, sort_keys=True), flush=True)
 
