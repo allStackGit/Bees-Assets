@@ -255,5 +255,28 @@ statistics are observational, not evaluation success.
 
 This first native mode is separate from the optional two-process legacy
 learner/local-actor mode above. It currently runs one learner with its local
-simulation processes; sharing a distributed rollout broker across machines
-and native Hub evaluation suite execution remain unfinished.
+simulation processes. Independent post-training evaluation supports the
+versioned four-case and 48-case scripted coverage suites. A shared distributed
+rollout broker across Hub machine leases is not yet implemented for this mode.
+
+### Portable native policy candidates
+
+A fully completed native Hub job exports `policy-candidate/` under its
+Hub job artifact directory. It contains `model.onnx`, a frozen manifest
+with the exact Unity worker/trainer/runtime and checkpoint hashes, and a
+matching evaluation summary when evaluation was requested.
+
+After exporting the job artifacts from the Hub, verify the candidate locally
+on Halifax, Exeter, or any other receiving machine using Python 3.10+:
+
+```sh
+python3 Assets/Training/bees_native_policy_candidate.py \
+    /path/to/exported-job/policy-candidate
+```
+
+Verification checks the portable network bytes, manifest integrity and
+evaluation accounting without installing Unity or a GPU learner. It does
+not authenticate the origin of the files or authorize promotion. The Unity
+player hot-bundle and any live model replacement still require the original
+explicit release/compatibility checks. A cooperative checkpoint Stop
+preserves optimizer continuation but does not publish a completed candidate.
