@@ -147,6 +147,13 @@ const beesWorker=()=>{
 };
 const beesManifest=()=>approvedBeesRelease?.releaseManifestPath||
     process.env.EXPERIMENT_HUB_BEES_WORKER_MANIFEST||null;
+// The enrolled Hub worker software release already carries Training/ and
+// its trusted runtime installer. A fully installed source cartridge therefore
+// needs no duplicate project checkout on remote simulation machines.
+const beesProject=()=>process.env.EXPERIMENT_HUB_BEES_ASSETS_ROOT?
+    required('EXPERIMENT_HUB_BEES_ASSETS_ROOT'):
+    approvedBeesRelease?.runtimeArchive?path.dirname(__dirname):
+    required('EXPERIMENT_HUB_BEES_ASSETS_ROOT');
 const beesTrainingArchive=()=>approvedBeesRelease&&approvedBeesRelease.runtimeArchive?
     {
         runtimeArchive:approvedBeesRelease.runtimeArchive,
@@ -202,7 +209,7 @@ if(enabled('courier')) {
 }
 if(enabled('bees_native')) {
     adapters.bees_native=createBeesNativeAdapter({
-        projectRoot:required('EXPERIMENT_HUB_BEES_ASSETS_ROOT'),
+        projectRoot:beesProject(),
         pythonPath:required('EXPERIMENT_HUB_BEES_PYTHON'),
         workerExecutable:beesWorker(),
         artifactRoot:artifactDirectory('bees_native'),
@@ -227,7 +234,7 @@ if(enabled('bees_rollout')) {
         !Number.isSafeInteger(sshPort)||sshPort>65535)
         throw Error('Bees WAN SSH listener needs a locally approved port 1–65535.');
     adapters.bees_rollout=createBeesRolloutAdapter({
-        projectRoot:required('EXPERIMENT_HUB_BEES_ASSETS_ROOT'),
+        projectRoot:beesProject(),
         pythonPath:required('EXPERIMENT_HUB_BEES_PYTHON'),
         workerExecutable:beesWorker(),
         artifactRoot:artifactDirectory('bees_rollout'),
