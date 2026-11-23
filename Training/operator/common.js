@@ -606,7 +606,7 @@ function resolveUnityEditor(config) {
         const projectVersion = path.join(paths.beesRoot, 'ProjectSettings', 'ProjectVersion.txt');
         let expectedVersion = '';
         if (exists(projectVersion)) {
-            const match = readText(projectVersion).match(/^m_EditorVersion:\\s*(\\S+)/m);
+            const match = readText(projectVersion).match(/^m_EditorVersion:\s*(\S+)/m);
             if (match) expectedVersion = match[1];
         }
         const roots = [
@@ -636,7 +636,7 @@ function resolveUnityEditor(config) {
     }
 
     if (process.platform === 'win32') {
-        const root = 'C:\\\\Program Files\\\\Unity\\\\Hub\\\\Editor';
+        const root = 'C:\\Program Files\\Unity\\Hub\\Editor';
         if (exists(root)) {
             const versions = fs.readdirSync(root, { withFileTypes: true })
                 .filter(entry => entry.isDirectory())
