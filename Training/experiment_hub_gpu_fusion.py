@@ -722,6 +722,46 @@ class MeasuredGpuExecution:
         self.max_profiles = max_profiles
         self.choices = OrderedDict()
         self.calls = self.eager_calls = self.fused_calls = self.stream_calls = self.graph_calls = 0
+        self.weight_refreshes = self.refresh_validations = self.refresh_invalidations = 0
+        self._pending_fused_validation = False
+        self._pending_graph_validation = set()
+
+    def refresh_frozen_weights(self, changed_indices=None):
+        """Refresh existing GPU storage without rebuilding captured graphs.
+
+        The caller must have drained all previous inference, synchronized
+        its GPU stream, and already copied newer immutable weights into
+        the SAME model objects. This preserves the CUDA graph's parameter
+        addresses. Invalid captured output behavior is detected against
+        fresh eager model forwards on the first use of each retained shape.
+        """
+        indices = (tuple(range(len(self.fusion.models))) if changed_indices is None
+                   else tuple(changed_indices))
+        if (not indices or len(set(indices)) != len(indices) or
+                any(type(i) is not int or not 0 <= i < len(self.fusion.models)
+                    for i in indices)):
+            raise ValueError("Invalid frozen-weight refresh model indices")
+        if self.fusion._stacked is not None:
+            # torch.func.stack_module_state owns independent stacked storage.
+            # Without copying refreshed weights here, vmap would silently
+            # continue using the OLD policy while graph/stream use the new.
+            params, buffers = self.fusion._stacked
+            named_params = [dict(model.named_parameters())
+                            for model in self.fusion.models]
+            named_buffers = [dict(model.named_buffers())
+                             for model in self.fusion.models]
+            with torch.no_grad():
+                for name, packed in params.items():
+                    for index in indices:
+                        packed[index].copy_(named_params[index][name])
+                for name, packed in buffers.items():
+                    for index in indices:
+                        packed[index].copy_(named_buffers[index][name])
+            self._pending_fused_validation = True
+        self._pending_graph_validation.update(
+            signature for signature, profile in self.graphs.profiles.items()
+            if profile is not None)
+        self.weight_refreshes += 1
 
     @staticmethod
     def _signature(batches):
@@ -781,11 +821,23 @@ class MeasuredGpuExecution:
             before = self.fusion.fused_calls
             result = self.fusion.run(batches)
             if self.fusion.fused_calls == before:
-                # A runtime fallback returned original model outputs.
-                # Do not re-validate every tensor shape on this hot path.
                 self.choices[signature] = "eager"
                 self.eager_calls += 1
             else:
+                if self._pending_fused_validation:
+                    self._pending_fused_validation = False
+                    expected = self.fusion._eager([
+                        FrozenGpuFusion._args(batch) for batch in batches])
+                    self.refresh_validations += 1
+                    if not all(_equivalent(a,b,self.fusion.rtol,self.fusion.atol)
+                               for a,b in zip(expected,result)):
+                        # A custom module may have captured constant weights.
+                        # Fall back to the authoritative new frozen models.
+                        self.refresh_invalidations += 1
+                        self.choices[signature] = "eager"
+                        self.fusion._profiles.clear()
+                        self.eager_calls += 1
+                        return expected
                 self.fused_calls += 1
             return result
         if choice == "streams":
@@ -804,6 +856,18 @@ class MeasuredGpuExecution:
                 self.choices[signature] = "eager"
                 self.eager_calls += 1
             else:
+                if signature in self._pending_graph_validation:
+                    self._pending_graph_validation.discard(signature)
+                    original = self.graphs._eager([
+                        FrozenGpuFusion._args(batch) for batch in batches])
+                    self.refresh_validations += 1
+                    if not all(_equivalent(a,b,self.graphs.rtol,self.graphs.atol)
+                               for a,b in zip(original,result)):
+                        self.refresh_invalidations += 1
+                        self.graphs.profiles.pop(signature,None)
+                        self.choices.pop(signature,None)
+                        self.eager_calls += 1
+                        return original
                 self.graph_calls += 1
             return result
         self.eager_calls += 1
@@ -818,6 +882,9 @@ class MeasuredGpuExecution:
             gpu_execution_stream_calls=self.stream_calls,
             gpu_execution_graph_calls=self.graph_calls,
             gpu_execution_profiles=len(self.choices),
+            gpu_execution_weight_refreshes=self.weight_refreshes,
+            gpu_execution_refresh_validations=self.refresh_validations,
+            gpu_execution_refresh_invalidations=self.refresh_invalidations,
             **self.fusion.metrics(),
             **self.streams.metrics(),
             **self.graphs.metrics(),
