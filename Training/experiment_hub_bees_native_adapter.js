@@ -150,6 +150,7 @@ const METRICS=Object.freeze(['training_steps','elapsed_training_seconds',
     'evaluation_cases_completed','evaluation_matches_completed',
     'evaluation_matches','evaluation_cases',
     'evaluation_win_rate','evaluation_timeout_rate','evaluation_score_rate',
+    'policy_candidate_ready',
     ...[1,2,3,4,5,6].flatMap(players=>[
         'evaluation_score_rate_'+players+'p',
         'evaluation_timeout_rate_'+players+'p',
@@ -457,6 +458,49 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                     }
                     value.source_modified_at=fs.statSync(summary).mtime.toISOString();
                     value.metrics={...value.metrics,...measured};
+                }catch(error) {
+                    if(error.code!=='ENOENT')throw error;
+                }
+                // The candidate is an immutable, exportable ONNX artifact.
+                // It is not an authorization to deploy or promote the network.
+                const candidateDir=path.join(root,'policy-candidate');
+                const candidateManifest=path.join(candidateDir,'manifest.json');
+                try {
+                    if(fs.realpathSync(candidateDir)!==candidateDir||
+                        fs.realpathSync(candidateManifest)!==candidateManifest||
+                        fs.statSync(candidateManifest).size>8192)
+                        throw Error('Native Bees policy candidate is redirected or oversized.');
+                    const published=JSON.parse(fs.readFileSync(candidateManifest,'utf8'));
+                    const receipt=checkpoint(context);
+                    if(published.schema_version!==1||
+                        published.kind!=='bees-unity-onnx-candidate'||
+                        published.deployment_status!=='not-promoted'||
+                        published.job_id!==context.job_id||
+                        published.lineage_root_id!==context.artifact_lineage_root_id||
+                        published.model_file!=='model.onnx'||
+                        published.model_sha256!==receipt.sha256||
+                        published.optimizer_checkpoint_sha256!==receipt.checkpoint_sha256||
+                        published.unity_worker_sha256!==approved.worker_sha256||
+                        published.runtime_version!==approved.runtime_version)
+                        throw Error('Native Bees policy candidate identity differs from its training job.');
+                    const model=path.join(candidateDir,'model.onnx');
+                    if(fs.realpathSync(model)!==model||
+                        !fs.statSync(model).isFile()||
+                        fs.statSync(model).size!==published.model_size_bytes||
+                        fileHash(model)!==published.model_sha256)
+                        throw Error('Native Bees exported policy model changed after publication.');
+                    const evidence=published.evaluation;
+                    if(evidence!==null) {
+                        const summary=path.join(candidateDir,'evaluation-summary.json');
+                        if(evidence?.file!=='evaluation-summary.json'||
+                            !SHA.test(String(evidence.sha256||''))||
+                            fs.realpathSync(summary)!==summary||
+                            fileHash(summary)!==evidence.sha256)
+                            throw Error('Native Bees policy candidate evaluation evidence changed.');
+                    }
+                    value.metrics={...value.metrics,
+                        policy_candidate_ready:{value:1,unit:'count'}};
+                    value.source_modified_at=fs.statSync(candidateManifest).mtime.toISOString();
                 }catch(error) {
                     if(error.code!=='ENOENT')throw error;
                 }
