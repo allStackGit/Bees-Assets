@@ -404,6 +404,8 @@ def gather_training_columns_once(columns, index_groups, *,
     feature or metadata columns separately for every map group. A single
     concatenated index selection amortizes GPU kernel launches across all
     groups, then callers retain zero-copy views in the original group order.
+    A two-column immutable value/target bank can be gathered as one 2D
+    tensor rather than launching separate index kernels for each column.
     Only the temporary gathered output has an extra bounded lifetime.
     """
     if (not isinstance(columns,(tuple,list)) or not columns or
@@ -412,9 +414,10 @@ def gather_training_columns_once(columns, index_groups, *,
             type(max_output_bytes) is not int or max_output_bytes<1):
         return None
     first=columns[0]
-    if (not isinstance(first,torch.Tensor) or first.ndim!=1 or
+    if (not isinstance(first,torch.Tensor) or first.ndim not in (1,2) or
             first.device.type!="cuda" or
-            any(not isinstance(column,torch.Tensor) or column.ndim!=1 or
+            any(not isinstance(column,torch.Tensor) or
+                column.ndim not in (1,2) or len(column)!=len(first) or
                 column.device!=first.device or column.requires_grad
                 for column in columns) or
             any(not isinstance(group,torch.Tensor) or group.ndim!=1 or
@@ -424,11 +427,12 @@ def gather_training_columns_once(columns, index_groups, *,
         return None
     total=sum(group.numel() for group in index_groups)
     # Account for BOTH the selected columns and the transient concatenated
-    # index tensor. The original group index views cost no new allocation,
-    # but torch.cat does. This preserves the shared lease for integer- or
-    # byte-valued inputs whose indices may exceed their payload size.
+    # index tensor. A 2D value bank contributes every field in each row.
+    # The original group index views cost no new allocation, but cat does.
     index_bytes=total*max(group.element_size() for group in index_groups)
-    output_bytes=total*sum(column.element_size() for column in columns)
+    output_bytes=total*sum(
+        column.element_size() * (column.shape[1] if column.ndim==2 else 1)
+        for column in columns)
     if not total or index_bytes+output_bytes>max_output_bytes:
         return None
     indices=torch.cat(tuple(index_groups))
