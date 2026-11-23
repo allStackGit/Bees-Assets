@@ -233,11 +233,13 @@ function validateCatalog(raw,installed=[],approved={}) {
         const entry=raw.bees_native;
         if(!installed.includes('bees_native')||
             !/^[0-9a-f]{64}$/.test(String(entry?.worker_sha256||''))||
-            !/^[0-9a-f]{64}$/.test(String(entry?.trainer_sha256||'')))
+            !/^[0-9a-f]{64}$/.test(String(entry?.trainer_sha256||''))||
+            !/^[0-9a-f]{64}$/.test(String(entry?.runtime_version||'')))
             throw Error('Bees native Design defaults require pinned Unity worker and MA-POCA trainer SHA-256 values.');
         result.bees_native={...validateFields(entry),
             worker_sha256:entry.worker_sha256,
             trainer_sha256:entry.trainer_sha256,
+            runtime_version:entry.runtime_version,
             metric_catalog:metricCatalog(entry.metric_catalog)};
     }
     if(raw.tinybrains!==undefined) {
