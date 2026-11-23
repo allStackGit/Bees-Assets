@@ -1321,8 +1321,16 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
             "latest_round": latest_round,
             "evaluated_rounds": len(observations),
             "latest_win_rate_gain": (
-                latest["side_win_rate"] - baseline["side_win_rate"]
+                (latest["candidate_terminal_matchup"]["candidate_win_rate"]
+                 if "candidate_terminal_matchup" in latest else latest["side_win_rate"]) -
+                (baseline["candidate_terminal_matchup"]["candidate_win_rate"]
+                 if "candidate_terminal_matchup" in baseline else baseline["side_win_rate"])
                 if latest is not None else None
+            ),
+            "latest_gain_scope": (
+                "observed_candidate_model_wins"
+                if "candidate_terminal_matchup" in baseline
+                else "requested_physical_side_wins"
             ),
             "results": [
                 {"round": index, "receipt": receipt}
