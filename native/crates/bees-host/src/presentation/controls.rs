@@ -121,6 +121,9 @@ struct BattleViewPreferences {
     edge_scrolling: Option<bool>,
     wasd_camera: Option<bool>,
     campaign_tooltips: Option<bool>,
+    /// Render pacing only; deterministic physics and PPO step cadence are
+    /// independent of the user's presentation frame rate.
+    render_fps: Option<u32>,
 }
 
 impl BattleViewPreferences {
@@ -212,7 +215,11 @@ impl NativeControls {
                 (Self::default_keys(), "Saved controls could not be read. Delete restores defaults.".into(), true)
             }
         };
-        let camera = BattleViewPreferences::load(&path.with_extension("camera.json"));
+        let mut camera = BattleViewPreferences::load(&path.with_extension("camera.json"));
+        if camera.render_fps.is_some_and(|fps| !matches!(fps, 30 | 60 | 120)) {
+            eprintln!("Invalid native render cap; using the original game default");
+            camera.render_fps = None;
+        }
         Ok(Self {
             path, camera, keys, selected: 0, mode: EditMode::Navigate, notice, settings_unreadable,
         })
@@ -365,6 +372,12 @@ impl NativeControls {
 
     pub(crate) fn show_campaign_tooltips(&self) -> bool {
         self.camera.campaign_tooltips.unwrap_or(true)
+    }
+
+    /// The frame cap affects only the client's window event/render loop.
+    /// The fixed timestep remains owned by the one native Level.
+    pub(crate) fn render_fps(&self, default: usize) -> usize {
+        self.camera.render_fps.map_or(default, |fps| fps as usize)
     }
 
     fn uses_camera_letter(&self, key: Key) -> bool {
@@ -627,6 +640,25 @@ impl NativeControls {
                     format!("Could not save campaign tips: {error}")
                 }
             };
+        } else if window.is_key_pressed(Key::F9, KeyRepeat::No) {
+            let previous = self.camera.render_fps;
+            self.camera.render_fps = match previous {
+                None => Some(30),
+                Some(30) => Some(60),
+                Some(60) => Some(120),
+                Some(_) => None,
+            };
+            self.notice = match self.save_view_preferences() {
+                Ok(()) => format!("Native render cap: {}",
+                    self.camera.render_fps.map_or_else(
+                        || "Game default".to_owned(),
+                        |fps| format!("{fps} FPS"),
+                    )),
+                Err(error) => {
+                    self.camera.render_fps = previous;
+                    format!("Could not save native render cap: {error}")
+                }
+            };
         } else if window.is_key_pressed(Key::Delete, KeyRepeat::No) {
             self.mode = EditMode::ConfirmReset;
             self.notice = "Replace saved bindings with defaults? Enter confirms, Esc cancels.".into();
@@ -669,6 +701,10 @@ impl NativeControls {
             format!("F7: camera keys [{}]   F8: campaign tips [{}]",
                 if self.wasd_camera() { "WASD + arrows" } else { "Arrows" },
                 if self.show_campaign_tooltips() { "On" } else { "Off" }),
+            format!("F9: native rendering [{}] (30 / 60 / 120 FPS)",
+                self.camera.render_fps.map_or_else(
+                    || "Game default".to_owned(), |fps| format!("{fps} FPS")
+                )),
         ];
         for i in start..(start + BINDINGS_PER_PAGE).min(self.keys.len()) {
             lines.push(format!("{} {:<23} : {}",
