@@ -544,6 +544,10 @@ class BundleReceiver:
                 # unchanged; only transport is encrypted.
                 self.server.socket = context.wrap_socket(
                     self.server.socket, server_side=True,
+                    # Handshakes belong to the bounded request workers.
+                    # A stalled TLS client must not block the accepting
+                    # thread and thereby strand unrelated collectors.
+                    do_handshake_on_connect=False,
                 )
             except (OSError, ValueError, ssl.SSLError):
                 self.server.server_close()
