@@ -721,6 +721,14 @@ class RemoteBattleWindow:
                 )
         elif self.lobby_button.winfo_manager():
             self.lobby_button.pack_forget()
+        reconnect_waiting = state is not None and (
+            state.get("waiting_for_player_reconnect") is True
+        )
+        if reconnect_waiting and not self.last_feedback:
+            self.status.set(
+                "Match paused for player reconnection — connected sides: "
+                f"{state.get('connected_commander_sides', [])}"
+            )
         can_host_clock = (
             not self.console.spectator and self.console.alive and
             self.console.time_controls_available and state is not None and
@@ -750,7 +758,8 @@ class RemoteBattleWindow:
             not self.console.spectator and self.console.alive and
             state is not None and state.get("can_surrender") is True and
             state.get("briefing_paused") is not True and
-            state.get("terminal_outcome") is None and not self.held_drag and
+            state.get("terminal_outcome") is None and not reconnect_waiting and
+            not self.held_drag and
             self.console.surrender_requested_episode != (
                 state["world_id"], state["episode_revision"]
             )
@@ -762,7 +771,7 @@ class RemoteBattleWindow:
             not self.console.spectator and self.console.alive and
             state is not None and state.get("can_activate_retreat") is True and
             state.get("briefing_paused") is not True and
-            state.get("terminal_outcome") is None and
+            state.get("terminal_outcome") is None and not reconnect_waiting and
             self.console.battle_receipt_snapshot() is None and not self.held_drag
         )
         self.retreat_button.state(
