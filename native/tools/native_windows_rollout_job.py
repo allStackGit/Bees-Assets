@@ -10,6 +10,7 @@ import ctypes
 from ctypes import wintypes
 import os
 import subprocess
+import signal
 
 
 class _BasicLimit(ctypes.Structure):
@@ -149,22 +150,45 @@ class NativeWindowsRolloutJob:
                 raise ctypes.WinError(ctypes.get_last_error())
 
 def run_owned_native_process(command, **kwargs):
-    """Run one native host/collector and retire its entire owned process tree.
+    """Run one native host and own every descendant until it is reaped.
 
-    On Windows a completed Rust parent must not leave a resident Python
-    inference descendant consuming GPU/CPU resources. POSIX callers keep
-    subprocess.run(check=True) behavior and existing process supervision.
+    A completed Rust parent must not leave a resident policy subprocess
+    consuming accelerator resources. The simulator keeps all physics and
+    model protocol ownership; this only manages OS process lifetimes.
     """
     if os.name != "nt":
-        return subprocess.run(command, check=True, **kwargs)
+        # A separate POSIX session gives the supervisor one owned process
+        # group, rather than relying on the parent Rust PID alone.
+        process = subprocess.Popen(command, start_new_session=True, **kwargs)
+        try:
+            if all(hasattr(os, name) for name in (
+                    "waitid", "P_PID", "WEXITED", "WNOWAIT")):
+                # Linux can observe the exited group leader WITHOUT reaping
+                # its PID. That prevents its numeric process-group ID from
+                # being recycled before orphan cleanup.
+                os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOWAIT)
+            else:
+                process.wait()
+        finally:
+            try:
+                # Only the process group created for this invocation. The
+                # source host has exited, so any survivor is a leaked actor.
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+        if process.returncode != 0:
+            raise subprocess.CalledProcessError(process.returncode, command)
+        return subprocess.CompletedProcess(command, process.returncode)
+
     process = subprocess.Popen(
         command, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, **kwargs
     )
     try:
         job = NativeWindowsRolloutJob(process)
     except BaseException:
-        # Assignment failure is fatal: this process is not safely owned.
-        # At least stop its still-live parent before propagating the error.
+        # Attachment failure cannot be treated as successfully supervised.
+        # Stop the still-owned process before propagating the error.
         if process.poll() is None:
             process.kill()
         process.wait()
