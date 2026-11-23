@@ -1331,6 +1331,176 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
 }
 
 
+/// Run an independent fixed-source evaluation of a verified native
+/// checkpoint. Gameplay and the Python evaluator still share the one
+/// CombatWorld and policy manifest; no second learner or scoring engine.
+fn evaluate_training_checkpoint(job: &Path, best: bool) -> Result<(), Box<dyn Error>> {
+    let session = job.join("model").join("session");
+    let config: Value = serde_json::from_slice(
+        &fs::read(session.join("session-config.json"))?
+    )?;
+    let source = config["evaluation_config"]["path"].as_str()
+        .ok_or_else(|| invalid("native training has no pinned evaluation configuration"))?;
+    let source_sha = config["evaluation_config"]["sha256"].as_str()
+        .ok_or_else(|| invalid("native evaluation configuration lacks its original hash"))?;
+    let source = PathBuf::from(source);
+    if sha256_file(&source)? != source_sha {
+        return Err(invalid("native evaluation source changed since training").into());
+    }
+    let receipt_name = if best { "best-evaluated.json" } else { "latest-playable.json" };
+    let selection: Value = serde_json::from_slice(&fs::read(session.join(receipt_name))?)?;
+    let expected_kind = if best {
+        "native_training_best_evaluated"
+    } else {
+        "native_training_latest_playable"
+    };
+    if selection["schema_version"].as_u64() != Some(1) ||
+        selection["kind"].as_str() != Some(expected_kind) {
+        return Err(invalid("selected native training checkpoint has an invalid receipt").into());
+    }
+    let model = if best { &selection["selected"] } else { &selection };
+    let manifest = model["manifest"].as_str()
+        .ok_or_else(|| invalid("selected checkpoint lacks its verified model manifest"))?;
+    let manifest_sha = model["manifest_sha256"].as_str()
+        .ok_or_else(|| invalid("selected checkpoint lacks its model manifest digest"))?;
+    let checkpoint = model["checkpoint"].as_str()
+        .ok_or_else(|| invalid("selected checkpoint lacks its physical policy artifact"))?;
+    let checkpoint_sha = model["checkpoint_sha256"].as_str()
+        .ok_or_else(|| invalid("selected checkpoint lacks its artifact digest"))?;
+    if sha256_file(Path::new(manifest))? != manifest_sha ||
+        sha256_file(Path::new(checkpoint))? != checkpoint_sha {
+        return Err(invalid("selected native policy checkpoint or manifest changed").into());
+    }
+    let side = config["evaluation_side"].as_u64()
+        .filter(|side| matches!(*side, 1 | 2))
+        .ok_or_else(|| invalid("native evaluation requires original learner faction"))?;
+    if best && selection["learner_side"].as_u64() != Some(side) {
+        return Err(invalid("best checkpoint belongs to a different faction").into());
+    }
+    let Some(seed) = choose_count(
+        "Independent policy sampling seed", &[0, 1, 42, 2026, 10007],
+    )? else { return Ok(()); };
+    let evaluator = converter_script()?.with_file_name("evaluate_policy.py");
+    if !evaluator.is_file() {
+        return Err(invalid("native fixed-source policy evaluator is not installed").into());
+    }
+    let evaluation_root = job.join("evaluations");
+    fs::create_dir_all(&evaluation_root)?;
+    if fs::symlink_metadata(&evaluation_root)?.file_type().is_symlink() {
+        return Err(invalid("native evaluation output must not be a symlink").into());
+    }
+    let invocation: Value = serde_json::from_slice(
+        &fs::read(job.join("invocation.json"))?
+    )?;
+    let python = env::var_os("BEES_NATIVE_PYTHON")
+        .unwrap_or_else(|| std::ffi::OsString::from(
+            if cfg!(windows) { "python" } else { "python3" }
+        ));
+    let mut command = Command::new(python);
+    let mut output = None;
+    for number in 1..u32::MAX {
+        let name = format!("evaluation-{number:06}");
+        let destination = evaluation_root.join(&name);
+        let log_path = evaluation_root.join(format!("{name}.log"));
+        if destination.exists() || log_path.exists() { continue; }
+        match OpenOptions::new().write(true).create_new(true).open(&log_path) {
+            Ok(log) => {
+                output = Some((destination, log_path, log));
+                break;
+            }
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    let (destination, log_path, log) = output.ok_or_else(||
+        invalid("native evaluation job identifiers exhausted"))?;
+    command.arg(&evaluator).arg(&source).arg(manifest).arg(&destination)
+        .arg("--learner-side").arg(side.to_string())
+        .arg("--policy-seed").arg(seed.to_string());
+    if let Some(workers) = invocation["evaluation_physics_workers"].as_u64()
+        .filter(|number| (1..=128).contains(number)) {
+        command.arg("--physics-workers").arg(workers.to_string());
+    }
+    if let Some(binary) = invocation["rollout_binary"].as_str() {
+        if sha256_file(Path::new(binary))? != invocation["rollout_binary_sha256"]
+            .as_str().ok_or_else(|| invalid("native evaluation rollout binary has no digest"))? {
+            return Err(invalid("native evaluation rollout binary changed").into());
+        }
+        command.arg("--rollout-binary").arg(binary);
+    }
+    // The evaluator itself verifies pinned model weights, source dependencies,
+    // actual physics completion and per-scene outcomes before publication.
+    let stdout = log.try_clone()?;
+    let child = command.stdin(Stdio::null())
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(log))
+        .spawn()?;
+    println!("{}", json!({
+        "kind": "native_fleet_evaluation_started",
+        "job": job,
+        "selection": if best { "best_fixed_holdout" } else { "latest_checkpoint" },
+        "policy_seed": seed,
+        "source": source,
+        "manifest": manifest,
+        "checkpoint": checkpoint,
+        "output": destination,
+        "log": log_path,
+        "pid": child.id(),
+    }));
+    reap_training_process(child, log_path);
+    Ok(())
+}
+
+/// Read already committed fixed-source evaluation receipts without
+/// reconstructing wins from logs or unverified intermediate rollouts.
+fn inspect_training_evaluations(job: &Path) -> Result<(), Box<dyn Error>> {
+    let root = job.join("evaluations");
+    if !root.is_dir() {
+        println!("No standalone evaluations for this native training job.");
+        return Ok(());
+    }
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() ||
+            !entry.file_name().to_string_lossy().starts_with("evaluation-") {
+            continue;
+        }
+        let path = entry.path().join("evaluation-result.json");
+        let complete = fs::symlink_metadata(&path).is_ok_and(|metadata|
+            metadata.file_type().is_file() && metadata.len() <= 4 * 1024 * 1024);
+        let result = if complete {
+            Some(serde_json::from_slice::<Value>(&fs::read(path)?)?)
+        } else { None };
+        entries.push((entry.file_name().to_string_lossy().into_owned(), result));
+    }
+    entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    if entries.is_empty() {
+        println!("No standalone evaluations for this native training job.");
+        return Ok(());
+    }
+    let titles = entries.iter().map(|(name, result)| {
+        let Some(row) = result else { return format!("{name} | In progress or interrupted"); };
+        let wins = row["side_victories"].as_u64().unwrap_or(0);
+        let episodes = row["episodes"].as_u64().unwrap_or(0);
+        let draws = row["draws"].as_u64().unwrap_or(0);
+        format!("{name} | {wins}/{episodes} wins, {draws} draws")
+    }).collect::<Vec<_>>();
+    let rows = titles.iter().map(|title| BattleMenuRow {
+        title, status: "  [Verified native evaluation]", unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut selection = 0;
+    if let Some(index) = select_library(&rows, &mut selection, false)? {
+        let (name, result) = &entries[index];
+        println!("{}", json!({
+            "kind": "native_fleet_evaluation_inspection",
+            "job": job, "evaluation": name,
+            "result": result,
+        }));
+    }
+    Ok(())
+}
+
 /// A stopped native game job has exactly one source contract and one model
 /// lineage. Let the existing bootstrapper decide whether its finished model
 /// may be reused; never copy checkpoints or fabricate a session cursor.
