@@ -114,7 +114,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         // optional fine-grained transfer counts. Keep chart width bounded.
         const sharedGpuPrefix=/^gpu_(?:microbatch|training|execution|fusion|graph|stream)_/;
         const sharedGpuPriority=name=>
-            /^gpu_execution_shared_(?:inference|learner)_(?:calls|selected)$/.test(name)?0:
+            /^gpu_execution_shared_(?:inference|learner)_(?:calls|selected|graph_calls|stream_calls)$/.test(name)?0:
             /(?:^|_)(?:useful|live|qualified)_work_per_second$/.test(name)?0:
                 /(?:work_confirmed|selected_streams|selected_width|selected_parallel|coalesced|flat_groups|bucketed_groups|pinned_groups|async_h2d_groups|fallback|policy_refresh)/.test(name)?1:
                     /(?:pending|queue|retune|allocation|bytes)/.test(name)?2:3;
