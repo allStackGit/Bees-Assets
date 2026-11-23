@@ -134,13 +134,15 @@ def inspect_job(filename: Path) -> dict:
     wan_keys = {"wan_actors", "wan_broker_port", "wan_key_file",
                 "wan_key_fingerprint", "game_payload_sha256",
                 "wan_release_sha256"}
+    optional_keys = {"checkpoint_interval", "evaluation_schedule"}
+    actual_keys = set(job) - optional_keys if isinstance(job, dict) else set()
     if not isinstance(job, dict) or (
-        job.get("schema_version") == 1 and set(job) != keys
+        job.get("schema_version") == 1 and actual_keys != keys
     ) or (
-        job.get("schema_version") == 2 and set(job) != keys | ancestry_keys
+        job.get("schema_version") == 2 and actual_keys != keys | ancestry_keys
     ) or (
         job.get("schema_version") == 3 and
-        set(job) != keys | ancestry_keys | wan_keys
+        actual_keys != keys | ancestry_keys | wan_keys
     ) or job.get("schema_version") not in (1, 2, 3):
         raise ValueError("Unexpected Bees native job schema.")
     if not isinstance(job["job_id"], str):
@@ -236,6 +238,15 @@ def inspect_job(filename: Path) -> dict:
         not 1 <= job["evaluation_matches"] <= 100
     ):
         raise ValueError("Unsupported frozen post-training evaluation profile.")
+    interval = job.get("checkpoint_interval")
+    if interval is not None and (
+        type(interval) is not int or not 1000 <= interval <= 100000000000
+    ):
+        raise ValueError("Invalid Bees checkpoint interval.")
+    if job.get("evaluation_schedule") is not None:
+        from bees_hub_checkpoint_evaluation import validate_schedule
+        validate_schedule(job["evaluation_schedule"], job["evaluation_profile"],
+                          job["evaluation_matches"])
     verify_pinned_runtime(job)
     pci = job["expected_gpu_pci"]
     if job["device"] == "cuda":
@@ -366,6 +377,8 @@ def freeze_trainer(job: dict, root: Path) -> Path:
         raise ValueError("Only the existing Bees MA-POCA learner is supported.")
     content["torch_settings"]["device"]=job["device"]
     behavior["max_steps"]=job["max_steps"]
+    if "checkpoint_interval" in job:
+        behavior["checkpoint_interval"]=job["checkpoint_interval"]
     frozen=job["hyperparameters"]
     if not isinstance(frozen,dict) or any(
         key not in ("batch_size","buffer_size","learning_rate","beta","epsilon","lambd","num_epoch")
@@ -509,19 +522,28 @@ class EventProgress:
 def record_model(root: Path, job: dict):
     job_id = job["job_id"]
     run_root = root / "results" / job["lineage_root_id"]
-    models = sorted(run_root.rglob("*.onnx"))
-    checkpoints = sorted(run_root.glob("*/checkpoint.pt"))
-    if not models or not checkpoints:
-        raise RuntimeError(
-            "Bees learner exited without both an ONNX network and an optimizer/critic checkpoint."
-        )
-    model = max(models, key=lambda p: p.stat().st_mtime_ns)
-    checkpoint = max(checkpoints, key=lambda p: p.stat().st_mtime_ns)
+    # The final canonical export is copied by ML-Agents from the saved
+    # versioned checkpoint. A recent diagnostic ONNX may not match it.
+    behavior_root = run_root / "BeesRL1v1"
+    checkpoint = behavior_root / "checkpoint.pt"
+    model = run_root / "BeesRL1v1.onnx"
     if model.is_symlink() or checkpoint.is_symlink() or (
             not model.is_file() or not checkpoint.is_file()
             or model.stat().st_size < 1 or checkpoint.stat().st_size < 1):
         raise RuntimeError("Bees completed model or optimizer checkpoint is missing or redirected.")
     checkpoint_sha = sha256_file(checkpoint)
+    model_sha = sha256_file(model)
+    exports = []
+    for candidate in behavior_root.glob("BeesRL1v1-*.pt"):
+        suffix = candidate.stem.removeprefix("BeesRL1v1-")
+        if suffix.isdecimal() and candidate.is_file() and not candidate.is_symlink():
+            exports.append((int(suffix), candidate))
+    if not exports:
+        raise RuntimeError("No versioned Bees checkpoint accompanies the final model.")
+    _, latest = max(exports, key=lambda item: item[0])
+    paired = latest.with_suffix(".onnx")
+    if paired.is_symlink() or not paired.is_file() or sha256_file(paired) != model_sha:
+        raise RuntimeError("Final Bees ONNX does not match the latest saved checkpoint.")
     if job["continuation_of_job_id"] is not None and (
         checkpoint_sha == job["expected_parent_checkpoint_sha256"]
     ):
@@ -534,7 +556,7 @@ def record_model(root: Path, job: dict):
         **({"lineage_root_id": job["lineage_root_id"],
             "continuation_of_job_id": job["continuation_of_job_id"]}
            if job["schema_version"] >= 2 else {}),
-        "model": str(model), "sha256": sha256_file(model),
+        "model": str(model), "sha256": model_sha,
         "checkpoint": str(checkpoint), "checkpoint_sha256": checkpoint_sha,
         "completed_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -718,16 +740,18 @@ def benchmark_recipe(root: Path, job: dict, case: tuple, index: int) -> Path:
         handle.write("\n")
     return file
 
-def collect_benchmark(root: Path, report_file: Path, job: dict, label: str, opponent: str) -> dict:
+def collect_benchmark(evaluation_root: Path, report_file: Path, job: dict,
+                      label: str, opponent: str, model_sha256: str) -> dict:
     if report_file.is_symlink() or not report_file.is_file() or (
-        report_file.parent != root/"evaluations"
+        report_file.parent != evaluation_root or
+        report_file.resolve() != report_file or report_file.stat().st_size > 4194304
     ):
         raise RuntimeError("Benchmark output path is missing or redirected.")
     report=json.loads(report_file.read_text(encoding="utf-8"))
     source=report.get("benchmark",{})
     summary=report.get("metrics",{})
     if(report.get("schema_version")!=1 or
-       report.get("candidate_sha256")!=json.loads((root/"model.json").read_text())["sha256"] or
+       report.get("candidate_sha256")!=model_sha256 or
        report.get("environment_executable_sha256")!=job["game_sha256"] or
        report.get("opponent_path")!="scripted:"+opponent or
        source.get("id")!="bees-native-"+label.replace("_","-") or
@@ -798,6 +822,70 @@ def main():
             ).hexdigest(),
             "BEES_TRAINING_ENVIRONMENT_ID": job["wan_release_sha256"],
         })
+    # At most one checkpoint evaluation shares this job's CPU/RAM
+    # reservation. It uses an independent player and communicator port.
+    schedule = job.get("evaluation_schedule")
+    checkpoint_root = root / "checkpoint-evaluations"
+    if schedule is not None:
+        from bees_hub_checkpoint_evaluation import ENV
+        checkpoint_root.mkdir(mode=0o700)
+        (checkpoint_root / "completed").mkdir(mode=0o700)
+        (checkpoint_root / "failed").mkdir(mode=0o700)
+        child_env[ENV] = json.dumps({
+            "root": str(checkpoint_root), "schedule": schedule,
+            "profile": job["evaluation_profile"], "matches": job["evaluation_matches"],
+        })
+    evaluation_child = None
+    pending = checkpoint_root / "pending"
+    def poll_evaluation(allow_start=True):
+        nonlocal evaluation_child
+        if schedule is None:
+            return
+        if evaluation_child is not None:
+            result = evaluation_child.poll()
+            if result is None:
+                return
+            evaluation_child = None
+            identity = json.loads((pending / "snapshot.json").read_text(encoding="utf-8"))
+            sha = identity["model_sha256"]
+            if len(sha) != 64 or any(ch not in "0123456789abcdef" for ch in sha):
+                raise RuntimeError("Invalid checkpoint evaluation output identity.")
+            if result == 0 and (pending / "summary.json").is_file():
+                destination = checkpoint_root / "completed" / sha
+                if destination.exists():
+                    shutil.rmtree(pending)
+                else:
+                    pending.rename(destination)
+            else:
+                pending.rename(checkpoint_root / "failed" / (sha + "-" + uuid.uuid4().hex))
+                print("[Bees Hub evaluation] Checkpoint evaluation failed; PPO continues.",
+                      file=sys.stderr, flush=True)
+        if allow_start and pending.is_dir():
+            environment = os.environ.copy()
+            threads = str(schedule["cpu_threads"])
+            environment.update({
+                "BEES_HUB_EVAL_THREADS": threads, "OMP_NUM_THREADS": threads,
+                "OPENBLAS_NUM_THREADS": threads, "MKL_NUM_THREADS": threads,
+            })
+            evaluation_child = subprocess.Popen([
+                sys.executable, "-B",
+                str(Path(job["training_script"]).with_name("bees_hub_checkpoint_evaluation.py")),
+                "--job", str(root / "job.json"),
+            ], cwd=str(Path(job["training_script"]).parent),
+                env=environment, start_new_session=True)
+    def close_evaluation():
+        nonlocal evaluation_child
+        poll_evaluation(False)
+        if evaluation_child is not None:
+            if evaluation_child.poll() is None:
+                evaluation_child.send_signal(signal.SIGINT)
+                try:
+                    evaluation_child.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(evaluation_child.pid, signal.SIGKILL)
+                    evaluation_child.wait(timeout=10)
+            poll_evaluation(False)
+
     child=None
     stopped=False
     stop_file=root/"stop.request"
@@ -841,6 +929,7 @@ def main():
         while child.poll() is None:
             if not stopped:
                 observe_stop_marker()
+            poll_evaluation(not stopped)
             try:
                 progress.poll()
             except (OSError,ValueError,RuntimeError) as error:
@@ -856,6 +945,7 @@ def main():
         except (OSError,ValueError,RuntimeError):
             pass
         progress.training_finished_at=time.monotonic()
+        close_evaluation()
         result=child.returncode
         if stopped:
             # The existing interrupt-safe ML-Agents launcher may have written
@@ -882,7 +972,9 @@ def main():
         if result!=0:
             return result or 1
         record_model(root,job)
-        if job["evaluation_profile"] in ("scripted-maps-v1","scripted-coverage-v2"):
+        if job["evaluation_profile"] in ("scripted-maps-v1","scripted-coverage-v2") and (
+            schedule is None or schedule["include_final"]
+        ):
             evaluation_root=root/"evaluations"
             evaluation_root.mkdir(mode=0o700)
             model=json.loads((root/"model.json").read_text(encoding="utf-8"))
@@ -922,6 +1014,7 @@ def main():
                     "--build-id",job["game_sha256"],
                     "--run-id",job["job_id"],
                     "--output-root",str(evaluation_root),
+                    "--base-port",str(port),
                 ]
                 with output.open("xb") as stream:
                     child=subprocess.Popen(command,
@@ -942,7 +1035,9 @@ def main():
                 reported=Path(lines[-1])
                 if reported.parent!=evaluation_root or not reported.name.endswith(".json"):
                     raise RuntimeError("Benchmark evaluator returned an unexpected output path.")
-                observed.append(collect_benchmark(root,reported,job,label,opponent))
+                observed.append(collect_benchmark(
+                    evaluation_root, reported, job, label, opponent, model["sha256"]
+                ))
                 progress.values["evaluation_cases_completed"]={
                     "value":len(observed),"unit":"count",
                 }
@@ -983,10 +1078,13 @@ def main():
                     child.kill()
                     child.wait(timeout=10)
         try:
-            if player is not None:
-                player.close()
+            close_evaluation()
         finally:
-            port_lock.close()
+            try:
+                if player is not None:
+                    player.close()
+            finally:
+                port_lock.close()
 
 if __name__=="__main__":
     try:

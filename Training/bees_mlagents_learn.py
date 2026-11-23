@@ -1483,6 +1483,8 @@ def main() -> None:
         managed_stop_event, managed_stop_watcher
     )
     original_maybe_save_model = _install_model_snapshot_requests()
+    from bees_hub_checkpoint_evaluation import install_checkpoint_publisher
+    checkpoint_publisher = install_checkpoint_publisher()
     original_trainer_advance = _install_managed_learner_progress_marker()
     torch_utils.torch.load = device_safe_torch_load
     sys.argv = [previous_argv[0], *trainer_args]
@@ -1500,6 +1502,8 @@ def main() -> None:
             managed_stop_watcher.join(timeout=1.0)
         if previous_sigbreak_handler is not None:
             signal.signal(signal.SIGBREAK, previous_sigbreak_handler)
+        if checkpoint_publisher is not None:
+            checkpoint_publisher()
         if original_maybe_save_model is not None:
             from mlagents.trainers.trainer.rl_trainer import RLTrainer
             RLTrainer._maybe_save_model = original_maybe_save_model

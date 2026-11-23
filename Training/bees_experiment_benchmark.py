@@ -261,6 +261,7 @@ def main() -> int:
     parser.add_argument("--stage-step", type=int, help="Observed cumulative learner steps at the stage boundary.")
     parser.add_argument("--run-id", default="", help="Optional training run for web cross-reference.")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_REPORT_DIR)
+    parser.add_argument("--base-port", type=int, help="Use an already reserved Unity communicator port.")
     args = parser.parse_args()
     if args.resolve_candidate_run:
         if any((args.benchmark, args.opponent, args.env, args.build_id, args.run_id,
@@ -297,7 +298,7 @@ def main() -> int:
         args.benchmark.resolve(), candidate, args.opponent,
         args.env.resolve(), args.build_id.strip(), (args.candidate_run or args.run_id).strip(),
         args.output_root.resolve(), candidate_sha256=args.candidate_sha256, experiment=experiment,
-        purpose=args.evaluation_purpose,
+        purpose=args.evaluation_purpose, base_port=args.base_port,
     )
     print(result)
     return 0
