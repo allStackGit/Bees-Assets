@@ -499,46 +499,6 @@ def package_extra_career_library(
         if any(game["id"] == entry["id"] for game in menu["games"]):
             raise ValueError(f"native library already contains {entry['id']}")
         entry["config"] = kind + "/" + entry["config"]
-        if entry.get("kind") == "campaign":
-            menu["games"].append(entry)
-            continue
-        gate = entry.get("unlock_after")
-        playtime = entry.get("unlock_after_playtime")
-        if gate is not None and playtime is not None:
-            raise ValueError("post-campaign modes cannot have two independent unlock authorities")
-        if gate is not None:
-            if (not isinstance(gate, dict) or
-                    set(gate) != {"campaign_id", "mission_id"} or
-                    not all(isinstance(value, str) and value for value in gate.values())):
-                raise ValueError("invalid native post-campaign or Challenge unlock reference")
-            campaign_id = gate["campaign_id"]
-        elif playtime is not None:
-            # Original FishTankTrigger allows 1800 seconds of real Pluto
-            # campaign playtime to unlock Fish Tank before the Uranus finale.
-            # Preserve its one existing durable campaign marker and normal
-            # game library gate; do not replace it with a made-up mission win.
-            if (entry.get("kind") != "battle" or
-                    not isinstance(playtime, dict) or
-                    set(playtime) != {"campaign_id", "seconds"} or
-                    not isinstance(playtime["campaign_id"], str) or
-                    not playtime["campaign_id"] or
-                    type(playtime["seconds"]) is not int or
-                    playtime["seconds"] != 1800):
-                raise ValueError("Fish Tank playtime unlock must specify the original 1800 seconds")
-            campaign_id = playtime["campaign_id"]
-        else:
-            campaign_id = None
-        if campaign_id is not None:
-            parents = [game for game in menu["games"] if
-                       game["kind"] == "campaign" and game["id"] == campaign_id]
-            if len(parents) != 1:
-                raise ValueError("native mode unlock must refer to a packaged campaign")
-            if gate is not None:
-                catalog_path = destination / parents[0]["config"]
-                catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-                if not any((battle.get("mission") or {}).get("id") == gate["mission_id"]
-                           for battle in catalog.get("battles", [])):
-                    raise ValueError("native mode unlock milestone is missing from the campaign")
         menu["games"].append(entry)
     menu_path.write_text(json.dumps(menu, indent=2, ensure_ascii=False) + "\n",
                          encoding="utf-8")
@@ -667,6 +627,51 @@ def create_manifest(output: Path, *, include_training: bool = False) -> None:
         }, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def validate_packaged_library(data: dict) -> list[dict]:
+    """Apply the desktop library's entry contract to the delivered menu."""
+    if (not isinstance(data, dict) or set(data) != {"library_schema", "games"} or
+            type(data["library_schema"]) is not int or data["library_schema"] != 1 or
+            not isinstance(data["games"], list) or not 1 <= len(data["games"]) <= 100):
+        raise ValueError("packaged native library requires 1..100 entries and schema 1")
+    seen = set()
+    for item in data["games"]:
+        if not isinstance(item, dict) or set(item) - {
+            "id", "kind", "title", "config", "unlock_after", "unlock_after_playtime",
+        }:
+            raise ValueError("invalid packaged native library entry")
+        game_id, kind, title, config = (item.get(key) for key in ("id", "kind", "title", "config"))
+        if (not isinstance(game_id, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,48}", game_id) is None or
+                game_id in seen or kind not in ("battle", "campaign", "challenge") or
+                not isinstance(title, str) or not title.strip() or len(title.encode("utf-8")) > 120 or
+                not isinstance(config, str) or not config or ":" in config or "\\" in config or
+                config.startswith(("/", "./")) or ".." in PurePosixPath(config).parts or
+                PurePosixPath(config).suffix != ".json"):
+            raise ValueError("invalid or duplicate packaged native library entry")
+        seen.add(game_id)
+    return data["games"]
+
+
+def validate_packaged_unlocks(games: list[dict], campaign_missions: dict[str, set[str]]) -> None:
+    """Resolve every lock against the shipped campaign and its mission IDs."""
+    for game in games:
+        mission = game.get("unlock_after")
+        playtime = game.get("unlock_after_playtime")
+        if playtime is not None:
+            if (mission is not None or game["kind"] != "battle" or
+                    not isinstance(playtime, dict) or set(playtime) != {"campaign_id", "seconds"} or
+                    not isinstance(playtime["campaign_id"], str) or
+                    playtime["campaign_id"] not in campaign_missions or
+                    type(playtime["seconds"]) is not int or playtime["seconds"] != 1800):
+                raise ValueError(f"invalid packaged Fish Tank playtime unlock for {game['id']}")
+        if mission is not None:
+            if (game["kind"] not in ("battle", "challenge") or not isinstance(mission, dict) or
+                    set(mission) != {"campaign_id", "mission_id"} or
+                    not isinstance(mission["campaign_id"], str) or
+                    not isinstance(mission["mission_id"], str) or not mission["mission_id"].strip() or
+                    mission["mission_id"] not in campaign_missions.get(mission["campaign_id"], ())):
+                raise ValueError(f"unknown packaged campaign mission unlock for {game['id']}")
 
 
 def verify_native_package(directory: Path) -> dict:
@@ -798,6 +803,9 @@ def verify_native_package(directory: Path) -> dict:
     seen = {}
     policies = set()
     count_runs = 0
+    games = []
+    campaign_paths = {}
+    catalog_missions = {}
     while pending:
         file, kind = pending.pop()
         prior = seen.get(file)
@@ -810,26 +818,27 @@ def verify_native_package(directory: Path) -> dict:
         seen[file] = kind
         data = json.loads(file.read_text(encoding="utf-8"))
         if kind == "library":
-            if not isinstance(data, dict) or data.get("library_schema") != 1:
-                raise ValueError("invalid packaged native library")
-            for item in data["games"]:
+            games = validate_packaged_library(data)
+            for item in games:
                 game_kind = item["kind"]
-                if game_kind not in ("campaign", "challenge", "battle"):
-                    raise ValueError("unsupported packaged native game kind")
-                pending.append((
-                    owned_link(file, item["config"], "game configuration"),
-                    game_kind if game_kind in ("campaign", "challenge") else "run",
-                ))
+                source = owned_link(file, item["config"], "game configuration")
+                if game_kind == "campaign":
+                    campaign_paths[item["id"]] = source
+                pending.append((source, game_kind if game_kind != "battle" else "run"))
         elif kind in ("campaign", "challenge"):
+            missions = set()
             for item in data["battles"]:
                 pending.append((owned_link(file, item["config"], "mission"), "run"))
                 mission = item.get("mission") or {}
+                if isinstance(mission.get("id"), str) and mission["id"].strip():
+                    missions.add(mission["id"])
                 for outcome in ("on_victory", "on_defeat"):
                     route = mission.get(outcome)
                     if route is not None:
                         pending.append((
                             owned_link(file, route["config"], outcome + " route"), "run",
                         ))
+            catalog_missions[file] = missions
         elif kind == "run":
             count_runs += 1
             validate_portable_hivemind(data.get("hivemind"))
@@ -860,6 +869,9 @@ def verify_native_package(directory: Path) -> dict:
                     policies.add(model.parent)
         elif kind not in ("scene", "stage_asset"):
             raise ValueError("unknown packaged native JSON dependency")
+    validate_packaged_unlocks(games, {
+        game_id: catalog_missions[path] for game_id, path in campaign_paths.items()
+    })
     return {
         "kind": "bees_native_game_package_verified",
         "files": len(expected), "bytes": total_bytes,
