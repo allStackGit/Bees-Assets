@@ -952,9 +952,19 @@ def main():
         return 0
     finally:
         if child and child.poll() is None:
+            # Unity's environment manager must finish before the disposable
+            # player directory can be removed. Terminate/kill if an
+            # unresponsive learner ignores its normal checkpoint interrupt.
             child.send_signal(signal.SIGINT)
-            try: child.wait(timeout=60)
-            except subprocess.TimeoutExpired: child.terminate()
+            try:
+                child.wait(timeout=60)
+            except subprocess.TimeoutExpired:
+                child.terminate()
+                try:
+                    child.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait(timeout=10)
         try:
             if player is not None:
                 player.close()
