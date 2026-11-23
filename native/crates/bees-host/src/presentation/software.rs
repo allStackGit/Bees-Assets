@@ -3052,16 +3052,13 @@ impl NativeSoftwareRenderer {
                 .and_then(|atlas| atlas.sprites.get(usize::from(projectile.projectile_type)))
                 .and_then(Option::as_ref);
             let drew_art = if let Some(art) = art {
-                // A newly created projectile always begins at its first
-                // authored frame. Stable live entity IDs and the current
-                // physics tick own animation age, not an arbitrary
-                // entity-ID modulo a whole sprite sheet.
-                let (born, seen) = self.projectile_art_ticks
-                    .entry(projectile.entity_id)
-                    .or_insert((view.tick, view.tick));
-                *seen = view.tick;
-                let age = view.tick.saturating_sub(*born) as f32
-                    * view.fixed_step_seconds;
+                let age = projectile.artwork_elapsed_seconds(body).unwrap_or_else(|| {
+                    let (born, seen) = self.projectile_art_ticks
+                        .entry(projectile.entity_id)
+                        .or_insert((view.tick, view.tick));
+                    *seen = view.tick;
+                    view.tick.saturating_sub(*born) as f32 * view.fixed_step_seconds
+                });
                 let index = projectile_art_frame(projectile.projectile_type, age, art.frames.len());
                 self.draw_sprite(&art.frames[index], position,
                     body.rotation_degrees.to_radians(),

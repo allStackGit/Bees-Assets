@@ -572,6 +572,26 @@ impl CombatProjectile {
         })
     }
 
+    /// Read-only presentation age. Explosions already own a recovered
+    /// timeline, and medium shots travel at constant speed from their
+    /// launch point. No render clock is needed in the simulation loop.
+    pub fn artwork_elapsed_seconds(&self, body: &ProjectileBody) -> Option<f32> {
+        if let ImpactBehavior::Explosion { timeline, .. } = &self.behavior {
+            return Some(timeline.elapsed_seconds());
+        }
+        if !matches!(self.projectile_type, 2 | 7) {
+            return None;
+        }
+        let speed_squared = body.motion.velocity.length_squared();
+        if speed_squared <= 0.0 || !speed_squared.is_finite() {
+            return None;
+        }
+        let distance_squared = (body.motion.position - body.motion.starting_position)
+            .length_squared();
+        let seconds = (distance_squared / speed_squared).sqrt();
+        seconds.is_finite().then_some(seconds)
+    }
+
     pub fn set_explosion_harmless(&mut self, harmless: bool) {
         if let ImpactBehavior::Explosion { contacts: explosion, .. } = &mut self.behavior {
             explosion.harmless = harmless;

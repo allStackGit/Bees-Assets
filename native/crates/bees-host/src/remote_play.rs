@@ -2920,7 +2920,7 @@ fn current_state(
         if fog && !sources.covers(position, measurements) {
             return None;
         }
-        Some(json!({
+        let mut snapshot = json!({
             "id": shot.entity_id,
             "type": shot.projectile_type,
             "x": position.x, "y": position.y,
@@ -2933,7 +2933,11 @@ fn current_state(
                 [bounds.min.x, bounds.min.y],
                 [bounds.max.x, bounds.max.y],
             ]),
-        }))
+        });
+        if let Some(age) = shot.artwork_elapsed_seconds(body) {
+            snapshot["artwork_age_seconds"] = json!(age);
+        }
+        Some(snapshot)
     }).collect();
     // Preserve the authoritative source registration order for LAN tab,
     // type-selection and keyboard cycling, including dynamically admitted

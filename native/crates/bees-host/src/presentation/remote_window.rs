@@ -335,10 +335,16 @@ impl RemoteArtwork {
                 shot["type"].as_u64().and_then(|kind| u8::try_from(kind).ok()),
                 visual.position(shot, 1, fraction),
             ) else { continue };
-            let (first, last) = self.shot_first_seen.entry(id)
-                .or_insert((tick, tick));
-            *last = tick;
-            let age = tick.saturating_sub(*first) as f32 * dt.max(0.0);
+            let age = shot["artwork_age_seconds"].as_f64()
+                .map(|seconds| seconds as f32)
+                .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+                .unwrap_or_else(|| {
+                    // Older hosts omit the field. Keep their existing
+                    // observation-clock fallback for compatibility.
+                    let (first, last) = self.shot_first_seen.entry(id).or_insert((tick, tick));
+                    *last = tick;
+                    tick.saturating_sub(*first) as f32 * dt.max(0.0)
+                });
             let angle = visual.heading_for(shot, 1, fraction);
             if self.raster.remote_projectile_art(kind, point, angle, age) {
                 self.projectiles.insert(id);
