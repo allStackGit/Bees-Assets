@@ -108,7 +108,12 @@ async function inspectOfflineWorkers(manifestPath, sourceSha) {
             (await hashFile(archive)) !== String(item.archive_sha256).toLowerCase()) {
             throw Error('Offline worker archive does not match the manifest: ' + expected.archive);
         }
-        selected.push({ ...expected, source: archive });
+        selected.push({
+            ...expected,
+            source: archive,
+            archive_sha256: String(item.archive_sha256).toLowerCase(),
+            archive_bytes: Number(item.archive_bytes),
+        });
     }
     return { manifestPath: filepath, artifacts: selected };
 }
@@ -145,6 +150,11 @@ async function installOfflineWorkers(checked, python, packageRoot) {
         const staging = archive + '.part';
         const directory = path.join(packageRoot, expected.folder);
         fs.copyFileSync(expected.source, staging, fs.constants.COPYFILE_EXCL);
+        if (fs.statSync(staging).size !== expected.archive_bytes ||
+            await hashFile(staging) !== expected.archive_sha256) {
+            fs.rmSync(staging, { force: true });
+            throw Error('Offline Unity archive changed during transfer: ' + expected.archive);
+        }
         fs.renameSync(staging, archive);
         fs.mkdirSync(directory, { recursive: false });
         extractWorkerArchive(python, archive, directory, expected.entrypoint);
