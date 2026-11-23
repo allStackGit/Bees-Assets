@@ -515,14 +515,16 @@ class FrozenInferenceMicrobatcher:
                     self._counters["dispatched"] += len(group)
                     self._counters["groups"] += 1
 
-    def _time(self, action):
+    def _time(self, action, *, burst=1):
         if self.device.type == "cuda":
             torch.cuda.current_stream(self.device).synchronize()
         start = perf_counter()
-        output = action()
+        output = None
+        for _ in range(burst):
+            output = action()
         if self.device.type == "cuda":
             torch.cuda.current_stream(self.device).synchronize()
-        return perf_counter()-start, output
+        return (perf_counter()-start)/burst, output
 
     def _individual(self, group):
         with torch.inference_mode():
@@ -825,12 +827,20 @@ class FrozenInferenceMicrobatcher:
                                     MemoryError,torch.OutOfMemoryError):
                                 pass
                     times = {name:[] for name in choices}
+                    # A copy-stream pipeline saves time across successive
+                    # groups, not necessarily on the first isolated call.
+                    # Measure sustained batch service, including host pack
+                    # and device transfer, with two queued groups per sample.
+                    # Two groups fit the bounded default pinned staging
+                    # budget; unsupported pinned paths never reach this
+                    # selection because their equivalence trial failed.
+                    burst = 2 if "pinned" in choices else 1
                     for _ in range(2):
                         # Interleaved timed trials reduce the chance of
                         # choosing a GPU path merely because a different
                         # job temporarily stopped competing for the device.
                         for name,operation in choices.items():
-                            seconds,_ = self._time(operation)
+                            seconds,_ = self._time(operation,burst=burst)
                             times[name].append(seconds)
                     baseline = median(times["individual"])
                     faster = sorted((median(v),name) for name,v in times.items()
