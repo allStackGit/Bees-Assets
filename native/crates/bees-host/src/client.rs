@@ -184,6 +184,7 @@ pub struct NativeClient {
     dialogue_reveal: Option<(u32, usize, Instant)>,
     dialogue_reveal_forced: bool,
     dialogue_visible: bool,
+    dialogue_intercom_played: bool,
     pluto_finale_camera: crate::presentation::campaign_dialogue::PlutoFinaleCamera,
     pluto_scout_tutorial: crate::presentation::campaign_dialogue::PlutoScoutTutorial,
     held_fire_target: Option<Vec2>,
@@ -326,6 +327,7 @@ impl NativeClient {
             dialogue_line: 0,
             dialogue_pause_started: None, dialogue_reveal: None,
             dialogue_reveal_forced: false, dialogue_visible: false,
+            dialogue_intercom_played: false,
             pluto_finale_camera: Default::default(),
             pluto_scout_tutorial: Default::default(),
             held_fire_target: None,
@@ -992,9 +994,12 @@ impl NativeClient {
                 self.dialogue_sequence = Some(sequence);
                 self.dialogue_line = 0;
                 self.dialogue_pause_started = None;
+                self.dialogue_intercom_played = false;
                 self.pluto_finale_camera = Default::default();
             }
-            use crate::presentation::campaign_dialogue::skip_disabled_tooltip_lines;
+            use crate::presentation::campaign_dialogue::{
+                campaign_tooltip_end, skip_disabled_tooltip_lines,
+            };
             let count = crate::presentation::campaign_dialogue::line_count(cue);
             let show_tooltips = self.controls.show_campaign_tooltips();
             self.dialogue_line = skip_disabled_tooltip_lines(cue, self.dialogue_line, show_tooltips);
@@ -1004,11 +1009,12 @@ impl NativeClient {
                 self.dialogue_reveal = Some((sequence, self.dialogue_line, now));
                 self.dialogue_reveal_forced = false;
             }
+            let tooltip_end = campaign_tooltip_end(cue, self.dialogue_line);
             if !self.show_controls_help && self.window.is_key_pressed(Key::K, KeyRepeat::No) {
-                self.dialogue_line = count;
+                self.dialogue_line = tooltip_end.unwrap_or(count);
             } else if !self.show_controls_help && self.dialogue_line < count &&
                 self.window.is_key_pressed(Key::L, KeyRepeat::No) {
-                let incomplete = !self.dialogue_reveal_forced &&
+                let incomplete = tooltip_end.is_none() && !self.dialogue_reveal_forced &&
                     crate::presentation::campaign_dialogue::visible_line(
                         cue, self.dialogue_line,
                     ).is_some_and(|(_, message)| {
@@ -1046,8 +1052,11 @@ impl NativeClient {
             // first visible line of each newly presented section. A
             // skipped section makes no sound, and advancing within the
             // same section never repeats the cue.
-            if first_presentation && self.dialogue_line < count {
+            if !self.dialogue_intercom_played && self.dialogue_line < count &&
+                campaign_tooltip_end(cue, self.dialogue_line).is_none()
+            {
                 self.audio.campaign_dialogue_presented();
+                self.dialogue_intercom_played = true;
             }
             crate::presentation::campaign_dialogue::visible_line(cue,self.dialogue_line)
                 .map(|(speaker, line)| (cue, speaker, line))
@@ -1073,7 +1082,8 @@ impl NativeClient {
         let finale_camera_before_input = (self.renderer.pluto_finale_reveal && self.dialogue_visible)
             .then_some(self.renderer.camera);
         self.audio.set_level_intro_ambience(
-            dialogue.is_some_and(|(cue, _, _)| cue.is_level_intro()),
+            dialogue.is_some_and(|(cue, _, _)| cue.is_level_intro() &&
+                crate::presentation::campaign_dialogue::campaign_tooltip_end(cue, self.dialogue_line).is_none()),
         );
         // Hiding the owner's story from the opposite hot-seat must not
         // advance the authoritative mission before the owner has read it.
@@ -2116,7 +2126,7 @@ impl NativeClient {
             } else { "Measuring native gameplay throughput...".to_owned() };
             self.renderer.draw_live_performance(&label);
         }
-        if let Some((_, speaker, line)) = dialogue {
+        if let Some((cue, speaker, line)) = dialogue {
             let elapsed = if self.dialogue_reveal_forced {
                 1_000_000.0
             } else {
@@ -2124,7 +2134,13 @@ impl NativeClient {
                     .map_or(0.0, |(_, _, began)|
                         now.saturating_duration_since(began).as_secs_f32())
             };
-            self.renderer.draw_campaign_dialogue(speaker, line, elapsed);
+            if let Some(end) = crate::presentation::campaign_dialogue::campaign_tooltip_end(
+                cue, self.dialogue_line,
+            ) {
+                self.renderer.draw_campaign_tooltip(line, self.dialogue_line, end);
+            } else {
+                self.renderer.draw_campaign_dialogue(speaker, line, elapsed);
+            }
         }
         // Help is a noninteractive presentation overlay. All underlying
         // authenticated player commands remain disabled until it closes.

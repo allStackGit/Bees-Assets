@@ -2381,6 +2381,10 @@ fn draw_campaign_dialogue(
     ) else {return;};
     let count=super::campaign_dialogue::line_count(cue);
     let Some((speaker,message))=super::campaign_dialogue::visible_line(cue,line_index) else{return;};
+    if let Some(end) = super::campaign_dialogue::campaign_tooltip_end(cue, line_index) {
+        super::campaign_dialogue::draw_campaign_tooltip(pixels, WIDTH, FIELD, message, line_index, end);
+        return;
+    }
     let (visible, speaking_frame) =
         super::campaign_dialogue::revealed_dialogue_text(message, elapsed_seconds);
     for scanline in pixels.chunks_exact_mut(WIDTH).skip(HEIGHT-160).take(96) {
@@ -3553,6 +3557,7 @@ pub fn connect_remote_with_trust(
     let mut last_middle:Option<(f32,f32)>=None;
     let mut dialogue_key:Option<(u64,u64,u64)>=None;
     let mut dialogue_line=0usize;
+    let mut dialogue_intercom_played = false;
     let mut pluto_finale_camera = super::campaign_dialogue::PlutoFinaleCamera::default();
     let mut pluto_scout_tutorial = super::campaign_dialogue::PlutoScoutTutorial::default();
     let mut dialogue_pause_started:Option<((u64,u64,u64),usize,Instant)>=None;
@@ -4138,9 +4143,9 @@ pub fn connect_remote_with_trust(
                 state["world_id"].as_u64().unwrap_or(0),
                 state["episode_revision"].as_u64().unwrap_or(0),sequence,
             ));
-            let first_presentation=cue.is_some()&&cue!=dialogue_key;
             if cue!=dialogue_key {
                 dialogue_key=cue;dialogue_line=0;dialogue_pause_started=None;
+                dialogue_intercom_played = false;
                 pluto_finale_camera = Default::default();
             }
             let count=state["campaign_dialogue"]["line_count"]
@@ -4165,12 +4170,14 @@ pub fn connect_remote_with_trust(
                 // A skip must not activate a Beacon in the same frame.
                 dialogue_skip_key=!show_controls_help&&dialogue_line<count &&
                     window.is_key_pressed(Key::K,KeyRepeat::No);
+                let tooltip_end = authored_cue.and_then(|cue|
+                    super::campaign_dialogue::campaign_tooltip_end(cue, dialogue_line));
                 if dialogue_skip_key {
-                    dialogue_line=count;
+                    dialogue_line = tooltip_end.unwrap_or(count);
                 } else if !show_controls_help &&
                     (window.is_key_pressed(Key::L,KeyRepeat::No) ||
                     (!lobby_waiting && window.is_key_pressed(Key::Enter,KeyRepeat::No))) {
-                    let incomplete = !dialogue_reveal_forced &&
+                    let incomplete = tooltip_end.is_none() && !dialogue_reveal_forced &&
                         authored_cue.and_then(|cue|
                             super::campaign_dialogue::visible_line(cue,dialogue_line))
                             .is_some_and(|(_,message)|
@@ -4208,12 +4215,17 @@ pub fn connect_remote_with_trust(
                 // The remote viewer hears only the first visible line
                 // of a new host-owned dialogue section. No cue leaks to
                 // an opposing viewer or plays when the section is skipped.
-                if first_presentation&&dialogue_line<count {
+                if !dialogue_intercom_played && dialogue_line < count &&
+                    authored_cue.is_some_and(|cue|
+                        super::campaign_dialogue::campaign_tooltip_end(cue, dialogue_line).is_none())
+                {
                     audio.campaign_dialogue_presented();
+                    dialogue_intercom_played = true;
                 }
             }
             level_intro_visible = dialogue_line < count &&
-                authored_cue.is_some_and(CampaignCue::is_level_intro);
+                authored_cue.is_some_and(|cue| cue.is_level_intro() &&
+                    super::campaign_dialogue::campaign_tooltip_end(cue, dialogue_line).is_none());
             if let Some(key) = dialogue_key.filter(|_| dialogue_line < count) {
                 if dialogue_reveal_scope != Some((key, dialogue_line)) {
                     dialogue_reveal_scope = Some((key, dialogue_line));

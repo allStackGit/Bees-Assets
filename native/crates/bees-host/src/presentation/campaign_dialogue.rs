@@ -728,12 +728,61 @@ pub(crate) fn line_count(cue: CampaignCue) -> usize {
 pub(crate) fn skip_disabled_tooltip_lines(
     cue: CampaignCue, index: usize, show_tooltips: bool,
 ) -> usize {
-    if show_tooltips { return index; }
+    if show_tooltips { index } else { campaign_tooltip_end(cue, index).unwrap_or(index) }
+}
+
+/// The exclusive end of the optional pages at this cursor. Both
+/// clients keep the authored story cursor and play its dialogue afterward.
+#[cfg(feature = "client")]
+pub(crate) fn campaign_tooltip_end(cue: CampaignCue, index: usize) -> Option<usize> {
     match cue {
-        CampaignCue::PlutoReinforcementsBriefing if index == 1 => line_count(cue),
-        CampaignCue::PlutoReinforcementsScoutSelected => index.max(5),
-        _ => index,
+        CampaignCue::PlutoReinforcementsBriefing if index == 1 => Some(2),
+        CampaignCue::PlutoReinforcementsScoutSelected if index < 5 => Some(5),
+        _ => None,
     }
+}
+
+#[cfg(feature = "client")]
+pub(super) fn draw_campaign_tooltip(
+    pixels: &mut [u32], stride: usize, field_width: usize,
+    message: &str, index: usize, end: usize,
+) {
+    use super::text;
+    if stride == 0 || field_width > stride || field_width < 100 { return; }
+    let height = pixels.len() / stride;
+    let bottom = height.saturating_sub(173);
+    let panel_width = field_width.saturating_sub(32).min(470);
+    let left = (field_width - panel_width) / 2;
+    let line_height = text::HEIGHT + 4;
+    let mut lines = [""; 5];
+    let mut count = 0;
+    let mut rest = message;
+    for line in &mut lines {
+        if rest.is_empty() { break; }
+        let fit = text::fit(rest, panel_width - 24);
+        if fit.is_empty() { break; }
+        let take = if fit.len() == rest.len() { fit.len() }
+            else { fit.rfind(' ').filter(|&offset| offset != 0).unwrap_or(fit.len()) };
+        *line = &rest[..take];
+        rest = rest[take..].trim_start();
+        count += 1;
+    }
+    let panel_height = (count + 2) * line_height + 16;
+    let Some(top) = bottom.checked_sub(panel_height) else { return; };
+    for y in top..bottom {
+        pixels[y * stride + left..y * stride + left + panel_width]
+            .fill(if y < top + 2 { 0xdce25f } else { 0x172b3b });
+    }
+    let heading = if end == 2 { "SELECT THE SCOUT".to_owned() }
+        else { format!("SQUAD CONTROLS  {}/{}", index + 1, end) };
+    text::draw_at(pixels, stride, left + 12, top + 7, &heading, 1, [220, 226, 95]);
+    for (row, line) in lines[..count].iter().enumerate() {
+        text::draw_at(pixels, stride, left + 12, top + 7 + (row + 1) * line_height,
+            line, 1, [239, 247, 255]);
+    }
+    let footer = if index + 1 < end { "L next tip   K close tips" } else { "L or K close tip" };
+    text::draw_at(pixels, stride, left + 12, top + 9 + (count + 1) * line_height,
+        footer, 1, [155, 178, 206]);
 }
 
 /// DialogueManager.TypeLine reveals one visible character per 0.02

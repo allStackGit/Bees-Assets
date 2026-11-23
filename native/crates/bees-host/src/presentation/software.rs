@@ -4891,6 +4891,13 @@ impl NativeSoftwareRenderer {
     }
 
     #[cfg(feature = "client")]
+    pub(crate) fn draw_campaign_tooltip(&mut self, message: &str, index: usize, end: usize) {
+        super::campaign_dialogue::draw_campaign_tooltip(
+            &mut self.pixels, self.width, self.width, message, index, end,
+        );
+    }
+
+    #[cfg(feature = "client")]
     pub(crate) fn draw_campaign_dialogue(
         &mut self, speaker: &str, message: &str, elapsed_seconds: f32,
     ) {
