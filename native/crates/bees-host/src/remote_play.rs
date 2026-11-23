@@ -64,6 +64,9 @@ const SPECTATOR_IDLE_STATE_EVERY_TICKS: u64 = STATE_EVERY_TICKS * 2;
 const CONGESTED_STATE_EVERY_TICKS: u64 = STATE_EVERY_TICKS * 4;
 const MAX_PENDING_AUDIO_EVENTS: usize = 32;
 const MAX_PENDING_SHIP_INSPECTIONS: usize = 16;
+// Optional weapon-range interest is client-selected and is rechecked on
+// every projected frame. Bound work independently of JSON line size.
+const MAX_WEAPON_OVERLAY_SQUADS: usize = 128;
 // No physical tick runs while one human faction is absent. A surviving
 // commander can explicitly adjudicate a FORFEIT after this wall-clock grace.
 // The grace resets on host recovery; never infer an expired timer from a
@@ -1589,6 +1592,18 @@ impl NativeRemotePlay {
                         if claimed_world == world_id.0 && claimed_revision == revision {
                             // Ownership is checked against the live roster at
                             // projection, not against client assertions.
+                            // Prevent an untrusted peer from retaining huge,
+                            // repeated interest vectors that scale each later
+                            // visibility and geometry pass independently of
+                            // the bounded incoming TCP frame.
+                            if squads.len() > MAX_WEAPON_OVERLAY_SQUADS {
+                                peer.closed = true;
+                                break;
+                            }
+                            let mut distinct = HashSet::with_capacity(squads.len());
+                            let squads = squads.into_iter()
+                                .filter(|owner| distinct.insert(*owner))
+                                .collect();
                             peer.weapon_overlay = Some((claimed_world, claimed_revision, squads));
                             self.measurements.weapon_overlay_requests += 1;
                         }
