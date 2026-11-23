@@ -168,6 +168,7 @@ pub struct NativeShopMenuRow {
     pub ship_type: u8,
     pub saved_squad_id: i64,
     pub quantity: u32,
+    pub unit_price_tsv: u64,
 }
 
 /// Read-only projection from the committed source campaign ledger. No
@@ -250,6 +251,7 @@ pub enum NativeBattleMenuAction {
         formation: NativeSavedSquadFormation,
         placements: Vec<NativeSavedShipPlacement> },
     Buy { side: i32, ship_type: u8, saved_squad_id: i64, quantity: u32 },
+    BuyFleet { side: i32, requisition: Vec<(u8, i64, u32)> },
     Transfer { fleet_ship_id: i64, to_saved_squad_id: i64 },
     TransferBatch { side: i32, fleet_ship_ids: Vec<i64>,
         to_saved_squad_id: i64 },
@@ -660,6 +662,9 @@ fn select_battle_inner(
     let mut name_input = String::new();
     let mut shop_selected = 0_usize;
     let mut shop_first = 0_usize;
+    // A local, unpublished shop selection, not another career inventory.
+    // Only the resulting BuyFleet action can reach the native ledger.
+    let mut shop_cart = Vec::<(i32, u8, i64, u32, u64)>::new();
     let mut fleet_selected = 0_usize;
     let mut fleet_first = 0_usize;
     while window.is_open() {
@@ -1052,6 +1057,9 @@ fn select_battle_inner(
                 fleet_first = 0;
             }
         }
+        if !show_shop && !shop_cart.is_empty() {
+            shop_cart.clear();
+        }
         if show_shop || show_transfer || show_create || show_tactics || show_delete {
             let count = if show_transfer { transfer_rows.len() }
                 else if show_create { create_rows.len() }
@@ -1258,6 +1266,31 @@ fn select_battle_inner(
                     }
                 }
             }
+            if show_shop {
+                if window.is_key_pressed(Key::Backspace, KeyRepeat::No) {
+                    shop_cart.pop();
+                }
+                if window.is_key_pressed(Key::Space, KeyRepeat::No) {
+                    if let Some(row) = shop_rows.get(shop_selected)
+                        .filter(|row| row.unlocked) {
+                        let same_side = shop_cart.first().is_none_or(|entry|
+                            entry.0 == row.side);
+                        let hulls = shop_cart.iter().fold(0u32, |sum, entry|
+                            sum.saturating_add(entry.3));
+                        let spent = shop_cart.iter().try_fold(0u64, |sum, entry|
+                            entry.4.checked_mul(u64::from(entry.3))
+                                .and_then(|price| sum.checked_add(price)));
+                        let next = row.unit_price_tsv.checked_mul(u64::from(row.quantity))
+                            .and_then(|price| spent.and_then(|sum| sum.checked_add(price)));
+                        if same_side && hulls.checked_add(row.quantity)
+                            .is_some_and(|total| total <= 256) &&
+                            next.is_some_and(|total| total <= banked_tsv) {
+                            shop_cart.push((row.side, row.ship_type,
+                                row.saved_squad_id, row.quantity, row.unit_price_tsv));
+                        }
+                    }
+                }
+            }
             if show_create && window.is_key_pressed(Key::D, KeyRepeat::No) {
                 if let Some(row) = create_rows.get(shop_selected) {
                     return Ok(Some(NativeBattleMenuAction::DuplicateSquad {
@@ -1267,6 +1300,16 @@ fn select_battle_inner(
                 }
             }
             if window.is_key_pressed(Key::Enter, KeyRepeat::No) {
+                if show_shop && !shop_cart.is_empty() {
+                    let side = shop_cart[0].0;
+                    let requisition = shop_cart.iter()
+                        .map(|&(_, kind, destination, count, _)|
+                            (kind, destination, count))
+                        .collect::<Vec<_>>();
+                    return Ok(Some(NativeBattleMenuAction::BuyFleet {
+                        side, requisition,
+                    }));
+                }
                 if let Some(action) = choose(shop_selected, tactic_edit_index,
                         tactic_strategy, tactic_chase, tactic_cease_fire,
                         tactic_match_speed, tactic_color, tactic_formation,
@@ -1371,8 +1414,15 @@ fn select_battle_inner(
                     else { "Purchase for deployment or buy into reserve; Enter spends mined TSV" }, 1, MUTED);
             }
             if show_shop {
+                let cart_total = shop_cart.iter().fold(0u64, |sum, entry|
+                    sum.saturating_add(entry.4.saturating_mul(u64::from(entry.3))));
+                let hulls = shop_cart.iter().map(|entry| entry.3).sum::<u32>();
                 text::draw_centered(&mut pixels, WIDTH, 94,
-                    &format!("Available mined TSV: {banked_tsv}"), 1, MUTED);
+                    &format!("TSV {banked_tsv} | Cart: {} lines, {hulls} hulls, TSV {cart_total}",
+                        shop_cart.len()), 1, MUTED);
+                text::draw_centered(&mut pixels, WIDTH, 441,
+                    "Space: add to cart | Backspace: undo | Enter: purchase cart / selected row",
+                    1, MUTED);
             }
             if count == 0 {
                 text::draw_centered(&mut pixels, WIDTH, 218,
