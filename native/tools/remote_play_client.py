@@ -892,6 +892,11 @@ class RemoteConsole:
         # Only Begin carries selected squad lifetimes; the native host
         # authorizes the gesture and owns the live weapon state.
         is_held = action[0] == "held_fire"
+        if ((state.get("lobby") or {}).get("waiting") is True or
+                state.get("waiting_for_player_reconnect") is True) and not (
+                    is_held and action[1].get("action") == "End"
+                ):
+            raise ValueError("native host is waiting for both commanders")
         is_side_action = action[0] in ("surrender", "activate_retreat")
         # Native selection is an actual source Level input, including
         # clearing all squads. Campaign tutorials observe its live result.
@@ -1153,6 +1158,9 @@ class RemoteConsole:
                 required = lobby.get("required_sides", [])
                 print(f"Multiplayer lobby: sides ready {ready} / {required}"
                       f"; enter 'ready' to join the match")
+            if state.get("waiting_for_player_reconnect") is True:
+                print("Match paused for commander reconnection; connected sides: "
+                      f"{state.get('connected_commander_sides', [])}")
             if self.time_controls_available:
                 print(f"Host clock: {state.get('game_speed', 1):g}x"
                       f", paused: {state.get('commander_paused') is True}"
