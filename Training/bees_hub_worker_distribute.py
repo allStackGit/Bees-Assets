@@ -32,6 +32,10 @@ SCHEMA_FIELDS = {
 }
 PLATFORM_ARCHIVE = {"linux": ("LinuxPlayer", "rl-linux.zip"),
                     "windows": ("WindowsPlayer", "rl-windows.zip")}
+PLATFORM_PLAYER = {
+    "LinuxPlayer": ("Linux", "Bees RL Training.x86_64", "rl-linux.zip"),
+    "WindowsPlayer": ("Windows", "Bees RL Training.exe", "rl-windows.zip"),
+}
 MAX_MANIFEST = 32768
 MAX_ARCHIVE = 16 * 1024 ** 3
 
@@ -155,7 +159,10 @@ def source_manifest(filename: Path) -> tuple[dict, str]:
         if isinstance(item, dict):
             platforms.append(item.get("platform"))
         if not isinstance(item, dict) or (
-            item.get("platform") not in ("LinuxPlayer", "WindowsPlayer") or
+            item.get("platform") not in PLATFORM_PLAYER or
+            (item.get("folder"), item.get("entrypoint"), item.get("archive")) !=
+                PLATFORM_PLAYER.get(item.get("platform")) or
+            item.get("role") != "dedicated" or
             not SHA.fullmatch(str(item.get("player_tree_sha256", ""))) or
             not SHA.fullmatch(str(item.get("archive_sha256", ""))) or
             type(item.get("archive_bytes")) is not int or
