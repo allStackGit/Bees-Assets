@@ -239,6 +239,7 @@ async function status(hub) {
             tinybrains_reason:tinybrains.reason||null,
             mini_candidates:tinybrains.mini_candidates||[],
             historical_candidates:tinybrains.historical_candidates||[],
+            custom_library:tinybrains.custom_library||null,
             evaluation_capacity:tinybrains.evaluation_capacity||null,
             courier_available:courier.available,
             courier_reason:courier.reason||null,
