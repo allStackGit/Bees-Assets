@@ -1681,6 +1681,257 @@ impl BattleCatalog {
         )
     }
 
+    /// Apply one fully published, chronologically ordered career edit.
+    /// No historical per-kind receipt is rewritten; the sequence starts
+    /// only when the first atomic squad duplication is committed.
+    fn apply_sequenced_edit(
+        &self, progress: &mut CampaignProgress<'_>, edit: CampaignSequencedEdit,
+    ) -> io::Result<()> {
+        match edit {
+            CampaignSequencedEdit::Duplicate {
+                squad, purchased_ids, authored, tactics,
+            } => {
+                if !matches!(squad.side, 1 | 2) ||
+                    squad.saved_squad_id <= progress.highest_saved_squad_id() ||
+                    squad.saved_squad_id == i64::MAX ||
+                    squad.template_saved_squad_id <= 0 ||
+                    squad.template_saved_squad_id == squad.saved_squad_id ||
+                    progress.is_retired_saved_squad(squad.template_saved_squad_id) ||
+                    progress.created_squads.iter().any(|old|
+                        old.saved_squad_id == squad.saved_squad_id) ||
+                    tactics.side != squad.side ||
+                    tactics.saved_squad_id != squad.saved_squad_id ||
+                    !(1..=40).contains(&tactics.shooting_strategy_id) ||
+                    tactics.formation.is_some_and(|formation| !formation.is_valid()) ||
+                    !tactics.placements_valid() ||
+                    purchased_ids.len() + authored.len() > 32768
+                {
+                    return Err(invalid("invalid atomic SavedSquad duplicate"));
+                }
+                let mut seen = HashSet::new();
+                for &id in &purchased_ids {
+                    if id <= 0 || !seen.insert(id) ||
+                        !progress.purchases.iter().any(|(side, ship)|
+                            *side == squad.side && ship.fleet_ship_id == id &&
+                            ship.saved_squad_id == 0) ||
+                        progress.fleet.get(&id).is_some_and(|fleet| fleet.is_dead)
+                    {
+                        return Err(invalid("duplicate claims an unavailable purchased reserve hull"));
+                    }
+                }
+                for &(id, kind) in &authored {
+                    if id <= 0 || !seen.insert(id) ||
+                        !progress.authored_roster.get(&id).is_some_and(|owner|
+                            owner.side == squad.side &&
+                            owner.current_saved_squad_id == 0 &&
+                            owner.ship_type.is_none_or(|known| known == kind)) ||
+                        progress.fleet.get(&id).is_some_and(|fleet|
+                            fleet.is_dead || fleet.ship_type.is_some_and(|known| known != kind))
+                    {
+                        return Err(invalid("duplicate claims an unavailable original reserve hull"));
+                    }
+                }
+                for (_, ship) in &mut progress.purchases {
+                    if purchased_ids.contains(&ship.fleet_ship_id) {
+                        ship.saved_squad_id = squad.saved_squad_id;
+                    }
+                }
+                for (id, kind) in authored {
+                    let owner = progress.authored_roster.get_mut(&id)
+                        .expect("duplicate authored reserve was verified");
+                    owner.current_saved_squad_id = squad.saved_squad_id;
+                    if owner.ship_type.is_none() { owner.ship_type = Some(kind); }
+                }
+                progress.created_squads.push(squad);
+                progress.tactics.push(tactics);
+                progress.transfer_count = progress.transfer_count
+                    .checked_add(purchased_ids.len() as u64)
+                    .ok_or_else(|| invalid("saved squad transfer count overflow"))?;
+                progress.authored_transfer_count = progress.authored_transfer_count
+                    .checked_add((seen.len() - purchased_ids.len()) as u64)
+                    .ok_or_else(|| invalid("authored squad edit counter overflow"))?;
+                progress.tactics_edits = progress.tactics_edits.checked_add(1)
+                    .ok_or_else(|| invalid("SavedSquad tactics history overflow"))?;
+            }
+            CampaignSequencedEdit::Purchase(receipt) => {
+                let ship = receipt.ship;
+                if ship.fleet_ship_id <= progress.highest_fleet_id() ||
+                    ship.saved_squad_id < 0 ||
+                    progress.is_retired_saved_squad(ship.saved_squad_id) ||
+                    !self.buildable_ships.iter().any(|entry|
+                        entry.player_side == receipt.player_side &&
+                        entry.ship_type == ship.ship_type &&
+                        entry.price_tsv == ship.price_tsv && entry.purchasable)
+                {
+                    return Err(invalid("invalid sequenced fleet purchase"));
+                }
+                progress.spent_minerals = progress.spent_minerals
+                    .checked_add(ship.price_tsv)
+                    .ok_or_else(|| invalid("campaign purchase total overflow"))?;
+                progress.fleet.insert(ship.fleet_ship_id, FleetProgress {
+                    side: receipt.player_side, ship_type: Some(ship.ship_type),
+                    loss_history_complete: true, combat_history_complete: true,
+                    special_history_complete: true,
+                    combat: NativeFleetCombatStats {
+                        source_kills: Some(0), ..NativeFleetCombatStats::default()
+                    },
+                    ..FleetProgress::default()
+                });
+                progress.purchases.push((receipt.player_side, ship));
+            }
+            CampaignSequencedEdit::Transfer(transfer) => {
+                let member = progress.purchases.iter_mut().find(|(_, ship)|
+                    ship.fleet_ship_id == transfer.fleet_ship_id)
+                    .ok_or_else(|| invalid("sequenced transfer has no purchased FleetShip"))?;
+                if member.0 != transfer.player_side ||
+                    member.1.saved_squad_id != transfer.from_saved_squad_id ||
+                    transfer.to_saved_squad_id < 0 ||
+                    transfer.to_saved_squad_id == transfer.from_saved_squad_id ||
+                    progress.retired_squad_ids.contains(&transfer.to_saved_squad_id) ||
+                    progress.fleet.get(&transfer.fleet_ship_id)
+                        .is_some_and(|fleet| fleet.is_dead &&
+                            transfer.to_saved_squad_id != 0) ||
+                    (transfer.to_saved_squad_id > 0 &&
+                        progress.created_squads.iter().any(|squad|
+                            squad.saved_squad_id == transfer.to_saved_squad_id &&
+                            squad.side != transfer.player_side))
+                {
+                    return Err(invalid("invalid or stale sequenced purchased FleetShip transfer"));
+                }
+                member.1.saved_squad_id = transfer.to_saved_squad_id;
+                progress.transfer_count = progress.transfer_count.checked_add(1)
+                    .ok_or_else(|| invalid("saved squad transfer count overflow"))?;
+            }
+            CampaignSequencedEdit::AuthoredAssignment(edit) => {
+                if !matches!(edit.player_side, 1 | 2) ||
+                    edit.fleet_ship_id <= 0 || edit.from_saved_squad_id < 0 ||
+                    edit.to_saved_squad_id < 0 ||
+                    (edit.from_saved_squad_id == edit.to_saved_squad_id &&
+                        (edit.from_saved_squad_id == 0 ||
+                         progress.authored_roster.contains_key(&edit.fleet_ship_id))) ||
+                    progress.purchased_ship(edit.fleet_ship_id).is_some() ||
+                    progress.is_retired_saved_squad(edit.to_saved_squad_id) ||
+                    progress.fleet.get(&edit.fleet_ship_id)
+                        .is_some_and(|fleet| fleet.side != edit.player_side ||
+                            (fleet.is_dead && edit.to_saved_squad_id != 0))
+                {
+                    return Err(invalid("invalid sequenced authored assignment"));
+                }
+                let owner = progress.authored_roster.entry(edit.fleet_ship_id)
+                    .or_insert(AuthoredRosterOwner {
+                        side: edit.player_side,
+                        initial_saved_squad_id: edit.from_saved_squad_id,
+                        current_saved_squad_id: edit.from_saved_squad_id,
+                        ship_type: edit.ship_type,
+                    });
+                if owner.side != edit.player_side ||
+                    owner.current_saved_squad_id != edit.from_saved_squad_id ||
+                    edit.ship_type.is_some_and(|kind|
+                        owner.ship_type.is_some_and(|old| old != kind) ||
+                        progress.fleet.get(&edit.fleet_ship_id)
+                            .and_then(|fleet| fleet.ship_type)
+                            .is_some_and(|old| old != kind))
+                {
+                    return Err(invalid("stale sequenced authored assignment"));
+                }
+                owner.current_saved_squad_id = edit.to_saved_squad_id;
+                if owner.ship_type.is_none() { owner.ship_type = edit.ship_type; }
+                if edit.from_saved_squad_id != edit.to_saved_squad_id {
+                    progress.authored_transfer_count = progress.authored_transfer_count.checked_add(1)
+                        .ok_or_else(|| invalid("authored squad edit counter overflow"))?;
+                }
+            }
+            CampaignSequencedEdit::Tactics(edit) => {
+                let entry = edit.tactics;
+                if !matches!(entry.side, 1 | 2) || entry.saved_squad_id <= 0 ||
+                    progress.is_retired_saved_squad(entry.saved_squad_id) ||
+                    !(1..=40).contains(&entry.shooting_strategy_id) ||
+                    entry.formation.is_some_and(|formation| !formation.is_valid()) ||
+                    !entry.placements_valid() ||
+                    progress.tactics_for_squad(entry.side, entry.saved_squad_id).as_ref() == Some(&entry) ||
+                    progress.tactics.iter().any(|other| other.saved_squad_id ==
+                        entry.saved_squad_id && other.side != entry.side)
+                {
+                    return Err(invalid("invalid sequenced SavedSquad tactics"));
+                }
+                progress.tactics.retain(|other| other.saved_squad_id != entry.saved_squad_id);
+                progress.tactics.push(entry);
+                progress.tactics_edits = progress.tactics_edits.checked_add(1)
+                    .ok_or_else(|| invalid("SavedSquad tactics history overflow"))?;
+            }
+            CampaignSequencedEdit::SquadName(edit) => {
+                if !matches!(edit.side, 1 | 2) || edit.saved_squad_id <= 0 ||
+                    progress.is_retired_saved_squad(edit.saved_squad_id) ||
+                    !valid_saved_squad_name(&edit.name) ||
+                    progress.squad_name(edit.saved_squad_id) == Some(edit.name.as_str())
+                {
+                    return Err(invalid("invalid sequenced SavedSquad rename"));
+                }
+                progress.squad_names.insert(edit.saved_squad_id, edit.name);
+            }
+            CampaignSequencedEdit::FleetName(edit) => {
+                if !matches!(edit.side, 1 | 2) || edit.fleet_ship_id <= 0 ||
+                    !progress.nameable_fleet_ships().contains(&(edit.side, edit.fleet_ship_id)) ||
+                    !valid_saved_squad_name(&edit.name) ||
+                    progress.fleet_ship_name(edit.fleet_ship_id) == Some(edit.name.as_str())
+                {
+                    return Err(invalid("invalid sequenced FleetShip rename"));
+                }
+                progress.fleet_names.insert(edit.fleet_ship_id, edit.name);
+            }
+            CampaignSequencedEdit::Create(edit) => {
+                let squad = edit.squad;
+                if !matches!(squad.side, 1 | 2) ||
+                    squad.saved_squad_id <= progress.highest_saved_squad_id() ||
+                    squad.saved_squad_id == i64::MAX ||
+                    squad.template_saved_squad_id <= 0 ||
+                    squad.template_saved_squad_id == squad.saved_squad_id ||
+                    progress.is_retired_saved_squad(squad.template_saved_squad_id)
+                {
+                    return Err(invalid("invalid sequenced SavedSquad creation"));
+                }
+                progress.created_squads.push(squad);
+            }
+            CampaignSequencedEdit::Retire(edit) => {
+                if !progress.can_retire_saved_squad(edit.side, edit.saved_squad_id) {
+                    return Err(invalid("invalid sequenced SavedSquad retirement"));
+                }
+                let purchased = progress.purchases.iter().filter_map(|&(side, ship)|
+                    (side == edit.side && ship.saved_squad_id == edit.saved_squad_id)
+                        .then_some(ship.fleet_ship_id)).collect::<HashSet<_>>();
+                let authored = progress.authored_roster.iter().filter_map(|(&id, owner)|
+                    (owner.side == edit.side &&
+                     owner.current_saved_squad_id == edit.saved_squad_id).then_some(id))
+                    .collect::<HashSet<_>>();
+                if purchased.len() != edit.purchased_fleet_ids.len() ||
+                    authored.len() != edit.authored_fleet_ids.len() ||
+                    edit.purchased_fleet_ids.iter().any(|id| !purchased.contains(id)) ||
+                    edit.authored_fleet_ids.iter().any(|id| !authored.contains(id)) {
+                    return Err(invalid("invalid sequenced SavedSquad reserve members"));
+                }
+                for (_, ship) in &mut progress.purchases {
+                    if purchased.contains(&ship.fleet_ship_id) { ship.saved_squad_id = 0; }
+                }
+                for (&id, owner) in &mut progress.authored_roster {
+                    if authored.contains(&id) { owner.current_saved_squad_id = 0; }
+                }
+                progress.transfer_count = progress.transfer_count
+                    .checked_add(purchased.len() as u64)
+                    .ok_or_else(|| invalid("saved squad transfer count overflow"))?;
+                progress.authored_transfer_count = progress.authored_transfer_count
+                    .checked_add(authored.len() as u64)
+                    .ok_or_else(|| invalid("authored squad edit counter overflow"))?;
+                progress.created_squads.retain(|squad|
+                    squad.saved_squad_id != edit.saved_squad_id);
+                progress.tactics.retain(|row| row.saved_squad_id != edit.saved_squad_id);
+                progress.retired_squad_ids.insert(edit.saved_squad_id);
+            }
+        }
+        progress.sequenced_edit_count = progress.sequenced_edit_count.checked_add(1)
+            .ok_or_else(|| invalid("sequenced campaign edit count overflow"))?;
+        Ok(())
+    }
+
     /// Reconstruct save data from *completed* campaign summaries, not from
     /// mutable UI state. A crashed game cannot half-credit minerals or a
     /// rematch, and re-opening the menu cannot credit the same run twice.
@@ -2469,6 +2720,19 @@ impl BattleCatalog {
             progress.tactics.retain(|row|
                 row.saved_squad_id != edit.saved_squad_id);
             progress.retired_squad_ids.insert(edit.saved_squad_id);
+        }
+        for directory in numbered_directories(output, "career-edit-")? {
+            let bytes = match fs::read(directory.join("edit.json")) {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            let receipt: CampaignSequencedReceipt = serde_json::from_slice(&bytes)
+                .map_err(|error| invalid(format!("invalid chronological campaign edit: {error}")))?;
+            if receipt.campaign_id != *campaign {
+                return Err(invalid("foreign sequenced campaign edit"));
+            }
+            self.apply_sequenced_edit(&mut progress, receipt.edit)?;
         }
         progress.unspent_minerals()?;
         Ok(progress)
