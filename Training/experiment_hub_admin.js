@@ -31,6 +31,7 @@ const POST_ACTIONS={
     '/api/hub/distributed/tinybrains/prepare':[202,'prepareDistributedTinyBrains'],
     '/api/hub/distributed/tinybrains/cancel-prepare':[200,'cancelDistributedTinyBrainsPreparation'],
     '/api/hub/distributed/courier':[201,'queueDistributedCourier'],
+    '/api/hub/distributed/bees':[201,'queueBeesDistributedGroup'],
     '/api/hub/distributed/courier/start-lineages':[200,'authorizeCourierLineages'],
     '/api/hub/distributed/courier/schedule-start':[200,'scheduleCourierGroup'],
     '/api/hub/distributed/courier/cancel-start-plan':[200,'cancelScheduledDistributedGroup'],
