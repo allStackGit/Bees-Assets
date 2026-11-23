@@ -46,6 +46,7 @@ pub trait NativePlayerAuthority {
     /// Authored Human faction, independent of the current viewer.
     fn player_human_side(&self) -> Option<i32> { None }
     fn source_faction_start(&self, _side: i32) -> Option<Vec2> { None }
+    fn pluto_finale_ship_position(&self, _ship_id: i64) -> Option<Vec2> { None }
     /// Unity uses Range = 2 * (Sight or MaxRange) as a SpriteMask
     /// *diameter*, hence the visibility radius is Sight or MaxRange.
     /// This display-only value never replaces HiveMind perception.

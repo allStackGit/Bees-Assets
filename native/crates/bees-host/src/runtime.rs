@@ -608,6 +608,11 @@ where
                 world.state.metadata.sync_campaign_player_permissions(
                     dialogue, world.state.events.roster(),
                 );
+                if dialogue.current().1 == bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyVictory {
+                    world.state.metadata.stage_pluto_finale(
+                        &world.state.combat, world.state.events.roster(), 3 - dialogue.player_side(),
+                    );
+                }
             }
             // Original Pluto II HiveMind is activated only when the
             // checkpointed Scout-selection tutorial releases its real

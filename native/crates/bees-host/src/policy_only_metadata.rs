@@ -194,6 +194,7 @@ pub struct NativePolicyOnlyMetadata {
     /// the campaign start. Checkpoint recovery rebuilds it from the frozen
     /// setup; no second mutable gameplay or learning owner is added.
     campaign_codex: Option<(i32, [bool; bees_sim::ship_assets::SHIP_TYPE_COUNT])>,
+    pluto_finale_positions: HashMap<i64, Vec2>,
     /// Original Pluto II tutorial temporarily locks squad inputs, not
     /// squad ownership or physical movement. These source lifetimes are
     /// rebuilt from the authored scene and never replace the player ledger.
@@ -974,7 +975,8 @@ impl NativePolicyOnlyMetadata {
             bounds, navigation, navigation_scheduler: None,
             navigation_worker_counts: NativeNavigationWorkerMeasurements::default(),
             activate_collision_asteroids, fleet,
-            campaign_codex: None, pluto_tutorial_locked: Vec::new(), ship_catalog,
+            campaign_codex: None, pluto_finale_positions: HashMap::new(),
+            pluto_tutorial_locked: Vec::new(), ship_catalog,
             authored_ships, effective_vision,
             source_static_discovery_values,
             explorers: Vec::new(),
@@ -1371,6 +1373,13 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
                 }
             }
         }
+    }
+
+    fn stage_pluto_finale(
+        &mut self, world: &CombatWorld, roster: &NativeSquadRoster, bee_side: i32,
+    ) {
+        self.pluto_finale_positions =
+            crate::reinforcements::plan_pluto_finale_positions(self, world, roster, bee_side);
     }
 
     fn observe_fleet_combat_tick(&mut self, world: &CombatWorld) {
@@ -2114,6 +2123,10 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
     fn source_faction_start(&self, side: i32) -> Option<Vec2> {
         let index = usize::try_from(side.checked_sub(1)?).ok()?;
         self.hivemind_starting_positions?.get(index).copied()
+    }
+
+    fn pluto_finale_ship_position(&self, ship_id: i64) -> Option<Vec2> {
+        self.pluto_finale_positions.get(&ship_id).copied()
     }
 
     fn player_fog_vision_radius(&self, ship_id: i64) -> Option<f32> {

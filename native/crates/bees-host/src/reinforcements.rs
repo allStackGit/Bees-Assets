@@ -339,17 +339,27 @@ fn place_reinforcement_formation(
         if !adjusted.is_finite() || clearance < 0 {
             return Err("Reinforcement formation has invalid authored clearance");
         }
-        members.push((id, adjusted, clearance));
+        members.push((id, adjusted, clearance, ship.ship_type));
     }
-    let Some(&(first_id, first_offset, _)) = members.first() else {
+    let Some(&(first_id, first_offset, _, _)) = members.first() else {
         return Err("Reinforcement formation has no ships");
     };
     let requested_center = *positions.get(&first_id)
         .ok_or("Reinforcement formation has no staged position")? - first_offset;
+    place_source_formation(&members, requested_center, positions, metadata, bounds)
+}
+
+fn place_source_formation(
+    members: &[(i64, Vec2, i32, u8)],
+    requested_center: Vec2,
+    positions: &mut HashMap<i64, Vec2>,
+    metadata: &NativePolicyOnlyMetadata,
+    bounds: bees_sim::collision::Aabb,
+) -> Result<(), &'static str> {
     let frame = metadata.navigation.map_frame();
     let clearance = metadata.navigation.clearance();
     let fits = |center: Vec2| {
-        center.is_finite() && members.iter().all(|&(_, offset, required)| {
+        center.is_finite() && members.iter().all(|&(_, offset, required, _)| {
             let slot = center + offset;
             slot.is_finite() &&
                 slot.x >= bounds.min.x && slot.x <= bounds.max.x &&
@@ -387,7 +397,7 @@ fn place_reinforcement_formation(
         }
     }
     if let Some(center) = selected {
-        for (id, offset, _) in members {
+        for &(id, offset, _, _) in members {
             positions.insert(id, center + offset);
         }
         return Ok(());
@@ -399,9 +409,8 @@ fn place_reinforcement_formation(
     // These are staging coordinates only; movement and collision remain in
     // the authoritative CombatWorld after admission.
     let mut placed: Vec<(i64, Vec2, Vec2)> = Vec::with_capacity(members.len());
-    for &(id, offset, required) in &members {
-        let ship = ships[&id];
-        let size = metadata.ship_catalog.sprite_size(ship.ship_type)
+    for &(id, offset, required, ship_type) in members {
+        let size = metadata.ship_catalog.sprite_size(ship_type)
             .ok_or("Reinforcement fallback has no source sprite size")?;
         if !size.is_finite() || size.x <= 0.0 || size.y <= 0.0 {
             return Err("Reinforcement fallback ship dimensions are invalid");
@@ -469,6 +478,53 @@ fn place_reinforcement_formation(
         positions.insert(id, point);
     }
     Ok(())
+}
+
+/// Source Pluto I restages the surviving Bee squads in roster order when
+/// the Honeybee falls. The first squad remains at its real combat position.
+pub(crate) fn plan_pluto_finale_positions(
+    metadata: &NativePolicyOnlyMetadata, world: &CombatWorld,
+    roster: &bees_gameplay::squads::NativeSquadRoster, bee_side: i32,
+) -> HashMap<i64, Vec2> {
+    use bees_gameplay::squad_geometry::live_squad_bounds_from_catalog;
+
+    let mut staged = HashMap::new();
+    let mut members = Vec::new();
+    let mut placement = HashMap::new();
+    for (index, squad) in roster.source_order().iter()
+        .filter_map(|&owner| roster.get(owner))
+        .filter(|squad| squad.side == bee_side && !squad.members.is_empty())
+        .enumerate().skip(1)
+    {
+        let Ok(geometry) = live_squad_bounds_from_catalog(world, squad, &metadata.ship_catalog)
+            else { continue };
+        let side = if index % 2 == 0 { 1.0 } else { -1.0 };
+        let requested = geometry.center + Vec2::new(side * 25.0 * index as f32, 0.0);
+        members.clear();
+        for &id in &squad.members {
+            let Some(ship) = world.ship(id).filter(|ship| !ship.vitals.is_dead()) else { break };
+            let Some(source_offset) = metadata.stored_formation_offset(id) else { break };
+            let Some(clearance) = metadata.current_path_clearance(id) else { break };
+            let adjustment = authored_placement_offset(ship.ship_type, squad.members.len(), source_offset);
+            if !adjustment.is_finite() || clearance < 0 { break; }
+            members.push((id, adjustment, clearance, ship.ship_type));
+        }
+        if members.len() != squad.members.len() { continue; }
+
+        placement.clear();
+        if metadata.player_formation_options().has_obstacles {
+            if place_source_formation(&members, requested, &mut placement, metadata, metadata.bounds)
+                .is_err()
+            { continue; }
+        } else {
+            placement.extend(members.iter().filter_map(|&(id, offset, _, _)| {
+                let point = requested + offset;
+                point.is_finite().then_some((id, point))
+            }));
+        }
+        staged.extend(placement.drain());
+    }
+    staged
 }
 
 fn reinforcement_carrier_parent(ship: &NativeAuthoredShip) -> Option<i64> {

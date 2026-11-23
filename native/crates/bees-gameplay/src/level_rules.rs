@@ -89,6 +89,10 @@ pub trait NativeLevelRewardMetadata {
         _roster: &crate::squads::NativeSquadRoster,
     ) {}
 
+    fn stage_pluto_finale(
+        &mut self, _world: &CombatWorld, _roster: &crate::squads::NativeSquadRoster, _bee_side: i32,
+    ) {}
+
     /// Read-only scoreboard supplied by the source Level, with its
     /// authorized player side. Non-campaign training need not store one.
     fn campaign_score_snapshot(&self) -> Option<(i32, i64)> { None }
@@ -2015,6 +2019,15 @@ where
         state.metadata.update_observation_memory(
             &state.combat, state.events.normalized_episode_progress(),
         )?;
+        if state.events.latest_finalized_episode().is_some() {
+            if let Some(dialogue) = state.campaign_dialogue.as_ref().filter(|story|
+                story.current().1 == crate::campaign_dialogue::CampaignCue::PlutoAnomalyVictory)
+            {
+                state.metadata.stage_pluto_finale(
+                    &state.combat, state.events.roster(), 3 - dialogue.player_side(),
+                );
+            }
+        }
         // Count final physical outcomes once after scripted contact/timer
         // callbacks, using the same combat-world definition as the standalone
         // game/physics driver. No separate Level hit ledger is kept here.

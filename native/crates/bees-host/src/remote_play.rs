@@ -3225,6 +3225,10 @@ fn current_state(
                 }))
             }).collect()
         } else { Vec::new() };
+        let render_position = finale_focus
+            .and_then(|_| view.player_authority.pluto_finale_ship_position(ship.entity_id))
+            .unwrap_or(body.motion.position);
+        let render_offset = render_position - body.motion.position;
         Some(json!({
             "id": ship.entity_id,
             "side": ship.side, "ship_type": ship.ship_type,
@@ -3254,7 +3258,7 @@ fn current_state(
             "barge_charge_input_available": if owned && ship.ship_type == 0 {
                 Some(view.combat.player_game_barge_charge_ready(ship.entity_id))
             } else { None },
-            "x": body.motion.position.x, "y": body.motion.position.y,
+            "x": render_position.x, "y": render_position.y,
             "rotation": body.motion.rotation_degrees,
             "collider": wire_primary_hull(body.shape()),
             // Source CheckClickCollision also includes the Beehive
@@ -3262,8 +3266,9 @@ fn current_state(
             // this is a click target, NEVER an enlarged combat hull.
             "input_healing_zone": body.input_healing_zone_shape()
                 .map(wire_primary_hull),
-            "collider_bounds": body.primary_bounds().map(|bounds|[
-                [bounds.min.x,bounds.min.y],[bounds.max.x,bounds.max.y],
+            "collider_bounds": body.primary_bounds().map(|bounds| [
+                [bounds.min.x + render_offset.x, bounds.min.y + render_offset.y],
+                [bounds.max.x + render_offset.x, bounds.max.y + render_offset.y],
             ]),
             "animation_variant": animation.map(|(variant, _)| variant),
             "animation_seconds": animation.map(|(_, seconds)| seconds),

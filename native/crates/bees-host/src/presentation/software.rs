@@ -2877,13 +2877,19 @@ impl NativeSoftwareRenderer {
                 .and_then(|owner| view.roster.get(owner)) else { continue };
             self.command_target_ship_ids.extend(enemy.members.iter().copied());
         }
+        let finale_staging = view.player_authority.player_viewer_side()
+            .is_some_and(|side| view.pluto_finale_focus_for(side).is_some());
         for (ship, body) in view.combat.render_ships() {
             counts.ships += 1;
             let selected_ship = view.roster.owning_squad(ship.entity_id).is_some_and(|owner|
                 if many_selected { self.selected_squad_lookup.contains(&owner) }
                 else { self.selection.squads().contains(&owner) }
             );
-            let position = body.motion.position;
+            let position = if finale_staging {
+                view.player_authority.pluto_finale_ship_position(ship.entity_id)
+                    .unwrap_or(body.motion.position)
+            } else { body.motion.position };
+            let offset = position - body.motion.position;
             let center_visible = position.x >= viewport.min.x &&
                 position.x <= viewport.max.x &&
                 position.y >= viewport.min.y &&
@@ -2891,14 +2897,16 @@ impl NativeSoftwareRenderer {
             // Selected offscreen ships still draw their movement and target
             // lines, which may cross the camera. Never cull those commands.
             if !selected_ship && !center_visible &&
-                body.primary_bounds().is_some_and(|hull| !hull.overlaps(viewport))
+                body.primary_bounds().is_some_and(|hull| {
+                    let drawn_bounds = Aabb { min: hull.min + offset, max: hull.max + offset };
+                    !drawn_bounds.overlaps(viewport)
+                })
             {
                 counts.culled_ships += 1;
                 continue;
             }
             let color = side_color(ship.side);
-            let pose = Pose { position: body.motion.position,
-                rotation_degrees: body.motion.rotation_degrees };
+            let pose = Pose { position, rotation_degrees: body.motion.rotation_degrees };
             // Only presentation pixels change: the exact ship collider is
             // still used for collision, selection, range and fog. The
             // source PNG's own Unity PPU controls its rendered world size.
@@ -3013,9 +3021,9 @@ impl NativeSoftwareRenderer {
             // is absent; do not redraw outlines over every rendered sprite.
             if !drew_art || selected_ship {
                 self.shape(body.shape(), pose, color);
-                self.cross(body.motion.position, 1.5, color);
+                self.cross(position, 1.5, color);
             }
-            let (x, y) = self.project(body.motion.position);
+            let (x, y) = self.project(position);
             if view.survival.is_some_and(|survival| survival.protected_ship_id == ship.entity_id) {
                 let marker = 0xffd873;
                 self.line(x - 5.0, y - 21.0, x, y - 16.0, marker);
@@ -3754,10 +3762,16 @@ impl NativeSoftwareRenderer {
             view.player_authority.player_viewer_side().is_some() &&
             view.player_authority.player_viewer_side() == view.campaign_dialogue_side);
         let human_side = view.player_authority.player_human_side();
+        let finale_staging = view.player_authority.player_viewer_side()
+            .is_some_and(|side| view.pluto_finale_focus_for(side).is_some());
         for (ship, body) in view.combat.render_ships() {
             let owner = view.roster.owning_squad(ship.entity_id);
             let controlled = owner.is_some_and(|id| view.is_local_player_squad(id));
-            let Some((x, y)) = layout.project(body.motion.position)
+            let position = if finale_staging {
+                view.player_authority.pluto_finale_ship_position(ship.entity_id)
+                    .unwrap_or(body.motion.position)
+            } else { body.motion.position };
+            let Some((x, y)) = layout.project(position)
                 else { continue };
             let px = x.round() as i32;
             let py = y.round() as i32;
