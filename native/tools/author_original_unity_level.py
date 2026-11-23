@@ -325,6 +325,19 @@ def native_game_run(
         **contract,
         **({"collision_asteroid_timer": timer} if timer is not None else {}),
     }
+    supply = scene.get("source_level_supply_capacity", -1)
+    source_side = scene.get("source_level_supply_player_side", 0)
+    if type(supply) is not int or type(source_side) is not int:
+        raise ValueError("Original LevelOptions supply authority is malformed")
+    if supply > 0:
+        if source_side not in (1, 2) or not (
+            scene.get("targeting_context") or {}
+        ).get("has_player") is True:
+            raise ValueError("Original source supply cap lacks player authority")
+        captured = {"player_side": source_side, "max_tsv": supply}
+        if level.get("supply_capacity", captured) != captured:
+            raise ValueError("Authored supply cap differs from original LevelOptions")
+        level["supply_capacity"] = captured
     if ai_tactics is not None:
         generated = canonical_original_ai(
             scene, bounds, level, ai_tactics, deferred_hivemind,

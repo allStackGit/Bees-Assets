@@ -322,6 +322,11 @@ internal static class NativePhysicalSceneExporter
         public int source_level_options_id;
         public int source_level_map_index;
         public string source_level_options_name;
+        // Original LevelOptions.SupplyCapacity governs the user-selected
+        // persistent FleetShip roster, not mining or temporary children.
+        // -1 means that this capture did not provide a positive source cap.
+        public int source_level_supply_capacity = -1;
+        public int source_level_supply_player_side;
         public string level_name;
         public string stage_name;
         // Authored MapData.Location, used only by the client soundtrack.
@@ -441,6 +446,11 @@ internal static class NativePhysicalSceneExporter
                 ? level.CurrentLevelOptions.MapIndex : -1,
             source_level_options_name = level.CurrentLevelOptions != null
                 ? level.CurrentLevelOptions.Name : null,
+            source_level_supply_capacity = level.CurrentLevelOptions != null &&
+                level.CurrentLevelOptions.SupplyCapacity > 0
+                ? level.CurrentLevelOptions.SupplyCapacity : -1,
+            source_level_supply_player_side = level.HasPlayer
+                ? ConfigData.Configuration.UserSide : 0,
             targeting_context = new SourceTargetingContext { has_player = level.HasPlayer, user_side = ConfigData.Configuration.UserSide },
             level_name = !string.IsNullOrEmpty(level.Name)
                 ? level.Name : level.gameObject.name,
