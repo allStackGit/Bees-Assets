@@ -2374,6 +2374,12 @@ fn focus_squad(state: &Value, squad_id: i64) -> Option<Vec2> {
     extents.map(|bounds|(bounds.min+bounds.max)*0.5)
 }
 
+fn wire_briefing_line_count(state: &Value) -> Option<usize> {
+    let dialogue = &state["campaign_dialogue"];
+    dialogue["briefing_line_count"].as_u64().or_else(|| dialogue["line_count"].as_u64())
+        .and_then(|count| usize::try_from(count).ok())
+}
+
 /// The remote window presents the host's authored dialogue, never a second
 /// mission progression state. Peers choose which line to read locally.
 fn draw_campaign_dialogue(
@@ -3166,9 +3172,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         draw_campaign_dialogue(pixels,state,dialogue_line,dialogue_elapsed_seconds);
         if state["briefing_paused"]==true {
             let is_owner=state["briefing_requires_ack"]==true;
-            let line_count=state["campaign_dialogue"]["line_count"]
-                .as_u64().unwrap_or(0);
-            let message=if is_owner && dialogue_line<(line_count as usize) {
+            let line_count = wire_briefing_line_count(state).unwrap_or(0);
+            let message=if is_owner && dialogue_line < line_count {
                 "CAMPAIGN BRIEFING - complete dialogue to begin"
             }else if is_owner {
                 "CAMPAIGN BRIEFING - waiting for other connected commanders"
@@ -4327,10 +4332,9 @@ pub fn connect_remote_with_trust(
                 state["episode_revision"].as_u64()?,
                 u32::try_from(state["campaign_dialogue"]["sequence"].as_u64()?).ok()?))
         });
-        let briefing=story_briefing.is_some() &&
-            peer.state.as_ref().is_some_and(|state|
-                state["campaign_dialogue"]["line_count"].as_u64()
-                    .is_some_and(|count|dialogue_line<count as usize));
+        let briefing = story_briefing.is_some() &&
+            peer.state.as_ref().and_then(wire_briefing_line_count)
+                .is_some_and(|count| dialogue_line < count);
         // Local+LAN hosting already has a local window that paces its
         // authored briefing. Only dedicated hosts request a remote ACK,
         // explicitly marked on the side-filtered authoritative snapshot.
@@ -5226,9 +5230,11 @@ pub fn connect_remote_with_trust(
                     })
                 });
                 if let Some(hull) = hull {
+                    let show_instruction = dialogue["line_count"].as_u64()
+                        .is_none_or(|count| dialogue_line as u64 >= count);
                     peer.metrics.pluto_scout_selection_marker_frames += u64::from(
                         super::campaign_dialogue::draw_pluto_scout_selection(
-                            &mut pixels, WIDTH, FIELD, cam, hull,
+                            &mut pixels, WIDTH, FIELD, cam, hull, show_instruction,
                         ),
                     );
                 }

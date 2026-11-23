@@ -116,7 +116,7 @@ impl PlutoScoutTutorial {
 #[cfg(feature = "client")]
 pub(super) fn draw_pluto_scout_selection(
     pixels: &mut [u32], stride: usize, field_width: usize,
-    camera: super::NativeCamera, hull: bees_sim::collision::Aabb,
+    camera: super::NativeCamera, hull: bees_sim::collision::Aabb, show_instruction: bool,
 ) -> bool {
     if stride == 0 || field_width > stride || field_width < 32 { return false; }
     let height = pixels.len() / stride;
@@ -148,9 +148,11 @@ pub(super) fn draw_pluto_scout_selection(
             }
         }
     }
-    let instruction = if visible { "Left-click the highlighted Scout to select it." }
-        else { "Find the first Scout or press 1 to select it." };
-    PlutoScoutTutorial::draw(pixels, stride, field_width, instruction);
+    if show_instruction || !visible {
+        let instruction = if visible { "Left-click the highlighted Scout to select it." }
+            else { "Find the first Scout or press 1 to select it." };
+        PlutoScoutTutorial::draw(pixels, stride, field_width, instruction);
+    }
     visible
 }
 
@@ -720,6 +722,15 @@ pub(crate) fn displayed_lines(cue: CampaignCue) ->
 
 pub(crate) fn line_count(cue: CampaignCue) -> usize {
     displayed_lines(cue).count()
+}
+
+/// Pluto II offers Scout selection as soon as Samuel finishes speaking.
+pub(crate) fn briefing_line_count(cue: CampaignCue) -> usize {
+    match cue {
+        CampaignCue::PlutoReinforcementsBriefing => 1,
+        cue if cue.is_briefing() => line_count(cue),
+        _ => 0,
+    }
 }
 
 /// Keep the canonical cursor and cue acknowledgment intact when hiding

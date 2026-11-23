@@ -578,7 +578,7 @@ impl NativeClient {
         let Some((sequence, cue)) = view.campaign_dialogue else { return false; };
         self.selection_owner == Some((view.world_id, view.episode_revision)) &&
             self.dialogue_sequence == Some(sequence) &&
-            self.dialogue_line >= crate::presentation::campaign_dialogue::line_count(cue)
+            self.dialogue_line >= crate::presentation::campaign_dialogue::briefing_line_count(cue)
     }
 
     pub fn result_action(&self) -> Option<NativeResultAction> {
@@ -1091,7 +1091,8 @@ impl NativeClient {
         // Hiding the owner's story from the opposite hot-seat must not
         // advance the authoritative mission before the owner has read it.
         let briefing = if dialogue_for_viewer {
-            dialogue.is_some_and(|(cue, _, _)| cue.is_briefing())
+            dialogue.is_some_and(|(cue, _, _)| self.dialogue_line <
+                crate::presentation::campaign_dialogue::briefing_line_count(cue))
         } else {
             view.terminal_result.is_none() &&
                 view.campaign_dialogue.is_some_and(|(_, cue)| cue.is_briefing())
@@ -2086,7 +2087,7 @@ impl NativeClient {
                 .and_then(|side| view.pluto_reinforcements_scout_for(side))
             {
                 self.pluto_scout_selection_marker_frames += u64::from(
-                    self.renderer.draw_pluto_reinforcements_scout(&view, scout),
+                    self.renderer.draw_pluto_reinforcements_scout(&view, scout, dialogue.is_none()),
                 );
             }
         }

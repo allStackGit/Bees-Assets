@@ -3591,6 +3591,7 @@ fn current_state(
                 "sequence": sequence,
                 "cue": cue,
                 "line_count": crate::presentation::campaign_dialogue::line_count(cue),
+                "briefing_line_count": crate::presentation::campaign_dialogue::briefing_line_count(cue),
                 "camera_ship": view.campaign_camera_subject_for(side).map(|(id, _)| id),
                 "scout_alarm": view.campaign_scout_alarm,
                 "scout_moved_from_start": view.pluto_scout_tutorial_for(side),

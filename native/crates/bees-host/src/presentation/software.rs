@@ -4325,12 +4325,12 @@ impl NativeSoftwareRenderer {
 
     #[cfg(feature = "client")]
     pub(crate) fn draw_pluto_reinforcements_scout(
-        &mut self, view: &NativeRenderWorldView<'_>, scout: i64,
+        &mut self, view: &NativeRenderWorldView<'_>, scout: i64, show_instruction: bool,
     ) -> bool {
         let Some(hull) = view.combat.ship_body(scout).and_then(|body| body.primary_bounds())
         else { return false; };
         super::campaign_dialogue::draw_pluto_scout_selection(
-            &mut self.pixels, self.width, self.width, self.camera, hull,
+            &mut self.pixels, self.width, self.width, self.camera, hull, show_instruction,
         )
     }
 
