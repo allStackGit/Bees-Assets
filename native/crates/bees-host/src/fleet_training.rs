@@ -1053,7 +1053,11 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
             .join("latest-playable.json").is_file();
         let finished = completed.zip(target)
             .is_some_and(|(done, total)| done >= total);
-        statuses.push(if job.join("stop.request").is_file() {
+        statuses.push(if stopped {
+            "  [Stopped at measured holdout plateau]"
+        } else if finished {
+            "  [Training complete]"
+        } else if job.join("stop.request").is_file() {
             if exited == Some(true) {
                 "  [Stopped after completed optimizer round; resumable]"
             } else {
@@ -1065,10 +1069,6 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
             } else {
                 "  [Training process failed; inspect diagnostics]"
             }
-        } else if stopped {
-            "  [Stopped at measured holdout plateau]"
-        } else if finished {
-            "  [Training complete]"
         } else if has_playable {
             "  [Playable checkpoint]"
         } else if diagnostic.is_some() {
