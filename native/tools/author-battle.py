@@ -523,21 +523,37 @@ def native_scripted_squad_orders(scene: dict, members: list[dict],
     exit_zone = mission.get("extraction")
     escort = mission.get("escort")
     if (isinstance(escort, dict) and
-            escort.get("escorting_side") == example["side"] and
-            any(ship["entity_id"] == escort.get("escorted_ship_id")
-                for ship in members)):
-        # An untrained original convoy still needs its real physical exit
-        # route, not a generic attack or scouting order. The canonical
-        # Level extraction collider decides delivery, not this author.
-        if (not isinstance(exit_zone, dict) or
-                exit_zone.get("player_side") != example["side"] or
-                not isinstance(exit_zone.get("center"), list) or
-                len(exit_zone["center"]) != 2 or
-                any(type(v) not in (int, float) or not math.isfinite(v)
-                    for v in exit_zone["center"])):
-            raise ValueError("original escort command needs a physical exit for its faction")
-        return [{"kind": "move_to_point",
-                 "destination": copy.deepcopy(exit_zone["center"])}]
+            escort.get("escorting_side") == example["side"]):
+        convoy = next(
+            (squad for squad in scene["squads"]
+             if squad["side"] == example["side"] and
+             escort.get("escorted_ship_id") in squad["members"]),
+            None,
+        )
+        if convoy is None:
+            raise ValueError("native escort objective lacks a physical convoy squad")
+        if any(ship["entity_id"] == escort["escorted_ship_id"]
+               for ship in members):
+            # The real extraction trigger decides delivery; author only
+            # the source MoveToPoint command to the physical exit.
+            if (not isinstance(exit_zone, dict) or
+                    exit_zone.get("player_side") != example["side"] or
+                    not isinstance(exit_zone.get("center"), list) or
+                    len(exit_zone["center"]) != 2 or
+                    any(type(v) not in (int, float) or not math.isfinite(v)
+                        for v in exit_zone["center"])):
+                raise ValueError("original escort command needs a physical exit for its faction")
+            return [{"kind": "move_to_point",
+                     "destination": copy.deepcopy(exit_zone["center"])}]
+        mining = (example["ship_type"] in (4, 9) and
+                  scene.get("activate_mining") and scene.get("mining_asteroids"))
+        if (example["ship_type"] not in (0, 5, 10, 17, 18, 19, 22) and
+                not mining and example.get("turrets")
+                and example["base_speed"] > 0):
+            # The same source Guard command as standalone AI convoy
+            # missions: follow the real squad, use real turrets.
+            return [{"kind": "guard",
+                     "friendly_squad_item_id": convoy["item_id"]}]
     survival = mission.get("survival")
     if (isinstance(survival, dict) and
             survival.get("defending_side") == example["side"]):
