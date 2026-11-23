@@ -314,6 +314,11 @@ def evaluate_with_metrics(checkpoint, digest, suite, work, *,
     by_map = {board: {"win": 0, "loss": 0, "draw": 0,
                       "placement_sum": 0, "top_half": 0, "trials": 0}
               for board in suite["maps"]}
+    # These are CONDITIONAL outcomes in matches containing an opponent,
+    # not head-to-head wins over that individual player.
+    by_opponent = {item["id"]: {"games": 0, "seats": 0,
+        "win": 0, "loss": 0, "draw": 0}
+        for item in suite.get("opponents", [])}
 
     def observe(result):
         outcome = result.get("outcome")
@@ -335,6 +340,13 @@ def evaluate_with_metrics(checkpoint, digest, suite, work, *,
         row["placement_sum"] += placement
         row["top_half"] += int(placement <= players // 2)
         row["trials"] += 1
+        if by_opponent:
+            roster = result["opponent_roster"]
+            for opponent in set(roster):
+                entry = by_opponent[opponent]
+                entry["games"] += 1
+                entry["seats"] += roster.count(opponent)
+                entry[outcome] += 1
 
     with pinned_runtime("tinybrains", suite, use_current=current_runtime) as runtime_sha256:
         wins, trials = _evaluate(checkpoint, digest, suite, work, on_result=observe)
@@ -371,7 +383,9 @@ def evaluate_with_metrics(checkpoint, digest, suite, work, *,
             raise ValueError("Per-map evaluation coverage is incomplete.")
         on_breakdown({"trials": trials, "successes": wins,
                       "maps": [{"map": board, "players": board_seats(board),
-                                **by_map[board]} for board in suite["maps"]]})
+                                **by_map[board]} for board in suite["maps"]],
+                      "opponents": [{"id": key, **counts}
+                                    for key, counts in by_opponent.items()]})
     return {"successes": wins, "metrics": metrics,
             **({"runtime_sha256": runtime_sha256} if current_runtime else {})}
 
