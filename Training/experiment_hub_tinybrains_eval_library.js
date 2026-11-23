@@ -184,7 +184,7 @@ function sourceDefaults(hub,config) {
     const cap={basic_tiny:300,tiny_two_player:300,small_two_player:500,
         all_two_player:750,full_multiplayer:sourceTurn}[p.training_stage||'full_multiplayer'];
     if(!cap)throw Error('Saved configuration has an unknown training map stage.');
-    const environmentFields=(host.design_catalog.tinybrains.fields||[])
+    const environmentFields=(host?.design_catalog?.tinybrains?.fields||[])
         .filter(item=>item.key.startsWith('environment.')&&
             item.section==='environment'&&
             item.default!==undefined);
