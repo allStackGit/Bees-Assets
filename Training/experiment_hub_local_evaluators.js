@@ -616,9 +616,9 @@ function miniCandidates(hub,o) {
     return historicalCandidates(hub,o).filter(source=>source.batch_size===128);
 }
 
-function verifyFrozenMini(options,source,suite) {
-    const directory=path.join(options.suites,'opponents',MINI_SUITE);
-    if(suite.suite_id!==MINI_SUITE||suite.opponent!=='mini'||
+function verifyFrozenMini(options,source,suite,name=MINI_SUITE) {
+    const directory=path.join(options.suites,'opponents',name);
+    if(suite.suite_id!==name||suite.opponent!=='mini'||
         suite.opponent_dir!==directory||
         suite.opponent_source_job!==source.id||
         suite.opponent_checkpoint_sha256!==source.sha256||
@@ -641,37 +641,40 @@ function verifyFrozenMini(options,source,suite) {
     }
 }
 
-async function setupMini(hub,sourceJobId) {
+async function setupMini(hub,sourceJobId,{historical=false}={}) {
     const o=localOptions(hub);
     prepareInstall(o);
-    const candidates=miniCandidates(hub,o);
+    const candidates=historical?historicalCandidates(hub,o):miniCandidates(hub,o);
     const source=sourceJobId===undefined?candidates[0]:
         candidates.find(item=>item.id===sourceJobId);
     if(!source)
-        throw Error('No finished Batch-128 TinyBrains run with a pinned checkpoint was found.');
-    const destination=path.join(o.suites,MINI_SUITE+'.json');
+        throw Error('No eligible finished TinyBrains run with a pinned checkpoint was found.');
+    const name=historical
+        ?'tinybrains_mini_'+source.id.replace(/-/g,'').slice(0,20)
+        :MINI_SUITE;
+    const destination=path.join(o.suites,name+'.json');
     if(fs.existsSync(destination)) {
         const file=presentFile(destination);
         const stat=fs.lstatSync(file);
         if(stat.uid!==process.getuid()||(stat.mode&0o077))
             throw Error('Frozen Mini suite file is not private and user-owned.');
         const suite=JSON.parse(fs.readFileSync(file,'utf8'));
-        verifyFrozenMini(o,source,suite);
+        verifyFrozenMini(o,source,suite,name);
         // An interrupted setup may have published the immutable suite before
         // systemd installed its one-shot service and timer. Finish that
         // installation instead of falsely reporting success.
         await setup(hub);
-        return {message:'Previously approved frozen Mini opponent verified and evaluator schedule reconciled. '+
-            'Restart the local agent when idle to advertise the suite.'};
+        return {message:'Previously approved frozen opponent '+name+
+            ' verified and evaluator schedule reconciled. Restart the local agent when idle to advertise it.'};
     }
     // The trusted launcher is installed only by local setup; it never gets
     // an arbitrary checkout, path, container or command from the browser.
     await setup(hub);
-    const stage=fs.mkdtempSync(path.join(o.scratch,'mini-freeze-'));
+    const stage=fs.mkdtempSync(path.join(o.scratch,historical?'history-freeze-':'mini-freeze-'));
     const output=path.join(stage,'out');
     fs.mkdirSync(output,{mode:0o700});
     const opponents=privateDirectory(path.join(o.suites,'opponents'),true);
-    const frozenPath=path.join(opponents,MINI_SUITE);
+    const frozenPath=path.join(opponents,name);
     let prepared=null;
     try {
         const {stdout}=await run(presentFile(o.launcher),[
@@ -721,8 +724,10 @@ async function setupMini(hub,sourceJobId) {
             prepared=null;
         }
         const suite={
-            suite_id:MINI_SUITE,maps:['basic-tiny-2p'],
-            seeds:Array.from({length:50},(_,i)=>813001+i),max_turns:300,
+            suite_id:name,
+            maps:historical?seasonBoards(o):['basic-tiny-2p'],
+            seeds:historical?[813101]:Array.from({length:50},(_,i)=>813001+i),
+            max_turns:historical?1000:300,
             opponent:'mini',opponent_dir:frozenPath,
             opponent_source_job:source.id,
             opponent_checkpoint_sha256:source.sha256,
@@ -737,6 +742,10 @@ async function setupMini(hub,sourceJobId) {
         // path preserves existing units and leaves expensive season timers
         // stopped until explicitly selected by the operator.
         await setup(hub);
+        if(historical)
+            return {message:'Historical TinyBrains checkpoint '+source.id+
+                ' frozen as '+name+' (update '+source.updates+
+                '). Full-season evaluation installed but stopped. Start it explicitly and restart the agent when idle.'};
         // Adding a new trusted opponent changes the evaluator method hash.
         // Reapprove existing Nano/Micro suites at their same seeds without
         // rewriting their historic definitions or interrupting training.
@@ -763,6 +772,9 @@ async function action(hub,value) {
     if(value.action==='setup-mini'&&value.id===undefined&&
         (value.source_job_id===undefined||UUID.test(value.source_job_id)))
         return setupMini(hub,value.source_job_id);
+    if(value.action==='freeze-history'&&value.id===undefined&&
+        UUID.test(String(value.source_job_id||'')))
+        return setupMini(hub,value.source_job_id,{historical:true});
     const options=localOptions(hub);
     if(!scheduledIds(options).includes(value.id)||
         !['start','restart','stop','run','refresh'].includes(value.action)||
