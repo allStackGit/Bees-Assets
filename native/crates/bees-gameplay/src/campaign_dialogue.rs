@@ -215,6 +215,8 @@ enum DialogueMode {
         withdrawal_before_report: bool,
         #[serde(default, skip_serializing_if = "is_false")]
         scout_report_started: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        scout_withdrawal_arrived: bool,
         #[serde(default)]
         report_completed: bool,
         #[serde(default)]
@@ -337,8 +339,8 @@ impl CampaignDialogue {
             } => (
                 DialogueMode::PlutoAnomaly {
                     scout_id, honeybee_id, gunship_id, withdrawal_before_report,
-                    spotted: false, scout_report_started: false, report_completed: false,
-                    gunship_arrived: false, gunship_briefed: false,
+                    spotted: false, scout_report_started: false, scout_withdrawal_arrived: false,
+                    report_completed: false, gunship_arrived: false, gunship_briefed: false,
                     honeybee_destroyed: false,
                 },
                 CampaignCue::PlutoAnomalyBriefing,
@@ -508,6 +510,13 @@ impl CampaignDialogue {
         if player_side != self.player_side || !same_authored_story {
             return Err(CampaignDialogueRestoreError::WrongStory);
         }
+        if matches!(mode, DialogueMode::PlutoAnomaly {
+            scout_withdrawal_arrived: true, ..
+        }) && !matches!(mode, DialogueMode::PlutoAnomaly {
+            withdrawal_before_report: true, spotted: true, ..
+        }) {
+            return Err(CampaignDialogueRestoreError::InvalidProgress);
+        }
         let valid = match (&mode, cue) {
             (DialogueMode::PlutoAnomaly {
                 scout_id, honeybee_id, gunship_id,
@@ -565,7 +574,7 @@ impl CampaignDialogue {
                 scout_id, honeybee_id, gunship_id,
                 spotted, report_completed, gunship_arrived,
                 gunship_briefed, honeybee_destroyed, withdrawal_before_report,
-                scout_report_started,
+                scout_report_started, ..
             }, CampaignCue::PlutoAnomalyVictory | CampaignCue::PlutoAnomalyDefeat) =>
                 *scout_id > 0 && *honeybee_id > 0 && *gunship_id > 0 &&
                 scout_id != honeybee_id && scout_id != gunship_id &&
@@ -820,6 +829,20 @@ impl CampaignDialogue {
         match (self.mode, self.cue) {
             (DialogueMode::PlutoAnomaly { scout_id, .. }, CampaignCue::PlutoAnomalyScoutWithdrawing) =>
                 Some(scout_id),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn record_pluto_scout_arrival(&mut self) {
+        if let DialogueMode::PlutoAnomaly { scout_withdrawal_arrived, .. } = &mut self.mode {
+            *scout_withdrawal_arrived = true;
+        }
+    }
+
+    pub(crate) fn pluto_scout_ready_to_depart(&self) -> Option<i64> {
+        match self.mode {
+            DialogueMode::PlutoAnomaly { scout_withdrawal_arrived: true, .. } =>
+                self.withdrawing_pluto_scout(),
             _ => None,
         }
     }
@@ -1103,7 +1126,7 @@ impl CampaignDialogue {
         if let DialogueMode::PlutoAnomaly {
             scout_id, honeybee_id, gunship_id, spotted, withdrawal_before_report,
             scout_report_started, report_completed, gunship_arrived, gunship_briefed,
-            honeybee_destroyed,
+            honeybee_destroyed, ..
         } = &mut self.mode {
             if !*spotted && source_pluto_honeybee_spotted {
                 *spotted = true;

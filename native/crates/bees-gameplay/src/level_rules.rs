@@ -1637,6 +1637,11 @@ where
         }
         if state.combat.surrendered_side().is_none() {
             state.combat.step_extraction(&self.collision_matrix)?;
+            if let Some(scout) = state.campaign_dialogue.as_ref()
+                .and_then(|dialogue| dialogue.pluto_scout_ready_to_depart())
+            {
+                state.combat.withdraw_scripted_ship(scout)?;
+            }
         }
         state.combat.consume_weapon_rank_events()?;
         state.metadata.register_scout_beacons(&state.combat, state.combat.events())?;
@@ -1933,17 +1938,25 @@ where
 
                 let withdrawal_finished = dialogue.withdrawing_pluto_scout()
                     .and_then(|scout| state.events.roster().owning_squad(scout))
-                    .is_some_and(|owner| state.events.latest_finished_commands().iter().any(|order|
+                    .and_then(|owner| state.events.latest_finished_commands().iter().find(|order|
                         order.owner == owner &&
                         order.selection.kind() == LocalCommandKind::MoveToPoint &&
                         matches!(order.selection.origin(), NativeCommandOrigin::Local(identity)
                             if identity.source == NativeLocalCommandSource::Scripted) &&
                         matches!(order.cause, CommandFinishCause::ReachedSpecifiedDestination |
-                            CommandFinishCause::Timeout)));
-                if withdrawal_finished {
-                    let cue = dialogue.begin_pluto_scout_report();
-                    dialogue.set_cue(cue);
-                    state.events.queue_campaign_dialogue(completed_tick, cue)?;
+                            CommandFinishCause::Timeout)))
+                    .map(|order| order.cause);
+                match withdrawal_finished {
+                    // Retire on the next physical event pass so roster,
+                    // fleet score and rewards all see the safe departure.
+                    Some(CommandFinishCause::ReachedSpecifiedDestination) =>
+                        dialogue.record_pluto_scout_arrival(),
+                    Some(CommandFinishCause::Timeout) => {
+                        let cue = dialogue.begin_pluto_scout_report();
+                        dialogue.set_cue(cue);
+                        state.events.queue_campaign_dialogue(completed_tick, cue)?;
+                    }
+                    _ => {}
                 }
             }
         }

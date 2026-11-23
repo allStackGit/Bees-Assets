@@ -202,6 +202,26 @@ impl CombatWorld {
         } else { None }
     }
 
+    /// Withdraw a ship after the Level has confirmed its authored escape
+    /// movement. Use the same events and retirement as a physical exit.
+    pub fn withdraw_scripted_ship(&mut self, ship_id: i64) -> Result<(), CombatWorldError> {
+        let Some(&index) = self.ship_by_id.get(&ship_id) else { return Ok(()) };
+        if !self.physics.ships()[index].active || self.ships[index].vitals.is_dead() {
+            return Ok(());
+        }
+        self.finish_safe_departure(index)
+    }
+
+    fn finish_safe_departure(&mut self, index: usize) -> Result<(), CombatWorldError> {
+        let ship = &mut self.ships[index];
+        let ship_id = ship.entity_id;
+        let side = ship.side;
+        let preserved_tsv = ship.vitals.tsv().max(0);
+        ship.vitals.kill_without_hit();
+        self.events.push(CombatEvent::ShipExtracted { ship_id, side, preserved_tsv });
+        self.retire_dead_ship_with_mode(index, 0, 0, true)
+    }
+
     pub fn step_extraction(&mut self, collisions: &CollisionMatrix) -> Result<(), CombatWorldError> {
         let Some(state) = self.extraction.as_ref() else { return Ok(()) };
         let zone = state.zone;
@@ -256,23 +276,19 @@ impl CombatWorld {
                 collisions.allows(zone.layer, self.physics.ships()[index].layer))
             .collect::<Vec<_>>();
         for index in hits {
-            let ship = &mut self.ships[index];
-            let ship_id = ship.entity_id;
-            let preserved_tsv = ship.vitals.tsv().max(0);
+            let ship_id = self.ships[index].entity_id;
             if self.extraction.as_ref().is_some_and(|state|
                 state.escort_ship_id == Some(ship_id)
             ) {
                 self.extraction.as_mut().expect("configured exit").escort_delivered = true;
             }
-            ship.vitals.kill_without_hit();
             if self.physics.ships()[index].motion.mobile &&
                 self.living_mobile_ships_on_side(zone.player_side) == 1 &&
                 !pending_friendly_reinforcements
             {
                 self.extraction.as_mut().expect("configured extraction").last_mobile_extracted = true;
             }
-            self.events.push(CombatEvent::ShipExtracted { ship_id, side: zone.player_side, preserved_tsv });
-            self.retire_dead_ship_with_mode(index, 0, 0, true)?;
+            self.finish_safe_departure(index)?;
         }
         Ok(())
     }
