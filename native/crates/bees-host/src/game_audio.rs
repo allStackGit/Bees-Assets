@@ -93,6 +93,20 @@ impl Effect {
         }
     }
 
+    /// Choose which original audio cues survive a saturated large-battle
+    /// presentation frame. The simulation event stream is never reordered.
+    fn priority(self) -> u8 {
+        match self {
+            Self::Intercom | Self::Error | Self::Save | Self::DeleteSquad => 3,
+            Self::Explosion | Self::SmallExplosion | Self::MediumExplosion |
+            Self::LargeExplosion | Self::HugeExplosion |
+            Self::Warp | Self::StrikerBomb | Self::WarpGateStarting => 2,
+            Self::Button | Self::FireBargeClick | Self::RocketLaunch |
+            Self::BeamCannon | Self::FlagshipLaser | Self::QueenLaser => 1,
+            _ => 0,
+        }
+    }
+
     fn clip_variant(self, alternate: bool) -> Self {
         if !alternate { return self; }
         match self {
@@ -157,6 +171,34 @@ impl Effect {
     }
 }
 
+/// Retain the eight highest-value original sound cues without heap
+/// allocations or a new event clock. On an overfull frame, replace only a
+/// strictly lower-priority sound. Ties preserve the source's event order.
+fn queue_frame_effect(
+    effects: &mut [Option<Effect>; MAX_NEW_EFFECTS_PER_FRAME],
+    count: &mut usize, effect: Effect,
+    measurements: &mut NativeAudioMeasurements,
+) {
+    if *count < effects.len() {
+        effects[*count] = Some(effect);
+        *count += 1;
+        return;
+    }
+    if let Some(index) = effects.iter().position(|queued|
+        queued.is_some_and(|queued| queued.priority() < effect.priority())
+    ) {
+        // Prefer discarding the lowest priority, not just the first shot.
+        let lowest = effects.iter().enumerate()
+            .min_by_key(|(_, queued)| queued.expect("full effect queue").priority())
+            .expect("bounded queue has eight slots").0;
+        let index = if effects[lowest].expect("full effect queue").priority() <
+            effect.priority() { lowest } else { index };
+        effects[index] = Some(effect);
+        measurements.high_priority_frame_cues_preserved += 1;
+    }
+    measurements.sound_effects_dropped += 1;
+}
+
 #[inline]
 fn on_screen(viewport: Aabb, point: Vec2) -> bool {
     point.x >= viewport.min.x && point.x <= viewport.max.x &&
@@ -193,6 +235,9 @@ pub struct NativeAudioMeasurements {
     pub sound_clips_missing: usize,
     pub sound_effects_started: u64,
     pub sound_effects_dropped: u64,
+    /// Actual important source events admitted after displacing an
+    /// ordinary shot in the same bounded rendered-frame sound budget.
+    pub high_priority_frame_cues_preserved: u64,
     /// Real source WarpGate activation and ChangeSpriteLoop playback.
     pub warp_gate_openings_started: u64,
     pub warp_gate_loops_started: u64,
@@ -807,7 +852,6 @@ impl NativeGameAudio {
         }
         self.last_tick = Some(tick);
         self.voices.retain(|(sink, _)| !sink.empty());
-        let mut budget = MAX_NEW_EFFECTS_PER_FRAME;
         // At most eight sounds can be admitted per frame: keep the
         // mixing queue on the stack, including during large battles.
         let mut effects = [None; MAX_NEW_EFFECTS_PER_FRAME];
@@ -849,11 +893,9 @@ impl NativeGameAudio {
                 !on_screen(visible, Vec2::new(x as f32, y as f32)) {
                 continue;
             }
-            if budget > 0 {
-                budget -= 1;
-                effects[effects_len] = Some(effect);
-                effects_len += 1;
-            } else { self.measurements.sound_effects_dropped += 1; }
+            queue_frame_effect(
+                &mut effects, &mut effects_len, effect, &mut self.measurements,
+            );
         }
         // The fallback still supports earlier hosts that only transmit
         // projectile state, without inventing projectile spawn events.
@@ -869,11 +911,9 @@ impl NativeGameAudio {
             }
             let Some(effect) = u8::try_from(kind).ok().and_then(Effect::projectile)
                 else { continue };
-            if budget > 0 {
-                budget -= 1;
-                effects[effects_len] = Some(effect);
-                effects_len += 1;
-            } else { self.measurements.sound_effects_dropped += 1; }
+            queue_frame_effect(
+                &mut effects, &mut effects_len, effect, &mut self.measurements,
+            );
         }
         self.seen_projectiles.retain(|_, seen| *seen == tick);
         for effect in effects[..effects_len].iter().flatten().copied() {
@@ -933,7 +973,6 @@ impl NativeGameAudio {
         }
         self.last_tick = Some(tick);
         self.voices.retain(|(sink, _)| !sink.empty());
-        let mut budget = MAX_NEW_EFFECTS_PER_FRAME;
         let mut new_effects = [None; MAX_NEW_EFFECTS_PER_FRAME];
         let mut new_effects_len = 0;
         // Source Weapon.PlaySoundEffect runs on the firing command, not on
@@ -972,13 +1011,10 @@ impl NativeGameAudio {
             let Some(point) = combat.ship_body(ship_id)
                 .map(|body| body.motion.position) else { continue };
             if !on_screen(visible, point) { continue; }
-            if budget > 0 {
-                budget -= 1;
-                new_effects[new_effects_len] = Some(effect);
-                new_effects_len += 1;
-            } else {
-                self.measurements.sound_effects_dropped += 1;
-            }
+            queue_frame_effect(
+                &mut new_effects, &mut new_effects_len, effect,
+                &mut self.measurements,
+            );
         }
         // Every native turret launch produces a GameWeaponFired or
         // PolicyWeaponFired event in this same fixed step. The old
@@ -1040,13 +1076,10 @@ impl NativeGameAudio {
             if point.is_some_and(|point| !on_screen(visible, point)) {
                 continue;
             }
-            if budget > 0 {
-                budget -= 1;
-                new_effects[new_effects_len] = Some(effect);
-                new_effects_len += 1;
-            } else {
-                self.measurements.sound_effects_dropped += 1;
-            }
+            queue_frame_effect(
+                &mut new_effects, &mut new_effects_len, effect,
+                &mut self.measurements,
+            );
         }
         for effect in new_effects[..new_effects_len].iter().flatten().copied() {
             self.play(effect);
