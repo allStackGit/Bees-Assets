@@ -167,7 +167,6 @@ pub struct NativeShopMenuRow {
     pub side: i32,
     pub ship_type: u8,
     pub saved_squad_id: i64,
-    pub quantity: u32,
     pub unit_price_tsv: u64,
 }
 
