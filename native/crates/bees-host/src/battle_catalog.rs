@@ -1792,6 +1792,25 @@ impl BattleCatalog {
     fn apply_sequenced_edit(
         &self, progress: &mut CampaignProgress<'_>, edit: CampaignSequencedEdit,
     ) -> io::Result<()> {
+        // The outer career receipt is bound to the active campaign by the
+        // reader. Also authenticate embedded legacy-format edit payloads:
+        // they must not claim a different career under an otherwise valid
+        // outer receipt.
+        let campaign = self.campaign_id.as_deref().unwrap_or("");
+        let belongs = match &edit {
+            CampaignSequencedEdit::Duplicate { .. } => true,
+            CampaignSequencedEdit::Purchase(row) => row.campaign_id == campaign,
+            CampaignSequencedEdit::Transfer(row) => row.campaign_id == campaign,
+            CampaignSequencedEdit::AuthoredAssignment(row) => row.campaign_id == campaign,
+            CampaignSequencedEdit::Tactics(row) => row.campaign_id == campaign,
+            CampaignSequencedEdit::SquadName(row) => row.campaign_id == campaign,
+            CampaignSequencedEdit::FleetName(row) => row.campaign_id == campaign,
+            CampaignSequencedEdit::Create(row) => row.campaign_id == campaign,
+            CampaignSequencedEdit::Retire(row) => row.campaign_id == campaign,
+        };
+        if !belongs {
+            return Err(invalid("sequenced campaign edit belongs to another career"));
+        }
         match edit {
             CampaignSequencedEdit::Duplicate {
                 squad, purchased_ids, authored, tactics,
