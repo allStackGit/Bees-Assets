@@ -389,5 +389,5 @@ class IndependentGpuTraining:
             gpu_training_stream_candidates=len(self.stream_candidates),
             gpu_training_calibration_complete=int(self.phase == "settled"),
             gpu_training_last_qualified_seconds=self.last_qualified_seconds,
-            gpu_training_last_qualified_work_per_second=self.last_qualified_work_rate,
+            gpu_training_qualified_work_per_second=self.last_qualified_work_rate,
         )
