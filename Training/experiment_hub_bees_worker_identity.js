@@ -63,4 +63,47 @@ function unityWorkerTreeSha256(entrypoint) {
     return crypto.createHash('sha256')
         .update(JSON.stringify(files),'utf8').digest('hex');
 }
-module.exports={unityWorkerTreeSha256};
+// A Linux/Windows pair legitimately has different executable and payload
+// hashes. Only one exact build invocation (one frozen offline manifest) can
+// identify their common Unity source release for authenticated WAN training.
+function pinnedWorkerRelease(manifestPath,entrypoint) {
+    if(typeof manifestPath!=='string'||!path.isAbsolute(manifestPath)||
+        fs.realpathSync(manifestPath)!==manifestPath||
+        !fs.statSync(manifestPath).isFile()||
+        fs.statSync(manifestPath).size>32768)
+        throw Error('Bees cross-platform release needs a trusted absolute offline worker manifest.');
+    const bytes=fs.readFileSync(manifestPath);
+    const manifest=JSON.parse(bytes.toString('utf8'));
+    const sha=/^[0-9a-f]{64}$/;
+    const platform=process.platform==='win32'?'WindowsPlayer':'LinuxPlayer';
+    const executable=process.platform==='win32'
+        ?'Bees RL Training.exe':'Bees RL Training.x86_64';
+    if(!manifest||manifest.schema_version!==1||
+        manifest.kind!=='offline-unity-workers'||
+        manifest.deployment_status!=='unpublished'||
+        typeof manifest.build_id!=='string'||manifest.build_id.length>160||
+        !/^[A-Za-z0-9._-]+$/.test(manifest.build_id)||
+        !Array.isArray(manifest.artifacts)||
+        ![1,2].includes(manifest.artifacts.length)||
+        new Set(manifest.artifacts.map(a=>a?.platform)).size!==
+            manifest.artifacts.length||
+        manifest.artifacts.some(a=>!a||
+            !['LinuxPlayer','WindowsPlayer'].includes(a.platform)||
+            !sha.test(String(a.archive_sha256||''))||
+            !sha.test(String(a.player_tree_sha256||''))))
+        throw Error('Bees offline Unity build manifest has an unsupported or incomplete artifact contract.');
+    const artifact=manifest.artifacts.find(a=>a.platform===platform);
+    if(!artifact||artifact.entrypoint!==executable||
+        path.basename(entrypoint)!==executable)
+        throw Error('Bees player is not from the current host platform in this frozen Unity release.');
+    const payload=unityWorkerTreeSha256(entrypoint);
+    if(payload!==artifact.player_tree_sha256)
+        throw Error('Installed Unity player files differ from their trusted cross-platform build manifest.');
+    return Object.freeze({
+        release_sha256:crypto.createHash('sha256').update(bytes).digest('hex'),
+        worker_payload_sha256:payload,
+        build_id:manifest.build_id,
+        platforms:manifest.artifacts.map(a=>a.platform),
+    });
+}
+module.exports={unityWorkerTreeSha256,pinnedWorkerRelease};
