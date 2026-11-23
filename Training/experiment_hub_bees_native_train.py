@@ -664,7 +664,10 @@ def main():
                 print("[Bees native Hub] Stop has no verified resumable checkpoint: "+str(error),
                       file=sys.stderr,flush=True)
                 return 130
-            return 0 if marker_stop else 130
+            # A cooperative Stop may report normal completion (0) or the
+            # Python interrupt convention (130) after the launcher's final
+            # save. Other failures never count as verified checkpoint Stops.
+            return 0 if marker_stop and result in (0,130) else 130
         if result!=0:
             return result or 1
         record_model(root,job)
