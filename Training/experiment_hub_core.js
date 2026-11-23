@@ -20,6 +20,16 @@ const {EvaluationHistory}=require('./experiment_hub_evaluation_history');
 const {validateCatalog,supportsDesign}=require('./experiment_hub_design_fields');
 const {ObservationArchive}=require('./experiment_hub_observations');
 const {ThroughputHistory}=require('./experiment_hub_throughput');
+function supportsJobRuntime(machine,job) {
+    if(job?.project_id==='bees_native') {
+        const pinned=machine?.design_catalog?.bees_native;
+        return machine?.agent_platform==='linux'&&
+            machine?.installed_projects?.includes('bees_native')&&
+            pinned?.worker_sha256===job.frozen_parameters?.worker_sha256&&
+            pinned?.trainer_sha256===job.frozen_parameters?.trainer_sha256;
+    }
+    return supportsTinyBrainsProfile(machine,job);
+}
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -1014,7 +1024,7 @@ function nativeStartReadiness(snapshot, job) {
             !['cpu','memory'].every(c=>
                 machine.execution_capabilities?.cgroup_controllers.includes(c))))
         return block('Linux cgroup v2 CPU and memory controllers are unavailable.');
-    if(!supportsTinyBrainsProfile(machine,job))
+    if(!supportsJobRuntime(machine,job))
         return block('The assigned worker does not approve this TinyBrains profile, GPU mode, checkpoint import and update count.');
     if(!supportsDesign(machine.design_catalog,job.project_id,job.frozen_parameters))
         return block('The assigned worker has not approved this exact Design configuration.');
@@ -1638,6 +1648,9 @@ function allocationBlockReason(machines,job,preferredMachineId=null) {
     if(!candidates.length)
         return preferredMachineId?'The selected worker is offline or unavailable.'
             :'No worker is connected.';
+    if(job.project_id==='bees_native'&&
+        !candidates.some(machine=>supportsJobRuntime(machine,job)))
+        return 'No connected Linux worker has the frozen Bees Unity executable and MA-POCA trainer hashes.';
     if(job.project_id==='tinybrains'&&
         !candidates.some(machine=>supportsTinyBrainsProfile(machine,job)))
         return 'No eligible worker approves this TinyBrains profile, GPU mode, checkpoint import and update count.';
@@ -1688,7 +1701,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
             machine.software_update_blocked!==true&&
             (canPrepareSimulation(machine,selected)||
                 supportsEvaluation(machine.evaluation_suites,selected)&&
-                supportsTinyBrainsProfile(machine,selected)&&
+                supportsJobRuntime(machine,selected)&&
                 supportsDesign(machine.design_catalog,selected.project_id,selected.frozen_parameters)&&
                 (!snapshot||!courierCurriculumBlock(snapshot,selected,machine)))&&
             (!snapshot||distributedRolloutHost(snapshot,selected,machine))&&
@@ -2784,7 +2797,7 @@ class ExperimentHub {
             const canHostJob=(machine,job)=>
                 machine.installed_projects?.includes(job.project_id)&&
                 supportsEvaluation(machine.evaluation_suites,job)&&
-                supportsTinyBrainsProfile(machine,job)&&
+                supportsJobRuntime(machine,job)&&
                 (job.resources.gpu_count===0||
                     machine.gpu_projects?.includes(job.project_id)&&
                     (machine.agent_platform==='linux'
@@ -3364,7 +3377,7 @@ class ExperimentHub {
                 throw Error('Checkpoint continuation must stay on the original machine.');
             const machine=machines.get(move.machine_id);
             if(machine?.status!=='connected'||!machine.installed_projects?.includes(job.project_id)||
-                !supportsEvaluation(machine.evaluation_suites,job)||!supportsTinyBrainsProfile(machine,job)||
+                !supportsEvaluation(machine.evaluation_suites,job)||!supportsJobRuntime(machine,job)||
                 !distributedRolloutHost({machines:[...machines.values()],jobs:next.jobs},job,machine))
                 throw Error('Destination requires a connected adapter supporting the project, configuration and evaluation suite.');
             return {job,source,machine};
@@ -5291,7 +5304,7 @@ class ExperimentHub {
                     !lease.receipt_fresh||
                     machine.native_preflight_passed!==true||
                     !supportsEvaluation(machine.evaluation_suites,job)||
-                    !supportsTinyBrainsProfile(machine,job)||
+                    !supportsJobRuntime(machine,job)||
                     !distributedRolloutHost(snapshot,job,machine)||
                     !courierLineageHost(snapshot,job,machine)||
                     nativeResourceBlock(job,lease)||
@@ -6402,7 +6415,7 @@ class ExperimentHub {
                 job.continuation_of_job_id||job.after_job_id||
                 (!preparing&&(!machine.installed_projects?.includes(job.project_id)||
                     !supportsEvaluation(machine.evaluation_suites,job)||
-                    !supportsTinyBrainsProfile(machine,job))))
+                    !supportsJobRuntime(machine,job))))
                 throw Error('Bundle member '+(index+1)+' requires an approved independent project adapter or a preparable CPU-only simulation.');
             const courierMulti=job.project_id==='courier'&&
                 ['linux','win32'].includes(machine.agent_platform)&&
