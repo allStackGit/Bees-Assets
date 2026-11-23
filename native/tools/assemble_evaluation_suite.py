@@ -69,8 +69,8 @@ def assemble(output: Path, source_paths: list[Path],
              worlds_per_source: int = 1,
              publication_origin: Path | None = None,
              publication_destination: Path | None = None) -> dict:
-    if not 2 <= len(source_paths) <= 64:
-        raise ValueError("native joint Level run requires 2..64 distinct sources")
+    if not 2 <= len(source_paths) <= 256:
+        raise ValueError("native joint Level run requires 2..256 distinct sources")
     if (type(worlds_per_source) is not int or not 1 <= worlds_per_source <= 1024 or
             len(source_paths) * worlds_per_source > 16384):
         raise ValueError("native Level suite needs 1..1024 persistent arenas per source, "
@@ -304,7 +304,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("native_run_configs", nargs="+", type=Path,
-                        help="2..64 authored native policy run JSON files with fixed seed plans")
+                        help="2..256 authored native policy run JSON files with fixed seed plans")
     parser.add_argument("--training", action="store_true",
                         help="retain the pinned model and native policy capture for "
                              "joint self-play training across original Level rosters")
