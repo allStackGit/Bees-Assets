@@ -120,89 +120,138 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     if (not isinstance(scene, dict) or not isinstance(run, dict) or
             not isinstance(scene.get("stage_name"), str) or
             not scene["stage_name"] or
-            not isinstance(run.get("levels"), list) or len(run["levels"]) != 1 or
+            not isinstance(run.get("levels"), list) or not run["levels"] or
+            len(run["levels"]) > (64 if scenario == "custom" else 1) or
             not isinstance(run.get("native_stage"), dict)):
-        raise ValueError("native bootstrap requires a one-Level native-authored policy scene")
+        raise ValueError("native bootstrap requires complete native physical Levels")
     if not isinstance(scene.get("ships"), list):
-        raise ValueError("native bootstrap requires authored policy ships")
-    original_authored = (
-        scenario == "custom" and scene.get("schema_version") == 35 and
-        scene.get("native_policy_authored_episode") is True and
-        scene.get("native_policy_capabilities_captured") is True
-    )
+        raise ValueError("native bootstrap requires authored physical policy ships")
+    source_scenes = [(source_scene, scene)]
     if scenario == "custom":
-        source_level = run["levels"][0]
-        scene_field = source_level.get("scene")
-        if original_authored:
-            # The imported Unity physical source uses Vector2 objects for
-            # its real bounds, not native_game_schema's [x, y] arrays.
-            # Validate the SAME physical bounds, rather than modifying
-            # the experiment arena to satisfy a template.
-            def unity_vec(name):
-                item = scene.get(name)
-                if (not isinstance(item, dict) or set(item) != {"x", "y"} or
-                        any(type(item[axis]) not in (int, float) or
-                            not np.isfinite(item[axis]) for axis in ("x", "y"))):
-                    raise ValueError(f"custom original source has invalid {name}")
-                return [item["x"], item["y"]]
-            physical_bounds = {
-                "min": unity_vec("min"), "max": unity_vec("max"),
-            }
-        else:
-            physical_bounds = scene.get("bounds")
-        if (not (scene.get("native_game_schema") == 1 or original_authored) or
-                not isinstance(scene_field, str) or not scene_field or
-                (source_run.parent / scene_field).resolve() != source_scene or
-                run.get("stage_name") != scene["stage_name"] or
-                run.get("fragment_spawn", {}).get("map_bounds") != physical_bounds or
-                not isinstance(scene.get("policy_episode"), dict) or
-                run.get("model_manifest") or run.get("hivemind")):
-            raise ValueError(
-                "custom native policy source must match its exact physical "
-                "Stage, map and unbootstrapped Run"
+        if run.get("model_manifest") or run.get("hivemind"):
+            raise ValueError("custom bootstrap cannot inherit a live model or HiveMind session")
+        source_scenes = []
+        for index, level in enumerate(run["levels"]):
+            if not isinstance(level, dict) or not isinstance(level.get("scene"), str):
+                raise ValueError("each custom Level needs its physical scene")
+            physical_path = (source_run.parent / level["scene"]).resolve(strict=True)
+            if index == 0 and physical_path != source_scene:
+                raise ValueError("first custom Level scene differs from --source-scene")
+            physical = scene if index == 0 else json.loads(
+                physical_path.read_text(encoding="utf-8")
             )
-        if original_authored:
-            expected_slots = {
-                "0": slots[0], "1": slots[1] if len(slots) > 1 else slots[0],
-            }
-            source_group = scene["policy_episode"].get("group_participants")
-            level_group = source_level.get("groups")
-            if (len(slots) != 2 or source_level.get("model_slots") != expected_slots or
-                    scene.get("has_policy_episode") is not True or
-                    (scene.get("targeting_context") or {}).get("has_player") is not False or
-                    scene.get("activate_hivemind") is not False or
-                    not isinstance(source_group, list) or not source_group or
-                    not isinstance(level_group, dict) or
-                    not isinstance(level_group.get("participants"), list) or
-                    level_group.get("episode_number") != scene["policy_episode"].get("episode_number") or
-                    sorted((row["side"], row["agent_id"]) for row in source_group)
-                    != sorted((row["side"], row["agent_id"])
-                              for row in level_group["participants"]) or
-                    Path(run.get("policy_worker", "")).resolve() != (
-                        ROOT / "native" / "tools" / "policy_worker.py"
-                    ).resolve()):
-                raise ValueError(
-                    "native original-fleet bootstrap requires the exact "
-                    "captured policy group, team slots and canonical v26 worker"
+            if not isinstance(physical, dict):
+                raise ValueError("custom native Level scene must be an object")
+            source_scenes.append((physical_path, physical))
+        if len(source_scenes) > 1 and holdout_worlds is not None:
+            raise ValueError(
+                "joint original fleet bootstraps use separate authored fixed-seed "
+                "evaluation suites, not a duplicated single-map holdout"
+            )
+
+    expected_slots = {
+        "0": slots[0], "1": slots[1] if len(slots) > 1 else slots[0],
+    }
+    for index, (physical_path, physical) in enumerate(source_scenes):
+        if (not isinstance(physical.get("ships"), list) or
+                physical.get("stage_name") != scene["stage_name"] or
+                physical.get("stage_name") != run.get("stage_name")):
+            raise ValueError("all original policy worlds need the same Stage and physical ship schema")
+        original_authored = (
+            physical.get("schema_version") == 35 and
+            physical.get("native_policy_authored_episode") is True and
+            physical.get("native_policy_capabilities_captured") is True
+        )
+        if scenario == "custom":
+            if original_authored:
+                def unity_vec(name):
+                    item = physical.get(name)
+                    if (not isinstance(item, dict) or set(item) != {"x", "y"} or
+                            any(type(item[axis]) not in (int, float) or
+                                not np.isfinite(item[axis]) for axis in ("x", "y"))):
+                        raise ValueError(f"custom original source has invalid {name}")
+                    return [item["x"], item["y"]]
+                bounds = {"min": unity_vec("min"), "max": unity_vec("max")}
+                source_group = physical.get("policy_episode", {}).get(
+                    "group_participants"
                 )
-    real_teams = {}
-    for ship in scene["ships"]:
-        if not isinstance(ship, dict):
-            raise ValueError("native bootstrap has invalid ship metadata")
-        policy = ship.get("policy")
-        if original_authored and ship.get("has_bound_policy") is True:
-            if ship.get("is_rl_policy_controlled") is not True:
-                raise ValueError("native original policy source has unbound action ownership")
-            policy = {"team_id": ship.get("policy_team_id")}
-        if policy is None:
-            continue
-        if not isinstance(policy, dict) or type(policy.get("team_id")) is not int:
-            raise ValueError("native bootstrap has an invalid policy agent")
-        real_teams.setdefault(policy["team_id"], set()).add(ship.get("side"))
-    if (set(real_teams) != {0, 1} or
-            len(real_teams[0]) != 1 or len(real_teams[1]) != 1 or
-            real_teams[0] == real_teams[1]):
-        raise ValueError("native bootstrap requires authentic policy agents on distinct sides")
+                level_group = run["levels"][index].get("groups")
+                if (len(slots) != 2 or
+                        physical.get("has_policy_episode") is not True or
+                        (physical.get("targeting_context") or {}).get("has_player") is not False or
+                        physical.get("activate_hivemind") is not False or
+                        not isinstance(source_group, list) or not source_group or
+                        not all(isinstance(item, dict) and
+                                type(item.get("side")) is int and
+                                type(item.get("agent_id")) is int and
+                                type(item.get("team_id")) is int and
+                                type(item.get("ship_id")) is int
+                                for item in source_group) or
+                        not isinstance(level_group, dict) or
+                        not isinstance(level_group.get("participants"), list) or
+                        level_group.get("episode_number") != physical["policy_episode"].get("episode_number") or
+                        sorted((item["side"], item["agent_id"]) for item in source_group)
+                        != sorted((item["side"], item["agent_id"])
+                                  for item in level_group["participants"]) or
+                        Path(run.get("policy_worker", "")).resolve() != (
+                            ROOT / "native" / "tools" / "policy_worker.py"
+                        ).resolve()):
+                    raise ValueError(
+                        "original fleet bootstrap requires the exact authored "
+                        "physical group, independent model slots and v26 worker"
+                    )
+                members = {
+                    (item["ship_id"], item["side"], item["team_id"])
+                    for item in source_group if item["ship_id"] != 0
+                }
+            else:
+                bounds = physical.get("bounds")
+            if (not (physical.get("native_game_schema") == 1 or original_authored) or
+                    not isinstance(physical.get("policy_episode"), dict) or
+                    run["levels"][index].get("model_slots") != expected_slots or
+                    run.get("fragment_spawn", {}).get("map_bounds") != bounds):
+                raise ValueError(
+                    "custom policy Level differs from its source map, policy "
+                    "episode, frozen model slots or physical gameplay"
+                )
+        teams = {}
+        bound = set()
+        for ship in physical["ships"]:
+            if not isinstance(ship, dict):
+                raise ValueError("native bootstrap has invalid ship metadata")
+            policy = ship.get("policy")
+            if original_authored and ship.get("has_bound_policy") is True:
+                if ship.get("is_rl_policy_controlled") is not True:
+                    raise ValueError("original physical policy ownership is invalid")
+                ship_id, side, team = (
+                    ship.get("entity_id"), ship.get("side"),
+                    ship.get("policy_team_id"),
+                )
+                if (ship_id, side, team) not in members:
+                    raise ValueError("original physical policy differs from its group Agent")
+                bound.add(ship_id)
+                policy = {"team_id": team}
+            if policy is None:
+                continue
+            if (not isinstance(policy, dict) or
+                    type(policy.get("team_id")) is not int or
+                    ship.get("side") not in (1, 2)):
+                raise ValueError("native bootstrap has an invalid policy agent")
+            teams.setdefault(policy["team_id"], set()).add(ship["side"])
+        if (set(teams) != {0, 1} or
+                len(teams[0]) != 1 or len(teams[1]) != 1 or
+                teams[0] == teams[1]):
+            raise ValueError(
+                f"native bootstrap Level {index + 1} requires real "
+                "policy agents on BOTH distinct source factions"
+            )
+        if original_authored and (
+                bound != {item[0] for item in members} or
+                len(bound) != len(members)):
+            raise ValueError("original source group has unowned or repeated bound actors")
+    source_scene_digests = [
+        file_sha256(path) for path, _ in source_scenes
+    ]
     source_scene_digest = file_sha256(source_scene)
     source_run_digest = file_sha256(source_run)
     trainer_config_digest = file_sha256(trainer_config)
@@ -244,12 +293,19 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     if file_sha256(output / "trainer-config.yaml") != trainer_config_digest:
         raise ValueError("trainer settings changed while initializing the native model")
 
-    # Keep the entire native source scenario as an immutable per-run input:
-    # later changes to the repository's example scenes cannot silently
-    # alter the learning task for this checkpoint generation.
-    shutil.copyfile(source_scene, output / "scene.json")
-    if file_sha256(output / "scene.json") != source_scene_digest:
-        raise ValueError("native game scene changed while initializing the model")
+    # Copy every authored physical World into the same immutable
+    # bootstrap. Original ship IDs, objectives, maps, reinforcement gates
+    # and Squad permissions are not rebased; only the enclosing host world
+    # identities and scene paths were authored earlier by the suite.
+    scene_outputs = []
+    for index, ((original_path, _), digest) in enumerate(
+        zip(source_scenes, source_scene_digests)
+    ):
+        name = "scene.json" if index == 0 else f"scene-{index + 1:04d}.json"
+        shutil.copyfile(original_path, output / name)
+        if file_sha256(output / name) != digest:
+            raise ValueError("native physical source changed while initializing the model")
+        scene_outputs.append(name)
     run.update({
         "run_id": f"native-{scenario}-bootstrap-{seed}",
         "stage_name": scene["stage_name"],
@@ -266,14 +322,13 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     run["episodes_per_world"] = episodes_per_world
     if not 1 <= run["max_rounds"] <= (1 << 64) - 1:
         raise ValueError("requested episode budget exceeds native uint64 run rounds")
-    level = run["levels"][0]
-    level["scene"] = "scene.json"
-    level["model_slots"] = {"0": slots[0], "1": slots[1] if len(slots) > 1 else slots[0]}
-    # Custom authored support squads may still have legitimate native
-    # scripted AI orders. They cannot share squad ownership with a policy
-    # controller; the authoring tool checks that contract.
-    if scenario != "custom":
-        level.pop("scripted_queues", None)
+    for level, scene_name in zip(run["levels"], scene_outputs):
+        level["scene"] = scene_name
+        level["model_slots"] = expected_slots
+        # Custom authored support squads retain their real native command
+        # ownership. Shipped examples use pure policy-only fleets.
+        if scenario != "custom":
+            level.pop("scripted_queues", None)
     with (output / "run.json").open("x", encoding="utf-8", newline="\n") as file:
         json.dump(run, file, indent=2)
         file.write("\n")
@@ -325,6 +380,12 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     )
     subprocess.run(command, cwd=ROOT, check=True)
 
+    if scenario == "custom" and (
+        file_sha256(source_run) != source_run_digest or
+        any(file_sha256(source_path) != digest for
+            (source_path, _), digest in zip(source_scenes, source_scene_digests))
+    ):
+        raise ValueError("original native policy Worlds changed while bootstrapping")
     # This is also the exact strict actor-loading path used by the resident
     # inference process, not just a JSON/hash format check.
     _, policies, _ = checked_manifest(manifest)
@@ -347,6 +408,13 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         **({
             "source_scene_sha256": source_scene_digest,
             "source_run_sha256": source_run_digest,
+            "source_scenes": [
+                {"source_path": str(source_path), "source_sha256": digest,
+                 "scene": name, "scene_sha256": file_sha256(output / name)}
+                for (source_path, _), digest, name in zip(
+                    source_scenes, source_scene_digests, scene_outputs,
+                )
+            ],
         } if scenario == "custom" else {}),
         "episodes_per_world": episodes_per_world,
         "holdout_worlds": holdout_worlds,
