@@ -929,13 +929,18 @@ class LinuxSupervisor {
         if(ramBlock)throw Error(ramBlock);
         if(gpuPlan&&this.gpuProbeCleanupPending())
             throw Error('GPU launch requires completed device qualification.');
-        if(gpuPlan)
-            sharedGpuAdmission(this.state.records,gpuPlan,job.resources,
-                Math.min(...invocation.gpu.bindings.map(binding=>binding.vram_mb)));
         if(gpuPlan)verifyUnconfinedDeviceAccess(gpuPlan,this.fs);
         if(gpuPlan) {
             const physical=discoverAmdGpus({fsApi:this.fs}).find(device=>
                 device.pci_address===gpuPlan.selected[0].pci_address);
+            if(job.resources.gpu_mode==='shared') {
+                const approvedVram=invocation.gpu.bindings[0].vram_mb;
+                if(!physical||!Number.isSafeInteger(physical.vram_mb)||
+                    physical.vram_mb<approvedVram)
+                    throw Error('Cannot verify physical GPU VRAM for cooperative native sharing.');
+                sharedGpuAdmission(this.state.records,gpuPlan,job.resources,
+                    Math.min(approvedVram,physical.vram_mb));
+            }else sharedGpuAdmission(this.state.records,gpuPlan,job.resources,0);
             const gpuBlock=startHeadroom(job.resources,availableRam,physical);
             if(gpuBlock)throw Error(gpuBlock);
         }
