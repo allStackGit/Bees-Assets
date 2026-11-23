@@ -358,8 +358,14 @@ class BundleReceiver:
         self.active_orders = None
         self.input_archives = {}
         self.inflight = set()
+        # A collector's partially transferred bytes have one immutable
+        # SHA/length identity and one private temp file. Only the holder
+        # of its existing active work order may append further bytes.
+        self.staged_uploads = {}
         self.input_bytes_served = 0
         self.upload_bytes_received = 0
+        self.upload_wire_bytes_received = 0
+        self.upload_resumed_prefix_bytes = 0
         self.upload_and_verify_seconds = 0.0
         self.completed_uploads = 0
         self.lock = threading.Lock()
@@ -389,14 +395,19 @@ class BundleReceiver:
             return {
                 "collector_input_bytes_served": self.input_bytes_served,
                 "collector_output_bytes_received": self.upload_bytes_received,
+                "collector_output_wire_bytes_received": self.upload_wire_bytes_received,
+                "collector_output_resumed_prefix_bytes": self.upload_resumed_prefix_bytes,
                 "collector_upload_and_verify_wall_seconds": self.upload_and_verify_seconds,
                 "collector_uploads_received": self.completed_uploads,
             }
 
-    def record_transfer(self, *, input_bytes=0, upload_bytes=0, upload_seconds=0.0):
+    def record_transfer(self, *, input_bytes=0, upload_bytes=0, upload_seconds=0.0,
+                        upload_wire_bytes=0, resumed_prefix_bytes=0):
         with self.lock:
             self.input_bytes_served += input_bytes
             self.upload_bytes_received += upload_bytes
+            self.upload_wire_bytes_received += upload_wire_bytes
+            self.upload_resumed_prefix_bytes += resumed_prefix_bytes
             self.upload_and_verify_seconds += upload_seconds
             if upload_bytes:
                 self.completed_uploads += 1
@@ -409,17 +420,31 @@ class BundleReceiver:
         if set(archives) - valid:
             raise ValueError("collector input archive was not issued in this round")
         with self.lock:
+            if self.inflight:
+                raise ValueError("cannot replace issued native round during active uploads")
+            staged = list(self.staged_uploads.values())
+            self.staged_uploads.clear()
             self.active_orders = orders
             self.input_archives = dict(archives)
             self.input_bytes_served = 0
             self.upload_bytes_received = 0
+            self.upload_wire_bytes_received = 0
+            self.upload_resumed_prefix_bytes = 0
             self.upload_and_verify_seconds = 0.0
             self.completed_uploads = 0
+        for state in staged:
+            state["path"].unlink(missing_ok=True)
 
     def deactivate(self):
         with self.lock:
+            if self.inflight:
+                raise ValueError("cannot deactivate issued native round during active uploads")
+            staged = list(self.staged_uploads.values())
+            self.staged_uploads.clear()
             self.active_orders = None
             self.input_archives.clear()
+        for state in staged:
+            state["path"].unlink(missing_ok=True)
 
     def prepared_input(self, collector_id):
         with self.lock:
@@ -462,6 +487,55 @@ class BundleReceiver:
         with self.lock:
             self.inflight.discard(collector_id)
 
+    def upload_offset(self, collector_id, digest, total):
+        """Report committed-to-staging bytes only after a prior POST exits."""
+        with self.lock:
+            if self.active_orders is None or not any(
+                    job["id"] == collector_id for job in self.active_orders["jobs"]):
+                raise LookupError("collector has no issued work order")
+            if collector_id in self.inflight:
+                raise FileExistsError("collector upload is still streaming")
+            state = self.staged_uploads.get(collector_id)
+            if state is None:
+                return None
+            if state["digest"] != digest or state["total"] != total:
+                raise ValueError("collector upload identity changed during resume")
+            if state["path"].is_symlink() or not state["path"].is_file() or (
+                    state["path"].stat().st_size != state["received"]):
+                raise ValueError("staged collector bytes were redirected or modified")
+            return state["received"]
+
+    def prepare_upload(self, collector_id, digest, total, offset):
+        """One active POST owns a staging file and its incremental digest."""
+        with self.lock:
+            if collector_id not in self.inflight:
+                raise ValueError("collector upload was not admitted")
+            state = self.staged_uploads.get(collector_id)
+            if state is None:
+                if offset:
+                    raise ValueError("collector resume has no matching staged prefix")
+                with tempfile.NamedTemporaryFile(dir=self.inbox,
+                        prefix=".native-bundle-upload-", suffix=".partial",
+                        delete=False) as output:
+                    path = Path(output.name)
+                state = {
+                    "path": path, "digest": digest, "total": total,
+                    "received": 0, "hasher": hashlib.sha256(),
+                }
+                self.staged_uploads[collector_id] = state
+            if (state["digest"] != digest or state["total"] != total or
+                    state["received"] != offset or state["path"].is_symlink() or
+                    not state["path"].is_file() or
+                    state["path"].stat().st_size != offset):
+                raise ValueError("collector upload offset or immutable identity differs")
+            return state
+
+    def discard_upload(self, collector_id):
+        with self.lock:
+            state = self.staged_uploads.pop(collector_id, None)
+        if state is not None:
+            state["path"].unlink(missing_ok=True)
+
 
 def _receiver_handler(owner):
     class Handler(BaseHTTPRequestHandler):
@@ -480,6 +554,40 @@ def _receiver_handler(owner):
             self.send_header("Connection", "close")
             self.end_headers()
             self.wfile.write(data)
+            self.close_connection = True
+
+        def do_HEAD(self):
+            if not hmac.compare_digest(
+                    self.headers.get("Authorization", ""), "Bearer " + owner.token):
+                self.respond(401, {"error": "unauthorized"})
+                return
+            prefix = "/v1/bundles/"
+            collector_id = self.path[len(prefix):] if self.path.startswith(prefix) else ""
+            if not BUNDLE_NAME.fullmatch(collector_id):
+                self.respond(404, {"error": "unknown bundle endpoint"})
+                return
+            try:
+                digest = self.headers.get("X-Archive-SHA256", "")
+                total = int(self.headers.get("X-Archive-Bytes", "0"))
+                if not DIGEST_RE.fullmatch(digest) or not 0 < total <= MAX_ARCHIVE_BYTES:
+                    raise ValueError("invalid immutable upload identity")
+                offset = owner.upload_offset(collector_id, digest, total)
+                if offset is None:
+                    self.send_response(404)
+                else:
+                    self.send_response(200)
+                    self.send_header("X-Received-Bytes", str(offset))
+                    self.send_header("X-Archive-SHA256", digest)
+                    self.send_header("X-Archive-Bytes", str(total))
+            except LookupError:
+                self.send_response(404)
+            except FileExistsError:
+                self.send_response(409)
+            except (ValueError, OSError):
+                self.send_response(422)
+            self.send_header("Content-Length", "0")
+            self.send_header("Connection", "close")
+            self.end_headers()
             self.close_connection = True
 
         def do_GET(self):
@@ -579,11 +687,15 @@ def _receiver_handler(owner):
                 return
             try:
                 count = int(self.headers.get("Content-Length", ""))
+                offset = int(self.headers.get("X-Resume-Offset", "0"))
+                total = int(self.headers.get("X-Archive-Bytes", str(count)))
             except ValueError:
-                count = 0
+                count, offset, total = -1, -1, -1
             digest = self.headers.get("X-Archive-SHA256", "")
-            if not 0 < count <= MAX_ARCHIVE_BYTES or not DIGEST_RE.fullmatch(digest):
-                self.respond(413, {"error": "invalid archive size or checksum"})
+            if (not 0 < total <= MAX_ARCHIVE_BYTES or
+                    not 0 <= offset <= total or count != total - offset or
+                    not DIGEST_RE.fullmatch(digest)):
+                self.respond(413, {"error": "invalid archive range, size or checksum"})
                 return
             try:
                 orders, job = owner.claim(collector_id)
@@ -597,42 +709,65 @@ def _receiver_handler(owner):
                 self.respond(422, {"error": str(error)})
                 return
             started = time.perf_counter()
-            temporary = None
+            wire_bytes = 0
+            staged = None
+            completed = False
             try:
                 self.connection.settimeout(60)
-                hasher = hashlib.sha256()
-                with tempfile.NamedTemporaryFile(mode="w+b", dir=owner.inbox,
-                    prefix=".native-bundle-upload-", suffix=".partial",
-                    delete=False) as stream:
-                    temporary = Path(stream.name)
+                staged = owner.prepare_upload(collector_id, digest, total, offset)
+                with staged["path"].open("ab") as stream:
                     remaining = count
                     while remaining:
                         data = self.rfile.read(min(CHUNK, remaining))
                         if not data:
-                            raise ValueError("truncated native rollout archive")
+                            raise ConnectionError("truncated native rollout archive")
                         stream.write(data)
-                        hasher.update(data)
+                        staged["hasher"].update(data)
+                        staged["received"] += len(data)
+                        wire_bytes += len(data)
                         remaining -= len(data)
                     stream.flush()
                     os.fsync(stream.fileno())
-                if hasher.hexdigest() != digest:
+                if staged["received"] != total or staged["hasher"].hexdigest() != digest:
+                    # Full-length mismatches cannot ever become valid by
+                    # resending a suffix; discard them for a fresh upload.
+                    owner.discard_upload(collector_id)
                     raise ValueError("collector archive checksum mismatch")
-                import_bundle_archive(temporary, job, orders, owner.inbox,
-                                      archive_sha256=digest, archive_bytes=count)
+                import_bundle_archive(
+                    staged["path"], job, orders, owner.inbox,
+                    archive_sha256=digest, archive_bytes=total,
+                )
                 result = {
                     **completed_uploaded_bundle(owner.inbox, job, orders),
                     "receive_and_verify_wall_seconds": time.perf_counter() - started,
+                    "resumed_prefix_bytes": offset,
                 }
-                owner.record_transfer(upload_bytes=count,
-                                      upload_seconds=result["receive_and_verify_wall_seconds"])
+                completed = True
+                owner.record_transfer(
+                    upload_bytes=total,
+                    upload_seconds=result["receive_and_verify_wall_seconds"],
+                    resumed_prefix_bytes=offset,
+                )
+                owner.discard_upload(collector_id)
                 if owner.on_event:
                     owner.on_event("native_bundle_received", result)
                 self.respond(200, result)
-            except (ValueError, OSError, EOFError, KeyError, TypeError, tarfile.TarError) as error:
-                self.respond(422, {"error": str(error)})
+            except (ConnectionError, BrokenPipeError, ConnectionResetError, TimeoutError):
+                # Preserve only an immutable digest-pinned prefix. A retried
+                # POST must present the exact stored byte count and identity.
+                self.close_connection = True
+            except (ValueError, OSError, EOFError, KeyError, TypeError,
+                    tarfile.TarError) as error:
+                # Import or identity failures must not poison future
+                # uploads under the same collector ID.
+                if staged is not None:
+                    owner.discard_upload(collector_id)
+                try:
+                    self.respond(422, {"error": str(error)})
+                except OSError:
+                    self.close_connection = True
             finally:
-                if temporary is not None:
-                    temporary.unlink(missing_ok=True)
+                owner.record_transfer(upload_wire_bytes=wire_bytes)
                 owner.release(collector_id)
 
     return Handler
