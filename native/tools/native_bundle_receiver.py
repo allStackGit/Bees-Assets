@@ -19,6 +19,7 @@ import json
 import os
 from pathlib import Path
 import re
+import ssl
 import tempfile
 import tarfile
 import threading
@@ -36,6 +37,7 @@ MAX_CLIENTS = 20
 MAX_DOWNLOAD_ATTEMPTS = 4
 MAX_UPLOAD_ATTEMPTS = 4
 TOKEN_ENV = "BEES_NATIVE_BUNDLE_TOKEN"
+CA_ENV = "BEES_NATIVE_BUNDLE_CA_FILE"
 DIGEST_RE = re.compile(r"[0-9a-f]{64}\Z")
 
 
@@ -63,6 +65,26 @@ def bundle_token(token_file=None):
     return token
 
 
+def bundle_connection_class(parts):
+    """HTTPS validates the original receiver hostname and certificate.
+
+    A machine-local private CA may be selected without disabling trust
+    verification or changing issued training artifacts and model lineage.
+    """
+    if parts.scheme == "http":
+        return http.client.HTTPConnection
+    ca = os.environ.get(CA_ENV)
+    if ca:
+        source = Path(ca).absolute()
+        if source.is_symlink() or not source.is_file():
+            raise ValueError("native bundle trusted CA must be a regular file")
+        context = ssl.create_default_context(cafile=str(source))
+        return lambda host, port, timeout: http.client.HTTPSConnection(
+            host, port, timeout=timeout, context=context,
+        )
+    return http.client.HTTPSConnection
+
+
 def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha256=None):
     """Stream a verified portable archive with bounded recoverable retries.
 
@@ -88,7 +110,7 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
         raise ValueError("bundle receiver URL must be an http(s) endpoint without credentials or query")
     auth = bundle_token() if token is None else token
     endpoint = parts.path.rstrip("/") + "/v1/bundles/" + collector_id
-    connection_class = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
+    connection_class = bundle_connection_class(parts)
     started = time.perf_counter()
     sha256 = archive_sha256 or file_sha256(archive)
     if not DIGEST_RE.fullmatch(sha256):
@@ -264,7 +286,7 @@ def download_input_archive(base_url, collector_id, destination, token=None):
     parent = target.parent.resolve(strict=True)
     if target.exists() or target.is_symlink():
         raise FileExistsError(f"native collector input archive already exists: {target}")
-    connection_class = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
+    connection_class = bundle_connection_class(parts)
     endpoint = parts.path.rstrip("/") + "/v1/inputs/" + collector_id
     auth = bundle_token() if token is None else token
     started = time.perf_counter()
@@ -467,7 +489,8 @@ class LimitedHTTPServer(ThreadingHTTPServer):
 class BundleReceiver:
     """Context-managed receiver; each training round activates exact orders."""
 
-    def __init__(self, listen, inbox, token=None, on_event=None):
+    def __init__(self, listen, inbox, token=None, on_event=None,
+                 tls_cert=None, tls_key=None):
         if ":" not in listen:
             raise ValueError("bundle listen address must be HOST:PORT")
         host, port_string = listen.rsplit(":", 1)
@@ -498,6 +521,33 @@ class BundleReceiver:
         self.completed_uploads = 0
         self.lock = threading.Lock()
         self.server = LimitedHTTPServer((host, port), _receiver_handler(self))
+        self.tls_enabled = tls_cert is not None
+        if (tls_cert is None) != (tls_key is None):
+            self.server.server_close()
+            raise ValueError("native bundle TLS requires both certificate and private key")
+        if tls_cert is not None:
+            certificate = Path(tls_cert).absolute()
+            key = Path(tls_key).absolute()
+            if (certificate.is_symlink() or key.is_symlink() or
+                    not certificate.is_file() or not key.is_file()):
+                self.server.server_close()
+                raise ValueError("native TLS certificate/key must be regular files")
+            if os.name == "posix" and key.stat().st_mode & 0o077:
+                self.server.server_close()
+                raise ValueError("native TLS private key must not be group/world accessible")
+            try:
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                context.minimum_version = ssl.TLSVersion.TLSv1_2
+                context.options |= ssl.OP_NO_COMPRESSION
+                context.load_cert_chain(certfile=str(certificate), keyfile=str(key))
+                # The HTTP handlers and their bounded artifact staging stay
+                # unchanged; only transport is encrypted.
+                self.server.socket = context.wrap_socket(
+                    self.server.socket, server_side=True,
+                )
+            except (OSError, ValueError, ssl.SSLError):
+                self.server.server_close()
+                raise
         self.worker = None
 
     def __enter__(self):
@@ -509,6 +559,7 @@ class BundleReceiver:
                 "address": f"{self.server.server_address[0]}:{self.server.server_address[1]}",
                 "max_concurrent_uploads": MAX_CLIENTS,
                 "max_concurrent_requests": MAX_CLIENTS,
+                "transport": "https" if self.tls_enabled else "http_private_network",
             })
         return self
 
