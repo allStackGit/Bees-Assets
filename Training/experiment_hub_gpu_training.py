@@ -179,6 +179,27 @@ def discrete_action_logprob_entropy(logits, actions):
     return chosen_logp, entropy
 
 
+def pack_immutable_gpu_scalar_columns(columns):
+    """Coalesce repeated small GPU peer copies without reducing precision.
+
+    Independent PPO advantage/old-value/target buffers often have the same
+    dtype and row count. Packing their contiguous columns before the
+    producer-stream event lets a secondary GPU receive all fields in ONE
+    asynchronous transfer; unbind() recreates inexpensive column views.
+    Return None if data types, shapes, device or immutable contract differ.
+    """
+    if (not isinstance(columns,(list,tuple)) or len(columns)<2 or
+            any(not isinstance(value,torch.Tensor) or value.ndim!=1 or
+                value.requires_grad for value in columns)):
+        return None
+    first = columns[0]
+    if (first.device.type!='cuda' or
+            any(value.device!=first.device or value.dtype!=first.dtype or
+                value.shape!=first.shape for value in columns[1:])):
+        return None
+    return torch.stack(tuple(columns),dim=1)
+
+
 def allocate_gpu_work_rows(rows, pixel_area, device_pixel_budgets, *, weights=None):
     """Partition same-shape training rows across independently leased GPUs.
 
