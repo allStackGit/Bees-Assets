@@ -1642,8 +1642,8 @@ document.addEventListener('DOMContentLoaded', () => {
             machine.status==='connected'&&machine.agent_platform==='linux'&&
             machine.local_executor_enabled===true&&machine.native_preflight_passed===true);
         const supports=(machine,role)=>config&&machine.installed_projects?.includes(role)&&
-            ['worker_sha256','trainer_sha256','runtime_version',
-                'wan_key_fingerprint'].every(key=>
+            ['worker_sha256','worker_payload_sha256','trainer_sha256',
+                'runtime_version','wan_key_fingerprint'].every(key=>
                 machine.design_catalog?.[role]?.[key]===config.parameters[key]);
         const learner=$('hub-bees-wan-learner'),prior=learner.value;
         const learners=members.filter(machine=>supports(machine,'bees_native'));
@@ -4288,6 +4288,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     entry.worker_sha256===parameters.worker_sha256)&&
                     (!parameters.trainer_sha256||
                         entry.trainer_sha256===parameters.trainer_sha256)&&
+                    (!parameters.worker_payload_sha256||
+                        entry.worker_payload_sha256===parameters.worker_payload_sha256)&&
                     (!parameters.runtime_version||
                         entry.runtime_version===parameters.runtime_version)&&
                     (!parameters.wan_key_fingerprint||
@@ -4311,6 +4313,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if(project==='bees_native')return {
             worker_sha256:choice.entry.worker_sha256,
             trainer_sha256:choice.entry.trainer_sha256,
+            ...(choice.entry.worker_payload_sha256
+                ?{worker_payload_sha256:choice.entry.worker_payload_sha256}:{}),
             runtime_version:choice.entry.runtime_version,
             ...(choice.entry.wan_key_fingerprint
                 ?{wan_key_fingerprint:choice.entry.wan_key_fingerprint}:{}),
@@ -4401,6 +4405,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(project==='bees_native') {
             parameters.worker_sha256??=choice.entry.worker_sha256;
             parameters.trainer_sha256??=choice.entry.trainer_sha256;
+            parameters.worker_payload_sha256??=choice.entry.worker_payload_sha256;
             parameters.runtime_version??=choice.entry.runtime_version;
             if(choice.entry.wan_key_fingerprint)
                 parameters.wan_key_fingerprint??=choice.entry.wan_key_fingerprint;
@@ -4508,6 +4513,7 @@ document.addEventListener('DOMContentLoaded', () => {
             fields:chosen?.entry?.fields||null,
             config_sha256:chosen?.entry?.config_sha256||null,
             worker_sha256:chosen?.entry?.worker_sha256||null,
+            worker_payload_sha256:chosen?.entry?.worker_payload_sha256||null,
             trainer_sha256:chosen?.entry?.trainer_sha256||null,
             runtime_version:chosen?.entry?.runtime_version||null,
             wan_key_fingerprint:chosen?.entry?.wan_key_fingerprint||null,
@@ -5636,6 +5642,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if(!entry)return false;
             return project==='bees_native'
                 ?entry.worker_sha256===params.worker_sha256&&
+                    (!params.worker_payload_sha256||
+                        entry.worker_payload_sha256===params.worker_payload_sha256)&&
                     entry.trainer_sha256===params.trainer_sha256&&
                     entry.runtime_version===params.runtime_version&&
                     ((params.wan_actors||0)===0||
