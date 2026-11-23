@@ -1271,8 +1271,10 @@ function approvedTinyBrainsProfiles(machines) {
                     ?' · Coordinator update waiting to activate ('+
                         data.pending_commit.slice(0,12)+')':'')+
                 (data.pending_agent_commit
-                    ?' · Agent update waiting for idle training ('+
-                        data.pending_agent_commit.slice(0,12)+')':'');
+                    ?' · Agent update pending activation ('+
+                        data.pending_agent_commit.slice(0,12)+')':'')+
+                (data.activation_reason
+                    ?' · '+data.activation_reason:'');
         }catch(error) {
             // Preserve the server-rendered running version, and surface the
             // failed check rather than hiding it behind a permanent spinner.
@@ -1294,7 +1296,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const parsed=JSON.parse(sessionStorage.getItem(viewKey)||'{}');
         if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))savedView=parsed;
     }catch {}
-    const tabs=['design','train','monitor','compare','machines'];
+    const tabs=['design','evaluations','train','monitor','compare','machines'];
     let project=typeof savedView.project==='string'?
         savedView.project:document.documentElement.dataset.hubDefaultProject||'bees';
     let tab=tabs.includes(savedView.tab)?savedView.tab:'monitor';
@@ -1963,7 +1965,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return fallback;
     }
     function selectTab(next) {
-        if (!['design','train','monitor','compare','machines'].includes(next)) return;
+        if (!['design','evaluations','train','monitor','compare','machines'].includes(next)) return;
         tab=next;
         saveView();
         for(const section of document.querySelectorAll('section[data-hub-tab]')) {
@@ -4095,6 +4097,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsThreads=document.createElement('input');
     const tinyBrainsDevice=document.createElement('select');
     const tinyBrainsStage=document.createElement('select');
+    const tinyBrainsCustomMaps=document.createElement('input');
+    const tinyBrainsMapSelect=document.createElement('select');
+    const tinyBrainsOpponentFields=document.createElement('div');
+    tinyBrainsOpponentFields.className='hub-training-opponent-pool';
+    tinyBrainsCustomMaps.type='checkbox';
+    tinyBrainsMapSelect.multiple=true;
+    tinyBrainsMapSelect.size=10;
     tinyBrainsStage.append(
         new Option('Stage 5 — Full multiplayer maps (default)','full_multiplayer'),
         new Option('Stage 1 — Basic tiny, two players','basic_tiny'),
@@ -4127,7 +4136,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const threads=hasThreads?tinyBrainsThreads.valueAsNumber:null;
         const cpuFallback=tinyBrainsDevice.value==='cpu';
         const dualGpu=tinyBrainsDevice.value==='dual';
-        const stage=tinyBrainsStage.value;
+        const stage=JSON.parse($('hub-config-json').value).training_stage||tinyBrainsStage.value;
         const multiGpu=tinyBrainsDevice.value==='multi';
         const remoteRollouts=tinyBrainsRemote.checked;
         const weightText=tinyBrainsWeights.value.trim();
@@ -4206,6 +4215,12 @@ document.addEventListener('DOMContentLoaded', () => {
             ...(weights.length?{rollout_action_weights:weights}:{}),
             ...(stage?{training_stage:stage}:{}),
             ...(current.profile===profile&&current.profile_sha256===digest&&
+                Array.isArray(current.training_map_ids)
+                ?{training_map_ids:current.training_map_ids}:{}),
+            ...(current.profile===profile&&current.profile_sha256===digest&&
+                Array.isArray(current.training_opponent_ids)
+                ?{training_opponent_ids:current.training_opponent_ids}:{}),
+            ...(current.profile===profile&&current.profile_sha256===digest&&
                 current.design_overrides?{design_overrides:current.design_overrides,
                     design_source_sha256:current.design_source_sha256}:{}),
             ...(sourceId&&sourceDigest?{
@@ -4238,7 +4253,6 @@ document.addEventListener('DOMContentLoaded', () => {
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
         ['Updates ',tinyBrainsUpdates],['CPU threads (optional) ',tinyBrainsThreads],
         ['Execution device ',tinyBrainsDevice],
-        ['Learning curriculum map stage ',tinyBrainsStage],
         ['Use approved remote rollout collectors ',tinyBrainsRemote],
         ['Fixed rollout action weights (optional; local then remotes) ',tinyBrainsWeights],
         ['Approved checkpoint import (optional) ',tinyBrainsImport]]) {
@@ -4247,12 +4261,6 @@ document.addEventListener('DOMContentLoaded', () => {
             label.className='hub-toggle-row hub-tinybrains-remote';
             label.append(control,document.createTextNode(caption.trim()));
         }else label.append(caption,control);
-        if(control===tinyBrainsStage) {
-            const hint=document.createElement('small');
-            hint.className='muted';
-            hint.textContent='New training runs default to all approved 2-, 4-, and 6-player maps. Select a smaller stage explicitly for a focused curriculum. The selected stage is frozen when the job is queued.';
-            label.append(hint);
-        }
         tinyBrainsFields.append(label);
     }
     const tinyBrainsActions=document.createElement('div');
@@ -4279,6 +4287,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 .map(([key,label])=>new Option(label,key))]);
         if(options.has(previous))tinyBrainsImport.value=previous;
     }
+    tinyBrainsStage.addEventListener('change',()=>{
+        try {readDesignControls();feedback('hub-config-message','');}
+        catch(error){feedback('hub-config-message',error.message);}
+    });
+    tinyBrainsCustomMaps.addEventListener('change',()=>{
+        tinyBrainsMapSelect.disabled=!tinyBrainsCustomMaps.checked;
+        try {readDesignControls();feedback('hub-config-message','');}
+        catch(error){feedback('hub-config-message',error.message);}
+    });
+    tinyBrainsMapSelect.addEventListener('change',()=>{
+        try {readDesignControls();feedback('hub-config-message','');}
+        catch(error){feedback('hub-config-message',error.message);}
+    });
     tinyBrainsSelect.addEventListener('change',displayTinyBrainsImports);
     function displayTinyBrainsProfiles() {
         tinyBrainsPicker.hidden=project!=='tinybrains';
@@ -4297,9 +4318,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // A worker supplies the defaults from its actual installed trainer;
     // the dashboard never invents hyperparameter values or environment rules.
     function designDefinition(parameters={}) {
+        // The server persists previously authenticated TinyBrains authoring
+        // metadata separately from the live execution-capability snapshot.
         const machines=(state?.machines||[]).filter(machine=>
-            machine.status==='connected'&&machine.local_executor_enabled===true&&
-            machine.installed_projects?.includes(project));
+            machine.status==='connected'&&
+                machine.local_executor_enabled===true&&
+                machine.installed_projects?.includes(project)||
+            project==='tinybrains'&&machine.status==='offline'&&
+                machine.agent_enrolled===true&&
+                machine.trusted_design_catalog?.tinybrains?.profiles)
+            .sort((a,b)=>Number(b.status==='connected')-
+                Number(a.status==='connected'));
         for(const machine of machines) {
             if(project==='courier') {
                 const entry=machine.design_catalog?.courier;
@@ -4322,13 +4351,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         entry.wan_key_fingerprint===parameters.wan_key_fingerprint))
                     return {entry,machine};
             }else if(project==='tinybrains') {
-                const profiles=machine.design_catalog?.tinybrains?.profiles||{};
+                const catalog=machine.status==='connected'
+                    ?machine.design_catalog?.tinybrains
+                    :machine.trusted_design_catalog?.tinybrains;
+                const profiles=catalog?.profiles||{};
                 for(const [profile,pin] of Object.entries(profiles))
                     if((!parameters.profile||parameters.profile===profile)&&
                         (!parameters.profile_sha256||
                             parameters.profile_sha256===pin.profile_sha256))
-                        return {entry:{...machine.design_catalog.tinybrains,
-                            profile_sha256:pin.profile_sha256},machine,profile};
+                        return {entry:{...catalog,
+                            profile_sha256:pin.profile_sha256},
+                            machine:{...machine,design_catalog:{tinybrains:catalog}},
+                            profile};
             }
         }
         return null;
@@ -4375,6 +4409,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tinyBrainsThreads.value=parameters.threads??'';
         tinyBrainsDevice.value=parameters.device||'';
         tinyBrainsStage.value=parameters.training_stage||'full_multiplayer';
+        tinyBrainsCustomMaps.checked=Array.isArray(parameters.training_map_ids);
         tinyBrainsRemote.checked=parameters.remote_rollouts===true;
         tinyBrainsWeights.value=(parameters.rollout_action_weights||[]).join(',');
         displayTinyBrainsImports();
@@ -4493,6 +4528,40 @@ document.addEventListener('DOMContentLoaded', () => {
             if(effective.initial_energy>effective.max_energy)
                 throw Error('Initial energy cannot exceed maximum energy.');
         }
+        if(project==='tinybrains') {
+            const stage=tinyBrainsStage.value;
+            if(!['basic_tiny','tiny_two_player','small_two_player',
+                'all_two_player','full_multiplayer'].includes(stage))
+                throw Error('Select an approved TinyBrains map stage.');
+            parameters.training_stage=stage;
+            if(tinyBrainsCustomMaps.checked) {
+                const allowed=choice.entry.map_catalog||[];
+                const selection=[...tinyBrainsMapSelect.selectedOptions]
+                    .map(option=>option.value);
+                if(!allowed.length||selection.length<1||
+                    selection.length>allowed.length||
+                    new Set(selection).size!==selection.length||
+                    selection.some(id=>!allowed.some(map=>map.id===id)))
+                    throw Error('Choose one or more verified training maps from the approved list.');
+                parameters.training_map_ids=selection;
+            }else delete parameters.training_map_ids;
+            const available=choice.entry.opponent_catalog||[];
+            if(available.length) {
+                const absent=(parameters.training_opponent_ids||[])
+                    .filter(id=>!available.some(row=>row.id===id));
+                if(absent.length)
+                    throw Error('Saved training opponent(s) are not currently verified on this worker: '+
+                        absent.join(', ')+'. Restore their frozen models before editing the Design.');
+                const chosen=[...tinyBrainsOpponentFields.querySelectorAll('input[data-training-opponent]')]
+                    .filter(input=>input.checked).map(input=>input.value);
+                if(!chosen.length||chosen.length>16||
+                    chosen.some(id=>!available.some(row=>row.id===id)))
+                    throw Error('Choose at least one installed, verified training opponent.');
+                parameters.training_opponent_ids=chosen;
+                // Pins are re-derived by the Hub, never authored by the UI.
+                delete parameters.training_opponent_pins;
+            }
+        }
         for(const input of runControls) {
             const key=input.dataset.designRun;
             if(input.type==='checkbox') {
@@ -4539,6 +4608,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return JSON.stringify({project,parameters,
             machine:chosen?.machine?.id||null,
             fields:chosen?.entry?.fields||null,
+            map_catalog:chosen?.entry?.map_catalog||null,
+            opponent_catalog:chosen?.entry?.opponent_catalog||null,
             config_sha256:chosen?.entry?.config_sha256||null,
             worker_sha256:chosen?.entry?.worker_sha256||null,
             worker_payload_sha256:chosen?.entry?.worker_payload_sha256||null,
@@ -4575,6 +4646,66 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!chosen)return;
         const {entry,machine}=chosen;
         $('hub-design-run-panel').hidden=project!=='courier';
+        if(project==='tinybrains') {
+            // Map selection changes the simulated environment, not the CPU/GPU
+            // allocation. One form owns it and freezes it with the Design.
+            tinyBrainsStage.value=parameters.training_stage||'full_multiplayer';
+            const mapLabel=document.createElement('label');
+            mapLabel.append(document.createTextNode('Training map coverage'),tinyBrainsStage);
+            const mapHint=document.createElement('small');
+            mapHint.textContent='Maps and 2/4/6 player counts are frozen with this Design, independent of GPU and CPU budgets.';
+            mapLabel.append(mapHint);
+            $('hub-design-environment').append(mapLabel);
+            const catalogue=entry.map_catalog||[];
+            const manual=document.createElement('label');
+            manual.className='hub-toggle-row';
+            tinyBrainsCustomMaps.checked=Array.isArray(parameters.training_map_ids);
+            tinyBrainsCustomMaps.disabled=!catalogue.length;
+            manual.append(tinyBrainsCustomMaps,
+                document.createTextNode(' Select individual training maps'));
+            const customLabel=document.createElement('label');
+            customLabel.textContent='Approved training boards (2-, 4- and 6-player)';
+            tinyBrainsMapSelect.replaceChildren(...catalogue.map(map=>
+                new Option(map.id+' · '+map.players+' players',map.id)));
+            const selected=new Set(parameters.training_map_ids||[]);
+            for(const option of tinyBrainsMapSelect.options)
+                option.selected=selected.has(option.value);
+            tinyBrainsMapSelect.disabled=!tinyBrainsCustomMaps.checked;
+            customLabel.append(tinyBrainsMapSelect);
+            const note=document.createElement('small');
+            note.textContent='Use Ctrl/Cmd-click to choose multiple. This subset is frozen in the training environment, not in CPU/GPU allocation. The selected stage must contain all chosen boards.';
+            customLabel.append(note);
+            customLabel.hidden=!catalogue.length;
+            $('hub-design-environment').append(manual,customLabel);
+            const roster=document.createElement('fieldset');
+            const legend=document.createElement('legend');
+            legend.textContent='Training opponents';
+            roster.append(legend);
+            tinyBrainsOpponentFields.replaceChildren();
+            const available=entry.opponent_catalog||[];
+            const selectedOpponents=new Set(parameters.training_opponent_ids||
+                ['frozen','current']);
+            for(const row of available) {
+                const label=document.createElement('label');
+                label.className='hub-toggle-row';
+                const input=document.createElement('input');
+                input.type='checkbox';
+                input.dataset.trainingOpponent='1';
+                input.value=row.id;
+                input.checked=selectedOpponents.has(row.id);
+                input.addEventListener('change',()=>{
+                    try{readDesignControls();feedback('hub-config-message','');}
+                    catch(error){feedback('hub-config-message',error.message);}
+                });
+                label.append(input,document.createTextNode(' '+row.label));
+                tinyBrainsOpponentFields.append(label);
+            }
+            roster.append(tinyBrainsOpponentFields);
+            const hint=document.createElement('small');
+            hint.textContent='Opponent IDs and model hashes are frozen with the saved training Design. Current and adaptive frozen snapshots are training-only choices; named networks can also be inherited by independent evaluations.';
+            roster.append(hint);
+            $('hub-design-environment').append(roster);
+        }
         if(project==='courier') {
             const instructions=document.createElement('p');
             instructions.className='muted hub-design-note';
@@ -5038,8 +5169,27 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
+    // The local evaluation library is server-owned and can publish an
+    // immutable suite before the independently running agent refreshes its
+    // advertisement. Preserve the distinction: authoring a monitoring policy
+    // is allowed, but native Start still requires fresh agent approval.
+    let savedLocalEvaluationSuites=new Map();
+    document.addEventListener('hub-local-services-status',event=>{
+        const library=event.detail?.evaluators?.custom_library;
+        savedLocalEvaluationSuites=new Map(
+            !Array.isArray(library?.templates)?[]:
+                library.templates.filter(item=>
+                    /^tinybrains_mix_[a-f0-9]{20}_v[1-9][0-9]*$/.test(
+                        String(item.suite_id||''))&&
+                    typeof item.name==='string'&&item.name.length<=80&&
+                    Number.isSafeInteger(item.games)&&item.games>0)
+                .map(item=>[item.suite_id,{
+                    name:item.name,games:item.games
+                }]));
+        renderEvaluationSuiteChoices();
+    });
     // The browser's datalist autocomplete is inconsistent across browsers.
-    // Build an explicit selector using authenticated worker-advertised suite IDs.
+    // Combine immutable locally saved suites with connected agent reports.
     function advertisedEvaluationSuites() {
         const suites=new Map();
         for(const machine of state?.machines||[]) {
@@ -5060,13 +5210,24 @@ document.addEventListener('DOMContentLoaded', () => {
         return name+(machines?.size?' ('+[...machines].join(', ')+')':'');
     }
     function fillEvaluationSuiteSelect(select,chosen=select.value,available=advertisedEvaluationSuites()) {
-        const options=[new Option('Select an approved suite…','')];
-        for(const [id,machines] of [...available].sort(([a],[b])=>a.localeCompare(b)))
-            options.push(new Option(evaluationSuiteLabel(id,machines),id));
-        if(chosen&&!available.has(chosen)) {
-            // A saved draft must survive a temporarily disconnected worker.
-            // This fallback is only created for an existing selected suite.
-            options.push(new Option(chosen+' (saved; not currently advertised)',chosen));
+        const options=[new Option('Select an evaluation suite…','')];
+        const ids=new Set([...available.keys(),
+            ...(project==='tinybrains'?savedLocalEvaluationSuites.keys():[])]);
+        for(const id of [...ids].sort()) {
+            const saved=project==='tinybrains'
+                ?savedLocalEvaluationSuites.get(id):null;
+            const advertised=available.has(id);
+            const label=saved
+                ?saved.name+' — '+id+(advertised
+                    ?' ('+[...available.get(id)].join(', ')+')'
+                    :' (saved locally; awaiting agent advertisement)')
+                :evaluationSuiteLabel(id,available.get(id));
+            options.push(new Option(label,id));
+        }
+        if(chosen&&!ids.has(chosen)) {
+            // Existing drafts may refer to an offline/archived suite.
+            // Never silently replace their frozen suite identities.
+            options.push(new Option(chosen+' (saved in Design; not available in library or agent)',chosen));
         }
         refreshSelectOptions(select,options);
         select.value=chosen||'';
@@ -5310,13 +5471,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     return (machine.name||machine.id)+': '+service.unit+
                         ' ('+cpu+'; '+ram+')';
                 }))||[];
-        $('hub-evaluation-available-suites').textContent=available.size
-            ?available.size+' approved suite IDs available in the dropdown. '+(running.length
-                    ?'Observed evaluator services: '+running.slice(0,4).join('; ')+'.'
-                    :'No active evaluator scheduler confirmed for this project.')+
-                ' Evaluator CPU/RAM ceilings are independent service limits, not training-job allocations. Service observation does not prove frozen-suite compatibility or successful evaluations.'
-            :'No connected machine currently advertises '+project+
-                ' evaluation suites. Editing a saved configuration retains its suite IDs; new suites require a connected evaluator.';
+        const localPending=project==='tinybrains'
+            ?[...savedLocalEvaluationSuites.keys()].filter(id=>!available.has(id)).length
+            :0;
+        $('hub-evaluation-available-suites').textContent=
+            available.size+' agent-advertised suite(s)'+
+            (localPending?' · '+localPending+' saved locally and awaiting agent advertisement':'')+
+            '. '+(running.length
+                ?'Observed evaluator services: '+running.slice(0,4).join('; ')+'. '
+                :'No active evaluator scheduler confirmed for this project. ')+
+            'You can select saved local suites now; native Start still requires a fresh agent advertisement of every selected suite. '+
+            'Evaluator CPU/RAM ceilings and actual receipt compatibility are verified separately.';
         const defaults=state?.projects.find(p=>p.id===project)
             ?.default_evaluation_monitor;
         $('hub-evaluation-default-status').textContent=defaults
@@ -5850,6 +6015,20 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-job-reset-metric-defaults').addEventListener('click',()=>{
         saveMetricDefaults(null);
     });
+    function editSavedConfiguration(c) {
+        editing={id:c.id,revision:c.revision};
+        $('hub-config-name').value=c.name;
+        $('hub-config-json').value=JSON.stringify(c.parameters,null,2);
+        tinyBrainsThreads.value=c.parameters.threads??'';
+        tinyBrainsDevice.value=['cpu','dual'].includes(c.parameters.device)
+            ?c.parameters.device:'';
+        setEvaluationEditor(c.evaluation_monitor||c.evaluation_stop,
+            Boolean(c.evaluation_monitor),c.evaluation_monitor?c.evaluation_stop:null);
+        syncTinyBrainsEditor(c.parameters);
+        renderDesignEditor(true);
+        $('hub-config-save').textContent='Save revision';
+        feedback('hub-config-message','Editing revision '+c.revision);
+    }
     function display() {
         if(!state)return;
         const current=project;
@@ -5871,19 +6050,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,c.updated_at?.replace('T',' ').slice(0,19)||'');
             const actions=cell(tr,'');
             $('hub-config-rows').append(tr);
-            actions.append(button('Edit draft',()=>{
-                editing={id:c.id,revision:c.revision};
-                $('hub-config-name').value=c.name;
-                $('hub-config-json').value=JSON.stringify(c.parameters,null,2);
-                tinyBrainsThreads.value=c.parameters.threads??'';
-                tinyBrainsDevice.value=['cpu','dual'].includes(c.parameters.device)
-                    ?c.parameters.device:'';
-                setEvaluationEditor(c.evaluation_monitor||c.evaluation_stop,Boolean(c.evaluation_monitor),c.evaluation_monitor?c.evaluation_stop:null);
-                syncTinyBrainsEditor(c.parameters);
-                renderDesignEditor(true);
-                $('hub-config-save').textContent='Save revision';
-                feedback('hub-config-message','Editing revision '+c.revision);
-            }));
+            actions.append(button('Edit draft',()=>editSavedConfiguration(c)));
             actions.append(button('Duplicate',()=>{
                 resetEditor();
                 $('hub-config-name').value=(c.name+' copy').slice(0,100);
@@ -8030,6 +8197,43 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     $('hub-project').addEventListener('change',()=>{
         project=$('hub-project').value;saveView();resetEditor();display();selectTab(tab);
+    });
+    // Evaluation definitions are authored separately, then referenced by a
+    // saved Design revision. Never mutate the evaluation or queue a job here.
+    document.addEventListener('hub-use-saved-evaluation',event=>{
+        const selection=event.detail||{};
+        if(project!=='tinybrains')return;
+        const c=state?.configurations?.find(item=>
+            item.project_id==='tinybrains'&&
+            item.id===selection.configuration_id&&
+            item.revision===selection.configuration_revision);
+        if(!c) {
+            feedback('hub-config-message',
+                'The source Design revision has changed. Reopen or duplicate the evaluation against the latest saved Design.');
+            selectTab('design');
+            return;
+        }
+        editSavedConfiguration(c);
+        selectTab('design');
+        // Avoid silently discarding an existing multi-suite or Stop policy.
+        if(c.evaluation_monitor?.all_of||c.evaluation_stop) {
+            feedback('hub-config-message',
+                'This Design already has multi-suite or stopping rules. Review them before selecting the new evaluation; no monitoring policy was replaced.');
+            return;
+        }
+        const games=Number(selection.games);
+        if(!selection.suite_id||!Number.isSafeInteger(games)||games<1) {
+            feedback('hub-config-message','Saved evaluation is missing its suite ID or game count.');
+            return;
+        }
+        setEvaluationEditor({
+            ...(c.evaluation_monitor||{}),
+            suite_id:selection.suite_id,
+            min_trials:games,
+            every_n_checkpoints:c.evaluation_monitor?.every_n_checkpoints??10,
+        },true,null);
+        feedback('hub-config-message',
+            'Evaluation selected for monitoring. Review the cadence and trial count, then click Save revision. The source environment and saved evaluation remain unchanged.');
     });
     $('hub-config-cancel').addEventListener('click',resetEditor);
     $('hub-copy-bees-form').addEventListener('click',()=>{

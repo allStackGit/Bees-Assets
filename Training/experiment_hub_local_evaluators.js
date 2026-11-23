@@ -10,6 +10,7 @@ const path=require('node:path');
 const {execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const {evaluatorDefinition,installEvaluatorUnits}=require('./experiment_hub_systemd');
+const custom=require('./experiment_hub_tinybrains_eval_library');
 
 const run=promisify(execFile);
 const SYSTEMCTL='/usr/bin/systemctl';
@@ -53,7 +54,7 @@ function suiteNames(options) {
             ?{mini:MINI_SUITE}:{}),
         ...Object.fromEntries(Object.entries(SEASON_SUITES).filter(([,name])=>
             fs.existsSync(path.join(options.suites,name+'.json')))),
-        ...historicalSuites(options),
+        ...historicalSuites(options),...custom.customSuites(options),
     };
     const stat=fs.lstatSync(marker);
     if(!stat.isFile()||stat.isSymbolicLink()||
@@ -80,7 +81,7 @@ function suiteNames(options) {
             ?{mini:MINI_SUITE}:{}),
         ...Object.fromEntries(Object.entries(SEASON_SUITES).filter(([,name])=>
             fs.existsSync(path.join(options.suites,name+'.json')))),
-        ...historicalSuites(options),
+        ...historicalSuites(options),...custom.customSuites(options),
     };
 }
 function scheduledIds(options) {
@@ -89,7 +90,8 @@ function scheduledIds(options) {
         'nano-season','micro-season',
         ...(fs.existsSync(path.join(options.suites,MINI_SUITE+'.json'))
             ?['mini-season']:[]),
-        ...Object.keys(historicalSuites(options))];
+        ...Object.keys(historicalSuites(options)),
+        ...Object.keys(custom.customSuites(options))];
 }
 const SAFE_PATH=/^\/[A-Za-z0-9._/@:+-]+$/;
 const MACHINE=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -129,7 +131,7 @@ function privateDirectory(dir,create=false) {
         throw Error('Evaluator writable directories must be private user-owned directories: '+dir);
     return dir;
 }
-function localOptions(hub) {
+function localOptions(hub,{observationOnly=false}={}) {
     if(process.platform!=='linux')
         throw Error('Local evaluator control requires Linux user systemd.');
     const home=checkedPath(os.homedir());
@@ -147,9 +149,9 @@ function localOptions(hub) {
     const host=hub.snapshot().machines.find(entry=>entry.id===machine);
     if(!host)
         throw Error('The enrolled local agent identity is not registered in the Hub.');
-    if(host.status!=='connected')
+    if(!observationOnly&&host.status!=='connected')
         throw Error('Waiting for a fresh authenticated local agent heartbeat; evaluator readiness will refresh automatically.');
-    if(!host.installed_projects?.includes('tinybrains')) {
+    if(!observationOnly&&!host.installed_projects?.includes('tinybrains')) {
         const projects=Array.isArray(host.installed_projects)
             ?host.installed_projects.join(', '):'';
         throw Error(host.local_executor_enabled!==true
@@ -178,7 +180,7 @@ function suiteFiles(options) {
     return Object.fromEntries(Object.entries(suiteNames(options)).map(([id,name])=>{
         const file=presentFile(path.join(options.suites,name+'.json'));
         const stat=fs.statSync(file);
-        if(stat.size<1||stat.size>8192)
+        if(stat.size<1||stat.size>(id.startsWith('mix-')?32768:8192))
             throw Error('Frozen evaluator suite has an invalid size: '+name);
         const definition=JSON.parse(fs.readFileSync(file,'utf8'));
         if(definition.suite_id!==name)
@@ -362,9 +364,9 @@ function definitions(options,overrides={}) {
             // bounded to 180 seconds. The timer waits until the service
             // finishes; permit the full bounded sweep instead of truncating
             // it at the next six-hour cadence.
-            interval:(Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-'))
+            interval:(Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-')||id.startsWith('mix-'))
                 ?'21600':'180',
-            timeout:(Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-'))
+            timeout:(Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-')||id.startsWith('mix-'))
                 ?'57600':'7200',
             unitId:id,
         }),
@@ -406,7 +408,7 @@ async function properties(unit) {
         .map(line=>[line.slice(0,line.indexOf('=')),line.slice(line.indexOf('=')+1)]));
 }
 function expensiveEvaluation(id) {
-    return Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-');
+    return Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-')||id.startsWith('mix-');
 }
 function evaluationCapacity(hub,options) {
     const snapshot=hub.snapshot();
@@ -441,7 +443,7 @@ function evaluationCapacity(hub,options) {
 }
 async function status(hub) {
     let options;
-    try { options=localOptions(hub); }
+    try { options=localOptions(hub,{observationOnly:true}); }
     catch(error) {
         return {available:false,reason:String(error.message||error),entries:[]};
     }
@@ -465,8 +467,8 @@ async function status(hub) {
             }
         }catch(error){statusError=error;}
     }
-    let definitions=null,definitionError=null;
-    if(installed.length)try {definitions=definitions(options);}
+    let approvedDefinitions=null,definitionError=null;
+    if(installed.length)try {approvedDefinitions=definitions(options);}
     catch(error){definitionError=error;}
     for(const id of ids) {
         const names=unitFiles(options,id);
@@ -480,7 +482,7 @@ async function status(hub) {
             try {
                 if(definitionError)throw definitionError;
                 if(statusError)throw statusError;
-                approvedUnit(options,id,definitions[id]);
+                approvedUnit(options,id,approvedDefinitions[id]);
                 const timer=propertiesByUnit.get(names.timer);
                 const service=propertiesByUnit.get(names.service);
                 if(!timer||!service)throw Error('Evaluator systemd status is incomplete.');
@@ -504,11 +506,23 @@ async function status(hub) {
         entries.push({id,suite_id:id===BATCH_ID?null:suiteNames(options)[id],installed,managed,
             active,running,last_result:lastResult,last_error:lastError,reason});
     }
-    return {available:true,machine:options.machine,entries,
+    // Saved-library diagnostics are independent of scheduler health. A
+    // damaged optional catalog cannot hide otherwise healthy evaluators.
+    let library=null,library_issue=null;
+    try {library=custom.library(options,hub);}
+    catch(error){library_issue=String(error.message||error).slice(0,180);}
+    const localMachine=hub.snapshot().machines.find(m=>m.id===options.machine);
+    const ready=localMachine?.status==='connected'&&
+        localMachine?.installed_projects?.includes('tinybrains')===true;
+    return {available:ready,machine:options.machine,entries,
+        ...(!ready?{reason:'Local evaluator definitions are readable, but the native agent is not ready.'}:{}),
         evaluation_capacity:evaluationCapacity(hub,options),
         mini_candidates:miniCandidates(hub,options).map(({id,updates})=>({id,updates})),
         historical_candidates:historicalCandidates(hub,options)
-            .map(({id,updates,batch_size})=>({id,updates,batch_size}))};
+            .map(({id,updates,batch_size})=>({id,updates,batch_size})),
+        checkpoint_candidates:checkpointCandidates(hub,options)
+            .map(({id,updates,batch_size})=>({id,updates,batch_size})),
+        custom_library:library,custom_library_issue:library_issue};
 }
 async function setup(hub) {
     const o=localOptions(hub);
@@ -539,7 +553,7 @@ async function setup(hub) {
         // Full-season sweeps are expensive. Install their units without
         // taking CPU from an ongoing learner unless the operator explicitly
         // starts each schedule or invokes Run now.
-        if(!Object.hasOwn(SEASON_SUITES,id)&&!id.startsWith('history-'))
+        if(!Object.hasOwn(SEASON_SUITES,id)&&!id.startsWith('history-')&&!id.startsWith('mix-'))
             await systemctl(['start',unitFiles(o,id).timer]);
     }
     return {message:'Fast TinyBrains evaluation timers started. Full-season 2/4/6-player suites installed; use Start or Run now for each expensive sweep.'};
@@ -648,6 +662,7 @@ function historicalCandidates(hub,o) {
     const candidates=[];
     for(const job of hub.snapshot().jobs||[]) {
         if(job.project_id!=='tinybrains'||job.status!=='finished'||
+            job.checkpoint_ready_verified!==true||
             !UUID.test(job.id)||!SHA256.test(job.checkpoint_model_sha256||''))
             continue;
         const dir=path.join(o.artifacts,job.id);
@@ -673,7 +688,149 @@ function historicalCandidates(hub,o) {
 function miniCandidates(hub,o) {
     return historicalCandidates(hub,o).filter(source=>source.batch_size===128);
 }
+// All retained, bounded update-N checkpoints of a verified finished job can
+// become named opponents. A browser chooses only an opaque candidate ID;
+// the server derives the private file path from its own job inventory.
+function checkpointCandidates(hub,o) {
+    const candidates=[];
+    for(const job of hub.snapshot().jobs||[]) {
+        if(job.project_id!=='tinybrains'||job.status!=='finished'||
+            job.checkpoint_ready_verified!==true||!UUID.test(job.id)||
+            !SHA256.test(String(job.checkpoint_model_sha256||'')))continue;
+        try {
+            const root=path.join(o.artifacts,job.id);
+            const dir=presentDirectory(path.join(root,'self-play'));
+            const status=JSON.parse(fs.readFileSync(path.join(root,'status.json'),'utf8'));
+            if(!Number.isSafeInteger(status.ppo_updates)||status.ppo_updates<1)continue;
+            const overrides=path.join(root,'hub-design-overrides.json');
+            const configured=fs.existsSync(overrides)
+                ?JSON.parse(fs.readFileSync(overrides,'utf8')):{};
+            const batchSize=configured['training.colony_batch_size']??null;
+            const retained=fs.readdirSync(dir).filter(name=>
+                /^update-[0-9]{6,8}\\.pt$/.test(name)).sort().slice(-32);
+            for(const file of ['latest.pt',...retained]) {
+                const checkpoint=path.join(dir,file);
+                if(!fs.existsSync(checkpoint))continue;
+                const stat=fs.lstatSync(checkpoint);
+                if(!stat.isFile()||stat.isSymbolicLink()||
+                    fs.realpathSync(checkpoint)!==checkpoint||
+                    stat.size<1||stat.size>1073741824)continue;
+                const updates=file==='latest.pt'?status.ppo_updates:
+                    Number(file.slice(7,-3));
+                if(!Number.isSafeInteger(updates)||updates<1)continue;
+                candidates.push({id:job.id+':'+file,
+                    job_id:job.id,file,updates,batch_size:batchSize,
+                    checkpoint,final_sha256:file==='latest.pt'
+                        ?job.checkpoint_model_sha256:null});
+            }
+        }catch { /* An incomplete old job is not an approved source. */ }
+    }
+    return candidates.sort((a,b)=>b.updates-a.updates||
+        a.id.localeCompare(b.id)).slice(0,256);
+}
 
+// A named opponent is an immutable model, not an evaluator timer. This
+// intentionally avoids creating an unnecessary 76-map historical suite.
+async function freezeCheckpointOpponent(hub,candidateId,opponentName) {
+    const o=localOptions(hub);
+    const source=checkpointCandidates(hub,o).find(item=>item.id===candidateId);
+    if(!source||typeof opponentName!=='string'||!opponentName.trim()||
+        opponentName.length>80)
+        throw Error('Select a verified saved PPO checkpoint and enter an opponent name.');
+    privateDirectory(o.suites);
+    privateDirectory(o.scratch,true);
+    const launcher=presentFile(o.launcher);
+    if(fs.readFileSync(launcher,'utf8')!==launcherText(o))
+        throw Error('The approved TinyBrains evaluator launcher has changed. Use Set up TinyBrains evaluations before freezing a checkpoint.');
+    const input=presentFile(source.checkpoint);
+    const expected=crypto.createHash('sha256')
+        .update(fs.readFileSync(input)).digest('hex');
+    if(source.final_sha256&&source.final_sha256!==expected)
+        throw Error('The finished Hub job final checkpoint no longer matches its approved SHA-256.');
+    const id='tinybrains_frozen_'+expected.slice(0,20);
+    const known=custom.read(o).opponent_models.find(item=>item.id===id);
+    if(known) {
+        if(known.checkpoint_sha256!==expected)
+            throw Error('Saved frozen model ID differs from the selected checkpoint.');
+        const retained=path.join(o.suites,'opponents',id,'checkpoint.pt');
+        if(!fs.existsSync(retained)) {
+            fs.copyFileSync(input,retained,fs.constants.COPYFILE_EXCL);
+            fs.chmodSync(retained,0o600);
+        }
+        if(crypto.createHash('sha256').update(fs.readFileSync(retained))
+            .digest('hex')!==expected)
+            throw Error('Retained training opponent checkpoint differs from the frozen model.');
+        return custom.registerFrozenOpponent(o,{...known,label:opponentName});
+    }
+    const root=privateDirectory(path.join(o.suites,'opponents'),true);
+    const destination=path.join(root,id);
+    const stage=fs.mkdtempSync(path.join(o.scratch,'candidate-freeze-'));
+    const output=path.join(stage,'out');
+    fs.mkdirSync(output,{mode:0o700});
+    let prepared=null;
+    try {
+        const {stdout}=await run(launcher,[
+            '-B',presentFile(path.join(o.hubRoot,
+                'Training/experiment_hub_tinybrains_freeze.py')),
+            '--checkpoint',input,'--output',output,
+            '--expected-sha256',expected,'--engine-path',o.engine,
+        ],{timeout:360000,maxBuffer:1048576});
+        const info=JSON.parse(stdout.trim().split(/\\r?\\n/).at(-1));
+        if(info.checkpoint_sha256!==expected||
+            [info.model_sha256,info.manifest_sha256,info.runtime_sha256]
+                .some(hash=>!SHA256.test(hash))||
+            !Number.isSafeInteger(info.model_size_metric_bytes)||
+            info.model_size_metric_bytes<1||info.model_size_metric_bytes>1048576)
+            throw Error('Frozen checkpoint export failed the approved Mini model/hash verification.');
+        const exported=presentDirectory(path.join(output,'export'));
+        const required=[['model.onnx',info.model_sha256],
+            ['manifest.json',info.manifest_sha256]];
+        for(const [file,sha] of required) {
+            const actual=crypto.createHash('sha256')
+                .update(fs.readFileSync(presentFile(path.join(exported,file)))).digest('hex');
+            if(actual!==sha)
+                throw Error('Frozen model export bytes differ from the pinned hash.');
+        }
+        if(fs.existsSync(destination)) {
+            privateDirectory(destination);
+            for(const [file,sha] of required) {
+                if(crypto.createHash('sha256').update(fs.readFileSync(
+                    presentFile(path.join(destination,file)))).digest('hex')!==sha)
+                    throw Error('An existing immutable opponent directory differs from this checkpoint.');
+            }
+        }else {
+            prepared=fs.mkdtempSync(path.join(root,'.candidate-stage-'));
+            for(const [file] of required) {
+                const target=path.join(prepared,file);
+                fs.copyFileSync(path.join(exported,file),target,fs.constants.COPYFILE_EXCL);
+                fs.chmodSync(target,0o600);
+            }
+            fs.renameSync(prepared,destination);
+            prepared=null;
+        }
+        const retained=path.join(destination,'checkpoint.pt');
+        if(!fs.existsSync(retained)) {
+            fs.copyFileSync(input,retained,fs.constants.COPYFILE_EXCL);
+            fs.chmodSync(retained,0o600);
+        }
+        if(crypto.createHash('sha256').update(fs.readFileSync(retained))
+            .digest('hex')!==expected||
+            crypto.createHash('sha256').update(fs.readFileSync(input))
+                .digest('hex')!==expected)
+            throw Error('Frozen source checkpoint changed or retained copy differs.');
+        return custom.registerFrozenOpponent(o,{
+            id,label:opponentName,
+            source_job_id:source.job_id,source_file:source.file,
+            ppo_updates:source.updates,checkpoint_sha256:expected,
+            model_sha256:info.model_sha256,
+            manifest_sha256:info.manifest_sha256,
+            runtime_sha256:info.runtime_sha256,
+        });
+    }finally {
+        if(prepared)fs.rmSync(prepared,{recursive:true,force:true});
+        fs.rmSync(stage,{recursive:true,force:true});
+    }
+}
 function verifyFrozenMini(options,source,suite,name=MINI_SUITE) {
     const directory=path.join(options.suites,'opponents',name);
     if(suite.suite_id!==name||suite.opponent!=='mini'||
@@ -718,6 +875,14 @@ async function setupMini(hub,sourceJobId,{historical=false}={}) {
             throw Error('Frozen Mini suite file is not private and user-owned.');
         const suite=JSON.parse(fs.readFileSync(file,'utf8'));
         verifyFrozenMini(o,source,suite,name);
+        const retained=path.join(o.suites,'opponents',name,'checkpoint.pt');
+        if(!fs.existsSync(retained)) {
+            fs.copyFileSync(source.checkpoint,retained,fs.constants.COPYFILE_EXCL);
+            fs.chmodSync(retained,0o600);
+        }
+        if(crypto.createHash('sha256').update(fs.readFileSync(retained))
+            .digest('hex')!==source.sha256)
+            throw Error('Retained frozen Mini checkpoint differs from its saved source.');
         // An interrupted setup may have published the immutable suite before
         // systemd installed its one-shot service and timer. Finish that
         // installation instead of falsely reporting success.
@@ -781,6 +946,14 @@ async function setupMini(hub,sourceJobId,{historical=false}={}) {
             fs.renameSync(prepared,frozenPath);
             prepared=null;
         }
+        const retained=path.join(frozenPath,'checkpoint.pt');
+        if(!fs.existsSync(retained)) {
+            fs.copyFileSync(source.checkpoint,retained,fs.constants.COPYFILE_EXCL);
+            fs.chmodSync(retained,0o600);
+        }
+        if(crypto.createHash('sha256').update(fs.readFileSync(retained))
+            .digest('hex')!==source.sha256)
+            throw Error('Frozen Mini PPO checkpoint differs from its original SHA-256.');
         const suite={
             suite_id:name,
             maps:historical?seasonBoards(o):['basic-tiny-2p'],
@@ -844,7 +1017,7 @@ function mapReport(hub,id) {
                 const stat=fs.lstatSync(file);
                 return stat.isFile()&&!stat.isSymbolicLink()&&
                     fs.realpathSync(file)===file&&stat.uid===process.getuid()&&
-                    !(stat.mode&0o077)&&stat.size>0&&stat.size<=16384
+                    !(stat.mode&0o077)&&stat.size>0&&stat.size<=32768
                     ?{file,dispatch,at:stat.mtimeMs}:null;
             }catch {return null;}
         }).filter(Boolean).sort((a,b)=>b.at-a.at);
@@ -886,14 +1059,78 @@ function mapReport(hub,id) {
             if(!valid||trials!==details.trials||wins!==details.successes)
                 continue;
             return {available:true,suite_id:suiteName,
-                dispatch_id:details.dispatch_id,job_id:details.job_id,
+                dispatch_id:details.dispatch_id,job_id:details.job,
                 checkpoint_sha256:details.checkpoint_sha256,
                 trials,successes:wins,maps:details.maps,
+                opponents:Array.isArray(details.opponents)?details.opponents:[],
                 recorded_at:new Date(item.at).toISOString()};
         }catch { /* Stale or incomplete reports do not replace a receipt. */ }
     }
     return {available:false,suite_id:suiteName,
         reason:'No current checkpoint receipt with a matching per-map report is available.'};
+}
+// Move unused immutable suite recipes out of the active timer namespace.
+// Never erase checkpoint imports or evaluator receipts. Archives are
+// deliberately not advertised as runnable suites until deliberately restored.
+async function archiveUnusedEvaluations(hub) {
+    const o=localOptions(hub,{observationOnly:true});
+    const unused=custom.unusedVersions(o,hub);
+    if(!unused.length)return {message:'No unreferenced mixed evaluation versions need archiving.',
+        archived:0,blocked:[]};
+    const archive=privateDirectory(path.join(o.suites,'archived'),true);
+    let archived=0,unitFilesChanged=false;
+    const blocked=[];
+    for(const suiteId of unused) {
+        const match=/^tinybrains_mix_([a-f0-9]{20})_v([1-9][0-9]*)$/.exec(suiteId);
+        if(!match)continue;
+        const origin=path.join(o.suites,suiteId+'.json');
+        const destination=path.join(archive,suiteId+'.json');
+        const unit=unitFiles(o,'mix-'+match[1]+'-v'+match[2]);
+        try {
+            if(fs.existsSync(destination))
+                throw Error('Archived immutable version already exists; no overwrite was attempted.');
+            const file=presentFile(origin),stat=fs.lstatSync(file);
+            if(stat.uid!==process.getuid()||(stat.mode&0o077)!==0)
+                throw Error('Frozen evaluation definition is not a private user-owned file.');
+            const serviceExists=fs.existsSync(unit.serviceFile);
+            const timerExists=fs.existsSync(unit.timerFile);
+            if(serviceExists!==timerExists)
+                throw Error('Evaluation service installation is partial; repair it before archiving.');
+            if(serviceExists) {
+                const approved=definitions(o);
+                approvedUnit(o,'mix-'+match[1]+'-v'+match[2],
+                    approved['mix-'+match[1]+'-v'+match[2]]);
+                const running=await properties(unit.service);
+                if(['active','activating','deactivating'].includes(running.ActiveState))
+                    throw Error('The evaluation service is still running.');
+                await systemctl(['stop',unit.timer]);
+                const afterward=await properties(unit.service);
+                if(['active','activating','deactivating'].includes(afterward.ActiveState))
+                    throw Error('The evaluation service started while retiring its timer.');
+                await systemctl(['disable',unit.timer]);
+            }
+            // Recheck live Hub references immediately before removing the
+            // approved suite from the discovery directory.
+            if(!custom.unusedVersions(o,hub).includes(suiteId))
+                throw Error('The evaluation became referenced by a saved job/configuration.');
+            if(serviceExists) {
+                // Retire unit files first while the immutable recipe is
+                // still in its original location. If cleanup is interrupted,
+                // Set up can reinstall the same frozen service safely.
+                fs.unlinkSync(unit.timerFile);
+                unitFilesChanged=true;
+                fs.unlinkSync(unit.serviceFile);
+            }
+            fs.renameSync(origin,destination);
+            archived++;
+        }catch(error) {
+            blocked.push({suite_id:suiteId,reason:String(error.message||error).slice(0,180)});
+        }
+    }
+    if(archived||unitFilesChanged)await systemctl(['daemon-reload']);
+    return {archived,blocked,message:'Archived '+archived+
+        ' unused mixed evaluation version(s); frozen recipes and prior receipts remain intact.'+
+        (blocked.length?' '+blocked.length+' version(s) need attention; see archive details.':'')};
 }
 async function action(hub,value) {
     if(!value||value.confirm_action!==true)
@@ -903,9 +1140,78 @@ async function action(hub,value) {
     if(value.action==='setup-mini'&&value.id===undefined&&
         (value.source_job_id===undefined||UUID.test(value.source_job_id)))
         return setupMini(hub,value.source_job_id);
+    if(value.action==='archive-unused-custom'&&value.id===undefined)
+        return archiveUnusedEvaluations(hub);
+    if(value.action==='save-custom') {
+        // Suite authoring is a filesystem/catalog transaction. It does not
+        // need a live training agent; service activation does. This keeps
+        // transient disconnects from losing an otherwise valid Design.
+        const o=localOptions(hub,{observationOnly:true});
+        const previous=value.id==null?null:
+            custom.read(o).templates.find(t=>t.id===value.id);
+        const saved=custom.saveEvaluation(o,hub,value);
+        const machine=hub.snapshot().machines.find(m=>m.id===o.machine);
+        if(machine?.status!=='connected'||
+            !machine.installed_projects?.includes('tinybrains'))
+            return {...saved,installed:false,message:saved.message+
+                ' The local TinyBrains agent is not connected; the immutable evaluation was saved. Set up evaluators after the agent reconnects.'};
+        // The immutable definition is already committed; a failed service
+        // install must not masquerade as a failed save and prompt another
+        // revision. Set up can reconcile the original installation later.
+        try {
+            await setup(hub);
+        }catch(error) {
+            return {...saved,installed:false,message:saved.message+
+                ' The evaluation is saved but its service is not installed: '+
+                String(error.message||error).slice(0,180)+
+                '. Use Set up TinyBrains evaluations to reconcile it.'};
+        }
+        // The previous revision may still be selected by another saved
+        // Design or a running job. Leave its schedule alone in that case.
+        // A failed optional timer stop must not turn a committed Save into
+        // an apparent failure that causes the user to duplicate a revision.
+        if(previous&&!custom.referencedSuites(hub).has(previous.suite_id)) {
+            const old=unitFiles(o,'mix-'+previous.id+'-v'+previous.revision);
+            if(fs.existsSync(old.timerFile))try {
+                await systemctl(['stop',old.timer]);
+            }catch(error) {
+                return {...saved,installed:true,message:saved.message+
+                    ' The prior revision was saved but its timer could not be stopped: '+
+                    String(error.message||error).slice(0,170)};
+            }
+        }
+        return saved;
+    }
+    if(value.action==='delete-custom') {
+        const o=localOptions(hub,{observationOnly:true});
+        const current=custom.read(o).templates.find(row=>row.id===value.id);
+        if(!current||current.revision!==value.expected_revision)
+            throw Error('Saved evaluation revision changed; reload before deletion.');
+        const referenced=custom.referencedSuites(hub).has(current.suite_id);
+        // A prequeued/running/terminal job may still require its pinned final
+        // suite. Never disarm its scheduler merely because a saved template
+        // was deleted. Old immutable service files and receipts are retained.
+        if(!referenced) {
+            const unit=unitFiles(o,'mix-'+current.id+'-v'+current.revision);
+            if(fs.existsSync(unit.timerFile))
+                await systemctl(['stop',unit.timer]);
+        }
+        const removed=custom.deleteEvaluation(o,value);
+        return {...removed,message:removed.message+(referenced
+            ?' A job still references its frozen suite; its evaluator schedule was preserved.'
+            :' Its evaluator timer was stopped.')};
+    }
+    if(value.action==='freeze-checkpoint-opponent'&&value.id===undefined)
+        return freezeCheckpointOpponent(hub,value.source_checkpoint_id,
+            value.opponent_name);
     if(value.action==='freeze-history'&&value.id===undefined&&
-        UUID.test(String(value.source_job_id||'')))
-        return setupMini(hub,value.source_job_id,{historical:true});
+        UUID.test(String(value.source_job_id||''))) {
+        const result=await setupMini(hub,value.source_job_id,{historical:true});
+        if(value.opponent_name)
+            return custom.nameOpponent(localOptions(hub),
+                value.source_job_id,value.opponent_name);
+        return result;
+    }
     const options=localOptions(hub);
     if(!scheduledIds(options).includes(value.id)||
         !['start','restart','stop','run','refresh'].includes(value.action)||

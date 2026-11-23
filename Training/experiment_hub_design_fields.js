@@ -64,7 +64,7 @@ function fieldsFor(config,project) {
                 'training.entropy_coefficient':[0,1000000],
                 'training.value_coefficient':[0,1000000],
                 'training.baseline_coefficient':[0,1000000],
-                'environment.max_turns':[1,1000000000],
+                'environment.max_turns':[1,1000],
                 'environment.timeout_seconds':[0.000000001,1000000000],
                 'self_play.snapshot_every':[1,1000000000],
                 'self_play.max_snapshots':[1,1000000000],
@@ -296,9 +296,32 @@ function validateCatalog(raw,installed=[],approved={}) {
             throw Error('TinyBrains Design defaults require approved profile identities.');
         if(!/^[0-9a-f]{64}$/.test(raw.tinybrains.source_sha256))
             throw Error('TinyBrains Design requires its frozen source run specification.');
+        const mapCatalog=raw.tinybrains.map_catalog??[];
+        if(!Array.isArray(mapCatalog)||mapCatalog.length>128||
+            new Set(mapCatalog.map(map=>map.id)).size!==mapCatalog.length||
+            mapCatalog.some(map=>!map||typeof map!=='object'||
+                Object.keys(map).sort().join(',')!=='id,players'||
+                typeof map.id!=='string'||!/^[a-z0-9_-]{1,80}$/.test(map.id)||
+                ![2,4,6].includes(map.players)))
+            throw Error('TinyBrains map choices must be a bounded trusted board catalogue.');
+        const opponentRows=raw.tinybrains.opponent_catalog??[];
+        if(!Array.isArray(opponentRows)||opponentRows.length>48||
+            new Set(opponentRows.map(row=>row?.id)).size!==opponentRows.length||
+            opponentRows.some(row=>!row||typeof row!=='object'||
+                typeof row.id!=='string'||typeof row.label!=='string'||
+                !row.label||row.label.length>100||
+                !/^(?:current|frozen|nano|micro|tinybrains_mini_batch128_v1|tinybrains_(?:mini|frozen)_[0-9a-f]{20})$/.test(row.id)||
+                (row.id==='current'||row.id==='frozen'
+                    ?row.model_sha256!==undefined||row.checkpoint_sha256!==undefined
+                    :!/^[0-9a-f]{64}$/.test(row.model_sha256||'')||
+                        row.checkpoint_sha256!==undefined&&
+                            !/^[0-9a-f]{64}$/.test(row.checkpoint_sha256))))
+            throw Error('Invalid approved training-opponent catalogue.');
         result.tinybrains={...validateFields(raw.tinybrains),
             source_sha256:raw.tinybrains.source_sha256,
             metric_catalog:metricCatalog(raw.tinybrains.metric_catalog),
+            map_catalog:mapCatalog.map(map=>({...map})),
+            opponent_catalog:(raw.tinybrains.opponent_catalog||[]).map(item=>({...item})),
             profiles:Object.fromEntries(Object.entries(profiles).map(([id,entry])=>
                 [id,{profile_sha256:entry.profile_sha256}]))};
     }

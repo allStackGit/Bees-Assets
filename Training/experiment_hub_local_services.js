@@ -153,8 +153,8 @@ async function restartActivity(hub,kind) {
     return machine
         ?{count:jobs.filter(job=>!job.assigned_machine_id||
             job.assigned_machine_id===machine).length,
-            scope:'local'}
-        :{count:jobs.length,scope:'all'};
+            scope:'local',machine_id:machine}
+        :{count:jobs.length,scope:'all',machine_id:null};
 }
 async function unitStatus(kind,{runCommand=run,platform=process.platform,
     pid=process.pid}={}) {
@@ -239,6 +239,9 @@ async function status(hub) {
             tinybrains_reason:tinybrains.reason||null,
             mini_candidates:tinybrains.mini_candidates||[],
             historical_candidates:tinybrains.historical_candidates||[],
+            checkpoint_candidates:tinybrains.checkpoint_candidates||[],
+            custom_library:tinybrains.custom_library||null,
+            custom_library_issue:tinybrains.custom_library_issue||null,
             evaluation_capacity:tinybrains.evaluation_capacity||null,
             courier_available:courier.available,
             courier_reason:courier.reason||null,
@@ -290,5 +293,5 @@ async function evaluatorAction(hub,value) {
 function evaluatorMapReport(hub,id) {
     return localEvaluators.mapReport(hub,id);
 }
-module.exports={status,scheduleRestart,unitStatus,evaluatorAction,
+module.exports={status,scheduleRestart,unitStatus,restartActivity,evaluatorAction,
     evaluatorMapReport,configureTinyBrainsCollectors};

@@ -203,6 +203,8 @@ function renderPage(html,runtime={}) {
         +'\n<script src="/experiment-hub-services.js?v='+
             runtime.frontend_revision+'"></script>'+
             '\n<script src="/experiment-hub-bees.js?v='+
+            runtime.frontend_revision+'"></script>'+
+            '\n<script src="/experiment-hub-library.js?v='+
             runtime.frontend_revision+'"></script>\n</body>\n</html>\n';
 }
 
@@ -215,6 +217,7 @@ const FRONTEND_ASSETS=Object.freeze({
     ui:'experiment_hub_ui.js',
     servicesUi:'experiment_hub_local_services_ui.js',
     beesUi:'experiment_hub_bees_bridge_ui.js',
+    libraryUi:'experiment_hub_tinybrains_library_ui.js',
     beakerIcon:'experiment_hub_beaker.svg',
 });
 function frontendSnapshot(runtime,commit=null,checkout=path.resolve(__dirname,'..')) {
@@ -349,6 +352,8 @@ function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null,
                 return sendFile(res,assets.servicesUi,'text/javascript; charset=utf-8');
             if(req.method==='GET'&&route==='/experiment-hub-bees.js')
                 return sendFile(res,assets.beesUi,'text/javascript; charset=utf-8');
+            if(req.method==='GET'&&route==='/experiment-hub-library.js')
+                return sendFile(res,assets.libraryUi,'text/javascript; charset=utf-8');
             if(req.method==='GET'&&route==='/api/hub/software/version') {
                 const candidate=releases?.workerSourceCommit||
                     releases?.latest?.worker?.source_commit;
@@ -360,6 +365,9 @@ function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null,
                         candidate!==runtime?.source_commit?candidate:null,
                     pending_agent_commit:frontend.agentPending&&SHA.test(candidate||'')&&
                         candidate!==runtime?.source_commit?candidate:null,
+                    activation_reason:frontend.backendPending||frontend.agentPending
+                        ?frontend.activationReason||'Safe activation is pending the next release check.'
+                        :null,
                 });
             }
             if(req.method==='GET'&&route==='/api/hub/software/releases')
@@ -512,7 +520,7 @@ async function main(argv=process.argv.slice(2)) {
     // commits immediately, but their manifest's activation_ready flag remains
     // false until the learner checkout and running coordinator generation
     // are both updated at an idle native-job boundary.
-    let closing=false,releaseBusy=false;
+    let closing=false,releaseBusy=false,followupTimer=null;
     let observedReleaseSignature=null;
     async function releaseCycle() {
         if(closing||releaseBusy)return;
@@ -531,6 +539,7 @@ async function main(argv=process.argv.slice(2)) {
                 candidate!==agentBase
                 ?await workerChangedPaths(releases.sources.worker.path,agentBase,candidate)
                 :[]).agent;
+            frontend.activationReason=null;
             // Browser-only assets are safe to hot-swap. Keep old compatible
             // pages while a matching backend or agent generation is pending;
             // exposing newer controls against old APIs breaks evaluation UI.
@@ -568,23 +577,72 @@ async function main(argv=process.argv.slice(2)) {
             });
             if(signature!==observedReleaseSignature) {
                 observedReleaseSignature=signature;
+                if(frontend.backendPending||frontend.agentPending) {
+                    frontend.activationReason='Waiting for a stable release revision before activating.';
+                    // Coalesce consecutive commits, without an unnecessary
+                    // two-minute wait once the release has settled.
+                    if(followupTimer)clearTimeout(followupTimer);
+                    followupTimer=setTimeout(()=>{
+                        followupTimer=null;
+                        void releaseCycle();
+                    },20000);
+                }
                 return;
             }
-            const active=hub.state.jobs.some(job=>job.dispatch_id&&
+            const outstanding=hub.state.jobs.filter(job=>job.dispatch_id&&
                 !job.capacity_released_at&&
                 !['finished','failed','stopped','cancelled'].includes(job.status));
-            const override=active&&Object.values(
+            const active=outstanding.length>0;
+            const operatorOverride=active&&Object.values(
                 hub.state.machine_update_policies||{}).includes('override');
-            if(active&&!override)return;
+            // A verified Halifax user-systemd agent can be restarted while
+            // separately OS-owned remote training continues. Remote worker
+            // state and reservations survive coordinator generations; they
+            // reauthenticate and reconcile after reconnect. Do not require
+            // the user to stop an unrelated Exeter job for local updates.
+            // Fail closed if local service identity is uncertain, automation
+            // is armed, or ANY dispatched claim belongs to the local agent.
+            const agentActivity=active
+                ?await localServices.restartActivity(hub,'agent'):null;
+            const remotelyOwned=active&&agentActivity?.scope==='local'&&
+                agentActivity.machine_id&&agentActivity.count===0&&
+                outstanding.every(job=>job.assigned_machine_id&&
+                    job.assigned_machine_id!==agentActivity.machine_id);
+            const localSafe=remotelyOwned&&
+                (!hub.automation.enabled||hub.state.automation_restart);
+            const override=operatorOverride||localSafe;
+            if(active&&!override) {
+                frontend.activationReason='Activation blocked by '+outstanding.length+
+                    ' dispatched job record(s) requiring native-owner reconciliation: '+
+                    outstanding.slice(0,3).map(job=>job.id.slice(0,8)+
+                        ' ('+job.status+')').join(', ')+
+                    (outstanding.length>3?', …':'')+
+                    '. A job may be unverified even when no trainer is running.'+
+                    (agentActivity?.scope==='all'
+                        ?' Local agent identity was not verified.'
+                        :agentActivity?.count
+                            ?' At least one job belongs to the local agent.'
+                            :'');
+                return;
+            }
             // An ordinary idle update still honors the separate CPU queue
             // restart re-arm authorization. An explicit mid-job software
             // override may pause automation, never stop native workloads.
-            if(!override&&hub.automation.enabled&&!hub.state.automation_restart)return;
-            if(independentEvaluatorActive())return;
+            if(!override&&hub.automation.enabled&&!hub.state.automation_restart) {
+                frontend.activationReason='Activation blocked by armed native queue automation; disarm or reconcile automation.';
+                return;
+            }
+            if(independentEvaluatorActive()) {
+                frontend.activationReason='Activation deferred while an independent evaluator service is executing (no training job is required).';
+                return;
+            }
             // Refreshing archives is safe during setup, but changing the live
             // checkout or restarting services is not. Serialise activation
             // with every local evaluator administration request.
-            if(localOperations.active>0)return;
+            if(localOperations.active>0) {
+                frontend.activationReason='Activation deferred while local evaluator administration is in progress.';
+                return;
+            }
             localOperations.activating=true;
             hub.softwareMaintenance=true;
             const result=await releases.applyLocalWhenIdle(hub,override);
@@ -592,6 +650,12 @@ async function main(argv=process.argv.slice(2)) {
             // against the previous release. If an earlier restart failed,
             // the same unloaded code still needs activation.
             const installedWorker=releases.localVersions.worker;
+            if(candidate&&installedWorker!==candidate) {
+                frontend.activationReason='Source activation failed: '+
+                    (releases.failures.worker||
+                     'the local worker checkout has not advanced to the approved revision.');
+                return;
+            }
             const impact=workerActivationImpact(installedWorker&&
                 installedWorker!==runtime.source_commit
                 ?await workerChangedPaths(releases.sources.worker.path,
@@ -610,8 +674,21 @@ async function main(argv=process.argv.slice(2)) {
                 return;
             }
             if(active&&agentNeedsRestart) {
-                console.log('[hub-updates] Agent runtime activation deferred until jobs are idle.');
-                return;
+                // The global Hub ledger includes jobs owned by other machines.
+                // A remote Exeter trainer is OS-owned and does not depend on
+                // Halifax's local agent process. Only the verified local agent
+                // ownership scope can block its restart; if the enrolled
+                // systemd identity is uncertain, restartActivity deliberately
+                // falls back to all busy machines.
+                const localActivity=await localServices.restartActivity(hub,'agent');
+                if(localActivity.count) {
+                    frontend.activationReason='Agent update deferred: '+
+                        localActivity.count+' native job(s) within the '+
+                        (localActivity.scope==='local'?'Halifax':'unverified')+
+                        ' agent ownership scope require an idle boundary.';
+                    return;
+                }
+                console.log('[hub-updates] Mid-job override: restarting idle local agent while remote native services retain ownership.');
             }
             if(result.changed.length)
                 console.log('[hub-updates] Local fast-forwarded software: '+
@@ -659,6 +736,8 @@ async function main(argv=process.argv.slice(2)) {
                 {detached:true,stdio:'ignore',windowsHide:true});
             proc.unref();
         }catch(error) {
+            frontend.activationReason='Local activation failed: '+
+                String(error.message||error).slice(0,200);
             console.error('[hub-updates] Local activation: '+String(error.message||error));
         }finally {
             hub.softwareMaintenance=false;
@@ -688,6 +767,7 @@ async function main(argv=process.argv.slice(2)) {
         closing=true;
         clearInterval(automationTimer);
         clearInterval(releaseTimer);
+        if(followupTimer)clearTimeout(followupTimer);
         admin.close();
         worker.close();
         if(remoteWorker)remoteWorker.close();

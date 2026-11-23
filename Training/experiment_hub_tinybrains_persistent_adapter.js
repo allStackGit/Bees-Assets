@@ -12,6 +12,7 @@ const {validateProgress,MAX_TINYBRAINS_COLLECTORS}=require('./experiment_hub_pro
 const {fixedCpuParallelism,approvedEndpointSubset}=require('./experiment_hub_resources');
 const {applyOverrides,described}=require('./experiment_hub_design_fields');
 const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
+const opponentLibrary=require('./experiment_hub_tinybrains_eval_library');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROFILE=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -1260,10 +1261,15 @@ function createTinyBrainsPersistentDockerAdapter({
     // Reuse the exact source-run map inventory. Stages are explicit,
     // frozen job inputs and never inferred from training reward or evaluation
     // chart data. Legacy runs without a stage retain their existing maps.
-    function approvedStage(name) {
+    const sourceMapId=map=>map==='basic-tiny-2p'?map:
+        path.posix.basename(map.replace(/\\/g,'/'),'.json');
+    function approvedStage(name,turnOverride=undefined,mapIds=undefined) {
         if(name===undefined)return null;
         const maps=originalSpec.model_config?.environment?.maps;
         const sourceTurns=originalSpec.model_config?.environment?.max_turns;
+        if(turnOverride!==undefined&&
+            (!Number.isSafeInteger(turnOverride)||turnOverride<1||turnOverride>1000))
+            throw Error('Training environment max turns must be 1–1000.');
         if(!Array.isArray(maps)||!maps.length||maps.length>128||
             maps.some(map=>typeof map!=='string'||!map||map.length>512)||
             new Set(maps).size!==maps.length||
@@ -1285,20 +1291,31 @@ function createTinyBrainsPersistentDockerAdapter({
         };
         if(!Object.hasOwn(filters,name))
             throw Error('Unknown trusted TinyBrains curriculum stage.');
-        const selected=maps.filter(filters[name]);
+        let selected=maps.filter(filters[name]);
+        if(mapIds!==undefined) {
+            if(!Array.isArray(mapIds)||mapIds.length<1||mapIds.length>128||
+                new Set(mapIds).size!==mapIds.length||
+                mapIds.some(id=>typeof id!=='string'||
+                    !/^[a-z0-9_-]{1,80}$/.test(id)))
+                throw Error('Training map selection must contain distinct approved board IDs.');
+            const wanted=new Set(mapIds);
+            selected=selected.filter(map=>wanted.has(sourceMapId(map)));
+            if(selected.length!==wanted.size)
+                throw Error('A selected training board is not in this approved map stage.');
+        }
         if(!selected.length||name==='basic_tiny'&&selected.length!==1)
             throw Error('The approved TinyBrains curriculum stage has no matching maps.');
         const limit={
             basic_tiny:300,tiny_two_player:300,small_two_player:500,
-            all_two_player:750,full_multiplayer:sourceTurns,
+            all_two_player:750,full_multiplayer:1000,
         }[name];
-        return {name,maps:selected,max_turns:Math.min(sourceTurns,limit)};
+        return {name,maps:selected,max_turns:Math.min(turnOverride??sourceTurns,limit)};
     }
     // Map inventories can be inherited from a Windows-authored source run.
     // Check their actual installed files and seat counts BEFORE creating a
     // Hub job output or assigning GPU work. A successful profile alone does
     // not prove that a 2/4/6-player curriculum is runnable on this machine.
-    function verifyStageMaps(stage) {
+    function verifyStageMaps(stage,customSelection=false) {
         if(!stage)return;
         const sourcePrefix=sourceWindowsRoot.replace(/\\/g,'/').replace(/\/$/,'')+'/';
         const seats=new Set();
@@ -1323,7 +1340,8 @@ function createTinyBrainsPersistentDockerAdapter({
                 throw Error('TinyBrains stage map has an invalid board ID or player count: '+map);
             seats.add(board.players);
         }
-        if(stage.name==='full_multiplayer'&&![2,4,6].every(count=>seats.has(count)))
+        if(stage.name==='full_multiplayer'&&!customSelection&&
+            ![2,4,6].every(count=>seats.has(count)))
             throw Error('Full multiplayer training requires installed 2-, 4-, and 6-player maps.');
     }
     // Do not advertise editable hyperparameters unless the installed project
@@ -1340,6 +1358,169 @@ function createTinyBrainsPersistentDockerAdapter({
     }):[];
     const designEnabled=installedLearningPath
         .includes('HUB_DESIGN_OVERRIDES_VERSION = 1');
+    const opponentSupport=installedLearningPath.includes('--hub-opponents-json')&&
+        fs.readFileSync(path.join(project,'src/ants_mapoca/pipeline.py'),'utf8')
+            .includes('hub_opponents=None')&&
+        fs.readFileSync(path.join(project,'src/ants_mapoca/opponents.py'),'utf8')
+            .includes('self.fixed[name]');
+    const mapCatalogue=stageSupport
+        ?approvedStage('full_multiplayer').maps.map(map=>{
+            const id=sourceMapId(map);
+            const seats=/-([246])p(?:-|$)/.exec(id);
+            if(!/^[a-z0-9_-]{1,80}$/.test(id)||!seats)
+                throw Error('Trusted training map inventory has an invalid board identity.');
+            return {id,players:Number(seats[1])};
+        }):[];
+    if(new Set(mapCatalogue.map(map=>map.id)).size!==mapCatalogue.length)
+        throw Error('Trusted training map inventory contains duplicate board IDs.');
+    // Read only locally verified opponent models. Named model IDs, file
+    // locations and fingerprints can never be supplied by an HTTP request.
+    // Optional evaluator setup is not a prerequisite for enrolling a worker.
+    const trainingOpponentSources=new Map();
+    const opponentCatalog=[
+        {id:'frozen',label:'Adaptive frozen self-play snapshots'},
+        {id:'current',label:'Current policy self-play'},
+    ];
+    if(opponentSupport)for(const id of ['nano','micro']) {
+        const folder=path.join(project,'upstream/ants-starter/models',id+'-bc');
+        try {
+            const model=path.join(folder,'model.onnx');
+            const stats=fs.lstatSync(model);
+            if(!stats.isFile()||stats.isSymbolicLink()||
+                fs.realpathSync(model)!==model)continue;
+            const model_sha256=modelFileSha256(model);
+            const row={id,label:id==='nano'?'Nano':'Micro',model_sha256};
+            trainingOpponentSources.set(id,{...row,model_dir:folder});
+            opponentCatalog.push(row);
+        }catch { /* A missing optional built-in model is never advertised. */ }
+    }
+    if(opponentSupport)try {
+        const suites=path.join(os.homedir(),'evaluation-audits/tinybrains/suites');
+        const o={suites,project};
+        const registered=opponentLibrary.read(o);
+        for(const opponent of opponentLibrary.availableOpponents(o)) {
+            let checkpoint=null;
+            if(opponent.checkpoint_sha256) {
+                const record=registered.opponent_models.find(row=>row.id===opponent.id);
+                const sourceFile=record?.source_file||'latest.pt';
+                const job=opponent.source_job_id;
+                if(!UUID.test(String(job||''))||
+                    !/^(?:latest|update-[0-9]{6,8})\.pt$/.test(sourceFile))
+                    continue;
+                const permanent=path.join(opponent.model_dir,'checkpoint.pt');
+                const original=path.join(artifacts,job,'self-play',sourceFile);
+                for(const candidate of [permanent,original])try {
+                    const stat=fs.lstatSync(candidate);
+                    if(stat.isFile()&&!stat.isSymbolicLink()&&
+                        fs.realpathSync(candidate)===candidate&&
+                        modelFileSha256(candidate)===opponent.checkpoint_sha256) {
+                        checkpoint=candidate;
+                        break;
+                    }
+                }catch { /* Probe the next approved frozen source. */ }
+                if(!checkpoint)continue;
+            }
+            const pin={id:opponent.id,label:opponent.label,
+                model_sha256:opponent.model_sha256,
+                ...(opponent.checkpoint_sha256
+                    ?{checkpoint_sha256:opponent.checkpoint_sha256}:{}),
+            };
+            if(trainingOpponentSources.has(pin.id))continue;
+            trainingOpponentSources.set(pin.id,{...pin,checkpoint,
+                model_dir:opponent.model_dir});
+            opponentCatalog.push(pin);
+        }
+    }catch(error) {
+        console.warn('[hub-tinybrains] Optional frozen opponent library is unavailable: '+
+            String(error.message||error).slice(0,160));
+    }
+    function approvedTrainingOpponents(ids,pins) {
+        if(ids===undefined) {
+            if(pins!==undefined)throw Error('Training opponent pins require selected opponent IDs.');
+            return null;
+        }
+        if(!opponentSupport)
+            throw Error('Install the approved TinyBrains named-opponent runtime before selecting a training roster.');
+        if(!Array.isArray(ids)||!Array.isArray(pins)||!ids.length||
+            ids.length>16||ids.length!==pins.length||
+            new Set(ids).size!==ids.length)
+            throw Error('Training opponent selection differs from its frozen model pins.');
+        const pool=[],fixed=[],sources=[];
+        for(let i=0;i<ids.length;i++) {
+            const id=ids[i],pin=pins[i];
+            const source=id==='frozen'||id==='current'
+                ?{id}
+                :trainingOpponentSources.get(id);
+            if(!source||!pin||pin.id!==id||
+                (source.model_sha256??null)!==(pin.model_sha256??null)||
+                (source.checkpoint_sha256??null)!==(pin.checkpoint_sha256??null))
+                throw Error('Training opponent library fingerprint differs from the saved Design: '+String(id));
+            if(source.model_sha256&&
+                modelFileSha256(path.join(source.model_dir,'model.onnx'))!==source.model_sha256)
+                throw Error('Selected opponent ONNX model differs from the pinned worker approval.');
+            if(source.checkpoint_sha256) {
+                if(!source.checkpoint||
+                    modelFileSha256(source.checkpoint)!==source.checkpoint_sha256)
+                    throw Error('Original frozen opponent checkpoint is missing or has changed.');
+                const name='fixed_'+source.checkpoint_sha256.slice(0,20);
+                if(pool.includes(name))
+                    throw Error('Two selected opponent labels resolve to the same checkpoint.');
+                pool.push(name);
+                fixed.push({id:name,sha256:source.checkpoint_sha256});
+                sources.push({file:source.checkpoint,id:name,sha256:source.checkpoint_sha256});
+            }else pool.push(id);
+        }
+        return {pool,fixed,sources};
+    }
+    function freezeTrainingOpponents(out,selected) {
+        if(!selected)return;
+        const doc={pool:selected.pool,fixed:selected.fixed};
+        const manifest=path.join(out,'hub-opponents.json');
+        const raw=JSON.stringify(doc)+'\n';
+        if(fs.existsSync(manifest)) {
+            if(fs.readFileSync(manifest,'utf8')!==raw)
+                throw Error('Frozen training opponent manifest differs from this job.');
+        }else fs.writeFileSync(manifest,raw,{flag:'wx',mode:0o600});
+        const snapshots=path.join(out,'self-play/opponents');
+        fs.mkdirSync(snapshots,{recursive:true,mode:0o700});
+        for(const item of selected.sources) {
+            const target=path.join(snapshots,'hub-'+item.id.slice(6)+'.pt');
+            if(!fs.existsSync(target))
+                stageFile(item.file,target);
+            if(modelFileSha256(target)!==item.sha256)
+                throw Error('Frozen training opponent copy differs from selected checkpoint.');
+        }
+    }
+    function checkpointTrainingOpponents(out,ids,pins) {
+        if(ids===undefined)return;
+        // Existing finished jobs depend on their own immutable snapshot copies,
+        // not on another run's retention policy or a current agent catalogue.
+        if(!Array.isArray(ids)||!Array.isArray(pins)||!ids.length||
+            ids.length>16||ids.length!==pins.length)
+            throw Error('Frozen training opponent list is invalid.');
+        const pool=[],fixed=[];
+        for(let i=0;i<ids.length;i++) {
+            const pin=pins[i],id=ids[i];
+            if(!pin||pin.id!==id)throw Error('Saved opponent identity differs.');
+            if(['frozen','current','nano','micro'].includes(id))pool.push(id);
+            else {
+                if(!SHA.test(String(pin.checkpoint_sha256||''))||
+                    !SHA.test(String(pin.model_sha256||'')))
+                    throw Error('A named training opponent has no immutable fingerprint.');
+                const name='fixed_'+pin.checkpoint_sha256.slice(0,20);
+                pool.push(name);
+                fixed.push({id:name,sha256:pin.checkpoint_sha256});
+            }
+        }
+        const raw=JSON.stringify({pool,fixed})+'\n';
+        if(fs.readFileSync(path.join(out,'hub-opponents.json'),'utf8')!==raw)
+            throw Error('Training checkpoint opponent roster differs from its frozen Design.');
+        for(const item of fixed) {
+            const model=path.join(out,'self-play/opponents','hub-'+item.id.slice(6)+'.pt');
+            if(modelFileSha256(model)!==item.sha256)
+                throw Error('Training checkpoint frozen opponent has changed.');
+        }
+    }
     const designFields=described(originalSpec,'tinybrains');
     const designSourceSha256=crypto.createHash('sha256').update(frozen).digest('hex');
     function approvedDesign(overrides) {
@@ -1363,7 +1544,7 @@ function createTinyBrainsPersistentDockerAdapter({
             throw Error('TinyBrains checkpoint Design differs from its frozen job.');
     }
 
-    function checkpointStage(out,expectedName=undefined) {
+    function checkpointStage(out,expectedName=undefined,expectedMapIds=undefined) {
         const file=path.join(out,'hub-curriculum-stage.json');
         if(!fs.existsSync(file)) {
             if(typeof expectedName==='string')
@@ -1375,8 +1556,19 @@ function createTinyBrainsPersistentDockerAdapter({
             fs.realpathSync(file)!==file||stat.size<1||stat.size>16384)
             throw Error('Invalid TinyBrains frozen curriculum manifest.');
         const value=JSON.parse(fs.readFileSync(file,'utf8'));
-        if(!value||typeof value!=='object'||Array.isArray(value)||
-            JSON.stringify(value)!==JSON.stringify(approvedStage(value.name))||
+        const designFile=path.join(out,'hub-design-overrides.json');
+        const design=fs.existsSync(designFile)
+            ?JSON.parse(fs.readFileSync(designFile,'utf8')):{};
+        const mapIds=expectedMapIds===undefined&&Array.isArray(value?.maps)
+            ?value.maps.map(sourceMapId):expectedMapIds;
+        const effective=approvedStage(value?.name,design['environment.max_turns'],mapIds);
+        const legacy=approvedStage(value?.name,undefined,mapIds);
+        // Old jobs are immutable: preserve their historical source-derived
+        // turn limit even if they had a Design override that the older stage
+        // implementation did not honor. Newly staged jobs use the override.
+        const matches=[effective,legacy].some(stage=>
+            JSON.stringify(value)===JSON.stringify(stage));
+        if(!value||typeof value!=='object'||Array.isArray(value)||!matches||
             expectedName===null||typeof expectedName==='string'&&
                 expectedName!==value.name)
             throw Error('TinyBrains frozen curriculum stage differs from approved inputs.');
@@ -1469,10 +1661,24 @@ function createTinyBrainsPersistentDockerAdapter({
     const runner=nativeWindows
         ?path.join(hub,'Training/experiment_hub_tinybrains_persistent.py')
         :HUB_IN+'/Training/experiment_hub_tinybrains_persistent.py';
-    // A locally confirmed immutable suite upgrade can be advertised after
-    // the agent restarts even when its private adapter map still lists v3.
-    // The original local evaluation opt-in is required; no HTTP-controlled
-    // suite or path can enable evaluation implicitly.
+    // Evaluation files are installed after this adapter starts. Re-evaluate
+    // only when the private suite directory or systemd unit inventory changes;
+    // never trust browser-provided paths or allow a new model without checking
+    // its original immutable fingerprints.
+    const approvalRoot=path.join(os.homedir(),'evaluation-audits/tinybrains/suites');
+    const systemdRoot=path.join(os.homedir(),'.config/systemd/user');
+    function approvalRevision() {
+        if(nativeWindows||evaluationRoot==null||
+            !Array.isArray(evaluationSuites)||!evaluationSuites.length)
+            return null;
+        const stat=file=>{
+            try {const item=fs.statSync(file);return item.mtimeMs+':'+item.ctimeMs;}
+            catch {return 'missing';}
+        };
+        return [stat(approvalRoot),stat(path.join(approvalRoot,'hub-approved-latest.json')),
+            stat(systemdRoot)].join('|');
+    }
+    function discoverApprovedEvaluationSuites() {
     let approvedEvaluationSuites=evaluationSuites;
     if(!nativeWindows&&evaluationRoot!=null&&
         Array.isArray(evaluationSuites)&&evaluationSuites.length) {
@@ -1675,21 +1881,102 @@ function createTinyBrainsPersistentDockerAdapter({
                 }
             }
         }
+        // New mixed suites are installed locally and remain immutable. An
+        // invalid optional definition must not prevent trainer enrollment.
+        const mixedFiles=fs.readdirSync(root).filter(file=>
+            /^tinybrains_mix_[a-f0-9]{20}_v[1-9][0-9]*\.json$/.test(file)).sort();
+        if(mixedFiles.length>48) {
+            console.warn('[hub-evaluations] Mixed evaluation approval exceeds 48 versions.');
+        }else for(const filename of mixedFiles) {
+            const name=filename.slice(0,-5),file=path.join(root,filename);
+            try {
+                // Authoring writes a suite definition before installing its
+                // dedicated evaluator service. Do not advertise it as runnable
+                // until the systemd service and timer are both present.
+                const match=/^tinybrains_mix_([a-f0-9]{20})_v([1-9][0-9]*)$/.exec(name);
+                const machine=process.env.EXPERIMENT_HUB_MACHINE_ID;
+                if(!match||!/^[a-z][a-z0-9_-]{0,47}$/.test(String(machine||'')))
+                    throw Error('No locally enrolled machine for mixed evaluator service.');
+                const unit='bees-experiment-hub-tinybrains-'+machine+
+                    '-evaluator-mix-'+match[1]+'-v'+match[2];
+                for(const suffix of ['.service','.timer']) {
+                    const entry=fs.lstatSync(path.join(systemdRoot,unit+suffix));
+                    if(!entry.isFile()||entry.isSymbolicLink()||
+                        entry.uid!==process.getuid()||entry.mode&0o077)
+                        throw Error('Mixed evaluator unit is not privately installed.');
+                }
+                const stat=fs.lstatSync(file);
+                if(!stat.isFile()||stat.isSymbolicLink()||
+                    fs.realpathSync(file)!==file||stat.uid!==process.getuid()||
+                    stat.mode&0o077||stat.size<1||stat.size>32768)
+                    throw Error('Mixed suite file is unsafe.');
+                const suite=JSON.parse(fs.readFileSync(file,'utf8'));
+                if(suite.schema_version!==2||suite.suite_id!==name||
+                    !Array.isArray(suite.maps)||!suite.maps.length||suite.maps.length>128||
+                    !Array.isArray(suite.seeds)||suite.seeds.length<1||suite.seeds.length>16||
+                    !Number.isSafeInteger(suite.max_turns)||suite.max_turns<1||
+                    suite.max_turns>1000||!Number.isSafeInteger(suite.rotations)||
+                    suite.rotations<1||suite.rotations>8||
+                    !Array.isArray(suite.opponents)||suite.opponents.length<1||
+                    suite.opponents.length>16)
+                    throw Error('Mixed suite limits are invalid.');
+                const permitted=new Set(['basic-tiny-2p',...fs.readdirSync(boards)
+                    .filter(file=>file.endsWith('.json')).map(file=>file.slice(0,-5))]);
+                if(suite.maps.some(map=>!permitted.has(map))||
+                    new Set(suite.maps).size!==suite.maps.length)
+                    throw Error('Mixed suite includes a map outside the installed inventory.');
+                for(const opponent of suite.opponents) {
+                    const id=opponent?.id;
+                    if(!['nano','micro','tinybrains_mini_batch128_v1'].includes(id)&&
+                        !/^tinybrains_(?:mini|frozen)_[a-f0-9]{20}$/.test(String(id||'')))
+                        throw Error('Mixed suite includes an unapproved opponent.');
+                    if(/^tinybrains_frozen_[a-f0-9]{20}$/.test(id)&&
+                        (!SHA.test(String(opponent.checkpoint_sha256||''))||
+                         id!=='tinybrains_frozen_'+opponent.checkpoint_sha256.slice(0,20)))
+                        throw Error('Custom opponent identity does not match its frozen checkpoint hash.');
+                    const folder=['nano','micro'].includes(id)
+                        ?path.join(project,'upstream/ants-starter/models',id+'-bc')
+                        :path.join(root,'opponents',id);
+                    if(opponent.model_dir!==folder)
+                        throw Error('Mixed suite opponent path differs from local approved model.');
+                    for(const [fileName,key] of [
+                        ['model.onnx','model_sha256'],['manifest.json','manifest_sha256'],
+                    ]) {
+                        const item=path.join(folder,fileName),stat=fs.lstatSync(item);
+                        if(!stat.isFile()||stat.isSymbolicLink()||
+                            crypto.createHash('sha256').update(fs.readFileSync(item)).digest('hex')!==opponent[key])
+                            throw Error('Mixed suite opponent model fingerprint is invalid.');
+                    }
+                }
+                approvedEvaluationSuites=[...new Set([...approvedEvaluationSuites,name])];
+            }catch(error) {
+                console.warn('[hub-evaluations] Ignoring invalid optional mixed suite '+name+': '+
+                    String(error.message||error).slice(0,160));
+            }
+        }
     }
-    return {
+    return approvedEvaluationSuites;
+    }
+    let approvedEvaluationSuites=discoverApprovedEvaluationSuites();
+    let observedApprovalRevision=approvalRevision();
+    const protectedEvaluationRoots=[project,hub,artifacts,source,cache,
+        ...(remote?[remote.keyDirectory]:[])];
+    const adapter={
         executable,cwd:nativeWindows?project:PROJECT_IN,
         ...(docker?{docker}:{}),
         stop_policy:nativeWindows?'terminate-group':'interrupt-main',
         ...evaluationReader('tinybrains',evaluationRoot,approvedEvaluationSuites,
-            [project,hub,artifacts,source,cache,
-             ...(remote?[remote.keyDirectory]:[])]),
+            protectedEvaluationRoots),
         artifact_export_dir(jobId) {
             if(!UUID.test(String(jobId||'')))throw Error('Invalid TinyBrains job identity.');
             return path.join(artifacts,jobId);
         },
         gpu_execution:'cuda',
         ...(designEnabled?{design_catalog:{tinybrains:{...designFields,source_sha256:designSourceSha256,
-            metric_catalog:TINYBRAINS_METRIC_CATALOG,profiles:
+            metric_catalog:TINYBRAINS_METRIC_CATALOG,
+            map_catalog:mapCatalogue,
+            opponent_catalog:opponentSupport?opponentCatalog:[],
+            profiles:
             Object.fromEntries([...approved].map(([id,item])=>[
                 id,{profile_sha256:item.sha256},
             ]))}}}:{}),
@@ -1742,12 +2029,16 @@ function createTinyBrainsPersistentDockerAdapter({
         args(parameters,context) {
             const {profile,profile_sha256,updates,threads,device,remote_rollouts,
                 rollout_action_weights,rollout_endpoints,import_checkpoint,import_checkpoint_sha256,
-                design_overrides,design_source_sha256,training_stage}=parameters;
+                design_overrides,design_source_sha256,training_stage,
+                training_map_ids,training_opponent_ids,training_opponent_pins}=parameters;
             approvedDesign(design_overrides);
             if(training_stage!==undefined&&!stageSupport)
                 throw Error('Install the approved TinyBrains curriculum-capable runtime before selecting a map stage.');
-            const stage=approvedStage(training_stage);
-            verifyStageMaps(stage);
+            const opponents=approvedTrainingOpponents(
+                training_opponent_ids,training_opponent_pins);
+            const stage=approvedStage(training_stage,
+                design_overrides?.['environment.max_turns'],training_map_ids);
+            verifyStageMaps(stage,training_map_ids!==undefined);
             const item=approved.get(profile);
             const endpoints=approvedEndpointSubset(remote?.endpoints,rollout_endpoints);
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
@@ -1756,7 +2047,9 @@ function createTinyBrainsPersistentDockerAdapter({
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
                     'threads','device','remote_rollouts','rollout_action_weights',
                     'import_checkpoint','import_checkpoint_sha256','rollout_endpoints',
-                    'design_overrides','design_source_sha256','training_stage'].includes(k))||
+                    'design_overrides','design_source_sha256','training_stage',
+                    'training_map_ids','training_opponent_ids',
+                    'training_opponent_pins'].includes(k))||
                 (design_overrides===undefined
                     ?design_source_sha256!==undefined
                     :design_source_sha256!==designSourceSha256)||
@@ -1844,7 +2137,7 @@ function createTinyBrainsPersistentDockerAdapter({
                     !frozenEvidenceIntact(out))
                     throw Error('Previously launched or changed Hub training output cannot be re-used.');
                 checkpointDesign(out,design_overrides,true);
-                checkpointStage(out,training_stage??null);
+                checkpointStage(out,training_stage??null,training_map_ids);
                 // Existing staged-but-unlaunched jobs may predate the initial
                 // benchmark opponent copy. Repair only this verified seed.
                 const initial=path.join(out,'self-play/opponents/initial.pt');
@@ -1873,6 +2166,7 @@ function createTinyBrainsPersistentDockerAdapter({
                 fs.writeFileSync(path.join(out,'hub-start-update.json'),
                     JSON.stringify({update:startingUpdate})+'\n',{flag:'wx',mode:0o600});
             }
+            freezeTrainingOpponents(out,opponents);
             // A machine-local choice, resolved once at launch from the frozen
             // CPU lease. Explicit per-job overrides keep their old meaning.
             const chosenThreads=threads??(cpuParallelism==='allocation'
@@ -1892,6 +2186,12 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
+                ...(opponents?['--hub-opponents-file',
+                    path.join(nativeWindows?out:JOBS_IN+'/'+context.job_id,'hub-opponents.json'),
+                    '--hub-opponents-sha256',
+                    crypto.createHash('sha256')
+                        .update(JSON.stringify({pool:opponents.pool,fixed:opponents.fixed})+'\n')
+                        .digest('hex')]:[]),
                 ...(stage?['--hub-stage-file',
                     path.join(nativeWindows?out:JOBS_IN+'/'+context.job_id,
                         'hub-curriculum-stage.json'),
@@ -1931,7 +2231,11 @@ function createTinyBrainsPersistentDockerAdapter({
                 throw Error('Unknown approved checkpoint profile.');
             checkpointReady(targetFor(context),item.text,context.frozen_parameters?.design_overrides,true);
             checkpointStage(targetFor(context),
-                context.frozen_parameters?.training_stage??null);
+                context.frozen_parameters?.training_stage??null,
+                context.frozen_parameters?.training_map_ids);
+            checkpointTrainingOpponents(targetFor(context),
+                context.frozen_parameters?.training_opponent_ids,
+                context.frozen_parameters?.training_opponent_pins);
             return true;
         },
         model_checkpoint_sha256(context){
@@ -1941,7 +2245,11 @@ function createTinyBrainsPersistentDockerAdapter({
             const out=targetFor(context);
             const checkpoint=checkpointReady(out,item.text,
                 context.frozen_parameters?.design_overrides,true);
-            checkpointStage(out,context.frozen_parameters?.training_stage??null);
+            checkpointStage(out,context.frozen_parameters?.training_stage??null,
+                context.frozen_parameters?.training_map_ids);
+            checkpointTrainingOpponents(out,
+                context.frozen_parameters?.training_opponent_ids,
+                context.frozen_parameters?.training_opponent_pins);
             return modelFileSha256(checkpoint);
         },
         readProgress(context){
@@ -2014,6 +2322,23 @@ function createTinyBrainsPersistentDockerAdapter({
             }
         },
     };
+    adapter.refreshEvaluationSuites=()=>{
+        const revision=approvalRevision();
+        if(revision===observedApprovalRevision)
+            return adapter.evaluation_suites||[];
+        const next=discoverApprovedEvaluationSuites();
+        const reader=evaluationReader('tinybrains',evaluationRoot,next,
+            protectedEvaluationRoots);
+        // Switch the advertised capability and its receipt reader together.
+        // A failed discovery retains the prior approved snapshot and can be
+        // retried without disconnecting an otherwise healthy training agent.
+        adapter.evaluation_suites=reader.evaluation_suites;
+        adapter.readEvaluation=reader.readEvaluation;
+        adapter.readEvaluationFailure=reader.readEvaluationFailure;
+        observedApprovalRevision=revision;
+        return reader.evaluation_suites||[];
+    };
+    return adapter;
 }
 // The same checkpoint, training metrics and PPO pipeline are native on
 // Windows; only the trusted process owner and physical CUDA selectors differ.

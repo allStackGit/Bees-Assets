@@ -307,8 +307,12 @@ async function main() {
     const syncLogs=process.env.EXPERIMENT_HUB_SYNC_ARTIFACTS==='1';
     if(syncLogs&&!executor)
         throw Error('Log sync requires an opted-in native execution adapter.');
+    const once=process.argv.includes('--once');
     let nativePreflightReason=null;
-    if(executor?.projects.length) {
+    // One-shot qualification preserves its diagnostic semantics. Continuous
+    // agents first re-authenticate as connected but *not qualified*, so a
+    // slow local preflight cannot leave the machine falsely offline.
+    if(once&&executor?.projects.length) {
         try {
             await executor.supervisor.qualify();
         }catch(error) {
@@ -319,7 +323,7 @@ async function main() {
     }
     const advertisement={
         ...(executor?executor.advertisement():{}),
-        native_preflight_passed:Boolean(executor?.supervisor.qualifiedAt),
+        native_preflight_passed:Boolean(once&&executor?.supervisor.qualifiedAt),
         native_preflight_reason:nativePreflightReason,
         instance_id:crypto.randomUUID(),
     };
@@ -333,7 +337,8 @@ async function main() {
         Object.assign(advertisement,evaluatorObservation.value);
     };
     let active=false,executingNative=false,busyHeartbeat=null,
-        last='initial',receipts=[],pendingReports=[],pendingGpuReports=[],
+        normalHeartbeat=null,stopping=false,reconnectTimer=null,
+        reconnectDelay=2500,last='initial',receipts=[],pendingReports=[],pendingGpuReports=[],
         pendingEvaluatorReports=[],pendingRemoteRestart=null;
     const artifactCache=new Map();
     let artifactSync=null;
@@ -346,10 +351,20 @@ async function main() {
             .finally(()=>{if(artifactSync===work)artifactSync=null;});
         artifactSync=work;
     };
-    const once=process.argv.includes('--once');
     const nativeOwned=()=>Boolean(executor?.supervisor.snapshot().some(entry=>
         !['finished','failed','stopped'].includes(entry.state)));
     const poll=async(expedite=false)=>{
+        if(stopping)return;
+        if(executor) {
+            // Suite setup is independent of the long-lived agent process.
+            // The adapter checks local immutable approvals, not Hub requests.
+            try {
+                advertisement.evaluation_suites=executor.refreshEvaluationSuites();
+            }catch(error) {
+                console.error('[experiment-hub-agent] Evaluation capabilities: '+
+                    String(error.message||error).slice(0,180));
+            }
+        }
         if(active) {
             if(executingNative&&!busyHeartbeat) {
                 // The existing interval must maintain machine liveness while
@@ -369,14 +384,25 @@ async function main() {
         active=true;
         try{
             const restartAwaitingReceipt=pendingRemoteRestart;
-            const response=await sendHeartbeat(url,id,token,receipts,
+            // Track the normal request separately from the native command.
+            // SIGTERM must not send a sign-off while this request can still
+            // re-create the old instance on the coordinator.
+            const inFlight=sendHeartbeat(url,id,token,receipts,
                 pendingReports,advertisement,pendingGpuReports,
                 !restartAwaitingReceipt,false,pendingEvaluatorReports);
+            normalHeartbeat=inFlight;
+            let response;
+            try {response=await inFlight;}
+            finally {if(normalHeartbeat===inFlight)normalHeartbeat=null;}
             // The coordinator accepted these reports. Any subsequent agent
             // crash is reconciled using the native service journal.
             pendingReports=[];
             pendingGpuReports=[];
             pendingEvaluatorReports=[];
+            // A shutdown requested while this HTTP call was pending cannot
+            // execute a newly offered native Start or evaluator directive.
+            // The replacement owner must reconcile any durable offer.
+            if(stopping)return;
             if(restartAwaitingReceipt) {
                 pendingRemoteRestart=null;
                 try {
@@ -462,10 +488,25 @@ async function main() {
                                 :'; native starts blocked (preflight failed)'
                         :'; observation only, no job execution')+').');
             last='connected';
+            reconnectDelay=2500;
+            if(reconnectTimer)clearTimeout(reconnectTimer);
+            reconnectTimer=null;
         }catch(error){
             const message=String(error.message||error);
             if(last!==message)console.error('[experiment-hub-agent] '+message);
             last=message;
+            // The regular 15-second cadence provides steady-state liveness.
+            // After a coordinator restart or brief transport failure, make a
+            // bounded earlier re-authentication attempt instead of leaving
+            // the machine offline for another full heartbeat interval.
+            if(!stopping&&!once&&!reconnectTimer) {
+                const delay=reconnectDelay;
+                reconnectDelay=Math.min(INTERVAL_MS,reconnectDelay*2);
+                reconnectTimer=setTimeout(()=>{
+                    reconnectTimer=null;
+                    void poll(true);
+                },delay);
+            }
         }finally{active=false;}
     };
     // Start the existing heartbeat cadence before a potentially slow native
@@ -481,14 +522,18 @@ async function main() {
         // leaving separately OS-owned native jobs and checkpoint journals.
         // Sign off before this process disappears so the replacement agent
         // does not collide with a stale 45-second instance identity.
-        let stopping=false;
         process.once('SIGTERM',async()=>{
             if(stopping)return;
             stopping=true;
             clearInterval(timer);
             if(mirrorTimer)clearInterval(mirrorTimer);
+            if(reconnectTimer)clearTimeout(reconnectTimer);
             try {
-                if(busyHeartbeat)await busyHeartbeat;
+                // Both ordinary and busy heartbeats may still be in flight.
+                // Wait for their coordinator mutations to settle before the
+                // closing heartbeat. Native work is separately OS-owned.
+                await Promise.allSettled([normalHeartbeat,busyHeartbeat]
+                    .filter(Boolean));
                 await sendHeartbeat(url,id,token,[],[],advertisement,[],false,true);
             }catch(error) {
                 console.error('[experiment-hub-agent] Update sign-off: '+
@@ -499,6 +544,25 @@ async function main() {
         });
     }
     await poll(!once);
+    // Qualification may involve slow OS/native probes. Keep the heartbeat
+    // timer alive throughout; the coordinator will deny native Starts until
+    // the fresh qualification is explicitly advertised.
+    if(!once&&executor?.projects.length&&!stopping) {
+        try {
+            await executor.supervisor.qualify();
+            nativePreflightReason=null;
+        }catch(error) {
+            nativePreflightReason=String(error.message||error).slice(0,180);
+            console.error('[experiment-hub-agent] Native resource preflight: '+
+                nativePreflightReason);
+        }
+        if(!stopping) {
+            advertisement.native_preflight_passed=
+                Boolean(executor.supervisor.qualifiedAt);
+            advertisement.native_preflight_reason=nativePreflightReason;
+            await poll(true);
+        }
+    }
     if(!once)collectArtifacts();
     if(once) {
         clearInterval(timer);

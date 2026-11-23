@@ -15,6 +15,10 @@ Resource leases and GPU device identity remain the Hub agent's authority.
 from __future__ import annotations
 
 from collections import deque
+from contextlib import contextmanager
+from functools import lru_cache
+from math import isfinite
+from numbers import Integral
 from concurrent.futures import ThreadPoolExecutor, wait
 from threading import current_thread
 from statistics import median
@@ -86,6 +90,69 @@ def immutable_training_input_budget(free_bytes, desired_bytes, reuse_passes, *,
                       free_bytes - minimum_compute_bytes))
 
 
+def upload_cast_training_observations(destination, source, *, staging=None):
+    """Upload compact observations and convert into the cached GPU dtype.
+
+    When actor and critic both require FP32, integer board banks may be
+    retained as FP32 for repeated epochs. Converting on the host first
+    multiplies PCIe transfer volume by up to four; instead DMA the original
+    int8/int16 tensor and perform its exact-value conversion on the GPU.
+    The optional pinned staging pool owns the in-flight host buffer and
+    enqueues the destination's producer-stream dependency.
+    """
+    if (not isinstance(destination,torch.Tensor) or
+            destination.device.type!="cuda" or
+            not isinstance(source,torch.Tensor) or
+            source.shape!=destination.shape or
+            source.requires_grad):
+        raise ValueError("GPU cached conversion requires matching immutable tensors")
+    if source.device.type=="cpu":
+        if staging is not None:
+            uploaded=staging.upload(source.contiguous())
+        else:
+            uploaded=source.to(destination.device)
+    elif source.device==destination.device:
+        uploaded=source
+    else:
+        uploaded=source.to(destination.device,non_blocking=True)
+    destination.copy_(uploaded)
+    return source.numel()*source.element_size()
+
+
+def cached_training_compute_dtype(source_dtype, source_bytes, cache_budget,
+                                  reuse_passes, *,
+                                  exact_fp32_consumer=False,
+                                  secondary_cache_budget=None):
+    """Choose reusable FP32 inputs only when all originals fit in VRAM.
+
+    Integer-encoded training observations are often converted to FP32
+    separately by actor and critic every epoch. If both consumers ALWAYS
+    convert integer values to FP32, int8/uint8/int16 values are exactly
+    representable and a preconverted GPU bank removes those repeated cast
+    kernels. Never trade full input-cache coverage for a larger dtype:
+    every byte of the complete converted dataset must fit the primary
+    cache budget, and optionally half the secondary peer-cache budget.
+    """
+    if (type(source_bytes) is not int or source_bytes < 0 or
+            type(cache_budget) is not int or cache_budget < 0 or
+            type(reuse_passes) is not int or reuse_passes < 0 or
+            type(exact_fp32_consumer) is not bool or
+            (secondary_cache_budget is not None and
+             (type(secondary_cache_budget) is not int or
+              secondary_cache_budget < 0))):
+        raise ValueError("Invalid immutable training input dtype budget")
+    if (not exact_fp32_consumer or reuse_passes < 2 or source_bytes == 0 or
+            source_dtype not in (torch.int8,torch.uint8,torch.int16)):
+        return None
+    multiplier = 4 // torch.empty((),dtype=source_dtype).element_size()
+    converted_bytes = source_bytes*multiplier
+    if converted_bytes > cache_budget or (
+            secondary_cache_budget is not None and
+            converted_bytes > secondary_cache_budget//2):
+        return None
+    return torch.float32
+
+
 def training_activation_workspace_budget(free_bytes, *,
                                          max_bytes=4 * 1024**3,
                                          free_fraction=0.16,
@@ -108,6 +175,76 @@ def training_activation_workspace_budget(free_bytes, *,
                       free_bytes-minimum_other_headroom))
 
 
+def foreach_grouped_gradient_norms(named_gradients):
+    """Compute per-module preclip L2 norms in one multi-tensor GPU dispatch.
+
+    Trainable actor, critic and future project-specific modules often share
+    one optimizer and global gradient clip. Reuse the same foreach result
+    across their named diagnostics rather than launching one foreach pass
+    for each subnetwork. The caller retains clipping/finite-check ownership.
+    Nothing reads gradients onto the CPU or changes the optimizer state.
+    """
+    if not isinstance(named_gradients,(list,tuple)) or not named_gradients:
+        raise ValueError("Expected named gradient groups")
+    entries=[]
+    gradients=[]
+    for name,group in named_gradients:
+        if not isinstance(name,str) or not name or not isinstance(group,(tuple,list)):
+            raise ValueError("Invalid named gradient group")
+        selected=tuple(g for g in group if g is not None)
+        if any(not isinstance(g,torch.Tensor) for g in selected):
+            raise ValueError("Gradient groups must contain tensors")
+        entries.append((name,len(selected)))
+        gradients.extend(selected)
+    if not gradients or not hasattr(torch,"_foreach_norm"):
+        return {}
+    individual=torch._foreach_norm(gradients,2)
+    grouped={}
+    cursor=0
+    for name,size in entries:
+        if size:
+            grouped[name]=torch.linalg.vector_norm(
+                torch.stack(individual[cursor:cursor+size]),ord=2)
+        cursor+=size
+    return grouped
+
+
+def stack_training_loss_diagnostics(columns, *, loss_index):
+    """Keep gradients only for the actual optimizer loss column.
+
+    A trainer commonly reports policy, value, entropy, KL and clipping
+    metrics alongside the one scalar loss per board. The optimizer only
+    backpropagates that loss; retaining each standalone diagnostic's
+    autograd path in a stacked result unnecessarily increases backward
+    graph fan-out and memory residency for every GPU microbatch.
+    Preserve all numerical metric values, column positions and loss
+    gradients while detaching the reporting-only columns.
+    """
+    if (not isinstance(columns,(tuple,list)) or
+            not columns or type(loss_index) is not int or
+            not 0<=loss_index<len(columns) or
+            any(not isinstance(value,torch.Tensor) for value in columns)):
+        raise ValueError("Training loss diagnostics require tensor columns")
+    return torch.stack(tuple(
+        value if i==loss_index else value.detach()
+        for i,value in enumerate(columns)),dim=1)
+
+
+def shared_fp32_training_input(observations, *, consumers_use_float32):
+    """Convert one immutable batch ONCE for independent FP32-only networks.
+
+    Many actor/critic pairs each perform boards.float() inside their
+    forward(). An explicit exact-value consumer contract allows the caller
+    to share the same FP32 tensor across both models, avoiding duplicated
+    device cast kernels and allocations. This does not change gradients,
+    optimizer steps, sampling, or observation values seen by those models.
+    """
+    if (not isinstance(observations,torch.Tensor) or
+            type(consumers_use_float32) is not bool):
+        raise ValueError("Shared PPO inputs require tensor and FP32 consumer contract")
+    return observations.float() if consumers_use_float32 else observations
+
+
 def discrete_action_logprob_entropy(logits, actions):
     """Fused-softmax-friendly discrete PPO policy terms for any action count.
 
@@ -128,20 +265,353 @@ def discrete_action_logprob_entropy(logits, actions):
     return chosen_logp, entropy
 
 
-def allocate_gpu_work_rows(rows, pixel_area, device_pixel_budgets):
+_SPARSE_SPATIAL_ADMISSION = {}
+
+
+def qualify_sparse_spatial_training_logits(device, *, dtype=torch.float32,
+                                           actions=5, min_speedup=0.10):
+    """Qualify sparse selection against dense NCHW-to-NHWC copy on one GPU.
+
+    Uses synthetic tensors (not learner weights or Torch RNG), checks the
+    exact action values and autograd gradients, and compares sustained
+    forward+backward time for small and large spatial maps. Qualification
+    is intended for startup, outside the useful PPO throughput window.
+    The result is read-only throughout concurrent GPU training forwards.
+    """
+    if (not isinstance(device,torch.device) or device.type!="cuda" or
+            dtype!=torch.float32 or type(actions) is not int or
+            not 2<=actions<=128 or not 0<=min_speedup<=0.5):
+        return False
+    key=(str(device),dtype,actions)
+    if key in _SPARSE_SPATIAL_ADMISSION:
+        return bool(_SPARSE_SPATIAL_ADMISSION[key][1])
+    # Register a disabled result before any qualification so a partial
+    # ROCm backend failure cannot select an unproven optimization.
+    _SPARSE_SPATIAL_ADMISSION[key]=((),frozenset())
+    try:
+        samples=[]
+        winners=set()
+        for side in (32,64):
+            n=8
+            area=side*side
+            elements=n*actions*area
+            data=torch.arange(elements,device=device,dtype=dtype)
+            logits=(data*0.0007).sin().reshape(n,actions,side,side)
+            logits=logits.detach().requires_grad_(True)
+            count=max(1,n*area//64)
+            owners=torch.arange(count,device=device,dtype=torch.int64)%n
+            local=(torch.arange(count,device=device,dtype=torch.int64)*37)%area
+            absolute=owners*area+local
+
+            def dense():
+                flat=logits.permute(0,2,3,1).reshape(-1,actions)
+                return flat.index_select(0,absolute)
+
+            def sparse():
+                return logits.flatten(2)[owners,:,absolute-owners*area]
+
+            def forward_backward(operation):
+                value=operation()
+                grad,=torch.autograd.grad(value.square().sum(),logits)
+                return value.detach(),grad.detach()
+
+            reference,ref_grad=forward_backward(dense)
+            candidate,candidate_grad=forward_backward(sparse)
+            if (not torch.allclose(reference,candidate,rtol=1e-6,atol=1e-6)
+                    or not torch.allclose(ref_grad,candidate_grad,
+                                           rtol=1e-5,atol=1e-6)):
+                samples.append(elements)
+                continue
+
+            def seconds(operation):
+                torch.cuda.synchronize(device)
+                started=perf_counter()
+                for _ in range(2):
+                    forward_backward(operation)
+                torch.cuda.synchronize(device)
+                return (perf_counter()-started)/2
+
+            eager_times,selected_times=[],[]
+            for round_index in range(4):
+                order=((dense,eager_times),(sparse,selected_times))
+                if round_index%2:
+                    order=order[::-1]
+                for operation,timings in order:
+                    timings.append(seconds(operation))
+            baseline=median(eager_times)
+            optimized=median(selected_times)
+            samples.append(elements)
+            if baseline>0 and optimized<=baseline*(1-min_speedup):
+                winners.add(elements)
+        _SPARSE_SPATIAL_ADMISSION[key]=(tuple(samples),frozenset(winners))
+        return bool(winners)
+    except (RuntimeError,ValueError,TypeError,NotImplementedError,
+            torch.OutOfMemoryError):
+        return False
+
+
+def select_spatial_training_logits(logits, owners, absolute_cells, *,
+                                   min_dense_elements=8192,
+                                   max_sparse_fraction=0.125):
+    """Select sparse spatial actions without copying a whole NHWC logit map.
+
+    Conv actors produce [boards, actions, height, width]. The conventional
+    permute(...).reshape(-1, actions) materializes the complete action map
+    in NHWC order before index_select, even when only a few entity cells
+    are used by the PPO loss. Sparse advanced indexing reads just those
+    cells from the original NCHW convolution output and preserves
+    autograd's gradient scatter back into the same original logits.
+
+    Keep contiguous dense gather for tiny maps or dense populations where
+    another small index kernel would not amortize removing the layout copy.
+    This is generic to spatial multi-agent actor-critic trainers.
+    """
+    if (not isinstance(logits,torch.Tensor) or logits.ndim!=4 or
+            not isinstance(owners,torch.Tensor) or
+            not isinstance(absolute_cells,torch.Tensor) or
+            owners.ndim!=1 or absolute_cells.ndim!=1 or
+            len(owners)!=len(absolute_cells) or
+            owners.device!=logits.device or
+            absolute_cells.device!=logits.device or
+            owners.dtype not in (torch.int32,torch.int64) or
+            absolute_cells.dtype not in (torch.int32,torch.int64)):
+        raise ValueError("Spatial GPU training selection requires matching indices")
+    boards,actions,height,width=logits.shape
+    cells_per_board=height*width
+    population=len(absolute_cells)
+    sizes,winners=_SPARSE_SPATIAL_ADMISSION.get(
+        (str(logits.device),logits.dtype,actions),((),frozenset()))
+    closest=(min(sizes,key=lambda size:abs(size-logits.numel()))
+             if sizes else None)
+    if (logits.device.type=="cuda" and
+            logits.numel()>=min_dense_elements and
+            closest in winners and
+            population <= boards*cells_per_board*max_sparse_fraction):
+        # Indices already carry a board owner and absolute flat cell
+        # location, so derive a local location with only a small 1D GPU
+        # operation. Unlike NHWC reshape, this never rearranges logits.
+        local=absolute_cells-owners*cells_per_board
+        return logits.flatten(2)[owners,:,local]
+    dense=logits.permute(0,2,3,1).reshape(-1,actions)
+    return dense.index_select(0,absolute_cells)
+
+
+def gather_training_columns_once(columns, index_groups, *,
+                                 max_output_bytes=16*1048576):
+    """Gather immutable GPU columns once for a whole grouped minibatch.
+
+    Shape-heterogeneous PPO workloads repeatedly select action, behavior,
+    feature or metadata columns separately for every map group. A single
+    concatenated index selection amortizes GPU kernel launches across all
+    groups, then callers retain zero-copy views in the original group order.
+    Only the temporary gathered output has an extra bounded lifetime.
+    """
+    if (not isinstance(columns,(tuple,list)) or not columns or
+            not isinstance(index_groups,(tuple,list)) or
+            len(index_groups)<2 or
+            type(max_output_bytes) is not int or max_output_bytes<1):
+        return None
+    first=columns[0]
+    if (not isinstance(first,torch.Tensor) or first.ndim!=1 or
+            first.device.type!="cuda" or
+            any(not isinstance(column,torch.Tensor) or column.ndim!=1 or
+                column.device!=first.device or column.requires_grad
+                for column in columns) or
+            any(not isinstance(group,torch.Tensor) or group.ndim!=1 or
+                group.device!=first.device or group.requires_grad or
+                group.dtype not in (torch.int32,torch.int64)
+                for group in index_groups)):
+        return None
+    total=sum(group.numel() for group in index_groups)
+    # Account for BOTH the selected columns and the transient concatenated
+    # index tensor. The original group index views cost no new allocation,
+    # but torch.cat does. This preserves the shared lease for integer- or
+    # byte-valued inputs whose indices may exceed their payload size.
+    index_bytes=total*max(group.element_size() for group in index_groups)
+    output_bytes=total*sum(column.element_size() for column in columns)
+    if not total or index_bytes+output_bytes>max_output_bytes:
+        return None
+    indices=torch.cat(tuple(index_groups))
+    result=tuple(column.index_select(0,indices) for column in columns)
+    return result,tuple(group.numel() for group in index_groups)
+
+
+def pack_immutable_gpu_scalar_columns(columns):
+    """Coalesce repeated small GPU peer copies without reducing precision.
+
+    Independent PPO advantage/old-value/target buffers often have the same
+    dtype and row count. Packing their contiguous columns before the
+    producer-stream event lets a secondary GPU receive all fields in ONE
+    asynchronous transfer; unbind() recreates inexpensive column views.
+    Return None if data types, shapes, device or immutable contract differ.
+    """
+    if (not isinstance(columns,(list,tuple)) or len(columns)<2 or
+            any(not isinstance(value,torch.Tensor) or value.ndim!=1 or
+                value.requires_grad for value in columns)):
+        return None
+    first = columns[0]
+    if (first.device.type!='cuda' or
+            any(value.device!=first.device or value.dtype!=first.dtype or
+                value.shape!=first.shape for value in columns[1:])):
+        return None
+    return torch.stack(tuple(columns),dim=1)
+
+
+@lru_cache(maxsize=32)
+def _gpu_segment_backward_supported(device, dtype):
+    """Check forward and autograd support once per GPU/dtype without learner state."""
+    if not hasattr(torch,'segment_reduce'):
+        return False
+    try:
+        with torch.enable_grad():
+            x = torch.tensor([[1.,2.],[3.,4.],[5.,6.]],
+                             device=device,dtype=dtype,requires_grad=True)
+            lengths = torch.tensor([2,0,1],device=device,dtype=torch.int64)
+            y = torch.segment_reduce(x,reduce='sum',lengths=lengths,axis=0)
+            grad = torch.autograd.grad(y.sum(),x)[0]
+            expected = x.new_tensor([[4.,6.],[0.,0.],[5.,6.]])
+            return (torch.allclose(y,expected,rtol=1e-4,atol=1e-4)
+                    and torch.allclose(grad,torch.ones_like(x),
+                                       rtol=1e-4,atol=1e-4))
+    except (RuntimeError,NotImplementedError,TypeError,AttributeError,ValueError):
+        return False
+
+
+# Qualified outside timed PPO work, never on a real loss graph.
+_SEGMENT_THRESHOLDS = {}
+
+
+def prepare_training_segment_reduction(device, *, dtype=torch.float32):
+    """Admit a faster differentiable segmented reduction on a leased GPU.
+
+    Compare the complete indexed/scatter versus segmented forward+backward
+    with deterministic synthetic data at small and large entity counts.
+    Retain the ordinary kernel when segmentation is unsupported or loses;
+    this admission does not read a learner weight or mutate an optimizer.
+    """
+    if (not isinstance(device,torch.device) or device.type!='cuda' or
+            not isinstance(dtype,torch.dtype)):
+        raise ValueError("Expected a leased CUDA/HIP device and tensor dtype")
+    key=(str(device),dtype)
+    if key in _SEGMENT_THRESHOLDS:
+        return _SEGMENT_THRESHOLDS[key] is not None
+    _SEGMENT_THRESHOLDS[key]=None
+    if not _gpu_segment_backward_supported(device,dtype):
+        return False
+    try:
+        for rows in (2048,8192):
+            groups=64
+            lengths=torch.full((groups,),rows//groups,
+                               device=device,dtype=torch.int64)
+            owner=torch.repeat_interleave(
+                torch.arange(groups,device=device,dtype=torch.int64),lengths)
+            sample=torch.linspace(-1.,1.,rows*4,device=device,
+                                  dtype=dtype).reshape(rows,4)
+            sample=sample.detach().requires_grad_(True)
+
+            def indexed():
+                out=sample.new_zeros((groups,4))
+                return out.index_add_(0,owner,sample)
+
+            def segmented():
+                return torch.segment_reduce(
+                    sample,reduce='sum',lengths=lengths,axis=0)
+
+            baseline=indexed()
+            candidate=segmented()
+            baseline_grad,=torch.autograd.grad(baseline.sum(),sample)
+            candidate_grad,=torch.autograd.grad(candidate.sum(),sample)
+            if (not torch.allclose(baseline,candidate,
+                                   rtol=3e-4,atol=5e-4) or
+                not torch.allclose(baseline_grad,candidate_grad,
+                                   rtol=1e-5,atol=1e-5)):
+                continue
+
+            def seconds(operation):
+                torch.cuda.synchronize(device)
+                begun=perf_counter()
+                for _ in range(2):
+                    output=operation()
+                    torch.autograd.grad(output.square().sum(),sample)
+                torch.cuda.synchronize(device)
+                return (perf_counter()-begun)/2
+
+            ordinary,optimized=[],[]
+            for repeat in range(3):
+                pair=((indexed,ordinary),(segmented,optimized))
+                if repeat%2:
+                    pair=pair[::-1]
+                for operation,measurements in pair:
+                    measurements.append(seconds(operation))
+            if (median(ordinary)>0 and
+                median(optimized)<=median(ordinary)*.92):
+                _SEGMENT_THRESHOLDS[key]=rows
+                return True
+    except (RuntimeError,TypeError,NotImplementedError,ValueError,
+            torch.OutOfMemoryError):
+        return False
+    return False
+
+
+def sum_consecutive_training_segments(terms, counts, owner, *,
+                                      denominator_dtype, min_parallel_rows=2048):
+    """Reduce grouped training contributions without scatter atomics.
+
+    When per-entity contributions are already packed in contiguous,
+    board-owned segments, a CUDA/HIP segmented sum can avoid repeated
+    atomic index_add operations into the same small number of board rows.
+    The caller explicitly guarantees owner order and exact segment counts.
+    For small groups or unsupported backends, retain the original
+    differentiable index_add implementation and its numerical behavior.
+    """
+    if (not isinstance(terms,torch.Tensor) or terms.ndim!=2 or
+            not isinstance(owner,torch.Tensor) or
+            owner.device!=terms.device or owner.numel()!=len(terms) or
+            not isinstance(counts,(list,tuple)) or
+            sum(counts)!=len(terms) or any(
+                not isinstance(c,Integral) or c<0 for c in counts)):
+        raise ValueError("Training segment sizes do not match ordered contributions")
+    threshold = _SEGMENT_THRESHOLDS.get((str(terms.device),terms.dtype))
+    use_segment = (terms.device.type=='cuda' and
+                   threshold is not None and
+                   len(terms)>=max(min_parallel_rows,threshold))
+    if use_segment:
+        try:
+            lengths = torch.as_tensor(
+                counts,device=terms.device,dtype=torch.int64)
+            reduced = torch.segment_reduce(
+                terms,reduce='sum',lengths=lengths,axis=0)
+        except (RuntimeError,NotImplementedError,TypeError,AttributeError):
+            pass
+        else:
+            return reduced,lengths.clamp_min(1).to(dtype=denominator_dtype)
+    reduced = terms.new_zeros((len(counts),terms.shape[1]))
+    reduced.index_add_(0,owner,terms)
+    denominator = terms.new_tensor(counts,dtype=denominator_dtype).clamp_min(1)
+    return reduced,denominator
+
+
+def allocate_gpu_work_rows(rows, pixel_area, device_pixel_budgets, *, weights=None):
     """Partition same-shape training rows across independently leased GPUs.
 
     Return contiguous row counts, preserving observation/action order.
     A small-memory GPU receives only the rows it can safely hold; the
     optimizer's primary GPU retains any surplus. This avoids rejecting
     useful parallel work simply because an equal split would not fit.
+    Optional measured forward-throughput weights bias contiguous work
+    toward the less-contended GPU without ever violating memory limits.
     Returns None if fewer than two GPUs can execute the group.
     """
     if (type(rows) is not int or rows < 1 or
             type(pixel_area) is not int or pixel_area < 1 or
             not isinstance(device_pixel_budgets,(tuple,list)) or
             not 1 <= len(device_pixel_budgets) <= 16 or
-            any(type(n) is not int or n < 0 for n in device_pixel_budgets)):
+            any(type(n) is not int or n < 0 for n in device_pixel_budgets) or
+            (weights is not None and
+             (not isinstance(weights,(tuple,list)) or
+              len(weights)!=len(device_pixel_budgets) or
+              any(type(value) not in (int,float) or
+                  not isfinite(value) or value<=0 for value in weights)))):
         raise ValueError("Invalid bounded GPU row-partition request")
     if rows < 2 or len(device_pixel_budgets) < 2:
         return None
@@ -158,16 +628,20 @@ def allocate_gpu_work_rows(rows, pixel_area, device_pixel_budgets):
         return None
     remaining = rows
     result = []
-    for i, limit in enumerate(capacity):
+    capacity_weights = (tuple(weights[:len(capacity)]) if weights is not None
+                        else (1.0,)*len(capacity))
+    for i,limit in enumerate(capacity):
         future = capacity[i+1:]
-        # Do not allocate so much to this GPU that later GPUs are left
-        # idle, but use extra headroom here if later leases cannot hold
-        # their nominal balanced share.
-        necessary = max(0, remaining-sum(future))
-        even = (remaining+len(future))//(len(future)+1)
-        assigned = min(limit,max(necessary,even))
-        if assigned < 1:
+        # Keep at least one productive row on each admitted GPU. A share
+        # must also leave enough work for the remaining devices, and meet
+        # their hard physical memory ceilings.
+        minimum = max(1,remaining-sum(future))
+        maximum = min(limit,remaining-len(future))
+        if minimum>maximum:
             return None
+        ideal = round(remaining*capacity_weights[i]/
+                      sum(capacity_weights[i:]))
+        assigned = max(minimum,min(maximum,ideal))
         result.append(assigned)
         remaining -= assigned
     return tuple(result) if remaining == 0 and len(result) > 1 else None
@@ -191,7 +665,8 @@ class MeasuredIndependentTrainForwards:
 
     def __init__(self, first, second, device, *,
                  max_profiles=16, min_speedup=0.10,
-                 qualified_independent=False):
+                 qualified_independent=False,
+                 first_parameters=(), second_parameters=()):
         from collections import OrderedDict
         if (not qualified_independent or not callable(first) or
                 not callable(second) or not isinstance(device,torch.device) or
@@ -199,6 +674,21 @@ class MeasuredIndependentTrainForwards:
                 not 0<=min_speedup<=0.5):
             raise ValueError("GPU training forward overlap needs trusted independent functions")
         self.first,self.second,self.device = first,second,device
+        first_parameters=tuple(first_parameters)
+        second_parameters=tuple(second_parameters)
+        # Qualification evaluates actual optimizer-relevant backward work
+        # without assigning to .grad or stepping Adam. Disjoint owners
+        # prevent synthetic grad propagation from crossing networks.
+        if (first_parameters and second_parameters and
+                not set(map(id,first_parameters)).isdisjoint(
+                    set(map(id,second_parameters)))):
+            raise ValueError("Overlapping GPU training forwards share gradients")
+        for parameter in (*first_parameters,*second_parameters):
+            if (not isinstance(parameter,torch.Tensor) or
+                    parameter.device!=device or
+                    not parameter.requires_grad):
+                raise ValueError("Qualified GPU forward parameters mismatch device")
+        self.grad_parameters=(*first_parameters,*second_parameters)
         self.min_speedup,self.max_profiles = min_speedup,max_profiles
         self.profiles,self.visits = OrderedDict(),OrderedDict()
         self.streams = None
@@ -242,8 +732,18 @@ class MeasuredIndependentTrainForwards:
         caller = torch.cuda.current_stream(self.device)
         caller.synchronize()
         began = perf_counter()
-        action()
-        action()
+        for _ in range(2):
+            outputs=action()
+            if self.grad_parameters:
+                # Real model parameters, but no optimizer and no mutations
+                # to .grad. Autograd computes the forward+backward schedule
+                # on synthetic loss scalars and releases its graph.
+                scalar_outputs=tuple(
+                    tensor.sum() for result in outputs
+                    for tensor in _tensor_outputs(result))
+                torch.autograd.grad(
+                    scalar_outputs,self.grad_parameters,
+                    allow_unused=True,retain_graph=False)
         caller.synchronize()
         return (perf_counter()-began)/2
 
@@ -272,13 +772,17 @@ class MeasuredIndependentTrainForwards:
                 with torch.no_grad():
                     reference = self._serial(first_input,second_input)
                     candidate = self._parallel(first_input,second_input)
-                    if all(torch.allclose(a,b,rtol=1e-5,atol=1e-6)
-                           for a,b in zip(reference,candidate)):
+                    equivalent = all(
+                        torch.allclose(a,b,rtol=1e-5,atol=1e-6)
+                        for a,b in zip(reference,candidate))
+                if equivalent:
+                    with torch.enable_grad():
                         serial = [self._time(lambda:self._serial(
                             first_input,second_input)) for _ in range(2)]
                         concurrent = [self._time(lambda:self._parallel(
                             first_input,second_input)) for _ in range(2)]
-                        selected = median(concurrent)<median(serial)*(1-self.min_speedup)
+                    selected = (median(concurrent) <
+                                median(serial)*(1-self.min_speedup))
             except (RuntimeError,ValueError,TypeError,NotImplementedError,
                     MemoryError,torch.OutOfMemoryError):
                 self.fallbacks += 1
@@ -308,6 +812,325 @@ class MeasuredIndependentTrainForwards:
             ppo_shared_train_forward_profiles=len(self.profiles))
 
 
+class PinnedGpuStaging:
+    """Bounded CPU-to-GPU upload pipeline for immutable training tensors.
+
+    Large contiguous host fragments are copied into pinned staging banks,
+    then transferred on a dedicated device stream while the CPU assembles
+    later fragments. Exact destination tensor content and order are retained.
+    At the ownership boundary finish() waits ONCE for all DMA to complete,
+    so no pinned host storage outlives an outstanding GPU read.
+
+    Unsupported HIP pinning or small fragments retain torch.copy_'s
+    established synchronous behavior. This staging service owns no policy
+    or optimizer state and does not change minibatch membership.
+    """
+
+    def __init__(self, device, *, max_pinned_bytes=64*1048576,
+                 min_async_bytes=1048576):
+        if (not isinstance(device,torch.device) or device.type!="cuda" or
+                type(max_pinned_bytes) is not int or max_pinned_bytes<1048576 or
+                type(min_async_bytes) is not int or min_async_bytes<1):
+            raise ValueError("Invalid GPU staging lease or transfer threshold")
+        self.device,self.max_pinned_bytes = device,max_pinned_bytes
+        self.min_async_bytes = min_async_bytes
+        self._copy_stream = None
+        self._pending = deque()
+        self._pending_bytes = 0
+        self._free_pinned = []
+        self._pinned_total_bytes = 0
+        self._known_banks = set()
+        self._closed = False
+        self.async_bytes = self.direct_bytes = self.async_copies = 0
+        self.pinned_reuses = self.pinned_allocations = 0
+        self.pinned_cross_shape_reuses = 0
+
+    def _make_stream(self):
+        if self._copy_stream is not None:
+            return True
+        try:
+            self._copy_stream = torch.cuda.Stream(device=self.device)
+        except (RuntimeError,NotImplementedError,AttributeError):
+            return False
+        return True
+
+    def _reap_completed(self):
+        # GPU completion determines when a pinned host bank may be written
+        # again. Querying an event does not synchronize CPU or GPU work.
+        while self._pending:
+            pinned,event,size = self._pending[0]
+            try:
+                completed = event.query()
+            except (RuntimeError,NotImplementedError):
+                completed = False
+            if not completed:
+                break
+            self._pending.popleft()
+            self._pending_bytes -= size
+            self._free_pinned.append(pinned)
+
+    def _checkout(self, source):
+        self._reap_completed()
+        for index,buffer in enumerate(self._free_pinned):
+            if buffer.dtype==source.dtype and buffer.numel()==source.numel():
+                self.pinned_reuses += 1
+                self._free_pinned.pop(index)
+                if buffer.shape!=source.shape:
+                    self.pinned_cross_shape_reuses += 1
+                # A view changes no pinned allocation or lease accounting.
+                # Most PPO map groups are contiguous but use different
+                # (batch,channels,height,width) shapes of equal byte size.
+                return buffer.view(source.shape)
+        nbytes = source.numel()*source.element_size()
+        while self._pinned_total_bytes+nbytes > self.max_pinned_bytes:
+            if self._free_pinned:
+                old = self._free_pinned.pop()
+                self._pinned_total_bytes -= old.numel()*old.element_size()
+                continue
+            if not self._pending:
+                return None
+            # All submitted DMA reads use one stream. Waiting for the
+            # oldest outstanding transfer releases an exact reusable
+            # pinned bank without racing an in-flight host read.
+            pinned,event,size = self._pending.popleft()
+            event.synchronize()
+            self._pending_bytes -= size
+            if pinned.dtype==source.dtype and pinned.numel()==source.numel():
+                self.pinned_reuses += 1
+                if pinned.shape!=source.shape:
+                    self.pinned_cross_shape_reuses += 1
+                return pinned.view(source.shape)
+            self._pinned_total_bytes -= size
+        try:
+            pinned = torch.empty(
+                source.shape,dtype=source.dtype,device='cpu',pin_memory=True)
+        except (RuntimeError,NotImplementedError,MemoryError):
+            return None
+        self._pinned_total_bytes += nbytes
+        self.pinned_allocations += 1
+        return pinned
+
+    def copy_(self, destination, source):
+        if (self._closed or not isinstance(destination,torch.Tensor) or
+                destination.device!=self.device or
+                not isinstance(source,torch.Tensor) or
+                source.device.type!="cpu" or
+                source.shape!=destination.shape or
+                source.dtype!=destination.dtype):
+            raise ValueError("GPU staging requires matching leased output and CPU input")
+        nbytes = source.numel()*source.element_size()
+        if (not source.is_contiguous() or
+                nbytes < self.min_async_bytes or
+                nbytes > self.max_pinned_bytes//2 or
+                not self._make_stream()):
+            destination.copy_(source)
+            self.direct_bytes += nbytes
+            return destination
+        pinned = self._checkout(source)
+        if pinned is None:
+            destination.copy_(source)
+            self.direct_bytes += nbytes
+            return destination
+        try:
+            pinned.copy_(source)
+        except (RuntimeError,NotImplementedError):
+            self._free_pinned.append(pinned)
+            destination.copy_(source)
+            self.direct_bytes += nbytes
+            return destination
+        # A newly allocated destination may belong to a stream different
+        # from the copy stream. Establish allocation/use order once per
+        # bank, without synchronizing the host or imposing a GPU barrier.
+        identity = destination.untyped_storage().data_ptr()
+        if identity not in self._known_banks:
+            self._copy_stream.wait_stream(torch.cuda.current_stream(self.device))
+            self._known_banks.add(identity)
+        try:
+            with torch.cuda.stream(self._copy_stream):
+                destination.copy_(pinned,non_blocking=True)
+                event = torch.cuda.Event()
+                event.record(self._copy_stream)
+            destination.record_stream(self._copy_stream)
+        except (RuntimeError,NotImplementedError):
+            # A partially submitted DMA must finish before its host
+            # staging buffer is released or rewritten by another request.
+            self._copy_stream.synchronize()
+            self._free_pinned.append(pinned)
+            destination.copy_(source)
+            self.direct_bytes += nbytes
+            return destination
+        self._pending.append((pinned,event,nbytes))
+        self._pending_bytes += nbytes
+        self.async_bytes += nbytes
+        self.async_copies += 1
+        return destination
+
+    def upload(self, source):
+        """Transfer a transient PPO microbatch through the same pinned pool.
+
+        Output allocation remains on the caller's compute stream. When a
+        pinned DMA is selected, only that stream waits on the copy's event;
+        no CPU-wide device sync is introduced. Host buffers remain owned by
+        this pool until the device event completes and can then be reused by
+        subsequent microbatches or a later PPO update.
+        """
+        if (self._closed or not isinstance(source,torch.Tensor) or
+                source.device.type!="cpu" or not source.is_contiguous()):
+            raise ValueError("GPU upload requires contiguous host input and a live lease")
+        consumer = torch.cuda.current_stream(self.device)
+        destination = torch.empty(
+            source.shape,dtype=source.dtype,device=self.device)
+        previous_async = self.async_copies
+        self.copy_(destination,source)
+        if self.async_copies != previous_async:
+            # copy_ recorded an event on the same leased transfer stream.
+            # Do not wait on its completion on the host. The stream wait
+            # makes the tensor safe for immediate GPU model consumption.
+            event = self._pending[-1][1]
+            consumer.wait_event(event)
+            destination.record_stream(consumer)
+        return destination
+
+    def finish_update(self):
+        """Finish one immutable GPU upload generation, retaining host buffers.
+
+        Source tensors, shape banks and observations change each PPO update,
+        but the pinned host *capacity* and copy stream can be reused. Drain
+        all outstanding reads before a new rollout can overwrite any data.
+        One stream synchronization per immutable upload generation replaces
+        many per-chunk host waits; no model/optimizer state survives here.
+        """
+        if self._closed:
+            return
+        if self._copy_stream is not None:
+            self._copy_stream.synchronize()
+        while self._pending:
+            pinned,event,size = self._pending.popleft()
+            self._pending_bytes -= size
+            self._free_pinned.append(pinned)
+        self._pending_bytes = 0
+        self._known_banks.clear()
+
+    @contextmanager
+    def update(self):
+        if self._closed:
+            raise RuntimeError("GPU pinned staging pool has been closed")
+        try:
+            yield self
+        finally:
+            self.finish_update()
+
+    def finish(self):
+        if self._closed:
+            return
+        self.finish_update()
+        self._closed = True
+        self._free_pinned.clear()
+        self._pinned_total_bytes = 0
+        self._copy_stream = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.finish()
+
+
+class ImmutableGpuScalarBank:
+    """Cache complete immutable training scalar columns once on a peer GPU.
+
+    PPO's advantage, old-value and target arrays do not change across
+    optimization epochs. Unlike a microbatch transfer cache, this compact
+    bank stores each logical record exactly once, then gathers arbitrary
+    reshuffled minibatches locally on the destination device. Ownership,
+    record keys, and the GPU memory lease remain with the calling trainer.
+    """
+
+    def __init__(self, device, *, max_bytes=64*1048576):
+        if (not isinstance(device,torch.device) or device.type!="cuda" or
+                type(max_bytes) is not int or max_bytes<1):
+            raise ValueError("Invalid secondary GPU scalar residency lease")
+        self.device,self.max_bytes=device,max_bytes
+        self._indices={}
+        self._values=None
+        self._ready=None
+        self._source=None
+        self.rows=self.saved_bytes=self.gather_calls=0
+
+    def stage(self, record_keys, columns):
+        if (not isinstance(record_keys,(list,tuple)) or
+                not isinstance(columns,(list,tuple)) or len(columns)<2 or
+                not all(isinstance(t,torch.Tensor) and t.ndim==1
+                        for t in columns) or
+                any(len(t)!=len(record_keys) or t.requires_grad
+                    for t in columns) or
+                len(set(record_keys))!=len(record_keys)):
+            return False
+        first=columns[0]
+        if (first.device.type!="cuda" or first.device==self.device or
+                any(t.device!=first.device or t.dtype!=first.dtype
+                    for t in columns)):
+            return False
+        wanted=len(record_keys)*len(columns)*first.element_size()
+        if wanted>self.max_bytes:
+            return False
+        try:
+            combined=torch.stack(columns,dim=1)
+            producer=torch.cuda.current_stream(first.device)
+            # The copy is enqueued on the DESTINATION device's current
+            # stream, which may differ from the stream later chosen by its
+            # persistent GPU worker. Ensure that the source GPU has finished
+            # building the immutable tensor before scheduling peer DMA.
+            destination_stream=torch.cuda.current_stream(self.device)
+            try:
+                destination_stream.wait_stream(producer)
+            except (RuntimeError,NotImplementedError):
+                # Some ROCm versions cannot enqueue cross-GPU event waits.
+                # A one-time staged dataset may wait for its producer;
+                # avoid introducing this barrier for each minibatch gather.
+                producer.synchronize()
+            with torch.cuda.device(self.device), torch.cuda.stream(destination_stream):
+                remote=combined.to(self.device,non_blocking=True)
+                ready=torch.cuda.Event()
+                ready.record(destination_stream)
+        except (RuntimeError,MemoryError,torch.OutOfMemoryError):
+            return False
+        self._indices={key:i for i,key in enumerate(record_keys)}
+        self._values=remote
+        self._source=combined
+        self._ready=ready
+        self.rows=len(record_keys)
+        return True
+
+    def gather(self, record_keys):
+        if self._values is None:
+            return None
+        try:
+            positions=[self._indices[key] for key in record_keys]
+        except KeyError:
+            return None
+        stream=torch.cuda.current_stream(self.device)
+        if self._ready is not None:
+            try:
+                stream.wait_event(self._ready)
+            except (RuntimeError,NotImplementedError):
+                # Unsupported cross-device HIP events are uncommon; one
+                # admission-boundary host wait is safer than stale scalar
+                # inputs, and never repeats after the first gather.
+                self._ready.synchronize()
+            self._ready=None
+        indices=torch.as_tensor(positions,device=self.device,dtype=torch.int64)
+        result=self._values.index_select(0,indices)
+        self.saved_bytes += result.numel()*result.element_size()
+        self.gather_calls += 1
+        return tuple(result.unbind(1))
+
+    def clear(self):
+        self._indices.clear()
+        self._values=self._ready=self._source=None
+        self.rows=0
+
+
 class ImmutableGpuRowCache:
     """Reuse immutable observation rows already transferred to another GPU.
 
@@ -332,6 +1155,63 @@ class ImmutableGpuRowCache:
         self.contiguous_view_hits = 0
         self.partial_hits = 0
         self.partial_bytes_saved = 0
+        self._seed_ready = None
+        self._seed_sources = []
+        self.seeded_rows = self.seeded_bytes = 0
+
+    def seed_bank(self, identities, source):
+        """Bulk-stage one frequently reused immutable shape bank.
+
+        The source is already a contiguous GPU bank belonging to the
+        primary optimizer. Reserve only a bounded portion of the secondary
+        cache and keep each row's identity; subsequent shuffled minibatches
+        read local GPU views. This runs before the PPO optimizer loop, not
+        during a critical forward/backward dispatch.
+        """
+        if (not isinstance(identities,(tuple,list)) or
+                not isinstance(source,torch.Tensor) or
+                source.device.type!="cuda" or source.device==self.device or
+                source.ndim<2 or not source.is_contiguous() or
+                len(identities)!=len(source) or
+                len(set(identities))!=len(identities) or
+                any(key in self.rows for key in identities)):
+            return 0
+        bytes_needed=source.numel()*source.element_size()
+        if not bytes_needed or self.resident_bytes+bytes_needed>self.max_bytes:
+            return 0
+        try:
+            producer=torch.cuda.current_stream(source.device)
+            consumer=torch.cuda.current_stream(self.device)
+            try:
+                consumer.wait_stream(producer)
+            except (RuntimeError,NotImplementedError):
+                producer.synchronize()
+            with torch.cuda.device(self.device), torch.cuda.stream(consumer):
+                remote=source.to(self.device,non_blocking=True)
+                ready=torch.cuda.Event()
+                ready.record(consumer)
+        except (RuntimeError,NotImplementedError,torch.OutOfMemoryError):
+            return 0
+        for index,key in enumerate(identities):
+            self.rows[key]=remote[index:index+1]
+        self._seed_ready=ready
+        self._seed_sources.append(source)
+        self.seeded_rows += len(identities)
+        self.seeded_bytes += bytes_needed
+        self.resident_bytes += bytes_needed
+        self.copied_bytes += bytes_needed
+        self.admitted_buffers += 1
+        return len(identities)
+
+    def _wait_seed(self):
+        if self._seed_ready is None:
+            return
+        try:
+            torch.cuda.current_stream(self.device).wait_event(self._seed_ready)
+        except (RuntimeError,NotImplementedError):
+            self._seed_ready.synchronize()
+        self._seed_ready=None
+        self._seed_sources.clear()
 
     @staticmethod
     def _contiguous_cached_view(views):
@@ -349,7 +1229,7 @@ class ImmutableGpuRowCache:
                 first,(len(views),*first.shape[1:]),stride)
         return None
 
-    def fetch(self, identifiers, boards):
+    def fetch(self, identifiers, boards, *, producer_stream=None):
         if (not isinstance(boards,torch.Tensor) or boards.ndim<1 or
                 boards.device.type!="cuda" or
                 len(identifiers)!=len(boards) or
@@ -357,6 +1237,8 @@ class ImmutableGpuRowCache:
             raise ValueError("Immutable GPU row request changed shape or identity")
         if boards.device == self.device:
             return boards
+        if self._seed_ready is not None:
+            self._wait_seed()
         keys = tuple(identifiers)
         if keys and all(key in self.rows and
                         self.rows[key].shape[1:] == boards.shape[1:] and
@@ -401,9 +1283,21 @@ class ImmutableGpuRowCache:
                 len(hit_indices)*row_bytes >= 512*1024):
             try:
                 # One compact source gather and one peer transfer replace
-                # the entire batch's data movement. No Python GPU readback.
-                source_rows = boards.index_select(
-                    0,torch.as_tensor(missing_indices,device=boards.device))
+                # the entire batch's data movement. The gather must run on
+                # the SOURCE GPU's producer stream, even when this call is
+                # launched by a secondary GPU's persistent Python worker.
+                # Otherwise per-thread default streams can race with the
+                # primary worker producing the observation tensor.
+                if producer_stream is None:
+                    source_rows = boards.index_select(
+                        0,torch.as_tensor(missing_indices,device=boards.device))
+                else:
+                    with torch.cuda.device(boards.device), torch.cuda.stream(producer_stream):
+                        source_rows = boards.index_select(
+                            0,torch.as_tensor(missing_indices,device=boards.device))
+                        ready = torch.cuda.Event()
+                        ready.record(producer_stream)
+                    torch.cuda.current_stream(self.device).wait_event(ready)
                 fresh = source_rows.to(self.device,non_blocking=True)
                 result = torch.empty(
                     boards.shape,device=self.device,dtype=boards.dtype)
@@ -418,6 +1312,9 @@ class ImmutableGpuRowCache:
                 # residency rather than prevent the required PPO forward.
                 self.oom_evictions += 1
                 self.clear()
+                # Release temporary output/selection buffers before the
+                # authoritative full peer copy attempts its allocation.
+                source_rows = fresh = result = prior = None
             else:
                 fresh_bytes = fresh.numel()*fresh.element_size()
                 self.copied_bytes += fresh_bytes
@@ -456,6 +1353,12 @@ class ImmutableGpuRowCache:
         return copied
 
     def clear(self):
+        # Retired peer banks must not be reclaimed while an asynchronous
+        # seed copy is still producing their contents.
+        if self._seed_ready is not None:
+            self._seed_ready.synchronize()
+            self._seed_ready=None
+        self._seed_sources.clear()
         self.rows.clear()
         self.resident_bytes = 0
 
@@ -467,6 +1370,8 @@ class ImmutableGpuRowCache:
             cached_peer_copied_bytes=self.copied_bytes,
             cached_peer_buffer_allocations=self.admitted_buffers,
             cached_peer_oom_evictions=self.oom_evictions,
+            cached_peer_seeded_rows=self.seeded_rows,
+            cached_peer_seeded_bytes=self.seeded_bytes,
             cached_peer_contiguous_view_hits=self.contiguous_view_hits,
             cached_peer_partial_hits=self.partial_hits,
             cached_peer_partial_bytes_saved=self.partial_bytes_saved)
@@ -893,6 +1798,110 @@ class PersistentGpuForwardPool:
         self._closed = False
         self.calls = 0
         self.prepared_calls = 0
+        self._pending_device_timings = deque()
+        self._device_work_rates = {device:deque(maxlen=8)
+                                   for device in self.devices}
+        self.device_timing_samples = 0
+        self._admitted_capacity_weights = {}
+        self.training_updates = 0
+
+    def begin_training_update(self):
+        """Requalify compute sharing after on-policy inputs are replaced.
+
+        The machine's independent background GPU work can change from one
+        PPO update to the next. Retain the expensive Python workers, but
+        discard per-update throughput weights and timing evidence. The
+        caller must have joined the previous update's backward/optimizer
+        work before this boundary.
+        """
+        if self._closed or current_thread() is not self._owner:
+            raise RuntimeError("GPU forward update requires its owner")
+        # Last update's event samples have completed at the existing PPO
+        # GPU synchronization boundary. Preserve a bounded recent window:
+        # short on-policy updates may not contain three samples on their
+        # own, and clearing every update prevented adaptation entirely.
+        self._collect_device_timings()
+        self._pending_device_timings.clear()
+        self._admitted_capacity_weights.clear()
+        self.training_updates += 1
+        if self.training_updates % 8 == 0:
+            # Periodically remeasure under the current co-tenant load,
+            # rather than treating last hour's GPU sharing as permanent.
+            for rates in self._device_work_rates.values():
+                rates.clear()
+
+    def _collect_device_timings(self):
+        if not self._pending_device_timings:
+            return
+        waiting = deque()
+        while self._pending_device_timings:
+            device,begin,end,pixels = self._pending_device_timings.popleft()
+            try:
+                if not end.query():
+                    waiting.append((device,begin,end,pixels))
+                    continue
+                elapsed_ms = begin.elapsed_time(end)
+            except (RuntimeError,ValueError,NotImplementedError):
+                continue
+            if elapsed_ms > 0 and pixels > 0:
+                self._device_work_rates[device].append(pixels/elapsed_ms)
+                self.device_timing_samples += 1
+        self._pending_device_timings = waiting
+
+    def measured_capacity_weights(self, devices=None):
+        """Return stable relative effective pixel rates, without GPU waits.
+
+        This is advisory. The existing memory allocator remains the hard
+        per-device upper bound, and the outer useful-throughput tuner can
+        still choose one GPU when data parallelism loses overall.
+        """
+        self._collect_device_timings()
+        ordinals = self.devices if devices is None else tuple(devices)
+        if ordinals in self._admitted_capacity_weights:
+            return self._admitted_capacity_weights[ordinals]
+        if any(len(self._device_work_rates[device])<3 for device in ordinals):
+            return None
+        rates = [median(self._device_work_rates[device]) for device in ordinals]
+        if min(rates) <= 0 or max(rates)/min(rates)<1.15:
+            return None
+        reference = median(rates)
+        # A rate derived from equal shares is NOT a stable measurement
+        # after assigning unequal shares: fixed GPU launch overhead makes
+        # pixels/ms depend on batch size. Freeze this PPO update's initial
+        # comparable split, rather than creating self-reinforcing imbalance
+        # and starving the slower card as the allocated rows shrink.
+        chosen = tuple(min(1.5,max(0.67,rate/reference)) for rate in rates)
+        self._admitted_capacity_weights[ordinals] = chosen
+        return chosen
+
+    def capacity_metrics(self):
+        """Read completed per-GPU forward service rates without a GPU wait.
+
+        Timing samples cover input materialization and model forward only,
+        not PPO backward, optimizer steps, or simulated frames. Callers
+        can compare the two devices' effective rates under their shared
+        workload and decide whether peer contention is worth addressing.
+        Values are reported only after three completed samples per device;
+        an absent rate is unknown, not a measured zero.
+        """
+        if self._closed or current_thread() is not self._owner:
+            raise RuntimeError("GPU forward metrics require the live owner")
+        self._collect_device_timings()
+        metrics = dict(
+            gpu_forward_capacity_pending_events=len(self._pending_device_timings),
+            gpu_forward_capacity_timing_samples=self.device_timing_samples)
+        rates = []
+        for slot, device in enumerate(self.devices):
+            samples = self._device_work_rates[device]
+            metrics[f'gpu_forward_capacity_device_{slot}_samples'] = len(samples)
+            rate = median(samples) if len(samples) >= 3 else None
+            rates.append(rate)
+            if rate is not None:
+                metrics[f'gpu_forward_capacity_device_{slot}_pixels_per_ms'] = rate
+        if len(rates) >= 2 and rates[0] is not None and rates[1] is not None:
+            metrics['gpu_forward_capacity_secondary_primary_rate_ratio'] = (
+                rates[1] / rates[0])
+        return metrics
 
     @staticmethod
     def _forward(model, parts, device, stream, grad_enabled,
@@ -928,21 +1937,49 @@ class PersistentGpuForwardPool:
 
     @staticmethod
     def _prepared_forward(model, factory, device, stream, producer_event,
-                          grad_enabled, autocast_enabled, autocast_dtype):
+                          grad_enabled, autocast_enabled, autocast_dtype,
+                          sampled_pixels):
         with (torch.set_grad_enabled(grad_enabled),
               torch.cuda.device(device),
               torch.cuda.stream(stream),
               torch.autocast("cuda", enabled=autocast_enabled,
                              dtype=autocast_dtype)):
+            started = finished = None
             # Per-device input factories may copy tensors produced on GPU 0
             # during the current optimizer minibatch. The producer event
             # establishes a proper cross-device dependency without waiting
             # for GPU 2's transfer on the host or delaying GPU 1's forward.
             if producer_event is not None:
-                stream.wait_event(producer_event)
-            return model(*factory())
+                try:
+                    stream.wait_event(producer_event)
+                except (RuntimeError,NotImplementedError):
+                    # Some HIP configurations cannot enqueue cross-device
+                    # event waits. Block only this worker, not GPU 1's
+                    # independent forward, while preserving input ordering.
+                    producer_event.synchronize()
+            # Measure only this device's actual input-copy and forward
+            # service time. Starting the timer BEFORE waiting on GPU 0
+            # misattributes unrelated producer backlog to GPU 1/2, causing
+            # measured capacity weights to send extra work to the already
+            # busy producer and leave the second GPU idle. The event itself
+            # is enqueued after the dependency, without any CPU sync.
+            if sampled_pixels:
+                try:
+                    started = torch.cuda.Event(enable_timing=True)
+                    started.record(stream)
+                except (RuntimeError,NotImplementedError,AttributeError):
+                    started = None
+            result = model(*factory())
+            if started is not None:
+                try:
+                    finished = torch.cuda.Event(enable_timing=True)
+                    finished.record(stream)
+                except (RuntimeError,NotImplementedError,AttributeError):
+                    started = finished = None
+            return result, (started,finished,sampled_pixels)
 
-    def run_prepared(self, models, input_factories, devices=None):
+    def run_prepared(self, models, input_factories, devices=None, *,
+                     pixel_work=None):
         """Prepare GPU inputs and launch their forwards concurrently.
 
         Factories are side-effect-free, single-use callables that return
@@ -959,7 +1996,10 @@ class PersistentGpuForwardPool:
                 ordinals != self.devices[:len(ordinals)] or
                 len(models)!=len(ordinals) or
                 len(input_factories)!=len(ordinals) or
-                any(not callable(factory) for factory in input_factories)):
+                any(not callable(factory) for factory in input_factories) or
+                (pixel_work is not None and
+                 (len(pixel_work)!=len(ordinals) or
+                  any(type(n) is not int or n < 0 for n in pixel_work)))):
             raise ValueError("GPU prepared cohort must match its leased devices")
         streams = [torch.cuda.current_stream(device) for device in ordinals]
         producer = torch.cuda.Event()
@@ -967,10 +2007,24 @@ class PersistentGpuForwardPool:
         grad_enabled = torch.is_grad_enabled()
         autocast_enabled = torch.is_autocast_enabled("cuda")
         autocast_dtype = torch.get_autocast_dtype("cuda")
+        # Compare only balanced same-shape work. Unequal assigned batches
+        # have different fixed kernel launch costs and could otherwise
+        # teach a self-reinforcing slowdown on the GPU assigned fewer rows.
+        # Samples are retained over a short number of PPO updates; a
+        # steady job need not run dozens of shape groups per update merely
+        # to discover when its other GPU is inference-contended.
+        comparable = (pixel_work is not None and
+                      min(pixel_work)>0 and
+                      max(pixel_work)/min(pixel_work)<=1.12)
+        sample = (comparable and
+                  ordinals not in self._admitted_capacity_weights and
+                  self.prepared_calls % 4 == 0 and
+                  len(self._pending_device_timings)<32)
         futures = [self._workers.submit(
             self._prepared_forward, model, factory, device, stream,
             producer if i else None,
-            grad_enabled, autocast_enabled, autocast_dtype)
+            grad_enabled, autocast_enabled, autocast_dtype,
+            pixel_work[i] if sample else 0)
             for i,(model,factory,device,stream) in enumerate(zip(
                 models,input_factories,ordinals,streams))]
         # Join Python dispatch, not GPU completion. Original tensors and
@@ -978,7 +2032,15 @@ class PersistentGpuForwardPool:
         wait(futures)
         self.calls += 1
         self.prepared_calls += 1
-        return [future.result() for future in futures]
+        collected = [future.result() for future in futures]
+        if sample:
+            for device,(_,timing) in zip(ordinals,collected):
+                begin,end,pixels = timing
+                if begin is not None and end is not None:
+                    self._pending_device_timings.append(
+                        (device,begin,end,pixels))
+        self._collect_device_timings()
+        return [output for output,_ in collected]
 
     def close(self):
         if current_thread() is not self._owner:

@@ -603,6 +603,100 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
             throw Error('Bees native environment count must fit the CPU claim, with exactly one exclusive GPU for ROCm or no GPU for CPU.');
     }
 }
+// Persisted TinyBrains authoring metadata originates exclusively from a
+// bounded, authenticated agent report. Offline catalogues may define drafts,
+// but may never prove execution readiness or reserve native resources.
+function tinyBrainsAuthoringCatalog(machine) {
+    if(machine.status==='connected')
+        return machine.local_executor_enabled===true&&
+            machine.installed_projects?.includes('tinybrains')
+            ?machine.design_catalog?.tinybrains||null:null;
+    if(machine.status==='offline'&&machine.agent_enrolled===true)
+        return machine.trusted_design_catalog?.tinybrains||null;
+    return null;
+}
+// Preserve only worker-advertised, approved environment scalar defaults when
+// a TinyBrains Design is saved. Evaluation authoring can then resolve the
+// identical saved environment while the agent is temporarily disconnected.
+// Never accept environment defaults supplied in a browser request.
+function approvedTinyBrainsEnvironment(parameters,machines) {
+    const catalog=[...(machines||[])].sort((a,b)=>
+        Number(b.status==='connected')-Number(a.status==='connected'))
+        .map(tinyBrainsAuthoringCatalog)
+        .find(item=>item?.profiles?.[parameters.profile]
+            ?.profile_sha256===parameters.profile_sha256);
+    if(!catalog||!Array.isArray(catalog.fields)||catalog.fields.length>128||
+        !SHA256.test(String(catalog.source_sha256||'')))return null;
+    if(parameters.design_source_sha256&&
+        parameters.design_source_sha256!==catalog.source_sha256)return null;
+    const fields=catalog.fields.filter(field=>
+        typeof field.key==='string'&&field.key.startsWith('environment.')&&
+        field.section==='environment'&&field.default!==undefined);
+    const values={};
+    for(const field of fields) {
+        const key=field.key.slice('environment.'.length);
+        const value=parameters.design_overrides?.[field.key]??field.default;
+        if(!/^[a-z][a-z0-9_]{0,63}$/.test(key)||
+            !['number','boolean','string'].includes(typeof value)||
+            typeof value==='number'&&!Number.isFinite(value))
+            return null;
+        values[key]=value;
+    }
+    if(!Number.isSafeInteger(values.max_turns)||values.max_turns<1||
+        values.max_turns>1000)return null;
+    return {parameters_sha256:crypto.createHash('sha256')
+        .update(JSON.stringify(parameters)).digest('hex'),
+        source_sha256:catalog.source_sha256,
+        profile_sha256:parameters.profile_sha256,
+        parameters:values};
+}
+// Resolve browser-selected opponent IDs against trusted, bounded catalogue
+// data. Persist immutable hashes so changed or missing opponent bytes cannot
+// silently alter queued training jobs.
+function pinTinyBrainsOpponents(parameters,machines,previous=null) {
+    if(parameters.training_opponent_ids===undefined) {
+        delete parameters.training_opponent_pins;
+        return;
+    }
+    const ids=parameters.training_opponent_ids;
+    if(!Array.isArray(ids)||!ids.length||ids.length>16||
+        new Set(ids).size!==ids.length||
+        ids.some(id=>typeof id!=='string'||id.length>64))
+        throw Error('Select 1–16 distinct approved training opponents.');
+    // Editing map settings or attaching an evaluation must not silently
+    // re-pin an unchanged opponent roster to newer/different model bytes.
+    // These pins were derived and verified by the Hub at the earlier save.
+    const earlier=previous?.parameters;
+    if(earlier?.profile===parameters.profile&&
+        earlier.profile_sha256===parameters.profile_sha256&&
+        JSON.stringify(earlier.training_opponent_ids)===JSON.stringify(ids)&&
+        Array.isArray(earlier.training_opponent_pins)&&
+        earlier.training_opponent_pins.length===ids.length&&
+        earlier.training_opponent_pins.every((pin,i)=>pin?.id===ids[i])) {
+        parameters.training_opponent_pins=copy(earlier.training_opponent_pins);
+        return;
+    }
+    const catalog=[...(machines||[])].sort((a,b)=>
+        Number(b.status==='connected')-Number(a.status==='connected'))
+        .map(tinyBrainsAuthoringCatalog)
+        .find(item=>item?.profiles?.[parameters.profile]
+            ?.profile_sha256===parameters.profile_sha256&&
+            Array.isArray(item.opponent_catalog))?.opponent_catalog;
+    if(!catalog)
+        throw Error('No authenticated TinyBrains opponent catalog matches this Design profile. Check the worker profile and installed opponent models.');
+    parameters.training_opponent_pins=ids.map(id=>{
+        const row=catalog.find(item=>item.id===id);
+        if(!row)throw Error('Selected opponent '+id+' is not installed and verified on the TinyBrains worker.');
+        if(!['current','frozen'].includes(id)&&
+            !SHA256.test(String(row.model_sha256||'')))
+            throw Error('Selected training model has no valid frozen fingerprint.');
+        if(!['current','frozen','nano','micro'].includes(id)&&
+            !SHA256.test(String(row.checkpoint_sha256||'')))
+            throw Error('Selected frozen network requires its original checkpoint SHA-256.');
+        return {id,...(row.model_sha256?{model_sha256:row.model_sha256}:{}),
+            ...(row.checkpoint_sha256?{checkpoint_sha256:row.checkpoint_sha256}:{})};
+    });
+}
 function requireCourierTrainingPin(projectId,parameters) {
     if(projectId!=='courier')return;
     const changes=parameters?.design_overrides;
@@ -2069,6 +2163,10 @@ class ExperimentHub {
         // Heartbeats are ephemeral. After a coordinator restart, a machine is
         // not considered connected until it authenticates again.
         this.agentReports = new Map();
+        // Process-local replay barrier. A delayed in-flight request from an
+        // instance that explicitly signed off must never resurrect its
+        // connection or block a newly authenticated replacement.
+        this.closedAgentInstances = new Map();
         // A planned software switch can briefly replace the agent process.
         // Pause queue automation while the new OS owner re-authenticates;
         // unrelated unplanned disconnects still disarm for safety.
@@ -5891,6 +5989,11 @@ class ExperimentHub {
              !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(instance)))
             throw Error('Native execution agent requires a process instance identity.');
         const previous=this.agentReports.get(machine.id);
+        if(instance&&this.closedAgentInstances.get(machine.id)?.includes(instance)) {
+            const error=Error('Agent instance has already signed off; start a new service instance.');
+            error.status=409;
+            throw error;
+        }
         const restartApproval=(this.state.evaluator_actions||[]).find(action=>
             action.machine_id===machine.id&&action.action==='restart-agent'&&
             action.status==='awaiting_restart'&&action.agent_instance_id!==instance&&
@@ -5968,6 +6071,20 @@ class ExperimentHub {
                 lease.resources,lease.gpu_bindings)===null) {
                 proof.status='stale';
                 proof.diagnostic='Physical GPU identity changed or disappeared; request a fresh device access probe.';
+                changed=true;
+            }
+        }
+        // Save only genuinely changed, validated authoring metadata. This
+        // comes from the already authenticated heartbeat, never browser
+        // input. It remains available when the agent or coordinator restarts.
+        if(report.local_executor&&
+            report.installed_projects.includes('tinybrains')&&
+            report.design_catalog?.tinybrains) {
+            const registered=next.machines.find(m=>m.id===machine.id);
+            const trusted={tinybrains:report.design_catalog.tinybrains};
+            if(registered&&JSON.stringify(registered.trusted_design_catalog)!==
+                    JSON.stringify(trusted)) {
+                registered.trusted_design_catalog=copy(trusted);
                 changed=true;
             }
         }
@@ -6277,6 +6394,12 @@ class ExperimentHub {
             // connected worker, a fresh execution lease receipt or an agent
             // instance lock until the heartbeat TTL expires. Persisted job
             // ownership and native service journals remain untouched.
+            if(instance) {
+                const closed=this.closedAgentInstances.get(machine.id)||[];
+                if(!closed.includes(instance))
+                    this.closedAgentInstances.set(machine.id,
+                        [...closed,instance].slice(-16));
+            }
             this.invalidateAgentIdentity(machine.id,
                 'One-shot native agent signed off; review and re-arm automation with a continuously running agent.');
             return {machine_id:machine.id,status:'connected',
@@ -6383,6 +6506,16 @@ class ExperimentHub {
         if(project.id==='ants')throw Error('Ants-v2 Hub integration is retired.');
         const params = config(value.parameters);
         validateBeesNativeDefinition(project.id,params);
+        const previous=value.id?this.state.configurations.find(c=>
+            c.id===value.id&&c.project_id===project.id&&
+            c.revision===value.revision):null;
+        // state.machines is the persistent registration registry, *not* the
+        // authenticated capability projection. Use the same derived source
+        // that Design sees, including a bounded trusted offline catalogue.
+        const designMachines=project.id==='tinybrains'
+            ?this.snapshot().machines:null;
+        if(project.id==='tinybrains')
+            pinTinyBrainsOpponents(params,designMachines,previous);
         requireCourierTrainingPin(project.id,params);
         if(project.id==='tinybrains'&&Object.hasOwn(params,'rollout_endpoints'))
             throw Error('Select TinyBrains rollout machines when reserving the group.');
@@ -6421,6 +6554,13 @@ class ExperimentHub {
         if(monitor)item.evaluation_monitor=monitor;
         else if(Object.hasOwn(value,'evaluation_monitor'))delete item.evaluation_monitor;
         compatibleMonitoringStop(item.evaluation_monitor,item.evaluation_stop);
+        if(project.id==='tinybrains') {
+            const frozen=approvedTinyBrainsEnvironment(params,designMachines);
+            if(frozen)item.environment_snapshot=frozen;
+            else if(item.environment_snapshot?.parameters_sha256!==
+                    crypto.createHash('sha256').update(JSON.stringify(params)).digest('hex'))
+                delete item.environment_snapshot;
+        }
         this.commit(next);
         return copy(item);
     }

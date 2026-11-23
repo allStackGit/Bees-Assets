@@ -15,6 +15,8 @@ const FRONTEND_PATHS=new Set([
     'Training/experiments.html',
     'Training/experiment_hub_ui.js',
     'Training/experiment_hub_local_services_ui.js',
+    'Training/experiment_hub_tinybrains_library_ui.js',
+    'Training/experiment_hub_bees_bridge_ui.js',
     'Training/experiment_hub_beaker.svg',
 ]);
 async function workerChangedPaths(repo,base,head) {
@@ -34,6 +36,7 @@ const COORDINATOR_ONLY=new Set([
     'experiment_hub_history.js','experiment_hub_evaluation_history.js',
     'experiment_hub_observations.js','experiment_hub_throughput.js',
     'experiment_hub_local_evaluators.js',
+    'experiment_hub_tinybrains_eval_library.js',
     'experiment_hub_local_courier_evaluators.js',
     // Evaluation and Design helpers are also imported by native agent
     // adapters: updates must restart BOTH processes at an idle boundary.

@@ -751,6 +751,16 @@ label.hub-toggle-row > input[type="checkbox"] {
     flex: 0 0 19px;
     margin: 1px 0 0;
 }
+/* Bound map/opponent checkbox hit areas instead of the whole grid cell. */
+#hub-design-environment label.hub-toggle-row {
+    justify-self: start;
+    width: fit-content;
+    max-width: 100%;
+}
+#hub-design-environment label.hub-toggle-row > input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+}
 #hub-automation-machines { margin: 12px 0; }
 #hub-automation-machines label { font-size: 13px; font-weight: 650; line-height: 1.45; }
 #hub-job-rows td:last-child { min-width: 195px; white-space: normal; }
@@ -904,6 +914,7 @@ label.hub-toggle-row > input[type="checkbox"] {
 
 <nav class="hub-tabs" role="tablist" aria-label="Experiment Hub navigation">
   <button type="button" data-hub-go="design" aria-selected="false">Design</button>
+  <button type="button" data-hub-go="evaluations" aria-selected="false">Evaluations</button>
   <button type="button" data-hub-go="train" aria-selected="false">Train</button>
   <button type="button" data-hub-go="monitor" aria-selected="true">Monitor</button>
   <button type="button" data-hub-go="compare" aria-selected="false">Compare</button>
@@ -1026,6 +1037,11 @@ label.hub-toggle-row > input[type="checkbox"] {
       <p class="muted">Project registration does not install executable code. Only trusted server-side adapters may launch jobs.</p>
     </form>
   </div>
+</section>
+<section data-hub-tab="evaluations" data-project="other">
+  <h2>Evaluation library</h2>
+  <p class="muted">Create independent evaluations from saved Design revisions. Save the training environment first, then create an evaluation here and attach it to a Design monitoring policy. Evaluations do not start training or modify existing jobs.</p>
+  <div id="hub-evaluations-library"></div>
 </section>
 <section data-hub-tab="train" data-project="bees">
   <h2>Ordinary Bees training</h2>

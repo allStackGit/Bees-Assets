@@ -62,6 +62,16 @@
                 lines.push([map.map,map.players,map.trials,map.win,map.draw,
                     map.loss,mean,top].join(' | '));
             }
+            if(Array.isArray(report.opponents)&&report.opponents.length) {
+                lines.push('', 'Mixed-opponent outcomes:',
+                    'Opponent | Games present | Opponent seats | Whole-game wins | Draws | Losses | Pairwise higher | Tied | Lower');
+                for(const opponent of report.opponents)
+                    lines.push([opponent.id,opponent.games,opponent.seats,
+                        opponent.win,opponent.draw,opponent.loss,
+                        opponent.pair_win??'—',opponent.pair_draw??'—',
+                        opponent.pair_loss??'—'].join(' | '));
+                lines.push('Pairwise comparisons are correlated within a multiplayer match; they are not independent game wins.');
+            }
             const pre=document.createElement('pre');
             pre.style.whiteSpace='pre';
             pre.style.maxHeight='420px';
@@ -134,6 +144,9 @@
                         item.id==='micro-season'?'TinyBrains Micro · all 76 season maps (2/4/6 players)':
                         item.id==='mini-season'?'TinyBrains Frozen Mini · all 76 season maps (2/4/6 players)':
                         item.id.startsWith('history-')?'TinyBrains Frozen checkpoint '+item.id.slice(-10)+' · all 76 maps':
+                        item.id.startsWith('mix-')?('TinyBrains Mixed · '+(
+                            info.custom_library?.templates?.find(t=>t.suite_id===item.suite_id)?.name||
+                            item.suite_id)):
                             'TinyBrains Nano + Micro (same checkpoint)';
             const status=document.createElement('span');
             status.textContent=!item.installed?(item.reason||'Not installed'):
@@ -144,7 +157,7 @@
                         ?' · last result: '+item.last_result:'')+
                     (item.last_error?' · '+item.last_error:'');
             const expensive=item.project==='tinybrains'&&
-                (item.id.endsWith('-season')||item.id.startsWith('history-'));
+                (item.id.endsWith('-season')||item.id.startsWith('history-')||item.id.startsWith('mix-'));
             const admissionBlocked=expensive&&
                 !info.evaluation_capacity?.ready;
             if(admissionBlocked&&!item.running)
@@ -152,7 +165,7 @@
                     (info.evaluation_capacity?.reason||'local resource capacity unavailable');
             line.append(title,status);
             if(item.managed&&item.project==='tinybrains'&&
-                (item.id.endsWith('-season')||item.id.startsWith('history-'))) {
+                (item.id.endsWith('-season')||item.id.startsWith('history-')||item.id.startsWith('mix-'))) {
                 const details=document.createElement('button');
                 details.type='button';
                 details.textContent='Map results';
@@ -319,7 +332,7 @@
                 'requested only after the Hub accepts the one-use preflight receipt.'
             :'Request '+action+' for evaluator '+unit+' on '+machine_id+
                 '? The enrolled agent verifies fixed local paths and approvals. '+
-                'A safe agent restart is required after suite setup or refresh.';
+                'Installed suites are advertised on the agent’s next heartbeat without a restart.';
         if(busy||!confirm(warning+' No action is automatically replayed.'))return;
         busy=true;
         try {
@@ -406,6 +419,7 @@
             state=data;
             renderEvaluators(data.evaluators);
             renderRemoteEvaluators(data.remote_evaluators);
+            document.dispatchEvent(new CustomEvent('hub-local-services-status',{detail:data}));
             const workerOptions=(data.tinybrains_collectors||[]);
             if(tinyWorker) {
                 const former=tinyWorker.value;
