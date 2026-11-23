@@ -23,6 +23,7 @@ import uuid
 
 from experiment_hub_bees_native_train import require_file, verify_pinned_runtime
 from bees_unity_port_reservation import reserve_base_port
+from bees_unity_worker_runtime import StagedUnityPlayer
 
 SHA = re.compile(r"^[0-9a-f]{64}$")
 FIELDS = {
@@ -273,13 +274,19 @@ def main(argv=None) -> int:
     # Lock one machine-local communicator port block for the actor lifetime.
     root = Path(job["output_root"])
     base_port, port_lock = reserve_base_port(root, job["job_id"], job["envs"])
+    player = None
     try:
+        player = StagedUnityPlayer(Path(job["game_binary"]), root)
+        live_binary = player.start(job["game_payload_sha256"])
+        # The learner's RunOptions travel with the broker; actor logs must
+        # use this machine's private Hub artifact directory.
+        os.environ["BEES_TRAINING_LOG_DIR"] = str(root / "rollout-logs")
         actor_argv = [
             "--actor-key", "hub-" + job["learner_job_id"] + "-" + str(job["slot"]),
             "--envs", str(job["envs"]),
             "--broker-host", "127.0.0.1",
             "--broker-port", str(job["broker_port"]),
-            "--env", job["game_binary"],
+            "--env", str(live_binary),
             "--auth-token-file", job["auth_token_file"],
             "--local-base-port", str(base_port),
             "--torch-device", job["device"],
@@ -304,7 +311,11 @@ def main(argv=None) -> int:
         from bees_elastic_wan_actor_worker import main as run_actor
         return run_actor(actor_argv)
     finally:
-        port_lock.close()
+        try:
+            if player is not None:
+                player.close()
+        finally:
+            port_lock.close()
 
 
 if __name__ == "__main__":
