@@ -1349,9 +1349,12 @@ impl PeerClient {
         // outcome. The LAN window must obey the same presentation rule.
         // End is still allowed to release a live held-fire gesture.
         if self.input_suppressed &&
-            !(action["kind"]=="held_fire" && action["input"]["action"]=="End")
+            !(action["kind"]=="held_fire" && action["input"]["action"]=="End") &&
+            !(action["kind"]=="surrender" &&
+                self.state.as_ref().is_some_and(|state|
+                    state["waiting_for_player_reconnect"]==true))
         {
-            return Err(invalid("orders unavailable during briefing or after battle").into());
+            return Err(invalid("orders unavailable during briefing or while the match is held").into());
         }
         let request=self.next_request;
         let submitted=Instant::now();
@@ -3608,6 +3611,8 @@ pub fn connect_remote(
         let lobby_waiting=peer.state.as_ref()
             .is_some_and(|state|state["lobby"]["waiting"]==true);
         if lobby_waiting && !show_controls_help && !show_battle_menu &&
+            !controls_open && !show_codex && !show_campaign_rewards &&
+            surrender_confirmation.is_none() &&
             !peer.spectator && window.is_active() &&
             window.is_key_pressed(Key::Enter,KeyRepeat::No)
         {
