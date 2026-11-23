@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Assemble one native fixed-seed evaluation across different real game fleets.
+"""Assemble real native Levels for joint training or fixed-seed evaluation.
 
-Each Level is a complete original CombatWorld scene, with its own actor roster,
-mission, reinforcement plan and seeds. No extra gameplay or policy loop is
-created: evaluate_policy.py consumes the resulting ordinary multi-Level Run.
+Each Level retains its own physical map, original fleet, policy agents,
+mission events, reinforcement plan and episode seeds. All Levels execute
+through the same native CombatWorld; the shared Stage and model ABI must
+match. No second gameplay or policy implementation is introduced.
 """
 
 import argparse
@@ -19,11 +20,12 @@ from native_training_artifacts import atomic_json, file_sha256, sync_directory
 
 
 PER_RUN = {
-    "run_id", "stage_name", "levels", "model_manifest", "notifications",
+    "run_id", "levels", "model_manifest", "notifications",
     "connection_checkpoint", "rollout_summary", "policy_capture",
     "host_recovery_checkpoint", "next_squad_item_id",
 }
-PATH_FIELDS = ("policy_worker", "collision_matrix", "stage_palette")
+PATH_FIELDS = ("policy_worker", "collision_matrix", "stage_palette",
+               "model_manifest")
 
 
 def load(path: Path) -> dict:
@@ -61,9 +63,12 @@ def physical_contract(config: dict) -> dict:
     return {key: value for key, value in config.items() if key not in PER_RUN}
 
 
-def assemble(output: Path, source_paths: list[Path]) -> dict:
-    if not 2 <= len(source_paths) <= 32:
-        raise ValueError("native multi-scene evaluation requires 2..32 distinct sources")
+def assemble(output: Path, source_paths: list[Path],
+             training: bool = False, recovery: bool = False) -> dict:
+    if not 2 <= len(source_paths) <= 64:
+        raise ValueError("native joint Level run requires 2..64 distinct sources")
+    if recovery and not training:
+        raise ValueError("host recovery is a native training option, not a holdout option")
     source_paths = [path.resolve(strict=True) for path in source_paths]
     if len(set(source_paths)) != len(source_paths):
         raise ValueError("evaluation cannot double-count one authored source run")
@@ -72,9 +77,23 @@ def assemble(output: Path, source_paths: list[Path]) -> dict:
     for path, run in zip(source_paths[1:], runs[1:]):
         if physical_contract(run) != shared:
             raise ValueError(
-                f"{path}: physical Stage, model worker, fixed-step or episode "
-                "contract differs; separate evaluations are required"
+                f"{path}: original Stage, collision assets, native model worker, "
+                "fixed-step or experiment contract differs; separate runs are required"
             )
+    manifest_sha = None
+    if training:
+        manifest = runs[0].get("model_manifest")
+        if not isinstance(manifest, str) or not Path(manifest).is_file():
+            raise ValueError("joint training needs an existing explicit model manifest")
+        manifest_sha = file_sha256(Path(manifest))
+        for path, run in zip(source_paths, runs):
+            if run.get("model_manifest") != manifest or (
+                file_sha256(Path(manifest)) != manifest_sha
+            ):
+                raise ValueError(
+                    f"{path}: every training Level must use the same pinned model "
+                    "manifest; do not silently change learner or self-play policies"
+                )
     # The root allocator is shared by all independent native Levels.
     # A fresh dynamic squad must never reuse an original serialized ID.
     output = output.resolve()
@@ -82,9 +101,16 @@ def assemble(output: Path, source_paths: list[Path]) -> dict:
         raise FileExistsError("new evaluation suite needs an existing parent and unused output")
     config = copy.deepcopy(runs[0])
     config["next_squad_item_id"] = max(run["next_squad_item_id"] for run in runs)
-    config["model_manifest"] = None  # evaluate_policy pins the actual model
-    config["policy_capture"] = None
-    config["host_recovery_checkpoint"] = None
+    if training:
+        config["model_manifest"] = manifest
+        config["policy_capture"] = "policy-capture.json"
+        config["host_recovery_checkpoint"] = (
+            "host-recovery-checkpoint.json" if recovery else None
+        )
+    else:
+        config["model_manifest"] = None  # evaluate_policy pins the actual model
+        config["policy_capture"] = None
+        config["host_recovery_checkpoint"] = None
     config["notifications"] = "events.jsonl"
     config["connection_checkpoint"] = "connection-checkpoint.json"
     config["rollout_summary"] = "rollout-summary.json"
@@ -132,7 +158,7 @@ def assemble(output: Path, source_paths: list[Path]) -> dict:
                     "scene_sha256": scene_sha, "episode_seeds": seeds,
                 })
             if file_sha256(path) != original_sha:
-                raise ValueError(f"{path}: source run changed during evaluation assembly")
+                raise ValueError(f"{path}: source run changed during immutable authoring")
             source_receipts.append({
                 "run": str(path), "run_sha256": original_sha,
                 "run_id": run["run_id"], "levels": recorded_levels,
@@ -140,17 +166,26 @@ def assemble(output: Path, source_paths: list[Path]) -> dict:
         identity = hashlib.sha256(json.dumps(
             source_receipts, sort_keys=True, separators=(",", ":"),
         ).encode("utf-8")).hexdigest()
-        config["run_id"] = "native-mixed-holdout-" + identity[:16]
+        config["run_id"] = (
+            "native-mixed-training-" if training else "native-mixed-holdout-"
+        ) + identity[:16]
+        if training and file_sha256(Path(manifest)) != manifest_sha:
+            raise ValueError("joint training model manifest changed during suite authoring")
         atomic_json(stage / "run.json", config)
         receipt = {
             "schema_version": 1,
-            "kind": "native_multi_fleet_evaluation_source",
+            "kind": ("native_multi_fleet_training_source" if training
+                     else "native_multi_fleet_evaluation_source"),
             "run_id": config["run_id"],
+            "training": training,
+            "recovery_enabled": recovery,
+            **({"model_manifest": manifest, "model_manifest_sha256": manifest_sha}
+               if training else {}),
             "source_runs": source_receipts,
             "levels": count,
             "episodes_per_world": config["episodes_per_world"],
             "planned_episodes": count * config["episodes_per_world"],
-            "evaluation_run_sha256": file_sha256(stage / "run.json"),
+            "native_run_sha256": file_sha256(stage / "run.json"),
             "shared_physical_contract_sha256": hashlib.sha256(
                 json.dumps(shared, sort_keys=True, separators=(",", ":")).encode("utf-8")
             ).hexdigest(),
@@ -158,7 +193,7 @@ def assemble(output: Path, source_paths: list[Path]) -> dict:
         atomic_json(stage / "suite-source.json", receipt)
         sync_directory(stage)
         if output.exists() or output.is_symlink():
-            raise FileExistsError("evaluation suite destination was claimed during authoring")
+            raise FileExistsError("joint native Level destination was claimed during authoring")
         os.rename(stage, output)
         sync_directory(output.parent)
         return receipt
@@ -168,10 +203,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("native_run_configs", nargs="+", type=Path,
-                        help="2..32 authored native policy run JSON files with fixed seed plans")
+                        help="2..64 authored native policy run JSON files with fixed seed plans")
+    parser.add_argument("--training", action="store_true",
+                        help="retain the pinned model and native policy capture for "
+                             "joint self-play training across original Level rosters")
+    parser.add_argument("--host-recovery", action="store_true",
+                        help="enable native host transaction recovery for joint training")
     args = parser.parse_args()
-    print(json.dumps(assemble(args.output_dir, args.native_run_configs),
-                     sort_keys=True), flush=True)
+    print(json.dumps(assemble(
+        args.output_dir, args.native_run_configs,
+        training=args.training, recovery=args.host_recovery,
+    ), sort_keys=True), flush=True)
 
 
 if __name__ == "__main__":
