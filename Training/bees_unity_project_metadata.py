@@ -135,6 +135,7 @@ def import_project(root: Path, archive: Path) -> None:
     staging = root / (".unity-metadata-" + uuid.uuid4().hex)
     staging.mkdir(mode=0o700)
     promoted = []
+    rollback_errors = []
     try:
         with zipfile.ZipFile(archive) as bundle:
             members = bundle.infolist()
@@ -216,12 +217,20 @@ def import_project(root: Path, archive: Path) -> None:
         print(f"Imported {len(expected)} metadata files into {root}")
     except BaseException:
         for name in reversed(promoted):
-            # A promotion failure must leave the checkout unchanged. A
-            # rollback error deliberately prevents misleading success.
-            os.replace(root / name, staging / name)
+            try:
+                os.replace(root / name, staging / name)
+            except OSError as error:
+                rollback_errors.append(f"{name}: {error}")
+        if rollback_errors:
+            raise RuntimeError(
+                "Unity metadata promotion failed and rollback was incomplete. "
+                f"Inspect the unchanged/new folders under {root} and preserved "
+                f"staging directory {staging}: {'; '.join(rollback_errors)}"
+            )
         raise
     finally:
-        shutil.rmtree(staging, ignore_errors=True)
+        if not rollback_errors:
+            shutil.rmtree(staging, ignore_errors=True)
 
 
 def main() -> None:
