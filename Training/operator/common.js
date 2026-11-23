@@ -561,7 +561,19 @@ function loadConfig() {
 }
 
 function resolvePython(config) {
-    return resolveCommand(config.python || 'python');
+    const requested = String(process.env.BEES_PYTHON || config.python || 'python').trim();
+    if (!requested) throw Error('Bees bootstrap Python path is empty.');
+    try {
+        return resolveCommand(requested);
+    } catch (error) {
+        // Debian does not always provide a 'python' command. Only fall back
+        // for the default command, never for an explicitly configured path.
+        if (process.platform === 'linux' &&
+            !process.env.BEES_PYTHON && requested === 'python') {
+            return resolveCommand('python3');
+        }
+        throw error;
+    }
 }
 
 function resolveGit() {
