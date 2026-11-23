@@ -301,6 +301,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                         !trials||wins+draws+losses!==trials||timeouts>draws)
                         throw Error('Bees native evaluation totals are inconsistent.');
                     const rate=(wins+0.5*(draws-timeouts))/trials;
+                    value.source_modified_at=fs.statSync(summary).mtime.toISOString();
                     value.metrics={
                         ...value.metrics,
                         evaluation_matches:{value:trials,unit:'count'},
