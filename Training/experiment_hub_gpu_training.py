@@ -908,6 +908,45 @@ class PersistentGpuForwardPool:
         self._closed = False
         self.calls = 0
         self.prepared_calls = 0
+        self._pending_device_timings = deque()
+        self._device_work_rates = {device:deque(maxlen=8)
+                                   for device in self.devices}
+        self.device_timing_samples = 0
+
+    def _collect_device_timings(self):
+        if not self._pending_device_timings:
+            return
+        waiting = deque()
+        while self._pending_device_timings:
+            device,begin,end,pixels = self._pending_device_timings.popleft()
+            try:
+                if not end.query():
+                    waiting.append((device,begin,end,pixels))
+                    continue
+                elapsed_ms = begin.elapsed_time(end)
+            except (RuntimeError,ValueError,NotImplementedError):
+                continue
+            if elapsed_ms > 0 and pixels > 0:
+                self._device_work_rates[device].append(pixels/elapsed_ms)
+                self.device_timing_samples += 1
+        self._pending_device_timings = waiting
+
+    def measured_capacity_weights(self, devices=None):
+        """Return stable relative effective pixel rates, without GPU waits.
+
+        This is advisory. The existing memory allocator remains the hard
+        per-device upper bound, and the outer useful-throughput tuner can
+        still choose one GPU when data parallelism loses overall.
+        """
+        self._collect_device_timings()
+        ordinals = self.devices if devices is None else tuple(devices)
+        if any(len(self._device_work_rates[device])<3 for device in ordinals):
+            return None
+        rates = [median(self._device_work_rates[device]) for device in ordinals]
+        if min(rates) <= 0 or max(rates)/min(rates)<1.15:
+            return None
+        reference = median(rates)
+        return tuple(min(2.0,max(0.5,rate/reference)) for rate in rates)
 
     @staticmethod
     def _forward(model, parts, device, stream, grad_enabled,
@@ -943,21 +982,43 @@ class PersistentGpuForwardPool:
 
     @staticmethod
     def _prepared_forward(model, factory, device, stream, producer_event,
-                          grad_enabled, autocast_enabled, autocast_dtype):
+                          grad_enabled, autocast_enabled, autocast_dtype,
+                          sampled_pixels):
         with (torch.set_grad_enabled(grad_enabled),
               torch.cuda.device(device),
               torch.cuda.stream(stream),
               torch.autocast("cuda", enabled=autocast_enabled,
                              dtype=autocast_dtype)):
+            started = finished = None
+            if sampled_pixels:
+                try:
+                    started = torch.cuda.Event(enable_timing=True)
+                    started.record(stream)
+                except (RuntimeError,NotImplementedError,AttributeError):
+                    started = None
             # Per-device input factories may copy tensors produced on GPU 0
             # during the current optimizer minibatch. The producer event
             # establishes a proper cross-device dependency without waiting
             # for GPU 2's transfer on the host or delaying GPU 1's forward.
             if producer_event is not None:
-                stream.wait_event(producer_event)
-            return model(*factory())
+                try:
+                    stream.wait_event(producer_event)
+                except (RuntimeError,NotImplementedError):
+                    # Some HIP configurations cannot enqueue cross-device
+                    # event waits. Block only this worker, not GPU 1's
+                    # independent forward, while preserving input ordering.
+                    producer_event.synchronize()
+            result = model(*factory())
+            if started is not None:
+                try:
+                    finished = torch.cuda.Event(enable_timing=True)
+                    finished.record(stream)
+                except (RuntimeError,NotImplementedError,AttributeError):
+                    started = finished = None
+            return result, (started,finished,sampled_pixels)
 
-    def run_prepared(self, models, input_factories, devices=None):
+    def run_prepared(self, models, input_factories, devices=None, *,
+                     pixel_work=None):
         """Prepare GPU inputs and launch their forwards concurrently.
 
         Factories are side-effect-free, single-use callables that return
@@ -974,7 +1035,10 @@ class PersistentGpuForwardPool:
                 ordinals != self.devices[:len(ordinals)] or
                 len(models)!=len(ordinals) or
                 len(input_factories)!=len(ordinals) or
-                any(not callable(factory) for factory in input_factories)):
+                any(not callable(factory) for factory in input_factories) or
+                (pixel_work is not None and
+                 (len(pixel_work)!=len(ordinals) or
+                  any(type(n) is not int or n < 0 for n in pixel_work)))):
             raise ValueError("GPU prepared cohort must match its leased devices")
         streams = [torch.cuda.current_stream(device) for device in ordinals]
         producer = torch.cuda.Event()
@@ -982,10 +1046,17 @@ class PersistentGpuForwardPool:
         grad_enabled = torch.is_grad_enabled()
         autocast_enabled = torch.is_autocast_enabled("cuda")
         autocast_dtype = torch.get_autocast_dtype("cuda")
+        # Sample a minority of real forwards. CUDA/HIP events are queried
+        # only on a subsequent request, never synchronized by this tuner.
+        sample = (pixel_work is not None and
+                  self.prepared_calls >= 4 and
+                  self.prepared_calls % 8 == 0 and
+                  len(self._pending_device_timings)<32)
         futures = [self._workers.submit(
             self._prepared_forward, model, factory, device, stream,
             producer if i else None,
-            grad_enabled, autocast_enabled, autocast_dtype)
+            grad_enabled, autocast_enabled, autocast_dtype,
+            pixel_work[i] if sample else 0)
             for i,(model,factory,device,stream) in enumerate(zip(
                 models,input_factories,ordinals,streams))]
         # Join Python dispatch, not GPU completion. Original tensors and
@@ -993,7 +1064,15 @@ class PersistentGpuForwardPool:
         wait(futures)
         self.calls += 1
         self.prepared_calls += 1
-        return [future.result() for future in futures]
+        collected = [future.result() for future in futures]
+        if sample:
+            for device,(_,timing) in zip(ordinals,collected):
+                begin,end,pixels = timing
+                if begin is not None and end is not None:
+                    self._pending_device_timings.append(
+                        (device,begin,end,pixels))
+        self._collect_device_timings()
+        return [output for output,_ in collected]
 
     def close(self):
         if current_thread() is not self._owner:
