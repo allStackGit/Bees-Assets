@@ -265,8 +265,35 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
         for row in receipts
     )
     mission_successes = sum(row["learner_mission_successes"] for row in receipts) if all_attributed else None
-    # Every row was executed sequentially. Unlike parallel machine
-    # occupancy, these measured intervals can be summed meaningfully.
+    # Each GPU lane runs its assigned scenes serially, so the sum of
+    # complete execution durations on that lane is a measured workload,
+    # not an inferred accelerator utilization percentage.
+    device_work = {}
+    if scenario_devices is not None:
+        for row in results:
+            label = row["inference_device"]
+            work = device_work.setdefault(label, {
+                "scenarios": 0, "episodes": 0, "world_steps": 0,
+                "execution_wall_seconds_sum": 0.0,
+                "completed_gpu_forward_calls": 0,
+                "completed_gpu_forward_rows": 0,
+            })
+            receipt = row["result"]
+            work["scenarios"] += 1
+            work["episodes"] += receipt["episodes"]
+            work["world_steps"] += receipt["world_steps"]
+            work["execution_wall_seconds_sum"] += receipt["execution_wall_seconds"]
+            execution = receipt.get("execution_evidence")
+            if isinstance(execution, dict):
+                work["completed_gpu_forward_calls"] += execution.get("gpu_forward_calls", 0)
+                work["completed_gpu_forward_rows"] += execution.get("gpu_forward_rows", 0)
+        for work in device_work.values():
+            work["world_steps_per_lane_execution_second"] = (
+                work["world_steps"] / work["execution_wall_seconds_sum"]
+            )
+    # Wall intervals cannot be summed as a suite-wide elapsed duration
+    # across concurrent GPU lanes. Report measured execution and elapsed
+    # rates separately.
     elapsed = time.monotonic() - begun
     result = {
         "schema_version": 1,
@@ -300,7 +327,8 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
             else "sum_of_sequential_native_evaluation_wall_seconds"
         ),
         "requested_parallel_scenarios": scenario_workers,
-        **({"allocated_inference_devices": list(scenario_devices)}
+        **({"allocated_inference_devices": list(scenario_devices),
+            "per_inference_device": device_work}
            if scenario_devices is not None else {}),
         "measured_simulation_world_steps_per_second": steps / measured,
         "measured_execution_wall_seconds": execution_seconds,
