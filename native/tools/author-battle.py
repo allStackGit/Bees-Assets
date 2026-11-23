@@ -2019,6 +2019,14 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
         raise ValueError("ordinary native policy binding needs the original ship Codex v5")
     scene = copy.deepcopy(scene)
     run = copy.deepcopy(run)
+    # Source command ownership must be captured BEFORE stripping player
+    # input and HiveMind metadata for policy play. A missing learner is
+    # not permission to issue orders for an otherwise autonomous unit.
+    fallback_owners = {
+        squad["item_id"] for squad in scene["squads"]
+        if squad.get("user_controlled")
+    }
+    fallback_owners.update(getattr(args, "scripted_fallback_squad_ids", ()))
     active = {1: 0, 2: 0}
     # Deferred native reinforcements have no live policy controller before
     # physical deployment. A fleet converter may leave these ships under
@@ -2189,7 +2197,8 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
     }
     for squad_index, squad in enumerate(scene["squads"]):
         squad_id = squad["item_id"]
-        if squad_id in already_scripted or squad_id in policy_squads:
+        if (squad_id in already_scripted or squad_id in policy_squads or
+                squad_id not in fallback_owners):
             continue
         members = [ships_by_id[ship_id] for ship_id in squad["members"]]
         if not members or any("policy" in ship for ship in members):

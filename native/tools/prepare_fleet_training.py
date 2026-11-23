@@ -383,30 +383,6 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
     return scene, run, len(clones)
 
 
-def verified_source_specialist_command(members: list[dict]) -> str | None:
-    """Only two original physical Bomb/Charge classes lack policy actors.
-
-    This strictly checks the source weapon contract; a type number alone
-    cannot authorize replacing player input with a scripted combat order.
-    """
-    kinds = {ship["ship_type"] for ship in members}
-    if kinds == {0} and all(
-            isinstance(ship.get("special"), dict) and
-            ship["special"].get("kind") == "barge" and
-            isinstance(ship.get("special_weapon"), dict) and
-            isinstance(ship["special_weapon"].get("charge_range"), dict)
-            for ship in members):
-        return "charge_nearest"
-    if kinds == {22} and all(
-            isinstance(ship.get("special"), dict) and
-            ship["special"].get("kind") == "yellow_jacket" and
-            isinstance(ship.get("special_weapon"), dict) and
-            isinstance(ship["special_weapon"].get("proximity"), dict)
-            for ship in members):
-        return "bombing_nearest"
-    return None
-
-
 def deferred_reinforcement_ships(
         scene: dict, run: dict, require_scripted_fallback: bool = True) -> set[int]:
     """Preflight reserved physical identities and their command ownership.
@@ -445,11 +421,10 @@ def deferred_reinforcement_ships(
     for squad_id in (deferred - command_squads if require_scripted_fallback else ()):
         squad = squads[squad_id]
         members = [ships_by_id[ship_id] for ship_id in squad["members"]]
-        if (squad.get("user_controlled") and
-                verified_source_specialist_command(members) is not None):
-            # The training author installs the same Charge/BombingRun source
-            # command on deployment, without ever stealing the live game's
-            # actual human-control authority.
+        if squad.get("user_controlled") and members:
+            # The shared native game command author will create an exact
+            # on-deployment order for this original player-owned squad if
+            # it has no compatible policy actor. No idle replacement ship.
             continue
         for ship_id in squad["members"]:
             ship = ships_by_id[ship_id]
@@ -520,7 +495,8 @@ def physical_scene_identity(scene: dict) -> str:
 
 
 def verify_same_battle(scene: dict, run: dict,
-                       policy_scene: dict, policy_run: dict) -> str:
+                       policy_scene: dict, policy_run: dict,
+                       scripted_orders=None) -> str:
     """Guard the gameplay/training boundary before handing bytes to PPO."""
     source_id = physical_scene_identity(scene)
     if source_id != physical_scene_identity(policy_scene):
@@ -545,15 +521,23 @@ def verify_same_battle(scene: dict, run: dict,
         entry for entry in expected["levels"][0].get("scripted_queues", [])
         if entry["squad_item_id"] not in owned
     ]
-    # The sole permitted new policy-scene commands belong to exact source
-    # specialist combatants with no compatible v26 model: ordinary game
-    # Barge Charge and Yellow Jacket BombingRun. These are real physical
-    # game commands, not an alternative simulator or a fabricated learner.
-    # Validate the additional instructions independently of their author,
-    # so publisher changes cannot silently broaden the training contract.
+    # Additional source-player/HiveMind squads may retain the same canonical
+    # gameplay commands after model ownership replaces human/server input.
+    # Recompute exact orders independently; never whitelist arbitrary JSON
+    # instructions or a second policy-specific combat algorithm.
+    if scripted_orders is None:
+        scripted_orders = policy_author().native_scripted_squad_orders
     original_queues = expected["levels"][0]["scripted_queues"]
     original_squads = {squad["item_id"]: squad for squad in scene["squads"]}
+    squad_indices = {
+        squad["item_id"]: index for index, squad in enumerate(policy_scene["squads"])
+    }
     source_ships = {ship["entity_id"]: ship for ship in scene["ships"]}
+    has_beehive = {
+        side: any(ship["side"] == side and ship["ship_type"] == 2
+                  for ship in scene["ships"])
+        for side in (1, 2)
+    }
     deferred = {
         squad_id for wave in expected["levels"][0].get("reinforcements", [])
         for squad_id in wave["squad_item_ids"]
@@ -564,12 +548,8 @@ def verify_same_battle(scene: dict, run: dict,
             continue
         squad_id = row.get("squad_item_id")
         squad = original_squads.get(squad_id)
-        # Source HiveMind squads are already commanded by the live
-        # BeesServer player in gameplay. After replacing that network
-        # owner with a trainable policy, the two unmodeled physical Bomb
-        # classes still need their original game Charge/BombingRun orders.
-        # Accept only the exact authoring fallback for either verified
-        # player ownership or a verified source HiveMind owner.
+        # Only a squad whose source command owner was a real player or
+        # authenticated HiveMind opponent can acquire this fallback.
         sourced_network = (
             isinstance(run.get("hivemind"), dict) and
             run["hivemind"].get("issue_source_commands") is True and
@@ -583,15 +563,21 @@ def verify_same_battle(scene: dict, run: dict,
             raise ValueError("policy added an unauthorized game command owner")
         extra_owners.add(squad_id)
         members = [source_ships[ship_id] for ship_id in squad["members"]]
-        action = verified_source_specialist_command(members)
+        if squad_id not in squad_indices or not members:
+            raise ValueError("native policy fallback has no original squad")
+        orders = scripted_orders(
+            scene, members, squad_indices[squad_id], "aggressive",
+            has_beehive[squad["side"]],
+        )
         allowed = {
-            "squad_item_id": squad_id, "repeat": True,
-            "orders": [{"kind": action}],
+            "squad_item_id": squad_id,
+            "repeat": orders[0]["kind"] != "hold",
+            "orders": orders,
         }
         if squad_id in deferred:
             allowed["activation"] = {"kind": "on_deployment"}
-        if action is None or row != allowed:
-            raise ValueError("native policy specialist fallback changed a source game command")
+        if row != allowed:
+            raise ValueError("native policy fallback differs from original game AI commands")
         original_queues.append(row)
     if expected != trained:
         raise ValueError("native policy author changed the simulation run beyond policy-owned commands")
@@ -672,12 +658,18 @@ def convert(source: Path, destination: Path, archetypes: Path,
         raise ValueError("escort ship must be initially deployed")
     if target_ship is not None and target_ship["target_ship_id"] in reserved_ships:
         raise ValueError("named-ship hunt cannot target an undeployed reinforcement")
+    network_fallback_squads = {
+        squad["item_id"] for squad in scene["squads"]
+        if live_hivemind and isinstance(squad.get("hivemind"), dict)
+        and squad["hivemind"].get("hivemind_controlled") is True
+    }
     args = SimpleNamespace(
         policy_archetypes=archetypes, minutes=seconds / 60,
         deferred_reinforcement_ship_ids=reserved_ships,
         scripted_reinforcement_ship_ids=(
             set() if policy_waves else reserved_ships
         ),
+        scripted_fallback_squad_ids=network_fallback_squads,
     )
     policy_input_scene, policy_input_run = copy.deepcopy(scene), copy.deepcopy(run)
     if policy_input_run.get("hivemind") is not None:
@@ -691,10 +683,16 @@ def convert(source: Path, destination: Path, archetypes: Path,
         policy_input_scene["hivemind_initial_command_delay_seconds"] = 0
         for squad in policy_input_scene["squads"]:
             squad.pop("hivemind", None)
-    policy_scene, policy_run = policy_author()(policy_input_scene, policy_input_run, args)
+    author_module = policy_author()
+    policy_scene, policy_run = author_module.author_policy_scene(
+        policy_input_scene, policy_input_run, args,
+    )
     run["levels"][0]["scene"] = "battle.scene.json"
     policy_run["levels"][0]["scene"] = "battle.policy.scene.json"
-    physical_identity = verify_same_battle(scene, run, policy_scene, policy_run)
+    physical_identity = verify_same_battle(
+        scene, run, policy_scene, policy_run,
+        author_module.native_scripted_squad_orders,
+    )
     if (file_sha256(source) != source_sha or
             file_sha256(scene_path) != scene_sha or
             file_sha256(archetypes) != archetypes_sha):
