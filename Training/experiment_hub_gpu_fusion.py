@@ -660,16 +660,35 @@ class FrozenGpuGraphs:
             if not all(_equivalent(a, b, self.rtol, self.atol)
                        for a, b in zip(original, candidate)):
                 return None
-            # Verify *changed* observations too, not the same input
-            # copied to a fresh buffer. This detects graphs that captured
-            # input-dependent preprocessing as constants. Preserve reset
-            # masks and recurrent states; perturb only floating observations.
-            changed = [
-                (row[0] + 0.125, *row[1:])
-                if row[0].is_floating_point() else row
-                for row in args
-            ]
+            # Replays must read newly supplied observations, including
+            # integer-encoded simulation boards. Previously an int8/uint8
+            # board was replayed UNCHANGED here, so a graph accidentally
+            # capturing a constant board could pass the entire admission.
+            # Change the first (observation) argument without touching
+            # recurrent state, reset masks, or the caller-owned tensors.
+            changed = []
+            for row in args:
+                board = row[0]
+                if board.is_floating_point():
+                    varied = board + 0.125
+                elif board.dtype == torch.bool:
+                    varied = ~board
+                elif board.dtype in (torch.uint8, torch.int8, torch.int16,
+                                     torch.int32, torch.int64):
+                    varied = torch.bitwise_xor(board, 1)
+                else:
+                    # An unsupported observation dtype cannot establish
+                    # that graph replay honors new inputs.
+                    return None
+                changed.append((varied, *row[1:]))
             changed_expected = self._eager(changed)
+            # If even the authoritative model ignores this change, this
+            # qualification cannot establish live-input dependence. Keep
+            # the original eager execution instead of accepting a graph
+            # based on identical inputs and uninformative outputs.
+            if all(_equivalent(a, b, self.rtol, self.atol)
+                   for a, b in zip(original, changed_expected)):
+                return None
             changed_actual = self._replay(profile, changed)
             if not all(_equivalent(a, b, self.rtol, self.atol)
                        for a, b in zip(changed_expected, changed_actual)):
