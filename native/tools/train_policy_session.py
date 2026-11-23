@@ -1343,8 +1343,31 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
                     result["policy_sampling_seed"] != baseline["policy_sampling_seed"]):
                 raise ValueError(f"incomparable monitored native suite: {suite_id}")
         latest_round, latest = observations[-1] if observations else (None, None)
+        gpu_lanes = (recipe or {}).get("monitor_evaluation_gpus", [])
+        gpu_device = gpu_lanes[(number - 1) % len(gpu_lanes)] if gpu_lanes else None
+        measured_gpu = [
+            result["policy_execution"] for _, result in observations
+            if isinstance(result.get("policy_execution"), dict)
+        ]
         monitor_report.append({
             "suite_id": suite_id,
+            **({"allocated_inference_gpu": gpu_device,
+                "gpu_execution_measurement_coverage": {
+                    "evaluations": len(measured_gpu),
+                    "expected_evaluations": len(observations),
+                },
+                "completed_gpu_forward_calls": sum(
+                    sample["gpu_forward_calls"] for sample in measured_gpu
+                ),
+                "completed_gpu_forward_rows": sum(
+                    sample["gpu_forward_rows"] for sample in measured_gpu
+                ),
+                "measured_execution_wall_seconds": sum(
+                    result["execution_wall_seconds"]
+                    for _, result in observations
+                    if isinstance(result.get("execution_wall_seconds"), (int, float))
+                )}
+               if gpu_device is not None else {}),
             "source_run_config": suite["path"],
             "source_run_config_sha256": suite["sha256"],
             "learner_side": baseline["learner_side"],
