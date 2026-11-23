@@ -7,6 +7,7 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const {spawnSync}=require('node:child_process');
+const crypto=require('node:crypto');
 const {createTinyBrainsAdapter}=require('./experiment_hub_tinybrains_adapter');
 const {createCourierAdapter}=require('./experiment_hub_courier_adapter');
 const {createBeesNativeAdapter}=require('./experiment_hub_bees_native_adapter');
@@ -70,6 +71,59 @@ function tinyBrainsCpuProfiles(project,python) {
     }
     return profiles;
 }
+// Activation is performed separately by the trusted local Unity installer.
+// An agent reads the selected immutable release only on process startup;
+// running jobs retain their original executable paths and source identities.
+function installedUnityRelease() {
+    const configured=process.env.EXPERIMENT_HUB_BEES_WORKER_INSTALL_ROOT;
+    if(!configured)return null;
+    const SHA=/^[0-9a-f]{64}$/;
+    const root=path.resolve(configured);
+    if(!path.isAbsolute(configured)||fs.realpathSync(root)!==root||
+        !fs.statSync(root).isDirectory())
+        throw Error('Hub Unity release root must be a real installed absolute directory.');
+    const marker=path.join(root,'current.json');
+    if(fs.realpathSync(marker)!==marker||fs.statSync(marker).size>4096)
+        throw Error('Hub Unity release needs a locally activated current.json receipt.');
+    const active=JSON.parse(fs.readFileSync(marker,'utf8'));
+    const platform=process.platform==='win32'?'WindowsPlayer':'LinuxPlayer';
+    const folder=process.platform==='win32'?'Windows':'Linux';
+    const entry=process.platform==='win32'?'Bees RL Training.exe':'Bees RL Training.x86_64';
+    if(!active||active.schema_version!==1||
+        !SHA.test(String(active.release_sha256||''))||
+        !SHA.test(String(active.player_tree_sha256||''))||
+        active.platform!==platform)
+        throw Error('Selected Bees Unity release has an invalid platform-specific activation receipt.');
+    const release=path.join(root,'releases',active.release_sha256);
+    const manifest=path.join(release,'worker-build-manifest.json');
+    const binary=path.join(release,folder,entry);
+    if(fs.realpathSync(release)!==release||
+        fs.realpathSync(manifest)!==manifest||
+        fs.realpathSync(binary)!==binary)
+        throw Error('Selected Bees Unity worker release contains redirected files.');
+    const bytes=fs.readFileSync(manifest);
+    if(crypto.createHash('sha256').update(bytes).digest('hex')!==
+        active.release_sha256)
+        throw Error('Selected Bees Unity worker manifest is not its pinned release.');
+    const data=JSON.parse(bytes.toString('utf8'));
+    const record=data?.artifacts?.find(item=>item.platform===platform);
+    if(data?.schema_version!==1||data.kind!=='offline-unity-workers'||
+        data.build_id!==active.build_id||
+        record?.player_tree_sha256!==active.player_tree_sha256||
+        record?.entrypoint!==entry)
+        throw Error('Selected Bees Unity worker release and activation receipt disagree.');
+    return Object.freeze({workerExecutable:binary,releaseManifestPath:manifest});
+}
+const approvedBeesRelease=
+    enabled('bees_native')||enabled('bees_rollout')?installedUnityRelease():null;
+const beesWorker=()=>{
+    if(approvedBeesRelease)return approvedBeesRelease.workerExecutable;
+    return required(process.platform==='win32'
+        ?'EXPERIMENT_HUB_BEES_WINDOWS_WORKER':'EXPERIMENT_HUB_BEES_LINUX_WORKER');
+};
+const beesManifest=()=>approvedBeesRelease?.releaseManifestPath||
+    process.env.EXPERIMENT_HUB_BEES_WORKER_MANIFEST||null;
+
 const adapters={};
 if(enabled('tinybrains')) {
     const project=required('EXPERIMENT_HUB_TINYBRAINS_PROJECT_ROOT');
@@ -119,11 +173,11 @@ if(enabled('bees_native')) {
     adapters.bees_native=createBeesNativeAdapter({
         projectRoot:required('EXPERIMENT_HUB_BEES_ASSETS_ROOT'),
         pythonPath:required('EXPERIMENT_HUB_BEES_PYTHON'),
-        workerExecutable:required('EXPERIMENT_HUB_BEES_LINUX_WORKER'),
+        workerExecutable:beesWorker(),
         artifactRoot:artifactDirectory('bees_native'),
         wanKeyPath:process.env.EXPERIMENT_HUB_BEES_WAN_KEY||null,
         wanBrokerPort:Number(process.env.EXPERIMENT_HUB_BEES_WAN_BROKER_PORT||55051),
-        releaseManifestPath:process.env.EXPERIMENT_HUB_BEES_WORKER_MANIFEST||null,
+        releaseManifestPath:beesManifest(),
     });
 }
 if(enabled('bees_rollout')) {
@@ -143,13 +197,11 @@ if(enabled('bees_rollout')) {
     adapters.bees_rollout=createBeesRolloutAdapter({
         projectRoot:required('EXPERIMENT_HUB_BEES_ASSETS_ROOT'),
         pythonPath:required('EXPERIMENT_HUB_BEES_PYTHON'),
-        workerExecutable:required(process.platform==='win32'
-            ?'EXPERIMENT_HUB_BEES_WINDOWS_WORKER'
-            :'EXPERIMENT_HUB_BEES_LINUX_WORKER'),
+        workerExecutable:beesWorker(),
         artifactRoot:artifactDirectory('bees_rollout'),
         keyPath:required('EXPERIMENT_HUB_BEES_WAN_KEY'),
         forwardPort:Number(required('EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT')),
-        releaseManifestPath:process.env.EXPERIMENT_HUB_BEES_WORKER_MANIFEST||null,
+        releaseManifestPath:beesManifest(),
         sshForward:sshEnabled?{
             learnerMachineId:required('EXPERIMENT_HUB_BEES_WAN_LEARNER_MACHINE'),
             tailnetIp:required('EXPERIMENT_HUB_BEES_WAN_SSH_TAILNET_IP'),
