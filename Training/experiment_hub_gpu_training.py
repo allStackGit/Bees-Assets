@@ -146,6 +146,27 @@ def training_activation_workspace_budget(free_bytes, *,
                       free_bytes-minimum_other_headroom))
 
 
+def stack_training_loss_diagnostics(columns, *, loss_index):
+    """Keep gradients only for the actual optimizer loss column.
+
+    A trainer commonly reports policy, value, entropy, KL and clipping
+    metrics alongside the one scalar loss per board. The optimizer only
+    backpropagates that loss; retaining each standalone diagnostic's
+    autograd path in a stacked result unnecessarily increases backward
+    graph fan-out and memory residency for every GPU microbatch.
+    Preserve all numerical metric values, column positions and loss
+    gradients while detaching the reporting-only columns.
+    """
+    if (not isinstance(columns,(tuple,list)) or
+            not columns or type(loss_index) is not int or
+            not 0<=loss_index<len(columns) or
+            any(not isinstance(value,torch.Tensor) for value in columns)):
+        raise ValueError("Training loss diagnostics require tensor columns")
+    return torch.stack(tuple(
+        value if i==loss_index else value.detach()
+        for i,value in enumerate(columns)),dim=1)
+
+
 def shared_fp32_training_input(observations, *, consumers_use_float32):
     """Convert one immutable batch ONCE for independent FP32-only networks.
 
