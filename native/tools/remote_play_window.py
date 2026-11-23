@@ -11,6 +11,7 @@ import math
 import os
 import socket
 import threading
+from queue import Empty, SimpleQueue
 import time
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -51,6 +52,16 @@ class RemoteBattleWindow:
         self.console = console
         self.connection = connection
         self.connect_recovered_host = reconnect
+        # Recovery transports run off the Tk event loop. A host restart must
+        # not freeze drawing or allow a stale command through a new peer ID.
+        self._reconnect_results = SimpleQueue()
+        self._reconnect_inflight = False
+        self._reconnect_attempts = 0
+        self._reconnect_next_at = 0.0
+        self._reconnect_deadline = None
+        self._reconnect_disabled = False
+        self._disconnection_reported = False
+        self._closing = False
         self.root.title("Bees — native spectator" if console.spectator
                         else "Bees — native cooperative battle")
         self.root.geometry("1140x760")
@@ -354,23 +365,77 @@ class RemoteBattleWindow:
             self.notice(f"Surrender unavailable: {error}")
 
     def rejoin(self):
-        # Explicit reconnection only: an old TCP peer and its held weapons
-        # never survive host recovery. The server must present the SAME
-        # durable host_session_id or the new console refuses its World.
+        # A manual attempt can restart an expired recovery window. All
+        # attempts still require the original authenticated session ID.
+        if self.console.alive or self.connect_recovered_host is None:
+            return
         session = self.console.host_session_id or self.console.expected_session_id
-        if self.console.alive or self.connect_recovered_host is None or session is None:
+        if session is None:
+            self.notice("No authenticated native session is available to rejoin")
             return
-        try:
-            connection, console = self.connect_recovered_host(session)
-        except OSError as error:
-            self.notice(f"Recovered host is not reachable: {error}")
+        self._reconnect_disabled = False
+        self._reconnect_deadline = time.monotonic() + 120.0
+        self._reconnect_next_at = 0.0
+        self._start_reconnect(session)
+
+    def _start_reconnect(self, session):
+        if (self._closing or self._reconnect_inflight or self.console.alive or
+                self.connect_recovered_host is None):
             return
+        self._reconnect_inflight = True
+        self._reconnect_attempts += 1
+        attempt_number = self._reconnect_attempts
+        self.status.set(
+            f"Reconnecting to original native battle (attempt {attempt_number})..."
+        )
+
+        def connect_off_thread():
+            connection = None
+            try:
+                connection, console = self.connect_recovered_host(session)
+                if self._closing:
+                    connection.close()
+                else:
+                    self._reconnect_results.put((connection, console, None))
+            except (OSError, ValueError) as error:
+                if connection is not None:
+                    connection.close()
+                if not self._closing:
+                    self._reconnect_results.put((None, None, str(error)))
+
+        threading.Thread(target=connect_off_thread, daemon=True).start()
+
+    def _receive_reconnect_results(self):
+        while True:
+            try:
+                connection, console, failure = self._reconnect_results.get_nowait()
+            except Empty:
+                break
+            self._reconnect_inflight = False
+            if self._closing:
+                if connection is not None:
+                    connection.close()
+                continue
+            if failure is not None:
+                self._reconnect_next_at = time.monotonic() + min(
+                    15.0, 0.5 * (2 ** min(self._reconnect_attempts, 5))
+                )
+                self.status.set(f"Original host unavailable: {failure}")
+                continue
+            self._install_reconnected_peer(connection, console)
+
+    def _install_reconnected_peer(self, connection, console):
+        # A successful TCP dial is NOT a successful recovery. RemoteConsole
+        # validates the welcome's host_session_id and side before accepting
+        # world_state; until then no input is enabled and retries remain
+        # limited by the original recovery deadline.
         old_connection = self.connection
         self.console = console
         self.connection = connection
         self.state = None
         self.drawn_scope = None
         self.shown_terminal_receipt = None
+        self.shown_campaign_receipt = None
         self.map_bounds = None
         self.dialogue_identity = None
         self.dialogue_line = 0
@@ -390,7 +455,6 @@ class RemoteBattleWindow:
         self.rejoin_button.state(["disabled"])
         self.status.set("Authenticating against the original host session...")
         old_connection.close()
-        self.root.after(50, self.poll)
 
     def set_mode(self, mode):
         if self.console.spectator:
@@ -495,10 +559,14 @@ class RemoteBattleWindow:
             self.draw()
 
     def poll(self):
+        self._receive_reconnect_results()
         while not self.console.notifications.empty():
             self.notice(self.console.notifications.get_nowait())
         state = self.console.snapshot()
         if state is not None:
+            self._reconnect_deadline = None
+            self._reconnect_attempts = 0
+            self._disconnection_reported = False
             key = (state["world_id"], state["episode_revision"], state["tick"])
             if key != self.drawn_scope:
                 if self.drawn_scope is not None and (
@@ -614,30 +682,46 @@ class RemoteBattleWindow:
             self.shown_terminal_receipt = terminal
             self.shown_campaign_receipt = campaign_receipt
             self.draw()
-        if self.console.alive:
-            self.root.after(50, self.poll)
-        else:
-            if self.connect_recovered_host and (
-                self.console.host_session_id or self.console.expected_session_id
-            ):
-                self.rejoin_button.state(["!disabled"])
+        if not self.console.alive:
+            session = self.console.host_session_id or self.console.expected_session_id
+            terminal = self.console.battle_receipt_snapshot()
             campaign = self.console.campaign_receipt_snapshot()
-            final = self.console.battle_receipt_snapshot()
             outcome = self.state.get("terminal_outcome") if self.state else None
+            if session is not None and self.connect_recovered_host is not None:
+                self.rejoin_button.state(["!disabled"])
             self.held_drag = False
-            if final is not None:
-                self.notice(
-                    f"Battle finished: {final['label']} — {final['reason']}"
-                    if final["kind"] == "battle_result"
-                    else f"Battle interrupted: {final['reason']}"
-                )
-            elif outcome is not None:
-                self.notice("Host closed before a reliable final battle receipt")
-            else:
-                self.notice("Disconnected from host; battle is no longer interactive")
-            if campaign is not None:
-                self.notice(self.console.campaign_receipt_summary(campaign))
-            self.draw()
+            if not self._disconnection_reported:
+                self._disconnection_reported = True
+                if terminal is not None:
+                    self.notice(
+                        f"Battle finished: {terminal['label']} — {terminal['reason']}"
+                        if terminal["kind"] == "battle_result"
+                        else f"Battle interrupted: {terminal['reason']}"
+                    )
+                elif outcome is not None:
+                    self.notice("Host closed before a reliable final battle receipt")
+                else:
+                    self.notice("Connection lost; preserving the original session for recovery")
+                if campaign is not None:
+                    self.notice(self.console.campaign_receipt_summary(campaign))
+                self.draw()
+
+            if self.console.protocol_failure is not None:
+                # A different host, wrong side or corrupt protocol is never
+                # silently accepted as the original game.
+                self._reconnect_disabled = True
+                self.status.set("Native session authentication rejected; manual retry only")
+            elif (session and terminal is None and not self._reconnect_disabled and
+                  self.connect_recovered_host is not None):
+                if self._reconnect_deadline is None:
+                    self._reconnect_deadline = now + 120.0
+                if now >= self._reconnect_deadline:
+                    self._reconnect_disabled = True
+                    self.status.set("Recovery window expired; retry manually")
+                elif not self._reconnect_inflight and now >= self._reconnect_next_at:
+                    self._start_reconnect(session)
+        if not self._closing:
+            self.root.after(50, self.poll)
 
     def refresh(self, _event=None):
         self.draw()
@@ -1940,6 +2024,14 @@ class RemoteBattleWindow:
                 )
 
     def close(self):
+        self._closing = True
+        while True:
+            try:
+                pending_connection, _, _ = self._reconnect_results.get_nowait()
+            except Empty:
+                break
+            if pending_connection is not None:
+                pending_connection.close()
         if self.held_drag:
             self.finish_held_fire()
         self.console.alive = False
