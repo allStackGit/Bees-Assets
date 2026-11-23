@@ -10,7 +10,7 @@ from pathlib import Path
 
 from experiment_hub_eval_io import read_bounded
 from experiment_hub_eval_poll import final_checkpoint, poll_checkpoint, poll_batch
-from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate_with_metrics, read_suite
+from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate_with_metrics, read_suite, suite_trials
 from experiment_hub_tinybrains_runtime import configure_engine
 
 CHECKPOINT = re.compile(r"update-([0-9]{6,8})\.pt")
@@ -132,7 +132,7 @@ def poll(args, suites):
         return selected if selected is not None else newest
 
     pairs = [(suite, {**suite, "trials":
-                      2 * len(suite["maps"]) * len(suite["seeds"])}) for suite in suites]
+                      suite_trials(suite)}) for suite in suites]
     if len(pairs) == 1:
         poll_checkpoint(args, "tinybrains", *pairs[0], find_checkpoint,
                         lambda job, file, digest, work:

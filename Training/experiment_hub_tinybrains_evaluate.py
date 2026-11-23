@@ -61,7 +61,9 @@ def read_suite(file):
                 "opponent_dir", "opponent_checkpoint_sha256", "opponent_source_job"))
             or not isinstance(suite["opponent_dir"], str)
             or suite["opponent_dir"] != str(
-                Path(file).parent / "opponents" / suite["suite_id"])
+                Path(file).parent / "opponents" /
+                ("tinybrains_mini_batch128_v1" if "_season_" in suite["suite_id"]
+                 else suite["suite_id"]))
             or not UUID.fullmatch(str(suite["opponent_source_job"]))
             or not SHA256.fullmatch(str(suite["opponent_checkpoint_sha256"]))
             or not re.fullmatch(r"tinybrains_mini_batch128_(?:season_)?v[1-9][0-9]*",
