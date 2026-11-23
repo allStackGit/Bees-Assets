@@ -24,6 +24,7 @@ from transfer_policy_inputs import import_inputs
 from native_bundle_receiver import download_input_archive, bundle_token
 from transfer_policy_bundle import checked_order
 from run_distributed_collector import acquire_collector_lease
+from native_windows_rollout_job import run_owned_native_process
 
 
 
@@ -300,7 +301,7 @@ def main():
         env["BEES_NATIVE_MODEL_STORE"] = str((inputs / "models").resolve(strict=True))
         if transport_token is not None:
             env["BEES_NATIVE_BUNDLE_TOKEN"] = transport_token
-        subprocess.run(command, check=True, env=env)
+        run_owned_native_process(command, env=env)
         # Standalone staging is disposable; Hub staging retains its original
         # paths for a rearmed job or a lost completion acknowledgement.
         if args.hub_job_id is None:
