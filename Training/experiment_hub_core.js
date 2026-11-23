@@ -2003,6 +2003,10 @@ class ExperimentHub {
         // Heartbeats are ephemeral. After a coordinator restart, a machine is
         // not considered connected until it authenticates again.
         this.agentReports = new Map();
+        // Process-local replay barrier. A delayed in-flight request from an
+        // instance that explicitly signed off must never resurrect its
+        // connection or block a newly authenticated replacement.
+        this.closedAgentInstances = new Map();
         // A planned software switch can briefly replace the agent process.
         // Pause queue automation while the new OS owner re-authenticates;
         // unrelated unplanned disconnects still disarm for safety.
@@ -5787,6 +5791,11 @@ class ExperimentHub {
              !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(instance)))
             throw Error('Native execution agent requires a process instance identity.');
         const previous=this.agentReports.get(machine.id);
+        if(instance&&this.closedAgentInstances.get(machine.id)?.includes(instance)) {
+            const error=Error('Agent instance has already signed off; start a new service instance.');
+            error.status=409;
+            throw error;
+        }
         const restartApproval=(this.state.evaluator_actions||[]).find(action=>
             action.machine_id===machine.id&&action.action==='restart-agent'&&
             action.status==='awaiting_restart'&&action.agent_instance_id!==instance&&
@@ -6173,6 +6182,12 @@ class ExperimentHub {
             // connected worker, a fresh execution lease receipt or an agent
             // instance lock until the heartbeat TTL expires. Persisted job
             // ownership and native service journals remain untouched.
+            if(instance) {
+                const closed=this.closedAgentInstances.get(machine.id)||[];
+                if(!closed.includes(instance))
+                    this.closedAgentInstances.set(machine.id,
+                        [...closed,instance].slice(-16));
+            }
             this.invalidateAgentIdentity(machine.id,
                 'One-shot native agent signed off; review and re-arm automation with a continuously running agent.');
             return {machine_id:machine.id,status:'connected',
