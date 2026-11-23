@@ -338,8 +338,12 @@ function definitions(options,overrides={}) {
             enginePath:options.engine,cpus:'2',ramMb:'4096',
             // Season-wide sweeps are expensive; keep their cadence separate
             // from short basic-map evaluations, with a bounded six-hour run.
+            // The sweep contains 268 sequential games, each individually
+            // bounded to 180 seconds. The timer waits until the service
+            // finishes; permit the full bounded sweep instead of truncating
+            // it at the next six-hour cadence.
             interval:Object.hasOwn(SEASON_SUITES,id)?'21600':'180',
-            timeout:Object.hasOwn(SEASON_SUITES,id)?'21600':'7200',
+            timeout:Object.hasOwn(SEASON_SUITES,id)?'57600':'7200',
             unitId:id,
         }),
     ]));
