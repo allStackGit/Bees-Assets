@@ -131,7 +131,7 @@ function privateDirectory(dir,create=false) {
         throw Error('Evaluator writable directories must be private user-owned directories: '+dir);
     return dir;
 }
-function localOptions(hub) {
+function localOptions(hub,{observationOnly=false}={}) {
     if(process.platform!=='linux')
         throw Error('Local evaluator control requires Linux user systemd.');
     const home=checkedPath(os.homedir());
@@ -149,9 +149,9 @@ function localOptions(hub) {
     const host=hub.snapshot().machines.find(entry=>entry.id===machine);
     if(!host)
         throw Error('The enrolled local agent identity is not registered in the Hub.');
-    if(host.status!=='connected')
+    if(!observationOnly&&host.status!=='connected')
         throw Error('Waiting for a fresh authenticated local agent heartbeat; evaluator readiness will refresh automatically.');
-    if(!host.installed_projects?.includes('tinybrains')) {
+    if(!observationOnly&&!host.installed_projects?.includes('tinybrains')) {
         const projects=Array.isArray(host.installed_projects)
             ?host.installed_projects.join(', '):'';
         throw Error(host.local_executor_enabled!==true
@@ -443,7 +443,7 @@ function evaluationCapacity(hub,options) {
 }
 async function status(hub) {
     let options;
-    try { options=localOptions(hub); }
+    try { options=localOptions(hub,{observationOnly:true}); }
     catch(error) {
         return {available:false,reason:String(error.message||error),entries:[]};
     }
@@ -511,7 +511,11 @@ async function status(hub) {
     let library=null,library_issue=null;
     try {library=custom.library(options,hub);}
     catch(error){library_issue=String(error.message||error).slice(0,180);}
-    return {available:true,machine:options.machine,entries,
+    const localMachine=hub.snapshot().machines.find(m=>m.id===options.machine);
+    const ready=localMachine?.status==='connected'&&
+        localMachine?.installed_projects?.includes('tinybrains')===true;
+    return {available:ready,machine:options.machine,entries,
+        ...(!ready?{reason:'Local evaluator definitions are readable, but the native agent is not ready.'}:{}),
         evaluation_capacity:evaluationCapacity(hub,options),
         mini_candidates:miniCandidates(hub,options).map(({id,updates})=>({id,updates})),
         historical_candidates:historicalCandidates(hub,options)
