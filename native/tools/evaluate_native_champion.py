@@ -235,7 +235,7 @@ def main():
     parser.add_argument("--rollout-binary", type=Path)
     parser.add_argument("--policy-seed", type=int, default=0)
     parser.add_argument("--physics-workers", type=int)
-    parser.add_argument("--inference-device", choices=("cpu", "cuda:0"))
+    parser.add_argument("--inference-device", choices=("cpu", "cuda:0", "cuda:1", "cuda:2", "cuda:3"))
     parser.add_argument("--parallel-assignments", action="store_true",
                         help="run both canonical faction assignments on separate CPU native processes")
     args = parser.parse_args()
