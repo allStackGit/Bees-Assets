@@ -374,14 +374,16 @@ fn append_training_arguments(
         command.arg("--learner-gpus").arg("2");
     }
     let inference = recipe["inference_device"].as_str().unwrap_or("cpu");
-    if !valid_torch_device(inference) ||
-        (inference != "cpu" &&
-         (recipe["hub_plan"].is_string() || device != inference))
+    if !valid_torch_device(inference) || inference == "cuda" ||
+        (inference != "cpu" && recipe["hub_plan"].is_string())
     {
         return Err(invalid(
-            "GPU policy inference requires a locally allocated CUDA/ROCm optimizer"
+            "native GPU policy inference requires an explicitly selected local GPU"
         ).into());
     }
+    // The resident policy worker and PPO optimizer are independent processes.
+    // The selected inference GPU is an explicit user allocation: it need not
+    // match the optimizer GPU, and CPU optimization may use GPU inference.
     command.arg("--inference-device").arg(inference);
     let saves = PathBuf::from(recipe["save_root"].as_str()
         .ok_or_else(|| invalid("missing native save directory"))?);
@@ -803,25 +805,28 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         };
         if choice == 1 { 2_u32 } else { 1_u32 }
     } else { 1_u32 };
-    let inference_device = if device != 0 && !use_hub {
+    let inference_device = if !use_hub {
+        let inference_choices = ["cpu", "cuda:0", "cuda:1", "cuda:2", "cuda:3"];
         let rows = [
-            BattleMenuRow {
-                title: "CPU policy inference",
-                status: "  [Keep neural action sampling on CPU]", unlocked: true,
-            },
-            BattleMenuRow {
-                title: "CUDA / ROCm GPU policy inference",
-                status: "  [Batch neural actions on the local GPU]", unlocked: true,
-            },
+            BattleMenuRow { title: "CPU policy inference",
+                status: "  [Local CPU resident model]", unlocked: true },
+            BattleMenuRow { title: "GPU 0 policy inference",
+                status: "  [CUDA / ROCm cuda:0]", unlocked: true },
+            BattleMenuRow { title: "GPU 1 policy inference",
+                status: "  [CUDA / ROCm cuda:1]", unlocked: true },
+            BattleMenuRow { title: "GPU 2 policy inference",
+                status: "  [CUDA / ROCm cuda:2]", unlocked: true },
+            BattleMenuRow { title: "GPU 3 policy inference",
+                status: "  [CUDA / ROCm cuda:3]", unlocked: true },
         ];
-        let mut choice = 0;
+        let mut choice = if device == 0 { 0 } else { device };
         let Some(selected) = select_library(&rows, &mut choice, false)? else {
             return Ok(());
         };
-        if selected == 1 { optimizer_device } else { "cpu" }
+        inference_choices[selected]
     } else {
-        // Hub's remote collectors can be CPU-only machines, and local CPU
-        // optimizers do not imply an available GPU model worker.
+        // Hub collector GPU allocation belongs to the approved per-machine
+        // plan; a local device index must not be forwarded to remote agents.
         "cpu"
     };
 
