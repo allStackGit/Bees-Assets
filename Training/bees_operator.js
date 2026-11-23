@@ -133,6 +133,7 @@ function parseArgs(argv = process.argv.slice(2)) {
             index++;
         } else if (arg.startsWith('--offline-workers=')) {
             options.offlineWorkers = arg.slice('--offline-workers='.length);
+            if (!options.offlineWorkers) throw new Error('--offline-workers requires an absolute manifest path.');
         } else if (arg === '--preserve-run') {
             options.preserveRun = true;
         } else if (arg === '--new-run') {
