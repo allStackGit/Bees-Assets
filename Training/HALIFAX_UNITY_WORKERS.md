@@ -103,8 +103,13 @@ then stages/distributes the release using the existing Bees control plane.
 Use -NewRun only when an intentionally fresh training lineage is required.
 
 This transitional route uses the existing Windows Bees learner and
-worker deployment. The separate Halifax ROCm learner is implemented as a
-configured Python environment option, but still requires runtime qualification.
+worker deployment. **The Windows learner still needs its existing Unity Editor
+for champion policy hot-bundle publication**, even though simulation workers
+are compiled on Halifax. It is not safe to remove that Editor until hot-bundle
+building runs on Halifax or is independently relocated.
+
+The separate Halifax ROCm learner is implemented as a configured Python
+environment option, but still requires runtime qualification.
 
 ## View and control Bees from the Halifax Experiment Hub
 
