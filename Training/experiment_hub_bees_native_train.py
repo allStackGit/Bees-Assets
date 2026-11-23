@@ -135,7 +135,7 @@ def inspect_job(filename: Path) -> dict:
         "expected_parent_model_sha256", "expected_parent_checkpoint_sha256",
     }
     wan_keys = {"wan_actors", "wan_broker_port", "wan_key_file",
-                "wan_key_fingerprint"}
+                "wan_key_fingerprint", "game_payload_sha256"}
     if not isinstance(job, dict) or (
         job.get("schema_version") == 1 and set(job) != keys
     ) or (
@@ -183,6 +183,12 @@ def inspect_job(filename: Path) -> dict:
     if job["device"] not in ("cpu","cuda"):
         raise ValueError("Unknown Bees learner device.")
     if job["schema_version"] == 3:
+        from bees_unity_worker_identity import unity_worker_tree_sha256
+        if not isinstance(job["game_payload_sha256"], str) or (
+            len(job["game_payload_sha256"]) != 64 or
+            any(ch not in "0123456789abcdef" for ch in job["game_payload_sha256"])
+        ) or unity_worker_tree_sha256(Path(job["game_binary"])) != job["game_payload_sha256"]:
+            raise ValueError("Complete Bees Unity player content differs from its frozen WAN job.")
         if type(job["wan_actors"]) is not int or not 1 <= job["wan_actors"] <= 8 or (
             type(job["wan_broker_port"]) is not int or
             not 1024 <= job["wan_broker_port"] <= 65535
@@ -757,7 +763,7 @@ def main():
     child_env = os.environ.copy()
     if native_wan:
         build, trainer_hash, runtime = (
-            job["game_sha256"], job["trainer_sha256"], job["runtime_version"]
+            job["game_payload_sha256"], job["trainer_sha256"], job["runtime_version"]
         )
         child_env.update({
             "BEES_TRAINING_BUILD_ID": build,
