@@ -109,12 +109,19 @@
                     (item.last_result&&item.last_result!=='success'
                         ?' · last result: '+item.last_result:'')+
                     (item.last_error?' · '+item.last_error:'');
+            const expensive=item.project==='tinybrains'&&
+                (item.id.endsWith('-season')||item.id.startsWith('history-'));
+            const admissionBlocked=expensive&&
+                !info.evaluation_capacity?.ready;
+            if(admissionBlocked&&!item.running)
+                status.textContent+=' · Admission deferred: '+
+                    (info.evaluation_capacity?.reason||'local resource capacity unavailable');
             line.append(title,status);
             if(item.managed) {
                 line.append(
-                    evaluatorButton('Start','start',item.id,busy||item.active,item.project),
-                    evaluatorButton('Restart','restart',item.id,busy,item.project),
-                    evaluatorButton('Run now','run',item.id,busy||item.running,item.project),
+                    evaluatorButton('Start','start',item.id,busy||item.active||admissionBlocked,item.project),
+                    evaluatorButton('Restart','restart',item.id,busy||admissionBlocked,item.project),
+                    evaluatorButton('Run now','run',item.id,busy||item.running||admissionBlocked,item.project),
                     evaluatorButton('Stop','stop',item.id,busy||!item.active,item.project)
                 );
                 if(item.project==='tinybrains'&&
