@@ -128,6 +128,18 @@ class RemoteConsole:
         self.protocol_failure = None
         self.notifications = SimpleQueue()
         self.lock = threading.Lock()
+        # A periodic liveness probe shares the real TCP stream with
+        # commander inputs. Serialize complete newline-delimited frames
+        # so a heartbeat can never interleave bytes with a player command.
+        self.wire_lock = threading.Lock()
+        self.heartbeat_stop = threading.Event()
+        self.heartbeat_thread = None
+        self.heartbeat_nonce = 1
+        self.heartbeat_outstanding = None
+        self.heartbeat_sent_at = None
+        self.heartbeat_rtt_ms = None
+        self.heartbeat_pongs = 0
+        self.heartbeat_timeouts = 0
         self.latest = None
         self.selected = []
         self.selected_scope = None
@@ -141,6 +153,56 @@ class RemoteConsole:
         self.last_battle_receipt = None
         self.briefing_acknowledgments = {}
         self.seen_ship_classes = {}
+
+    def _send_wire(self, encoded):
+        # Player commands, presentation queries and transport heartbeats
+        # share exactly one socket but independent protocol namespaces.
+        with self.wire_lock:
+            if not self.alive:
+                raise OSError("native host is disconnected")
+            self.socket.sendall(encoded)
+
+    def _heartbeat_loop(self):
+        # Keep running while the authoritative World is paused or the
+        # terminal user is waiting at an input prompt. Host heartbeat leases
+        # only become active once a verified welcome has been received.
+        while not self.heartbeat_stop.wait(10.0):
+            if not self.alive:
+                return
+            now = __import__("time").monotonic()
+            with self.lock:
+                outstanding = self.heartbeat_outstanding
+                if outstanding is not None:
+                    expired = now - self.heartbeat_sent_at >= 45.0
+                    if expired:
+                        self.heartbeat_timeouts += 1
+                    else:
+                        continue
+                else:
+                    expired = False
+                    nonce = self.heartbeat_nonce
+                    self.heartbeat_nonce += 1
+                    self.heartbeat_outstanding = nonce
+                    self.heartbeat_sent_at = now
+            if expired:
+                self.notifications.put("Native host heartbeat timed out")
+                try:
+                    self.socket.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                return
+            try:
+                packet = (json.dumps({"kind": "ping", "nonce": nonce},
+                                     separators=(",", ":")) + "\n").encode("utf-8")
+                self._send_wire(packet)
+            except OSError:
+                return
+
+    def _start_heartbeat(self):
+        if self.heartbeat_thread is None:
+            self.heartbeat_thread = threading.Thread(
+                target=self._heartbeat_loop, daemon=True)
+            self.heartbeat_thread.start()
 
     def receive(self):
         try:
@@ -284,6 +346,7 @@ class RemoteConsole:
                         with self.lock:
                             self.host_session_id = session
                             self.authenticated_side = side
+                        self._start_heartbeat()
                         note = ("Rejoined recovered native host"
                                 if message.get("recovered_host") is True
                                 else "Connected to native host")
@@ -291,6 +354,20 @@ class RemoteConsole:
                         self.notifications.put(f"{note}; {role} side {side} ready")
                         if not self.silent:
                             print(f"{note}; {role} side {side} ready")
+                    elif kind == "pong":
+                        with self.lock:
+                            nonce = message.get("nonce")
+                            if (type(nonce) is not int or
+                                    nonce != self.heartbeat_outstanding or
+                                    self.heartbeat_sent_at is None):
+                                raise ValueError("unsolicited or invalid native heartbeat")
+                            self.heartbeat_rtt_ms = (
+                                __import__("time").monotonic() -
+                                self.heartbeat_sent_at
+                            ) * 1000.0
+                            self.heartbeat_pongs += 1
+                            self.heartbeat_outstanding = None
+                            self.heartbeat_sent_at = None
                     elif kind == "held_fire_released":
                         self.held_scope = None
                         self.held_begin_request = None
@@ -393,6 +470,7 @@ class RemoteConsole:
                 print(f"Connection failed: {error}")
         finally:
             self.alive = False
+            self.heartbeat_stop.set()
             try:
                 self.socket.shutdown(socket.SHUT_RDWR)
             except OSError:
@@ -441,7 +519,7 @@ class RemoteConsole:
             "sequence": cue[2],
         }
         try:
-            self.socket.sendall(
+            self._send_wire(
                 (json.dumps(packet, separators=(",", ":")) + "\n").encode("utf-8")
             )
         except OSError:
@@ -725,7 +803,7 @@ class RemoteConsole:
         # Physical input coordinates must be finite; Python's default
         # encoder otherwise emits NaN/Infinity outside valid JSON.
         encoded = (json.dumps(packet, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
-        self.socket.sendall(encoded)
+        self._send_wire(encoded)
         self.next_request += 1
         return packet["request_id"]
 
@@ -748,7 +826,7 @@ class RemoteConsole:
             "ship_id": ship_id,
         }
         try:
-            self.socket.sendall((json.dumps(packet, separators=(",", ":"))
+            self._send_wire((json.dumps(packet, separators=(",", ":"))
                                  + "\n").encode("utf-8"))
         except OSError:
             with self.lock:
@@ -771,7 +849,7 @@ class RemoteConsole:
             "squads": owners,
         }
         encoded = (json.dumps(packet, separators=(",", ":")) + "\n").encode("utf-8")
-        self.socket.sendall(encoded)
+        self._send_wire(encoded)
         self.next_request += 1
 
     def submit_selection(self, state, owners):
