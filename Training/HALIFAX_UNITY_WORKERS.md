@@ -419,11 +419,16 @@ python3 -B Training/bees_hub_worker_distribute.py \
     --apply --activate
 ```
 
-The distributor copies the platform-specific ZIP, shared frozen
-Python runtime ZIP, manifest, and installation helpers. Each machine
-verifies both archives and the extracted Unity player against that
-manifest before activation; the exact trainer and actor sources no longer
-depend on the remote checkout's revision. It does not change passwords, install Unity/Python,
+The distributor validates the selected inventory and local artifacts first,
+then copies and verifies an immutable installation on **every selected machine**
+before activating any selector. If an upload or installation fails, all
+existing active releases remain selected. Activation is atomic **per machine**,
+not across a network: if connectivity fails during the activation phase,
+rerun the same release to finish the remaining machines before restarting
+their Hub agents. Each machine verifies the platform-specific player ZIP,
+shared frozen Python runtime ZIP, manifest, and installation helpers; the exact
+trainer and actor sources no longer depend on the remote checkout's revision.
+It does not change passwords, install Unity/Python,
 configure Hub enrollment, edit running agent services, or restart
 active jobs. On an enrolled machine you can inspect its selected
 release with `python -B Training/bees_hub_worker_install.py current
