@@ -1886,6 +1886,8 @@ def main():
                         help="stable per-job game ID; fixed while the session advances")
     parser.add_argument("--library-game-title",
                         help="game library display title (defaults to native run ID)")
+    parser.add_argument("--operator-stop-file", type=Path,
+                        help="optional cooperative stop marker; exit between committed rounds")
     args = parser.parse_args()
     if (args.library_save_root is None) != (args.library_game_id is None):
         parser.error("--library-save-root and --library-game-id must be used together")
@@ -2414,10 +2416,10 @@ def main():
         # The game or a local operator can request a graceful stop without
         # signalling the optimizer or interrupting a distributed collector.
         # A committed round is always finished before this is consulted.
-        operator_stop_file = root.parent.parent / "stop.request"
+        operator_stop_file = args.operator_stop_file
         stopped_by_operator = False
         for index in range(first_pending_round, args.rounds + 1):
-            if operator_stop_file.is_file():
+            if operator_stop_file is not None and operator_stop_file.is_file():
                 stopped_by_operator = True
                 break
             if stop_state is not None and stop_state["stop"]:
