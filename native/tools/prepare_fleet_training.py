@@ -9,6 +9,7 @@ Combat, collision assets, commands, episode rules and seeds remain native.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import copy
 import hashlib
 import importlib.util
@@ -747,6 +748,33 @@ def convert(source: Path, destination: Path, archetypes: Path,
         ),
         "physical_ship_count": len(scene["ships"]),
         "policy_ship_count": sum("policy" in ship for ship in policy_scene["ships"]),
+        # This records which real source classes the learner is actually
+        # training, including heterogeneous 1v1/128v128 game fleets.
+        # It is derived from the exact same pinned scene whose physical
+        # SHA is checked above; no synthetic team composition or extra
+        # simulation/NN path is introduced.
+        "physical_ship_classes_by_side": {
+            str(side): {
+                str(kind): count for kind, count in sorted(Counter(
+                    ship["ship_type"] for ship in scene["ships"]
+                    if ship["side"] == side
+                ).items())
+            } for side in (1, 2)
+        },
+        "policy_ship_classes_by_side": {
+            str(side): {
+                str(kind): count for kind, count in sorted(Counter(
+                    ship["ship_type"] for ship in policy_scene["ships"]
+                    if ship["side"] == side and isinstance(ship.get("policy"), dict)
+                ).items())
+            } for side in (1, 2)
+        },
+        "physical_squad_count_by_side": {
+            str(side): sum(squad["side"] == side for squad in scene["squads"])
+            for side in (1, 2)
+        },
+        "physical_map_objects": len(scene.get("map_objects", [])),
+        "physical_mining_asteroids": len(scene.get("mining_asteroids", [])),
         "episode_fleet_value_by_side": {
             str(side): {
                 "valued_ships": sum(
