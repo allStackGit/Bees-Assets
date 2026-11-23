@@ -19,6 +19,7 @@ import tempfile
 import zipfile
 
 from bees_unity_worker_identity import unity_worker_tree_sha256
+from bees_release_runtime import verify_runtime
 
 SHA = re.compile(r"^[0-9a-f]{64}$")
 BUILD_ID = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
@@ -30,6 +31,7 @@ MAX_MANIFEST_BYTES = 32768
 MAX_ARCHIVE_BYTES = 16 * 1024 ** 3
 MAX_FILES = 20000
 MAX_UNPACKED_BYTES = 16 * 1024 ** 3
+MAX_RUNTIME_BYTES = 512 * 1024 ** 2
 
 
 def sha256_file(filename: Path) -> str:
@@ -74,6 +76,17 @@ def manifest_record(filename: Path) -> tuple[bytes, dict, dict, str]:
         not 1 <= len(doc["artifacts"]) <= 2
     ):
         raise ValueError("Unsupported or incomplete Bees offline worker build manifest.")
+    runtime = doc.get("runtime")
+    if runtime is not None and (
+        not isinstance(runtime, dict) or
+        set(runtime) != {"archive", "archive_sha256", "archive_bytes", "runtime_version"} or
+        runtime.get("archive") != "bees-runtime.zip" or
+        not SHA.fullmatch(str(runtime.get("archive_sha256", ""))) or
+        not SHA.fullmatch(str(runtime.get("runtime_version", ""))) or
+        type(runtime.get("archive_bytes")) is not int or
+        not 0 < runtime["archive_bytes"] <= MAX_RUNTIME_BYTES
+    ):
+        raise ValueError("Offline Unity release contains an invalid immutable Bees training runtime.")
     platforms = []
     for item in doc["artifacts"]:
         if not isinstance(item, dict) or (
@@ -117,8 +130,24 @@ def installed(root: Path, release: str) -> dict:
     tree_sha = unity_worker_tree_sha256(binary)
     if tree_sha != record["player_tree_sha256"]:
         raise ValueError("Installed Unity player content no longer matches its release.")
+    runtime = doc.get("runtime")
+    if runtime:
+        runtime_archive = base / runtime["archive"]
+        if (runtime_archive.is_symlink() or not runtime_archive.is_file() or
+            runtime_archive.stat().st_size != runtime["archive_bytes"] or
+            sha256_file(runtime_archive) != runtime["archive_sha256"]):
+            raise ValueError("Installed Bees Python learner runtime archive differs from the release.")
+        verify_runtime(runtime_archive,
+                       expected_sha256=runtime["archive_sha256"],
+                       expected_version=runtime["runtime_version"],
+                       expected_build_id=doc["build_id"])
     return {
         "schema_version": 1,
+        **({
+            "runtime_archive": str(runtime_archive),
+            "runtime_sha256": runtime["archive_sha256"],
+            "runtime_version": runtime["runtime_version"],
+        } if runtime else {}),
         "release_sha256": release,
         "build_id": doc["build_id"],
         "platform": platform_name,
@@ -175,7 +204,18 @@ def extract_archive(archive: Path, directory: Path, entrypoint: str) -> None:
 
 def install(root: Path, manifest: Path, archive: Path) -> dict:
     root = safe_root(root)
-    raw, _doc, record, release = manifest_record(manifest)
+    raw, doc, record, release = manifest_record(manifest)
+    runtime = doc.get("runtime")
+    runtime_source = manifest.parent / "bees-runtime.zip"
+    if runtime:
+        if (runtime_source.is_symlink() or not runtime_source.is_file() or
+            runtime_source.stat().st_size != runtime["archive_bytes"] or
+            sha256_file(runtime_source) != runtime["archive_sha256"]):
+            raise ValueError("Unity release's Python training runtime ZIP is missing or changed.")
+        verify_runtime(runtime_source,
+                       expected_sha256=runtime["archive_sha256"],
+                       expected_version=runtime["runtime_version"],
+                       expected_build_id=doc["build_id"])
     if not archive.is_absolute() or archive.is_symlink() or not archive.is_file():
         raise ValueError("Unity worker ZIP must be an absolute regular local archive.")
     if (archive.stat().st_size != record["archive_bytes"] or
@@ -203,6 +243,11 @@ def install(root: Path, manifest: Path, archive: Path) -> dict:
             output.write(raw)
         if sha256_file(target) != release:
             raise ValueError("Copied build manifest differs from its source.")
+        if runtime:
+            frozen_runtime = stage / runtime["archive"]
+            shutil.copyfile(runtime_source, frozen_runtime)
+            if sha256_file(frozen_runtime) != runtime["archive_sha256"]:
+                raise ValueError("Copied Bees Python runtime differs from verified build source.")
         try:
             stage.rename(destination)
         except FileExistsError:
