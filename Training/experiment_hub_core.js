@@ -540,7 +540,7 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
         throw Error('Bees native jobs require a pinned Unity worker and MA-POCA trainer, 1,000–100 billion steps, 1–64 environments, a seed and a CPU/ROCm device.');
     if(typeof (parameters.batch_inference??true)!=='boolean')
         throw Error('Bees native batched inference preference must be a boolean.');
-    if(!['off','scripted-maps-v1'].includes(parameters.evaluation_profile??'off')||
+    if(!['off','scripted-maps-v1','scripted-coverage-v2'].includes(parameters.evaluation_profile??'off')||
         !Number.isSafeInteger(parameters.evaluation_matches??8)||
         (parameters.evaluation_matches??8)<1||
         (parameters.evaluation_matches??8)>100)
