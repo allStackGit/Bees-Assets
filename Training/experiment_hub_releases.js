@@ -6,7 +6,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const os=require('node:os');
 const crypto=require('node:crypto');
-const {spawn}=require('node:child_process');
+const {spawn,spawnSync}=require('node:child_process');
 const {pipeline}=require('node:stream/promises');
 const COMPONENTS=['worker','bees','tinybrains','courier'];
 // These browser-only assets never execute in the coordinator or an agent.
@@ -187,13 +187,41 @@ async function fileHash(file) {
     }
     return {sha256:hash.digest('hex'),bytes};
 }
+// The Halifax development checkout is also the live Docker bind-mounted
+// TinyBrains source. Track its approved branch alongside the Hub by default,
+// without fetching from an arbitrary user-specified repository or following a
+// symlink. Other machines without this checkout remain worker-only.
+function discoverLocalTinyBrains() {
+    const root=path.join(os.homedir(),'ai','projects','tinybrains');
+    const branch='feat/linux-tinybrains-runtime';
+    try {
+        const stat=fs.lstatSync(root);
+        if(!stat.isDirectory()||stat.isSymbolicLink()||
+            fs.realpathSync(root)!==root||
+            !fs.statSync(path.join(root,'.git')).isDirectory()||
+            !fs.statSync(path.join(root,'Ants-MAPOCA','src','ants_mapoca',
+                'pipeline.py')).isFile())return null;
+        const remote=spawnSync('git',['remote','get-url','origin'],{
+            cwd:root,encoding:'utf8',timeout:3000,maxBuffer:4096,
+            windowsHide:true});
+        if(remote.status!==0||
+            !/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/|git:\/\/github\.com\/)allStackGit\/TinyBrains(?:\.git)?\/?$/.test(
+                remote.stdout.trim()))return null;
+        return {path:root,branch};
+    }catch{return null;}
+}
 function configuration(input,workerRoot) {
-    if(!input)return {worker:{path:workerRoot,branch:'feat/hub-resource-experiments-20261110'}};
-    const parsed=JSON.parse(input);
+    const parsed=input?JSON.parse(input):{};
     if(!parsed||typeof parsed!=='object'||Array.isArray(parsed)||
         Object.keys(parsed).some(key=>!COMPONENTS.includes(key)))
         throw Error('EXPERIMENT_HUB_RELEASE_SOURCES must map approved component names.');
     if(!parsed.worker)parsed.worker={path:workerRoot,branch:'feat/hub-resource-experiments-20261110'};
+    // An explicit TinyBrains source wins. Otherwise enroll the known Halifax
+    // checkout without requiring a second EnvironmentFile configuration.
+    if(!parsed.tinybrains) {
+        const local=discoverLocalTinyBrains();
+        if(local)parsed.tinybrains=local;
+    }
     for(const [key,value] of Object.entries(parsed)) {
         if(!value||typeof value.path!=='string'||!path.isAbsolute(value.path)||
             value.path.includes('\\0')||!fs.existsSync(path.join(value.path,'.git'))||
@@ -343,17 +371,21 @@ class ReleaseStore {
             };
         return components;
     }
-    async applyLocalWhenIdle(hub,allowWorkerOverride=false) {
+    async applyLocalWhenIdle(hub,allowWorkerOverride=false,allowLocalSimulation=false) {
         // Ordinary learner/simulation revisions require an idle native-job
         // boundary. Explicit operator override may refresh coordinator and
         // Linux agents while separately OS-owned native workloads continue.
         const active=hub.state.jobs.some(job=>job.dispatch_id&&
             !job.capacity_released_at&&
             !['finished','failed','stopped','cancelled'].includes(job.status));
-        if(active&&!allowWorkerOverride)return {deferred:true,changed:[]};
+        if(active&&!allowWorkerOverride&&!allowLocalSimulation)
+            return {deferred:true,changed:[]};
         const changed=[];
         for(const [name,source] of Object.entries(this.sources)) {
-            if(active&&name!=='worker')continue;
+            // A remote trainer must not pin Halifax's source to an old
+            // version forever. A local trainer or unknown agent identity
+            // still prevents changing its bind-mounted Python modules.
+            if(active&&name!=='worker'&&!allowLocalSimulation)continue;
             try {
                 const local=await git(['rev-parse','HEAD'],source.path);
                 const target=name==='worker'
