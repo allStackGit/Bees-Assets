@@ -451,6 +451,21 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
                 check_native_input_dependencies({
                     "source_dependencies": receipt["source_dependencies"],
                 })
+                actual, scenes = terminal_matchup(
+                    receipt_path.parent, receipt, candidate_slot, reference_slot,
+                )
+                stored = receipt.get("candidate_terminal_matchup")
+                if (not isinstance(stored, dict) or
+                        stored.get("counts") != dict(actual) or
+                        stored.get("by_scene_sha256") != {
+                            digest: dict(measured) for digest, measured in scenes.items()
+                        } or
+                        row.get("candidate_terminal_matchup") != stored or
+                        row.get("side_win_rate") != receipt["side_win_rate"] or
+                        row.get("episodes") != receipt["episodes"]):
+                    raise ValueError(
+                        f"side {side} published candidate model results disagree with terminal journal"
+                    )
             reused_sides += 1
         else:
             result = evaluate_suite(
