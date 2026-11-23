@@ -107,11 +107,17 @@ def write_native_holdout(output: Path, training_run: dict,
             max_world >= U64 - (worlds - count) or
             max_level >= (1 << 63) - (worlds - count)):
         raise ValueError("native holdout World/Level identity allocation is exhausted")
-    per_episode_budget, remainder = divmod(
-        run["max_rounds"], run["episodes_per_world"],
-    )
-    if remainder or per_episode_budget <= 0 or per_episode_budget * episodes >= U64:
-        raise ValueError("native holdout round budget is invalid")
+    source_budget = run.get("max_rounds")
+    source_episodes = run.get("episodes_per_world")
+    if (type(source_budget) is not int or type(source_episodes) is not int or
+            source_budget < 1 or source_episodes < 1):
+        raise ValueError("native source holdout has an invalid total episode budget")
+    # Original multi-episode runs can have a legitimate, indivisible
+    # total tick cap. Round UP the per-episode allowance so the fixed
+    # holdout never truncates the physical completion window.
+    per_episode_budget = (source_budget + source_episodes - 1) // source_episodes
+    if per_episode_budget * episodes >= U64:
+        raise ValueError("native fixed holdout exceeds the uint64 tick budget")
     run["run_id"] += "-fixed-holdout"
     run["max_rounds"] = per_episode_budget * episodes
     run["episodes_per_world"] = episodes
