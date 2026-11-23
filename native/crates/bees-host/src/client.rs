@@ -178,6 +178,10 @@ pub struct NativeClient {
     /// in-game mining cargo or client-side asset counts.
     campaign_ending_awards: Option<(usize,u64)>,
     playback: bool,
+    /// View-only summary of the authoritative EpisodeFinal ledger for a
+    /// local Fish Tank series. The Level still owns physics and results.
+    /// (total, finished, Bee wins, Human wins, draws)
+    fish_tank_series: Option<(u32, u64, u64, u64, u64)>,
     dialogue_sequence: Option<u32>,
     dialogue_line: usize,
     dialogue_pause_started: Option<(u32, usize, Instant)>,
@@ -324,7 +328,7 @@ impl NativeClient {
             result_controls: None,
             match_summary_visible: false, match_summary: None,
             campaign_ending_awards: None,
-            playback: false,
+            playback: false, fish_tank_series: None,
             dialogue_sequence: None,
             dialogue_line: 0,
             dialogue_pause_started: None, dialogue_reveal: None,
@@ -553,6 +557,17 @@ impl NativeClient {
         self.game_speed = 0;
     }
     pub fn set_playback(&mut self) { self.playback = true; }
+
+    /// The caller supplies only delivered EpisodeFinal counters. Do not
+    /// accumulate UI-side victories or infer results from visible damage.
+    pub fn set_fish_tank_series(
+        &mut self, total: u32, finished: u64, bee_wins: u64,
+        human_wins: u64, draws: u64,
+    ) {
+        self.fish_tank_series = Some((
+            total, finished, bee_wins, human_wins, draws,
+        ));
+    }
 
     pub fn set_freeplay_fog_allowed(&mut self,allowed:bool) {
         self.allow_freeplay_fog=allowed;
@@ -2293,6 +2308,15 @@ impl NativeClient {
                 counts.aim_points, counts.missing_aim_data) }
             else { "off".to_owned() },
         ) };
+        let title = if let Some((total, finished, bees, humans, draws)) =
+            self.fish_tank_series
+        {
+            format!(
+                "{title} | Fish Tank {}/{} | Finished {} | Bees {} Humans {} Draws {}",
+                (view.episode_revision.saturating_add(1)).min(u64::from(total)),
+                total, finished, bees, humans, draws,
+            )
+        } else { title };
         self.window.set_title(&title);
             self.last_title_update = Some(now);
         }
