@@ -915,7 +915,15 @@ impl PeerClient {
                         self.battle_loss_breakdown.clear();
                         self.campaign_receipt = None;
                         self.campaign_reward_details.clear();
-                        self.notice = "New battle started".into();
+                        self.notice = match (
+                            message["fish_tank_series"]["episode"].as_u64(),
+                            message["fish_tank_series"]["total"].as_u64(),
+                        ) {
+                            (Some(episode), Some(total)) if episode > 0 &&
+                                episode <= total && total <= 64 =>
+                                format!("Fish Tank battle {episode} of {total}"),
+                            _ => "New battle started".into(),
+                        };
                     }
                     if self.visual.snapshot(self.state.as_ref(), &message) {
                         self.metrics.snapshot_pairs_interpolated += 1;
@@ -5606,6 +5614,15 @@ pub fn connect_remote_with_trust(
             text::draw_at(&mut pixels,WIDTH,12,53,
                 &format!("Spectator camera following visible ship #{id}"),
                 1,[198,231,248]);
+        }
+        if let Some((episode,total)) = peer.state.as_ref().and_then(|state|
+            Some((
+                state["fish_tank_series"]["episode"].as_u64()?,
+                state["fish_tank_series"]["total"].as_u64()?,
+            ))
+        ) {
+            text::draw_at(&mut pixels,WIDTH,12,37,
+                &format!("Fish Tank battle {episode} / {total}"),1,[198,231,248]);
         }
         if let Some(speed)=peer.state.as_ref()
             .and_then(|state|state["game_speed"].as_f64())
