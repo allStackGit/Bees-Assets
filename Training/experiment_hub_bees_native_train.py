@@ -215,6 +215,98 @@ def inspect_job(filename: Path) -> dict:
         raise ValueError("CPU-only job cannot request a GPU.")
     return job
 
+def stage_parent_checkpoint(root: Path, job: dict) -> bool:
+    """Resume by copying an immutable parent ML-Agents state into this job.
+
+    Each Hub job gets a distinct private artifact owner; the ML-Agents run ID
+    remains the initial lineage ID so its checkpoint is a real optimizer
+    continuation rather than a weights-only initialization.
+    """
+    parent_id = job["continuation_of_job_id"]
+    if parent_id is None:
+        return False
+    lineage = job["lineage_root_id"]
+    parent = root.parent / parent_id
+    parent_job_file = parent / "job.json"
+    receipt_file = parent / "model.json"
+    if parent.is_symlink() or not parent.is_dir() or (
+        parent_job_file.is_symlink() or not parent_job_file.is_file()
+        or receipt_file.is_symlink() or not receipt_file.is_file()
+        or parent_job_file.stat().st_size > 65536
+        or receipt_file.stat().st_size > 4096
+    ):
+        raise ValueError("Parent Bees Hub job or checkpoint receipt is missing or redirected.")
+    previous = json.loads(parent_job_file.read_text(encoding="utf-8"))
+    receipt = json.loads(receipt_file.read_text(encoding="utf-8"))
+    if not isinstance(previous, dict) or not isinstance(receipt, dict) or (
+        previous.get("job_id") != parent_id
+        or previous.get("lineage_root_id", parent_id) != lineage
+        or receipt.get("job_id") != parent_id
+        or receipt.get("lineage_root_id", parent_id) != lineage
+        or receipt.get("sha256") != job["expected_parent_model_sha256"]
+        or receipt.get("checkpoint_sha256") !=
+            job["expected_parent_checkpoint_sha256"]
+    ):
+        raise ValueError("Parent Bees checkpoint identity or model receipt has changed.")
+    for field in ("game_sha256", "runtime_version", "trainer_sha256", "seed"):
+        if previous.get(field) != job[field]:
+            raise ValueError("Parent Bees runtime or trainer differs at continuation: " + field)
+    source = parent / "results" / lineage
+    target = root / "results" / lineage
+    if source.is_symlink() or not source.is_dir() or (
+        source.resolve() != source or target.exists() or target.is_symlink()
+    ):
+        raise ValueError("Bees continuation result tree is missing, redirected or already staged.")
+    for field, digest in (
+        ("model", "expected_parent_model_sha256"),
+        ("checkpoint", "expected_parent_checkpoint_sha256"),
+    ):
+        name = receipt.get(field)
+        if not isinstance(name, str):
+            raise ValueError("Invalid parent Bees receipt path.")
+        item = Path(name)
+        if not item.is_absolute() or not item.is_relative_to(source):
+            raise ValueError("Parent Bees receipt escapes its frozen results tree.")
+        require_file(item, job[digest])
+        if item.resolve() != item:
+            raise ValueError("Parent Bees checkpoint has a redirected path component.")
+    total, count = 0, 0
+    for directory, dirs, files in os.walk(source, followlinks=False):
+        for name in [*dirs, *files]:
+            candidate = Path(directory) / name
+            if candidate.is_symlink() or not (
+                candidate.is_dir() if name in dirs else candidate.is_file()
+            ):
+                raise ValueError("Parent Bees checkpoint contains a symlink or special file.")
+            if name in files:
+                total += candidate.stat().st_size
+                count += 1
+                if count > 100000 or total > 128 * 1024 ** 3:
+                    raise ValueError("Parent Bees training state exceeds bounded copy capacity.")
+    temporary = root / ("resume-state-" + uuid.uuid4().hex)
+    try:
+        # Event logs are observations, not checkpoint state. Avoid copying
+        # large old TensorBoard files or re-reporting the parent's metrics.
+        shutil.copytree(
+            source, temporary, copy_function=shutil.copy2,
+            ignore=lambda directory, names: {
+                name for name in names if name.startswith("events.out.tfevents.")
+            },
+        )
+        for field, digest in (
+            ("model", "expected_parent_model_sha256"),
+            ("checkpoint", "expected_parent_checkpoint_sha256"),
+        ):
+            item = temporary / Path(receipt[field]).relative_to(source)
+            require_file(item, job[digest])
+        target.parent.mkdir(mode=0o700, parents=True, exist_ok=False)
+        os.replace(temporary, target)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+    return True
+
+
 def reserve_base_port(root: Path, job_id: str, num_envs: int):
     """Keep a process-held inter-job port reservation until training exits."""
     lockroot = root.parent / "_bees_native_ports"
