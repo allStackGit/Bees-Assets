@@ -6995,38 +6995,52 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
                     let commands_side = |side| squads.iter().any(|squad|
                         squad["side"] == side && squad["user_controlled"] == true &&
                         squad["can_accept_input"] == true);
-                    let spectator_fleet = if let Some(human) = single_remote_side {
-                        let ai = 3 - human;
-                        // Existing saved matches may be policy-controlled
-                        // or have lost their original human roster. Require
-                        // genuine authored scripted command queues, not
-                        // simply the absence of user permissions.
+                    let player_roster = [commands_side(1), commands_side(2)];
+                    // Only an original two-commander roster gets two
+                    // remote seats. For an AI-controlled roster, prove the
+                    // source script queues name actual authored squads;
+                    // a disabled player flag alone is not an AI director.
+                    // Archived HiveMind/policy executions are not restarted
+                    // as a new, unrelated network opponent.
+                    let scripted = if player_roster == [true, true] {
+                        [false, false]
+                    } else {
                         let run: Value = serde_json::from_slice(
                             &fs::read(&source).ok()?,
                         ).ok()?;
                         if !run["hivemind"].is_null() { return None; }
                         let queues = run["levels"][0]["scripted_queues"].as_array()?;
-                        let scripted_side = |side| queues.iter().any(|queue| {
+                        std::array::from_fn(|side| queues.iter().any(|queue| {
                             let Some(id) = queue["squad_item_id"].as_i64() else {
                                 return false;
                             };
-                            queue["orders"].as_array().is_some_and(|orders| !orders.is_empty()) &&
+                            queue["orders"].as_array()
+                                .is_some_and(|orders| !orders.is_empty()) &&
                             squads.iter().any(|squad|
-                                squad["item_id"] == id && squad["side"] == side
-                            )
-                        });
-                        let human_vs_ai = commands_side(human) &&
-                            !commands_side(ai) && scripted_side(ai);
-                        let ai_vs_ai = !commands_side(human) &&
-                            !commands_side(ai) && scripted_side(human) &&
-                            scripted_side(ai);
-                        if !human_vs_ai && !ai_vs_ai { return None; }
-                        ai_vs_ai
-                    } else {
-                        if !commands_side(1) || !commands_side(2) {
+                                squad["item_id"] == id && squad["side"] == side + 1)
+                        }))
+                    };
+                    let spectator_fleet = if let Some(human) = single_remote_side {
+                        let human = (human - 1) as usize;
+                        let opponent = 1 - human;
+                        if player_roster[human] &&
+                            !player_roster[opponent] && scripted[opponent] {
+                            false
+                        } else if player_roster == [false, false] &&
+                            scripted == [true, true] {
+                            true
+                        } else {
                             return None;
                         }
+                    } else if player_roster == [true, true] {
                         false
+                    } else if player_roster == [false, false] &&
+                        scripted == [true, true] {
+                        // Both viewer invitations belong to this host;
+                        // neither commander token becomes player authority.
+                        true
+                    } else {
+                        return None;
                     };
                     if spectator_fleet && !spectator_available { return None; }
                     Some((recording.title, source, spectator_fleet))
