@@ -658,6 +658,10 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
         **({"allocated_inference_devices": list(scenario_devices)}
            if scenario_devices is not None else {}),
         "completed_sides_reused": reused_sides,
+        **({"per_side_inference_device_work": {
+            str(side): result.get("per_inference_device", {})
+            for side, result in enumerate(sides, start=1)
+        }} if scenario_devices is not None else {}),
         "episodes": episodes, "side_victories": physical_side_victories,
         "candidate_slot_victories": total_candidate_wins,
         "candidate_slot_draws": total_candidate_draws,
