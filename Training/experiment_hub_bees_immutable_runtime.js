@@ -50,8 +50,8 @@ function pythonJson(executable,args,cwd) {
 }
 
 function prepare({project,python,artifactRoot,workerSha}) {
-    if(process.platform!=='linux')
-        throw Error('Bees native runtime pin requires Linux machine ownership.');
+    if(!['linux','win32'].includes(process.platform))
+        throw Error('Bees immutable Python runtime requires Linux or Windows native ownership.');
     if(!SHA.test(String(workerSha||'')))
         throw Error('Bees Unity worker must have a pinned SHA-256 before runtime packaging.');
     const resolved=fs.realpathSync(project),storage=fs.realpathSync(artifactRoot);
@@ -65,7 +65,8 @@ function prepare({project,python,artifactRoot,workerSha}) {
     const id='hub-native-'+workerSha.slice(0,24);
     const cache=path.join(storage,'_immutable_runtime');
     fs.mkdirSync(cache,{recursive:true,mode:0o700});
-    if(fs.realpathSync(cache)!==cache||fs.statSync(cache).mode&0o077)
+    if(fs.realpathSync(cache)!==cache||
+        process.platform!=='win32'&&(fs.statSync(cache).mode&0o077))
         throw Error('Immutable Bees runtime cache must be private and non-redirected.');
     const archive=path.join(cache,'runtime.zip');
     const packaged=pythonJson(python,[
