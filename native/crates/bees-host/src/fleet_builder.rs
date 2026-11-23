@@ -867,7 +867,7 @@ pub(super) fn choose_for_preferred_side(
 /// The existing private host authenticates a separate remote commander
 /// per side; no new network controller, simulation or permission model.
 pub(super) fn choose_multiplayer(
-    authenticated_side: Option<i32>, save_root: &Path,
+    authenticated_side: Option<i32>, spectator_available: bool, save_root: &Path,
     queen_archetype: Option<&Value>, factory_archetype: Option<&Value>,
     sources: &OriginalGameSources,
 ) -> Result<Option<FleetChoice>, Box<dyn Error>> {
@@ -886,16 +886,19 @@ pub(super) fn choose_multiplayer(
                 unlocked: hive_available },
             BattleMenuRow { title: "Watch native AI vs AI battles",
                 status: "  [Read-only authenticated spectators; source Fish Tank]",
-                unlocked: true },
+                unlocked: spectator_available },
             BattleMenuRow { title: "Watch HiveMind vs HiveMind",
                 status: "  [Two configured socket opponents; read-only spectators]",
-                unlocked: hive_available },
+                unlocked: hive_available && spectator_available },
         ];
         let mut selected = 0_usize;
         let Some(mode) = select_library(&rows, &mut selected, false)?
             else { return Ok(None); };
         if (mode == 1 || mode == 3) && !hive_available {
             return Err(invalid("native HiveMind opponent requires a configured profile").into());
+        }
+        if (mode == 2 || mode == 3) && !spectator_available {
+            return Err(invalid("hosted AI viewing needs private spectator credentials").into());
         }
         mode + 1
     } else {
