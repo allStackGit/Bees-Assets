@@ -701,15 +701,32 @@ def verified_gpu_forwards(log_path):
                     evidence is None or processed >= evidence["agent_rows"]
             ):
                 pci = row.get("gpu_pci_address")
+                uuid = row.get("gpu_cuda_uuid")
                 if pci is not None and (
                         not isinstance(pci, str) or
                         not re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", pci)):
                     continue
+                if uuid is not None and (
+                        not isinstance(uuid, str) or
+                        not re.fullmatch(
+                            r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", uuid
+                        )):
+                    continue
+                # The proof identifies hardware from a completed forward,
+                # never from a requested CUDA/ROCr visibility ordinal.
+                if pci is not None and uuid is not None:
+                    continue
+                identity = (
+                    f"hip_pci:{pci}" if pci is not None else
+                    f"cuda_uuid:{uuid}" if uuid is not None else None
+                )
                 evidence = {
                     "model_forwards": calls,
                     "agent_rows": processed,
                     "final_counters": row.get("final") is True,
                     **({"gpu_pci_address": pci} if pci else {}),
+                    **({"gpu_cuda_uuid": uuid} if uuid else {}),
+                    **({"gpu_device_identity": identity} if identity else {}),
                 }
                 staging = row.get("accelerator_input_staging_by_device")
                 if isinstance(staging, list) and staging:
@@ -842,12 +859,14 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                 # least one action batch on a GPU, not merely loaded weights.
                 addresses = {proof["gpu_pci_address"] for proof in gpu_proofs.values()
                              if "gpu_pci_address" in proof}
+                identities = {proof["gpu_device_identity"] for proof in gpu_proofs.values()
+                              if "gpu_device_identity" in proof}
                 if leased_gpu_count == 2 and leased_gpu_inference and (
-                        len(addresses) != 2 or any(
-                            "gpu_pci_address" not in proof for proof in gpu_proofs.values()
+                        len(identities) != 2 or any(
+                            "gpu_device_identity" not in proof for proof in gpu_proofs.values()
                         )):
                     raise ValueError(
-                        "dual-GPU lease did not execute real model forwards on two distinct HIP PCI devices"
+                        "dual-GPU lease did not prove real model forwards on two distinct physical GPUs"
                     )
                 # Per-device useful work is counted from each completed
                 # immutable simulation shard, not inferred from GPU %
@@ -855,11 +874,16 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                 # only their authentic world/policy samples.
                 by_device = {}
                 for index, proof in gpu_proofs.items():
-                    pci = proof.get("gpu_pci_address")
-                    if pci is None:
-                        continue  # CUDA/Windows has no HIP PCI attestation.
-                    work = by_device.setdefault(pci, {
-                        "gpu_pci_address": pci, "rollout_processes": 0,
+                    identity = proof.get("gpu_device_identity")
+                    if identity is None:
+                        continue  # Single GPU without a hardware identity.
+                    work = by_device.setdefault(identity, {
+                        "gpu_device_identity": identity,
+                        **({"gpu_pci_address": proof["gpu_pci_address"]}
+                           if "gpu_pci_address" in proof else {}),
+                        **({"gpu_cuda_uuid": proof["gpu_cuda_uuid"]}
+                           if "gpu_cuda_uuid" in proof else {}),
+                        "rollout_processes": 0,
                         "model_forwards": 0, "gpu_agent_rows": 0,
                         "successful_world_steps": 0, "successful_policy_rows": 0,
                     })
@@ -915,7 +939,8 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                         agent_rows / model_forwards if model_forwards else None
                     ),
                     **({"gpu_pci_addresses": sorted(addresses)} if addresses else {}),
-                    **({"per_device": [by_device[pci] for pci in sorted(by_device)]}
+                    **({"gpu_device_identities": sorted(identities)} if identities else {}),
+                    **({"per_device": [by_device[identity] for identity in sorted(by_device)]}
                        if by_device else {}),
                 }
             return result
