@@ -493,6 +493,120 @@ def record_model(root: Path, job: dict):
         json.dump(receipt, handle, sort_keys=True)
         handle.write("\n")
 
+
+
+def publish_policy_candidate(root: Path, job: dict) -> Path:
+    """Export a portable, immutable ONNX candidate without promoting it.
+
+    A native Hub training run owns its checkpoint and its candidate artifact.
+    Importing this package into a live Unity deployment remains a separate,
+    explicitly approved compatibility and release operation.
+    """
+    receipt_path = root / "model.json"
+    if receipt_path.is_symlink() or not receipt_path.is_file() or (
+        receipt_path.stat().st_size > 4096
+    ):
+        raise ValueError("Cannot publish Bees candidate without its verified model receipt.")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if not isinstance(receipt, dict) or (
+        receipt.get("job_id") != job["job_id"] or
+        receipt.get("lineage_root_id", receipt.get("job_id")) != job["lineage_root_id"]
+    ):
+        raise ValueError("Bees candidate model receipt does not belong to this job.")
+    digest = receipt.get("sha256")
+    checkpoint_digest = receipt.get("checkpoint_sha256")
+    if any(not isinstance(value, str) or len(value) != 64 or
+           any(char not in "0123456789abcdef" for char in value)
+           for value in (digest, checkpoint_digest)):
+        raise ValueError("Bees model or optimizer receipt has an invalid digest.")
+    source = Path(str(receipt.get("model", "")))
+    results = root / "results" / job["lineage_root_id"]
+    if not source.is_absolute() or not source.is_relative_to(results) or (
+        source.resolve() != source
+    ):
+        raise ValueError("Bees candidate source escapes the immutable job results.")
+    require_file(source, digest)
+
+    evaluation = None
+    evaluation_source = root / "evaluations" / "summary.json"
+    if job["evaluation_profile"] != "off":
+        if evaluation_source.is_symlink() or not evaluation_source.is_file() or (
+            evaluation_source.stat().st_size > 32768
+        ):
+            raise ValueError("Evaluated Bees candidate requires its completed evaluation receipt.")
+        summary = json.loads(evaluation_source.read_text(encoding="utf-8"))
+        if not isinstance(summary, dict) or (
+            summary.get("schema_version") != 1 or
+            summary.get("job_id") != job["job_id"] or
+            summary.get("profile") != job["evaluation_profile"] or
+            summary.get("model_sha256") != digest or
+            summary.get("case_count") != len(evaluation_cases(job["evaluation_profile"]))
+        ):
+            raise ValueError("Bees candidate evaluation is not for this model and suite.")
+        evaluation = {
+            "file": "evaluation-summary.json",
+            "sha256": sha256_file(evaluation_source),
+            "profile": job["evaluation_profile"],
+            "case_count": summary["case_count"],
+        }
+    elif evaluation_source.exists() or evaluation_source.is_symlink():
+        raise ValueError("Unevaluated Bees candidate unexpectedly contains evaluation results.")
+
+    destination = root / "policy-candidate"
+    if destination.exists() or destination.is_symlink():
+        raise ValueError("Bees candidate export already exists; refusing to replace it.")
+    temporary = root / ("policy-candidate-" + uuid.uuid4().hex + ".tmp")
+    temporary.mkdir(mode=0o700)
+    try:
+        candidate_model = temporary / "model.onnx"
+        with source.open("rb") as reader, candidate_model.open("xb") as writer:
+            os.chmod(candidate_model, 0o600)
+            shutil.copyfileobj(reader, writer, 1 << 20)
+            writer.flush()
+            os.fsync(writer.fileno())
+        if sha256_file(candidate_model) != digest:
+            raise ValueError("Bees candidate model bytes changed while exporting.")
+        if evaluation is not None:
+            candidate_evaluation = temporary / evaluation["file"]
+            with evaluation_source.open("rb") as reader, candidate_evaluation.open("xb") as writer:
+                os.chmod(candidate_evaluation, 0o600)
+                shutil.copyfileobj(reader, writer, 1 << 20)
+                writer.flush()
+                os.fsync(writer.fileno())
+            if sha256_file(candidate_evaluation) != evaluation["sha256"]:
+                raise ValueError("Bees candidate evaluation changed while exporting.")
+        manifest = {
+            "schema_version": 1,
+            "kind": "bees-unity-onnx-candidate",
+            "deployment_status": "not-promoted",
+            "job_id": job["job_id"],
+            "lineage_root_id": job["lineage_root_id"],
+            "continuation_of_job_id": job["continuation_of_job_id"],
+            "model_file": "model.onnx",
+            "model_sha256": digest,
+            "model_size_bytes": candidate_model.stat().st_size,
+            "optimizer_checkpoint_sha256": checkpoint_digest,
+            "unity_worker_sha256": job["game_sha256"],
+            "trainer_sha256": job["trainer_sha256"],
+            "runtime_version": job["runtime_version"],
+            "seed": job["seed"],
+            "hyperparameters": job["hyperparameters"],
+            "environment_args": job["environment_args"],
+            "evaluation": evaluation,
+        }
+        with (temporary / "manifest.json").open("x", encoding="utf-8") as writer:
+            os.chmod(temporary / "manifest.json", 0o600)
+            json.dump(manifest, writer, sort_keys=True, indent=2)
+            writer.write("\n")
+            writer.flush()
+            os.fsync(writer.fileno())
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+    return destination
+
+
 # Versioned, independently scored scenarios. The benchmark runner owns
 # match/timeout accounting; these are observations, not training rewards or
 # an authorization to promote a policy. This is deliberately not described
@@ -756,6 +870,7 @@ def main():
             with (evaluation_root/"summary.json").open("x",encoding="utf-8") as stream:
                 json.dump(summary,stream,sort_keys=True,indent=2)
                 stream.write("\n")
+        publish_policy_candidate(root,job)
         return 0
     finally:
         if child and child.poll() is None:
