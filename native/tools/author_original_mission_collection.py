@@ -50,10 +50,18 @@ def load_manifest(path: Path) -> dict:
 
 
 def author_collection(source_manifest: Path, destination: Path,
-                      original_campaign_options: Path | None = None) -> dict:
+                      original_campaign_options: Path | None = None,
+                      original_challenge_options: Path | None = None) -> dict:
     source_manifest = source_manifest.resolve(strict=True)
     if original_campaign_options is not None:
         original_campaign_options = original_campaign_options.resolve(strict=True)
+    if original_challenge_options is not None:
+        original_challenge_options = original_challenge_options.resolve(strict=True)
+        if original_campaign_options is None:
+            raise ValueError(
+                "original Challenge career requires its real campaign "
+                "and source Uranus III completion gate in the same native library"
+            )
     manifest_sha = file_sha256(source_manifest)
     configuration = load_manifest(source_manifest)
     if (original_campaign_options is not None and
@@ -177,13 +185,30 @@ def author_collection(source_manifest: Path, destination: Path,
             published = publish_original_campaign(
                 stage, original_campaign_options,
             )
-            # The publisher joins the authentic career and post-campaign
-            # modes to the root menu. Keep the returned source receipts
-            # aligned with the updated immutable menu bytes.
             suite["native_game_libraries"][0]["sha256"] = (
                 published["native_library_sha256"]
             )
             suite["original_campaign"] = published
+            if original_challenge_options is not None:
+                challenge = publish_original_challenge(
+                    stage, original_challenge_options,
+                )
+                suite["native_game_libraries"][0]["sha256"] = (
+                    challenge["native_library_sha256"]
+                )
+                suite["original_challenge"] = challenge
+                # The Challenge installer updates the one native root
+                # menu atomically. Its new receipt is the final collection
+                # identity; retain that identity in the campaign link too.
+                suite["original_campaign"]["collection_receipt_sha256"] = (
+                    challenge["collection_receipt_sha256"]
+                )
+                suite["original_campaign"]["native_library_sha256"] = (
+                    challenge["native_library_sha256"]
+                )
+                suite["original_campaign"]["native_library_games"] = (
+                    challenge["native_library_games"]
+                )
         sync_directory(stage)
         if destination.exists() or destination.is_symlink():
             raise FileExistsError("Original campaign collection destination was claimed")
@@ -369,6 +394,146 @@ def publish_original_campaign(collection: Path, options_file: Path) -> dict:
     return result
 
 
+def publish_original_challenge(collection: Path, options_file: Path) -> dict:
+    """Use the existing native Challenge author, fleet ledger and menu gate.
+
+    No alternate battle or career implementation is introduced. The
+    original captured campaign and all ten genuine Challenge levels are
+    prepared together before the outer collection becomes visible.
+    """
+    collection = collection.resolve(strict=True)
+    options_file = options_file.resolve(strict=True)
+    options_sha = file_sha256(options_file)
+    plan = json.loads(options_file.read_text(encoding="utf-8"))
+    required = {
+        "schema_version", "map_missions", "fleets", "max_squad_size",
+        "asteroid_minimum_rate", "asteroid_maximum_rate",
+    }
+    if (not isinstance(plan, dict) or
+            not required.issubset(plan) or
+            set(plan) - required - {"seed", "minutes", "archetype_missions"} or
+            plan["schema_version"] != 1 or
+            not isinstance(plan["map_missions"], dict) or
+            not isinstance(plan["fleets"], list) or
+            len(plan["fleets"]) != 10 or
+            any(not isinstance(fleet, str) or not fleet or
+                len(fleet) > 1024 for fleet in plan["fleets"]) or
+            any(type(plan.get(name)) is not int or
+                not 1 <= plan[name] <= 1024
+                for name in ("max_squad_size", "asteroid_minimum_rate",
+                             "asteroid_maximum_rate")) or
+            plan["asteroid_minimum_rate"] > plan["asteroid_maximum_rate"] or
+            type(plan.get("seed", 12345)) is not int or
+            not 0 <= plan.get("seed", 12345) < (1 << 32) or
+            type(plan.get("minutes", 15)) is not int or
+            not 1 <= plan.get("minutes", 15) <= 1440):
+        raise ValueError("original Challenge needs complete source map, fleet and asteroid authoring")
+    levels_source = Path(__file__).resolve().parents[2] / (
+        "Scripts/Data/challenge_levels.json"
+    )
+    levels = json.loads(levels_source.read_text(encoding="utf-8")).get("Levels", [])
+    if (not isinstance(levels, list) or len(levels) != 10 or
+            sorted(level["Id"] for level in levels) != list(range(10))):
+        raise ValueError("original source Challenge catalog changed")
+    required_maps = {level["MapIndex"] for level in levels}
+    if set(plan["map_missions"]) != {str(index) for index in required_maps}:
+        raise ValueError("original Challenge requires source captures for every selected planet")
+    receipt_path = collection / "collection-receipt.json"
+    source_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    missions = source_receipt["missions"]
+    paths = {}
+    for map_text, mission_index in plan["map_missions"].items():
+        if (type(mission_index) is not int or
+                not 1 <= mission_index <= len(missions)):
+            raise ValueError("original Challenge selected an unknown source mission")
+        source = missions[mission_index - 1]
+        scene_path = collection / source["scene"]
+        run_path = collection / source["run"]
+        if (file_sha256(scene_path) != source["scene_sha256"] or
+                file_sha256(run_path) != source["run_sha256"]):
+            raise ValueError("original Challenge source mission changed before authoring")
+        scene = json.loads(scene_path.read_text(encoding="utf-8"))
+        if scene.get("source_level_map_index") != int(map_text):
+            raise ValueError("original Challenge planet differs from the captured source map")
+        paths[int(map_text)] = (scene_path, run_path)
+    archetypes = plan.get("archetype_missions", list(range(1, len(missions) + 1)))
+    if (not isinstance(archetypes, list) or
+            len(archetypes) > len(missions) or
+            len(set(archetypes)) != len(archetypes) or
+            any(type(index) is not int or
+                not 1 <= index <= len(missions) for index in archetypes)):
+        raise ValueError("invalid original Challenge ship archetype source selection")
+    campaign_path = collection / "original-campaign" / "campaign.json"
+    catalog = json.loads(campaign_path.read_text(encoding="utf-8"))
+    if (not isinstance(catalog.get("campaign_id"), str) or
+            len(catalog.get("battles", [])) != 12 or
+            catalog["battles"][-1].get("mission", {}).get("id") != "mission-012"):
+        raise ValueError("Challenge unlock requires the full original Uranus III campaign")
+    gate = f"{catalog['campaign_id']}:mission-012"
+    library_path = collection / "native-library.json"
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve().with_name("prepare-challenge.py")),
+        str(collection / "original-challenge"),
+        "--max-squad-size", str(plan["max_squad_size"]),
+        "--stage-asteroid-minimum-rate", str(plan["asteroid_minimum_rate"]),
+        "--stage-asteroid-maximum-rate", str(plan["asteroid_maximum_rate"]),
+        "--seed", str(plan.get("seed", 12345)),
+        "--minutes", str(plan.get("minutes", 15)),
+        "--install-into-library", str(library_path),
+        "--unlock-after", gate,
+    ]
+    for map_index in sorted(paths):
+        scene_path, run_path = paths[map_index]
+        command.extend(("--map-scene", f"{map_index}={scene_path}"))
+        command.extend(("--map-run", f"{map_index}={run_path}"))
+    for index, fleet in enumerate(plan["fleets"]):
+        command.extend(("--fleet", f"{index}={fleet}"))
+    for index in archetypes:
+        command.extend((
+            "--archetype-scene",
+            str(collection / missions[index - 1]["scene"]),
+        ))
+    subprocess.run(command, check=True)
+    if file_sha256(options_file) != options_sha:
+        raise ValueError("source Challenge fleet or map plan changed during publication")
+    challenged = collection / "original-challenge"
+    catalog_path = challenged / "challenge.catalog.json"
+    if not catalog_path.is_file():
+        raise ValueError("original ten-level Challenge was not published")
+    installed = json.loads(library_path.read_text(encoding="utf-8"))
+    if (installed.get("library_schema") != 1 or
+            not isinstance(installed.get("games"), list) or
+            len(installed["games"]) > 100 or
+            sum(entry.get("id") == "original-human-challenge"
+                for entry in installed["games"]) != 1):
+        raise ValueError("original native Challenge is absent from the unified game menu")
+    source_receipt["native_game_libraries"][0]["sha256"] = file_sha256(library_path)
+    atomic_json(receipt_path, source_receipt)
+    link_path = collection / "campaign-link-receipt.json"
+    campaign_link = json.loads(link_path.read_text(encoding="utf-8"))
+    campaign_link.update({
+        "collection_receipt_sha256": file_sha256(receipt_path),
+        "native_library_sha256": file_sha256(library_path),
+        "native_library_games": len(installed["games"]),
+    })
+    atomic_json(link_path, campaign_link)
+    result = {
+        "schema_version": 1,
+        "kind": "native_original_challenge_collection_published",
+        "source_options_sha256": options_sha,
+        "source_challenge_catalog_sha256": file_sha256(levels_source),
+        "challenge_catalog": "original-challenge/challenge.catalog.json",
+        "challenge_catalog_sha256": file_sha256(catalog_path),
+        "campaign_unlock": gate,
+        "native_library_sha256": file_sha256(library_path),
+        "native_library_games": len(installed["games"]),
+        "collection_receipt_sha256": file_sha256(receipt_path),
+    }
+    atomic_json(collection / "challenge-link-receipt.json", result)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path,
@@ -377,10 +542,14 @@ def main():
     parser.add_argument("--original-campaign-options", type=Path,
                         help="source-approved original campaign options JSON; "
                              "publishes the twelve real missions using author_campaign.py")
+    parser.add_argument("--original-challenge-options", type=Path,
+                        help="original ten-level Challenge fleet/planet plan; "
+                             "install the unlocked career in the same native game menu")
     args = parser.parse_args()
     result = author_collection(
         args.manifest, args.output_directory,
         original_campaign_options=args.original_campaign_options,
+        original_challenge_options=args.original_challenge_options,
     )
     print(json.dumps(result, sort_keys=True), flush=True)
 
