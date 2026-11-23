@@ -451,6 +451,14 @@ pub struct RemotePlayMeasurements {
     pub commander_pause_requests: u64,
     #[serde(default)]
     pub commander_pause_rejections: u64,
+    /// Time-control input from a view-only Fish Tank viewer is permitted
+    /// only when there is no player-controlled faction in this World.
+    #[serde(default)]
+    pub spectator_pause_requests: u64,
+    #[serde(default)]
+    pub spectator_paused_steps: u64,
+    #[serde(default)]
+    pub spectator_speed_changes: u64,
     #[serde(default)]
     pub commander_paused_polls: u64,
     #[serde(default)]
@@ -1439,7 +1447,9 @@ impl NativeRemotePlay {
                                 "spectator": spectator, "side": side,
                                 "host_session_id": self.host_session_id,
                                 "recovered_host": self.recovered_session,
-                                "hosted_time_control": self.dedicated_briefing_gate && !spectator,
+                                "hosted_time_control": self.dedicated_briefing_gate &&
+                                    !self.archive_only &&
+                                    (spectator == self.spectator_only_host),
                                 "state_codecs": ["lz4"],
                             }));
                         } else {
@@ -1563,10 +1573,13 @@ impl NativeRemotePlay {
                         }
                         peer.last_request_id = request_id;
                         peer_orders += 1;
-                        let accepted = !peer.spectator && !self.archive_only &&
-                            claimed_world == world_id.0 &&
+                        let accepted = (peer.spectator == self.spectator_only_host) &&
+                            !self.archive_only && claimed_world == world_id.0 &&
                             claimed_revision == revision;
                         if accepted {
+                            if peer.spectator {
+                                self.measurements.spectator_pause_requests += 1;
+                            }
                             let changed = if paused {
                                 self.pause_peers.insert(peer.id)
                             } else {
@@ -1602,7 +1615,8 @@ impl NativeRemotePlay {
                         peer.last_request_id = request_id;
                         peer_orders += 1;
                         let permitted = self.dedicated_briefing_gate &&
-                            !peer.spectator && !self.archive_only &&
+                            (peer.spectator == self.spectator_only_host) &&
+                            !self.archive_only &&
                             claimed_world == world_id.0 &&
                             claimed_revision == revision &&
                             self.pause_peers.contains(&peer.id) &&
@@ -1610,6 +1624,9 @@ impl NativeRemotePlay {
                         if permitted {
                             self.paused_step_owner = Some(peer.id);
                             self.measurements.commander_step_requests += 1;
+                            if peer.spectator {
+                                self.measurements.spectator_paused_steps += 1;
+                            }
                         } else {
                             self.measurements.commander_step_rejections += 1;
                         }
@@ -1635,11 +1652,14 @@ impl NativeRemotePlay {
                         }
                         peer.last_request_id = request_id;
                         peer_orders += 1;
-                        let accepted = !peer.spectator && !self.archive_only &&
-                            self.dedicated_briefing_gate &&
+                        let accepted = (peer.spectator == self.spectator_only_host) &&
+                            !self.archive_only && self.dedicated_briefing_gate &&
                             claimed_world == world_id.0 &&
                             claimed_revision == revision;
                         if accepted {
+                            if peer.spectator {
+                                self.measurements.spectator_speed_changes += 1;
+                            }
                             // Start from the actual source speed when it is
                             // one of Unity's three menu selections.
                             let current = self.game_speed_override
@@ -2703,7 +2723,8 @@ impl NativeRemotePlay {
         let paused_before = self.pause_peers.len();
         self.pause_peers.retain(|peer|
             self.peers.iter().any(|client| client.id==*peer &&
-                client.side.is_some() && !client.spectator));
+                client.side.is_some() &&
+                client.spectator == self.spectator_only_host));
         if paused_before != self.pause_peers.len() {
             self.force_initial_state = true;
         }
