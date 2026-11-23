@@ -2826,7 +2826,8 @@ def main():
                 "best_checkpoint_sha256":
                     best_evaluated["selected"]["checkpoint_sha256"],
             }), flush=True)
-        print(json.dumps({"kind": "native_training_session_complete",
+        print(json.dumps({"kind": ("native_training_session_stopped" if stopped_by_operator
+                                       else "native_training_session_complete"),
                           "progress": str(root / "session-progress.json"),
                           "completed_rounds": len(completed),
                           "target_rounds": args.rounds,
