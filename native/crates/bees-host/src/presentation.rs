@@ -228,6 +228,7 @@ pub struct NativeRenderWorldView<'a> {
     /// viewer. Dedicated multiplayer hosts can have no local viewer.
     pub campaign_dialogue_side: Option<i32>,
     pub campaign_camera_ship: Option<i64>,
+    pub campaign_scout_alarm: bool,
     /// Current source GameState.PlayerScore, read from the same checkpointed
     /// physical death ledger as the terminal campaign result.
     pub campaign_score: Option<(i32, i64)>,

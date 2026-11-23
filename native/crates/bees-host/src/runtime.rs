@@ -2010,6 +2010,8 @@ where
             campaign_dialogue_side: world.state.campaign_dialogue.as_ref().map(|dialogue| dialogue.player_side()),
             campaign_camera_ship: world.state.campaign_dialogue.as_ref()
                 .and_then(|dialogue| dialogue.camera_subject()),
+            campaign_scout_alarm: world.state.campaign_dialogue.as_ref()
+                .is_some_and(|dialogue| dialogue.pluto_scout_alarm_active(world.tick())),
             campaign_score: world.state.metadata.campaign_score_snapshot(),
             campaign_codex: world.state.metadata.campaign_codex_classes(),
             player_match_counts: world.state.metadata.player_match_counts(),

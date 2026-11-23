@@ -484,7 +484,7 @@ pub trait NativeLevelCommandContext {
         _events: &mut NativeLevelEventProcessor,
         _random: &mut bees_sim::simulation::RandomStream,
         _completed_tick: u64,
-        _withdrawing_pluto_scout: Option<i64>,
+        _withdrawing_pluto_scout: Option<(i64, bool)>,
     ) -> Result<u64, NativeLevelEventError> { Ok(0) }
 
     fn scripted_queue_measurements(
@@ -1725,6 +1725,16 @@ where
                 &state.combat, bumblebee_spotted, pluto_spotted,
             ) {
                 dialogue.set_cue(cue);
+                if let Some(scout) = dialogue.withdrawing_pluto_scout()
+                    .filter(|_| !state.events.completed())
+                {
+                    if let Some(owner) = state.events.roster().owning_squad(scout) {
+                        state.events.finalize_local_command(completed_tick, &mut state.combat, owner)?;
+                        state.metadata.player_command_finished(owner);
+                    }
+                    state.combat.stop_ship_game_movement(scout)?;
+                    dialogue.start_pluto_scout_alarm(completed_tick, dt_seconds);
+                }
                 state.metadata.observe_campaign_cue(cue);
                 state.metadata.sync_campaign_player_permissions(dialogue, state.events.roster());
                 state.events.queue_campaign_dialogue(completed_tick, cue)?;
@@ -1955,7 +1965,8 @@ where
                     Some((scout, CommandFinishCause::ReachedSpecifiedDestination))
                         if state.combat.ship_cleared_south_edge(scout) =>
                         dialogue.record_pluto_scout_arrival(),
-                    Some(_) => {
+                    Some((scout, _)) => {
+                        state.combat.stop_ship_game_movement(scout)?;
                         let cue = dialogue.begin_pluto_scout_report();
                         dialogue.set_cue(cue);
                         state.events.queue_campaign_dialogue(completed_tick, cue)?;
@@ -1970,7 +1981,8 @@ where
         // replace the one which just finished in the same fixed tick.
         if !state.events.completed() {
             let withdrawing_pluto_scout = state.campaign_dialogue.as_ref()
-                .and_then(|dialogue| dialogue.withdrawing_pluto_scout());
+                .and_then(|dialogue| dialogue.withdrawing_pluto_scout()
+                    .map(|scout| (scout, dialogue.pluto_scout_alarm_active(completed_tick))));
             state.metadata.advance_scripted_commands(
                 &mut state.combat, &mut state.events, &mut world.random,
                 completed_tick, withdrawing_pluto_scout,

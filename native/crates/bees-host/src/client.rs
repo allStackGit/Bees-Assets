@@ -257,6 +257,7 @@ pub struct NativeClient {
     pub minimap_camera_moves: u64,
     pub camera_pan_frames: u64,
     pub campaign_camera_follow_frames: u64,
+    pub scout_alarm_frames: u64,
     pub camera_wheel_pans: u64,
     pub camera_boundary_clamps: u64,
     pub camera_zoom_clamps: u64,
@@ -355,6 +356,7 @@ impl NativeClient {
             numbered_squad_rows_drawn: 0,
             striker_bomb_indicators_drawn: 0,
             minimap_camera_moves: 0, camera_pan_frames: 0, campaign_camera_follow_frames: 0,
+            scout_alarm_frames: 0,
             camera_wheel_pans: 0, camera_boundary_clamps: 0,
             camera_zoom_clamps: 0, numbered_shortcut_selections: 0,
             cycled_shortcut_selections: 0,
@@ -2247,6 +2249,8 @@ impl NativeClient {
             .saturating_add(counts.minimap_terrain_markers as u64);
         self.destination_marker_draws = self.destination_marker_draws
             .saturating_add(counts.destination_markers as u64);
+        self.scout_alarm_frames = self.scout_alarm_frames
+            .saturating_add(counts.scout_alarm_markers as u64);
         self.minimap_briefing_mining_markers = self.minimap_briefing_mining_markers
             .saturating_add(counts.minimap_briefing_mining_markers as u64);
         self.numbered_squad_rows_drawn = self.numbered_squad_rows_drawn.saturating_add(counts.numbered_squad_rows as u64);

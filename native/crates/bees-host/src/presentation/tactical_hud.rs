@@ -14,6 +14,28 @@ pub enum HudAction {
 pub(super) const CONTEXT_ATTACK_RADIUS_SQUARED: f32 = 100.0;
 pub(super) const DESTINATION_MARKER_RADIUS_PIXELS: i32 = 3;
 
+/// World-anchored version of the source red Alarm Reaction panel and '!'.
+pub(super) fn draw_scout_alarm(
+    pixels: &mut [u32], stride: usize, field_width: usize, x: i32, y: i32,
+) -> bool {
+    let width = 10;
+    let height = 16;
+    let x = x.saturating_add(4);
+    let y = y.saturating_sub(height);
+    let height_limit = (pixels.len() / stride) as i32;
+    if x < 0 || y < 0 || x > field_width as i32 - width || y > height_limit - height {
+        return false;
+    }
+    for row in 0..height {
+        let start = (y + row) as usize * stride + x as usize;
+        pixels[start..start + width as usize].fill(0xb03737);
+        if (3..9).contains(&row) || (11..13).contains(&row) {
+            pixels[start + 4..start + 6].fill(0xffffff);
+        }
+    }
+    true
+}
+
 pub(super) fn battle_marker_color(
     custom_rgb: Option<[u8; 3]>, side: i32, human_side: Option<i32>, fallback: u32,
 ) -> u32 {

@@ -217,6 +217,8 @@ enum DialogueMode {
         scout_report_started: bool,
         #[serde(default, skip_serializing_if = "is_false")]
         scout_withdrawal_arrived: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scout_alarm_until_tick: Option<u64>,
         #[serde(default)]
         report_completed: bool,
         #[serde(default)]
@@ -340,7 +342,7 @@ impl CampaignDialogue {
                 DialogueMode::PlutoAnomaly {
                     scout_id, honeybee_id, gunship_id, withdrawal_before_report,
                     spotted: false, scout_report_started: false, scout_withdrawal_arrived: false,
-                    report_completed: false, gunship_arrived: false, gunship_briefed: false,
+                    scout_alarm_until_tick: None, report_completed: false, gunship_arrived: false, gunship_briefed: false,
                     honeybee_destroyed: false,
                 },
                 CampaignCue::PlutoAnomalyBriefing,
@@ -515,6 +517,11 @@ impl CampaignDialogue {
         }) && !matches!(mode, DialogueMode::PlutoAnomaly {
             withdrawal_before_report: true, spotted: true, ..
         }) {
+            return Err(CampaignDialogueRestoreError::InvalidProgress);
+        }
+        if matches!(mode, DialogueMode::PlutoAnomaly { scout_alarm_until_tick: Some(_), .. }) &&
+            cue != CampaignCue::PlutoAnomalyScoutWithdrawing
+        {
             return Err(CampaignDialogueRestoreError::InvalidProgress);
         }
         let valid = match (&mode, cue) {
@@ -833,6 +840,18 @@ impl CampaignDialogue {
         }
     }
 
+    pub(crate) fn start_pluto_scout_alarm(&mut self, tick: u64, dt_seconds: f32) {
+        if let DialogueMode::PlutoAnomaly { scout_alarm_until_tick, .. } = &mut self.mode {
+            let duration_ticks = (1.5 / dt_seconds).ceil() as u64;
+            *scout_alarm_until_tick = Some(tick.saturating_add(duration_ticks));
+        }
+    }
+
+    pub fn pluto_scout_alarm_active(&self, tick: u64) -> bool {
+        matches!(self.mode, DialogueMode::PlutoAnomaly { scout_alarm_until_tick: Some(until), .. }
+            if tick < until)
+    }
+
     pub(crate) fn record_pluto_scout_arrival(&mut self) {
         if let DialogueMode::PlutoAnomaly { scout_withdrawal_arrived, .. } = &mut self.mode {
             *scout_withdrawal_arrived = true;
@@ -887,6 +906,11 @@ impl CampaignDialogue {
     }
 
     pub(crate) fn set_cue(&mut self, cue: CampaignCue) {
+        if cue != CampaignCue::PlutoAnomalyScoutWithdrawing {
+            if let DialogueMode::PlutoAnomaly { scout_alarm_until_tick, .. } = &mut self.mode {
+                *scout_alarm_until_tick = None;
+            }
+        }
         // Long source survival battles can legitimately announce hundreds
         // of physical reinforcement arrivals. u32 keeps the same on-wire
         // integer and old JSON checkpoints readable without wrapping

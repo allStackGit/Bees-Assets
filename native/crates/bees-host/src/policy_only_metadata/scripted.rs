@@ -708,7 +708,7 @@ impl NativePolicyOnlyMetadata {
         &mut self, world: &mut CombatWorld,
         events: &mut NativeLevelEventProcessor, random: &mut RandomStream,
         completed_tick: u64,
-        withdrawing_pluto_scout: Option<i64>,
+        withdrawing_pluto_scout: Option<(i64, bool)>,
     ) -> Result<u64, NativeLevelEventError> {
         if self.scripted_queues.is_empty() { return Ok(0); }
         let mut started = 0;
@@ -949,14 +949,19 @@ impl NativePolicyOnlyMetadata {
             } else { None };
             let squad = events.roster().get(owner)
                 .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?;
-            let scout_exit = withdrawing_pluto_scout.filter(|&scout|
-                squad.members.as_slice() == [scout] &&
-                matches!(&order, NativeScriptedOrder::MoveToPoint { .. }) &&
-                self.scripted_queues[index].required_event ==
-                    Some(NativeMissionEvent::CampaignCue(NativeMissionCue::PlutoHoneybeeSpotted)))
-                .map(|scout| world.scripted_south_exit_destination(scout)
-                    .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad)))
-                .transpose()?;
+            let scout_exit = if let Some((scout, alarm_active)) = withdrawing_pluto_scout
+                .filter(|&(scout, _)| squad.members.as_slice() == [scout] &&
+                    matches!(&order, NativeScriptedOrder::MoveToPoint { .. }) &&
+                    self.scripted_queues[index].required_event ==
+                        Some(NativeMissionEvent::CampaignCue(NativeMissionCue::PlutoHoneybeeSpotted)))
+            {
+                if alarm_active {
+                    index += 1;
+                    continue;
+                }
+                Some(world.scripted_south_exit_destination(scout)
+                    .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?)
+            } else { None };
             let formation = SquadFormationOptions {
                 map_bounds: self.bounds, has_obstacles: self.player.has_obstacles,
                 can_override_bounds: scout_exit.is_some(),

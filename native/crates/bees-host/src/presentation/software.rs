@@ -193,6 +193,7 @@ pub struct NativeRenderCounts {
     pub selected_command_rows: usize,
     pub command_target_markers: usize,
     pub destination_markers: usize,
+    pub scout_alarm_markers: usize,
     /// Presentation-only pixel coverage; headless physics does no work.
     pub fog_sources: usize,
     pub fog_fading_sources: usize,
@@ -3210,6 +3211,16 @@ impl NativeSoftwareRenderer {
         // and the source-owned visibility caches remain unchanged.
         self.apply_player_fog(view, &mut counts);
         counts.destination_markers = self.draw_selected_destinations(view);
+        if view.campaign_scout_alarm {
+            if let Some((_, scout)) = view.player_authority.player_viewer_side()
+                .and_then(|side| view.campaign_camera_subject_for(side))
+            {
+                let (x, y) = self.project(scout);
+                counts.scout_alarm_markers = usize::from(tactical_hud::draw_scout_alarm(
+                    &mut self.pixels, self.width, self.width, x.round() as i32, y.round() as i32,
+                ));
+            }
+        }
         self.observe_codex_discoveries(view);
         if let Some(bounds) = self.selection_box {
             self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
