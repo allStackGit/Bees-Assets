@@ -29,7 +29,7 @@ function binding(config,role,env=process.env,platform=process.platform) {
     if(index===null)return {index:null,environment:{...env},visibility:null};
 
     const device=role==='learner'?String(config?.learnerDevice||'cuda'):
-        String(config?.localActor?.torchDevice||'cpu');
+        String(env.BEES_LOCAL_ACTOR_TORCH_DEVICE||config?.localActor?.torchDevice||'cpu');
     if(device!=='cuda'&&device!=='cuda:0')
         throw Error(external+' requires the matching Bees '+role+' to use CUDA/ROCm device "cuda" or "cuda:0".');
 
