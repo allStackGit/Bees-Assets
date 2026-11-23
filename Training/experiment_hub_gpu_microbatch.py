@@ -247,6 +247,109 @@ class FrozenInferenceMicrobatcher:
             self._condition.notify()
         return futures
 
+    def publish_weights(self, changes):
+        """Publish new frozen weights at one drained policy-version boundary.
+
+        changes maps model IDs to (new_version, complete state_dict). The
+        input weights are validated before publication. No old-version work
+        is cancelled, replayed or silently executed with new weights: the
+        worker drains accepted requests first, while new submissions wait.
+        Parameter/buffer storage addresses remain stable so qualified GPU
+        graphs can be reused; fused stacked weights are refreshed too.
+        This should be called only by the trusted snapshot owner, not from
+        a Future completion callback running on the batcher worker thread.
+        """
+        if current_thread() is self._worker:
+            raise RuntimeError("A GPU worker cannot publish its own policy")
+        if not isinstance(changes, dict) or not changes:
+            raise ValueError("Publish a nonempty frozen policy snapshot mapping")
+        prepared = {}
+        for name, value in changes.items():
+            if name not in self.models or not isinstance(value, (tuple,list)) or len(value)!=2:
+                raise ValueError("Unknown frozen policy or invalid snapshot envelope")
+            version, new_state = value
+            if (type(version) not in (str,int) or
+                    (isinstance(version,str) and not 1<=len(version)<=128) or
+                    (isinstance(version,int) and not 0<=version<=2**63-1) or
+                    not isinstance(new_state, dict)):
+                raise ValueError("A policy snapshot needs a bounded immutable version")
+            expected = self.models[name].state_dict()
+            if expected.keys()!=new_state.keys():
+                raise ValueError("Policy parameter/buffer keys changed")
+            for field,old in expected.items():
+                tensor = new_state[field]
+                if (not isinstance(tensor, torch.Tensor) or
+                        tensor.shape != old.shape or tensor.dtype != old.dtype or
+                        tensor.device not in (self.device,torch.device("cpu"))):
+                    raise ValueError("Policy parameter/buffer identity changed")
+            prepared[name] = (version,new_state)
+        with self._condition:
+            while self._publishing and not self._closed:
+                self._condition.wait()
+            if self._closed:
+                raise RuntimeError("Frozen GPU service was closed")
+            if any(self.versions[name]==version
+                   for name,(version,_) in prepared.items()):
+                raise ValueError("New frozen policy version must differ")
+            self._publishing = True
+            while self._outstanding and not self._closed:
+                self._condition.wait()
+            if self._closed:
+                self._publishing = False
+                self._condition.notify_all()
+                raise RuntimeError("Frozen GPU service stopped during publication")
+            final_event = self._last_event
+        begun = perf_counter()
+        try:
+            context = (torch.cuda.device(self.device) if self.device.type=="cuda"
+                       else nullcontext())
+            with context:
+                if final_event is not None:
+                    final_event.synchronize()
+                storage_before = {
+                    name:{k:t.untyped_storage().data_ptr()
+                          for k,t in self.models[name].state_dict().items()
+                          if t.numel()}
+                    for name in prepared
+                }
+                with torch.no_grad():
+                    for name,(_,weights) in prepared.items():
+                        # assign=False preserves the captured graph's weight
+                        # pointers; a custom module replacing them is denied.
+                        self.models[name].load_state_dict(
+                            weights,strict=True,assign=False)
+                    for keys,executor in self._executors.items():
+                        dirty = [i for i,name in enumerate(keys) if name in prepared]
+                        if dirty:
+                            executor.refresh_frozen_weights(dirty)
+                for name in prepared:
+                    after = {k:t.untyped_storage().data_ptr()
+                             for k,t in self.models[name].state_dict().items()
+                             if t.numel()}
+                    if after != storage_before[name]:
+                        raise RuntimeError("Frozen policy weights moved during graph publication")
+                if self.device.type=="cuda":
+                    torch.cuda.current_stream(self.device).synchronize()
+            with self._condition:
+                for name,(version,_) in prepared.items():
+                    self.versions[name] = version
+                self._counters["policy_refreshes"] += len(prepared)
+                self._counters["policy_refresh_bytes"] += sum(
+                    t.numel()*t.element_size() for _,weights in prepared.values()
+                    for t in weights.values())
+                self._counters["policy_refresh_seconds"] += perf_counter()-begun
+        except BaseException:
+            # In-place state copies cannot be rolled back reliably if an
+            # unknown custom module failed midway. Stop admitting work
+            # rather than expose a mixed version to another collector.
+            with self._condition:
+                self._closed = True
+            raise
+        finally:
+            with self._condition:
+                self._publishing = False
+                self._condition.notify_all()
+
     def _serve(self):
         context = torch.cuda.device(self.device) if self.device.type == "cuda" else nullcontext()
         try:
