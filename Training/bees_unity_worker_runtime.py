@@ -6,11 +6,40 @@ The clone is outside the job's export directory and is removed on normal exit.
 """
 from __future__ import annotations
 
+import errno
 import os
 from pathlib import Path
 import shutil
 import tempfile
 import time
+
+# Linux FICLONE creates an independent copy-on-write inode, not a hard link.
+# Unsupported filesystems use an ordinary private copy. Unity may write to its
+# own *_Data and ML-Agents timer files after launch; sharing mutable inodes
+# with the approved source player would invalidate release identity.
+LINUX_FICLONE = 0x40049409
+_UNSUPPORTED_REFLINK = {
+    errno.EOPNOTSUPP, errno.ENOTTY, errno.EINVAL, errno.EXDEV,
+    errno.ENOSYS,
+}
+
+
+def clone_or_copy(source: str, destination: str) -> str:
+    if os.name == "nt":
+        return shutil.copy2(source, destination)
+    import fcntl
+    with open(source, "rb") as original, open(destination, "xb") as target:
+        try:
+            fcntl.ioctl(target.fileno(), LINUX_FICLONE, original.fileno())
+        except OSError as error:
+            if error.errno not in _UNSUPPORTED_REFLINK:
+                raise
+            # Reuse the just-created destination inode; it cannot be a hard
+            # link or another job's executable, even on the fallback path.
+            original.seek(0)
+            shutil.copyfileobj(original, target, 1024 * 1024)
+    shutil.copystat(source, destination, follow_symlinks=False)
+    return destination
 
 from bees_unity_worker_identity import unity_worker_tree_sha256
 
@@ -55,7 +84,8 @@ class StagedUnityPlayer:
             # only a bounded managed builds/ subtree and its communicator ports.
             player_root = Path(self._temporary.name) / "builds" / "worker"
             player_root.parent.mkdir()
-            shutil.copytree(self.source.parent, player_root, symlinks=True)
+            shutil.copytree(self.source.parent, player_root,
+                            symlinks=True, copy_function=clone_or_copy)
             executable = player_root / self.source.name
             if unity_worker_tree_sha256(executable) != original_hash:
                 raise ValueError("Staged Unity player differs from its immutable source.")
