@@ -10,6 +10,7 @@ event/command contract; absent mission events are never fabricated.
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -132,10 +133,77 @@ def required_source(scene: dict) -> tuple[dict, list[float], list[float]]:
     return {"min": bounds_min, "max": bounds_max}, half_extents, scene["ships"]
 
 
+def canonical_original_ai(source: dict, bounds: dict,
+                          level: dict, tactics: str) -> list[dict]:
+    """Use the existing native game command author; never emulate Ship AI."""
+    script_path = Path(__file__).resolve().with_name("author-battle.py")
+    spec = importlib.util.spec_from_file_location("bees_native_battle_author", script_path)
+    if spec is None or spec.loader is None:
+        raise ValueError("Missing canonical original game AI command author")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    physical = source["ships"]
+    normalized = {
+        "bounds": bounds,
+        "ships": [{
+            **ship,
+            "position": vector(ship["position"], "ship position"),
+            "sight": {"source_sight": ship["source_sight"]},
+        } for ship in physical],
+        "squads": [{
+            "item_id": squad["item_id"],
+            "side": squad["side"],
+            "members": squad["member_ids"],
+        } for squad in source["squads"]],
+        "starting_positions": [
+            vector(value, "starting position")
+            for value in source["starting_positions"]
+        ],
+        "activate_mining": source.get("activate_mining") is True,
+        "mining_asteroids": [
+            obstacle for obstacle in source.get("obstacles", [])
+            if obstacle.get("kind") == "mining"
+        ],
+        "map_objects": [{
+            **obj,
+            "position": vector(obj["position"], "map object position"),
+        } for obj in source.get("map_objects", [])],
+        "human_side": source["human_side"],
+    }
+    scripted = {queue["squad_item_id"] for queue in level.get("scripted_queues", [])}
+    has_beehive = {
+        side: any(ship["side"] == side and ship["ship_type"] == 2
+                  for ship in physical)
+        for side in (1, 2)
+    }
+    added = []
+    for index, squad in enumerate(source["squads"]):
+        if (squad.get("user_controlled") is True or
+                squad["item_id"] in scripted or
+                (squad.get("is_hivemind_controlled") is True and
+                 source.get("activate_hivemind") is True)):
+            continue
+        members = [ship for ship in normalized["ships"]
+                   if ship["entity_id"] in squad["member_ids"]]
+        if not members:
+            raise ValueError("Original source Squad has no physical members")
+        orders = module.native_scripted_squad_orders(
+            normalized, members, index, tactics,
+            has_beehive[squad["side"]], level,
+        )
+        added.append({
+            "squad_item_id": squad["item_id"],
+            "orders": orders,
+            "repeat": module.native_scripted_queue_repeats(orders, level),
+        })
+    return added
+
+
 def native_game_run(
     scene: dict, matrix: dict, palette: dict, contract: dict, seed: int,
     max_rounds: int, cell: float, workers: int | None,
     navigation_workers: int | None, hivemind: dict | None,
+    ai_tactics: str | None,
 ) -> dict:
     bounds, half_extents, ships = required_source(scene)
     stage = collision_stage(matrix, palette, scene)
@@ -198,6 +266,10 @@ def native_game_run(
         **contract,
         **({"collision_asteroid_timer": timer} if timer is not None else {}),
     }
+    if ai_tactics is not None:
+        generated = canonical_original_ai(scene, bounds, level, ai_tactics)
+        if generated:
+            level["scripted_queues"] = list(script) + generated
     return {
         "run_id": "native-unity-source",
         "stage_name": scene["stage_name"],
@@ -228,7 +300,8 @@ def native_game_run(
 def author(output: Path, source_path: Path, matrix_path: Path,
            palette_path: Path, contract_path: Path | None, seed: int,
            max_rounds: int, cell: float, physics_workers: int | None,
-           navigation_workers: int | None, hive_path: Path | None) -> dict:
+           navigation_workers: int | None, hive_path: Path | None,
+           ai_tactics: str | None) -> dict:
     source_path, matrix_path, palette_path = (
         path.resolve(strict=True) for path in
         (source_path, matrix_path, palette_path)
@@ -245,11 +318,11 @@ def author(output: Path, source_path: Path, matrix_path: Path,
     hive = read(hive_path) if hive_path else None
     run = native_game_run(
         scene, matrix, palette, mission, seed, max_rounds, cell,
-        physics_workers, navigation_workers, hive,
+        physics_workers, navigation_workers, hive, ai_tactics,
     )
     identity = hashlib.sha256(json.dumps(
         [originals_sha, seed, max_rounds, cell, physics_workers,
-         navigation_workers], sort_keys=True,
+         navigation_workers, ai_tactics], sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")).hexdigest()
     run["run_id"] = "native-unity-" + identity[:20]
@@ -276,6 +349,10 @@ def author(output: Path, source_path: Path, matrix_path: Path,
             "fixed_dt_seconds": scene["fixed_dt_seconds"],
             "source_pool_item_count": scene["source_pool_item_count"],
             "source_collision_asteroid_timer": run["levels"][0].get("collision_asteroid_timer"),
+            "native_source_ai_tactics": ai_tactics,
+            "native_scripted_squads": [
+                row["squad_item_id"] for row in run["levels"][0].get("scripted_queues", [])
+            ],
             "native_run_sha256": file_sha256(stage / "run.json"),
             "native_scene_sha256": file_sha256(stage / "source-level.json"),
         }
@@ -309,12 +386,17 @@ def main() -> None:
                         help="non-gameplay native contact search allocation (default 20)")
     parser.add_argument("--physics-workers", type=int)
     parser.add_argument("--navigation-workers", type=int)
+    parser.add_argument("--source-ai-tactics",
+                        choices=("aggressive", "circle", "right-swipe", "left-swipe",
+                                 "in-and-out", "mixed"),
+                        help="explicitly enable the game's canonical scripted AI "
+                             "on original non-player, non-HiveMind squads with no authored queue")
     args = parser.parse_args()
     print(json.dumps(author(
         args.output_directory, args.unity_scene, args.physics_matrix,
         args.stage_palette, args.level_contract, args.seed, args.max_rounds,
         args.broadphase_cell_size, args.physics_workers,
-        args.navigation_workers, args.hivemind_config,
+        args.navigation_workers, args.hivemind_config, args.source_ai_tactics,
     ), sort_keys=True), flush=True)
 
 
