@@ -420,6 +420,7 @@ impl RemoteArtwork {
             ) {
                 let (admitted, dropped) = self.raster.record_combat_impact(
                     born_tick, projectile, target, Vec2::new(x, y), fatal,
+                    impact["projectile_type"].as_u64().and_then(|kind| u8::try_from(kind).ok()),
                 );
                 stats.combat_impacts_received += u64::from(admitted);
                 stats.combat_impact_visuals_dropped += u64::from(dropped);

@@ -45,6 +45,7 @@ ARTWORK_ATLASES = (
     ("map-fog", "map-fog.rgba", b"BSS1"),
     ("portrait", "dialogue-portraits.rgba", b"BDP1"),
     ("projectile", "projectile-sprites.rgba", b"BPS2"),
+    ("projectile-impact", "projectile-impacts.rgba", b"BPS2"),
     ("asteroid", "asteroid-sprites.rgba", b"BAS1"),
     ("animation", "ship-animations.rgba", b"BSA1"),
     ("remains", "ship-remains.rgba", b"BSR1"),
@@ -646,6 +647,7 @@ def create_manifest(
         "content": files,
     }
     if audio_paths is not None:
+        manifest["presentation_version"] = 2
         manifest["presentation_audio"] = [path.as_posix() for path in audio_paths]
     (output / "manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8",
@@ -656,6 +658,9 @@ def verify_presentation_assets(directory: Path, manifest: dict, inventory: dict)
     # Earlier release manifests carry only the general file inventory.
     if "presentation_audio" not in manifest:
         return
+    presentation_version = manifest.get("presentation_version", 1)
+    if type(presentation_version) is not int or presentation_version not in (1, 2):
+        raise ValueError("unsupported native presentation inventory")
     audio = manifest["presentation_audio"]
     if (not isinstance(audio, list) or len(audio) < 20 or
             any(not isinstance(name, str) or not name.startswith("assets/audio/") or
@@ -664,6 +669,8 @@ def verify_presentation_assets(directory: Path, manifest: dict, inventory: dict)
         raise ValueError("native release is missing required audio tracks")
     for _, filename, signature in ARTWORK_ATLASES:
         name = f"assets/{filename}"
+        if filename == "projectile-impacts.rgba" and name not in inventory and presentation_version == 1:
+            continue  # Earlier releases predate source impact artwork.
         if name not in inventory or inventory[name][0] < 7:
             raise ValueError(f"native release is missing required artwork: {name}")
         with (directory / name).open("rb") as atlas:

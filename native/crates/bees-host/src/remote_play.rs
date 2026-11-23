@@ -2517,6 +2517,7 @@ fn collect_remote_audio(
                     "projectile_id": projectile_id,
                     "target_id": target_id,
                     "fatal": fatal,
+                    "projectile_type": view.combat.recent_projectile_type(projectile_id),
                 });
             }
             // The host already buffers these side-filtered audio cues

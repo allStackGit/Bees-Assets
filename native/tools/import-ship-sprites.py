@@ -326,9 +326,27 @@ def pack(images, directory, magic, animated, palettes=None,
     return data, len(entries)
 
 
+PROJECTILE_IMPACTS = (
+    (1, "Bee Small Laser Shot Explosion.png", "Bee Small Laser Shot Explosion.anim"),
+    (2, "Bee Medium Laser Shot Impact Splash.png", "Bee Medium Laser Shot impact Splash.anim"),
+    (3, "large_projectile_impact_24.png", "Bumblebee Laser Shot Impact.anim"),
+    (4, "flagship_laser_contact_1_optimized-export.png", "Flagship Laser Shot Impact Splash.anim"),
+    (6, "Human Small Laser Shot Explosion.png", "Human Small Laser Shot Explosion.anim"),
+    (7, "Human Medium Laser Shot Impact Splash.png", "Human Medium Laser Shot Impact Splash.anim"),
+    (9, "Leafcutter Shot.png", "Leaf Cutter Shot Explode.anim"),
+    (10, "Queen Small Laser Shot Explosion.png", "Queen Small Laser Shot Explosion.anim"),
+    (11, "stinger_explosion_24.png", "Queen Stinger Laser Shot Impact.anim"),
+)
+
+
 def pack_projectiles():
-    entries = [(kind, image, PROJECTILE_CLIPS[kind])
-               for kind, image in enumerate(PROJECTILE_IMAGES) if image]
+    return pack_projectile_clips([
+        (kind, image, PROJECTILE_CLIPS[kind])
+        for kind, image in enumerate(PROJECTILE_IMAGES) if image
+    ])
+
+
+def pack_projectile_clips(entries, *, one_shot=False):
     data = bytearray(struct.pack("<4sH", b"BPS2", len(entries)))
     for kind, image, clip in entries:
         texture = ROOT / "Sprites" / image
@@ -349,14 +367,26 @@ def pack_projectiles():
                 not 1 <= len(keys) <= 64 or not 1 <= int(rate[1]) <= 120):
             raise ValueError(f"Invalid source projectile animation: {clip}")
         fps = int(rate[1])
-        if abs(float(duration[1]) * fps - len(keys)) > 0.001:
-            raise ValueError(f"Nonuniform source projectile duration: {clip}")
+        frame_count = round(float(duration[1]) * fps)
+        if (not 1 <= frame_count <= 64 or
+                abs(float(duration[1]) * fps - frame_count) > 0.001):
+            raise ValueError(f"Invalid source projectile duration: {clip}")
         slices = dict(zip(ids, frames, strict=True))
-        data.extend(struct.pack("<BHHHB", kind, ppu, len(keys), fps, int(loop[1])))
-        for index, (seconds, sprite_id, guid) in enumerate(keys):
+        keyframes = {}
+        for seconds, sprite_id, guid in keys:
+            index = round(float(seconds) * fps)
             if (abs(float(seconds) * fps - index) > 0.001 or
+                    not 0 <= index < frame_count or index in keyframes or
                     guid != sprite_guid[1] or sprite_id not in slices):
                 raise ValueError(f"Invalid source projectile frame {index}: {clip}")
+            keyframes[index] = sprite_id
+        sprite_id = keyframes.get(0)
+        if sprite_id is None:
+            raise ValueError(f"Source projectile clip has no opening frame: {clip}")
+        data.extend(struct.pack("<BHHHB", kind, ppu, frame_count, fps,
+                                0 if one_shot else int(loop[1])))
+        for index in range(frame_count):
+            sprite_id = keyframes.get(index, sprite_id)
             frame = slices[sprite_id]
             data.extend(struct.pack("<HH", frame.width, frame.height))
             packed_pixels(data, frame)
@@ -525,6 +555,8 @@ def main():
                         default=ROOT / "native/assets/beacon-enemy.rgba")
     parser.add_argument("--projectile-output", type=Path,
                         default=ROOT / "native/assets/projectile-sprites.rgba")
+    parser.add_argument("--projectile-impact-output", type=Path,
+                        default=ROOT / "native/assets/projectile-impacts.rgba")
     parser.add_argument("--asteroid-output", type=Path,
                         default=ROOT / "native/assets/asteroid-sprites.rgba")
     parser.add_argument("--animation-output", type=Path,
@@ -569,6 +601,10 @@ def main():
         SHIP_EFFECT_IMAGES, ROOT / "Sprites/Ships/Parts", b"BSS1", False,
     )
     projectiles, projectile_count = pack_projectiles()
+    impacts, _ = pack_projectile_clips([
+        (kind, f"Projectiles/{image}", f"Projectiles/Animations/{clip}")
+        for kind, image, clip in PROJECTILE_IMPACTS
+    ], one_shot=True)
     asteroids, asteroid_count = pack(
         ASTEROID_IMAGES, ROOT / "Sprites/Asteroids", b"BAS1", False,
     )
@@ -578,6 +614,7 @@ def main():
     ships_path = write_atomic(args.ship_output, ships)
     beacon_path = write_atomic(args.beacon_output, beacon_enemy)
     projectiles_path = write_atomic(args.projectile_output, projectiles)
+    write_atomic(args.projectile_impact_output, impacts)
     asteroids_path = write_atomic(args.asteroid_output, asteroids)
     animations_path = write_atomic(args.animation_output, animations)
     remains_path = write_atomic(args.remains_output, remains)

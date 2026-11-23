@@ -2874,6 +2874,13 @@ impl CombatWorld {
             .then_some((shot, body))
     }
 
+    /// Visual events can reference a shot retired earlier in this tick.
+    /// Once its slot is reused the identity map no longer holds that shot.
+    pub fn recent_projectile_type(&self, id: i64) -> Option<u8> {
+        let shot = self.projectiles.get(*self.projectile_by_id.get(&id)?)?;
+        (shot.entity_id == id).then_some(shot.projectile_type)
+    }
+
     pub fn render_projectiles(&self)
         -> impl Iterator<Item = (&CombatProjectile, &ProjectileBody)> + '_
     {

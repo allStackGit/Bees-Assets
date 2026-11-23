@@ -327,6 +327,7 @@ struct CombatImpactVisual {
     target_id: i64,
     position: Vec2,
     fatal: bool,
+    projectile_type: Option<u8>,
 }
 
 /// Pure rendering of the source Beehive.SpawnHealingCross callback. The
@@ -1269,6 +1270,7 @@ impl NativeSoftwareRenderer {
                         let (admitted, dropped) = self.record_combat_impact(
                             tick, hit.projectile_id, hit.target_id,
                             body.motion.position, hit.delta.killed,
+                            combat.recent_projectile_type(hit.projectile_id),
                         );
                         counts.combat_impacts_observed += usize::from(admitted);
                         counts.combat_impact_visuals_dropped += usize::from(dropped);
@@ -1294,6 +1296,7 @@ impl NativeSoftwareRenderer {
                     let (admitted, dropped) = self.record_combat_impact(
                         tick, projectile_id, obstacle_id,
                         body.pose.position, false,
+                        combat.recent_projectile_type(projectile_id),
                     );
                     counts.combat_impacts_observed += usize::from(admitted);
                     counts.combat_impact_visuals_dropped += usize::from(dropped);
@@ -1410,7 +1413,7 @@ impl NativeSoftwareRenderer {
     /// over one tick must not restart an effect, and old episodes cannot leak.
     pub(super) fn record_combat_impact(&mut self,
         born_tick: u64, projectile_id: i64, target_id: i64,
-        position: Vec2, fatal: bool,
+        position: Vec2, fatal: bool, projectile_type: Option<u8>,
     ) -> (bool, bool) {
         if !position.is_finite() || self.impact_effects.iter().any(|fx|
             fx.born_tick == born_tick && fx.projectile_id == projectile_id &&
@@ -1422,7 +1425,7 @@ impl NativeSoftwareRenderer {
             true
         } else { false };
         self.impact_effects.push(CombatImpactVisual {
-            born_tick, projectile_id, target_id, position, fatal,
+            born_tick, projectile_id, target_id, position, fatal, projectile_type,
         });
         (true, dropped)
     }
@@ -1433,13 +1436,29 @@ impl NativeSoftwareRenderer {
         tick: u64, fixed_dt: f32,
     ) -> usize {
         if !fixed_dt.is_finite() || fixed_dt <= 0.0 { return 0; }
-        self.impact_effects.retain(|fx| tick >= fx.born_tick &&
-            (tick - fx.born_tick) as f32 * fixed_dt < 0.3);
+        if self.impact_effects.is_empty() { return 0; }
+        static ATLAS: OnceLock<Option<SourceProjectileAtlas>> = OnceLock::new();
+        let atlas = ATLAS.get_or_init(|| load_source_art(
+            "projectile-impacts.rgba", SourceProjectileAtlas::decode,
+        )).as_ref();
+        let clip = |kind: Option<u8>| {
+            atlas?.sprites.get(usize::from(kind?))?.as_ref()
+        };
+        self.impact_effects.retain(|fx| {
+            let duration = clip(fx.projectile_type)
+                .map_or(0.3, |art| art.frames.len() as f32 / art.frames_per_second);
+            tick >= fx.born_tick && (tick - fx.born_tick) as f32 * fixed_dt < duration
+        });
         let mut drawn = 0;
         for i in 0..self.impact_effects.len() {
             let fx = self.impact_effects[i];
-            let progress = ((tick - fx.born_tick) as f32 * fixed_dt / 0.3)
-                .clamp(0.0, 1.0);
+            let elapsed = (tick - fx.born_tick) as f32 * fixed_dt;
+            if let Some(art) = clip(fx.projectile_type) {
+                drawn += usize::from(self.draw_sprite(art.frame(elapsed), fx.position, 0.0,
+                    self.camera.pixels_per_unit / art.pixels_per_unit, 1.0));
+                continue;
+            }
+            let progress = (elapsed / 0.3).clamp(0.0, 1.0);
             let radius = 0.7 + progress * (if fx.fatal { 4.0 } else { 2.4 });
             let (x, y) = self.project(fx.position);
             let pixels = radius * self.camera.pixels_per_unit;
