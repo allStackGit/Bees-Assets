@@ -159,6 +159,18 @@ internal static class NativePhysicalSceneExporter
         public Vector2 mount_offset;
         public Vector2 linecast_offset;
         public SourceTrigger charge_range, proximity;
+        // Immutable v26 input for an authentic physical Bomb/Charge. The
+        // native author may later enroll this ORIGINAL hull in a policy,
+        // without inventing a special weapon or borrowing another class's
+        // timing. The source game remains in control during export.
+        public SourceSpecialWeaponObservation observation;
+    }
+
+    [Serializable]
+    private sealed class SourceSpecialWeaponObservation
+    {
+        public float range, rate_of_fire, rotation_rate, projectile_value;
+        public bool has_target_ship;
     }
 
     [Serializable]
@@ -1110,6 +1122,16 @@ internal static class NativePhysicalSceneExporter
                 : Vector2.zero,
             charge_range = ship is Barge ? Capture(weapon.RangeCollider?.Collider) : null,
             proximity = ship is Barge ? null : Capture(ship.ProximityCollider?.Collider),
+            // Read all observation-only fields from the EXACT Unity
+            // Weapon in ship.Weapons[slot]. They are never used to modify
+            // the collider/power/cooldown snapshot or Bomb physics.
+            observation = new SourceSpecialWeaponObservation {
+                range = weapon.Range,
+                rate_of_fire = weapon.RateOfFire,
+                rotation_rate = weapon.RotationRate,
+                projectile_value = weapon.ProjectileValue,
+                has_target_ship = weapon.HasTargetShip,
+            },
         };
     }
 
