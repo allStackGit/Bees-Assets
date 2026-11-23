@@ -99,6 +99,9 @@ def owned_forward(job: dict, plan: dict, argv: list[str]) -> int:
     # A preexisting socket might be some other learner's broker. Refuse to
     # reuse it, even if it happens to accept the expected HMAC secret.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        # Previous rollout connections may leave TIME_WAIT sockets behind.
+        # SSH still requires a genuinely exclusive listening forward.
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind(("127.0.0.1", port))
     command = [
         plan["ssh_executable"],
