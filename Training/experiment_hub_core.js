@@ -7744,7 +7744,7 @@ class ExperimentHub {
         return {jobs,executable:false,
             note:'Frozen pipeline only; native execution remains subject to separate authorization.'};
     }
-    queueIn(next,value,placementParameters) {
+    queueIn(next,value,placementParameters,internalBeesRollout=false) {
         if (!object(value) || typeof value.configuration_id !== 'string')
             throw Error('Select a saved configuration to queue.');
         const selected = next.configurations.find(x=>x.id===value.configuration_id);
@@ -7815,6 +7815,39 @@ class ExperimentHub {
             if(!shared&&frozen.remote_lineages===true&&
                 (!Number.isSafeInteger(frozen.workers)||frozen.workers<2||frozen.workers>64))
                 throw Error('Distributed Courier requires an explicit, frozen population of at least two PPO lineages.');
+        }
+        if(project.id==='bees_rollout') {
+            const learner=next.jobs.find(j=>j.id===frozen.learner_job_id);
+            const fields=['learner_job_id','lineage_root_id','worker_sha256',
+                'trainer_sha256','runtime_version','wan_key_fingerprint',
+                'envs','device','slot'];
+            if(internalBeesRollout!==true||
+                Object.keys(frozen).some(key=>!fields.includes(key))||
+                !UUID.test(String(frozen.learner_job_id||''))||
+                !UUID.test(String(frozen.lineage_root_id||''))||
+                !Number.isSafeInteger(frozen.slot)||frozen.slot<0||frozen.slot>7||
+                !Number.isSafeInteger(frozen.envs)||frozen.envs<1||
+                frozen.envs>64||frozen.envs>resources.cpus||
+                !['cpu','cuda'].includes(frozen.device)||
+                (frozen.device==='cuda'
+                    ?resources.gpu_count!==1||resources.gpu_mode!=='exclusive'
+                    :resources.gpu_count!==0)||
+                !learner||learner.project_id!=='bees_native'||
+                learner.status!=='waiting_adapter'||
+                learner.dispatch_id||
+                learner.frozen_parameters?.wan_actors<1||
+                frozen.slot>=learner.frozen_parameters.wan_actors||
+                frozen.lineage_root_id!==
+                    (learner.artifact_lineage_root_id||learner.id)||
+                ['worker_sha256','trainer_sha256','runtime_version',
+                    'wan_key_fingerprint'].some(key=>
+                        frozen[key]!==learner.frozen_parameters[key])||
+                next.jobs.some(job=>job.project_id==='bees_rollout'&&
+                    job.frozen_parameters?.learner_job_id===learner.id&&
+                    job.frozen_parameters?.slot===frozen.slot&&
+                    job.status!=='cancelled')||
+                ancestorId!==null||afterId!==null)
+                throw Error('Bees WAN actor must be an immutable member of one reserved native learner group.');
         }
         if(project.id==='courier_lineage') {
             const learner=next.jobs.find(j=>j.id===frozen.learner_job_id);
