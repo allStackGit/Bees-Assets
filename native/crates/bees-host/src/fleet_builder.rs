@@ -2418,9 +2418,9 @@ pub(super) fn archive(
         // Do not accidentally transport Neptune's mission coordinates
         // into an unrelated 320x200 skirmish map.
         let position = if original_game {
-            &json!([-2.0, 70.0])
+            json!([-2.0, 70.0])
         } else {
-            &mine["position"]
+            mine["position"].clone()
         };
         let original = position.as_array().ok_or_else(||
             invalid("source mineable asteroid has no physical position"))?;
