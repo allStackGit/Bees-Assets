@@ -82,12 +82,15 @@ def qualify_bf16_training_forward(models, methods, *, device, channels,
         return result
     total_bytes=sum(p.numel()*p.element_size()
                     for model in models for p in model.parameters())
-    if total_bytes>max_parameter_bytes:
+    if (total_bytes>max_parameter_bytes or
+            any(p.dtype!=torch.float32 or p.device.type!="cuda"
+                for model in models for p in model.parameters())):
         return result
     if hasattr(torch.cuda,"is_bf16_supported"):
         try:
-            if not torch.cuda.is_bf16_supported():
-                return result
+            with torch.cuda.device(device):
+                if not torch.cuda.is_bf16_supported():
+                    return result
         except (RuntimeError,NotImplementedError):
             return result
     try:
@@ -99,11 +102,15 @@ def qualify_bf16_training_forward(models, methods, *, device, channels,
         # representative convolution widths rather than just one map.
         reference_rates=[]
         candidate_rates=[]
-        for side in (32,64):
-            amount=2*channels*side*side
+        for batch,side in ((8,32),(4,64),(2,47)):
+            # Small and large convolution cohorts plus an odd board size
+            # capture the relevant MIOpen, instance-norm and padding paths.
+            # A bare single-board probe would be dominated by CPU launches,
+            # often rejecting useful BF16 training on large PPO groups.
+            amount=batch*channels*side*side
             board=torch.arange(amount,device=device,dtype=torch.float32)
             board=((board*0.015625).sin()*0.5).reshape(
-                2,channels,side,side)
+                batch,channels,side,side)
             reference,ref_grad=_compute(clones,methods,board,False)
             candidate,trial_grad=_compute(clones,methods,board,True)
             if (any(_relative_error(a,b)>.04
