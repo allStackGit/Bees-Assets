@@ -593,9 +593,50 @@ function resolveGit() {
 
 function resolveUnityEditor(config) {
     const configured = process.env.BEES_UNITY_EDITOR || config.unityEditor;
-    if (configured && exists(configured)) return path.resolve(configured);
+    if (configured) {
+        if (!exists(configured)) {
+            throw new Error('Configured Unity Editor does not exist: ' + configured);
+        }
+        return path.resolve(configured);
+    }
+
+    if (process.platform === 'linux') {
+        // Unity Hub's default editor layout on Linux. Prefer the project's
+        // pinned editor, not the newest installed editor, when it is known.
+        const projectVersion = path.join(paths.beesRoot, 'ProjectSettings', 'ProjectVersion.txt');
+        let expectedVersion = '';
+        if (exists(projectVersion)) {
+            const match = readText(projectVersion).match(/^m_EditorVersion:\\s*(\\S+)/m);
+            if (match) expectedVersion = match[1];
+        }
+        const roots = [
+            path.join(os.homedir(), 'Unity', 'Hub', 'Editor'),
+            '/opt/unity/Hub/Editor',
+        ];
+        for (const root of roots) {
+            if (!exists(root)) continue;
+            const versions = expectedVersion
+                ? [expectedVersion]
+                : fs.readdirSync(root, { withFileTypes: true })
+                    .filter(entry => entry.isDirectory())
+                    .map(entry => entry.name)
+                    .sort((a, b) => b.localeCompare(a));
+            for (const version of versions) {
+                const candidate = path.join(root, version, 'Editor', 'Unity');
+                if (exists(candidate)) return path.resolve(candidate);
+            }
+        }
+        if (expectedVersion) {
+            throw new Error(
+                'Unity ' + expectedVersion + ' is required by the project but was not found ' +
+                'under ~/Unity/Hub/Editor or /opt/unity/Hub/Editor. ' +
+                'Set BEES_UNITY_EDITOR to the matching Editor/Unity executable.'
+            );
+        }
+    }
+
     if (process.platform === 'win32') {
-        const root = 'C:\\Program Files\\Unity\\Hub\\Editor';
+        const root = 'C:\\\\Program Files\\\\Unity\\\\Hub\\\\Editor';
         if (exists(root)) {
             const versions = fs.readdirSync(root, { withFileTypes: true })
                 .filter(entry => entry.isDirectory())
