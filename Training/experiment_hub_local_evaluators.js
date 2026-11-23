@@ -822,6 +822,79 @@ async function setupMini(hub,sourceJobId,{historical=false}={}) {
         fs.rmSync(stage,{recursive:true,force:true});
     }
 }
+function mapReport(hub,id) {
+    const o=localOptions(hub),approved=suiteNames(o);
+    if(typeof id!=='string'||!/^[a-z][a-z0-9_-]{0,31}$/.test(id)||
+        !Object.hasOwn(approved,id))
+        throw Error('Unknown approved TinyBrains evaluation suite.');
+    const suiteName=approved[id];
+    const suite=JSON.parse(fs.readFileSync(
+        presentFile(path.join(o.suites,suiteName+'.json')),'utf8'));
+    if(suite.suite_id!==suiteName||!Array.isArray(suite.maps)||
+        suite.maps.length>128)
+        throw Error('Invalid frozen TinyBrains map inventory.');
+    privateDirectory(o.receipts);
+    const suffix='.'+suiteName+'.maps.json';
+    const reports=fs.readdirSync(o.receipts).filter(name=>name.endsWith(suffix))
+        .map(name=>{
+            const dispatch=name.slice(0,-suffix.length);
+            if(!UUID.test(dispatch))return null;
+            const file=path.join(o.receipts,name);
+            try {
+                const stat=fs.lstatSync(file);
+                return stat.isFile()&&!stat.isSymbolicLink()&&
+                    fs.realpathSync(file)===file&&stat.uid===process.getuid()&&
+                    !(stat.mode&0o077)&&stat.size>0&&stat.size<=16384
+                    ?{file,dispatch,at:stat.mtimeMs}:null;
+            }catch {return null;}
+        }).filter(Boolean).sort((a,b)=>b.at-a.at);
+    for(const item of reports.slice(0,128)) {
+        try {
+            const details=JSON.parse(fs.readFileSync(item.file,'utf8'));
+            const file=presentFile(path.join(o.receipts,
+                item.dispatch+'.'+suiteName+'.json'));
+            const stat=fs.lstatSync(file);
+            if(stat.uid!==process.getuid()||stat.mode&0o077||
+                stat.size<1||stat.size>4096)continue;
+            const receipt=JSON.parse(fs.readFileSync(file,'utf8'));
+            if(details.schema_version!==1||details.dispatch_id!==item.dispatch||
+                details.suite_id!==suiteName||
+                !UUID.test(String(details.job_id||''))||
+                !SHA256.test(String(details.suite_sha256||''))||
+                !SHA256.test(String(details.checkpoint_sha256||''))||
+                receipt.dispatch_id!==details.dispatch_id||
+                receipt.suite_id!==details.suite_id||
+                receipt.suite_sha256!==details.suite_sha256||
+                receipt.checkpoint_sha256!==details.checkpoint_sha256||
+                receipt.trials!==details.trials||
+                receipt.successes!==details.successes||
+                !Array.isArray(details.maps)||
+                details.maps.length!==suite.maps.length)continue;
+            let trials=0,wins=0,valid=true;
+            for(let i=0;i<details.maps.length;i++) {
+                const row=details.maps[i];
+                if(!row||row.map!==suite.maps[i]||
+                    ![2,4,6].includes(row.players)||
+                    !['win','loss','draw','top_half','placement_sum','trials']
+                        .every(key=>Number.isSafeInteger(row[key])&&row[key]>=0)||
+                    row.win+row.loss+row.draw!==row.trials||
+                    row.top_half>row.trials||
+                    row.placement_sum<row.trials||
+                    row.placement_sum>row.trials*row.players) {valid=false;break;}
+                trials+=row.trials;wins+=row.win;
+            }
+            if(!valid||trials!==details.trials||wins!==details.successes)
+                continue;
+            return {available:true,suite_id:suiteName,
+                dispatch_id:details.dispatch_id,job_id:details.job_id,
+                checkpoint_sha256:details.checkpoint_sha256,
+                trials,successes:wins,maps:details.maps,
+                recorded_at:new Date(item.at).toISOString()};
+        }catch { /* Stale or incomplete reports do not replace a receipt. */ }
+    }
+    return {available:false,suite_id:suiteName,
+        reason:'No current checkpoint receipt with a matching per-map report is available.'};
+}
 async function action(hub,value) {
     if(!value||value.confirm_action!==true)
         throw Error('Explicit evaluator action confirmation is required.');
@@ -860,4 +933,4 @@ async function action(hub,value) {
         ?'schedule stopped; any current evaluation may finish.'
         :value.action==='restart'?'schedule restarted.':'schedule started.')};
 }
-module.exports={status,action};
+module.exports={status,action,mapReport};
