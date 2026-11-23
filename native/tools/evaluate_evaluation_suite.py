@@ -27,7 +27,8 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
                    physics_workers: int | None, device: str | None,
                    resume: bool = False, scenario_workers: int = 1,
                         candidate_slot: int | None = None,
-                        reference_slot: int | None = None) -> dict:
+                        reference_slot: int | None = None,
+                        scenario_devices: tuple[str, ...] | None = None) -> dict:
     if not 2 <= len(sources) <= 64:
         raise ValueError("heterogeneous holdout needs 2..64 authored native source runs")
     if learner_side not in (1, 2) or not 0 <= seed < (1 << 63):
@@ -35,10 +36,19 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
     if (type(scenario_workers) is not int or
             not 1 <= scenario_workers <= min(16, len(sources))):
         raise ValueError("scenario workers must be 1..16 and no more than authored scenarios")
-    if scenario_workers > 1 and (binary is None or device != "cpu"):
+    if scenario_devices is not None:
+        if (device is not None or scenario_workers < 2 or
+                len(scenario_devices) != scenario_workers or
+                len(set(scenario_devices)) != scenario_workers or
+                any(value not in ("cuda:0", "cuda:1", "cuda:2", "cuda:3")
+                    for value in scenario_devices)):
+            raise ValueError("parallel GPU evaluation needs one distinct explicitly allocated GPU per worker")
+        if binary is None:
+            raise ValueError("parallel GPU evaluations require a pinned native rollout binary")
+    elif scenario_workers > 1 and (binary is None or device != "cpu"):
         raise ValueError(
-            "parallel native holdouts require an existing native binary and explicit CPU inference; "
-            "GPU allocation remains owned by the host or Experiment Hub"
+            "parallel native holdouts require a pinned binary and explicit CPU inference "
+            "or separate GPU allocations for each worker"
         )
     if (candidate_slot is None) != (reference_slot is None):
         raise ValueError("candidate and reference model slots must be specified together")
@@ -69,6 +79,7 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
         "rollout_binary_sha256": file_sha256(binary) if binary else None,
         "physics_workers": physics_workers,
         "inference_device": device,
+        **({"inference_devices": list(scenario_devices)} if scenario_devices else {}),
         **({"candidate_slot": candidate_slot, "reference_slot": reference_slot}
            if candidate_slot is not None else {}),
         **({"parallel_scenario_workers": scenario_workers}
@@ -93,6 +104,10 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
         sync_directory(output.parent)
     begun = time.monotonic()
     def evaluate_one(index, source):
+        selected_device = (
+            scenario_devices[(index - 1) % scenario_workers]
+            if scenario_devices is not None else device
+        )
         # Every scenario owns its native World, source scene, subprocess
         # and atomic receipt. No Python or Rust gameplay state is shared.
         # Keep incomplete attempts for forensics and recovery, never
@@ -124,7 +139,7 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
                          not isinstance(result.get("candidate_terminal_matchup"), dict)) or
                         result.get("source_run_config") != str(source) or
                         result.get("model_dependencies") != model_dependencies or
-                        result.get("inference_device_override") != device or
+                        result.get("inference_device_override") != selected_device or
                         result.get("requested_physics_workers") != (
                             physics_workers if physics_workers is not None
                             else json.loads(source.read_text(encoding="utf-8")).get(
@@ -159,7 +174,7 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
             # evaluation concurrency or Windows/Linux process scheduling.
             result = evaluate(
                 source, manifest, destination, learner_side, binary, seed,
-                physics_workers, device, candidate_slot, reference_slot,
+                physics_workers, selected_device, candidate_slot, reference_slot,
             )
             result_path = destination / "evaluation-result.json"
         if (result.get("kind") != "native_policy_evaluation_complete" or
@@ -175,6 +190,7 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
             "source_run_sha256": original_sha[index - 1],
             "result_path": result_path.relative_to(output).as_posix(),
             "result_sha256": file_sha256(result_path),
+            "inference_device": selected_device,
             "result": result,
         }, reused)
 
@@ -187,6 +203,19 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
             evaluate_one(index, source)
             for index, source in enumerate(sources, start=1)
         ]
+    elif scenario_devices is not None:
+        # One persistent execution lane per GPU prevents overlapping model
+        # processes from oversubscribing a faster card.
+        def evaluate_gpu_lane(lane):
+            return [
+                (index, evaluate_one(index, sources[index - 1]))
+                for index in range(lane + 1, len(sources) + 1, scenario_workers)
+            ]
+        with ThreadPoolExecutor(max_workers=scenario_workers) as pool:
+            lanes = [pool.submit(evaluate_gpu_lane, lane)
+                     for lane in range(scenario_workers)]
+            ordered = [outcome for lane in lanes for outcome in lane.result()]
+        completed = [outcome for _, outcome in sorted(ordered)]
     else:
         with ThreadPoolExecutor(max_workers=scenario_workers) as pool:
             futures = [
@@ -271,6 +300,8 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
             else "sum_of_sequential_native_evaluation_wall_seconds"
         ),
         "requested_parallel_scenarios": scenario_workers,
+        **({"allocated_inference_devices": list(scenario_devices)}
+           if scenario_devices is not None else {}),
         "measured_simulation_world_steps_per_second": steps / measured,
         "measured_execution_wall_seconds": execution_seconds,
         "measured_execution_world_steps_per_second": steps / execution_seconds,
@@ -287,6 +318,7 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
             "source_run_sha256": row["source_run_sha256"],
             "result_path": row["result_path"],
             "result_sha256": row["result_sha256"],
+            "inference_device": row["inference_device"],
             "episodes": row["result"]["episodes"],
             "side_win_rate": row["result"]["side_win_rate"],
             "draw_rate": row["result"]["draw_rate"],
