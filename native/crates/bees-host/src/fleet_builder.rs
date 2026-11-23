@@ -1670,11 +1670,27 @@ fn mixed_fleet_offsets(
     let home = if side == 0 { -75.0 } else { 75.0 };
     let mut offsets = vec![[0.0, 0.0]; total];
     let mut occupied = vec![(home, 0.0, fighter_size.x * 0.5, fighter_size.y * 0.5)];
+    let half_map_x = arena_size.map_or(160.0, |size| size as f32 * 0.5);
+    let half_map_y = arena_size.map_or(100.0, |size| size as f32 * 0.5);
+    // Preserve every old 320x200 placement. On a larger authored native
+    // arena, expand only AFTER the established placement cells run out.
+    // This allows original Dreadnoughts and Flagships to form substantial
+    // fleets instead of failing because the old Wasp-only lane was full.
     let mut y_rows = (-22_i32..=22).collect::<Vec<_>>();
+    let max_row = ((half_map_y - 5.0) / 4.0).floor() as i32;
+    if max_row > 22 {
+        y_rows.extend((23..=max_row).flat_map(|row| [-row, row]));
+    }
     y_rows.sort_unstable_by_key(|&row| (row.abs(), row));
-    let outer_x = (-151_i32..=-35).step_by(4).collect::<Vec<_>>();
+    let mut outer_x = (-151_i32..=-35).step_by(4).collect::<Vec<_>>();
     let mut inner_x = outer_x.clone();
     inner_x.reverse();
+    let far = (half_map_x - 8.0).floor() as i32;
+    if far >= 155 {
+        let extra = (155..=far).step_by(4).map(|value| -value);
+        outer_x.extend(extra.clone());
+        inner_x.extend(extra);
+    }
     for index in (fighters + specialist..total)
         .chain(fighters..fighters + specialist)
         .chain(1..fighters)
@@ -1717,12 +1733,13 @@ fn mixed_fleet_offsets(
         let mut placed = false;
         for &column in columns {
             let x = if side == 0 { column as f32 } else { -(column as f32) };
-            if x.abs() - half_x < 30.0 || x.abs() + half_x > 158.0 {
+            if x.abs() - half_x < 30.0 ||
+                x.abs() + half_x > half_map_x - 2.0 {
                 continue;
             }
             for &row in &y_rows {
                 let y = row as f32 * 4.0;
-                if y.abs() + half_y > 95.0 ||
+                if y.abs() + half_y > half_map_y - 5.0 ||
                     occupied.iter().any(|&(other_x, other_y, other_half_x, other_half_y)| {
                         (x - other_x).abs() < half_x + other_half_x + 2.0 &&
                         (y - other_y).abs() < half_y + other_half_y + 2.0
