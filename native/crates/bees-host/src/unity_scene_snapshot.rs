@@ -600,6 +600,15 @@ struct UnitySnapshot {
     human_side: i32,
     beehive_size_pixels: UnitySize,
     has_policy_episode: bool,
+    /// Original exporter captures physical v26 action inputs for every
+    /// ordinary ship, not only a Unity-bound RL Agent.
+    #[serde(default)]
+    native_policy_capabilities_captured: bool,
+    /// True ONLY on an explicitly authored native experiment overlay.
+    /// It is not evidence that Unity spawned policy Agents in this game:
+    /// the native author records that distinct control-provenance receipt.
+    #[serde(default)]
+    native_policy_authored_episode: bool,
     policy_episode: Option<UnityPolicyEpisode>,
     min: UnityVec2,
     max: UnityVec2,
@@ -4875,6 +4884,21 @@ impl NativePhysicalScene {
             .map_err(NativeSnapshotError::Malformed)?;
         if !(20..=SNAPSHOT_VERSION).contains(&raw.schema_version) {
             return Err(NativeSnapshotError::UnsupportedSchema(raw.schema_version));
+        }
+        if raw.native_policy_authored_episode &&
+            (raw.schema_version < 35 ||
+             !raw.native_policy_capabilities_captured ||
+             !raw.has_policy_episode ||
+             raw.activate_hivemind != Some(false) ||
+             raw.targeting_context.as_ref().is_none_or(|ctx| ctx.has_player) ||
+             raw.ships.iter().any(|ship|
+                 ship.has_bound_policy && !ship.is_rl_policy_controlled))
+        {
+            // Native authoring legitimately adds policy command owners to
+            // immutable original Unity physical hulls. Never mistake this
+            // for a live Unity Agent, old partial export, or a replay of
+            // the source network's already consumed strategy decisions.
+            return Err(NativeSnapshotError::InvalidEpisodeSource);
         }
         if raw.schema_version >= 25 && (raw.targeting_context.is_none() || raw.ships.iter().any(|ship|
             ship.combat_activity.is_none() || ship.special.beacon.as_ref().is_some_and(|beacon| beacon.combat_activity.is_none()))) {
