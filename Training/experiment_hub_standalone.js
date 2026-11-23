@@ -344,6 +344,13 @@ function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null,
                             ...entry,
                             activation_ready:entry.source_commit===releases.bootVersions[name],
                         }])),
+                    sources:Object.fromEntries(Object.entries(releases?.sources||{})
+                        .map(([name,source])=>[name,{
+                            branch:source.branch,
+                            checkout_commit:releases.localVersions[name]||null,
+                            activated_commit:releases.bootVersions[name]||null,
+                            latest_commit:releases.latest[name]?.source_commit||null,
+                        }])),
                     errors:releases?.failures||{},
                     machine_update_policies:hub.state.machine_update_policies||{},
                 });
