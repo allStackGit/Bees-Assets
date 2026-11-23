@@ -259,12 +259,23 @@ function validateCatalog(raw,installed=[],approved={}) {
                 'wan_key_fingerprint'].every(key=>
                     /^[0-9a-f]{64}$/.test(String(entry?.[key]||''))))
             throw Error('Bees remote actor must advertise exact Unity, PPO, runtime and WAN key hashes.');
+        if(entry.wan_forward_managed!==undefined&&
+            typeof entry.wan_forward_managed!=='boolean')
+            throw Error('Bees WAN actor SSH ownership must be a trusted boolean.');
+        if(entry.wan_forward_managed===true&&
+            !/^[a-z][a-z0-9_-]{0,47}$/.test(String(entry.wan_target_machine_id||''))||
+            entry.wan_forward_managed!==true&&
+                entry.wan_target_machine_id!==undefined)
+            throw Error('Bees WAN actor SSH forward must have one pinned learner machine.');
         result.bees_rollout={...validateFields(entry),
             worker_sha256:entry.worker_sha256,
             worker_payload_sha256:entry.worker_payload_sha256,
             trainer_sha256:entry.trainer_sha256,
             runtime_version:entry.runtime_version,
-            wan_key_fingerprint:entry.wan_key_fingerprint};
+            wan_key_fingerprint:entry.wan_key_fingerprint,
+            wan_forward_managed:entry.wan_forward_managed===true,
+            ...(entry.wan_forward_managed===true
+                ?{wan_target_machine_id:entry.wan_target_machine_id}:{})};
     }
     if(raw.tinybrains!==undefined) {
         const profiles=raw.tinybrains?.profiles;
