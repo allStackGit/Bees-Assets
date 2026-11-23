@@ -1841,6 +1841,12 @@ class PersistentGpuForwardPool:
         self._pending_device_timings = deque()
         self._device_work_rates = {device:deque(maxlen=8)
                                    for device in self.devices}
+        # Work-rate ratios require identical shapes and balanced work.
+        # Raw per-GPU forward timing can include heterogeneous map pairs,
+        # but must never be fed back into the capacity weight allocator.
+        self._device_forward_ms = {device:deque(maxlen=16)
+                                   for device in self.devices}
+        self.device_forward_timing_samples = 0
         self.device_timing_samples = 0
         self._admitted_capacity_weights = {}
         self.training_updates = 0
@@ -1872,6 +1878,8 @@ class PersistentGpuForwardPool:
             # rather than treating last hour's GPU sharing as permanent.
             for rates in self._device_work_rates.values():
                 rates.clear()
+            for timings in self._device_forward_ms.values():
+                timings.clear()
 
     def _collect_device_timings(self):
         if not self._pending_device_timings:
@@ -1886,9 +1894,15 @@ class PersistentGpuForwardPool:
                 elapsed_ms = begin.elapsed_time(end)
             except (RuntimeError,ValueError,NotImplementedError):
                 continue
-            if elapsed_ms > 0 and pixels > 0:
-                self._device_work_rates[device].append(pixels/elapsed_ms)
-                self.device_timing_samples += 1
+            if elapsed_ms > 0:
+                self._device_forward_ms[device].append(elapsed_ms)
+                self.device_forward_timing_samples += 1
+                if pixels > 0:
+                    # Only shape-matched, balanced measurements can
+                    # change assignment weights. Mixed maps are observable
+                    # but cannot falsely teach one GPU to take more work.
+                    self._device_work_rates[device].append(pixels/elapsed_ms)
+                    self.device_timing_samples += 1
         self._pending_device_timings = waiting
 
     def measured_capacity_weights(self, devices=None):
@@ -1933,10 +1947,19 @@ class PersistentGpuForwardPool:
         metrics = dict(
             gpu_forward_capacity_pending_events=len(self._pending_device_timings),
             gpu_forward_capacity_timing_samples=self.device_timing_samples,
+            gpu_forward_all_shape_timing_samples=self.device_forward_timing_samples,
             gpu_forward_primary_inline_dispatches=self.owner_inline_prepared_calls,
             gpu_forward_direct_inline_dispatches=self.owner_inline_direct_calls)
         rates = []
         for slot, device in enumerate(self.devices):
+            # Heterogeneous-map forward durations are NOT directly
+            # comparable across cards. Expose each card's activity while
+            # reserving capacity ratios for same-shape balanced pairs.
+            durations = self._device_forward_ms[device]
+            metrics[f'gpu_forward_device_{slot}_timed_forwards'] = len(durations)
+            if durations:
+                metrics[f'gpu_forward_device_{slot}_median_forward_ms'] = (
+                    median(durations))
             samples = self._device_work_rates[device]
             metrics[f'gpu_forward_capacity_device_{slot}_samples'] = len(samples)
             rate = median(samples) if len(samples) >= 3 else None
@@ -2070,18 +2093,15 @@ class PersistentGpuForwardPool:
         grad_enabled = torch.is_grad_enabled()
         autocast_enabled = torch.is_autocast_enabled("cuda")
         autocast_dtype = torch.get_autocast_dtype("cuda")
-        # Compare only balanced same-shape work. Unequal assigned batches
-        # have different fixed kernel launch costs and could otherwise
-        # teach a self-reinforcing slowdown on the GPU assigned fewer rows.
-        # Samples are retained over a short number of PPO updates; a
-        # steady job need not run dozens of shape groups per update merely
-        # to discover when its other GPU is inference-contended.
+        # Sample every fourth real two-card forward so even mixed-map
+        # training exposes per-card service times. Only same-shape,
+        # balanced samples may influence adaptive GPU work allocation.
+        # Pixel-work is None for heterogeneous map pairs.
         comparable = (pixel_work is not None and
                       min(pixel_work)>0 and
-                      max(pixel_work)/min(pixel_work)<=1.12)
-        sample = (comparable and
-                  ordinals not in self._admitted_capacity_weights and
-                  self.prepared_calls % 4 == 0 and
+                      max(pixel_work)/min(pixel_work)<=1.12 and
+                      ordinals not in self._admitted_capacity_weights)
+        sample = (self.prepared_calls % 4 == 0 and
                   len(self._pending_device_timings)<32)
         if len(ordinals)==2:
             # Launch GPU 1's worker first, then enqueue GPU 0's forward
@@ -2095,12 +2115,12 @@ class PersistentGpuForwardPool:
                 self._prepared_forward,models[1],input_factories[1],
                 ordinals[1],streams[1],producer,
                 grad_enabled,autocast_enabled,autocast_dtype,
-                pixel_work[1] if sample else 0)
+                (pixel_work[1] if comparable else -1) if sample else 0)
             try:
                 primary = self._prepared_forward(
                     models[0],input_factories[0],ordinals[0],streams[0],
                     None,grad_enabled,autocast_enabled,autocast_dtype,
-                    pixel_work[0] if sample else 0)
+                    (pixel_work[0] if comparable else -1) if sample else 0)
             except BaseException:
                 # No optimizer step may proceed while a peer dispatch is
                 # still using the current minibatch's source tensors.
@@ -2113,7 +2133,7 @@ class PersistentGpuForwardPool:
                 self._prepared_forward, model, factory, device, stream,
                 producer if i else None,
                 grad_enabled, autocast_enabled, autocast_dtype,
-                pixel_work[i] if sample else 0)
+                (pixel_work[i] if comparable else -1) if sample else 0)
                 for i,(model,factory,device,stream) in enumerate(zip(
                     models,input_factories,ordinals,streams))]
             # Join Python dispatch, not GPU completion. Original tensors
