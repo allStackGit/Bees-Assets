@@ -2085,6 +2085,23 @@ impl NativeRemotePlay {
         let fog_enabled = view.player_authority.player_fog_of_war_enabled();
         let mut vision = HashMap::<i32, RemoteFogSources>::new();
         for &side in &sides {
+            // A slow opposing viewer must not force an unrelated fast
+            // commander's side to spend CPU constructing that viewer's
+            // entire fog index. This only applies to quiet frames without
+            // audio or a forced state transition. Every recipient on the
+            // skipped side already has a complete replacement snapshot
+            // queued behind the current socket frame.
+            if !force_view && !has_events &&
+                self.pending_audio.get(&side).is_none_or(Vec::is_empty) &&
+                self.peers.iter().filter(|peer|
+                    !peer.closed && peer.side == Some(side)).all(|peer|
+                    peer.snapshot_backlogged(view.tick) ||
+                    (peer.spectator &&
+                        view.tick % SPECTATOR_IDLE_STATE_EVERY_TICKS != 0))
+            {
+                self.measurements.fog_query_views_skipped_no_output += 1;
+                continue;
+            }
             // A clear-sight game still uses the same audio and state
             // projection, but never queries or transmits source fog circles.
             // Avoid copying, sorting, and indexing them on every LAN frame.
@@ -2252,6 +2269,12 @@ impl NativeRemotePlay {
                 pending_audio.get(&side).is_none_or(Vec::is_empty)
             {
                 measurements.congested_snapshots_deferred += 1;
+                continue;
+            }
+            if !vision.contains_key(&side) {
+                // The quiet side has no eligible presentation recipient.
+                // Queued inspections and urgent changes prevent its source
+                // vision from being omitted above.
                 continue;
             }
             let encoded = snapshots.entry((side, spectator)).or_insert_with(|| {
