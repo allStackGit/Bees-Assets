@@ -10455,6 +10455,7 @@ fn run_battle(
         // command dispatcher as the local window and recorded input replay.
         // Process it at this fixed-tick boundary, never during physics.
         let mut remote_lobby_waiting = false;
+        let mut remote_reconnect_waiting = false;
         if remote.is_some() {
             let world = host.simulation().world(0).expect("remote play has one Level");
             let world_id = world.id;
@@ -10468,11 +10469,17 @@ fn run_battle(
             remote_lobby_waiting = !view &&
                 remote.as_mut().expect("checked remote listener")
                     .lobby_waiting(world_id, revision, world.tick());
+            remote_reconnect_waiting = !view &&
+                !world.is_failed() && !world.state.events.completed() &&
+                !world.state.events.was_aborted() &&
+                remote.as_mut().expect("checked remote listener")
+                    .reconnect_waiting(world.tick());
             for order in orders {
                 // A story briefing blocks physical orders from both player
                 // sides until its authored viewer releases the real Level.
                 // End still frees an existing peer-owned held-fire gesture.
-                if (remote_briefing.is_some() || remote_lobby_waiting) &&
+                if (remote_briefing.is_some() ||
+                    remote_lobby_waiting || remote_reconnect_waiting) &&
                     !matches!(&order.action, NativePlayerInput::HeldFire(input)
                         if matches!(input.action,
                             bees_gameplay::player_inputs::NativeHeldFireAction::End)) {
@@ -10480,6 +10487,8 @@ fn run_battle(
                         order.peer, order.request_id,
                         Err(if remote_lobby_waiting {
                             "waiting for both authenticated commanders to ready"
+                        } else if remote_reconnect_waiting {
+                            "waiting for the disconnected commander to rejoin"
                         } else {
                             "campaign briefing is still being presented"
                         }));
@@ -10569,7 +10578,8 @@ fn run_battle(
             // The local window may still be displaying its own briefing;
             // deliver the initial paused state to newly authenticated LAN
             // peers without advancing physics to make a snapshot.
-            if remote_briefing.is_some() || remote_lobby_waiting {
+            if remote_briefing.is_some() || remote_lobby_waiting ||
+                remote_reconnect_waiting {
                 if let Some(view) = host.render_world(0) {
                     remote.as_mut().expect("remote listener")
                         .broadcast_initial_if_pending(&view, client_bounds[0]);
@@ -10726,7 +10736,11 @@ fn run_battle(
         // admission is transport-only; the original World, input trace,
         // source HiveMind clock and simulation checkpoint are unchanged.
         // A disconnected or recovered peer must reauthenticate and ready.
-        if remote_lobby_waiting {
+        if remote_lobby_waiting || remote_reconnect_waiting {
+            // A returned commander resumes the exact checkpointed World
+            // rather than racing a disconnected peer's physical decisions.
+            // The incoming TCP seat is authenticated by the existing host
+            // and all prior held-fire leases are retired normally.
             std::thread::sleep(Duration::from_millis(16));
             remote_deadline = Instant::now();
             continue 'battle;
