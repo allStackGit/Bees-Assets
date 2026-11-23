@@ -181,7 +181,8 @@ const METRICS=Object.freeze(['training_steps','elapsed_training_seconds',
     'evaluation_score_rate_pursuit','evaluation_score_rate_strafe']);
 
 function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifactRoot,
-    wanKeyPath=null,wanBrokerPort=55051,releaseManifestPath=null}) {
+    wanKeyPath=null,wanBrokerPort=55051,releaseManifestPath=null,
+    runtimeArchive=null,runtimeSha256=null,runtimeVersion=null,runtimeBuildId=null}) {
     if(process.platform!=='linux')
         throw Error('The first native Bees Unity training adapter requires the Linux ROCm supervisor.');
     const project=fs.realpathSync(projectRoot);
@@ -201,6 +202,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
     // plane. A later Git checkout edit cannot change queued job behavior.
     const pinned=prepareImmutableRuntime({
         project,python,artifactRoot:artifacts,workerSha:fileHash(worker),
+        runtimeArchive,runtimeSha256,runtimeVersion,runtimeBuildId,
     });
     const trainer=trustedFile(pinned.trainer,'Frozen Bees trainer YAML');
     const training=trustedFile(pinned.training,'Frozen Bees ML-Agents learner');
