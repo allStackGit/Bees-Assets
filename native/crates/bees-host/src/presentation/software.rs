@@ -319,6 +319,15 @@ struct ShipDeathVisual {
     color_rgb: Option<[u8; 3]>,
 }
 
+/// Ordinary projectiles create a splash at their own position. A
+/// persistent beam or area explosion uses the individual target marker.
+pub(crate) fn projectile_splash(
+    combat: &CombatWorld, projectile_id: i64,
+) -> Option<(u8, Vec2)> {
+    combat.recent_projectile_impact(projectile_id).filter(|(kind, point)|
+        matches!(*kind, 1..=4 | 6 | 7 | 9..=11) && point.is_finite())
+}
+
 /// No additional damage or physics: an ephemeral rendering of an actual hit.
 #[derive(Clone, Copy)]
 struct CombatImpactVisual {
@@ -1267,10 +1276,11 @@ impl NativeSoftwareRenderer {
             if let bees_sim::combat_world::CombatEvent::Hit(hit) = event {
                 if hit.delta.applied_damage > 0 {
                     if let Some(body) = combat.ship_body(hit.target_id) {
+                        let splash = projectile_splash(combat, hit.projectile_id);
                         let (admitted, dropped) = self.record_combat_impact(
                             tick, hit.projectile_id, hit.target_id,
-                            body.motion.position, hit.delta.killed,
-                            combat.recent_projectile_type(hit.projectile_id),
+                            splash.map_or(body.motion.position, |(_, point)| point),
+                            hit.delta.killed, splash.map(|(kind, _)| kind),
                         );
                         counts.combat_impacts_observed += usize::from(admitted);
                         counts.combat_impact_visuals_dropped += usize::from(dropped);
@@ -1293,10 +1303,11 @@ impl NativeSoftwareRenderer {
             };
             if let Some((projectile_id, obstacle_id)) = obstacle_impact {
                 if let Some(body) = combat.obstacle_body(obstacle_id) {
+                    let splash = projectile_splash(combat, projectile_id);
                     let (admitted, dropped) = self.record_combat_impact(
                         tick, projectile_id, obstacle_id,
-                        body.pose.position, false,
-                        combat.recent_projectile_type(projectile_id),
+                        splash.map_or(body.pose.position, |(_, point)| point),
+                        false, splash.map(|(kind, _)| kind),
                     );
                     counts.combat_impacts_observed += usize::from(admitted);
                     counts.combat_impact_visuals_dropped += usize::from(dropped);

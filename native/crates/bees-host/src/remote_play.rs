@@ -2517,8 +2517,16 @@ fn collect_remote_audio(
                     "projectile_id": projectile_id,
                     "target_id": target_id,
                     "fatal": fatal,
-                    "projectile_type": view.combat.recent_projectile_type(projectile_id),
                 });
+                if let Some((kind, origin)) = crate::presentation::projectile_splash(
+                    view.combat, projectile_id,
+                ).filter(|(_, origin)|
+                    !view.player_authority.player_fog_of_war_enabled() ||
+                    sources.covers(*origin, measurements))
+                {
+                    cue["combat_impact"]["projectile_type"] = json!(kind);
+                    cue["combat_impact"]["position"] = json!([origin.x, origin.y]);
+                }
             }
             // The host already buffers these side-filtered audio cues
             // across its five-tick state cadence. Attach an optional

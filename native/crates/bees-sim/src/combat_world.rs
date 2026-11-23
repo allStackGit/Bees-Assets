@@ -2874,11 +2874,14 @@ impl CombatWorld {
             .then_some((shot, body))
     }
 
-    /// Visual events can reference a shot retired earlier in this tick.
-    /// Once its slot is reused the identity map no longer holds that shot.
-    pub fn recent_projectile_type(&self, id: i64) -> Option<u8> {
-        let shot = self.projectiles.get(*self.projectile_by_id.get(&id)?)?;
-        (shot.entity_id == id).then_some(shot.projectile_type)
+    /// A visual hit can reference a shot already retired this tick.
+    /// Return only the exact identity, never a replacement in the same slot.
+    pub fn recent_projectile_impact(&self, id: i64) -> Option<(u8, Vec2)> {
+        let &index = self.projectile_by_id.get(&id)?;
+        let shot = self.projectiles.get(index)?;
+        let body = self.physics.projectiles().get(index)?;
+        (shot.entity_id == id && body.id == id)
+            .then_some((shot.projectile_type, body.motion.position))
     }
 
     pub fn render_projectiles(&self)

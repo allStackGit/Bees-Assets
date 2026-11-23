@@ -48,6 +48,7 @@ pub use battle_menu::{
     show_campaign_intermission, show_campaign_debrief,
 };
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
+pub(crate) use software::projectile_splash;
 pub use selection::{NativeSquadSelection, NativeSupportMode};
 pub use tactical_hud::HudAction;
 pub(crate) use tactical_hud::retreat_button_rect;
