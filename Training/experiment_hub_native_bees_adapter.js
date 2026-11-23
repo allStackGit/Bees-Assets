@@ -1301,23 +1301,54 @@ function createNativeBeesAdapter({
         const plan=JSON.parse(probe.stdout);
         if(plan?.plan?.path!==curriculumFile||
             plan.plan.sha256!==sha256(fs.readFileSync(curriculumFile))||
-            !Array.isArray(plan.stages)||!plan.stages.length||
-            plan.stages.length>MAX_TRAINING_ROUNDS-1)
+            !Array.isArray(plan.stages)||
+            (plan.rotation===undefined?!plan.stages.length:plan.stages.length!==0))
             throw Error('Native curriculum stage plan changed during adapter installation.');
         curriculumPins.set(curriculumFile,plan.plan.sha256);
         curriculumPins.set(curriculumModule,sha256(fs.readFileSync(curriculumModule)));
-        for(const stage of plan.stages) {
+        // The Hub currently approves at most eight native optimizer
+        // rounds per authenticated collector group. Expand the SAME
+        // source rotation that native_curriculum.selected_curriculum_run
+        // uses into just those eight approved round boundaries. The Hub
+        // validates an exact source SHA for EACH selected round rather
+        // than interpreting a new scheduling protocol or silently
+        // continuing on the last Stage after the first rotation cycle.
+        let stages=plan.stages;
+        if(plan.rotation!==undefined) {
+            const period=plan.rotation?.rounds_per_stage;
+            const alternatives=plan.rotation?.run_configs;
+            if(!Number.isSafeInteger(period)||period<1||
+                !Array.isArray(alternatives)||!alternatives.length||
+                period*(alternatives.length+1)>8)
+                throw Error('Hub native Stage rotation must complete one full cycle within the approved eight-round group.');
+            stages=[];
+            const sourceCycle=[{path:run,sha256:sha256(runBytes)},...alternatives];
+            for(let start=period+1;start<=8;start+=period) {
+                const source=sourceCycle[
+                    Math.floor((start-1)/period)%sourceCycle.length
+                ];
+                stages.push({start_round:start,run_config:source});
+            }
+        }
+        if(stages.length>7)
+            throw Error('Native Hub permits at most eight pinned round boundaries.');
+        const distinctStages=new Map();
+        for(const stage of stages) {
             const stageRun=trustedFile(stage.run_config?.path);
             const stageBytes=fs.readFileSync(stageRun);
             if(stage.run_config.sha256!==sha256(stageBytes)||
                 !Number.isSafeInteger(stage.start_round)||
-                stage.start_round<2||stage.start_round>MAX_TRAINING_ROUNDS||
+                stage.start_round<2||stage.start_round>8||
                 stage.start_round<=curriculumRuns.at(-1).start_round)
-                throw Error('Native curriculum has a changed or unordered stage.');
-            const stageConfig=JSON.parse(stageBytes);
-            curriculumPins.set(stageRun,stage.run_config.sha256);
-            for(const [file,digest] of nativeSourceDependencies(stageRun,stageConfig))
-                curriculumPins.set(file,digest);
+                throw Error('Native Hub curriculum has a changed or unordered physical Stage.');
+            let stageConfig=distinctStages.get(stageRun);
+            if(stageConfig===undefined) {
+                stageConfig=JSON.parse(stageBytes);
+                distinctStages.set(stageRun,stageConfig);
+                curriculumPins.set(stageRun,stage.run_config.sha256);
+                for(const [file,digest] of nativeSourceDependencies(stageRun,stageConfig))
+                    curriculumPins.set(file,digest);
+            }
             curriculumRuns.push({
                 start_round:stage.start_round,run:stageRun,config:stageConfig,
             });
