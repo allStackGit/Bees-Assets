@@ -879,8 +879,6 @@ pub(super) fn choose_multiplayer(
     let opponent_mode = if authenticated_side.is_some() {
         let hive_available = has_hivemind_profile(save_root);
         let rows = [
-            BattleMenuRow { title: "Two remote commanders",
-                status: "  [Separate authenticated sides]", unlocked: true },
             BattleMenuRow { title: "Remote commander vs native game AI",
                 status: "  [Original scripted FreePlay squads]", unlocked: true },
             BattleMenuRow { title: "Remote commander vs HiveMind",
@@ -890,11 +888,15 @@ pub(super) fn choose_multiplayer(
         let mut selected = 0_usize;
         let Some(mode) = select_library(&rows, &mut selected, false)?
             else { return Ok(None); };
-        if mode == 2 && !hive_available {
+        if mode == 1 && !hive_available {
             return Err(invalid("native HiveMind opponent requires a configured profile").into());
         }
-        mode
-    } else { 0 };
+        mode + 1
+    } else {
+        // Two player tokens belong to the existing two-commander game.
+        // A single player token must NEVER be mistaken for two seats.
+        0
+    };
     let use_scripted_ai = opponent_mode == 1;
     let use_hivemind = opponent_mode == 2;
     let hivemind = if use_hivemind {
