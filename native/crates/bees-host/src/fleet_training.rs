@@ -1453,7 +1453,9 @@ fn evaluate_training_checkpoint(job: &Path, best: bool) -> Result<(), Box<dyn Er
     command.arg(&evaluator).arg(&source).arg(manifest).arg(&destination)
         .arg("--learner-side").arg(side.to_string())
         .arg("--policy-seed").arg(seed.to_string());
-    if let Some((candidate, reference)) = matchup {
+    if side != trained_side {
+        let (candidate, reference) = matchup
+            .ok_or_else(|| invalid("opposing-faction evaluation has no reference policy"))?;
         command.arg("--candidate-slot").arg(candidate.to_string())
             .arg("--reference-slot").arg(reference.to_string());
     }
