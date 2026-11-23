@@ -112,8 +112,10 @@ impl PlutoScoutTutorial {
     }
 }
 
-pub(super) fn gunship_attack_prompt(selected: bool) -> &'static str {
-    if selected {
+pub(super) fn gunship_attack_prompt(selected: bool, show_tooltips: bool) -> &'static str {
+    if !show_tooltips {
+        "Lieutenant Tom is awaiting orders"
+    } else if selected {
         "Choose Attack on Sight to let Tom fire"
     } else {
         "Select Tom's Gunship, then choose Attack on Sight"
@@ -181,12 +183,14 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
             ("Samuel", "Okay, commander, it's up to you to lead us to victory."),
             ("Samuel", "Start with the first Scout. Select it to inspect its squad controls."),
         ],
+        // The first five lines are optional tooltips. The last two are
+        // Samuel's story dialogue and still gate the host briefing.
         CampaignCue::PlutoReinforcementsScoutSelected => &[
             ("Samuel", "Here are different settings for your ship. You can determine your squad’s flight pattern and shooting strategies here. Take some time to familiarize yourself with these options."),
             ("Samuel", "You can also select squads with the number hotkeys on your keyboard. These are displayed at the top of the screen."),
             ("Samuel", "If you need to select multiple squads, click and drag the mouse over the squads."),
-            ("Samuel", "Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ ranges at any time by holding R."),
-            ("Samuel", "You can manually fire towards your cursor with any selected ships by pressing F."),
+            ("Samuel", "Your ships with weapons will automatically shoot at any enemies in range. You can view your selected ships’ ranges with the Show Ranges control."),
+            ("Samuel", "To fire toward your cursor, hold the Manual Fire shortcut with those ships selected."),
             ("Samuel", "I recommend you try to find out where the enemy is with your scouts, then form a plan of attack. I’ll be working on restoring our local communications with the rest of the base."),
             ("Samuel", " . . .Also, Marco wants me to remind you that we are… now at war, so all of our combat vessels are ordered to fire on sight by default."),
         ],
@@ -674,6 +678,20 @@ pub(crate) fn displayed_lines(cue: CampaignCue) ->
 
 pub(crate) fn line_count(cue: CampaignCue) -> usize {
     displayed_lines(cue).count()
+}
+
+/// Keep the canonical cursor and cue acknowledgment intact when hiding
+/// optional instructional lines embedded in a story section.
+#[cfg(feature = "client")]
+pub(crate) fn skip_disabled_tooltip_lines(
+    cue: CampaignCue, index: usize, show_tooltips: bool,
+) -> usize {
+    if show_tooltips { return index; }
+    match cue {
+        CampaignCue::PlutoReinforcementsBriefing if index == 1 => line_count(cue),
+        CampaignCue::PlutoReinforcementsScoutSelected => index.max(5),
+        _ => index,
+    }
 }
 
 /// DialogueManager.TypeLine reveals one visible character per 0.02

@@ -117,12 +117,13 @@ struct StoredBindings {
 
 #[derive(Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
-struct CameraPreferences {
+struct BattleViewPreferences {
     edge_scrolling: Option<bool>,
     wasd_camera: Option<bool>,
+    campaign_tooltips: Option<bool>,
 }
 
-impl CameraPreferences {
+impl BattleViewPreferences {
     fn load(path: &std::path::Path) -> Self {
         let loaded = (|| -> io::Result<Self> {
             let metadata = fs::symlink_metadata(path)?;
@@ -182,7 +183,7 @@ enum EditMode {
 
 pub(crate) struct NativeControls {
     path: PathBuf,
-    camera: CameraPreferences,
+    camera: BattleViewPreferences,
     keys: Vec<Key>,
     selected: usize,
     mode: EditMode,
@@ -211,7 +212,7 @@ impl NativeControls {
                 (Self::default_keys(), "Saved controls could not be read. Delete restores defaults.".into(), true)
             }
         };
-        let camera = CameraPreferences::load(&path.with_extension("camera.json"));
+        let camera = BattleViewPreferences::load(&path.with_extension("camera.json"));
         Ok(Self {
             path, camera, keys, selected: 0, mode: EditMode::Navigate, notice, settings_unreadable,
         })
@@ -326,10 +327,11 @@ impl NativeControls {
         // Camera settings have their own file, so changing them from a
         // battle never republishes stale key bindings from that window.
         self.camera.edge_scrolling = enabled;
-        self.save_camera_preferences()
+        self.save_view_preferences()
     }
 
-    fn save_camera_preferences(&self) -> io::Result<()> {
+    fn save_view_preferences(&self) -> io::Result<()> {
+        // Keep the existing preferences path so older settings load in place.
         let path = self.path.with_extension("camera.json");
         match fs::symlink_metadata(&path) {
             Ok(metadata) if !metadata.file_type().is_file() =>
@@ -359,6 +361,10 @@ impl NativeControls {
 
     pub(crate) fn wasd_camera(&self) -> bool {
         self.camera.wasd_camera.unwrap_or(true)
+    }
+
+    pub(crate) fn show_campaign_tooltips(&self) -> bool {
+        self.camera.campaign_tooltips.unwrap_or(true)
     }
 
     fn uses_camera_letter(&self, key: Key) -> bool {
@@ -602,12 +608,23 @@ impl NativeControls {
         } else if window.is_key_pressed(Key::F7, KeyRepeat::No) {
             let prior = self.camera.wasd_camera;
             self.camera.wasd_camera = Some(!self.wasd_camera());
-            self.notice = match self.save_camera_preferences() {
+            self.notice = match self.save_view_preferences() {
                 Ok(()) if self.wasd_camera() => "Camera uses WASD and arrows".into(),
                 Ok(()) => "Camera uses arrow keys".into(),
                 Err(error) => {
                     self.camera.wasd_camera = prior;
                     format!("Could not save camera keys: {error}")
+                }
+            };
+        } else if window.is_key_pressed(Key::F8, KeyRepeat::No) {
+            let prior = self.camera.campaign_tooltips;
+            self.camera.campaign_tooltips = Some(!self.show_campaign_tooltips());
+            self.notice = match self.save_view_preferences() {
+                Ok(()) if self.show_campaign_tooltips() => "Campaign tips enabled".into(),
+                Ok(()) => "Campaign tips disabled".into(),
+                Err(error) => {
+                    self.camera.campaign_tooltips = prior;
+                    format!("Could not save campaign tips: {error}")
                 }
             };
         } else if window.is_key_pressed(Key::Delete, KeyRepeat::No) {
@@ -649,8 +666,9 @@ impl NativeControls {
                 Some(true) => "On",
                 Some(false) => "Off",
             }),
-            format!("F7: camera keys [{}]",
-                if self.wasd_camera() { "WASD + arrows" } else { "Arrows" }),
+            format!("F7: camera keys [{}]   F8: campaign tips [{}]",
+                if self.wasd_camera() { "WASD + arrows" } else { "Arrows" },
+                if self.show_campaign_tooltips() { "On" } else { "Off" }),
         ];
         for i in start..(start + BINDINGS_PER_PAGE).min(self.keys.len()) {
             lines.push(format!("{} {:<23} : {}",

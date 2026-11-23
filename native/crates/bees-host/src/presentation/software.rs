@@ -272,6 +272,7 @@ pub struct NativeSoftwareRenderer {
     /// Presentation-only tactical overview, never used by headless worlds.
     pub show_minimap: bool,
     pub opening_hud_locked: bool,
+    pub(crate) show_campaign_tooltips: bool,
     pub hide_terminal_banner: bool,
     pub pluto_finale_reveal: bool,
     /// Only affects the window; training runs keep the same headless world.
@@ -1236,6 +1237,7 @@ impl NativeSoftwareRenderer {
             sprite_raster_blended_pixels: 0,
             selection_box: None, show_weapon_ranges: false,
             show_minimap: true, opening_hud_locked: false, hide_terminal_banner: false,
+            show_campaign_tooltips: true,
             pluto_finale_reveal: false, show_shooting_menu: false,
             focused_shooting_strategy: 1,
             active_tactical_action: None, locked_selection_all: false,
@@ -3441,7 +3443,7 @@ impl NativeSoftwareRenderer {
                 != view.campaign_dialogue_side {
                 "Defend the unidentified vessel near Pluto"
             } else if let Some(selected) = gunship_attack_prompt {
-                super::campaign_dialogue::gunship_attack_prompt(selected)
+                super::campaign_dialogue::gunship_attack_prompt(selected, self.show_campaign_tooltips)
             } else if view.campaign_dialogue.is_some_and(|(_, cue)|
                 matches!(cue,
                     bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeDestroyed
@@ -3627,8 +3629,9 @@ impl NativeSoftwareRenderer {
                     .is_some_and(|permission| permission.locked_on));
         if !self.opening_hud_locked {
             let show_beacon = self.selection_has_beacon_enabled_scout(view);
-            counts.tactical_buttons_drawn =
-                self.draw_tactical_bar(gunship_attack_prompt == Some(true), show_beacon);
+            counts.tactical_buttons_drawn = self.draw_tactical_bar(
+                self.show_campaign_tooltips && gunship_attack_prompt == Some(true), show_beacon,
+            );
             counts.selected_command_rows = self.draw_selected_command_status(view);
             self.draw_selected_priority(view);
             if self.show_shooting_menu { self.draw_shooting_menu(view); }

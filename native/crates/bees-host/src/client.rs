@@ -643,6 +643,7 @@ impl NativeClient {
             self.previous_frame = Instant::now();
             return Ok(NativeClientAction::Wait);
         }
+        self.renderer.show_campaign_tooltips = self.controls.show_campaign_tooltips();
         if let Some((world, revision, side)) = self.surrender_confirmation {
             if (world, revision) != (view.world_id, view.episode_revision) ||
                 view.player_authority.player_viewer_side() != Some(side) ||
@@ -984,7 +985,10 @@ impl NativeClient {
                 self.dialogue_pause_started = None;
                 self.pluto_finale_camera = Default::default();
             }
+            use crate::presentation::campaign_dialogue::skip_disabled_tooltip_lines;
             let count = crate::presentation::campaign_dialogue::line_count(cue);
+            let show_tooltips = self.controls.show_campaign_tooltips();
+            self.dialogue_line = skip_disabled_tooltip_lines(cue, self.dialogue_line, show_tooltips);
             if self.dialogue_reveal.as_ref().is_none_or(|(prior, index, _)|
                 *prior != sequence || *index != self.dialogue_line)
             {
@@ -1008,7 +1012,8 @@ impl NativeClient {
                 } else if finale_focus.is_none() ||
                     !self.pluto_finale_camera.waiting_on_camera(self.dialogue_line)
                 {
-                    self.dialogue_line += 1;
+                    self.dialogue_line =
+                        skip_disabled_tooltip_lines(cue, self.dialogue_line + 1, show_tooltips);
                 }
             }
             if let Some(seconds) =
@@ -2058,7 +2063,7 @@ impl NativeClient {
             (view.world_id.0, view.episode_revision), scout_moved, self.renderer.camera.center,
             now, self.controls.wasd_camera(),
         );
-        if let Some(hint) = scout_hint.filter(|_| !briefing) {
+        if let Some(hint) = scout_hint.filter(|_| !briefing && self.controls.show_campaign_tooltips()) {
             self.renderer.draw_pluto_scout_hint(hint);
             self.pluto_scout_hint_frames += 1;
         }

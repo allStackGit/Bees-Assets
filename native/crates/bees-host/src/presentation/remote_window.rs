@@ -2414,7 +2414,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     patrol_start: Option<Vec2>, metrics: &WireCounts, dialogue_line: usize,
     held_fire_active: bool, shooting_menu: bool, shooting_focus: u8,
     visual: &RemoteVisual, fraction: f32,
-    dialogue_elapsed_seconds: f32,
+    dialogue_elapsed_seconds: f32, show_campaign_tooltips: bool,
     artwork: &RemoteArtwork, show_art: bool, show_weapon_ranges: bool,
     show_minimap: bool,
     combat_hud_draws: &mut [u64; 10], obstacle_hull_draws: &mut u64,
@@ -2906,7 +2906,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                 let label = if !owner {
                     "Defend the unidentified vessel near Pluto"
                 } else if let Some(selected) = gunship_attack_prompt {
-                    super::campaign_dialogue::gunship_attack_prompt(selected)
+                    super::campaign_dialogue::gunship_attack_prompt(selected, show_campaign_tooltips)
                 } else if objective["honeybee_destroyed"] == true {
                     "First Honeybee destroyed  |  Monitor incoming enemy signals"
                 } else if objective["gunship_briefed"] == true {
@@ -3179,7 +3179,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             HudAction::PointFire=>mode==Some(TargetMode::Fire),
             _=>false,
         };
-        let attack_prompt = gunship_attack_prompt == Some(true) && action == HudAction::AttackOnSight;
+        let attack_prompt = show_campaign_tooltips && gunship_attack_prompt == Some(true) &&
+            action == HudAction::AttackOnSight;
         let color = if attack_prompt { 0x923e39 } else if active { 0x3d635d } else { 0x244056 };
         for line in pixels.chunks_exact_mut(WIDTH)
             .skip(rect.top).take(rect.bottom-rect.top) {
@@ -4147,6 +4148,11 @@ pub fn connect_remote_with_trust(
                 state["campaign_dialogue"]["cue"].clone(),
             ).ok()).flatten();
             if count>0 {
+                let skip_tooltips = |index| authored_cue.map_or(index, |cue|
+                    super::campaign_dialogue::skip_disabled_tooltip_lines(
+                        cue, index, controls.show_campaign_tooltips(),
+                    ));
+                dialogue_line = skip_tooltips(dialogue_line);
                 if let Some(key) = dialogue_key.filter(|_| dialogue_line < count) {
                     if dialogue_reveal_scope != Some((key, dialogue_line)) {
                         dialogue_reveal_scope = Some((key, dialogue_line));
@@ -4181,6 +4187,7 @@ pub fn connect_remote_with_trust(
                 {
                     dialogue_line=dialogue_line.saturating_sub(1);
                 }
+                dialogue_line = skip_tooltips(dialogue_line);
                 let pause = authored_cue.and_then(|cue|
                     super::campaign_dialogue::pause_seconds(cue, dialogue_line));
                 if let (Some(key),Some(seconds))=(dialogue_key,pause) {
@@ -5157,7 +5164,7 @@ pub fn connect_remote_with_trust(
             if dialogue_reveal_forced { 1_000_000.0 } else {
                 now.saturating_duration_since(dialogue_reveal_started).as_secs_f32()
             },
-            &artwork,show_art,range_overlay_active,
+            controls.show_campaign_tooltips(), &artwork,show_art,range_overlay_active,
             minimap_visible && (finale_focus.is_none() || finale_reveal),
             &mut combat_hud_draws, &mut hulls, &mut map_object_health_bars,
             &mut map_ships, &mut map_terrain, &mut map_objectives,
@@ -5168,7 +5175,8 @@ pub fn connect_remote_with_trust(
             let scout_moved = state["campaign_dialogue"]["scout_moved_from_start"].as_bool();
             if let Some(hint) = pluto_scout_tutorial
                 .update(scope, scout_moved, cam.center, now, controls.wasd_camera())
-                .filter(|_| !briefing && peer.connected && peer.authenticated && !peer.spectator)
+                .filter(|_| controls.show_campaign_tooltips() && !briefing &&
+                    peer.connected && peer.authenticated && !peer.spectator)
             {
                 super::campaign_dialogue::PlutoScoutTutorial::draw(&mut pixels, WIDTH, FIELD, hint);
                 peer.metrics.pluto_scout_hint_frames += 1;
