@@ -2355,9 +2355,7 @@ async function exportExperimentLogs(item, res, percent) {
 const server = http.createServer(async (req, res) => {
     const host = req.headers.host, origin = req.headers.origin;
     if (!allowedManagerHosts.has(host) ||
-        (origin&&!allowedManagerHosts.has(origin.replace(/^http:\/\//,''))) ||
-        (req.headers['sec-fetch-site']&&
-            !['same-origin','none'].includes(req.headers['sec-fetch-site']))) {
+        (origin&&!allowedManagerHosts.has(origin.replace(/^http:\/\//,'')))) {
         return json(res, 403, { error: 'Loopback-only web interface.' });
     }
     try {
