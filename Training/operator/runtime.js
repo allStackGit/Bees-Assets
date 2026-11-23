@@ -145,6 +145,14 @@ function preflightExternalLearner(executable, config) {
             'and a working ROCm-enabled PyTorch install; it will not be modified automatically.'
         );
     }
+    if (gpu.index !== null &&
+        (result.backend !== gpu.backend || result.gpus !== 1)) {
+        throw Error(
+            'Pinned Bees GPU does not match the expected '+gpu.backend+
+            ' backend / exactly one visible GPU: found backend='+result.backend+
+            ' gpu_count='+result.gpus+'. Refusing to launch a learner with ambiguous placement.'
+        );
+    }
     if (process.platform === 'linux' && device === 'cuda' && result.backend !== 'rocm') {
         console.warn(
             'Linux Bees learner uses a non-ROCm GPU backend (' + result.backend +
