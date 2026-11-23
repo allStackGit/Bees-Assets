@@ -265,7 +265,8 @@ function saveEvaluation(o,hub,value) {
     if(!value||typeof value!=='object'||Array.isArray(value)||
         Object.keys(value).some(key=>!['action','confirm_action','id',
             'expected_revision','name','configuration_id','configuration_revision',
-            'map_mode','map_ids','max_turns','seeds','rotations','opponent_ids'].includes(key)))
+            'map_mode','map_ids','max_turns','seeds','rotations','opponent_ids',
+            'opponent_mode'].includes(key)))
         throw Error('Unexpected custom evaluation fields.');
     const name=label(value.name,'Evaluation name');
     if(!UUID.test(String(value.configuration_id||''))||
@@ -275,9 +276,11 @@ function saveEvaluation(o,hub,value) {
         value.seeds.some(n=>!Number.isSafeInteger(n)||n<0||n>=2**32)||
         new Set(value.seeds).size!==value.seeds.length||
         !Number.isSafeInteger(value.rotations)||value.rotations<1||value.rotations>8||
-        !Array.isArray(value.opponent_ids)||value.opponent_ids.length<1||
-        value.opponent_ids.length>16||
-        new Set(value.opponent_ids).size!==value.opponent_ids.length)
+        !['configuration','manual'].includes(value.opponent_mode??'manual')||
+        (value.opponent_mode!=='configuration'&&(
+            !Array.isArray(value.opponent_ids)||value.opponent_ids.length<1||
+            value.opponent_ids.length>16||
+            new Set(value.opponent_ids).size!==value.opponent_ids.length)))
         throw Error('Invalid saved evaluation configuration, map sampling or opponent set.');
     const config=hub.snapshot().configurations.find(c=>
         c.id===value.configuration_id&&c.revision===value.configuration_revision&&
@@ -293,9 +296,24 @@ function saveEvaluation(o,hub,value) {
         throw Error('The selected training environment contains no approved maps.');
     const catalog=read(o),available=new Map(
         availableOpponents(o).map(item=>[item.id,item]));
-    const pool=value.opponent_ids.map(id=>{
+    const inherited=(config.parameters.training_opponent_ids||[])
+        .filter(id=>!['frozen','current'].includes(id));
+    const selected=value.opponent_mode==='configuration'
+        ?inherited:value.opponent_ids;
+    if(!Array.isArray(selected)||!selected.length||
+        selected.length>16||new Set(selected).size!==selected.length)
+        throw Error('This training Design has no fixed opponent models to inherit. Select named Nano/Micro/frozen opponents or use a manual evaluation pool.');
+    const pinById=new Map((config.parameters.training_opponent_pins||[])
+        .map(pin=>[pin.id,pin]));
+    const pool=selected.map(id=>{
         const item=available.get(id);
         if(!item)throw Error('Selected evaluation opponent is not a verified frozen model: '+String(id));
+        if(value.opponent_mode==='configuration') {
+            const pin=pinById.get(id);
+            if(!pin||pin.model_sha256!==item.model_sha256||
+                (pin.checkpoint_sha256??null)!==(item.checkpoint_sha256??null))
+                throw Error('The inherited training opponent '+id+' no longer matches its saved fingerprint.');
+        }
         const {source_job_id,...frozen}=item;
         return {...frozen,name:undefined,
             label:frozen.label};
@@ -362,7 +380,8 @@ function saveEvaluation(o,hub,value) {
         map_mode:value.map_mode,
         ...(value.map_mode==='custom'?{map_ids:maps}:{}),
         max_turns:turns,seeds:value.seeds,
-        rotations:value.rotations,opponent_ids:value.opponent_ids,
+        rotations:value.rotations,opponent_ids:selected,
+        opponent_mode:value.opponent_mode??'manual',
         games,created_at:current?.created_at||new Date().toISOString(),
         updated_at:new Date().toISOString()};
     if(current)catalog.templates.splice(catalog.templates.indexOf(current),1,record);
