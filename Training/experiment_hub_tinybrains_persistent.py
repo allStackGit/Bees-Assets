@@ -30,6 +30,8 @@ def main():
     parser.add_argument("--hub-design-overrides-sha256")
     parser.add_argument("--hub-stage-file", type=Path)
     parser.add_argument("--hub-stage-sha256")
+    parser.add_argument("--hub-opponents-file", type=Path)
+    parser.add_argument("--hub-opponents-sha256")
     parser.add_argument("--device", choices=("cpu", "cuda", "dual", "multi"), default="cuda")
     parser.add_argument("--rocm-pci", action="append")
     parser.add_argument("--cuda-uuid", action="append")
@@ -130,6 +132,24 @@ def main():
         if (not isinstance(stage, dict) or set(stage) != {"name", "maps", "max_turns"}
                 or not isinstance(stage["maps"], list) or not stage["maps"]):
             parser.error("Invalid frozen TinyBrains curriculum.")
+    opponents = None
+    if (args.hub_opponents_file is None) != (args.hub_opponents_sha256 is None):
+        parser.error("Frozen opponent roster and SHA-256 are required together.")
+    if args.hub_opponents_file is not None:
+        item = run / "hub-opponents.json"
+        if (args.hub_opponents_file.resolve(strict=True) != item or
+                item.is_symlink() or not item.is_file() or
+                not 1 <= item.stat().st_size <= 8192):
+            parser.error("The named opponent roster must be the private job-local file.")
+        raw = item.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != args.hub_opponents_sha256:
+            parser.error("Named opponent roster changed after trusted staging.")
+        opponents = json.loads(raw)
+        if (not isinstance(opponents, dict) or
+                set(opponents) != {"pool", "fixed"} or
+                not isinstance(opponents["pool"], list) or
+                not isinstance(opponents["fixed"], list)):
+            parser.error("Frozen opponent roster is invalid.")
     checkpoint = run / "self-play" / "latest.pt"
     spec = run / "run-spec.json"
     gate = run / "gate-passed.json"
@@ -240,6 +260,8 @@ def main():
           if design_overrides is not None else []),
         *(["--hub-stage-json", json.dumps(stage, separators=(",", ":"))]
           if stage is not None else []),
+        *(["--hub-opponents-json", json.dumps(opponents, separators=(",", ":"))]
+          if opponents is not None else []),
         *[arg for endpoint in args.remote_rollout_endpoint
           for arg in ("--remote-rollout-endpoint", endpoint)],
         *[arg for weight in args.remote_rollout_weight
