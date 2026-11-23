@@ -467,8 +467,8 @@ async function status(hub) {
             }
         }catch(error){statusError=error;}
     }
-    let definitions=null,definitionError=null;
-    if(installed.length)try {definitions=definitions(options);}
+    let approvedDefinitions=null,definitionError=null;
+    if(installed.length)try {approvedDefinitions=definitions(options);}
     catch(error){definitionError=error;}
     for(const id of ids) {
         const names=unitFiles(options,id);
@@ -482,7 +482,7 @@ async function status(hub) {
             try {
                 if(definitionError)throw definitionError;
                 if(statusError)throw statusError;
-                approvedUnit(options,id,definitions[id]);
+                approvedUnit(options,id,approvedDefinitions[id]);
                 const timer=propertiesByUnit.get(names.timer);
                 const service=propertiesByUnit.get(names.service);
                 if(!timer||!service)throw Error('Evaluator systemd status is incomplete.');
