@@ -778,7 +778,7 @@ async function startCentralAgentIfNeeded(
         '--token-file', paths.workerTokenPath,
         '--trainer-id', 'central-learner',
         '--role', 'dedicated',
-        '--platform', 'WindowsPlayer',
+        '--platform', process.platform === 'linux' ? 'LinuxPlayer' : 'WindowsPlayer',
         '--install-root', paths.centralAgentInstallRoot,
         '--runtime-ready-file', paths.centralRuntimeReadyBuildPath,
         '--runtime-cutover-pointer', paths.centralRuntimePointerPath,
