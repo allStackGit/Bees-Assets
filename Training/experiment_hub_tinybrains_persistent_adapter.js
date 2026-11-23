@@ -883,6 +883,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     const fits=()=>Object.keys(metrics).length<=500&&
         JSON.stringify(metrics).length<=31000;
     if(!fits()) {
+        // Per-board samples are optional and sparse. Drop them before any
+        // collector diagnostics, critical-path timing or player-count
+        // summaries. Every exact board count remains in native history.
+        for(const name of Object.keys(metrics)) {
+            if(/^training_map_[a-z0-9_]+$/.test(name)&&
+                name!=='training_map_coverage_ratio')
+                delete metrics[name];
+        }
         for(const suffix of optionalSuffixes) {
             // Delete a detail for all workers before deleting a more
             // valuable stage from just one worker.
