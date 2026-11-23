@@ -92,11 +92,13 @@ def export_project(root: Path, output: Path) -> None:
             compresslevel=6, allowZip64=True,
         ) as bundle:
             for relative, source in files:
-                value = source.read_bytes()
-                size = len(value)
-                total += size
-                if size > MAX_FILE or total > MAX_TOTAL:
+                size = source.stat().st_size
+                if size > MAX_FILE or total + size > MAX_TOTAL:
                     raise ValueError("Unity project metadata exceeds size limits")
+                value = source.read_bytes()
+                if len(value) != size:
+                    raise ValueError("Unity metadata file changed while packaging: " + relative)
+                total += size
                 entries.append({
                     "path": relative, "bytes": size,
                     "sha256": hashlib.sha256(value).hexdigest(),
@@ -138,9 +140,9 @@ def import_project(root: Path, archive: Path) -> None:
             names = [member.filename for member in members]
             if len(names) != len(set(names)) or names.count(MANIFEST) != 1:
                 raise ValueError("Archive members are duplicated or manifest is absent")
-            manifest_bytes = bundle.read(MANIFEST)
-            if len(manifest_bytes) > MAX_TOTAL:
+            if bundle.getinfo(MANIFEST).file_size > 8 * 1024 * 1024:
                 raise ValueError("Manifest exceeds size limit")
+            manifest_bytes = bundle.read(MANIFEST)
             manifest = json.loads(manifest_bytes)
             if not isinstance(manifest, dict) or manifest.get("schema_version") != VERSION or (
                 manifest.get("kind") != "bees-unity-project-metadata"
@@ -178,6 +180,8 @@ def import_project(root: Path, archive: Path) -> None:
                     raise ValueError("Archive contains a directory or symbolic link entry")
                 if member.file_size != size:
                     raise ValueError("Archive file size disagrees with metadata")
+                if member.compress_size > MAX_FILE:
+                    raise ValueError("Archive member has unexpected compressed size")
                 total += size
                 if total > MAX_TOTAL:
                     raise ValueError("Archive exceeds metadata size limit")
