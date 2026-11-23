@@ -801,7 +801,7 @@ def main() -> None:
                         help="fixed nonnegative int63 holdout inference sampling seed")
     parser.add_argument("--evaluation-every", type=int, default=1,
                         help="fixed native holdout cadence in completed PPO rounds (default: 1)")
-    parser.add_argument("--evaluation-inference-device", choices=("cpu", "cuda:0"),
+    parser.add_argument("--evaluation-inference-device", choices=("cpu", "cuda:0", "cuda:1", "cuda:2", "cuda:3"),
                         help="pin fixed holdout and monitor inference to CPU or a visible GPU")
     parser.add_argument("--evaluation-physics-workers", type=int,
                         help="CPU physics workers in each independent holdout, not training rollout workers")
