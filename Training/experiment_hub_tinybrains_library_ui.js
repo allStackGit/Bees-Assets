@@ -238,6 +238,8 @@
         const info=event.detail?.evaluators;
         if(info?.custom_library)render({...info.custom_library,
             checkpoint_candidates:info.historical_candidates||[]});
+        else if(info?.custom_library_issue)
+            notice('Saved evaluation library unavailable: '+info.custom_library_issue);
     });
     panel.hidden=$('hub-project')?.value!=='tinybrains';
 })();
