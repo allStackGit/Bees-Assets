@@ -9,6 +9,7 @@ const path=require('node:path');
 const {spawnSync}=require('node:child_process');
 const {createTinyBrainsAdapter}=require('./experiment_hub_tinybrains_adapter');
 const {createCourierAdapter}=require('./experiment_hub_courier_adapter');
+const {createBeesNativeAdapter}=require('./experiment_hub_bees_native_adapter');
 const {createTinyBrainsRemoteRolloutAdapter}=
     require('./experiment_hub_tinybrains_remote_adapter');
 const {createCourierRemoteLineageAdapter}=
@@ -39,10 +40,10 @@ function listenerPorts(prefix,defaults) {
     return Object.fromEntries(values.map((value,index)=>[index,value]));
 }
 const projects=(process.env.EXPERIMENT_HUB_WORKER_PROJECTS||'').split(',').filter(Boolean);
-if(projects.length>2||
-    projects.some(p=>!['tinybrains','courier'].includes(p))||
+if(projects.length>3||
+    projects.some(p=>!['tinybrains','courier','bees_native'].includes(p))||
     new Set(projects).size!==projects.length)
-    throw Error('Installed simulation selection must contain only TinyBrains or Courier.');
+    throw Error('Installed simulation selection must contain only TinyBrains, Courier or Bees native.');
 function artifactDirectory(name) {
     const root=path.join(required('EXPERIMENT_HUB_LOCAL_ROOT'),'artifacts',name);
     fs.mkdirSync(root,{recursive:true,mode:0o700});
@@ -111,6 +112,14 @@ if(enabled('courier')) {
         listenIp:required('EXPERIMENT_HUB_TAILNET_IP'),
         port:slots[0],slotPorts:slots,
         enableCuda:false,enableRocm:false,
+    });
+}
+if(enabled('bees_native')) {
+    adapters.bees_native=createBeesNativeAdapter({
+        projectRoot:required('EXPERIMENT_HUB_BEES_ASSETS_ROOT'),
+        pythonPath:required('EXPERIMENT_HUB_BEES_PYTHON'),
+        workerExecutable:required('EXPERIMENT_HUB_BEES_LINUX_WORKER'),
+        artifactRoot:artifactDirectory('bees_native'),
     });
 }
 module.exports=adapters;
