@@ -2347,6 +2347,8 @@ impl NativeRemotePlay {
         let camera_edge_scrolling = self.camera_edge_scrolling;
         let commander_paused = !self.pause_peers.is_empty();
         let game_speed = self.actual_game_speed();
+        let spectator_only_host = self.spectator_only_host;
+        let spectator_series_episodes = self.spectator_series_episodes;
         let two_sided = self.dedicated_briefing_gate &&
             self.side_tokens.len() == 2 && !self.archive_only && !self.spectator_only_host;
         let mut connected_commander_sides = Vec::new();
@@ -2501,14 +2503,14 @@ impl NativeRemotePlay {
                 );
                 state["commander_paused"] = json!(commander_paused);
                 state["game_speed"] = json!(game_speed);
-                if self.spectator_only_host {
+                if spectator_only_host {
                     // A read-only hint derived from the canonical World
                     // revision and immutable run configuration. No extra
                     // scoreboard or competing battle lifecycle is kept.
                     state["fish_tank_series"] = json!({
                         "episode": (view.episode_revision.saturating_add(1))
-                            .min(u64::from(self.spectator_series_episodes)),
-                        "total": self.spectator_series_episodes,
+                            .min(u64::from(spectator_series_episodes)),
+                        "total": spectator_series_episodes,
                     });
                 }
                 if two_sided {
