@@ -435,6 +435,16 @@ def main():
             model=json.loads((root/"model.json").read_text(encoding="utf-8"))
             observed=[]
             cases=evaluation_cases(job["evaluation_profile"])
+            progress.values["evaluation_cases_total"]={
+                "value":len(cases),"unit":"count",
+            }
+            progress.values["evaluation_cases_completed"]={
+                "value":0,"unit":"count",
+            }
+            progress.values["evaluation_matches_completed"]={
+                "value":0,"unit":"count",
+            }
+            progress.poll()
             for index,case in enumerate(cases):
                 if stopped: return 130
                 label,_,_,opponent=case
@@ -475,6 +485,15 @@ def main():
                 if reported.parent!=evaluation_root or not reported.name.endswith(".json"):
                     raise RuntimeError("Benchmark evaluator returned an unexpected output path.")
                 observed.append(collect_benchmark(root,reported,job,label,opponent))
+                progress.values["evaluation_cases_completed"]={
+                    "value":len(observed),"unit":"count",
+                }
+                progress.values["evaluation_matches_completed"]={
+                    "value":sum(item["matches"] for item in observed),"unit":"count",
+                }
+                # A case is only counted after its frozen benchmark receipt
+                # and outcome accounting have been verified.
+                progress.poll()
             summary={
                 "schema_version":1,"job_id":job["job_id"],
                 "profile":job["evaluation_profile"],"model_sha256":model["sha256"],
