@@ -4144,6 +4144,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(entry&&(!parameters.config_sha256||
                     entry.config_sha256===parameters.config_sha256))
                     return {entry,machine};
+            }else if(project==='bees_native') {
+                const entry=machine.design_catalog?.bees_native;
+                if(entry&&(!parameters.worker_sha256||
+                    entry.worker_sha256===parameters.worker_sha256)&&
+                    (!parameters.trainer_sha256||
+                        entry.trainer_sha256===parameters.trainer_sha256))
+                    return {entry,machine};
             }else if(project==='tinybrains') {
                 const profiles=machine.design_catalog?.tinybrains?.profiles||{};
                 for(const [profile,pin] of Object.entries(profiles))
@@ -4159,6 +4166,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function projectDefaultParameters() {
         const choice=designDefinition();
         if(!choice)return {};
+        if(project==='bees_native')return {
+            worker_sha256:choice.entry.worker_sha256,
+            trainer_sha256:choice.entry.trainer_sha256,
+            max_steps:100000,envs:8,seed:42,device:'cuda',
+            hyperparameters:{},
+        };
         if(project==='courier')return {
             config_sha256:choice.entry.config_sha256,
             seed:42,max_rounds:1000,checkpoint_rounds:250,
@@ -4240,6 +4253,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!choice)throw Error('Matching approved project defaults are unavailable. Reconnect the worker or edit Advanced JSON.');
         // Older, empty native drafts can be upgraded without discarding their
         // saved unknown fields or altering any explicit trusted identities.
+        if(project==='bees_native') {
+            parameters.worker_sha256??=choice.entry.worker_sha256;
+            parameters.trainer_sha256??=choice.entry.trainer_sha256;
+        }
         if(project==='courier'&&!parameters.config_sha256)
             parameters.config_sha256=choice.entry.config_sha256;
         if(project==='tinybrains'&&!parameters.profile&&!parameters.profile_sha256) {
@@ -4264,7 +4281,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     field.type==='integer'&&!Number.isSafeInteger(value))
                     throw Error(field.label+' must be within the approved range.');
             }
-            if(value===field.default)delete overrides[field.key];
+            if(project==='bees_native') {
+                if(field.key.startsWith('hyperparameters.')) {
+                    const name=field.key.slice('hyperparameters.'.length);
+                    if(!parameters.hyperparameters)parameters.hyperparameters={};
+                    if(value===field.default)delete parameters.hyperparameters[name];
+                    else parameters.hyperparameters[name]=value;
+                }else parameters[field.key]=value;
+            }else if(value===field.default)delete overrides[field.key];
             else overrides[field.key]=value;
         }
         if(project==='courier') {
@@ -4306,7 +4330,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw Error(key.replace(/_/g,' ')+' is outside its approved limits.');
             parameters[key]=value;
         }
-        if(Object.keys(overrides).length) {
+        if(project==='bees_native') {
+            delete parameters.design_overrides;
+            delete parameters.design_source_sha256;
+            delete parameters.training_schema_sha256;
+        }else if(Object.keys(overrides).length) {
             parameters.design_overrides=overrides;
             if(project==='tinybrains')
                 parameters.design_source_sha256=choice.machine.design_catalog.tinybrains.source_sha256;
@@ -4331,6 +4359,8 @@ document.addEventListener('DOMContentLoaded', () => {
             machine:chosen?.machine?.id||null,
             fields:chosen?.entry?.fields||null,
             config_sha256:chosen?.entry?.config_sha256||null,
+            worker_sha256:chosen?.entry?.worker_sha256||null,
+            trainer_sha256:chosen?.entry?.trainer_sha256||null,
             profile_sha256:chosen?.entry?.profile_sha256||null,
             training_schema_sha256:chosen?.entry?.training_schema_sha256||null,
             source_sha256:chosen?.machine?.design_catalog?.tinybrains?.source_sha256||null});
@@ -5440,7 +5470,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const matching=machines.filter(machine=>{
             const entry=machine.design_catalog?.[project];
             if(!entry)return false;
-            return project==='courier'
+            return project==='bees_native'
+                ?entry.worker_sha256===params.worker_sha256&&
+                    entry.trainer_sha256===params.trainer_sha256
+                :project==='courier'
                 ?entry.config_sha256===params.config_sha256&&
                     (!params.training_schema_sha256||
                         params.training_schema_sha256===entry.training_schema_sha256)
