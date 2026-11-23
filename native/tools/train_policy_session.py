@@ -2411,7 +2411,15 @@ def main():
             complete_generations(root, recipe, completed,
                 final=len(completed) == args.rounds or bool(stop_state and stop_state["stop"]))
         first_pending_round = len(completed) + 1
+        # The game or a local operator can request a graceful stop without
+        # signalling the optimizer or interrupting a distributed collector.
+        # A committed round is always finished before this is consulted.
+        operator_stop_file = root / "stop.request"
+        stopped_by_operator = False
         for index in range(first_pending_round, args.rounds + 1):
+            if operator_stop_file.is_file():
+                stopped_by_operator = True
+                break
             if stop_state is not None and stop_state["stop"]:
                 # A resumed session reaches exactly the same stop decision
                 # as its original invocation from immutable evaluations.
@@ -2786,6 +2794,26 @@ def main():
                   flush=True)
         stopped_early = (len(completed) < args.rounds and
                          stop_state is not None and stop_state["stop"])
+        if stopped_by_operator:
+            # Do not turn an operator stop into holdout failure or a learned
+            # terminal condition. The last checkpoint and pending round are
+            # untouched, so --resume retains exactly the original lineage.
+            snapshot = progress_snapshot(
+                completed, args.rounds, evaluations, baseline_holdout,
+                best_evaluated, stop_state, recipe, latest_playable,
+                monitor_baseline=monitor_baseline,
+                monitor_observations=monitor_observations,
+            )
+            snapshot["operator_stop_requested"] = True
+            atomic_json(root / "session-progress.json", snapshot)
+            print(json.dumps({
+                "kind": "native_training_session_operator_stopped",
+                "completed_rounds": len(completed),
+                "target_rounds": args.rounds,
+                "checkpoint": str(next_checkpoint),
+                "manifest": str(next_manifest),
+                "progress": str(root / "session-progress.json"),
+            }), flush=True)
         if stopped_early:
             print(json.dumps({
                 "kind": "native_training_session_early_stopped",
@@ -2801,7 +2829,9 @@ def main():
                           "completed_rounds": len(completed),
                           "target_rounds": args.rounds,
                           "stopped_early": stopped_early,
-                          "stop_reason": stop_state["reason"] if stopped_early else None,
+                          "stopped_by_operator": stopped_by_operator,
+                          "stop_reason": ("operator_request" if stopped_by_operator else
+                              stop_state["reason"] if stopped_early else None),
                           "checkpoint": str(next_checkpoint),
                           "manifest": str(next_manifest),
                           "latest_playable_run": latest_playable["playable_run"],
