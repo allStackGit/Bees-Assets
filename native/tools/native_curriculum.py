@@ -91,7 +91,10 @@ def load_curriculum(path, base_run, total_rounds, round_python, learner_slot, se
         # base_run. No new learner or physical simulation is constructed.
         rotation = document["rotation"]
         if (not isinstance(rotation, dict) or
-                set(rotation) != {"rounds_per_stage", "run_configs"} or
+                set(rotation) not in (
+                    {"rounds_per_stage", "run_configs"},
+                    {"rounds_per_stage", "run_configs", "monitor_run_configs"},
+                ) or
                 type(rotation["rounds_per_stage"]) is not int or
                 not 1 <= rotation["rounds_per_stage"] <= 10000 or
                 not isinstance(rotation["run_configs"], list) or
@@ -109,11 +112,46 @@ def load_curriculum(path, base_run, total_rounds, round_python, learner_slot, se
             len(alternatives) + 1
         ):
             raise ValueError("native Stage rotation cannot repeat an authored source Run")
+        monitoring = []
+        if "monitor_run_configs" in rotation:
+            paths = rotation["monitor_run_configs"]
+            if (not isinstance(paths, list) or
+                    len(paths) != len(alternatives)):
+                raise ValueError(
+                    "rotated holdout monitoring requires exactly one "
+                    "fixed evaluation Run for each additional physical Stage"
+                )
+            for source, value in zip(alternatives, paths):
+                holdout = validated_stage_run(value)
+                training_stage = _source(source["path"])
+                measured_stage = _source(holdout["path"])
+                if (training_stage.get("stage_name") != measured_stage.get("stage_name") or
+                        training_stage.get("native_stage") != measured_stage.get("native_stage") or
+                        training_stage.get("fragment_spawn") !=
+                            measured_stage.get("fragment_spawn")):
+                    raise ValueError(
+                        "rotated monitoring must use the SAME source Stage "
+                        "physics/palette/fragment configuration as the trained map"
+                    )
+                if holdout["path"] == source["path"] or (
+                    file_sha256(Path(holdout["path"])) == source["sha256"]
+                ):
+                    raise ValueError(
+                        "a native Stage's holdout must not be the training "
+                        "source Run; use separately pinned evaluation seeds"
+                    )
+                monitoring.append(holdout)
+        if monitoring and len({
+            base_run["path"], *(item["path"] for item in alternatives),
+            *(item["path"] for item in monitoring),
+        }) != len(alternatives) * 2 + 1:
+            raise ValueError("fixed native Stage monitoring must not reuse training or other holdout Runs")
         return {
             "plan": plan, "stages": [],
             "rotation": {
                 "rounds_per_stage": rotation["rounds_per_stage"],
                 "run_configs": alternatives,
+                **({"monitor_run_configs": monitoring} if monitoring else {}),
             },
         }
 

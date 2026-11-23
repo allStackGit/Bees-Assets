@@ -1843,7 +1843,8 @@ def main():
         parser.error("physical mission ranking requires a pinned primary evaluation suite")
     if len(args.monitor_evaluation_run_config) > 16:
         parser.error("no more than 16 independent monitoring suites per session")
-    if args.checkpoint_selection in ("mean", "worst") and not args.monitor_evaluation_run_config:
+    if (args.checkpoint_selection in ("mean", "worst") and
+            not args.monitor_evaluation_run_config and args.curriculum_plan is None):
         parser.error("mean/worst suite ranking requires additional monitoring suites")
     if args.evaluation_physics_workers is not None and (
             args.evaluation_run_config is None or not 1 <= args.evaluation_physics_workers <= 128):
@@ -1991,6 +1992,37 @@ def main():
     curriculum = (load_curriculum(args.curriculum_plan, run, args.rounds,
                                   round_python, args.learner_slot, self_play)
                   if args.curriculum_plan is not None else None)
+    automatic_monitors = (
+        curriculum.get("rotation", {}).get("monitor_run_configs", [])
+        if curriculum is not None else []
+    )
+    if automatic_monitors:
+        if args.evaluation_run_config is None:
+            parser.error(
+                "rotated native holdout monitoring needs a fixed primary "
+                "--evaluation-run-config for the base physical Stage"
+            )
+        reference = read_json(Path(run["path"]))
+        primary = read_json(args.evaluation_run_config.resolve(strict=True))
+        if (reference.get("stage_name") != primary.get("stage_name") or
+                reference.get("native_stage") != primary.get("native_stage") or
+                reference.get("fragment_spawn") != primary.get("fragment_spawn")):
+            parser.error(
+                "native primary holdout must match the original base Stage "
+                "physics/palette/fragment configuration"
+            )
+        if (Path(run["path"]).resolve() ==
+                args.evaluation_run_config.resolve(strict=True) or
+                file_sha256(Path(run["path"])) ==
+                    file_sha256(args.evaluation_run_config.resolve(strict=True))):
+            parser.error(
+                "native base Stage holdout must have a separately authored fixed seed plan"
+            )
+    if (len(args.monitor_evaluation_run_config) + len(automatic_monitors) > 16):
+        parser.error("no more than 16 independently pinned monitoring suites")
+    if (args.checkpoint_selection in ("mean", "worst") and
+            not automatic_monitors and not args.monitor_evaluation_run_config):
+        parser.error("mean/worst ranking needs pinned additional source Stage holdouts")
     if args.rollout_binary is not None:
         binary = pinned(args.rollout_binary)
     else:
@@ -2056,8 +2088,11 @@ def main():
             recipe["evaluation_every"] = args.evaluation_every
         if args.evaluation_physics_workers is not None:
             recipe["evaluation_physics_workers"] = args.evaluation_physics_workers
-    if args.monitor_evaluation_run_config:
-        suites = [pinned(path) for path in args.monitor_evaluation_run_config]
+    if args.monitor_evaluation_run_config or automatic_monitors:
+        suites = [
+            *[pinned(path) for path in args.monitor_evaluation_run_config],
+            *automatic_monitors,
+        ]
         hashes = [recipe["evaluation_config"]["sha256"], *(suite["sha256"] for suite in suites)]
         if len(set(hashes)) != len(hashes):
             parser.error("primary and monitoring evaluation suites must have distinct pinned source bytes")
@@ -2269,7 +2304,8 @@ def main():
                     raise ValueError("curriculum plan changed during training")
                 for source in (
                     [item["run_config"] for item in curriculum["stages"]] +
-                    curriculum.get("rotation", {}).get("run_configs", [])
+                    curriculum.get("rotation", {}).get("run_configs", []) +
+                    curriculum.get("rotation", {}).get("monitor_run_configs", [])
                 ):
                     if file_sha256(Path(source["path"])) != source["sha256"]:
                         raise ValueError("curriculum source run changed during training")
