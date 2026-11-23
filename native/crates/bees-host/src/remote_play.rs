@@ -654,6 +654,10 @@ pub struct NativeRemotePlay {
     // Read-only terminal listener: authenticate old session identities but
     // never admit new gameplay commands without an authoritative World.
     archive_only: bool,
+    // A source-authored AI-vs-AI World has no commander seats. Keep
+    // spectator credentials independent, and do not let a player token
+    // grant time control or unblock a nonexistent player lobby.
+    spectator_only_host: bool,
     /// A graphical local host already owns its own briefing pacing.
     /// Only dedicated LAN hosting needs remote viewer acknowledgment.
     dedicated_briefing_gate: bool,
@@ -821,7 +825,7 @@ impl NativeRemotePlay {
         }));
         Ok(Some(Self {
             listener, tls, host_session_id, recovered_session: false,
-            archive_only: false, dedicated_briefing_gate: dedicated,
+            archive_only: false, spectator_only_host: false, dedicated_briefing_gate: dedicated,
             side_tokens, spectator_tokens,
             archived_receipts: HashMap::new(), peers: Vec::new(),
             next_peer: 1, last_state: None, force_initial_state: false,
@@ -1070,6 +1074,31 @@ impl NativeRemotePlay {
         self.side_tokens.keys().copied()
     }
 
+    /// Set once, before admitting peers, when the actual native Level
+    /// contains no user-controlled squads. The side map still binds this
+    /// host's durable session identity; only separately authenticated
+    /// spectator seats can enter its live World.
+    pub fn require_spectator_only(&mut self) -> io::Result<()> {
+        if self.spectator_tokens.is_empty() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                "AI-vs-AI hosting requires independent spectator credentials"));
+        }
+        if self.peers.iter().any(|peer| peer.side.is_some()) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                "cannot change remote authority after authentication"));
+        }
+        self.spectator_only_host = true;
+        println!("{}", json!({
+            "kind": "native_remote_spectator_only",
+            "spectator_sides": {
+                let mut sides = self.spectator_tokens.keys().copied().collect::<Vec<_>>();
+                sides.sort_unstable();
+                sides
+            },
+        }));
+        Ok(())
+    }
+
     /// Poll at the authoritative world's fixed-tick boundary. An expired
     /// episode cannot retain a peer's old gesture lease. Disconnect releases
     /// are returned as canonical inputs before newly received player orders.
@@ -1257,6 +1286,15 @@ impl NativeRemotePlay {
                 match message {
                     Ok(WireInput::Hello { token, resume_session_id, spectator })
                         if peer.side.is_none() => {
+                        // An AI-versus-AI source has no player command
+                        // authority, even for a valid commander credential.
+                        // Require an independent view-only invitation rather
+                        // than promoting that secret into presentation access.
+                        if self.spectator_only_host && !spectator {
+                            self.measurements.rejected_connections += 1;
+                            peer.closed = true;
+                            break;
+                        }
                         let credentials = if spectator {
                             &self.spectator_tokens
                         } else { &self.side_tokens };
@@ -1876,7 +1914,7 @@ impl NativeRemotePlay {
         tick: u64) -> bool
     {
         if tick != 0 || !self.dedicated_briefing_gate ||
-            self.side_tokens.len() != 2 || self.archive_only {
+            self.side_tokens.len() != 2 || self.archive_only || self.spectator_only_host {
             return false;
         }
         let ready = self.lobby_episode == Some((world_id.0, revision)) &&
@@ -1895,7 +1933,7 @@ impl NativeRemotePlay {
     /// input or inferred forfeit is issued on transient network failure.
     pub fn reconnect_waiting(&mut self, tick: u64) -> bool {
         if tick == 0 || !self.dedicated_briefing_gate ||
-            self.side_tokens.len() != 2 || self.archive_only {
+            self.side_tokens.len() != 2 || self.archive_only || self.spectator_only_host {
             self.forfeit_absence = None;
             self.forfeit_announced = false;
             return false;
@@ -1937,6 +1975,7 @@ impl NativeRemotePlay {
 
     fn pending_campaign_briefing(&self, view: &NativeRenderWorldView<'_>) -> Option<(i32, u32)> {
         let briefing @ (owner, sequence) = view.active_campaign_briefing()?;
+        if self.spectator_only_host { return None; }
         if !self.dedicated_briefing_gate {
             return (self.local_briefing_ack != Some((view.world_id, view.episode_revision, sequence)))
                 .then_some(briefing);
@@ -2228,7 +2267,7 @@ impl NativeRemotePlay {
         let commander_paused = !self.pause_peers.is_empty();
         let game_speed = self.actual_game_speed();
         let two_sided = self.dedicated_briefing_gate &&
-            self.side_tokens.len() == 2 && !self.archive_only;
+            self.side_tokens.len() == 2 && !self.archive_only && !self.spectator_only_host;
         let mut connected_commander_sides = Vec::new();
         if two_sided {
             for peer in &self.peers {
@@ -2251,7 +2290,8 @@ impl NativeRemotePlay {
         } else { None };
         let lobby_active = self.dedicated_briefing_gate &&
             self.side_tokens.len() == 2 && view.tick == 0 &&
-            view.terminal_result.is_none() && !self.archive_only;
+            view.terminal_result.is_none() && !self.archive_only &&
+            !self.spectator_only_host;
         let mut lobby_required_sides = Vec::new();
         let mut lobby_ready_sides = Vec::new();
         if lobby_active {
