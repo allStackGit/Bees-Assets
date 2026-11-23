@@ -66,7 +66,9 @@ def physical_contract(config: dict) -> dict:
 def assemble(output: Path, source_paths: list[Path],
              training: bool = False, recovery: bool = False,
              bootstrap_source: bool = False,
-             worlds_per_source: int = 1) -> dict:
+             worlds_per_source: int = 1,
+             publication_origin: Path | None = None,
+             publication_destination: Path | None = None) -> dict:
     if not 2 <= len(source_paths) <= 64:
         raise ValueError("native joint Level run requires 2..64 distinct sources")
     if (type(worlds_per_source) is not int or not 1 <= worlds_per_source <= 1024 or
@@ -76,6 +78,29 @@ def assemble(output: Path, source_paths: list[Path],
     if (recovery or bootstrap_source) and not training:
         raise ValueError("bootstrap-source and host recovery require a native training suite")
     source_paths = [path.resolve(strict=True) for path in source_paths]
+    if (publication_origin is None) != (publication_destination is None):
+        raise ValueError("native source publication paths must be specified together")
+    if publication_origin is not None:
+        staging_root = publication_origin.resolve(strict=True)
+        published_root = publication_destination.resolve()
+        if (not staging_root.is_dir() or
+                published_root.exists() or published_root.is_symlink()):
+            raise ValueError("relocated native sources need an existing staging root and unused destination")
+        if any(not path.is_relative_to(staging_root) for path in source_paths):
+            raise ValueError("native source run escapes the atomic publication root")
+    else:
+        staging_root = published_root = None
+
+    def source_provenance(path: Path) -> str:
+        # Only immutable receipts are rebased. The serialized CombatWorld
+        # scene paths remain relative to their assembled Run and are
+        # copied below as normal, so training gameplay never changes.
+        if staging_root is None:
+            return str(path)
+        if not path.is_relative_to(staging_root):
+            raise ValueError("source scene escaped the atomically published package")
+        return str(published_root / path.relative_to(staging_root))
+
     if len(set(source_paths)) != len(source_paths):
         raise ValueError("evaluation cannot double-count one authored source run")
     runs = [load(path) for path in source_paths]
@@ -193,7 +218,7 @@ def assemble(output: Path, source_paths: list[Path],
                         "original_world_id": level.get("world_id"),
                         "original_level_id": level.get("level_id"),
                         "suite_world_id": count, "suite_level_id": count,
-                        "scene": name, "source_scene": str(scene),
+                        "scene": name, "source_scene": source_provenance(scene),
                         "scene_sha256": scene_sha,
                         "source_episode_seeds": seeds,
                         "episode_seeds": episode_seeds,
@@ -201,7 +226,7 @@ def assemble(output: Path, source_paths: list[Path],
             if file_sha256(path) != original_sha:
                 raise ValueError(f"{path}: source run changed during immutable authoring")
             source_receipts.append({
-                "run": str(path), "run_sha256": original_sha,
+                "run": source_provenance(path), "run_sha256": original_sha,
                 "run_id": run["run_id"], "levels": recorded_levels,
             })
         # Native collection partitions by a prefix or global World
