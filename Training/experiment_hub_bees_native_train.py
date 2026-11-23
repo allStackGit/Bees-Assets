@@ -305,8 +305,10 @@ def benchmark_recipe(root: Path, job: dict, case: tuple, index: int) -> Path:
             "--rl-matchup-mode=sampled",
             f"--rl-ships-per-side={players}",
             f"--rl-map-size={map_size}",
-            "--rl-bee-ship-types=Wasp,Hornet",
-            "--rl-human-ship-types=Gunship,Frigate",
+            ("--rl-bee-ship-types=Wasp,Hornet" if players==2
+             else "--rl-bee-ship-types=Wasp"),
+            ("--rl-human-ship-types=Gunship,Frigate" if players==2
+             else "--rl-human-ship-types=Gunship"),
             "--rl-episode-timeout=60",
             "--rl-health-ratio=0.5",
         ],
