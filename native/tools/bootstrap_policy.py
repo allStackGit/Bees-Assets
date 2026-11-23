@@ -732,6 +732,8 @@ def main() -> None:
                         help="also execute this many native MA-POCA rounds via the existing resumable session")
     parser.add_argument("--resume", action="store_true",
                         help="continue from an unchanged completed bootstrap and existing round receipts")
+    parser.add_argument("--clear-stop-request", action="store_true",
+                        help="on an exclusively locked resume, clear this native game's cooperative stop request")
     parser.add_argument("--curriculum-plan", type=Path,
                         help="existing pinned native curriculum Stage plan, applied between optimizer rounds")
     parser.add_argument("--learner-slot", type=int,
@@ -889,6 +891,8 @@ def main() -> None:
         parser.error("--train-rounds must be between 1 and 99999")
     if args.resume and args.train_rounds is None:
         parser.error("--resume requires --train-rounds")
+    if args.clear_stop_request and (not args.resume or args.train_rounds is None):
+        parser.error("--clear-stop-request requires a training resume")
     if args.curriculum_plan is not None and args.train_rounds is None:
         parser.error("--curriculum-plan requires --train-rounds")
     if not 1 <= args.evaluation_every <= 99999 or (
@@ -1109,6 +1113,14 @@ def main() -> None:
                     )
                 os.rename(staged, output)
                 sync_directory(output.parent)
+        # This block owns the cross-platform exclusive model lock. A second
+        # launch cannot clear a stop request while the original optimizer
+        # is still running and finishing its current committed round.
+        if args.clear_stop_request:
+            stop = output.parent / "stop.request"
+            if stop.is_symlink() or (stop.exists() and not stop.is_file()):
+                raise ValueError("native training stop request must be a regular file")
+            stop.unlink(missing_ok=True)
         print(json.dumps(result, sort_keys=True), flush=True)
         if args.train_rounds is not None:
             learner_slot = chosen_learner
