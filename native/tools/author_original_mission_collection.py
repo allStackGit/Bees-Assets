@@ -29,7 +29,8 @@ def load_manifest(path: Path) -> dict:
         raise ValueError("Original campaign collection needs source manifest schema 1 and 1..128 missions")
     required = {"source", "stage_palette", "seed", "max_rounds"}
     optional = {"level_contract", "hivemind_config", "ai_tactics",
-                "broadphase_cell_size", "physics_workers", "navigation_workers"}
+                "broadphase_cell_size", "physics_workers", "navigation_workers",
+                "deferred_hivemind"}
     for index, mission in enumerate(manifest["missions"], start=1):
         if (not isinstance(mission, dict) or
                 not required.issubset(mission) or
@@ -38,7 +39,9 @@ def load_manifest(path: Path) -> dict:
                     for field in ("source", "stage_palette")) or
                 any(field in mission and
                     (not isinstance(mission[field], str) or not mission[field])
-                    for field in ("level_contract", "hivemind_config"))):
+                    for field in ("level_contract", "hivemind_config")) or
+                ("deferred_hivemind" in mission and
+                 type(mission["deferred_hivemind"]) is not bool)):
             raise ValueError(f"Original mission {index} lacks a required physical source or has unknown fields")
     return manifest
 
@@ -85,6 +88,7 @@ def author_collection(source_manifest: Path, destination: Path) -> dict:
                 absolute(mission["hivemind_config"])
                     if mission.get("hivemind_config") else None,
                 script,
+                deferred_hivemind=mission.get("deferred_hivemind", False),
             )
             authored.append({
                 "mission_index": index,
