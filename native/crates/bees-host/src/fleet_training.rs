@@ -1605,6 +1605,57 @@ fn evaluate_training_checkpoint(
     let invocation: Value = serde_json::from_slice(
         &fs::read(job.join("invocation.json"))?
     )?;
+    // Standalone evaluations are new, independent runs. Their physical
+    // resources need not match the optimizer or the training holdout, while
+    // the pinned source, learner model, and sampling seed remain unchanged.
+    let default_workers = config["evaluation_physics_workers"].as_u64()
+        .or_else(|| invocation["evaluation_physics_workers"].as_u64())
+        .filter(|number| (1..=128).contains(number))
+        .unwrap_or(1);
+    let worker_options = [1u32, 2, 4, 8, 16, 32, 64, 128];
+    let worker_titles = std::iter::once(format!(
+        "Use training holdout allocation ({default_workers} CPU workers)"
+    )).chain(worker_options.iter().map(|number|
+        format!("{number} native CPU physics workers")
+    )).collect::<Vec<_>>();
+    let worker_rows = worker_titles.iter().map(|title| BattleMenuRow {
+        title, status: "  [Independent evaluation allocation]", unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut worker_selection = 0;
+    let Some(worker_index) = select_library(
+        &worker_rows, &mut worker_selection, false,
+    )? else { return Ok(()); };
+    let evaluation_workers = if worker_index == 0 {
+        default_workers
+    } else {
+        worker_options[worker_index - 1] as u64
+    };
+    let default_device = config["evaluation_inference_device"].as_str()
+        .or_else(|| invocation["evaluation_inference_device"].as_str());
+    if default_device.is_some_and(|device|
+        !valid_torch_device(device) || device == "cuda")
+    {
+        return Err(invalid("native evaluation has an invalid recorded inference device").into());
+    }
+    let devices = ["cpu", "cuda:0", "cuda:1", "cuda:2", "cuda:3"];
+    let device_titles = std::iter::once(format!(
+        "Use recorded evaluation device ({})",
+        default_device.unwrap_or("manifest default")
+    )).chain(devices.iter().map(|device|
+        format!("Evaluate on {device}")
+    )).collect::<Vec<_>>();
+    let device_rows = device_titles.iter().map(|title| BattleMenuRow {
+        title, status: "  [Independent evaluation inference]", unlocked: true,
+    }).collect::<Vec<_>>();
+    let mut device_selection = 0;
+    let Some(device_index) = select_library(
+        &device_rows, &mut device_selection, false,
+    )? else { return Ok(()); };
+    let evaluation_device = if device_index == 0 {
+        default_device
+    } else {
+        Some(devices[device_index - 1])
+    };
     let python = env::var_os("BEES_NATIVE_PYTHON")
         .unwrap_or_else(|| std::ffi::OsString::from(
             if cfg!(windows) { "python" } else { "python3" }
@@ -1642,17 +1693,8 @@ fn evaluate_training_checkpoint(
         command.arg("--candidate-slot").arg(candidate.to_string())
             .arg("--reference-slot").arg(reference.to_string());
     }
-    if let Some(workers) = config["evaluation_physics_workers"].as_u64()
-        .or_else(|| invocation["evaluation_physics_workers"].as_u64())
-        .filter(|number| (1..=128).contains(number)) {
-        command.arg("--physics-workers").arg(workers.to_string());
-    }
-    let evaluation_device = config["evaluation_inference_device"].as_str()
-        .or_else(|| invocation["evaluation_inference_device"].as_str());
+    command.arg("--physics-workers").arg(evaluation_workers.to_string());
     if let Some(device) = evaluation_device {
-        if !valid_torch_device(device) || device == "cuda" {
-            return Err(invalid("native evaluation has an invalid recorded inference device").into());
-        }
         command.arg("--inference-device").arg(device);
     }
     if let Some(binary) = invocation["rollout_binary"].as_str() {
@@ -1684,6 +1726,7 @@ fn evaluate_training_checkpoint(
         "learner_slot": learner_slot,
         "training_round": training_round,
         "evaluation_inference_device": evaluation_device,
+        "evaluation_physics_workers": evaluation_workers,
         "output": destination,
         "log": log_path,
         "pid": child.id(),
