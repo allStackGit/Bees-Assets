@@ -805,7 +805,13 @@ class MeasuredGpuExecution:
         signature = self._signature(batches)
         if self.graphs.profiles.get(signature) is None:
             return False
-        torch.cuda.current_stream(self.graphs.device).synchronize()
+        try:
+            torch.cuda.current_stream(self.graphs.device).synchronize()
+        except (RuntimeError, NotImplementedError) as error:
+            # Optional graph-cache reclamation must not turn a successful
+            # authoritative fallback into a failed rollout.
+            self.graphs.last_issue = str(error)[:220]
+            return False
         self.graphs.profiles.pop(signature, None)
         self._pending_graph_validation.discard(signature)
         if self.choices.get(signature) == "graph":
