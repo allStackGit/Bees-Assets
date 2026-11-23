@@ -11,6 +11,7 @@ const {spawn,spawnSync}=require('node:child_process');
 const {ExperimentHub}=require('./experiment_hub_core');
 const {JobExporter}=require('./experiment_hub_job_export');
 const localServices=require('./experiment_hub_local_services');
+const {BeesBridge}=require('./experiment_hub_bees_bridge');
 const {route:hubRoute}=require('./experiment_hub_admin');
 const {ReleaseStore,workerChangedPaths,workerActivationImpact}=
     require('./experiment_hub_releases');
@@ -184,6 +185,7 @@ const FRONTEND_ASSETS=Object.freeze({
     html:'experiments.html',
     ui:'experiment_hub_ui.js',
     servicesUi:'experiment_hub_local_services_ui.js',
+    beesUi:'experiment_hub_bees_bridge_ui.js',
     beakerIcon:'experiment_hub_beaker.svg',
 });
 function frontendSnapshot(runtime,commit=null,checkout=path.resolve(__dirname,'..')) {
@@ -277,7 +279,7 @@ function independentEvaluatorActive() {
         /^\s*bees-experiment-hub-\S+-evaluator-\S+\.service\s/.test(line));
 }
 function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null,
-    localOperations={active:0,activating:false}}={}) {
+    beesBridge=new BeesBridge(null),localOperations={active:0,activating:false}}={}) {
     const exporter=new JobExporter(dataRoot,hub);
     return http.createServer(async(req,res)=>{
         const host=req.headers.host,origin=req.headers.origin;
@@ -316,6 +318,8 @@ function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null,
                 return sendFile(res,assets.ui,'text/javascript; charset=utf-8');
             if(req.method==='GET'&&route==='/experiment-hub-services.js')
                 return sendFile(res,assets.servicesUi,'text/javascript; charset=utf-8');
+            if(req.method==='GET'&&route==='/experiment-hub-bees.js')
+                return sendFile(res,assets.beesUi,'text/javascript; charset=utf-8');
             if(req.method==='GET'&&route==='/api/hub/software/version') {
                 const candidate=releases?.workerSourceCommit||
                     releases?.latest?.worker?.source_commit;
@@ -378,23 +382,41 @@ function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null,
             const partRoute=/^\/api\/hub\/exports\/([0-9a-f-]{36})\/part\/([1-9][0-9]*)$/.exec(route);
             if(req.method==='GET'&&partRoute)
                 return exporter.download(partRoute[1],Number(partRoute[2]),res);
+            if(req.method==='GET'&&route==='/api/hub/bees/bridge') {
+                await beesBridge.refresh();
+                return json(res,200,beesBridge.status());
+            }
             if(req.method==='GET'&&route==='/api/hub/bees/workers')
-                return json(res,200,{workers:[],run_id:null});
+                return beesBridge.port
+                    ?json(res,200,await beesBridge.forward('GET',route))
+                    :json(res,200,{workers:[],run_id:null});
             if(req.method==='GET'&&route==='/api/hub/bees/control')
-                return json(res,200,{run_id:null,training_enabled:false,
-                    env_args:[],pending_release:false,experiment_owned:false,
-                    queue_armed:false,initial_build_required:true,
-                    operator_operation:null});
+                return beesBridge.port
+                    ?json(res,200,await beesBridge.forward('GET',route))
+                    :json(res,200,{run_id:null,training_enabled:false,
+                        env_args:[],pending_release:false,experiment_owned:false,
+                        queue_armed:false,initial_build_required:true,
+                        operator_operation:null});
+            if(req.method==='GET'&&route==='/api/hub/progress'&&
+                url.searchParams.get('project_id')==='bees'&&beesBridge.port)
+                return json(res,200,await beesBridge.forward('GET',
+                    '/api/hub/progress?project_id=bees'));
+            if(req.method==='POST'&&/^\/api\/hub\/bees\/(start|stop|build|update-workers|import-workers)$/.test(route)) {
+                const value=await readJson(req);
+                const result=await beesBridge.forward('POST',route,value);
+                return json(res,202,result);
+            }
             if(!route.startsWith('/api/hub/')||
                 route.startsWith('/api/hub/bees/'))
                 return json(res,404,{error:'Not available in native-only coordinator.'});
             const value=req.method==='POST'?await readJson(req):null;
-            const result=hubRoute(hub,req.method,route,url.searchParams,value);
+            const result=hubRoute(hub,req.method,route,url.searchParams,value,
+                route==='/api/hub/state'?beesBridge.snapshot():null);
             return result
                 ?json(res,result.status,result.data)
                 :json(res,404,{error:'Unknown Hub API route.'});
         }catch(error) {
-            return json(res,[401,409,413].includes(error.status)
+            return json(res,[400,401,403,404,409,413,502,503,504].includes(error.status)
                 ?error.status:400,{error:String(error.message||error)});
         }
     });
@@ -421,7 +443,8 @@ async function main(argv=process.argv.slice(2)) {
         hub.addProject({id:'tinybrains',name:'TinyBrains Ants-MAPOCA'});
         hub.addProject({id:'courier',name:'Courier Ants'});
     }
-    const runtime=activeHubVersion(root);
+    const beesBridge=new BeesBridge(process.env.EXPERIMENT_HUB_BEES_BRIDGE_PORT||null);
+    const runtime={...activeHubVersion(root),bees_bridge_configured:!!beesBridge.port};
     const initialFrontend=frontendSnapshot(runtime);
     const frontend={current:initialFrontend,checkedSource:runtime.source_commit,
         backendPending:false,agentPending:false,snapshots:new Map([
@@ -431,7 +454,7 @@ async function main(argv=process.argv.slice(2)) {
     // evaluator setup are mutually exclusive on this coordinator process.
     const localOperations={active:0,activating:false};
     const admin=createAdminServer(hub,{frontend,dataRoot:root,releases,
-        runtime,localOperations});
+        runtime,localOperations,beesBridge});
     const worker=createAgentServer(()=>hub,AGENT_HOST,releases);
     const remoteWorker=tailnet?createAgentServer(()=>hub,tailnet,releases,root):null;
     async function listen(server,port,host) {
