@@ -25,8 +25,7 @@ function required(name) {
     return value;
 }
 function enabled(name) {
-    const value=process.env.EXPERIMENT_HUB_WORKER_PROJECTS||'';
-    return value.split(',').includes(name);
+    return projects.includes(name);
 }
 function port(name,defaultValue) {
     const raw=process.env[name];
@@ -42,7 +41,15 @@ function listenerPorts(prefix,defaults) {
         throw Error(prefix+' listeners must use unique ports.');
     return Object.fromEntries(values.map((value,index)=>[index,value]));
 }
-const projects=(process.env.EXPERIMENT_HUB_WORKER_PROJECTS||'').split(',').filter(Boolean);
+// A Bees-only additive module can be loaded alongside an already approved
+// Halifax TinyBrains/Courier adapter. It must never construct those adapters
+// a second time or change their existing supervised process ownership.
+const addonRoles=process.env.EXPERIMENT_HUB_BEES_ADDON_ROLES;
+const projects=(addonRoles??process.env.EXPERIMENT_HUB_WORKER_PROJECTS??'')
+    .split(',').filter(Boolean);
+if(addonRoles!==undefined&&
+    projects.some(role=>!['bees_native','bees_rollout'].includes(role)))
+    throw Error('Bees additive enrollment may select only native learner and WAN actor roles.');
 if(projects.length>4||
     projects.some(p=>!['tinybrains','courier','bees_native','bees_rollout'].includes(p))||
     new Set(projects).size!==projects.length)
