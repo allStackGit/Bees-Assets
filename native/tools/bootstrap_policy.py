@@ -208,7 +208,8 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
                 bounds = physical.get("bounds")
             if (not (physical.get("native_game_schema") == 1 or original_authored) or
                     not isinstance(physical.get("policy_episode"), dict) or
-                    run["levels"][index].get("model_slots") != expected_slots or
+                    (original_authored and
+                     run["levels"][index].get("model_slots") != expected_slots) or
                     run.get("fragment_spawn", {}).get("map_bounds") != bounds):
                 raise ValueError(
                     "custom policy Level differs from its source map, policy "
@@ -457,14 +458,34 @@ def verified_existing_bootstrap(output: Path, seed: int, slots: list[int],
                 receipt.get("holdout_episodes") != holdout_episodes
             ))):
         raise ValueError("bootstrap receipt does not match the requested initial run")
+    source_receipts = []
     if scenario == "custom":
         if source_scene_override is None or source_run_override is None:
             raise ValueError("resuming custom bootstrap requires its original native inputs")
-        if (file_sha256(source_scene_override.resolve(strict=True)) !=
-                receipt.get("source_scene_sha256") or
-                file_sha256(source_run_override.resolve(strict=True)) !=
-                receipt.get("source_run_sha256")):
-            raise ValueError("custom native scene or run source changed since bootstrap")
+        original_run = source_run_override.resolve(strict=True)
+        first_scene = source_scene_override.resolve(strict=True)
+        if (file_sha256(first_scene) != receipt.get("source_scene_sha256") or
+                file_sha256(original_run) != receipt.get("source_run_sha256")):
+            raise ValueError("original native policy source changed since bootstrap")
+        source_receipts = receipt.get("source_scenes", [])
+        if source_receipts:
+            original_config = json.loads(original_run.read_text(encoding="utf-8"))
+            source_levels = original_config.get("levels")
+            if (not isinstance(source_levels, list) or
+                    len(source_receipts) != len(source_levels) or
+                    source_receipts[0].get("source_path") != str(first_scene)):
+                raise ValueError("resumed native source Level collection identity changed")
+            for index, (row, level) in enumerate(zip(source_receipts, source_levels)):
+                name = "scene.json" if index == 0 else f"scene-{index + 1:04d}.json"
+                expected_source = (original_run.parent / level["scene"]).resolve(strict=True)
+                if (not isinstance(row, dict) or
+                        row.get("scene") != name or
+                        row.get("source_path") != str(expected_source) or
+                        row.get("source_sha256") != file_sha256(expected_source) or
+                        row.get("scene_sha256") != file_sha256(output / name)):
+                    raise ValueError(
+                        "resumed original physical Level was modified or reordered"
+                    )
     for name in ("checkpoint", "manifest", "trainer_config", "scene", "run"):
         expected_name = {
             "checkpoint": "checkpoint.pt",
@@ -483,14 +504,21 @@ def verified_existing_bootstrap(output: Path, seed: int, slots: list[int],
                 file_sha256(output / "holdout-run.json") != receipt.get("holdout_run_sha256")):
             raise ValueError("frozen native holdout configuration changed")
     config = json.loads((output / "run.json").read_text(encoding="utf-8"))
+    expected_scenes = (
+        [entry["scene"] for entry in source_receipts] if source_receipts
+        else ["scene.json"]
+    )
+    expected_slots = {
+        "0": slots[0], "1": slots[1] if len(slots) > 1 else slots[0]
+    }
     if (config.get("episodes_per_world") != episodes_per_world or
             config.get("model_manifest") != "manifest.json" or
-            len(config.get("levels", [])) != 1 or
-            config["levels"][0].get("scene") != "scene.json" or
-            config["levels"][0].get("model_slots") != {
-                "0": slots[0], "1": slots[1] if len(slots) > 1 else slots[0]
-            }):
-        raise ValueError("saved native bootstrap model routing changed")
+            not isinstance(config.get("levels"), list) or
+            len(config["levels"]) != len(expected_scenes) or
+            any(level.get("scene") != name or
+                level.get("model_slots") != expected_slots
+                for level, name in zip(config["levels"], expected_scenes))):
+        raise ValueError("saved native bootstrap Level ownership or model routing changed")
     # The resident inference loader independently verifies all model-slot
     # weights and the exact frozen v26 ABI, not just the receipt hashes.
     _, loaded, _ = checked_manifest(output / "manifest.json")
