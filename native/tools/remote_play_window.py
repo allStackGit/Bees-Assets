@@ -564,9 +564,12 @@ class RemoteBattleWindow:
             self.notice(self.console.notifications.get_nowait())
         state = self.console.snapshot()
         if state is not None:
-            self._reconnect_deadline = None
-            self._reconnect_attempts = 0
-            self._disconnection_reported = False
+            # A dead connection retains its last read-only snapshot. Only a
+            # live, authenticated new socket can reset the recovery deadline.
+            if self.console.alive and self.console.host_session_id is not None:
+                self._reconnect_deadline = None
+                self._reconnect_attempts = 0
+                self._disconnection_reported = False
             key = (state["world_id"], state["episode_revision"], state["tick"])
             if key != self.drawn_scope:
                 if self.drawn_scope is not None and (
