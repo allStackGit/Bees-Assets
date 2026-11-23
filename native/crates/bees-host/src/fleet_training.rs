@@ -1596,9 +1596,16 @@ fn evaluate_training_checkpoint(
         command.arg("--candidate-slot").arg(candidate.to_string())
             .arg("--reference-slot").arg(reference.to_string());
     }
-    if let Some(workers) = invocation["evaluation_physics_workers"].as_u64()
+    if let Some(workers) = config["evaluation_physics_workers"].as_u64()
+        .or_else(|| invocation["evaluation_physics_workers"].as_u64())
         .filter(|number| (1..=128).contains(number)) {
         command.arg("--physics-workers").arg(workers.to_string());
+    }
+    if let Some(device) = config["evaluation_inference_device"].as_str() {
+        if !matches!(device, "cpu" | "cuda:0") {
+            return Err(invalid("native evaluation has an invalid recorded inference device").into());
+        }
+        command.arg("--inference-device").arg(device);
     }
     if let Some(binary) = invocation["rollout_binary"].as_str() {
         if sha256_file(Path::new(binary))? != invocation["rollout_binary_sha256"]
@@ -1628,6 +1635,7 @@ fn evaluate_training_checkpoint(
         "checkpoint_sha256": checkpoint_sha,
         "learner_slot": learner_slot,
         "training_round": training_round,
+        "evaluation_inference_device": config["evaluation_inference_device"],
         "output": destination,
         "log": log_path,
         "pid": child.id(),
