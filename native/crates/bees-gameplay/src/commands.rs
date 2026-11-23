@@ -28,7 +28,7 @@ use bees_hivemind::protocol::{
 use bees_hivemind::session::StrategyReceipt;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::Aabb;
-use bees_sim::combat_world::{CombatWorld, CombatWorldError, CombatRecoveryView};
+use bees_sim::combat_world::{CombatWorld, CombatWorldError, CombatRecoveryView, GamePointOrder};
 use bees_sim::geometry::Vec2;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::simulation::RandomStream;
@@ -1464,10 +1464,24 @@ impl NativeSquadCommandDirector {
                 if !destination.is_finite() {
                     return Err(GameCommandError::InvalidCombatSnapshot);
                 }
-                issue_squad_move(
-                    world, navigation, squad.members,
-                    destination, squad.formation,
-                )?.is_some()
+                if squad.formation.can_override_bounds {
+                    // The authored departure is an individual Ship.MoveToPoint,
+                    // not Squad.Move's playable-map formation placement.
+                    let [member] = squad.members else { return Err(GameCommandError::InvalidSquad) };
+                    if !member.mobile { return Err(GameCommandError::InvalidSquad); }
+                    world.move_ship_to_point(member.ship_id, GamePointOrder {
+                        destination, ship_clearance: member.clearance,
+                        map_bounds: squad.formation.map_bounds,
+                        has_obstacles: squad.formation.has_obstacles,
+                        can_override_bounds: true, newly_found_obstacle: false,
+                    })?;
+                    true
+                } else {
+                    issue_squad_move(
+                        world, navigation, squad.members,
+                        destination, squad.formation,
+                    )?.is_some()
+                }
             }
             LocalCommandKind::MoveToRandom => {
                 // Unity MoveToRandom.Setup uses the source maximum when
@@ -2384,9 +2398,12 @@ impl NativeSquadCommandDirector {
                         // Unity Ship.HasReachedDestination means exactly
                         // !HasTargetCoordinates (not "velocity nearly zero").
                         let all_arrived = command.member_ids.iter().all(|id| {
-                            world.ship_body(*id)
-                                .is_some_and(|ship| ship.active &&
-                                    !ship.motion.has_target_coordinates)
+                            world.ship_body(*id).is_some_and(|ship| ship.active &&
+                                if command.selection.local_command == LocalCommandKind::MoveToPoint {
+                                    !world.ship_has_pending_game_movement(*id)
+                                } else {
+                                    !ship.motion.has_target_coordinates
+                                })
                         });
                         if all_arrived {
                             if let Some(route) = command.patrol.as_mut() {

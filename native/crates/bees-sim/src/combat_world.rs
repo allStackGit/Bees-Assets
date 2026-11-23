@@ -3187,6 +3187,25 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Source Scout exit: leave south from the current X coordinate, with
+    /// twice the full largest sprite dimension beyond the map edge.
+    pub fn scripted_south_exit_destination(&self, ship_id: i64) -> Option<Vec2> {
+        let bounds = self.level_geometry?.map_bounds;
+        let body = self.ship_body(ship_id).filter(|body| body.active && body.motion.mobile)?;
+        let profile = self.game_ship_steering.get(&ship_id)?.profile;
+        let destination = Vec2::new(body.motion.position.x,
+            bounds.min.y - 4.0 * profile.half_width.max(profile.half_height));
+        destination.is_finite().then_some(destination)
+    }
+
+    pub fn ship_cleared_south_edge(&self, ship_id: i64) -> bool {
+        let Some(geometry) = self.level_geometry else { return false };
+        let Some(body) = self.ship_body(ship_id).filter(|body| body.active) else { return false };
+        let Some(steering) = self.game_ship_steering.get(&ship_id) else { return false };
+        let extent = steering.profile.half_width.max(steering.profile.half_height);
+        body.motion.position.y + extent <= geometry.map_bounds.min.y
+    }
+
     /// Preflight a game/squad point order without mutating any controller.
     /// A whole squad must be checked before issuing its first ship command,
     /// otherwise a missing asset profile or policy-owned ship could leave

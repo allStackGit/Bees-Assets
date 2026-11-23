@@ -1080,7 +1080,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             scout_owners = [
                 squad for squad in source_squads.values()
                 if squad.get("side") == args.player_side and
-                scouts and scouts[0].get("entity_id") in squad_members(squad)
+                scouts and squad_members(squad) == [scouts[0].get("entity_id")]
             ]
             scout_departures = [
                 queue for queue in level.get("scripted_queues", [])

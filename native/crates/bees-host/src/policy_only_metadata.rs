@@ -1589,8 +1589,9 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         events: &mut bees_gameplay::level_events::NativeLevelEventProcessor,
         random: &mut bees_sim::simulation::RandomStream,
         completed_tick: u64,
+        withdrawing_pluto_scout: Option<i64>,
     ) -> Result<u64, bees_gameplay::level_events::NativeLevelEventError> {
-        self.advance_source_scripted(world, events, random, completed_tick)
+        self.advance_source_scripted(world, events, random, completed_tick, withdrawing_pluto_scout)
     }
 
     fn scripted_queue_measurements(

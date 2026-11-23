@@ -484,6 +484,7 @@ pub trait NativeLevelCommandContext {
         _events: &mut NativeLevelEventProcessor,
         _random: &mut bees_sim::simulation::RandomStream,
         _completed_tick: u64,
+        _withdrawing_pluto_scout: Option<i64>,
     ) -> Result<u64, NativeLevelEventError> { Ok(0) }
 
     fn scripted_queue_measurements(
@@ -1937,21 +1938,24 @@ where
                 use bees_hivemind::dispatch::LocalCommandKind;
 
                 let withdrawal_finished = dialogue.withdrawing_pluto_scout()
-                    .and_then(|scout| state.events.roster().owning_squad(scout))
-                    .and_then(|owner| state.events.latest_finished_commands().iter().find(|order|
-                        order.owner == owner &&
-                        order.selection.kind() == LocalCommandKind::MoveToPoint &&
-                        matches!(order.selection.origin(), NativeCommandOrigin::Local(identity)
-                            if identity.source == NativeLocalCommandSource::Scripted) &&
-                        matches!(order.cause, CommandFinishCause::ReachedSpecifiedDestination |
-                            CommandFinishCause::Timeout)))
-                    .map(|order| order.cause);
+                    .and_then(|scout| {
+                        let owner = state.events.roster().owning_squad(scout)?;
+                        state.events.latest_finished_commands().iter()
+                            .find(|order| order.owner == owner &&
+                                order.selection.kind() == LocalCommandKind::MoveToPoint &&
+                                matches!(order.selection.origin(), NativeCommandOrigin::Local(identity)
+                                    if identity.source == NativeLocalCommandSource::Scripted) &&
+                                matches!(order.cause, CommandFinishCause::ReachedSpecifiedDestination |
+                                    CommandFinishCause::Timeout))
+                            .map(|order| (scout, order.cause))
+                    });
                 match withdrawal_finished {
                     // Retire on the next physical event pass so roster,
                     // fleet score and rewards all see the safe departure.
-                    Some(CommandFinishCause::ReachedSpecifiedDestination) =>
+                    Some((scout, CommandFinishCause::ReachedSpecifiedDestination))
+                        if state.combat.ship_cleared_south_edge(scout) =>
                         dialogue.record_pluto_scout_arrival(),
-                    Some(CommandFinishCause::Timeout) => {
+                    Some(_) => {
                         let cue = dialogue.begin_pluto_scout_report();
                         dialogue.set_cue(cue);
                         state.events.queue_campaign_dialogue(completed_tick, cue)?;
@@ -1965,9 +1969,11 @@ where
         // Run after command completion so no additional command can
         // replace the one which just finished in the same fixed tick.
         if !state.events.completed() {
+            let withdrawing_pluto_scout = state.campaign_dialogue.as_ref()
+                .and_then(|dialogue| dialogue.withdrawing_pluto_scout());
             state.metadata.advance_scripted_commands(
                 &mut state.combat, &mut state.events, &mut world.random,
-                completed_tick,
+                completed_tick, withdrawing_pluto_scout,
             )?;
         }
         // Source Squad.CheckChase fires independently of the current

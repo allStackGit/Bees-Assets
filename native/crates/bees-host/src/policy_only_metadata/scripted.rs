@@ -708,6 +708,7 @@ impl NativePolicyOnlyMetadata {
         &mut self, world: &mut CombatWorld,
         events: &mut NativeLevelEventProcessor, random: &mut RandomStream,
         completed_tick: u64,
+        withdrawing_pluto_scout: Option<i64>,
     ) -> Result<u64, NativeLevelEventError> {
         if self.scripted_queues.is_empty() { return Ok(0); }
         let mut started = 0;
@@ -948,9 +949,17 @@ impl NativePolicyOnlyMetadata {
             } else { None };
             let squad = events.roster().get(owner)
                 .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?;
+            let scout_exit = withdrawing_pluto_scout.filter(|&scout|
+                squad.members.as_slice() == [scout] &&
+                matches!(&order, NativeScriptedOrder::MoveToPoint { .. }) &&
+                self.scripted_queues[index].required_event ==
+                    Some(NativeMissionEvent::CampaignCue(NativeMissionCue::PlutoHoneybeeSpotted)))
+                .map(|scout| world.scripted_south_exit_destination(scout)
+                    .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad)))
+                .transpose()?;
             let formation = SquadFormationOptions {
                 map_bounds: self.bounds, has_obstacles: self.player.has_obstacles,
-                can_override_bounds: false,
+                can_override_bounds: scout_exit.is_some(),
             };
             let scouting = if let NativeScriptedOrder::Scouting {
                 max_sight, human_side,
@@ -1015,7 +1024,9 @@ impl NativePolicyOnlyMetadata {
                 completed_tick, world, &self.navigation, random, order_view,
                 &self.scripted_friendlies,
                 source.settings, NativeLocalCommandSource::Scripted,
-                order.action(linked_target), source.shooting, bombing,
+                scout_exit.map_or_else(|| order.action(linked_target),
+                    |destination| NativeLocalCommandAction::MoveToPoint { destination }),
+                source.shooting, bombing,
             )?;
             match result {
                 Activation::Applied { .. } => {
