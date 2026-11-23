@@ -55,6 +55,31 @@ def rocm_visible_gpu_pci(device_index=0) -> str | None:
         return None
 
 
+def cuda_visible_gpu_uuid(device_index=0) -> str | None:
+    """Identify the CUDA card that completed resident PyTorch forwards.
+
+    This uses the runtime's physical UUID, never a requested device
+    ordinal or CUDA_VISIBLE_DEVICES value. Drivers without a UUID
+    attribute do not supply dual-GPU attestation by assumption.
+    """
+    import sys
+
+    torch = sys.modules.get("torch")
+    if (torch is None or getattr(torch.version, "hip", None) or
+            not torch.cuda.is_initialized()):
+        return None
+    try:
+        value = getattr(torch.cuda.get_device_properties(device_index), "uuid", None)
+        if not isinstance(value, str):
+            return None
+        value = value.removeprefix("GPU-").lower()
+        return value if re.fullmatch(
+            r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", value
+        ) else None
+    except (RuntimeError, AttributeError, AssertionError):
+        return None
+
+
 def process_memory_bytes():
     """Current and peak resident memory of this process, not its device."""
     if os.name == "nt":
