@@ -1526,6 +1526,144 @@ document.addEventListener('DOMContentLoaded', () => {
     // Build capacity bundles from the same saved project configurations and
     // authenticated machine choices used by normal job Start. A bundle never
     // transmits arbitrary executable paths or worker network endpoints.
+
+    // Reserve one native Bees learner plus a fixed remote Unity actor group.
+    // The Hub's existing resource-bundle controls handle later Start/Stop.
+    // No browser field supplies an executable, authentication key or port.
+    let beesWanUiReady=false;
+    function beesWanGroupUi() {
+        if(beesWanUiReady)return;
+        beesWanUiReady=true;
+        const panel=document.createElement('section');
+        panel.id='hub-bees-wan-group';
+        panel.className='hub-standalone';
+        panel.innerHTML='<h4>Bees Unity — distributed WAN training</h4>'+
+            '<p class="muted">Reserve one authoritative MA-POCA learner and 1–8 independently leased Linux Unity actors. '+
+            'An operator-installed private broker tunnel is required on every actor machine. '+
+            'Reserving does not start any workload.</p>'+
+            '<div class="hub-controls">'+
+            '<label>Saved WAN learner <select id="hub-bees-wan-config"></select></label>'+
+            '<label>Learner machine <select id="hub-bees-wan-learner"></select></label>'+
+            '<label>Learner CPUs <input id="hub-bees-wan-learner-cpus" type="number" min="1" max="256" value="8"></label>'+
+            '<label>Learner RAM (MiB) <input id="hub-bees-wan-learner-ram" type="number" min="128" value="16384"></label>'+
+            '<label>Learner exclusive GPUs <select id="hub-bees-wan-learner-gpus"><option value="0">CPU</option><option value="1" selected>1 GPU</option></select></label></div>'+
+            '<div id="hub-bees-wan-actors"></div>'+
+            '<div class="hub-controls"><button type="button" id="hub-bees-wan-add">Add remote actor</button>'+
+            '<button type="button" id="hub-bees-wan-reserve">Reserve Bees WAN group</button></div>'+
+            '<p id="hub-bees-wan-result" class="hub-notice" role="status"></p>';
+        $('hub-resource-bundle-rows').parentElement.insertAdjacentElement('beforebegin',panel);
+        $('hub-bees-wan-add').addEventListener('click',()=>{
+            addBeesWanActor();
+            renderBeesWanGroup();
+        });
+        $('hub-bees-wan-config').addEventListener('change',renderBeesWanGroup);
+        $('hub-bees-wan-learner').addEventListener('change',renderBeesWanGroup);
+        $('hub-bees-wan-reserve').addEventListener('click',async()=>{
+            try {
+                const config=state.configurations.find(c=>c.id===$('hub-bees-wan-config').value);
+                const learnerMachine=$('hub-bees-wan-learner').value;
+                const rows=[...$('hub-bees-wan-actors').children];
+                if(!config||!learnerMachine||!rows.length||rows.length>8||
+                    config.parameters.wan_actors!==rows.length)
+                    throw Error('Choose a WAN learner whose saved remote actor count equals the selected machine count.');
+                const budget=(cpu,ram,gpu)=>({
+                    cpus:Number(cpu),ram_mb:Number(ram),gpu_count:Number(gpu),
+                });
+                const machines=new Set([learnerMachine]);
+                const actors=rows.map(row=>{
+                    const machine_id=row.querySelector('.hub-bees-wan-machine').value;
+                    if(!machine_id||machines.has(machine_id))
+                        throw Error('Every WAN actor requires a distinct machine, separate from the learner.');
+                    machines.add(machine_id);
+                    const gpu=row.querySelector('.hub-bees-wan-gpus').value;
+                    return {
+                        machine_id,
+                        resources:budget(row.querySelector('.hub-bees-wan-cpus').value,
+                            row.querySelector('.hub-bees-wan-ram').value,gpu),
+                        envs:Number(row.querySelector('.hub-bees-wan-envs').value),
+                        device:gpu==='1'?'cuda':'cpu',
+                    };
+                });
+                if(!confirm('Reserve the selected Bees learner and '+actors.length+
+                    ' remote Unity actors on '+machines.size+
+                    ' machines? The native WAN resource bundle will not Start automatically.'))return;
+                const result=await action('hub/distributed/bees',{
+                    confirm_queue:true,
+                    learner:{
+                        configuration_id:config.id,expected_revision:config.revision,
+                        machine_id:learnerMachine,
+                        resources:budget($('hub-bees-wan-learner-cpus').value,
+                            $('hub-bees-wan-learner-ram').value,
+                            $('hub-bees-wan-learner-gpus').value),
+                    },
+                    actors,
+                });
+                feedback('hub-bees-wan-result',
+                    'Reserved '+result.members.length+' native jobs in bundle '+
+                    result.bundle_id.slice(-8)+'. Use the resource-bundle Start controls after private tunnels and leases are ready.');
+                await reload();
+            }catch(error){
+                feedback('hub-bees-wan-result',String(error.message||error));
+            }
+        });
+        addBeesWanActor();
+    }
+    function addBeesWanActor() {
+        const parent=$('hub-bees-wan-actors');
+        if(parent.children.length>=8)return;
+        const row=document.createElement('div');
+        row.className='hub-pipeline-stage';
+        row.innerHTML='<label>Remote machine <select class="hub-bees-wan-machine"></select></label>'+
+            '<label>Unity environments <input class="hub-bees-wan-envs" type="number" min="1" max="64" value="4"></label>'+
+            '<label>CPUs <input class="hub-bees-wan-cpus" type="number" min="1" max="256" value="4"></label>'+
+            '<label>RAM (MiB) <input class="hub-bees-wan-ram" type="number" min="128" value="8192"></label>'+
+            '<label>GPU <select class="hub-bees-wan-gpus"><option value="0">CPU</option>'+
+            '<option value="1">1 exclusive GPU</option></select></label>'+
+            '<button type="button" class="hub-bees-wan-remove">Remove</button>';
+        row.querySelector('.hub-bees-wan-remove').addEventListener('click',()=>{
+            row.remove();renderBeesWanGroup();
+        });
+        parent.append(row);
+    }
+    function renderBeesWanGroup() {
+        if(!beesWanUiReady)return;
+        const panel=$('hub-bees-wan-group');
+        panel.hidden=project!=='bees_native';
+        if(panel.hidden)return;
+        const configs=(state?.configurations||[]).filter(c=>
+            c.project_id==='bees_native'&&Number.isSafeInteger(c.parameters?.wan_actors)&&
+            c.parameters.wan_actors>=1&&c.parameters.wan_actors<=8);
+        const selected=$('hub-bees-wan-config'),previous=selected.value;
+        refreshSelectOptions(selected,configs.map(c=>
+            new Option(c.name+' · '+c.parameters.wan_actors+' WAN actors',c.id)));
+        if(configs.some(c=>c.id===previous))selected.value=previous;
+        const config=configs.find(c=>c.id===selected.value);
+        const members=(state?.machines||[]).filter(machine=>
+            machine.status==='connected'&&machine.agent_platform==='linux'&&
+            machine.local_executor_enabled===true&&machine.native_preflight_passed===true);
+        const supports=(machine,role)=>config&&machine.installed_projects?.includes(role)&&
+            ['worker_sha256','trainer_sha256','runtime_version',
+                'wan_key_fingerprint'].every(key=>
+                machine.design_catalog?.[role]?.[key]===config.parameters[key]);
+        const learner=$('hub-bees-wan-learner'),prior=learner.value;
+        const learners=members.filter(machine=>supports(machine,'bees_native'));
+        refreshSelectOptions(learner,learners.map(machine=>
+            new Option(machine.name+' ('+machine.id+')',machine.id)));
+        if(learners.some(machine=>machine.id===prior))learner.value=prior;
+        const actors=members.filter(machine=>supports(machine,'bees_rollout')&&
+            machine.id!==learner.value);
+        for(const row of $('hub-bees-wan-actors').children) {
+            const input=row.querySelector('.hub-bees-wan-machine');
+            const value=input.value;
+            refreshSelectOptions(input,actors.map(machine=>
+                new Option(machine.name+' ('+machine.id+')',machine.id)));
+            if(actors.some(machine=>machine.id===value))input.value=value;
+        }
+        $('hub-bees-wan-add').disabled=
+            $('hub-bees-wan-actors').children.length>=8;
+        $('hub-bees-wan-reserve').disabled=
+            !config||!learner.value||!actors.length;
+    }
     function addResourceBundleMember() {
         const container=$('hub-resource-bundle-rows');
         if(container.children.length>=16)return;
@@ -5932,6 +6070,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             renderResourceBundleMembers();
         }
+        renderBeesWanGroup();
         $('hub-job-queue').disabled=['bees','ants'].includes(project)||!configs.length;
         const previousMachine=$('hub-job-machine').value;
         refreshSelectOptions($('hub-job-machine'), [new Option('Automatic best fit',''),
@@ -8206,6 +8345,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }catch(e){feedback('hub-plan-result',e.message);}
     });
 
+    beesWanGroupUi();
+    renderBeesWanGroup();
     $('hub-resource-bundle-add').addEventListener('click',()=>{
         addResourceBundleMember();
         renderResourceBundleMembers();
