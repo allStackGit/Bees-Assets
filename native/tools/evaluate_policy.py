@@ -599,6 +599,10 @@ def main():
     parser.add_argument("--policy-seed", type=int, default=0,
                         help="fixed stochastic action-sampling seed across checkpoints")
     parser.add_argument("--rollout-binary", type=Path)
+    parser.add_argument("--candidate-slot", type=int,
+                        help="genuine candidate model slot routed onto --learner-side")
+    parser.add_argument("--reference-slot", type=int,
+                        help="fixed opposing model slot when reassigning a policy faction")
     parser.add_argument("--physics-workers", type=int,
                         help="persistent native CPU physics workers for this holdout (1..128)")
     parser.add_argument("--inference-device", choices=("cpu", "cuda:0"),
@@ -610,10 +614,13 @@ def main():
         parser.error("--policy-seed must be a nonnegative int63")
     if args.physics_workers is not None and not 1 <= args.physics_workers <= 128:
         parser.error("--physics-workers must be between 1 and 128")
+    if (args.candidate_slot is None) != (args.reference_slot is None):
+        parser.error("--candidate-slot and --reference-slot are required together")
     result = evaluate(args.run_config, args.model_manifest,
                       args.output_dir.resolve(), args.learner_side,
                       args.rollout_binary, args.policy_seed, args.physics_workers,
-                      args.inference_device)
+                      args.inference_device, args.candidate_slot,
+                      args.reference_slot)
     print(json.dumps(result), flush=True)
 
 
