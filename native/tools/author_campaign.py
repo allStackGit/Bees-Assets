@@ -277,8 +277,8 @@ def neptune_production_waves_match_source(scene: dict, level: dict) -> bool:
     }
     by_second = {}
     for wave in waves:
-        if not isinstance(wave, dict) or (
-                set(wave) - {"after_seconds", "squad_item_ids", "spawn", "entry"}) or
+        if (not isinstance(wave, dict) or
+                set(wave) - {"after_seconds", "squad_item_ids", "spawn", "entry"} or
                 type(wave.get("after_seconds")) not in (int, float) or
                 not 0 < wave["after_seconds"] < float("inf") or
                 not same_point(wave.get("spawn"), spawn) or
