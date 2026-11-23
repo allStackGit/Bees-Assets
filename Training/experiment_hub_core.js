@@ -5299,10 +5299,13 @@ class ExperimentHub {
         // learner's worker, and never infer a native process has disappeared.
         for(const learner of next.jobs.filter(j=>
             (j.project_id==='tinybrains'&&j.distributed_rollout_managed===true||
-                j.project_id==='courier'&&j.distributed_courier_managed===true)&&
+                j.project_id==='courier'&&j.distributed_courier_managed===true||
+                j.project_id==='bees_native'&&j.frozen_parameters?.wan_actors>0&&
+                    j.resource_bundle?.index===1)&&
             ['finished','failed','stopped'].includes(j.status))) {
             const workerProject=learner.project_id==='courier'
-                ?'courier_lineage':'tinybrains_rollout';
+                ?'courier_lineage':learner.project_id==='bees_native'
+                    ?'bees_rollout':'tinybrains_rollout';
             for(const child of next.jobs.filter(j=>j.project_id===workerProject&&
                 j.frozen_parameters?.learner_job_id===learner.id)) {
                 if(['running','launch_requested','unverified'].includes(child.status)) {
@@ -5339,6 +5342,34 @@ class ExperimentHub {
                     }
                 }
             }
+        }
+        // A remote actor's terminal failure invalidates the frozen WAN
+        // population. Ask the one authoritative learner to checkpoint and
+        // Stop; never silently continue an incomplete distributed experiment.
+        // The learner's terminal receipt then drives the standard sidecar
+        // shutdown path above on the next authenticated observation.
+        for(const learner of next.jobs.filter(j=>
+            j.project_id==='bees_native'&&j.frozen_parameters?.wan_actors>0&&
+            j.resource_bundle?.index===1&&
+            ['running','launch_requested','unverified'].includes(j.status))) {
+            const failed=next.jobs.find(child=>
+                child.project_id==='bees_rollout'&&
+                child.frozen_parameters?.learner_job_id===learner.id&&
+                child.resource_bundle?.id===learner.resource_bundle.id&&
+                child.status==='failed');
+            if(!failed)continue;
+            const lease=next.reservations.find(item=>
+                item.id===learner.lease_id&&item.job_id===learner.id&&
+                item.machine_id===learner.assigned_machine_id&&
+                item.project_id==='bees_native'&&
+                item.status==='acknowledged'&&
+                item.issued_by==='experiment-hub');
+            if(!lease||!learner.dispatch_id)continue;
+            learner.status='stop_requested';
+            learner.stop_requested_at=now();
+            learner.status_reason='Bees WAN actor '+failed.id.slice(-8)+
+                ' failed; saving the authoritative learner checkpoint and stopping the distributed group.';
+            changed=true;
         }
         if(this.reconcileDistributedAborts(next))changed=true;
         return changed;
@@ -6605,8 +6636,10 @@ class ExperimentHub {
             const lease=this.claimJobIn(next,job,machine.id,machine);
             jobs.push(job);leases.push(lease);
         }
-        for(const [index,job] of jobs.entries())
+        for(const [index,job] of jobs.entries()) {
             job.resource_bundle={id:bundleId,index:index+1,size:jobs.length};
+            job.release_on_terminal=true;
+        }
         this.commit(next);
         return {
             bundle_id:bundleId,
