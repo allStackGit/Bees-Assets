@@ -45,17 +45,20 @@ function usage() {
     return [
         'Usage: node Training/bees_build_workers.js [--platform linux|windows|both]',
         '       [--unity-editor /absolute/path/to/Editor/Unity] [--python EXECUTABLE]',
+        '       [--install-root /absolute/worker/install/root] [--activate]',
         '',
         'Builds one or both Unity RL simulation workers, packages ZIPs and writes',
         'an artifact manifest under ../Builds/OfflineWorkers/. No server, learner,',
         'experiment, checkpoint, remote worker or active release is modified.',
         'The Windows target requires Windows Build Support installed in Unity.',
         'Every build also packages the exact matching Bees Python learner/actor runtime.',
+        'With --install-root, verifies and installs the host-platform player locally.',
+        'Only an explicit --activate selects it for future Hub agent starts.',
     ].join('\n');
 }
 
 function options(argv) {
-    const result = { platform: 'linux', editor: '', python: '' };
+    const result = { platform: 'linux', editor: '', python: '', installRoot: '', activate: false };
     for (let i = 0; i < argv.length; i++) {
         if (argv[i] === '-h' || argv[i] === '--help') return { help: true };
         const name = argv[i], value = argv[i + 1];
@@ -69,11 +72,19 @@ function options(argv) {
             result.editor = value;
         } else if (name === '--python' && value) {
             result.python = value;
+        } else if (name === '--install-root' && value) {
+            if (!path.isAbsolute(value)) throw Error('--install-root must be an absolute path.');
+            result.installRoot = path.resolve(value);
+        } else if (name === '--activate') {
+            result.activate = true;
+            i--;
         } else {
             throw Error('Unknown or incomplete argument: ' + name + '\n' + usage());
         }
         i++;
     }
+    if (result.activate && !result.installRoot)
+        throw Error('--activate requires --install-root.');
     return result;
 }
 
@@ -195,6 +206,16 @@ async function build(argv = process.argv.slice(2)) {
     const targets = arg.platform === 'both'
         ? [TARGETS.linux, TARGETS.windows]
         : [TARGETS[arg.platform]];
+    const hostPlatform = process.platform === 'linux' ? 'linux'
+        : process.platform === 'win32' ? 'windows' : null;
+    if (arg.installRoot) {
+        if (!hostPlatform || !targets.includes(TARGETS[hostPlatform]))
+            throw Error('--install-root requires building the worker for this host OS.');
+        const prefix = paths.beesRoot.endsWith(path.sep) ? paths.beesRoot
+            : paths.beesRoot + path.sep;
+        if (arg.installRoot === paths.beesRoot || arg.installRoot.startsWith(prefix))
+            throw Error('--install-root must be outside the Unity project tree.');
+    }
     const commit = getGitShortSha();
     const sourceDirty = dirtySource();
     if(sourceDirty===null)
@@ -284,6 +305,30 @@ async function build(argv = process.argv.slice(2)) {
     });
     console.log('Worker build completed. Manifest: ' + manifestPath);
     console.log('These artifacts have not been published to any training cluster.');
+    if (arg.installRoot) {
+        const installer = path.join(paths.assetsRoot, 'Training',
+            'bees_hub_worker_install.py');
+        const command = [
+            '-B', installer, 'install',
+            '--root', arg.installRoot,
+            '--manifest', manifestPath,
+            '--archive', path.join(root, TARGETS[hostPlatform].archive),
+            ...(arg.activate ? ['--activate'] : []),
+        ];
+        const receipt = JSON.parse(String(runSync(python, command, {
+            cwd: paths.assetsRoot, timeout: 180000, maxBuffer: 1024 * 1024,
+        }).stdout || '').trim());
+        const matching = artifacts.find(artifact =>
+            artifact.platform === TARGETS[hostPlatform].platform);
+        if (receipt.release_sha256 !== await sha256(manifestPath) ||
+            receipt.platform !== matching.platform ||
+            receipt.player_tree_sha256 !== matching.player_tree_sha256 ||
+            (arg.activate && receipt.activated !== true))
+            throw Error('Local Unity worker installer did not return the expected verified release receipt.');
+        console.log('Host worker release installed: ' + receipt.release_sha256);
+        if (arg.activate)
+            console.log('Host worker release activated for future idle Hub agent starts.');
+    }
     return manifest;
 }
 
