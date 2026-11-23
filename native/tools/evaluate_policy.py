@@ -16,7 +16,7 @@ import subprocess
 import uuid
 
 from native_mission_contract import level_has_goal, verified_policy_observations
-from native_training_artifacts import (file_sha256, sync_directory, atomic_json,
+from native_training_artifacts import (file_sha256, check_learner, sync_directory, atomic_json,
                                        native_input_dependencies,
                                        check_native_input_dependencies,
                                        native_headless_environment,
@@ -482,11 +482,27 @@ def terminal_matchup(directory, result, candidate_slot, incumbent_slot):
 
 def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
              physics_workers=None, inference_device=None,
-             candidate_slot=None, reference_slot=None):
+             candidate_slot=None, reference_slot=None,
+             selected_checkpoint=None, selected_checkpoint_sha256=None,
+             selected_learner_slot=None, selected_round=None):
     manifest = manifest.resolve(strict=True)
     source_path = source_path.resolve(strict=True)
     manifest_sha = file_sha256(manifest)
     source_sha = file_sha256(source_path)
+    checkpoint_selection = None
+    if selected_checkpoint is not None:
+        selected_checkpoint = selected_checkpoint.resolve(strict=True)
+        if (file_sha256(selected_checkpoint) != selected_checkpoint_sha256 or
+                check_learner(manifest, selected_checkpoint, selected_learner_slot)
+                != selected_checkpoint_sha256):
+            raise ValueError("selected native checkpoint is not the claimed learner manifest slot")
+        checkpoint_selection = {
+            "checkpoint": str(selected_checkpoint),
+            "checkpoint_sha256": selected_checkpoint_sha256,
+            "learner_slot": selected_learner_slot,
+            **({"training_round": selected_round}
+               if selected_round is not None else {}),
+        }
     source_dependencies = native_input_dependencies({"path": str(source_path)})
     env = native_headless_environment()
     model_store = env.get("BEES_NATIVE_MODEL_STORE")
@@ -620,6 +636,11 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
             throughput["peak_parallel_physics_workers"] < 0 or
             throughput["peak_parallel_physics_workers"] > selected_workers):
         raise ValueError("native evaluation physics worker accounting differs from its source")
+    if (checkpoint_selection is not None and
+            (file_sha256(selected_checkpoint) != selected_checkpoint_sha256 or
+             check_learner(manifest, selected_checkpoint, selected_learner_slot)
+             != selected_checkpoint_sha256)):
+        raise ValueError("selected learner checkpoint changed during evaluation")
     if file_sha256(manifest) != manifest_sha or file_sha256(source_path) != source_sha:
         raise ValueError("evaluation input changed during the native run")
     # The same authored scene, Stage collision assets and policy code used
@@ -657,6 +678,8 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
         "model_dependencies": model_dependencies,
         **({"model_store": model_store} if model_store else {}),
         "model_manifest": str(manifest), "model_manifest_sha256": manifest_sha,
+        **({"selected_training_checkpoint": checkpoint_selection}
+           if checkpoint_selection is not None else {}),
         "learner_side": learner_side, "policy_sampling_seed": policy_seed,
         **({"candidate_side_assignment": side_assignment}
            if side_assignment is not None else {}),
@@ -735,6 +758,14 @@ def main():
                         help="fixed opposing model slot when reassigning a policy faction")
     parser.add_argument("--physics-workers", type=int,
                         help="persistent native CPU physics workers for this holdout (1..128)")
+    parser.add_argument("--selected-checkpoint", type=Path,
+                        help="optional verified training learner artifact evaluated here")
+    parser.add_argument("--selected-checkpoint-sha256",
+                        help="immutable source checkpoint SHA-256")
+    parser.add_argument("--selected-learner-slot", type=int,
+                        help="manifest slot that owns the selected training weights")
+    parser.add_argument("--selected-training-round", type=int,
+                        help="original completed training round for comparison")
     parser.add_argument("--inference-device", choices=("cpu", "cuda:0"),
                         help="override PyTorch model placement without changing checkpoint or manifest")
     args = parser.parse_args()
@@ -746,11 +777,27 @@ def main():
         parser.error("--physics-workers must be between 1 and 128")
     if (args.candidate_slot is None) != (args.reference_slot is None):
         parser.error("--candidate-slot and --reference-slot are required together")
+    selected_fields = (args.selected_checkpoint, args.selected_checkpoint_sha256,
+                       args.selected_learner_slot)
+    if any(field is not None for field in selected_fields) and not all(
+            field is not None for field in selected_fields):
+        parser.error("selected checkpoint, SHA-256 and learner slot are required together")
+    if args.selected_training_round is not None and (
+            args.selected_checkpoint is None or args.selected_training_round < 0):
+        parser.error("selected training round requires a checkpoint and must be nonnegative")
+    if args.selected_checkpoint is not None and (
+            len(args.selected_checkpoint_sha256) != 64 or
+            any(char not in "0123456789abcdef"
+                for char in args.selected_checkpoint_sha256) or
+            not 0 <= args.selected_learner_slot < (1 << 32)):
+        parser.error("selected checkpoint identity is invalid")
     result = evaluate(args.run_config, args.model_manifest,
                       args.output_dir.resolve(), args.learner_side,
                       args.rollout_binary, args.policy_seed, args.physics_workers,
                       args.inference_device, args.candidate_slot,
-                      args.reference_slot)
+                      args.reference_slot, args.selected_checkpoint,
+                      args.selected_checkpoint_sha256,
+                      args.selected_learner_slot, args.selected_training_round)
     print(json.dumps(result), flush=True)
 
 
