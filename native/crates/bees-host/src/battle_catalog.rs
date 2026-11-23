@@ -1473,6 +1473,71 @@ impl BattleCatalog {
         Ok(ships)
     }
 
+    /// Commit one mixed-class fleet requisition through the existing
+    /// chronological BatchPurchase receipt. Each requested class must be
+    /// purchasable and unlocked, every destination must belong to the same
+    /// player faction, and the entire TSV debit must fit the verified bank.
+    /// The native launcher preflights this exact projected fleet against
+    /// all authored mission configurations before calling this method.
+    pub fn buy_fleet(
+        &self, progress: &CampaignProgress<'_>, output: &Path,
+        player_side: i32, first_fleet_ship_id: i64,
+        requisition: &[(u8, i64, u32)],
+    ) -> io::Result<Vec<NativePurchasedShip>> {
+        let campaign = self.campaign_id.as_deref()
+            .ok_or_else(|| invalid("native fleet requisition requires a campaign"))?;
+        if !matches!(player_side, 1 | 2) || requisition.is_empty() ||
+            requisition.len() > 256 ||
+            first_fleet_ship_id <= progress.highest_fleet_id() ||
+            first_fleet_ship_id <= 0 || !progress.bank_history_complete {
+            return Err(invalid("invalid native fleet requisition ownership or identity"));
+        }
+        let mut total_hulls = 0u32;
+        let mut total_price = 0u64;
+        let mut ships = Vec::new();
+        for &(kind, destination, count) in requisition {
+            if count == 0 || destination < 0 ||
+                progress.is_retired_saved_squad(destination) ||
+                (destination > 0 &&
+                    (progress.squads.get(&destination).is_some_and(|squad|
+                        squad.side != player_side) ||
+                     progress.created_squads.iter().any(|squad|
+                        squad.saved_squad_id == destination &&
+                        squad.side != player_side))) {
+                return Err(invalid("fleet requisition has an invalid squad destination"));
+            }
+            let shop = self.buildable_ships.iter().find(|shop|
+                shop.player_side == player_side && shop.ship_type == kind &&
+                shop.purchasable &&
+                progress.is_ship_unlocked(shop))
+                .ok_or_else(|| invalid("fleet requisition includes a locked or unavailable class"))?;
+            total_hulls = total_hulls.checked_add(count)
+                .filter(|count| *count <= 256)
+                .ok_or_else(|| invalid("fleet requisition exceeds 256 purchased hulls"))?;
+            total_price = total_price.checked_add(
+                shop.price_tsv.checked_mul(u64::from(count))
+                    .ok_or_else(|| invalid("fleet requisition cost overflow"))?
+            ).ok_or_else(|| invalid("fleet requisition total cost overflow"))?;
+            for _ in 0..count {
+                let offset = i64::try_from(ships.len())
+                    .map_err(|_| invalid("fleet requisition identity overflow"))?;
+                let id = first_fleet_ship_id.checked_add(offset)
+                    .ok_or_else(|| invalid("fleet requisition identity space exhausted"))?;
+                ships.push(NativePurchasedShip {
+                    fleet_ship_id: id, saved_squad_id: destination,
+                    ship_type: kind, price_tsv: shop.price_tsv,
+                });
+            }
+        }
+        if progress.unspent_minerals()? < total_price {
+            return Err(invalid("fleet requisition exceeds verified campaign minerals"));
+        }
+        commit_sequenced_edit(output, campaign, CampaignSequencedEdit::BatchPurchase {
+            player_side, ships: ships.clone(),
+        })?;
+        Ok(ships)
+    }
+
     /// A purchased ship can join a different SavedSquad between missions.
     /// Preserve its FleetShip identity, type, TSV cost and career totals;
     /// never modify a historical battle or the original purchase receipt.
