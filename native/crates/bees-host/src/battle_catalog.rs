@@ -370,6 +370,36 @@ struct CampaignSquadCreation {
     squad: NativeCreatedSquad,
 }
 
+/// Every edit following the first atomic squad copy uses one ordered
+/// append-only stream. Older per-kind receipts are still replayed first;
+/// later edits are applied in publication order regardless of edit kind.
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "kind", content = "data", rename_all = "snake_case")]
+enum CampaignSequencedEdit {
+    Duplicate {
+        squad: NativeCreatedSquad,
+        purchased_ids: Vec<i64>,
+        authored: Vec<(i64, u8)>,
+        tactics: NativeSavedSquadTactics,
+    },
+    Purchase(CampaignPurchase),
+    Transfer(CampaignTransfer),
+    AuthoredAssignment(CampaignAuthoredAssignment),
+    Tactics(CampaignTacticsEdit),
+    SquadName(CampaignSquadNameEdit),
+    FleetName(CampaignFleetShipNameEdit),
+    Create(CampaignSquadCreation),
+    Retire(CampaignSquadRetirementWithReserve),
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignSequencedReceipt {
+    campaign_id: String,
+    edit: CampaignSequencedEdit,
+}
+
+
 /// Tombstone for a user-created SavedSquad with no live fleet assignments.
 /// Historical battle receipts and permanent IDs remain intact.
 #[derive(Deserialize, Serialize)]
@@ -506,6 +536,7 @@ pub struct CampaignProgress<'a> {
     transfer_count: u64,
     authored_roster: HashMap<i64, AuthoredRosterOwner>,
     authored_transfer_count: u64,
+    sequenced_edit_count: u64,
 }
 
 #[derive(Default)]
@@ -2832,6 +2863,13 @@ impl BattleCatalog {
 
 /// One publication path for player edits. An incomplete write never
 /// appears in a replay, and an existing numbered receipt is never changed.
+fn commit_sequenced_edit(
+    output: &Path, campaign_id: &str, edit: CampaignSequencedEdit,
+) -> io::Result<()> {
+    commit_campaign_edit(output, "career-edit-", "edit.json",
+        &CampaignSequencedReceipt { campaign_id: campaign_id.to_owned(), edit })
+}
+
 fn commit_campaign_edit<T: Serialize>(
     root: &Path, prefix: &str, filename: &str, value: &T,
 ) -> io::Result<()> {
