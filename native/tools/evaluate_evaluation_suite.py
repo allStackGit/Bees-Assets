@@ -366,6 +366,14 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
     """
     if not 2 <= len(sources) <= 64 or not 0 <= seed < (1 << 63):
         raise ValueError("paired native evaluation needs 2..64 scenarios and a fixed seed")
+    if scenario_devices is not None and (
+            device is not None or scenario_workers < 2 or
+            len(scenario_devices) != scenario_workers or
+            len(set(scenario_devices)) != scenario_workers or
+            any(value not in ("cuda:0", "cuda:1", "cuda:2", "cuda:3")
+                for value in scenario_devices) or binary is None
+    ):
+        raise ValueError("paired GPU evaluation needs a fixed binary and a distinct GPU per worker")
     if (type(candidate_slot) is not int or type(reference_slot) is not int or
             not 0 <= candidate_slot < (1 << 32) or
             not 0 <= reference_slot < (1 << 32) or
@@ -479,6 +487,14 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
                         pinned["source_runs"][index]["sha256"] or
                         receipt.get("model_manifest_sha256") !=
                         pinned["model_manifest_sha256"] or
+                        receipt.get("inference_device_override") != (
+                            scenario_devices[index % scenario_workers]
+                            if scenario_devices is not None else device
+                        ) or
+                        row.get("inference_device") != (
+                            scenario_devices[index % scenario_workers]
+                            if scenario_devices is not None else device
+                        ) or
                         not isinstance(receipt.get("candidate_side_assignment"), dict) or
                         receipt["candidate_side_assignment"].get("candidate_slot") != candidate_slot or
                         receipt["candidate_side_assignment"].get("reference_slot") != reference_slot or
