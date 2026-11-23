@@ -345,7 +345,7 @@ class FrozenGpuStreams:
         self.max_streams = max_streams
         ceiling = min(max_streams,len(self.models))
         self.stream_candidates = tuple(sorted(
-            {2,ceiling,*(n for n in (4,8,16) if n <= ceiling)}
+            {ceiling,*(n for n in (1,2,4,8,16) if n <= ceiling)}
         )) if self.enabled else ()
         self.profiles = OrderedDict()
         self.calls = self.parallel_calls = self.qualifications = 0
@@ -380,7 +380,7 @@ class FrozenGpuStreams:
             self.streams = [torch.cuda.Stream(device=self.device)
                             for _ in range(min(self.max_streams, len(self.models)))]
         width = len(self.streams) if width is None else width
-        if not 2 <= width <= len(self.streams):
+        if not 1 <= width <= len(self.streams):
             raise ValueError("Concurrent inference width exceeds the fixed GPU cohort")
         caller = torch.cuda.current_stream(self.device)
         outputs = []
@@ -423,7 +423,7 @@ class FrozenGpuStreams:
                 return FusionDecision(False,"numerical_mismatch")
             # Selecting max_streams unconditionally can make small-network
             # batches slower: more stream events compete for too little
-            # arithmetic work. Time 2/4/... independent stream widths and
+            # arithmetic work. Time admitted 1/2/4/... stream widths and
             # choose the best useful-work rate on the actual frozen cohort.
             serial = []
             parallel = {width:[] for width in valid}
