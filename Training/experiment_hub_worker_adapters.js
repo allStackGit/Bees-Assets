@@ -123,6 +123,7 @@ if(enabled('bees_native')) {
         artifactRoot:artifactDirectory('bees_native'),
         wanKeyPath:process.env.EXPERIMENT_HUB_BEES_WAN_KEY||null,
         wanBrokerPort:Number(process.env.EXPERIMENT_HUB_BEES_WAN_BROKER_PORT||55051),
+        releaseManifestPath:process.env.EXPERIMENT_HUB_BEES_WORKER_MANIFEST||null,
     });
 }
 if(enabled('bees_rollout')) {
@@ -142,10 +143,13 @@ if(enabled('bees_rollout')) {
     adapters.bees_rollout=createBeesRolloutAdapter({
         projectRoot:required('EXPERIMENT_HUB_BEES_ASSETS_ROOT'),
         pythonPath:required('EXPERIMENT_HUB_BEES_PYTHON'),
-        workerExecutable:required('EXPERIMENT_HUB_BEES_LINUX_WORKER'),
+        workerExecutable:required(process.platform==='win32'
+            ?'EXPERIMENT_HUB_BEES_WINDOWS_WORKER'
+            :'EXPERIMENT_HUB_BEES_LINUX_WORKER'),
         artifactRoot:artifactDirectory('bees_rollout'),
         keyPath:required('EXPERIMENT_HUB_BEES_WAN_KEY'),
         forwardPort:Number(required('EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT')),
+        releaseManifestPath:process.env.EXPERIMENT_HUB_BEES_WORKER_MANIFEST||null,
         sshForward:sshEnabled?{
             learnerMachineId:required('EXPERIMENT_HUB_BEES_WAN_LEARNER_MACHINE'),
             tailnetIp:required('EXPERIMENT_HUB_BEES_WAN_SSH_TAILNET_IP'),
