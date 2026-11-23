@@ -175,7 +175,8 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
     return wins, trials
 
 
-def evaluate_with_metrics(checkpoint, digest, suite, work, *, current_runtime=False):
+def evaluate_with_metrics(checkpoint, digest, suite, work, *,
+                          current_runtime=False, on_breakdown=None):
     """Evaluate a frozen checkpoint and reconcile all independent outcomes."""
     counts = {"win": 0, "loss": 0, "draw": 0}
     by_players = {2: {"win": 0, "loss": 0, "draw": 0},
@@ -183,6 +184,9 @@ def evaluate_with_metrics(checkpoint, digest, suite, work, *, current_runtime=Fa
                   6: {"win": 0, "loss": 0, "draw": 0}}
     placements = {2: 0, 4: 0, 6: 0}
     top_half = {2: 0, 4: 0, 6: 0}
+    by_map = {board: {"win": 0, "loss": 0, "draw": 0,
+                      "placement_sum": 0, "top_half": 0, "trials": 0}
+              for board in suite["maps"]}
 
     def observe(result):
         outcome = result.get("outcome")
@@ -196,6 +200,14 @@ def evaluate_with_metrics(checkpoint, digest, suite, work, *, current_runtime=Fa
         by_players[players][outcome] += 1
         placements[players] += placement
         top_half[players] += int(placement <= players // 2)
+        map_id = result["map"]
+        if map_id not in by_map:
+            raise ValueError("Evaluator reported a board outside the pinned suite.")
+        row = by_map[map_id]
+        row[outcome] += 1
+        row["placement_sum"] += placement
+        row["top_half"] += int(placement <= players // 2)
+        row["trials"] += 1
 
     with pinned_runtime("tinybrains", suite, use_current=current_runtime) as runtime_sha256:
         wins, trials = _evaluate(checkpoint, digest, suite, work, on_result=observe)
@@ -224,6 +236,15 @@ def evaluate_with_metrics(checkpoint, digest, suite, work, *, current_runtime=Fa
         "value": sum(placements.values()) / trials, "unit": "scalar"}
     metrics["top_half_rate"] = {
         "value": sum(top_half.values()) / trials, "unit": "ratio"}
+    if on_breakdown is not None:
+        # Per-board observations belong in a separate bounded, immutable
+        # checkpoint-identified detail file. The coordinator's fixed-size
+        # scoring receipt remains project-neutral and unchanged.
+        if sum(row["trials"] for row in by_map.values()) != trials:
+            raise ValueError("Per-map evaluation coverage is incomplete.")
+        on_breakdown({"trials": trials, "successes": wins,
+                      "maps": [{"map": board, "players": board_seats(board),
+                                **by_map[board]} for board in suite["maps"]]})
     return {"successes": wins, "metrics": metrics,
             **({"runtime_sha256": runtime_sha256} if current_runtime else {})}
 
