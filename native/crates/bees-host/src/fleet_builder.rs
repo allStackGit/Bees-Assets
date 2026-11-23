@@ -745,6 +745,8 @@ pub(super) fn choose_for_preferred_side(
         fleet_sizes, ore_count > 0, arena_size, queen_archetype.is_some(),
         factory_archetype.is_some(), fighters,
     )? else { return Ok(None); };
+    let Some(original_roster) = choose_original_composition(mix, fleet_sizes, fighters)?
+        else { return Ok(None); };
     let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
@@ -838,13 +840,10 @@ pub(super) fn choose_for_preferred_side(
             match mix[side] {
                 FleetMix::SourceClass(kind) => fighters[side].iter()
                     .find(|ship| ship["ship_type"] == kind).cloned(),
-                FleetMix::OriginalCombined => fighters[side].first().cloned(),
+                FleetMix::OriginalCombined => original_roster[side].first().cloned(),
                 _ => None,
             }),
-        original_fighters: std::array::from_fn(|side|
-            if matches!(mix[side], FleetMix::OriginalCombined) {
-                fighters[side].clone()
-            } else { Vec::new() }),
+        original_fighters: original_roster,
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: matches!(mode, 3 | 6), benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
@@ -892,6 +891,8 @@ pub(super) fn choose_multiplayer(
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size,
         queen_archetype.is_some(), factory_archetype.is_some(), fighters)? else { return Ok(None); };
+    let Some(original_roster) = choose_original_composition(mix, fleet_sizes, fighters)?
+        else { return Ok(None); };
     let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
@@ -936,13 +937,10 @@ pub(super) fn choose_multiplayer(
             match mix[side] {
                 FleetMix::SourceClass(kind) => fighters[side].iter()
                     .find(|ship| ship["ship_type"] == kind).cloned(),
-                FleetMix::OriginalCombined => fighters[side].first().cloned(),
+                FleetMix::OriginalCombined => original_roster[side].first().cloned(),
                 _ => None,
             }),
-        original_fighters: std::array::from_fn(|side|
-            if matches!(mix[side], FleetMix::OriginalCombined) {
-                fighters[side].clone()
-            } else { Vec::new() }),
+        original_fighters: original_roster,
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: false,
         benchmark: false,
@@ -967,6 +965,8 @@ pub(super) fn choose_benchmark(
     let Some(ore_count) = choose_mining_field(terrain, arena_size)? else { return Ok(None); };
     let Some(mix) = choose_mix(fleet_sizes, ore_count > 0, arena_size,
         queen_archetype.is_some(), factory_archetype.is_some(), fighters)? else { return Ok(None); };
+    let Some(original_roster) = choose_original_composition(mix, fleet_sizes, fighters)?
+        else { return Ok(None); };
     let Some((colors, shooting_priorities)) = choose_squad_preferences()? else { return Ok(None); };
     let Some(carrier_deck) = choose_carrier_deck(fleet_sizes, mix)? else { return Ok(None); };
     let Some(squad_sizes) = choose_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
@@ -1028,13 +1028,10 @@ pub(super) fn choose_benchmark(
             match mix[side] {
                 FleetMix::SourceClass(kind) => fighters[side].iter()
                     .find(|ship| ship["ship_type"] == kind).cloned(),
-                FleetMix::OriginalCombined => fighters[side].first().cloned(),
+                FleetMix::OriginalCombined => original_roster[side].first().cloned(),
                 _ => None,
             }),
-        original_fighters: std::array::from_fn(|side|
-            if matches!(mix[side], FleetMix::OriginalCombined) {
-                fighters[side].clone()
-            } else { Vec::new() }),
+        original_fighters: original_roster,
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: true,
         benchmark: true,
@@ -3319,9 +3316,15 @@ pub(super) fn archive(
             .and_then(|ship| ship["ship_type"].as_u64()).unwrap_or(21);
         let b = selected.source_fighter[1].as_ref()
             .and_then(|ship| ship["ship_type"].as_u64()).unwrap_or(13);
-        let mixed = original_kinds.iter().map(|classes|
-            classes.iter().map(u8::to_string).collect::<Vec<_>>().join("_")
-        ).collect::<Vec<_>>();
+        // A flexible original fleet can field 64 ships per faction.
+        // Store compact sorted class counts, not one long token per
+        // physical ship, in the durable replay/session identity.
+        let mixed = original_kinds.iter().map(|classes| {
+            let mut counts = std::collections::BTreeMap::<u8, usize>::new();
+            for &kind in classes { *counts.entry(kind).or_default() += 1; }
+            counts.iter().map(|(kind, count)| format!("{kind}x{count}"))
+                .collect::<Vec<_>>().join("_")
+        }).collect::<Vec<_>>();
         run["run_id"] = json!(format!(
             "{id}-original-classes-{a}v{b}-mix-{}v{}",
             if mixed[0].is_empty() { "none" } else { mixed[0].as_str() },
