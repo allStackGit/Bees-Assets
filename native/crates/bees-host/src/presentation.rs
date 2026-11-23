@@ -33,7 +33,7 @@ mod battle_menu;
 #[cfg(feature = "client")]
 mod multiplayer_menu;
 #[cfg(feature = "client")]
-pub use multiplayer_menu::{choose_multiplayer_join, MultiplayerJoin};
+pub use multiplayer_menu::{choose_multiplayer_host, choose_multiplayer_join, MultiplayerJoin};
 #[cfg(feature = "client")]
 mod remote_window;
 #[cfg(feature = "client")]

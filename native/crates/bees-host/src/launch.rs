@@ -5212,7 +5212,7 @@ struct NativeSavedNetwork {
 }
 
 #[cfg(feature = "client")]
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct NativeSavedHost {
     game_id: String,
@@ -5845,14 +5845,13 @@ fn serve_native_archived_receipts(root: &Path) -> Result<(), Box<dyn Error>> {
 }
 
 #[cfg(feature = "client")]
-fn run_library_host(settings_path: &Path, save_root: &Path,
+fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
     library: &NativeLibrary, games: &[PathBuf],
     trained: &[trained_library::TrainedGame],
     freeplay_unlocked: bool, original_queen: Option<&Value>,
     original_factory: Option<&Value>, sources: &OriginalGameSources)
     -> Result<(), Box<dyn Error>>
 {
-    let settings:NativeSavedHost=serde_json::from_slice(&fs::read(settings_path)?)?;
     if settings.game_id == fleet_builder::GAME_ID && !freeplay_unlocked {
         return Err(invalid(
             "original Bee FreePlay requires completion of the Uranus campaign finale",
@@ -5916,9 +5915,7 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     // must FIRST be projected to the original physical single-Level human
     // challenge, exactly as the existing local trained-game picker does.
     let game_source = static_battle.map(|index| games[index].clone());
-    let token_file=if settings.tokens_file.is_absolute(){
-        settings.tokens_file
-    }else{save_root.join(settings.tokens_file)};
+    let token_file = save_root.join(&settings.tokens_file);
     let metadata=fs::symlink_metadata(&token_file)?;
     if !metadata.is_file() || metadata.file_type().is_symlink() ||
         metadata.len()<2 || metadata.len()>2048 {
@@ -6285,6 +6282,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
     let saved_network = save_root.join("multiplayer.json");
     let mut last_multiplayer_join: Option<bees_host::presentation::MultiplayerJoin> = None;
     let saved_host = save_root.join("multiplayer-host.json");
+    let mut last_multiplayer_host: Option<NativeSavedHost> = None;
     // The published game library and its authored assets are immutable for
     // this menu session. Cache expensive original class/collider discovery;
     // only the durable player campaign ledger changes after a mission.
@@ -6522,13 +6520,12 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             status: if saved_network.is_file() { "  [Saved server]" } else { "  [LAN]" },
             unlocked: true,
         });
-        let host_available = saved_host.is_file();
-        if host_available {
-            rows.push(BattleMenuRow {
-                title: "Host Multiplayer", status: "  [Private lobby]",
-                unlocked: true,
-            });
-        }
+        let host_index = rows.len();
+        rows.push(BattleMenuRow {
+            title: "Host Multiplayer", status: "  [Private lobby]",
+            unlocked: true,
+        });
+        let recordings_index = rows.len();
         if !recordings.is_empty() {
             rows.push(BattleMenuRow {
                 title: "Watch Recorded Battles",
@@ -6622,9 +6619,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             index < library.games.len() + trained.len())
             .then_some(index.saturating_sub(library.games.len()));
         let remote = index == join_index;
-        let hosting = host_available && index == join_index + 1;
-        let watching = !recordings.is_empty() &&
-            index == join_index + 1 + usize::from(host_available);
+        let hosting = index == host_index;
+        let watching = !recordings.is_empty() && index == recordings_index;
         let (game_id, game_kind, game_title) = if creating_fleet {
             (fleet_builder::GAME_ID, "custom_fleet", "Build Fleet Skirmish")
         } else if reusing_fleet {
@@ -6906,9 +6902,55 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 result
             })()
         } else if hosting {
-            run_library_host(&saved_host,save_root,&library,&games,&trained,
-                playable_freeplay, original_queen.as_ref(), original_factory.as_ref(),
-                &original_fighters)
+            (|| {
+                use bees_host::presentation::choose_multiplayer_host;
+                let saved = match &last_multiplayer_host {
+                    Some(settings) => Some(settings.clone()),
+                    None => match fs::read(&saved_host) {
+                        Ok(bytes) => serde_json::from_slice::<NativeSavedHost>(&bytes)
+                            .inspect_err(|_| eprintln!("Could not read saved multiplayer host settings"))
+                            .ok(),
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+                        Err(error) => return Err(error.into()),
+                    },
+                };
+                let mut game_ids = library.games.iter()
+                    .map(|item| item.id.as_str())
+                    .chain(trained.iter().map(|model| model.id.as_str()))
+                    .collect::<Vec<_>>();
+                let mut host_rows = rows[..join_index].iter().map(|row| BattleMenuRow {
+                    title: row.title, status: row.status, unlocked: row.unlocked,
+                }).collect::<Vec<_>>();
+                if playable_freeplay {
+                    game_ids.push(fleet_builder::GAME_ID);
+                    host_rows.push(BattleMenuRow {
+                        title: "Build Fleet Skirmish", status: "  [Custom native fleets]",
+                        unlocked: true,
+                    });
+                }
+                let mut selected_game = saved.as_ref().and_then(|settings|
+                    game_ids.iter().position(|&id| id == settings.game_id))
+                    .or_else(|| game_ids.iter().position(|&id| id == "two-player"))
+                    .unwrap_or(0);
+                let Some(game_index) = select_library(&host_rows, &mut selected_game, false)?
+                    else { return Ok(()) };
+                let listen = saved.as_ref().map_or_else(
+                    || "127.0.0.1:7284".to_owned(), |settings| settings.listen.clone(),
+                );
+                let tokens_file = saved.as_ref().map_or_else(
+                    || Path::new("host-side-tokens.json"), |settings| settings.tokens_file.as_path(),
+                );
+                let Some((listen, tokens_file)) = choose_multiplayer_host(listen, tokens_file)?
+                    else { return Ok(()) };
+                let settings = NativeSavedHost {
+                    game_id: game_ids[game_index].to_owned(), listen, tokens_file,
+                };
+                let result = run_library_host(&settings, save_root, &library, &games, &trained,
+                    playable_freeplay, original_queen.as_ref(), original_factory.as_ref(),
+                    &original_fighters);
+                last_multiplayer_host = Some(settings);
+                result
+            })()
         } else if let Some(trained_index) = trained_index {
             // A selected trained model can still run the exact original
             // AI-vs-AI rollout, or become a human opponent on either

@@ -1353,8 +1353,10 @@ on Linux the native client requires its permissions to be owner-only.
 The packaged multiplayer option returns to the game library on disconnect
 or battle completion. A missing configuration never blocks offline play.
 
-To **host** the authored independent-player battle from the packaged game
-library, add `multiplayer-host.json` to the same player save directory:
+Select **Host Multiplayer** in the packaged game library, pick an
+available game, and enter the listen address and path to the host's
+private side-token map. An optional `multiplayer-host.json` in the same
+save directory supplies the initial game, address and file path:
 
 ```json
 {
@@ -1369,10 +1371,9 @@ whose contents are the host's usual
 `{"1":"<unique-long-secret>","2":"<different-long-secret>"}` mapping.
 Only the host reads both secrets; each player receives **only their
 individual** secret in their own private token file. The library's
-**Host Multiplayer** action launches the existing native
-`bees play` simulation with this binding in a separate child process
-and returns to the library when the battle ends. Set the host's saved
-`multiplayer-host.json` `game_id` to `fleet-skirmish` to select
+**Host Multiplayer** action launches the existing native dedicated host
+in a separate child process and returns to the library when the battle
+ends. Select **Build Fleet Skirmish** to choose
 independent fleet sizes through the same native builder before hosting;
 both factions then retain their real player-controlled squads and the
 ordinary authenticated remote commands. The source run and scene are
