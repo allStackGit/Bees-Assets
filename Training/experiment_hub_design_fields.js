@@ -236,6 +236,9 @@ function validateCatalog(raw,installed=[],approved={}) {
             !/^[0-9a-f]{64}$/.test(String(entry?.trainer_sha256||''))||
             !/^[0-9a-f]{64}$/.test(String(entry?.runtime_version||'')))
             throw Error('Bees native Design defaults require pinned Unity worker and MA-POCA trainer SHA-256 values.');
+        if(entry.worker_payload_sha256!==undefined&&
+            !/^[0-9a-f]{64}$/.test(entry.worker_payload_sha256))
+            throw Error('Bees WAN game package requires a complete Unity player content hash.');
         if(entry.wan_key_fingerprint!==undefined&&
             !/^[0-9a-f]{64}$/.test(entry.wan_key_fingerprint))
             throw Error('Bees WAN private key identity must be a pinned SHA-256 fingerprint.');
@@ -244,18 +247,21 @@ function validateCatalog(raw,installed=[],approved={}) {
             trainer_sha256:entry.trainer_sha256,
             runtime_version:entry.runtime_version,
             ...(entry.wan_key_fingerprint
-                ?{wan_key_fingerprint:entry.wan_key_fingerprint}:{}),
+                ?{wan_key_fingerprint:entry.wan_key_fingerprint,
+                    worker_payload_sha256:entry.worker_payload_sha256}:{}),
             metric_catalog:metricCatalog(entry.metric_catalog)};
     }
     if(raw.bees_rollout!==undefined) {
         const entry=raw.bees_rollout;
         if(!installed.includes('bees_rollout')||
-            !['worker_sha256','trainer_sha256','runtime_version',
+            !['worker_sha256','worker_payload_sha256',
+                'trainer_sha256','runtime_version',
                 'wan_key_fingerprint'].every(key=>
                     /^[0-9a-f]{64}$/.test(String(entry?.[key]||''))))
             throw Error('Bees remote actor must advertise exact Unity, PPO, runtime and WAN key hashes.');
         result.bees_rollout={...validateFields(entry),
             worker_sha256:entry.worker_sha256,
+            worker_payload_sha256:entry.worker_payload_sha256,
             trainer_sha256:entry.trainer_sha256,
             runtime_version:entry.runtime_version,
             wan_key_fingerprint:entry.wan_key_fingerprint};
