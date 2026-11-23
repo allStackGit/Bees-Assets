@@ -200,6 +200,13 @@ def upload_bundle_archive(path, collector_id, base_url, token=None, archive_sha2
                 raise ValueError(f"invalid collector receiver response: HTTP {response.status}")
             if response.status == 503:
                 raise ConnectionError("native bundle receiver is at its connection limit")
+            if (response.status == 422 and offset > 0 and
+                    isinstance(payload, dict) and
+                    payload.get("error") == "collector archive checksum mismatch"):
+                # The saved prefix could have been damaged by an unclean
+                # receiver restart. It has been discarded; one bounded
+                # retry may retransmit the exact original artifact.
+                raise ConnectionError("staged native rollout prefix failed SHA verification")
             if (response.status == 409 and isinstance(payload, dict) and
                     payload.get("error") == "collector bundle already published or being received"):
                 # The previous connection can still be finishing import.
@@ -562,6 +569,12 @@ class BundleReceiver:
             if not path.is_file():
                 raise ValueError("staged collector file is not regular")
             received = path.stat().st_size
+            if received > total and state is None:
+                # An interrupted, uncommitted prefix cannot exceed the
+                # pinned archive length. Restart cleanly rather than
+                # stranding an unattended collector on a corrupt offset.
+                path.unlink()
+                return None
             if received > total or (state is not None and
                                     received != state["received"]):
                 raise ValueError("staged collector bytes were modified")
