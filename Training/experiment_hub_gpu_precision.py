@@ -16,6 +16,44 @@ import torch
 from torch import nn
 
 
+class GpuTrainingPrecisionGuard:
+    """One shared BF16 admission state for all leased learner GPU workers.
+
+    MIOpen/HIP may support the synthetic qualified shapes but not every
+    runtime board dimension. On an explicitly unsupported BF16 operator,
+    disable the optional precision for the rest of the run and recompute
+    that forward with FP32. Other runtime errors and out-of-memory
+    conditions are never concealed by this fallback.
+    """
+
+    def __init__(self, enabled):
+        if type(enabled) is not bool:
+            raise ValueError("Training precision admission must be explicit")
+        self.enabled=enabled
+        self.backend_fallbacks=0
+
+    def run(self, forward):
+        if self.enabled:
+            try:
+                with torch.autocast("cuda",dtype=torch.bfloat16):
+                    return forward()
+            except RuntimeError as exc:
+                reason=str(exc).lower()
+                if not (("bfloat16" in reason or "bf16" in reason) and
+                        any(fragment in reason for fragment in
+                            ("unsupported","not supported","not implemented",
+                             "not available","miopen","dtype","type"))):
+                    raise
+                # PyTorch kernels are asynchronous, but an unsupported
+                # operator fails at dispatch. The original model and its
+                # FP32 optimizer state are untouched by this abandoned
+                # forward, and every later forward uses the eager FP32
+                # path on all GPUs in the same run.
+                self.enabled=False
+                self.backend_fallbacks += 1
+        return forward()
+
+
 def _stateful_training_layers(module):
     # Extra qualification forwards must never mutate running statistics or
     # introduce stochastic dropout that defeats a meaningful comparison.
