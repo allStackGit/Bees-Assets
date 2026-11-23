@@ -104,10 +104,26 @@ pub(super) fn original_campaign_factory(
     Ok(None)
 }
 
+fn original_regular_class(side: usize, kind: u8) -> bool {
+    match side {
+        0 => matches!(kind, 3 | 14 | 15 | 16 | 21),
+        1 => matches!(kind, 6 | 7 | 11 | 12 | 13),
+        _ => false,
+    }
+}
+
+fn original_special_class(side: usize, kind: u8) -> bool {
+    match side {
+        0 => matches!(kind, 2 | 4 | 18 | 20),
+        1 => matches!(kind, 0 | 5 | 8 | 9 | 10 | 19 | 22),
+        _ => false,
+    }
+}
+
 /// Reuse the physically authored class contracts present in the original
 /// campaign instead of replacing Wasp/Gunship with approximate ship stats.
 /// Every selected ship still enters the same CombatWorld and squad clones.
-pub(super) fn original_campaign_fighters(
+pub(super) fn original_campaign_hulls(
     catalog_path: &Path,
 ) -> Result<[Vec<Value>; 2], Box<dyn Error>> {
     let catalog_path = catalog_path.canonicalize()?;
@@ -119,13 +135,9 @@ pub(super) fn original_campaign_fighters(
     let codex: Value = serde_json::from_str(include_str!(
         "../../../assets/ship-codex.json"
     ))?;
-    // These are original ordinary combat vessels. Parent-child ships,
-    // spawners, special weapons and economy buildings have dedicated
-    // gameplay lifecycles and are never cloned as regular fighters.
-    const ORDINARY: [&[u8]; 2] = [
-        &[3, 14, 15, 16, 21],
-        &[6, 7, 11, 12, 13],
-    ];
+    // Original support and special classes retain their authored weapon,
+    // vision, carrier and economy contracts. Only ordinary combat hulls
+    // are eligible for generic native roster cloning.
     let mut result: [Vec<Value>; 2] = [Vec::new(), Vec::new()];
     for stage in stages {
         let mut configs = Vec::new();
@@ -143,25 +155,31 @@ pub(super) fn original_campaign_fighters(
                 .chain(scene["fleet_templates"].as_array().into_iter().flatten())
             {
                 let Some(side) = ship["side"].as_u64() else { continue };
-                let Some(kind) = ship["ship_type"].as_u64() else { continue };
+                let Some(kind) = ship["ship_type"].as_u64()
+                    .and_then(|kind| u8::try_from(kind).ok())
+                else { continue };
                 if !(1..=2).contains(&side) ||
-                    !ORDINARY[(side - 1) as usize].contains(&(kind as u8)) ||
+                    !(original_regular_class((side - 1) as usize, kind) ||
+                      original_special_class((side - 1) as usize, kind)) ||
                     result[(side - 1) as usize].iter().any(|existing|
                         existing["ship_type"] == kind)
                 {
                     continue;
                 }
-                let expected = &codex["ships"][kind as usize];
+                let expected = &codex["ships"][usize::from(kind)];
+                let regular = original_regular_class((side - 1) as usize, kind);
                 if expected["ship_type"] != kind ||
                     ship["max_health"] != expected["health"] ||
                     ship["original_health"] != expected["health"] ||
                     ship["max_tsv"] != expected["tsv"] ||
                     ship["base_speed"].as_f64() != expected["speed"].as_f64() ||
                     ship["sight"]["source_sight"].as_f64() != expected["sight"].as_f64() ||
-                    ship["policy"].is_object() || ship["special"].is_object() ||
-                    ship["special_weapon"].is_object() ||
-                    ship["drone_carrier_id"].is_number() ||
-                    !ship["turrets"].is_array() || ship["persistent_fleet"] != true
+                    ship["policy"].is_object() ||
+                    (regular && (ship["special"].is_object() ||
+                        ship["special_weapon"].is_object() ||
+                        ship["drone_carrier_id"].is_number() ||
+                        ship["persistent_fleet"] != true)) ||
+                    !ship["turrets"].is_array()
                 {
                     // A source example is not a canonical original class
                     // merely because it has a familiar ship_type number.
