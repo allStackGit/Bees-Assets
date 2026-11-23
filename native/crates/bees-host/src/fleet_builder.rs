@@ -1379,6 +1379,24 @@ fn choose_mix(
                 )));
             }
         }
+        if fighters.iter().any(|classes| !classes.is_empty()) {
+            // The original game must never present a selection that
+            // silently substitutes a synthetic development fixture for a
+            // real source Beehive, Carrier, Scout or special weapon.
+            options.retain(|(mix, _)| {
+                let has_class = |kind: u8| fighters[side].iter()
+                    .any(|source| source["ship_type"] == kind);
+                let supports = mix.support_count(total);
+                let specialists = mix.specialist_count(total);
+                (supports == 0 || matches!(mix, FleetMix::Queen) ||
+                    has_class(mix.support_type(side))) &&
+                (0..specialists).all(|slot|
+                    has_class(mix.specialist_type_at(side, slot))) &&
+                !(side == 1 && supports > 0 &&
+                    !matches!(mix, FleetMix::Queen | FleetMix::Factories) &&
+                    !(has_class(8) && has_class(19)))
+            });
+        }
         let rows = options.iter().map(|(_, title)| BattleMenuRow {
             title, status: "  [Real source hulls]", unlocked: true,
         }).collect::<Vec<_>>();
