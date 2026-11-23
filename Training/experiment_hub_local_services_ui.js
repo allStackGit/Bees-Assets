@@ -288,7 +288,7 @@
             :action==='setup'
             ?(project==='courier'
                 ?'Set up the approved Courier survival evaluator using the installed local environment? The suite is pinned to the current environment file. A local agent restart is needed to advertise it.'
-                :'Set up TinyBrains evaluators? The Hub preserves existing frozen Nano/Micro/Mini suites, adds 76-map season-wide benchmarks for 2/4/6 players, and installs separate schedules. Full-season evaluations are CPU-intensive, with six-hour cadence and timeout. This does not start or stop training.')
+                :'Set up TinyBrains evaluators? The Hub preserves existing frozen Nano/Micro/Mini suites, adds 76-map season-wide benchmarks for 2/4/6 players and installs their separate timers without activating them. Full-season evaluations use significant CPU, so select Start or Run now for each new suite. This does not start or stop training.')
             :action==='refresh'
                 ?'Create a new immutable '+id+' evaluation suite pinned to the installed runtime and replace its local schedule? Old suite files and receipts are preserved. Restart the local agent afterward.'
             :action==='stop'

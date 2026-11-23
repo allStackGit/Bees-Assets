@@ -449,9 +449,14 @@ async function setup(hub) {
         else installEvaluatorUnits(definition,o.home,{repairPartial:true});
     }
     await systemctl(['daemon-reload']);
-    for(const id of scheduledIds(o))
-        await systemctl(['start',unitFiles(o,id).timer]);
-    return {message:'Approved TinyBrains evaluation timers installed and started.'};
+    for(const id of scheduledIds(o)) {
+        // Full-season sweeps are expensive. Install their units without
+        // taking CPU from an ongoing learner unless the operator explicitly
+        // starts each schedule or invokes Run now.
+        if(!Object.hasOwn(SEASON_SUITES,id))
+            await systemctl(['start',unitFiles(o,id).timer]);
+    }
+    return {message:'Fast TinyBrains evaluation timers started. Full-season 2/4/6-player suites installed; use Start or Run now for each expensive sweep.'};
 }
 async function refreshSuite(hub,id) {
     const o=localOptions(hub);
