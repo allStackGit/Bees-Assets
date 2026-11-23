@@ -700,12 +700,11 @@ async function setupMini(hub,sourceJobId) {
         };
         fs.writeFileSync(destination,JSON.stringify(suite,null,2)+'\n',
             {flag:'wx',mode:0o600});
-        await createSeasonSuites(o);
-        const defs=definitions(o);
-        const unit=unitFiles(o,MINI_ID);
-        installEvaluatorUnits(defs[MINI_ID],o.home,{repairPartial:true});
-        await systemctl(['daemon-reload']);
-        await systemctl(['start',unit.timer]);
+        // Reconcile the entire approved evaluator set after publishing Mini,
+        // including the newly eligible Mini season suite. The common setup
+        // path preserves existing units and leaves expensive season timers
+        // stopped until explicitly selected by the operator.
+        await setup(hub);
         // Adding a new trusted opponent changes the evaluator method hash.
         // Reapprove existing Nano/Micro suites at their same seeds without
         // rewriting their historic definitions or interrupting training.
