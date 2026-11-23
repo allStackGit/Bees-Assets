@@ -206,7 +206,8 @@ class LocalExecution {
                             :{gpu_pci_address:lease.gpu_bindings[0].pci_address}),
                     }));
                 const result=await this.supervisor.qualifyGpuDeviceAccess(
-                    lease.gpu_bindings,{...runtime,ram_mb:job.resources.ram_mb});
+                    lease.gpu_bindings,{...runtime,ram_mb:job.resources.ram_mb,
+                        project_id:job.project_id});
                 if(!Array.isArray(result?.selected)||
                     result.selected.length!==count||
                     result.selected.some((pci,i)=>
