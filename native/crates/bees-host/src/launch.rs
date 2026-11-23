@@ -59,6 +59,16 @@ mod trained_library;
 #[cfg(feature = "client")]
 #[path = "recorded_library.rs"]
 mod recorded_library;
+/// Portable, launcher-owned original game source assets. The headless
+/// runner still uses the same session contract without linking a desktop
+/// Fleet Builder or its windowing dependencies.
+#[derive(Clone, Default)]
+struct OriginalGameSources {
+    ships: [Vec<Value>; 2],
+    mining_asteroid: Option<Value>,
+    map_object: Option<Value>,
+}
+
 #[cfg(feature = "client")]
 #[path = "fleet_builder.rs"]
 mod fleet_builder;
@@ -2636,7 +2646,7 @@ fn run_session(
 ) -> Result<(), Box<dyn Error>> {
     run_session_with_queen_access(
         config_path, play, view, output, capture, replay_inputs, mission,
-        None, None, &fleet_builder::OriginalGameSources::default(),
+        None, None, &OriginalGameSources::default(),
     )
 }
 
@@ -2648,7 +2658,7 @@ fn run_session_with_queen_access(
     config_path: &Path, play: bool, view: bool, output: Option<PathBuf>,
     capture: Option<PathBuf>, mut replay_inputs: Option<PathBuf>,
     mission: Option<CampaignMission<'_>>, original_queen: Option<&Value>,
-    original_factory: Option<&Value>, sources: &fleet_builder::OriginalGameSources,
+    original_factory: Option<&Value>, sources: &OriginalGameSources,
 ) -> Result<(), Box<dyn Error>> {
     let mut config_path = config_path.canonicalize()?;
     let mut replay_number = 0_u64;
@@ -5672,7 +5682,7 @@ fn archive_quick_battle_replay_source(
 fn run_library_quick_battle(
     save_root: &Path, game_id: &str, config: &Path,
     original_queen: Option<&Value>, original_factory: Option<&Value>,
-    sources: &fleet_builder::OriginalGameSources,
+    sources: &OriginalGameSources,
 ) -> Result<(), Box<dyn Error>> {
     let root = save_root.join("battles").join(game_id);
     // Non-checkpointed quick battles remain independent: they can launch
@@ -5834,7 +5844,7 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     library: &NativeLibrary, games: &[PathBuf],
     trained: &[trained_library::TrainedGame],
     freeplay_unlocked: bool, original_queen: Option<&Value>,
-    original_factory: Option<&Value>, sources: &fleet_builder::OriginalGameSources)
+    original_factory: Option<&Value>, sources: &OriginalGameSources)
     -> Result<(), Box<dyn Error>>
 {
     let settings:NativeSavedHost=serde_json::from_slice(&fs::read(settings_path)?)?;
@@ -6393,7 +6403,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     },
                 })
             ).unwrap_or_default()
-        } else { fleet_builder::OriginalGameSources::default() };
+        } else { OriginalGameSources::default() };
         // The same source traversal collected production hulls, fighter
         // classes, genuine specialist abilities, and Carrier children.
         // Do not reparse the entire campaign for one Factory or let a
