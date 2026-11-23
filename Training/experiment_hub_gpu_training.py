@@ -1095,7 +1095,7 @@ class ImmutableGpuScalarBank:
         self._source=None
         self.rows=self.saved_bytes=self.gather_calls=0
 
-    def stage(self, record_keys, columns):
+    def stage(self, record_keys, columns, *, packed=None):
         if (not isinstance(record_keys,(list,tuple)) or
                 not isinstance(columns,(list,tuple)) or len(columns)<2 or
                 not all(isinstance(t,torch.Tensor) and t.ndim==1
@@ -1112,8 +1112,19 @@ class ImmutableGpuScalarBank:
         wanted=len(record_keys)*len(columns)*first.element_size()
         if wanted>self.max_bytes:
             return False
+        if packed is not None and (
+                not isinstance(packed,torch.Tensor) or packed.ndim!=2 or
+                packed.shape!=(len(record_keys),len(columns)) or
+                packed.device!=first.device or packed.dtype!=first.dtype or
+                not packed.is_contiguous() or packed.requires_grad):
+            return False
         try:
-            combined=torch.stack(columns,dim=1)
+            # The learner already keeps one immutable packed scalar bank
+            # for its own shape-group gathers. Reuse it as the peer-DMA
+            # source instead of launching a second full-rollout torch.stack.
+            # Column identity/order is the trusted trainer's contract.
+            combined=(packed if packed is not None else
+                      torch.stack(columns,dim=1))
             producer=torch.cuda.current_stream(first.device)
             # The copy is enqueued on the DESTINATION device's current
             # stream, which may differ from the stream later chosen by its
