@@ -271,6 +271,7 @@ pub struct NativeSoftwareRenderer {
     /// Presentation-only tactical overview, never used by headless worlds.
     pub show_minimap: bool,
     pub opening_hud_locked: bool,
+    pub hide_terminal_banner: bool,
     /// Only affects the window; training runs keep the same headless world.
     pub show_shooting_menu: bool,
     pub focused_shooting_strategy: u8,
@@ -1232,7 +1233,8 @@ impl NativeSoftwareRenderer {
             sprite_raster_opaque_pixels: 0,
             sprite_raster_blended_pixels: 0,
             selection_box: None, show_weapon_ranges: false,
-            show_minimap: true, opening_hud_locked: false, show_shooting_menu: false,
+            show_minimap: true, opening_hud_locked: false, hide_terminal_banner: false,
+            show_shooting_menu: false,
             focused_shooting_strategy: 1,
             active_tactical_action: None, locked_selection_all: false,
             chasing_selection_all: false,
@@ -3232,7 +3234,9 @@ impl NativeSoftwareRenderer {
                 Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0xddeaff);
         }
         if let Some(result) = view.terminal_result {
-            self.draw_battle_result(view, result);
+            if !self.hide_terminal_banner {
+                self.draw_battle_result(view, result);
+            }
         } else if let Some(survival) = view.survival {
             let seconds = survival.seconds_remaining.ceil() as u64;
             let evacuation = view.campaign_objective == Some(

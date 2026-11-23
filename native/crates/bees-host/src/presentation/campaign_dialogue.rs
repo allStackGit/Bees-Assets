@@ -24,11 +24,21 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
         ("Tom", "What are your orders, Commander?"),
         ("Samuel", "In order to attack, he’ll need to be in range of his ship’s guns. Once in range, he can attack the ship."),
     ];
+    const PLUTO_ANOMALY_ENDING: &[(&str, &str)] = &[
+        ("Tom", "Well, that was hardly a fight."),
+        ("Samuel", "I hope it wasn’t an innocent civilian. Why would High Command even order that?"),
+        ("Tom", "Uh, Commander? Are you picking this up?"),
+        ("Samuel", "You need to get out of there, now!"),
+        ("Samuel", "Their fleet is huge! We need to contact High Command immediately!"),
+        ("Samuel", ""),
+        ("Samuel", "Communications are down. What should we do?"),
+        ("Samuel", ""),
+        ("Samuel", "Understood. Preparing our fleet to deploy, commander."),
+    ];
     match cue {
         // Original PlutoLines_Anomaly is split at physical Scout sighting,
-        // Tom's real Gunship arrival, and the first Honeybee kill. Only
-        // source non-speaking pause and audio staging lines are omitted;
-        // this one existing campaign cue machine owns all stage boundaries.
+        // Tom's entry and weapon contact, and the first Honeybee kill.
+        // The existing campaign cue machine owns the stage boundaries.
         CampaignCue::PlutoAnomalyBriefing => &[
             ("Samuel", "Good morning, Commander! I brought your coffee."),
             ("Samuel", "I agree, it doesn't taste as good as Earth coffee. Or even Mars coffee… But hey, coffee is coffee! And we’ll both get off of Pluto soon enough."),
@@ -46,17 +56,11 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
         CampaignCue::PlutoAnomalyGunshipApproaching => &PLUTO_GUNSHIP_DIALOGUE[..1],
         CampaignCue::PlutoAnomalyGunshipContact => &PLUTO_GUNSHIP_DIALOGUE[1..],
         CampaignCue::PlutoAnomalyGunshipBriefingComplete => &[],
-        CampaignCue::PlutoAnomalyHoneybeeDestroyed => &[
-            ("Tom", "Well, that was hardly a fight."),
-            ("Samuel", "I hope it wasn’t an innocent civilian. Why would High Command even order that?"),
-            ("Tom", "Uh, Commander? Are you seeing this?"),
-            ("Samuel", "You need to get out of there, now!"),
-        ],
-        CampaignCue::PlutoAnomalyVictory => &[
-            ("Samuel", "Their fleet is huge! We need to contact High Command immediately!"),
-            ("Samuel", "Communications are down, sir. What should we do?"),
-            ("Samuel", "Understood. Preparing our fleet to deploy, sir."),
-        ],
+        CampaignCue::PlutoAnomalyHoneybeeDestroyed => &PLUTO_ANOMALY_ENDING[..4],
+        // The named Honeybee objective finalizes the battle on the kill
+        // tick. The terminal cue replaces the kill cue in the latest
+        // snapshot, so it carries the earlier reactions as well.
+        CampaignCue::PlutoAnomalyVictory => PLUTO_ANOMALY_ENDING,
         CampaignCue::PlutoAnomalyDefeat => &[
             ("Samuel", "We've lost contact with our scouting force, commander."),
         ],
@@ -583,13 +587,15 @@ pub(crate) fn visible_line(cue: CampaignCue, index: usize) ->
     displayed_lines(cue).nth(index)
 }
 
-/// Source PlutoLines_Pushback uses a one-second Pause DialogueLine before
-/// the closing decision, not a selectable blank spoken line. This is a
-/// presentation clock only; it never advances the physical Level.
+/// Hold the source's non-speaking Pluto closing lines on the existing
+/// presentation clock without advancing the physical Level.
 pub(crate) fn pause_seconds(cue: CampaignCue, visible_index: usize) -> Option<f32> {
-    (matches!(cue,
-        CampaignCue::PlutoPushbackVictory | CampaignCue::PlutoPushbackDefeat
-    ) && visible_index == 7).then_some(1.0)
+    match (cue, visible_index) {
+        (CampaignCue::PlutoAnomalyVictory, 5) => Some(2.0),
+        (CampaignCue::PlutoAnomalyVictory | CampaignCue::PlutoPushbackVictory |
+            CampaignCue::PlutoPushbackDefeat, 7) => Some(1.0),
+        _ => None,
+    }
 }
 
 // Original LevelIntro travel dialogue, separate from in-battle cues.

@@ -1039,6 +1039,8 @@ impl NativeClient {
             self.dialogue_reveal_forced = false;
         }
         self.dialogue_visible = dialogue.is_some();
+        self.renderer.hide_terminal_banner = dialogue.is_some_and(|(cue, _, _)|
+            cue == bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyVictory);
         self.audio.set_level_intro_ambience(
             dialogue.is_some_and(|(cue, _, _)| cue.is_level_intro()),
         );

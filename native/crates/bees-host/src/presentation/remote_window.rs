@@ -2836,14 +2836,19 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         }
         let outcome=state["terminal_outcome"]["label"].as_str().map(str::to_owned);
         if let Some(outcome)=outcome {
-            let reason = state["terminal_outcome"]["reason"].as_str()
-                .unwrap_or("Battle finished");
-            let seconds = state["terminal_outcome"]["duration_seconds"]
-                .as_f64().filter(|duration| duration.is_finite() && *duration >= 0.0)
-                .unwrap_or(0.0);
-            let label = format!("Result: {outcome}  /  {reason}  /  {seconds:.1}s");
-            text::draw_at(pixels,WIDTH,16,20,
-                text::fit(&label,FIELD-32),2,[255,210,129]);
+            let dialogue = &state["campaign_dialogue"];
+            let playing_pluto_ending = dialogue["cue"] == "PlutoAnomalyVictory" &&
+                dialogue["line_count"].as_u64().is_some_and(|count| dialogue_line < count as usize);
+            if !playing_pluto_ending {
+                let reason = state["terminal_outcome"]["reason"].as_str()
+                    .unwrap_or("Battle finished");
+                let seconds = state["terminal_outcome"]["duration_seconds"]
+                    .as_f64().filter(|duration| duration.is_finite() && *duration >= 0.0)
+                    .unwrap_or(0.0);
+                let label = format!("Result: {outcome}  /  {reason}  /  {seconds:.1}s");
+                text::draw_at(pixels,WIDTH,16,20,
+                    text::fit(&label,FIELD-32),2,[255,210,129]);
+            }
         } else if let Some(objective)=state["campaign_objective"].as_object() {
             if objective.get("kind").and_then(Value::as_str) == Some("barge_rescue") {
                 let rescue = objective.get("rescuer_side").and_then(Value::as_i64)
