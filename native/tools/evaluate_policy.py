@@ -379,7 +379,7 @@ def evaluation_execution_evidence(final_report):
         raise ValueError("invalid native evaluation GPU PCI backend")
     if pci is not None and (
             not isinstance(pci, str) or not re.fullmatch(
-                r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]", pci)):
+                r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", pci)):
         raise ValueError("invalid native evaluation physical GPU PCI address")
     if uuid is not None and (
             not isinstance(uuid, str) or not re.fullmatch(
