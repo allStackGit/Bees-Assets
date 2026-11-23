@@ -3685,9 +3685,16 @@ pub(super) fn archive(
         // Level lifecycle, with one immutable run budget across episodes.
         let single_battle_budget = run["max_rounds"].as_u64()
             .ok_or_else(|| invalid("Fish Tank source has no physical round budget"))?;
-        let series_budget = single_battle_budget
+        // The canonical terminal counts fixed dt in f32. Permit a small
+        // number of additional physical ticks per episode for rounding
+        // and same-tick episode turnover without consuming the next
+        // battle's timeout budget. Do not shorten the authored deadline.
+        let per_battle_budget = single_battle_budget
+            .checked_add(if selected.spectator_episodes > 1 { 32 } else { 0 })
+            .ok_or_else(|| invalid("Fish Tank physical budget overflows"))?;
+        let series_budget = per_battle_budget
             .checked_mul(selected.spectator_episodes as u64)
-            .ok_or_else(|| invalid("Fish Tank series round budget overflows"))?;
+            .ok_or_else(|| invalid("Fish Tank series round budget overflows"))?
         run["max_rounds"] = json!(series_budget);
         run["episodes_per_world"] = json!(selected.spectator_episodes);
         if selected.spectator_episodes > 1 {
