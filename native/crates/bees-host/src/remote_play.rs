@@ -266,10 +266,17 @@ impl Peer {
         self.newest_state.replace(data).is_some()
     }
 
-    /// Returns actual state payload bytes written, not just queued traffic.
+    /// Returns application state bytes admitted to the socket/TLS layer.
     /// A partially written JSON line is always finished before another one.
     fn flush(&mut self) -> u64 {
         let mut bytes = 0u64;
+        // TLS may still own encrypted output after the last JSON byte has
+        // entered its bounded writer. This drain makes even idle reliable
+        // receipts progress while physical simulation is paused.
+        if self.socket.flush().is_err() {
+            self.closed = true;
+            return 0;
+        }
         let mut budget = WRITE_BYTES_PER_FLUSH;
         while !self.closed && budget > 0 {
             if self.written == self.outgoing.len() {
@@ -283,7 +290,10 @@ impl Peer {
                     self.outgoing = state;
                     self.writing_state = true;
                 } else {
-                    if self.close_after_flush { self.closed = true; }
+                    if self.close_after_flush &&
+                        !self.socket.has_pending_output() {
+                        self.closed = true;
+                    }
                     break;
                 }
             }
@@ -299,6 +309,9 @@ impl Peer {
                 Err(ref error) if error.kind() == io::ErrorKind::Interrupted => continue,
                 Err(_) => { self.closed = true; break; }
             }
+        }
+        if !self.closed && self.socket.flush().is_err() {
+            self.closed = true;
         }
         bytes
     }
@@ -2405,7 +2418,8 @@ impl NativeRemotePlay {
                 if !peer.closed && (
                     peer.written < peer.outgoing.len() ||
                     !peer.reliable.is_empty() ||
-                    peer.newest_state.is_some()
+                    peer.newest_state.is_some() ||
+                    peer.socket.has_pending_output()
                 ) {
                     pending += 1;
                 }
