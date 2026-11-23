@@ -3409,6 +3409,8 @@ impl NativeSoftwareRenderer {
             } else if view.campaign_dialogue.is_some_and(|(_, cue)|
                 matches!(cue,
                     bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeSpotted |
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyScoutWithdrawing |
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyScoutReport |
                     bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyScoutReportComplete
                 ))
             {

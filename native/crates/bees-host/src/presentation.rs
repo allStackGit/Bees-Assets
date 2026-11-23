@@ -286,6 +286,7 @@ impl<'a> NativeRenderWorldView<'a> {
         self.campaign_dialogue_side == Some(viewer_side) && self.terminal_result.is_none() &&
             self.campaign_dialogue.is_some_and(|(_, cue)| matches!(cue,
                 CampaignCue::PlutoAnomalyBriefing | CampaignCue::PlutoAnomalyHoneybeeSpotted |
+                CampaignCue::PlutoAnomalyScoutWithdrawing | CampaignCue::PlutoAnomalyScoutReport |
                 CampaignCue::PlutoAnomalyScoutReportComplete | CampaignCue::PlutoAnomalyGunshipArrived))
     }
 

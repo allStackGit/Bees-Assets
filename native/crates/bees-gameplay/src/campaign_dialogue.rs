@@ -21,6 +21,8 @@ pub enum CampaignDialogueSpec {
     PlutoAnomaly {
         player_side: i32, scout_id: i64, honeybee_id: i64,
         gunship_id: i64,
+        #[serde(default, skip_serializing_if = "is_false")]
+        withdrawal_before_report: bool,
     },
     /// Original Pluto II: the first real Scout must be selected before
     /// the campaign permits the rest of the fleet and the Bee encounter.
@@ -125,6 +127,8 @@ impl UploadMilestone {
 pub enum CampaignCue {
     PlutoAnomalyBriefing,
     PlutoAnomalyHoneybeeSpotted,
+    PlutoAnomalyScoutWithdrawing,
+    PlutoAnomalyScoutReport,
     /// The player completed the Scout report; existing source-authored
     /// deferred Gunship squads may now enter the same physical World.
     PlutoAnomalyScoutReportComplete,
@@ -197,7 +201,7 @@ impl CampaignCue {
 
     pub fn is_briefing(self) -> bool {
         self.is_level_intro() || matches!(self, Self::PlutoAnomalyHoneybeeSpotted |
-            Self::PlutoAnomalyGunshipArrived | Self::PlutoReinforcementsScoutSelected)
+            Self::PlutoAnomalyScoutReport | Self::PlutoAnomalyGunshipArrived | Self::PlutoReinforcementsScoutSelected)
     }
 }
 
@@ -207,6 +211,10 @@ enum DialogueMode {
     PlutoAnomaly {
         scout_id: i64, honeybee_id: i64, gunship_id: i64,
         spotted: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        withdrawal_before_report: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        scout_report_started: bool,
         #[serde(default)]
         report_completed: bool,
         #[serde(default)]
@@ -325,11 +333,11 @@ impl CampaignDialogue {
     pub fn new(spec: CampaignDialogueSpec) -> Self {
         let (mode, cue) = match spec {
             CampaignDialogueSpec::PlutoAnomaly {
-                scout_id, honeybee_id, gunship_id, ..
+                scout_id, honeybee_id, gunship_id, withdrawal_before_report, ..
             } => (
                 DialogueMode::PlutoAnomaly {
-                    scout_id, honeybee_id, gunship_id,
-                    spotted: false, report_completed: false,
+                    scout_id, honeybee_id, gunship_id, withdrawal_before_report,
+                    spotted: false, scout_report_started: false, report_completed: false,
                     gunship_arrived: false, gunship_briefed: false,
                     honeybee_destroyed: false,
                 },
@@ -415,7 +423,8 @@ impl CampaignDialogue {
     pub fn camera_subject(&self) -> Option<i64> {
         match (self.mode, self.cue) {
             (DialogueMode::PlutoAnomaly { scout_id, .. },
-                CampaignCue::PlutoAnomalyHoneybeeSpotted | CampaignCue::PlutoAnomalyScoutReportComplete) =>
+                CampaignCue::PlutoAnomalyHoneybeeSpotted | CampaignCue::PlutoAnomalyScoutWithdrawing |
+                CampaignCue::PlutoAnomalyScoutReportComplete) =>
                 Some(scout_id),
             (DialogueMode::PlutoAnomaly { gunship_id, .. }, CampaignCue::PlutoAnomalyGunshipArrived) =>
                 Some(gunship_id),
@@ -453,10 +462,10 @@ impl CampaignDialogue {
         }
         let same_authored_story = match (&mode, &self.mode) {
             (DialogueMode::PlutoAnomaly {
-                scout_id: a, honeybee_id: b, gunship_id: e, ..
+                scout_id: a, honeybee_id: b, gunship_id: e, withdrawal_before_report: saved, ..
             }, DialogueMode::PlutoAnomaly {
-                scout_id: c, honeybee_id: d, gunship_id: f, ..
-            }) => a == c && b == d && e == f,
+                scout_id: c, honeybee_id: d, gunship_id: f, withdrawal_before_report: authored, ..
+            }) => a == c && b == d && e == f && saved == authored,
             (DialogueMode::PlutoReinforcements { scout_id: a, .. },
                 DialogueMode::PlutoReinforcements { scout_id: b, .. }) => a == b,
             (DialogueMode::Minesweeper { .. }, DialogueMode::Minesweeper { .. }) =>
@@ -504,7 +513,7 @@ impl CampaignDialogue {
                 scout_id, honeybee_id, gunship_id,
                 spotted: false, report_completed: false,
                 gunship_arrived: false, gunship_briefed: false,
-                honeybee_destroyed: false,
+                honeybee_destroyed: false, scout_report_started: false, ..
             }, CampaignCue::PlutoAnomalyBriefing) =>
                 *scout_id > 0 && *honeybee_id > 0 && *gunship_id > 0 &&
                 scout_id != honeybee_id && scout_id != gunship_id &&
@@ -512,42 +521,62 @@ impl CampaignDialogue {
             (DialogueMode::PlutoAnomaly {
                 spotted: true, report_completed: false,
                 gunship_arrived: false, gunship_briefed: false,
-                honeybee_destroyed: false, ..
-            }, CampaignCue::PlutoAnomalyHoneybeeSpotted) => sequence == 1,
+                honeybee_destroyed: false, withdrawal_before_report, scout_report_started, ..
+            }, CampaignCue::PlutoAnomalyHoneybeeSpotted |
+                CampaignCue::PlutoAnomalyScoutWithdrawing | CampaignCue::PlutoAnomalyScoutReport) =>
+                match cue {
+                    CampaignCue::PlutoAnomalyHoneybeeSpotted =>
+                        !*withdrawal_before_report && !*scout_report_started && sequence == 1,
+                    CampaignCue::PlutoAnomalyScoutWithdrawing =>
+                        *withdrawal_before_report && !*scout_report_started && sequence == 1,
+                    CampaignCue::PlutoAnomalyScoutReport =>
+                        *withdrawal_before_report && *scout_report_started && sequence == 2,
+                    _ => false,
+                },
             (DialogueMode::PlutoAnomaly {
                 spotted: true, report_completed: true,
                 gunship_arrived: false, gunship_briefed: false,
-                honeybee_destroyed: false, ..
-            }, CampaignCue::PlutoAnomalyScoutReportComplete) => sequence == 2,
+                honeybee_destroyed: false, withdrawal_before_report, scout_report_started, ..
+            }, CampaignCue::PlutoAnomalyScoutReportComplete) =>
+                scout_report_started == withdrawal_before_report &&
+                sequence == 2 + u32::from(*scout_report_started),
             (DialogueMode::PlutoAnomaly {
                 spotted: true, report_completed: true,
                 gunship_arrived: true, gunship_briefed: false,
-                honeybee_destroyed: false, ..
-            }, CampaignCue::PlutoAnomalyGunshipArrived) => sequence == 3,
+                honeybee_destroyed: false, withdrawal_before_report, scout_report_started, ..
+            }, CampaignCue::PlutoAnomalyGunshipArrived) =>
+                scout_report_started == withdrawal_before_report &&
+                sequence == 3 + u32::from(*scout_report_started),
             (DialogueMode::PlutoAnomaly {
                 spotted: true, report_completed: true,
                 gunship_arrived: true, gunship_briefed: true,
-                honeybee_destroyed: false, ..
-            }, CampaignCue::PlutoAnomalyGunshipBriefingComplete) => sequence == 4,
+                honeybee_destroyed: false, withdrawal_before_report, scout_report_started, ..
+            }, CampaignCue::PlutoAnomalyGunshipBriefingComplete) =>
+                scout_report_started == withdrawal_before_report &&
+                sequence == 4 + u32::from(*scout_report_started),
             (DialogueMode::PlutoAnomaly {
                 spotted: true, report_completed: true,
                 gunship_arrived: true, gunship_briefed: true,
-                honeybee_destroyed: true, ..
-            }, CampaignCue::PlutoAnomalyHoneybeeDestroyed) => sequence == 5,
+                honeybee_destroyed: true, withdrawal_before_report, scout_report_started, ..
+            }, CampaignCue::PlutoAnomalyHoneybeeDestroyed) =>
+                scout_report_started == withdrawal_before_report &&
+                sequence == 5 + u32::from(*scout_report_started),
             (DialogueMode::PlutoAnomaly {
                 scout_id, honeybee_id, gunship_id,
                 spotted, report_completed, gunship_arrived,
-                gunship_briefed, honeybee_destroyed,
+                gunship_briefed, honeybee_destroyed, withdrawal_before_report,
+                scout_report_started,
             }, CampaignCue::PlutoAnomalyVictory | CampaignCue::PlutoAnomalyDefeat) =>
                 *scout_id > 0 && *honeybee_id > 0 && *gunship_id > 0 &&
                 scout_id != honeybee_id && scout_id != gunship_id &&
                 honeybee_id != gunship_id &&
-                (!*report_completed || *spotted) &&
+                (!*scout_report_started || (*withdrawal_before_report && *spotted)) &&
+                (!*report_completed || (*spotted && (!*withdrawal_before_report || *scout_report_started))) &&
                 (!*gunship_arrived || *report_completed) &&
                 (!*gunship_briefed || *gunship_arrived) &&
                 (!*honeybee_destroyed || *gunship_briefed) &&
                 sequence == 1 + u32::from(*spotted) +
-                    u32::from(*report_completed) +
+                    u32::from(*scout_report_started) + u32::from(*report_completed) +
                     u32::from(*gunship_arrived) +
                     u32::from(*gunship_briefed) +
                     u32::from(*honeybee_destroyed),
@@ -785,6 +814,21 @@ impl CampaignDialogue {
             ],
             _ => [None, None],
         }
+    }
+
+    pub(crate) fn withdrawing_pluto_scout(&self) -> Option<i64> {
+        match (self.mode, self.cue) {
+            (DialogueMode::PlutoAnomaly { scout_id, .. }, CampaignCue::PlutoAnomalyScoutWithdrawing) =>
+                Some(scout_id),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn begin_pluto_scout_report(&mut self) -> CampaignCue {
+        let DialogueMode::PlutoAnomaly { scout_report_started, .. } = &mut self.mode
+            else { unreachable!("Scout report requires the Pluto opening encounter") };
+        *scout_report_started = true;
+        CampaignCue::PlutoAnomalyScoutReport
     }
 
     pub fn pluto_anomaly_spotted(&self) -> Option<bool> {
@@ -1057,12 +1101,24 @@ impl CampaignDialogue {
             return None;
         }
         if let DialogueMode::PlutoAnomaly {
-            honeybee_id, gunship_id, spotted, report_completed,
-            gunship_arrived, gunship_briefed, honeybee_destroyed, ..
+            scout_id, honeybee_id, gunship_id, spotted, withdrawal_before_report,
+            scout_report_started, report_completed, gunship_arrived, gunship_briefed,
+            honeybee_destroyed,
         } = &mut self.mode {
             if !*spotted && source_pluto_honeybee_spotted {
                 *spotted = true;
-                return Some(CampaignCue::PlutoAnomalyHoneybeeSpotted);
+                return Some(if *withdrawal_before_report {
+                    CampaignCue::PlutoAnomalyScoutWithdrawing
+                } else {
+                    CampaignCue::PlutoAnomalyHoneybeeSpotted
+                });
+            }
+            if *spotted && *withdrawal_before_report && !*scout_report_started {
+                if world.ship(*scout_id).is_none_or(|ship| ship.vitals.is_dead()) {
+                    *scout_report_started = true;
+                    return Some(CampaignCue::PlutoAnomalyScoutReport);
+                }
+                return None;
             }
             // Local play withholds the next physical tick while this
             // briefing is visible. Dedicated LAN hosts wait on their

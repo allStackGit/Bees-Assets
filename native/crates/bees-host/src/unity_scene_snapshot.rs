@@ -3997,7 +3997,7 @@ impl NativePhysicalScene {
                     setup.extraction.is_some() || setup.target_ship.is_some() =>
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::PlutoAnomaly {
-                player_side, scout_id, honeybee_id, gunship_id,
+                player_side, scout_id, honeybee_id, gunship_id, ..
             }) if player_side != human_side || scout_id <= 0 ||
                 honeybee_id <= 0 || gunship_id <= 0 ||
                 scout_id == honeybee_id || scout_id == gunship_id ||

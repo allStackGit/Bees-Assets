@@ -12,7 +12,8 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
             ("Samuel", "Good morning, Commander! I brought your coffee."),
             ("Samuel", "I agree, it doesn't taste as good as Earth coffee. Or even Mars coffee… But hey, coffee is coffee! And we’ll both get off of Pluto soon enough."),
         ],
-        CampaignCue::PlutoAnomalyHoneybeeSpotted => &[
+        CampaignCue::PlutoAnomalyScoutWithdrawing => &[],
+        CampaignCue::PlutoAnomalyHoneybeeSpotted | CampaignCue::PlutoAnomalyScoutReport => &[
             ("Samuel", "Oh, that's odd. A Scout is reporting an unidentified vessel approaching military airspace. What should we do?"),
             ("Samuel", "Right away, sir. Contacting the vessel."),
             ("Samuel", "It isn’t responding, sir."),

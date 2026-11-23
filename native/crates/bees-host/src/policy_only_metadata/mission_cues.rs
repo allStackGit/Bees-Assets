@@ -54,7 +54,8 @@ impl NativeMissionCue {
             (Self::FireTankDestroyedObject { object_id: expected },
                 CampaignCue::FireTankDestroyed { object_id }) => expected == object_id,
             pair => matches!(pair,
-            (Self::PlutoHoneybeeSpotted, CampaignCue::PlutoAnomalyHoneybeeSpotted) |
+            (Self::PlutoHoneybeeSpotted,
+                CampaignCue::PlutoAnomalyHoneybeeSpotted | CampaignCue::PlutoAnomalyScoutWithdrawing) |
             (Self::PlutoScoutReportComplete, CampaignCue::PlutoAnomalyScoutReportComplete) |
             (Self::PlutoGunshipBriefingComplete, CampaignCue::PlutoAnomalyGunshipBriefingComplete) |
             (Self::PlutoHoneybeeDestroyed, CampaignCue::PlutoAnomalyHoneybeeDestroyed) |

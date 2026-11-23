@@ -1123,6 +1123,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
             level["campaign_dialogue"] = {
                 "pluto_anomaly": {
                     "player_side": args.player_side,
+                    "withdrawal_before_report": True,
                     "scout_id": scouts[0]["entity_id"],
                     "honeybee_id": honeybees[0]["entity_id"],
                     "gunship_id": gunship_id,

@@ -1926,6 +1926,27 @@ where
         for finished in state.events.latest_finished_commands() {
             state.metadata.player_command_finished(finished.owner);
         }
+        if !state.events.completed() {
+            if let Some(dialogue) = &mut state.campaign_dialogue {
+                use crate::commands::{CommandFinishCause, NativeCommandOrigin, NativeLocalCommandSource};
+                use bees_hivemind::dispatch::LocalCommandKind;
+
+                let withdrawal_finished = dialogue.withdrawing_pluto_scout()
+                    .and_then(|scout| state.events.roster().owning_squad(scout))
+                    .is_some_and(|owner| state.events.latest_finished_commands().iter().any(|order|
+                        order.owner == owner &&
+                        order.selection.kind() == LocalCommandKind::MoveToPoint &&
+                        matches!(order.selection.origin(), NativeCommandOrigin::Local(identity)
+                            if identity.source == NativeLocalCommandSource::Scripted) &&
+                        matches!(order.cause, CommandFinishCause::ReachedSpecifiedDestination |
+                            CommandFinishCause::Timeout)));
+                if withdrawal_finished {
+                    let cue = dialogue.begin_pluto_scout_report();
+                    dialogue.set_cue(cue);
+                    state.events.queue_campaign_dialogue(completed_tick, cue)?;
+                }
+            }
+        }
         // Scripted Level queues are source-owned, but each action uses the
         // canonical local command director, movement, timers and outbox.
         // Run after command completion so no additional command can
