@@ -160,6 +160,10 @@ class IndependentGpuTraining:
         self.probe_index = 0
         self.serial_rates = []
         self.parallel_rates = {n:[] for n in self.stream_candidates}
+        # GPU event rates are separate from end-to-end wall rates. The
+        # latter select the fastest learner strategy, while event-only
+        # rates are the sole valid baseline for steady-state GPU drift.
+        self.calibration_gpu_rates = {n:[] for n in self.probe_widths}
         self.phase = "calibrating"
         self.calls = self.serial_calls = self.concurrent_calls = 0
         self.work_dispatched = 0.0
@@ -247,7 +251,8 @@ class IndependentGpuTraining:
         measured = self.live_gpu_rate
         selected_rates = (self.parallel_rates[self.selected_streams]
                           if self.selected_streams else self.serial_rates)
-        baseline = median(selected_rates)
+        baseline_rates = self.calibration_gpu_rates.get(self.selected_streams,[])
+        baseline = median(baseline_rates) if baseline_rates else 0
         if (baseline > 0 and (measured < baseline*(1-self.retune_threshold) or
                               measured > baseline*(1+self.retune_threshold))):
             # Re-qualify using future distinct optimizer updates. No
@@ -255,6 +260,8 @@ class IndependentGpuTraining:
             self._retunes += 1
             self.serial_rates.clear()
             for rates in self.parallel_rates.values():
+                rates.clear()
+            for rates in self.calibration_gpu_rates.values():
                 rates.clear()
             self.probe_index = 0
             self.phase = "calibrating"
@@ -326,6 +333,15 @@ class IndependentGpuTraining:
         if measuring:
             torch.cuda.current_stream(self.device).synchronize()
         sample = None
+        calibrated_events = None
+        if measuring and self._sampling_enabled:
+            try:
+                start_event = torch.cuda.Event(enable_timing=True)
+                end_event = torch.cuda.Event(enable_timing=True)
+                start_event.record(torch.cuda.current_stream(self.device))
+                calibrated_events = (start_event,end_event)
+            except (RuntimeError, NotImplementedError):
+                self._sampling_enabled = False
         if (not measuring and self._sampling_enabled and
                 (self.calls+1) % self.completion_sample_interval == 0):
             if len(self._pending_samples) < 32:
@@ -343,6 +359,12 @@ class IndependentGpuTraining:
         begun = perf_counter()
         output = (self._parallel(steps, inputs, width)
                   if mode == "parallel" else self._serial(steps))
+        if calibrated_events is not None:
+            try:
+                calibrated_events[1].record(torch.cuda.current_stream(self.device))
+            except (RuntimeError, NotImplementedError):
+                self._sampling_enabled = False
+                calibrated_events = None
         if sample is not None:
             try:
                 sample[1].record(torch.cuda.current_stream(self.device))
@@ -369,6 +391,14 @@ class IndependentGpuTraining:
             self.last_qualified_seconds = seconds
             self.last_qualified_work_rate = count/seconds
         if measuring and seconds>0:
+            if calibrated_events is not None:
+                try:
+                    gpu_seconds = calibrated_events[0].elapsed_time(
+                        calibrated_events[1])/1000.0
+                    if gpu_seconds>0:
+                        self.calibration_gpu_rates[width].append(count/gpu_seconds)
+                except (RuntimeError, NotImplementedError):
+                    self._sampling_enabled = False
             rates = self.serial_rates if mode == "serial" else self.parallel_rates[width]
             rates.append(count/seconds)
             self.probe_index = (self.probe_index+1) % len(self.probe_widths)
@@ -403,6 +433,8 @@ class IndependentGpuTraining:
             gpu_training_selected_parallel=int(self.selected == "parallel"),
             gpu_training_selected_streams=self.selected_streams,
             gpu_training_stream_candidates=len(self.stream_candidates),
+            gpu_training_gpu_reference_samples=sum(
+                map(len,self.calibration_gpu_rates.values())),
             gpu_training_calibration_complete=int(self.phase == "settled"),
             gpu_training_last_qualified_seconds=self.last_qualified_seconds,
             gpu_training_qualified_work_per_second=self.last_qualified_work_rate,
