@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 from pathlib import Path
 import signal
 import socket
@@ -129,11 +130,45 @@ def inspect_job(filename: Path) -> dict:
         "evaluation_profile","evaluation_matches","batch_inference","evaluator_script","evaluator_sha256",
         "evaluator_core","evaluator_core_sha256","opponent_script","opponent_script_sha256",
     }
-    if not isinstance(job, dict) or set(job) != keys or job["schema_version"] != 1:
+    ancestry_keys = {
+        "lineage_root_id", "continuation_of_job_id",
+        "expected_parent_model_sha256", "expected_parent_checkpoint_sha256",
+    }
+    if not isinstance(job, dict) or (
+        job.get("schema_version") == 1 and set(job) != keys
+    ) or (
+        job.get("schema_version") == 2 and set(job) != keys | ancestry_keys
+    ) or job.get("schema_version") not in (1, 2):
         raise ValueError("Unexpected Bees native job schema.")
     if not isinstance(job["job_id"], str):
         raise ValueError("Invalid Hub job identity.")
     uuid.UUID(job["job_id"])
+    if job["schema_version"] == 1:
+        job.update({
+            "lineage_root_id": job["job_id"],
+            "continuation_of_job_id": None,
+            "expected_parent_model_sha256": None,
+            "expected_parent_checkpoint_sha256": None,
+        })
+    lineage, parent = job["lineage_root_id"], job["continuation_of_job_id"]
+    if not isinstance(lineage, str):
+        raise ValueError("Invalid Bees Hub lineage identity.")
+    uuid.UUID(lineage)
+    if parent is not None:
+        if not isinstance(parent,str):
+            raise ValueError("Invalid Bees checkpoint predecessor.")
+        uuid.UUID(parent)
+        if parent == job["job_id"] or lineage == job["job_id"] or (
+            any(not isinstance(job[field],str) or len(job[field]) != 64 or
+                any(c not in "0123456789abcdef" for c in job[field])
+                for field in ("expected_parent_model_sha256","expected_parent_checkpoint_sha256"))
+        ):
+            raise ValueError("Invalid Bees continuation parent or pinned hashes.")
+    elif lineage != job["job_id"] or (
+        job["expected_parent_model_sha256"] is not None or
+        job["expected_parent_checkpoint_sha256"] is not None
+    ):
+        raise ValueError("Independent Bees jobs must start their own checkpoint lineage.")
     if filename.parent != Path(job["output_root"]):
         raise ValueError("Job directory does not match its frozen output root.")
     if not 1 <= job["num_envs"] <= 64 or not 1 <= job["max_steps"] <= 100000000000 or (
