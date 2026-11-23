@@ -78,6 +78,7 @@ struct WireCounts {
     lobby_ready_receipts: u64,
     lobby_ready_rejections: u64,
     lobby_wait_frames: u64,
+    reconnect_wait_frames: u64,
     speed_requests_sent: u64,
     speed_receipts: u64,
     orders_accepted: u64,
@@ -3668,7 +3669,8 @@ pub fn connect_remote(
             }
         }
         audio.set_paused(soundtrack_paused || peer.state.as_ref()
-            .is_some_and(|state|state["commander_paused"]==true));
+            .is_some_and(|state|state["commander_paused"]==true ||
+                state["waiting_for_player_reconnect"]==true));
         // Backspace mirrors the local tactical client's cancellation
         // without closing the battle. Escape still exits only when no
         // targeting or shooting UI is active.
@@ -4096,12 +4098,18 @@ pub fn connect_remote(
         if menu_surrender_requested {
             surrender_confirmation=surrender_owner.clone();
         }
+        // Refresh after network polling: a same-tick authoritative
+        // snapshot can change lobby or disconnect admission without
+        // advancing simulation. Never trust the earlier UI frame's flag.
+        let lobby_waiting=peer.state.as_ref()
+            .is_some_and(|state|state["lobby"]["waiting"]==true);
+        let reconnect_waiting=peer.state.as_ref()
+            .is_some_and(|state|state["waiting_for_player_reconnect"]==true);
         peer.input_suppressed=peer.spectator||terminal||briefing||
-            host_briefing_paused||lobby_waiting||
+            host_briefing_paused||lobby_waiting||reconnect_waiting||
             show_controls_help||menu_action_consumed;
-        if lobby_waiting {
-            peer.metrics.lobby_wait_frames+=1;
-        }
+        if lobby_waiting { peer.metrics.lobby_wait_frames+=1; }
+        if reconnect_waiting { peer.metrics.reconnect_wait_frames+=1; }
         if !peer.input_suppressed && !held_fire_active &&
             peer.connected && peer.authenticated && window.is_active() &&
             window.is_key_pressed(Key::F3, KeyRepeat::No)
@@ -5168,6 +5176,18 @@ pub fn connect_remote(
                     "MATCH LOBBY: {admitted}/{required} sides ready ({sides}) - {prompt}"
                 ),FIELD-22),1,[255,211,130]);
         }
+        if let Some(state)=peer.state.as_ref().filter(|state|
+            state["waiting_for_player_reconnect"]==true)
+        {
+            let connected=state["connected_commander_sides"].as_array()
+                .map_or_else(String::new,|sides|
+                    sides.iter().filter_map(|side|side.as_i64())
+                        .map(|side|side.to_string()).collect::<Vec<_>>().join(", "));
+            text::draw_at(&mut pixels,WIDTH,12,HEIGHT-96,
+                text::fit(&format!(
+                    "MATCH PAUSED: waiting for disconnected commander - connected sides: {connected}"
+                ),FIELD-22),1,[255,211,130]);
+        }
         if peer.state.as_ref().is_some_and(|state|
             state["commander_paused"] == true)
         {
@@ -5440,6 +5460,7 @@ pub fn connect_remote(
         "lobby_ready_receipts":peer.metrics.lobby_ready_receipts,
         "lobby_ready_rejections":peer.metrics.lobby_ready_rejections,
         "lobby_wait_frames":peer.metrics.lobby_wait_frames,
+        "reconnect_wait_frames":peer.metrics.reconnect_wait_frames,
         "orders_accepted":peer.metrics.orders_accepted,
         "orders_rejected":peer.metrics.orders_rejected,
         "order_ack_latency_samples":peer.metrics.order_ack_latency_samples,
