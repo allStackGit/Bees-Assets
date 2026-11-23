@@ -526,46 +526,80 @@ class BundleReceiver:
         with self.lock:
             self.inflight.discard(collector_id)
 
+    def _issued_stage_path(self, collector_id, digest, total):
+        # The issued order already binds a job-specific collection digest.
+        # Derive a private, deterministic prefix path from that identity
+        # and the exact archive SHA/size. No second checkpoint format or
+        # untrusted client-selected filename is introduced.
+        if self.active_orders is None:
+            raise LookupError("collector has no active issued work order")
+        jobs = [job for job in self.active_orders["jobs"]
+                if job["id"] == collector_id]
+        if len(jobs) != 1 or not isinstance(jobs[0].get("collection_id"), str):
+            raise LookupError("collector has no issued collection identity")
+        seed = (jobs[0]["collection_id"] + ":" + digest + ":" + str(total))
+        stage_name = hashlib.sha256(seed.encode("ascii")).hexdigest()
+        return self.inbox / (".native-bundle-upload-" + stage_name + ".partial")
+
     def upload_offset(self, collector_id, digest, total):
         """Report committed-to-staging bytes only after a prior POST exits."""
         with self.lock:
-            if self.active_orders is None or not any(
-                    job["id"] == collector_id for job in self.active_orders["jobs"]):
-                raise LookupError("collector has no issued work order")
             if collector_id in self.inflight:
                 raise FileExistsError("collector upload is still streaming")
+            path = self._issued_stage_path(collector_id, digest, total)
             state = self.staged_uploads.get(collector_id)
-            if state is None:
-                return None
-            if state["digest"] != digest or state["total"] != total:
+            if state is not None and (
+                    state["digest"] != digest or state["total"] != total or
+                    state["path"] != path):
                 raise ValueError("collector upload identity changed during resume")
-            if state["path"].is_symlink() or not state["path"].is_file() or (
-                    state["path"].stat().st_size != state["received"]):
-                raise ValueError("staged collector bytes were redirected or modified")
-            return state["received"]
+            if path.is_symlink():
+                raise ValueError("staged collector file is a symlink")
+            if not path.exists():
+                return None
+            if not path.is_file():
+                raise ValueError("staged collector file is not regular")
+            received = path.stat().st_size
+            if received > total or (state is not None and
+                                    received != state["received"]):
+                raise ValueError("staged collector bytes were modified")
+            return received
 
     def prepare_upload(self, collector_id, digest, total, offset):
         """One active POST owns a staging file and its incremental digest."""
         with self.lock:
             if collector_id not in self.inflight:
                 raise ValueError("collector upload was not admitted")
+            path = self._issued_stage_path(collector_id, digest, total)
             state = self.staged_uploads.get(collector_id)
             if state is None:
-                if offset:
-                    raise ValueError("collector resume has no matching staged prefix")
-                with tempfile.NamedTemporaryFile(dir=self.inbox,
-                        prefix=".native-bundle-upload-", suffix=".partial",
-                        delete=False) as output:
-                    path = Path(output.name)
+                if path.is_symlink():
+                    raise ValueError("staged collector file is a symlink")
+                if path.exists():
+                    if not path.is_file() or path.stat().st_size > total:
+                        raise ValueError("invalid recovered native upload prefix")
+                    # Reconstruct the prefix digest only after a receiver
+                    # process restart; same-process retries reuse the live
+                    # incremental hasher without rereading gigabytes.
+                    hasher = hashlib.sha256()
+                    with path.open("rb") as stream:
+                        while chunk := stream.read(CHUNK):
+                            hasher.update(chunk)
+                    received = path.stat().st_size
+                else:
+                    if offset:
+                        raise ValueError("collector resume has no matching staged prefix")
+                    with path.open("xb"):
+                        pass
+                    hasher, received = hashlib.sha256(), 0
                 state = {
                     "path": path, "digest": digest, "total": total,
-                    "received": 0, "hasher": hashlib.sha256(),
+                    "received": received, "hasher": hasher,
                 }
                 self.staged_uploads[collector_id] = state
             if (state["digest"] != digest or state["total"] != total or
-                    state["received"] != offset or state["path"].is_symlink() or
-                    not state["path"].is_file() or
-                    state["path"].stat().st_size != offset):
+                    state["received"] != offset or state["path"] != path or
+                    path.is_symlink() or not path.is_file() or
+                    path.stat().st_size != offset):
                 raise ValueError("collector upload offset or immutable identity differs")
             return state
 
