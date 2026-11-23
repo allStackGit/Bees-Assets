@@ -146,6 +146,40 @@ def training_activation_workspace_budget(free_bytes, *,
                       free_bytes-minimum_other_headroom))
 
 
+def foreach_grouped_gradient_norms(named_gradients):
+    """Compute per-module preclip L2 norms in one multi-tensor GPU dispatch.
+
+    Trainable actor, critic and future project-specific modules often share
+    one optimizer and global gradient clip. Reuse the same foreach result
+    across their named diagnostics rather than launching one foreach pass
+    for each subnetwork. The caller retains clipping/finite-check ownership.
+    Nothing reads gradients onto the CPU or changes the optimizer state.
+    """
+    if not isinstance(named_gradients,(list,tuple)) or not named_gradients:
+        raise ValueError("Expected named gradient groups")
+    entries=[]
+    gradients=[]
+    for name,group in named_gradients:
+        if not isinstance(name,str) or not name or not isinstance(group,(tuple,list)):
+            raise ValueError("Invalid named gradient group")
+        selected=tuple(g for g in group if g is not None)
+        if any(not isinstance(g,torch.Tensor) for g in selected):
+            raise ValueError("Gradient groups must contain tensors")
+        entries.append((name,len(selected)))
+        gradients.extend(selected)
+    if not gradients or not hasattr(torch,"_foreach_norm"):
+        return {}
+    individual=torch._foreach_norm(gradients,2)
+    grouped={}
+    cursor=0
+    for name,size in entries:
+        if size:
+            grouped[name]=torch.linalg.vector_norm(
+                torch.stack(individual[cursor:cursor+size]),ord=2)
+        cursor+=size
+    return grouped
+
+
 def stack_training_loss_diagnostics(columns, *, loss_index):
     """Keep gradients only for the actual optimizer loss column.
 
