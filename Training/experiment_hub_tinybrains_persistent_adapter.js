@@ -1812,6 +1812,13 @@ function createTinyBrainsPersistentDockerAdapter({
                     throw Error('Previously launched or changed Hub training output cannot be re-used.');
                 checkpointDesign(out,design_overrides,true);
                 checkpointStage(out,training_stage??null);
+                // Existing staged-but-unlaunched jobs may predate the initial
+                // benchmark opponent copy. Repair only this verified seed.
+                const initial=path.join(out,'self-play/opponents/initial.pt');
+                if(fs.existsSync(initial)) {
+                    if(modelFileSha256(initial)!==gate.checkpoint_sha256)
+                        throw Error('TinyBrains initial benchmark model changed.');
+                }else stageFile(runRelative(out,gate.checkpoint),initial);
 
             }else{
                 fs.mkdirSync(out,{mode:0o700});
@@ -1819,6 +1826,10 @@ function createTinyBrainsPersistentDockerAdapter({
                 stageFile(path.join(source,'run-spec.json'),path.join(out,'run-spec.json'));
                 stageFile(path.join(source,'gate-passed.json'),path.join(out,'gate-passed.json'));
                 stageFile(candidate,runRelative(out,gate.checkpoint));
+                // The native fixed benchmark compares against the initial
+                // post-imitation actor. The gate-passed actor is that exact
+                // frozen policy; never derive it from a later PPO snapshot.
+                stageFile(candidate,path.join(out,'self-play/opponents/initial.pt'));
                 fs.writeFileSync(path.join(out,'hub-profile.json'),item.text,{flag:'wx',mode:0o600});
                 if(design_overrides!==undefined)
                     fs.writeFileSync(path.join(out,'hub-design-overrides.json'),
