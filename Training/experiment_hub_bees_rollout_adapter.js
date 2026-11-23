@@ -182,7 +182,7 @@ function createBeesRolloutAdapter({
                 fs.statSync(root).mode&0o077)
                 throw Error('Bees remote job artifact owner must be private and unredirected.');
             const job={
-                schema_version:1,job_id:context.job_id,
+                schema_version:approvedForward?2:1,job_id:context.job_id,
                 learner_job_id:parameters.learner_job_id,
                 lineage_root_id:parameters.lineage_root_id,
                 slot:parameters.slot,
