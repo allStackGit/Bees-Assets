@@ -323,6 +323,9 @@ class LocalExecution {
                 const context=Object.freeze({
                     job_id:job.id,project_id:job.project_id,
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                    continuation_of_job_id:job.continuation_of_job_id||null,
+                    frozen_parameters:job.frozen_parameters,
+                    state,final_checkpoint_sha256:job.final_checkpoint_sha256||null,
                     dispatch_id:order.dispatch_id,suite_id:rule.suite_id,
                 });
                 try {
