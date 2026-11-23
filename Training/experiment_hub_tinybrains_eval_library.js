@@ -326,6 +326,38 @@ function nameOpponent(o,sourceId,name) {
     saveCatalog(o,catalog);
     return {message:'Frozen opponent saved as '+catalog.opponent_labels[id]+'. Existing checkpoints and evaluations remain unchanged.'};
 }
+// An archived version must not be in the editable library, any saved Design
+// evaluation policy, a project default, or any non-cancelled job. This
+// inventory is shared by status, cleanup and update/delete admission.
+function referencedSuites(hub) {
+    const state=hub.snapshot();
+    const ids=new Set();
+    const add=policy=>{
+        for(const rule of policy?.all_of||[policy])
+            if(typeof rule?.suite_id==='string')ids.add(rule.suite_id);
+    };
+    for(const project of state.projects||[]) {
+        add(project.default_evaluation_monitor);
+        add(project.default_evaluation_stop);
+    }
+    for(const configuration of state.configurations||[]) {
+        add(configuration.evaluation_monitor);
+        add(configuration.evaluation_stop);
+    }
+    for(const job of state.jobs||[])if(job.status!=='cancelled') {
+        add(job.evaluation_monitor);
+        add(job.evaluation_stop);
+    }
+    return ids;
+}
+function unusedVersions(o,hub) {
+    const active=new Set(read(o).templates.map(item=>item.suite_id));
+    const referenced=referencedSuites(hub);
+    return fs.readdirSync(o.suites).filter(file=>file.endsWith('.json')&&
+        MIX.test(file.slice(0,-5))&&
+        !active.has(file.slice(0,-5))&&!referenced.has(file.slice(0,-5)))
+        .map(file=>file.slice(0,-5)).sort();
+}
 function customSuites(o) {
     const files=fs.existsSync(o.suites)?fs.readdirSync(o.suites):[];
     const names=files.filter(file=>MIX.test(file.slice(0,-5))&&file.endsWith('.json'));
@@ -356,6 +388,8 @@ function library(o,hub) {
         opponents:availableOpponents(o).map(({id,label,source_job_id,checkpoint_sha256})=>
             ({id,label,source_job_id,checkpoint_sha256})),
         configurations:candidates(hub),
+        archivable_count:unusedVersions(o,hub).length,
         maps:['basic-tiny-2p',...boards(o)]};
 }
-module.exports={read,library,customSuites,saveEvaluation,deleteEvaluation,nameOpponent};
+module.exports={read,library,customSuites,saveEvaluation,deleteEvaluation,nameOpponent,
+    referencedSuites,unusedVersions};
