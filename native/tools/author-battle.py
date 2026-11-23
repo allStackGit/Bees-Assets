@@ -1945,6 +1945,46 @@ def author(args) -> tuple[dict, dict, dict]:
     return scene, run, library
 
 
+def original_ordinary_policy_reference(ship: dict, policies: dict,
+                                       codex: dict) -> dict | None:
+    """Bind existing class-neutral v26 controls to a real original combat ship.
+
+    The model already observes real self-weapon slots, hull speed, sight and
+    legal action masks from CombatWorld. An ordinary Wasp/Gunship reference
+    supplies ONLY policy authority, never its physical hull, turret stats,
+    collision shape, timing or a new control algorithm. Specials with distinct
+    Bomb/minion/Carrier lifecycles retain their explicit model templates.
+    """
+    side, kind = ship.get("side"), ship.get("ship_type")
+    ordinary = {
+        1: {3, 14, 15, 16, 21},
+        2: {6, 7, 11, 12, 13},
+    }
+    if kind not in ordinary.get(side, set()) or type(kind) is not int:
+        return None
+    entries = codex.get("ships", [])
+    if not isinstance(entries, list) or not 0 <= kind < len(entries):
+        return None
+    original = entries[kind]
+    if (original.get("ship_type") != kind or
+            ship.get("health") != original.get("health") or
+            ship.get("max_health") != original.get("health") or
+            ship.get("original_health") != original.get("health") or
+            ship.get("max_tsv") != original.get("tsv") or
+            ship.get("base_speed") != original.get("speed") or
+            (ship.get("sight") or {}).get("source_sight") != original.get("sight") or
+            ship.get("special") is not None or
+            ship.get("special_weapon") is not None or
+            ship.get("drone_carrier_id") is not None or
+            not isinstance(ship.get("turrets"), list) or
+            len(ship["turrets"]) > 5):
+        return None
+    # Preserve the original class-neutral MA-POCA observation/action
+    # vocabulary and team transform. The fallback never copies the
+    # demonstration ship's speed, weapon, reward or statistical metadata.
+    return policies.get((side, 21 if side == 1 else 13))
+
+
 def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
     """Use source-authored v26 policy identities with this same CombatWorld."""
     source = load_json(args.policy_archetypes)
@@ -1955,6 +1995,13 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
         for ship in source.get("ships", [])
         if isinstance(ship, dict) and isinstance(ship.get("policy"), dict)
     }
+    # One pinned Codex v5 class contract serves every source-authored
+    # game and future arena. Never infer physical authenticity by type ID.
+    codex = load_json(
+        Path(__file__).resolve().parents[1] / "assets" / "ship-codex.json"
+    )
+    if codex.get("schema_version") != 1 or codex.get("source_ship_stats_version") != 5:
+        raise ValueError("ordinary native policy binding needs the original ship Codex v5")
     scene = copy.deepcopy(scene)
     run = copy.deepcopy(run)
     active = {1: 0, 2: 0}
@@ -1980,7 +2027,8 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
                 ship.get("mined_cargo", 0)):
             raise ValueError("custom native policy starting ships must be at full health with no cargo")
         source_ship = (None if ship["entity_id"] in scripted_reinforcement_ships
-                       else policies.get((ship["side"], ship["ship_type"])))
+                       else policies.get((ship["side"], ship["ship_type"])) or
+                            original_ordinary_policy_reference(ship, policies, codex))
         if source_ship is None:
             ship.pop("policy", None)
             continue
