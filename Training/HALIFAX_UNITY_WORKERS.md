@@ -295,7 +295,11 @@ EXPERIMENT_HUB_ENABLE_ROCM=1
 
 The additive loader constructs only the requested Bees role from the same
 authenticated Hub worker software release. It refuses duplicate roles and
-leaves the existing adapter map and running jobs unchanged. Use
+retains the existing adapter map. With `EXPERIMENT_HUB_LINUX_BACKEND=mixed`,
+the native systemd owner runs Bees and Courier while TinyBrains remains under
+its Docker owner. Their CPU/RAM capacity ledger is shared; cross-backend GPU
+admission refuses overlapping physical PCI devices, so running Bees on one
+Radeon does not replace an existing TinyBrains job on the other. Use
 `EXPERIMENT_HUB_BEES_ADDON_ROLES=bees_rollout` on an already enrolled remote
 actor with a custom adapter, together with its installed player, key and
 WAN-forward settings below. Do not set additive roles when
