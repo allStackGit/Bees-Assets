@@ -37,6 +37,7 @@ from native_training_artifacts import (
 )
 from native_distributed_collection import verify_bundle, aggregate_collection_metrics
 from transfer_policy_bundle import artifact_paths, verify_bundle_files
+from native_windows_rollout_job import NativeWindowsRolloutJob
 from native_gpu_allocation import (
     parse_rollout_gpus, validate_gpu_allocation, validate_leased_gpu_inference,
     rollout_worker_environment,
@@ -610,21 +611,26 @@ def combined_rollout_metrics(shards, wall_seconds):
     return metrics
 
 
-def stop_parallel_rollout_workers(processes):
-    """Retire the owned native process trees after any failed collection.
+def stop_parallel_rollout_workers(processes, windows_jobs=None):
+    """Retire ONLY owned native rollout processes and resident inference.
 
-    On POSIX the Rust group leader may already have exited nonzero while
-    its Python inference descendant is still running. A parent-only live
-    list misses that child. Each rollout was launched with a dedicated
-    session ID equal to its PID, so terminate the *owned process group*
-    even when the leader has already exited.
+    A Windows Job Object owns the process tree after the Rust parent exits,
+    unlike taskkill /T, which cannot reliably find orphaned descendants.
+    POSIX retains the existing independent session/process-group ownership.
     """
     live = [process for process in processes if process.poll() is None]
     if os.name == "nt":
-        if not live:
-            return
-        # Windows taskkill /T traverses a still-live Rust process tree.
-        for process in live:
+        for process in processes:
+            job = (windows_jobs or {}).get(process.pid)
+            if job is not None:
+                # The native simulator may already have exited while its
+                # policy worker still occupies GPU memory.
+                job.terminate()
+                continue
+            if process.poll() is not None:
+                continue
+            # Fallback applies only before a job was successfully assigned.
+            # An attachment error aborts collection; never report success.
             try:
                 result = subprocess.run(
                     ["taskkill", "/PID", str(process.pid), "/T", "/F"],
@@ -776,6 +782,7 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
     """
     started = time.perf_counter()
     processes = [None] * len(shards)
+    windows_jobs = {}
     metrics = {}
     gpu_proofs = {}
     gpu_requested = gpu_ids is not None or leased_gpu_inference
@@ -810,6 +817,14 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     start_new_session=os.name != "nt",
                     creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0),
                 )
+                if os.name == "nt":
+                    try:
+                        job = NativeWindowsRolloutJob(processes[index])
+                    except BaseException:
+                        stop_parallel_rollout_workers([processes[index]])
+                        raise
+                    windows_jobs[processes[index].pid] = job
+                    files.callback(job.close)
             while len(metrics) != len(shards):
                 resources.sample(processes, settled)
                 for index, (shard, _) in enumerate(shards):
@@ -833,7 +848,11 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
                     # can finish long before slower environments; waiting
                     # until the last sibling completes could allow its PID
                     # to be recycled and endanger an unrelated process group.
-                    if os.name != "nt":
+                    if os.name == "nt":
+                        # Closing an owned completed Job also retires any
+                        # lingering Python inference descendants.
+                        windows_jobs.pop(processes[index].pid).close()
+                    else:
                         stop_parallel_rollout_workers([processes[index]])
                     settled.add(index)
                 if len(metrics) != len(shards):
@@ -969,7 +988,7 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics,
             stop_parallel_rollout_workers([
                 process for index, process in enumerate(processes)
                 if index not in settled and process is not None
-            ])
+            ], windows_jobs)
             raise
 
 
