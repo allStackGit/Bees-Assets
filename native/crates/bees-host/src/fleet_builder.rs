@@ -887,11 +887,14 @@ pub(super) fn choose_multiplayer(
             BattleMenuRow { title: "Watch native AI vs AI battles",
                 status: "  [Read-only authenticated spectators; source Fish Tank]",
                 unlocked: true },
+            BattleMenuRow { title: "Watch HiveMind vs HiveMind",
+                status: "  [Two configured socket opponents; read-only spectators]",
+                unlocked: hive_available },
         ];
         let mut selected = 0_usize;
         let Some(mode) = select_library(&rows, &mut selected, false)?
             else { return Ok(None); };
-        if mode == 1 && !hive_available {
+        if (mode == 1 || mode == 3) && !hive_available {
             return Err(invalid("native HiveMind opponent requires a configured profile").into());
         }
         mode + 1
@@ -903,12 +906,20 @@ pub(super) fn choose_multiplayer(
     let use_scripted_ai = opponent_mode == 1;
     let use_hivemind = opponent_mode == 2;
     let watch_scripted_ai = opponent_mode == 3;
-    let hivemind = if use_hivemind {
-        let side = authenticated_side.expect("one authorized remote commander");
+    let watch_hivemind = opponent_mode == 4;
+    let hivemind = if use_hivemind || watch_hivemind {
+        let configured = configured_hivemind_fleet(save_root)?
+            .ok_or_else(|| invalid("selected HiveMind profile vanished"))?;
+        if watch_hivemind && configured.second_opponent_id.is_none() {
+            return Err(invalid(
+                "hosted HiveMind-vs-HiveMind requires a distinct second_opponent_id",
+            ).into());
+        }
         Some(NativeHiveMindFleet {
-            controlled_side: 3 - side,
-            ..configured_hivemind_fleet(save_root)?
-                .ok_or_else(|| invalid("selected HiveMind profile vanished"))?
+            controlled_side: if watch_hivemind { 0 } else {
+                3 - authenticated_side.expect("one authorized remote commander")
+            },
+            ..configured
         })
     } else { None };
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
@@ -929,7 +940,7 @@ pub(super) fn choose_multiplayer(
     // The original Fish Tank displays the entire physical battle; it
     // does not reveal faction-private information through an otherwise
     // fog-filtered remote commander snapshot.
-    let fog_of_war = if watch_scripted_ai { false } else {
+    let fog_of_war = if watch_scripted_ai || watch_hivemind { false } else {
         let Some(fog) = choose_visibility()? else { return Ok(None); };
         fog
     };
@@ -945,7 +956,7 @@ pub(super) fn choose_multiplayer(
             ai_tactics[side] = doctrine;
         }
     }
-    let spectator_episodes = if watch_scripted_ai {
+    let spectator_episodes = if watch_scripted_ai || watch_hivemind {
         let Some(count) = choose_resource(
             "AI-vs-AI battles in this hosted spectator session",
             &[1, 4, 16, 64],
@@ -1000,7 +1011,7 @@ pub(super) fn choose_multiplayer(
         original_mining_asteroid: sources.mining_asteroid.clone(),
         original_map_object: sources.map_object.clone(),
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
-        ai_both: watch_scripted_ai,
+        ai_both: watch_scripted_ai || watch_hivemind,
         benchmark: false,
         spectator_episodes,
         ai_tactics,
