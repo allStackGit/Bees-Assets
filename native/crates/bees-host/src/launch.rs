@@ -1776,7 +1776,12 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees tactics <catalog.json> --output-dir <battle-runs> --side <n> --squad <saved-id> --shooting <1-40> --chase <true|false> --cease-fire <true|false> [--match-speed <true|false>] [--color <inherit|clear|RRGGBB>] [--formation <kind[:width[:rotation[:mirror[:dx:dy]]]]>] [--place-ship <fleet-id:x:y>]... [--clear-placements]
   play  Open the native battle window (requires the client feature)
   serve  Host headless authenticated multiplayer with deterministic input recording
-         (requires --output-dir, BEES_NATIVE_REMOTE_LISTEN and remote token)
+         (requires --output-dir, BEES_NATIVE_REMOTE_LISTEN and remote tokens)
+         BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE: private JSON side 1/2 credentials
+         BEES_NATIVE_REMOTE_TLS_CERT_DER and BEES_NATIVE_REMOTE_TLS_KEY_DER:
+           optional DER certificate and owner-private PKCS#8 key; fail closed
+  connect  For encrypted hosts use tls://host:port and trust the server's
+           DER CA through BEES_NATIVE_REMOTE_TLS_CA_DER (hostname verified)
   serve-receipts  Host committed results only, with the same authenticated LAN protocol
   library  Open packaged native campaigns and quick battles
   connect  Join authoritative native multiplayer without Python
