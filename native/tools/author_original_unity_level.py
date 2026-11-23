@@ -243,6 +243,11 @@ def native_game_run(
             continue
         if (hivemind is not None and squad.get("is_hivemind_controlled") is True):
             continue
+        # Explicit AI authoring below assigns these original source squads
+        # the same real native gameplay director used by ordinary skirmishes.
+        # Without that opt-in an unowned armed mobile hull is an error.
+        if ai_tactics is not None:
+            continue
         # The original remote command owner is not serialized into a live
         # Unity physical scene: an imported Level cannot leave untrained,
         # mobile enemy ships idle and call it a gameplay replacement.
