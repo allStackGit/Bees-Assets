@@ -613,9 +613,9 @@ pub struct NativeRemotePlayRecoveryCheckpoint {
     // This checkpoint's exact authoritatively selected seat class. Older
     // checkpoints lack these fields and recover under the original World
     // permissions, never under a client-provided role.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     spectator_only_host: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     spectator_credentials_sha256: Option<[u8; 32]>,
     next_peer: u64,
     connected_peers: usize,
@@ -982,7 +982,10 @@ impl NativeRemotePlay {
             schema_version: 1,
             host_session_id: self.host_session_id.clone(),
             side_credentials_sha256: credential_digest(&self.side_tokens),
-            spectator_only_host: Some(self.spectator_only_host),
+            // Ordinary commander checkpoints retain their original v1
+            // serialized fields. Only a real AI-only World needs these
+            // additional durable spectator authorization bindings.
+            spectator_only_host: self.spectator_only_host.then_some(true),
             spectator_credentials_sha256: self.spectator_only_host
                 .then(|| credential_digest(&self.spectator_tokens)),
             next_peer: self.next_peer,
