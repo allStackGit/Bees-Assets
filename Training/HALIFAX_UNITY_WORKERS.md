@@ -450,14 +450,27 @@ EXPERIMENT_HUB_BEES_WAN_KEY=/absolute/private/path/bees-wan.hex
 EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT=56051
 ```
 
-**Windows CPU actor agent:** set the same `EXPERIMENT_HUB_BEES_ASSETS_ROOT`,
+**Windows CPU or CUDA actor agent:** set the same `EXPERIMENT_HUB_BEES_ASSETS_ROOT`,
 `EXPERIMENT_HUB_BEES_PYTHON`, `EXPERIMENT_HUB_BEES_WORKER_MANIFEST`,
 `EXPERIMENT_HUB_BEES_WAN_KEY`, and `EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT`
 variables to Windows absolute paths, and use
 `EXPERIMENT_HUB_BEES_WINDOWS_WORKER=C:\path\to\Bees RL Training.exe`.
 Set `EXPERIMENT_HUB_WORKER_PROJECTS=bees_rollout` alongside any other
 approved installed projects. Windows actors use the Hub's existing
-machine-owned Windows Job Object supervisor and must request **zero GPUs**.
+machine-owned Windows Job Object supervisor. CPU actors request no GPU.
+For a Windows NVIDIA/CUDA actor, also configure:
+
+```text
+EXPERIMENT_HUB_BEES_WAN_CUDA=1
+```
+
+That opt-in requires the selected Python installation to have a working
+CUDA-enabled PyTorch runtime. The Hub accepts only an **exclusive,
+UUID-pinned CUDA GPU lease**, uses the Windows native owner's existing
+`CUDA_VISIBLE_DEVICES` selection, and verifies the selected UUID and
+visible GPU count inside the actor before training. The Design machine
+selector identifies Windows machines as CPU-only or CUDA-ready. Do not
+enable the option on Windows hosts without a compatible NVIDIA GPU.
 
 The `EXPERIMENT_HUB_BEES_WAN_KEY` file contains the same 64 lowercase
 hexadecimal characters on all machines. On Linux it must be a private real
