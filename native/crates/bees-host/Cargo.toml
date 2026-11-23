@@ -36,7 +36,7 @@ sha2 = "0.10"
 
 # Optional negotiated multiplayer world snapshots: cross-platform bounded
 # lossless codec; reliable commands and legacy clients stay plain JSON.
-lz4_flex = "0.11"
+lz4_flex = { version = "=0.11.5", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
 base64 = "0.22"
 
 minifb = { version = "0.29", optional = true, default-features = false, features = ["x11"] }
