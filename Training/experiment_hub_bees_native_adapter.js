@@ -100,7 +100,7 @@ function normalize(parameters,context,approved) {
         throw Error('Bees batched cross-worker inference must be a boolean.');
     const profile=parameters.evaluation_profile??'off';
     const matches=parameters.evaluation_matches??8;
-    if(!['off','scripted-maps-v1'].includes(profile)||
+    if(!['off','scripted-maps-v1','scripted-coverage-v2'].includes(profile)||
         !Number.isSafeInteger(matches)||matches<1||matches>100)
         throw Error('Bees evaluation profile must be off or scripted-maps-v1 with 1–100 matches per scenario.');
     return {maxSteps,envs,seed,device,profile,matches,batching,
@@ -133,7 +133,7 @@ const DESIGN_FIELDS=Object.freeze([
     {key:'batch_inference',label:'Batch policy inference across Unity environments',
         section:'training',type:'boolean',default:true},
     {key:'evaluation_profile',label:'Post-training evaluation profile',section:'training',
-        type:'enum',default:'off',options:['off','scripted-maps-v1']},
+        type:'enum',default:'off',options:['off','scripted-maps-v1','scripted-coverage-v2']},
     {key:'evaluation_matches',label:'Matches per evaluation scenario',section:'training',
         type:'integer',default:8,min:1,max:100},
 ]);
