@@ -524,12 +524,15 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
             if entry["backend"] == "onnx":
                 providers = entry.get("providers", ["CPUExecutionProvider"])
                 if (not isinstance(providers, list) or not providers or
-                        (inference_device == "cpu" and
-                         providers[0] != "CPUExecutionProvider") or
-                        (inference_device != "cpu" and inference_device != "cuda:0" and
-                         providers[0] != "CPUExecutionProvider")):
-                    raise ValueError("native ONNX provider cannot safely relocate to requested inference device")
-                gpu_capable |= providers[0] != "CPUExecutionProvider"
+                        any(not isinstance(provider, str) for provider in providers)):
+                    raise ValueError("invalid ONNX providers in native evaluation manifest")
+                # Explicit CPU selection is forced by the worker even when
+                # the immutable manifest specifies a GPU execution provider.
+                # An accelerator request only counts supported GPU backends;
+                # its exact ordinal is verified by the resident ONNX worker.
+                gpu_capable |= any(provider in (
+                    "CUDAExecutionProvider", "ROCMExecutionProvider"
+                ) for provider in providers)
             else:
                 gpu_capable = True
         if inference_device != "cpu" and not gpu_capable:
