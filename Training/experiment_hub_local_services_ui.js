@@ -332,7 +332,7 @@
                 'requested only after the Hub accepts the one-use preflight receipt.'
             :'Request '+action+' for evaluator '+unit+' on '+machine_id+
                 '? The enrolled agent verifies fixed local paths and approvals. '+
-                'A safe agent restart is required after suite setup or refresh.';
+                'Installed suites are advertised on the agent’s next heartbeat without a restart.';
         if(busy||!confirm(warning+' No action is automatically replayed.'))return;
         busy=true;
         try {
