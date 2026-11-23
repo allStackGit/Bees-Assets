@@ -241,8 +241,8 @@ function boundedReport(value) {
         curriculumStages.some(stage=>!knownStages.includes(stage))||
         new Set(curriculumStages).size!==curriculumStages.length||
         (curriculumStages.length&&
-            (value.platform!=='linux'||!Object.keys(profiles).length)))
-        throw Error('TinyBrains curriculum stages require an approved native Linux runner.');
+            (!['linux','win32'].includes(value.platform)||!Object.keys(profiles).length)))
+        throw Error('TinyBrains curriculum stages require an approved native training runner.');
     const cpuFallback=value.tinybrains_cpu_fallback_profiles??[];
     if(!Array.isArray(cpuFallback)||cpuFallback.length>cudaProfiles.length||
         cpuFallback.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
