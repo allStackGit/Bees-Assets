@@ -1797,8 +1797,11 @@ impl BattleCatalog {
                 squad, purchased_ids, authored, tactics,
             } => {
                 if !matches!(squad.side, 1 | 2) ||
-                    squad.saved_squad_id <= progress.highest_saved_squad_id() ||
+                    squad.saved_squad_id <= 0 ||
                     squad.saved_squad_id == i64::MAX ||
+                    progress.squads.contains_key(&squad.saved_squad_id) ||
+                    progress.awarded_saved_squad_ids.contains(&squad.saved_squad_id) ||
+                    progress.retired_squad_ids.contains(&squad.saved_squad_id) ||
                     squad.template_saved_squad_id <= 0 ||
                     squad.template_saved_squad_id == squad.saved_squad_id ||
                     progress.is_retired_saved_squad(squad.template_saved_squad_id) ||
@@ -1860,7 +1863,10 @@ impl BattleCatalog {
             }
             CampaignSequencedEdit::Purchase(receipt) => {
                 let ship = receipt.ship;
-                if ship.fleet_ship_id <= progress.highest_fleet_id() ||
+                if ship.fleet_ship_id <= 0 ||
+                    progress.purchases.iter().any(|(_, existing)|
+                        existing.fleet_ship_id == ship.fleet_ship_id) ||
+                    progress.authored_roster.contains_key(&ship.fleet_ship_id) ||
                     ship.saved_squad_id < 0 ||
                     progress.is_retired_saved_squad(ship.saved_squad_id) ||
                     !self.buildable_ships.iter().any(|entry|
@@ -1873,15 +1879,21 @@ impl BattleCatalog {
                 progress.spent_minerals = progress.spent_minerals
                     .checked_add(ship.price_tsv)
                     .ok_or_else(|| invalid("campaign purchase total overflow"))?;
-                progress.fleet.insert(ship.fleet_ship_id, FleetProgress {
-                    side: receipt.player_side, ship_type: Some(ship.ship_type),
-                    loss_history_complete: true, combat_history_complete: true,
-                    special_history_complete: true,
-                    combat: NativeFleetCombatStats {
-                        source_kills: Some(0), ..NativeFleetCombatStats::default()
-                    },
-                    ..FleetProgress::default()
-                });
+                let fleet = progress.fleet.entry(ship.fleet_ship_id)
+                    .or_insert_with(|| FleetProgress {
+                        side: receipt.player_side, ship_type: Some(ship.ship_type),
+                        loss_history_complete: true, combat_history_complete: true,
+                        special_history_complete: true,
+                        combat: NativeFleetCombatStats {
+                            source_kills: Some(0), ..NativeFleetCombatStats::default()
+                        },
+                        ..FleetProgress::default()
+                    });
+                if fleet.side != receipt.player_side ||
+                    fleet.ship_type.is_some_and(|kind| kind != ship.ship_type)
+                {
+                    return Err(invalid("sequenced purchase conflicts with recorded FleetShip"));
+                }
                 progress.purchases.push((receipt.player_side, ship));
             }
             CampaignSequencedEdit::Transfer(transfer) => {
@@ -1987,11 +1999,20 @@ impl BattleCatalog {
             CampaignSequencedEdit::Create(edit) => {
                 let squad = edit.squad;
                 if !matches!(squad.side, 1 | 2) ||
-                    squad.saved_squad_id <= progress.highest_saved_squad_id() ||
+                    squad.saved_squad_id <= 0 ||
                     squad.saved_squad_id == i64::MAX ||
+                    progress.squads.contains_key(&squad.saved_squad_id) ||
+                    progress.retired_squad_ids.contains(&squad.saved_squad_id) ||
+                    progress.created_squads.iter().any(|old|
+                        old.saved_squad_id == squad.saved_squad_id) ||
                     squad.template_saved_squad_id <= 0 ||
                     squad.template_saved_squad_id == squad.saved_squad_id ||
-                    progress.is_retired_saved_squad(squad.template_saved_squad_id)
+                    progress.is_retired_saved_squad(squad.template_saved_squad_id) ||
+                    progress.created_squads.iter().any(|old|
+                        old.saved_squad_id == squad.template_saved_squad_id &&
+                        old.side != squad.side) ||
+                    progress.squads.get(&squad.template_saved_squad_id)
+                        .is_some_and(|old| old.side != squad.side)
                 {
                     return Err(invalid("invalid sequenced SavedSquad creation"));
                 }
