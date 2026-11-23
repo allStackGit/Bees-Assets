@@ -134,11 +134,16 @@ def inspect_job(filename: Path) -> dict:
         "lineage_root_id", "continuation_of_job_id",
         "expected_parent_model_sha256", "expected_parent_checkpoint_sha256",
     }
+    wan_keys = {"wan_actors", "wan_broker_port", "wan_key_file",
+                "wan_key_fingerprint"}
     if not isinstance(job, dict) or (
         job.get("schema_version") == 1 and set(job) != keys
     ) or (
         job.get("schema_version") == 2 and set(job) != keys | ancestry_keys
-    ) or job.get("schema_version") not in (1, 2):
+    ) or (
+        job.get("schema_version") == 3 and
+        set(job) != keys | ancestry_keys | wan_keys
+    ) or job.get("schema_version") not in (1, 2, 3):
         raise ValueError("Unexpected Bees native job schema.")
     if not isinstance(job["job_id"], str):
         raise ValueError("Invalid Hub job identity.")
@@ -177,6 +182,26 @@ def inspect_job(filename: Path) -> dict:
         raise ValueError("Invalid Bees training budget.")
     if job["device"] not in ("cpu","cuda"):
         raise ValueError("Unknown Bees learner device.")
+    if job["schema_version"] == 3:
+        if type(job["wan_actors"]) is not int or not 1 <= job["wan_actors"] <= 8 or (
+            type(job["wan_broker_port"]) is not int or
+            not 1024 <= job["wan_broker_port"] <= 65535
+        ):
+            raise ValueError("Bees WAN learner requires 1–8 actors and a private broker port.")
+        key_file = Path(job["wan_key_file"])
+        if not key_file.is_absolute() or key_file.is_symlink() or not key_file.is_file() or (
+            key_file.stat().st_mode & 0o077 or
+            not 64 <= key_file.stat().st_size <= 128
+        ):
+            raise ValueError("Bees WAN learner requires an installed private token file.")
+        import re
+        key = key_file.read_text(encoding="ascii").strip()
+        if not re.fullmatch(r"[a-f0-9]{64}", key) or (
+            hashlib.sha256(key.encode("ascii")).hexdigest() !=
+            job["wan_key_fingerprint"]
+        ):
+            raise ValueError("Bees WAN broker key differs from enrollment.")
+
     args = job["environment_args"]
     if not isinstance(args,list) or len(args) > 32 or any(
         not isinstance(arg,str) or len(arg)>256 or not arg.startswith("--rl-")
@@ -707,8 +732,14 @@ def main():
     resume=stage_parent_checkpoint(root,job)
     trainer=freeze_trainer(job,root)
     port,port_lock=reserve_base_port(root,job["job_id"],job["num_envs"])
+    native_wan = job["schema_version"] == 3
+    training_script = (Path(job["training_script"]).with_name(
+        "bees_elastic_wan_mlagents_learn.py"
+    ) if native_wan else Path(job["training_script"]))
+    if native_wan and not training_script.is_file():
+        raise ValueError("Frozen Bees runtime lacks the elastic WAN learner.")
     command=[
-        sys.executable,"-B",job["training_script"],str(trainer),
+        sys.executable,"-B",str(training_script),str(trainer),
         "--env="+job["game_binary"],
         "--run-id="+job["lineage_root_id"],
         "--results-dir="+str(root/"results"),
@@ -717,8 +748,26 @@ def main():
         "--seed="+str(job["seed"]),
         "--no-graphics","--resume" if resume else "--force",
         *(["--bees-batch-inference"] if job["batch_inference"] else []),
+        *(["--bees-wan-actors",str(job["wan_actors"]),
+            "--bees-wan-min-actors","0",
+            "--bees-wan-broker-port",str(job["wan_broker_port"]),
+            "--bees-wan-auth-token-file",job["wan_key_file"]] if native_wan else []),
         *(["--env-args",*job["environment_args"]] if job["environment_args"] else []),
     ]
+    child_env = os.environ.copy()
+    if native_wan:
+        build, trainer_hash, runtime = (
+            job["game_sha256"], job["trainer_sha256"], job["runtime_version"]
+        )
+        child_env.update({
+            "BEES_TRAINING_BUILD_ID": build,
+            "BEES_TRAINING_RUN_ID": job["lineage_root_id"],
+            "BEES_TRAINING_COMPATIBILITY_KEY": hashlib.sha256(
+                ("bees-native-wan-v1:" + build + ":" + trainer_hash +
+                 ":" + runtime).encode("ascii")
+            ).hexdigest(),
+            "BEES_TRAINING_ENVIRONMENT_ID": build,
+        })
     child=None
     stopped=False
     marker_stop=False
@@ -746,7 +795,7 @@ def main():
     progress=EventProgress(root,job["job_id"],job["lineage_root_id"])
     try:
         child=subprocess.Popen(command,cwd=str(Path(job["training_script"]).parent.parent),
-                               start_new_session=True)
+                               env=child_env,start_new_session=True)
         telemetry_error = False
         while child.poll() is None:
             if not stopped:
