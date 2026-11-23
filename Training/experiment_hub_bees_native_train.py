@@ -635,8 +635,21 @@ def main():
             pass
         progress.training_finished_at=time.monotonic()
         result=child.returncode
-        if result!=0 or stopped:
-            return 130 if stopped else result or 1
+        if stopped:
+            # The existing interrupt-safe ML-Agents launcher may have written
+            # a final optimizer checkpoint. Record it only when both actual
+            # immutable model and optimizer files exist; a missing or unchanged
+            # checkpoint cannot authorize a continuation.
+            try:
+                record_model(root,job)
+                print("[Bees native Hub] Graceful Stop retained a verified resumable checkpoint.",
+                      flush=True)
+            except (OSError,ValueError,RuntimeError) as error:
+                print("[Bees native Hub] Stop has no verified resumable checkpoint: "+str(error),
+                      file=sys.stderr,flush=True)
+            return 130
+        if result!=0:
+            return result or 1
         record_model(root,job)
         if job["evaluation_profile"] in ("scripted-maps-v1","scripted-coverage-v2"):
             evaluation_root=root/"evaluations"
