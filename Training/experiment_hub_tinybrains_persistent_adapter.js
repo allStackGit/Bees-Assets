@@ -1675,6 +1675,60 @@ function createTinyBrainsPersistentDockerAdapter({
                 }
             }
         }
+        // New mixed suites are installed locally and remain immutable. An
+        // invalid optional definition must not prevent trainer enrollment.
+        const mixedFiles=fs.readdirSync(root).filter(file=>
+            /^tinybrains_mix_[a-f0-9]{20}_v[1-9][0-9]*\.json$/.test(file)).sort();
+        if(mixedFiles.length>48) {
+            console.warn('[hub-evaluations] Mixed evaluation approval exceeds 48 versions.');
+        }else for(const filename of mixedFiles) {
+            const name=filename.slice(0,-5),file=path.join(root,filename);
+            try {
+                const stat=fs.lstatSync(file);
+                if(!stat.isFile()||stat.isSymbolicLink()||
+                    fs.realpathSync(file)!==file||stat.uid!==process.getuid()||
+                    stat.mode&0o077||stat.size<1||stat.size>32768)
+                    throw Error('Mixed suite file is unsafe.');
+                const suite=JSON.parse(fs.readFileSync(file,'utf8'));
+                if(suite.schema_version!==2||suite.suite_id!==name||
+                    !Array.isArray(suite.maps)||!suite.maps.length||suite.maps.length>128||
+                    !Array.isArray(suite.seeds)||suite.seeds.length<1||suite.seeds.length>16||
+                    !Number.isSafeInteger(suite.max_turns)||suite.max_turns<1||
+                    suite.max_turns>1000||!Number.isSafeInteger(suite.rotations)||
+                    suite.rotations<1||suite.rotations>8||
+                    !Array.isArray(suite.opponents)||suite.opponents.length<1||
+                    suite.opponents.length>16)
+                    throw Error('Mixed suite limits are invalid.');
+                const permitted=new Set(['basic-tiny-2p',...fs.readdirSync(boards)
+                    .filter(file=>file.endsWith('.json')).map(file=>file.slice(0,-5))]);
+                if(suite.maps.some(map=>!permitted.has(map))||
+                    new Set(suite.maps).size!==suite.maps.length)
+                    throw Error('Mixed suite includes a map outside the installed inventory.');
+                for(const opponent of suite.opponents) {
+                    const id=opponent?.id;
+                    if(!['nano','micro','tinybrains_mini_batch128_v1'].includes(id)&&
+                        !/^tinybrains_mini_[a-f0-9]{20}$/.test(String(id||'')))
+                        throw Error('Mixed suite includes an unapproved opponent.');
+                    const folder=['nano','micro'].includes(id)
+                        ?path.join(project,'upstream/ants-starter/models',id+'-bc')
+                        :path.join(root,'opponents',id);
+                    if(opponent.model_dir!==folder)
+                        throw Error('Mixed suite opponent path differs from local approved model.');
+                    for(const [fileName,key] of [
+                        ['model.onnx','model_sha256'],['manifest.json','manifest_sha256'],
+                    ]) {
+                        const item=path.join(folder,fileName),stat=fs.lstatSync(item);
+                        if(!stat.isFile()||stat.isSymbolicLink()||
+                            crypto.createHash('sha256').update(fs.readFileSync(item)).digest('hex')!==opponent[key])
+                            throw Error('Mixed suite opponent model fingerprint is invalid.');
+                    }
+                }
+                approvedEvaluationSuites=[...new Set([...approvedEvaluationSuites,name])];
+            }catch(error) {
+                console.warn('[hub-evaluations] Ignoring invalid optional mixed suite '+name+': '+
+                    String(error.message||error).slice(0,160));
+            }
+        }
     }
     return {
         executable,cwd:nativeWindows?project:PROJECT_IN,
