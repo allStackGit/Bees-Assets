@@ -10,6 +10,7 @@ const {spawnSync}=require('node:child_process');
 const {createTinyBrainsAdapter}=require('./experiment_hub_tinybrains_adapter');
 const {createCourierAdapter}=require('./experiment_hub_courier_adapter');
 const {createBeesNativeAdapter}=require('./experiment_hub_bees_native_adapter');
+const {createBeesRolloutAdapter}=require('./experiment_hub_bees_rollout_adapter');
 const {createTinyBrainsRemoteRolloutAdapter}=
     require('./experiment_hub_tinybrains_remote_adapter');
 const {createCourierRemoteLineageAdapter}=
@@ -40,8 +41,8 @@ function listenerPorts(prefix,defaults) {
     return Object.fromEntries(values.map((value,index)=>[index,value]));
 }
 const projects=(process.env.EXPERIMENT_HUB_WORKER_PROJECTS||'').split(',').filter(Boolean);
-if(projects.length>3||
-    projects.some(p=>!['tinybrains','courier','bees_native'].includes(p))||
+if(projects.length>4||
+    projects.some(p=>!['tinybrains','courier','bees_native','bees_rollout'].includes(p))||
     new Set(projects).size!==projects.length)
     throw Error('Installed simulation selection must contain only TinyBrains, Courier or Bees native.');
 function artifactDirectory(name) {
@@ -120,6 +121,18 @@ if(enabled('bees_native')) {
         pythonPath:required('EXPERIMENT_HUB_BEES_PYTHON'),
         workerExecutable:required('EXPERIMENT_HUB_BEES_LINUX_WORKER'),
         artifactRoot:artifactDirectory('bees_native'),
+        wanKeyPath:process.env.EXPERIMENT_HUB_BEES_WAN_KEY||null,
+        wanBrokerPort:Number(process.env.EXPERIMENT_HUB_BEES_WAN_BROKER_PORT||55051),
+    });
+}
+if(enabled('bees_rollout')) {
+    adapters.bees_rollout=createBeesRolloutAdapter({
+        projectRoot:required('EXPERIMENT_HUB_BEES_ASSETS_ROOT'),
+        pythonPath:required('EXPERIMENT_HUB_BEES_PYTHON'),
+        workerExecutable:required('EXPERIMENT_HUB_BEES_LINUX_WORKER'),
+        artifactRoot:artifactDirectory('bees_rollout'),
+        keyPath:required('EXPERIMENT_HUB_BEES_WAN_KEY'),
+        forwardPort:Number(required('EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT')),
     });
 }
 module.exports=adapters;
