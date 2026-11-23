@@ -9,6 +9,7 @@ independent job; no machine-wide process enumeration or other jobs are touched.
 import ctypes
 from ctypes import wintypes
 import os
+import subprocess
 
 
 class _BasicLimit(ctypes.Structure):
@@ -105,3 +106,35 @@ class NativeWindowsRolloutJob:
             handle, self.handle = self.handle, None
             if not self.kernel.CloseHandle(handle):
                 raise ctypes.WinError(ctypes.get_last_error())
+
+def run_owned_native_process(command, **kwargs):
+    """Run one native host/collector and retire its entire owned process tree.
+
+    On Windows a completed Rust parent must not leave a resident Python
+    inference descendant consuming GPU/CPU resources. POSIX callers keep
+    subprocess.run(check=True) behavior and existing process supervision.
+    """
+    if os.name != "nt":
+        return subprocess.run(command, check=True, **kwargs)
+    process = subprocess.Popen(
+        command, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, **kwargs
+    )
+    try:
+        job = NativeWindowsRolloutJob(process)
+    except BaseException:
+        # Assignment failure is fatal: this process is not safely owned.
+        # At least stop its still-live parent before propagating the error.
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+        raise
+    try:
+        returncode = process.wait()
+        if returncode != 0:
+            raise subprocess.CalledProcessError(returncode, command)
+        return subprocess.CompletedProcess(command, returncode)
+    finally:
+        # KILL_ON_JOB_CLOSE also retires descendants of an already-exited
+        # simulator. Never scan machine-wide PIDs or kill another session.
+        job.close()
+        process.wait()
