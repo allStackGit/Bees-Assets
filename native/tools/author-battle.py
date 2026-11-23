@@ -2157,6 +2157,48 @@ def original_ordinary_policy_reference(ship: dict, policies: dict,
     return policies.get((side, 21 if side == 1 else 13))
 
 
+def original_source_special_policy_reference(ship: dict,
+                                             codex: dict) -> dict | None:
+    """Enroll authentic Barge/Yellow Jacket with its own captured weapon data.
+
+    Only source-authored complete v26 observations can bind these distinct
+    Charge/Bomb actions. Never synthesize special weapon timing or copy
+    another class's recoil, movement or body state. Without the captured
+    original weapon observation the gameplay command fallback remains.
+    """
+    kind = ship.get("ship_type")
+    side = ship.get("side")
+    if (side != 2 or kind not in (0, 22) or type(kind) is not int or
+            not isinstance(ship.get("special"), dict) or
+            not isinstance(ship.get("special_weapon"), dict)):
+        return None
+    original = next(
+        (entry for entry in codex.get("ships", [])
+         if entry.get("ship_type") == kind), None,
+    )
+    if not isinstance(original, dict) or any(
+        ship.get(field) != original.get(codex_field)
+        for field, codex_field in (
+            ("health", "health"), ("max_health", "health"),
+            ("original_health", "health"), ("max_tsv", "tsv"),
+            ("base_speed", "speed"),
+        )
+    ) or (ship.get("sight") or {}).get("source_sight") != original.get("sight"):
+        return None
+    special, weapon = ship["special"], ship["special_weapon"]
+    if (special.get("kind") != ("barge" if kind == 0 else "yellow_jacket")
+            or special.get("power") != weapon.get("power")
+            or ship.get("drone_carrier_id") is not None or ship.get("turrets")
+            or not isinstance(weapon.get("observation"), dict)
+            or type(weapon.get("slot")) is not int
+            or not 0 <= weapon["slot"] < 5
+            or not isinstance(weapon.get("charge_range" if kind == 0 else "proximity"), dict)):
+        return None
+    # This is an immutable class-authentic source contract already present
+    # on the real physical ship, not an inferred neural weapon descriptor.
+    return {"special_weapon": weapon}
+
+
 def original_yellow_jacket_policy_reference(ship: dict, source: dict,
                                              codex: dict) -> dict | None:
     """Enroll authentic original Yellow Jackets using Queen minion Bomb data.
@@ -2264,6 +2306,7 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
         source_ship = (None if ship["entity_id"] in scripted_reinforcement_ships
                        else (policies.get((ship["side"], ship["ship_type"])) or
                              original_ordinary_policy_reference(ship, policies, codex) or
+                             original_source_special_policy_reference(ship, codex) or
                              original_yellow_jacket_policy_reference(ship, source, codex)))
         if source_ship is None:
             ship.pop("policy", None)
