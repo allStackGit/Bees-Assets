@@ -115,7 +115,7 @@ async function inspectOfflineWorkers(manifestPath, sourceSha) {
             archive_bytes: Number(item.archive_bytes),
         });
     }
-    return { manifestPath: filepath, artifacts: selected };
+    return { manifestPath: filepath, manifest_sha256: await hashFile(filepath), artifacts: selected };
 }
 
 function extractWorkerArchive(python, archive, destination, entrypoint) {
@@ -142,6 +142,12 @@ function extractWorkerArchive(python, archive, destination, entrypoint) {
 }
 
 async function installOfflineWorkers(checked, python, packageRoot) {
+    const receipt = path.join(packageRoot, 'source-worker-manifest.json');
+    fs.copyFileSync(checked.manifestPath, receipt, fs.constants.COPYFILE_EXCL);
+    if (await hashFile(receipt) !== checked.manifest_sha256) {
+        fs.rmSync(receipt, { force: true });
+        throw Error('Offline Unity worker manifest changed during transfer.');
+    }
     // Keep a private copy under the versioned release root: later upgrades
     // must not depend on a removable share or a still-changing source folder.
     const result = [];
