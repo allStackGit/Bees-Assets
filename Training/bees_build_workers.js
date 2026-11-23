@@ -108,9 +108,10 @@ function projectVersion() {
     return match[1];
 }
 
-// A fresh Editor import may generate .meta for tracked, non-Unity tooling
-// under Assets/Training. Capture only metadata absent BEFORE the build;
-// existing metadata and all game/C# metadata remain source inputs.
+// A first Unity import generates .meta for tracked Hub tooling (including
+// standalone .NET helper projects). Only files whose metadata was ABSENT at
+// build entry can be excluded. Existing metadata, the actual source files,
+// and all Unity gameplay/C# metadata remain part of the immutable snapshot.
 function initialToolMetadata() {
     const result=runSync('git',['ls-files','-z','--','Training'],{
         cwd:paths.assetsRoot,timeout:30000,maxBuffer:16*1024*1024,check:false,
@@ -118,12 +119,28 @@ function initialToolMetadata() {
     if(result.status!==0)
         throw Error('Cannot inspect tracked tooling before Unity compilation.');
     const ignored=new Set();
+    const externalDirs=['experiment_hub_windows_owner',
+        'experiment_hub_windows_service','experiment_legacy_evaluator','systemd'];
     for(const name of String(result.stdout||'').split('\0')) {
-        if(!/^Training\/[^/]+\.(?:js|py|md|svg|html|json|sh|cmd|ps1)$/i.test(name))
+        const standalone=externalDirs.some(dir=>name.startsWith('Training/'+dir+'/'));
+        if(!standalone&&
+            !/^Training\/[^/]+\.(?:js|py|md|svg|html|json|sh|cmd|ps1)$/i.test(name)&&
+            name!=='Training/Dockerfile.tinybrains-rocm-node')
             continue;
-        const meta=name+'.meta';
-        if(!fs.existsSync(path.join(paths.assetsRoot,meta)))
-            ignored.add(meta);
+        if(name.endsWith('.meta'))continue;
+        const candidates=[name];
+        if(standalone) {
+            let dir=path.posix.dirname(name);
+            while(dir!=='Training') {
+                candidates.push(dir);
+                dir=path.posix.dirname(dir);
+            }
+        }
+        for(const candidate of candidates) {
+            const meta=candidate+'.meta';
+            if(!fs.existsSync(path.join(paths.assetsRoot,meta)))
+                ignored.add(meta);
+        }
     }
     return ignored;
 }
