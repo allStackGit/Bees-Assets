@@ -516,8 +516,9 @@ ssh -N -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=yes \
 
 Actor traffic must remain on private loopback and the authenticated broker.
 Each Hub training or evaluation job stages a private disposable copy of
-its installed Unity player. Unity/ML-Agents timer and player files therefore
-cannot mutate the pinned release. The copy is held outside exported job
+its installed Unity player (Linux uses copy-on-write reflinks on capable
+filesystems, otherwise an ordinary copy). Unity/ML-Agents timer and player
+files therefore cannot mutate the pinned release. The copy is held outside exported job
 artifacts and is cleaned up on normal exit; the runner reports the startup
 copy/verification time. Allow enough temporary disk space for one Unity
 player copy per concurrently active job.
