@@ -25,6 +25,7 @@ from native_bundle_receiver import download_input_archive, bundle_token
 from transfer_policy_bundle import checked_order
 from run_distributed_collector import acquire_collector_lease
 from native_windows_rollout_job import run_owned_native_process
+from native_training_artifacts import native_headless_environment
 
 
 
@@ -297,7 +298,7 @@ def main():
             ]),
             *([] if not args.stage_diagnostics else ["--stage-diagnostics"]),
         ]
-        env = os.environ.copy()
+        env = native_headless_environment()
         env["BEES_NATIVE_MODEL_STORE"] = str((inputs / "models").resolve(strict=True))
         if transport_token is not None:
             env["BEES_NATIVE_BUNDLE_TOKEN"] = transport_token
