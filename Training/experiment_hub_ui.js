@@ -7626,6 +7626,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 readiness.append(row);
             }
             if(!state.machines.length)readiness.textContent='No enrolled machines.';
+            const source=state.software_release_catalog?.sources?.tinybrains;
+            const line=document.createElement('p');
+            const label=document.createElement('strong');
+            label.textContent='TinyBrains automatic source updates: ';
+            const short=sha=>sha?sha.slice(0,12):'not available';
+            line.append(label,document.createTextNode(source
+                ?source.branch+' · latest '+short(source.latest_commit)+
+                    ' · checkout '+short(source.checkout_commit)+
+                    ' · activated '+short(source.activated_commit)+
+                    (state.software_release_catalog?.errors?.tinybrains
+                        ?' · publisher error: '+
+                            state.software_release_catalog.errors.tinybrains:'')
+                :'Not configured: no approved Halifax TinyBrains checkout was discovered.'));
+            readiness.append(line);
         }
         const selectedProject=$('hub-lease-project').value;
         refreshSelectOptions($('hub-lease-project'), [...state.projects.map(p=>
