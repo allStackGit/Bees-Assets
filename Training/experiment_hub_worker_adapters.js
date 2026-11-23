@@ -112,7 +112,31 @@ function installedUnityRelease() {
         record?.player_tree_sha256!==active.player_tree_sha256||
         record?.entrypoint!==entry)
         throw Error('Selected Bees Unity worker release and activation receipt disagree.');
-    return Object.freeze({workerExecutable:binary,releaseManifestPath:manifest});
+    const runtime=data.runtime;
+    if(runtime!==undefined&&(
+        !runtime||typeof runtime!=='object'||Array.isArray(runtime)||
+        Object.keys(runtime).sort().join(',')!==
+            ['archive','archive_bytes','archive_sha256','runtime_version'].join(',')||
+        runtime.archive!=='bees-runtime.zip'||
+        !SHA.test(String(runtime.archive_sha256||''))||
+        !SHA.test(String(runtime.runtime_version||''))||
+        !Number.isSafeInteger(runtime.archive_bytes)||
+        runtime.archive_bytes<1||runtime.archive_bytes>512*1024*1024))
+        throw Error('Selected Bees Unity release has an invalid immutable Python runtime receipt.');
+    const runtimeArchive=runtime?path.join(release,runtime.archive):null;
+    if(runtime&&(
+        fs.realpathSync(runtimeArchive)!==runtimeArchive||
+        fs.statSync(runtimeArchive).size!==runtime.archive_bytes||
+        crypto.createHash('sha256').update(fs.readFileSync(runtimeArchive)).digest('hex')!==
+            runtime.archive_sha256))
+        throw Error('Selected Bees Python learner/actor archive differs from the activated Unity release.');
+    return Object.freeze({
+        workerExecutable:binary,releaseManifestPath:manifest,
+        runtimeArchive,
+        runtimeSha256:runtime?.archive_sha256??null,
+        runtimeVersion:runtime?.runtime_version??null,
+        runtimeBuildId:runtime?data.build_id:null,
+    });
 }
 const approvedBeesRelease=
     enabled('bees_native')||enabled('bees_rollout')?installedUnityRelease():null;
@@ -123,6 +147,13 @@ const beesWorker=()=>{
 };
 const beesManifest=()=>approvedBeesRelease?.releaseManifestPath||
     process.env.EXPERIMENT_HUB_BEES_WORKER_MANIFEST||null;
+const beesTrainingArchive=()=>approvedBeesRelease&&approvedBeesRelease.runtimeArchive?
+    {
+        runtimeArchive:approvedBeesRelease.runtimeArchive,
+        runtimeSha256:approvedBeesRelease.runtimeSha256,
+        runtimeVersion:approvedBeesRelease.runtimeVersion,
+        runtimeBuildId:approvedBeesRelease.runtimeBuildId,
+    }:{};
 
 const adapters={};
 if(enabled('tinybrains')) {
@@ -178,6 +209,7 @@ if(enabled('bees_native')) {
         wanKeyPath:process.env.EXPERIMENT_HUB_BEES_WAN_KEY||null,
         wanBrokerPort:Number(process.env.EXPERIMENT_HUB_BEES_WAN_BROKER_PORT||55051),
         releaseManifestPath:beesManifest(),
+        ...beesTrainingArchive(),
     });
 }
 if(enabled('bees_rollout')) {
@@ -202,6 +234,7 @@ if(enabled('bees_rollout')) {
         keyPath:required('EXPERIMENT_HUB_BEES_WAN_KEY'),
         forwardPort:Number(required('EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT')),
         releaseManifestPath:beesManifest(),
+        ...beesTrainingArchive(),
         sshForward:sshEnabled?{
             learnerMachineId:required('EXPERIMENT_HUB_BEES_WAN_LEARNER_MACHINE'),
             tailnetIp:required('EXPERIMENT_HUB_BEES_WAN_SSH_TAILNET_IP'),
