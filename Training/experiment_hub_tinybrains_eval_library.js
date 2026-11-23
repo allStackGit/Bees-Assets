@@ -283,13 +283,26 @@ function nameOpponent(o,sourceId,name) {
 function customSuites(o) {
     const files=fs.existsSync(o.suites)?fs.readdirSync(o.suites):[];
     const names=files.filter(file=>MIX.test(file.slice(0,-5))&&file.endsWith('.json'));
-    // Leave room within the Hub's 64-suite/64-systemd-service cap for its
-    // existing base and historical opponent evaluators.
+    // Leave room in the Hub's 64-suite/service cap for existing evaluator
+    // families. One damaged optional mixed file never disables Nano/Micro.
     if(names.length>20)throw Error('Mixed evaluation archive has reached 20 revisions.');
-    return Object.fromEntries(names.map(file=>{
-        const name=file.slice(0,-5);
-        const match=MIX.exec(name);
-        return ['mix-'+match[1]+'-v'+match[2],name];
+    return Object.fromEntries(names.flatMap(file=>{
+        const name=file.slice(0,-5),match=MIX.exec(name);
+        try {
+            const source=privateFile(path.join(o.suites,file));
+            if(!source||fs.statSync(source).size>32768)
+                throw Error('Suite file is missing or oversized.');
+            const doc=JSON.parse(fs.readFileSync(source,'utf8'));
+            if(doc.schema_version!==2||doc.suite_id!==name||
+                !Array.isArray(doc.maps)||!doc.maps.length||
+                !Array.isArray(doc.opponents)||!doc.opponents.length)
+                throw Error('Incomplete immutable mixed suite.');
+            return [['mix-'+match[1]+'-v'+match[2],name]];
+        }catch(error) {
+            console.warn('[hub-evaluations] Ignoring invalid optional mixed suite '+name+
+                ': '+String(error.message||error).slice(0,150));
+            return [];
+        }
     }));
 }
 function library(o,hub) {
