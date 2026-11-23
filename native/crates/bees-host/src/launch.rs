@@ -6012,8 +6012,30 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
     // must FIRST be projected to the original physical single-Level human
     // challenge, exactly as the existing local trained-game picker does.
     let game_source = static_battle.map(|index| games[index].clone());
-    let token_map = read_private_multiplayer_file(&save_root.join(&settings.tokens_file), 2048)?;
-    let tokens = parse_host_side_tokens(&token_map)?;
+    let mut token_map = read_private_multiplayer_file(&save_root.join(&settings.tokens_file), 2048)?;
+    let mut tokens = parse_host_side_tokens(&token_map)?;
+    if trained_model.is_some() && settings.tokens_file == Path::new(GENERATED_HOST_TOKEN_MAP) {
+        use bees_host::presentation::{select_library, BattleMenuRow};
+        let rows = [
+            BattleMenuRow {
+                title: "Play side 1",
+                status: "  [Share multiplayer-invites/side-1.token]",
+                unlocked: true,
+            },
+            BattleMenuRow {
+                title: "Play side 2",
+                status: "  [Share multiplayer-invites/side-2.token]",
+                unlocked: true,
+            },
+        ];
+        let mut selected = 0;
+        let Some(side) = select_library(&rows, &mut selected, false)? else {
+            return Ok(());
+        };
+        let side = (side + 1).to_string();
+        tokens.retain(|key, _| key == &side);
+        token_map = serde_json::to_string(&tokens)?;
+    }
     // Recovery of a terminal result is a different lifecycle from
     // launching a new battle. Offer the same saved multiplayer host and
     // side-token configuration without allocating a new physical World.
@@ -7030,20 +7052,23 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     tokens_file == Path::new(GENERATED_HOST_TOKEN_MAP)
                 {
                     let directory = prepare_multiplayer_invites(save_root)?;
-                    let folder = directory.display().to_string();
-                    let invite_rows = [
-                        BattleMenuRow {
-                            title: "Start hosting", status: "", unlocked: true,
-                        },
-                        BattleMenuRow {
-                            title: "Share only side-1.token or side-2.token with the matching player",
-                            status: "", unlocked: false,
-                        },
-                        BattleMenuRow { title: &folder, status: "", unlocked: false },
-                    ];
-                    let mut selected = 0;
-                    if select_library(&invite_rows, &mut selected, false)?.is_none() {
-                        return Ok(());
+                    let is_trained = (library.games.len()..join_index).contains(&game_index);
+                    if !is_trained {
+                        let folder = directory.display().to_string();
+                        let invite_rows = [
+                            BattleMenuRow {
+                                title: "Start hosting", status: "", unlocked: true,
+                            },
+                            BattleMenuRow {
+                                title: "Share only side-1.token or side-2.token with the matching player",
+                                status: "", unlocked: false,
+                            },
+                            BattleMenuRow { title: &folder, status: "", unlocked: false },
+                        ];
+                        let mut selected = 0;
+                        if select_library(&invite_rows, &mut selected, false)?.is_none() {
+                            return Ok(());
+                        }
                     }
                     PathBuf::from(GENERATED_HOST_TOKEN_MAP)
                 } else {
