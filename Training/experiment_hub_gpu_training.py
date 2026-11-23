@@ -853,6 +853,63 @@ class ImmutableGpuRowCache:
         self.contiguous_view_hits = 0
         self.partial_hits = 0
         self.partial_bytes_saved = 0
+        self._seed_ready = None
+        self._seed_sources = []
+        self.seeded_rows = self.seeded_bytes = 0
+
+    def seed_bank(self, identities, source):
+        """Bulk-stage one frequently reused immutable shape bank.
+
+        The source is already a contiguous GPU bank belonging to the
+        primary optimizer. Reserve only a bounded portion of the secondary
+        cache and keep each row's identity; subsequent shuffled minibatches
+        read local GPU views. This runs before the PPO optimizer loop, not
+        during a critical forward/backward dispatch.
+        """
+        if (not isinstance(identities,(tuple,list)) or
+                not isinstance(source,torch.Tensor) or
+                source.device.type!="cuda" or source.device==self.device or
+                source.ndim<2 or not source.is_contiguous() or
+                len(identities)!=len(source) or
+                len(set(identities))!=len(identities) or
+                any(key in self.rows for key in identities)):
+            return 0
+        bytes_needed=source.numel()*source.element_size()
+        if not bytes_needed or self.resident_bytes+bytes_needed>self.max_bytes:
+            return 0
+        try:
+            producer=torch.cuda.current_stream(source.device)
+            consumer=torch.cuda.current_stream(self.device)
+            try:
+                consumer.wait_stream(producer)
+            except (RuntimeError,NotImplementedError):
+                producer.synchronize()
+            with torch.cuda.device(self.device), torch.cuda.stream(consumer):
+                remote=source.to(self.device,non_blocking=True)
+                ready=torch.cuda.Event()
+                ready.record(consumer)
+        except (RuntimeError,NotImplementedError,torch.OutOfMemoryError):
+            return 0
+        for index,key in enumerate(identities):
+            self.rows[key]=remote[index:index+1]
+        self._seed_ready=ready
+        self._seed_sources.append(source)
+        self.seeded_rows += len(identities)
+        self.seeded_bytes += bytes_needed
+        self.resident_bytes += bytes_needed
+        self.copied_bytes += bytes_needed
+        self.admitted_buffers += 1
+        return len(identities)
+
+    def _wait_seed(self):
+        if self._seed_ready is None:
+            return
+        try:
+            torch.cuda.current_stream(self.device).wait_event(self._seed_ready)
+        except (RuntimeError,NotImplementedError):
+            self._seed_ready.synchronize()
+        self._seed_ready=None
+        self._seed_sources.clear()
 
     @staticmethod
     def _contiguous_cached_view(views):
@@ -878,6 +935,8 @@ class ImmutableGpuRowCache:
             raise ValueError("Immutable GPU row request changed shape or identity")
         if boards.device == self.device:
             return boards
+        if self._seed_ready is not None:
+            self._wait_seed()
         keys = tuple(identifiers)
         if keys and all(key in self.rows and
                         self.rows[key].shape[1:] == boards.shape[1:] and
@@ -992,6 +1051,12 @@ class ImmutableGpuRowCache:
         return copied
 
     def clear(self):
+        # Retired peer banks must not be reclaimed while an asynchronous
+        # seed copy is still producing their contents.
+        if self._seed_ready is not None:
+            self._seed_ready.synchronize()
+            self._seed_ready=None
+        self._seed_sources.clear()
         self.rows.clear()
         self.resident_bytes = 0
 
@@ -1003,6 +1068,8 @@ class ImmutableGpuRowCache:
             cached_peer_copied_bytes=self.copied_bytes,
             cached_peer_buffer_allocations=self.admitted_buffers,
             cached_peer_oom_evictions=self.oom_evictions,
+            cached_peer_seeded_rows=self.seeded_rows,
+            cached_peer_seeded_bytes=self.seeded_bytes,
             cached_peer_contiguous_view_hits=self.contiguous_view_hits,
             cached_peer_partial_hits=self.partial_hits,
             cached_peer_partial_bytes_saved=self.partial_bytes_saved)
