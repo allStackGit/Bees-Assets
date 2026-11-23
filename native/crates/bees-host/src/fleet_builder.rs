@@ -1596,12 +1596,15 @@ fn fleet_offsets(side: usize, count: usize) -> Vec<[f32; 2]> {
 fn mixed_fleet_offsets(
     side: usize, total: usize, mix: FleetMix,
     arena_size: Option<u32>, catalog: &ShipAssetCatalog,
+    original_classes: &[u8],
 ) -> Result<Vec<[f32; 2]>, Box<dyn Error>> {
     let support = mix.support_count(total);
     let specialist = mix.specialist_count(total);
     let fighters = total - support - specialist;
     let fighter_kind = match mix {
         FleetMix::SourceClass(kind) => kind,
+        FleetMix::OriginalCombined => *original_classes.first()
+            .ok_or_else(|| invalid("mixed original fleet has no physical class sources"))?,
         _ => if side == 0 { 21 } else { 13 },
     };
     let support_kind = mix.support_type(side);
@@ -1619,7 +1622,9 @@ fn mixed_fleet_offsets(
         .chain(fighters..fighters + specialist)
         .chain(1..fighters)
     {
-        let kind = if index >= fighters + specialist { support_kind }
+        let kind = if matches!(mix, FleetMix::OriginalCombined) {
+            original_classes[index % original_classes.len()]
+        } else if index >= fighters + specialist { support_kind }
             else if index >= fighters {
                 mix.specialist_type_at(side, index - fighters)
             } else { fighter_kind };
@@ -2083,8 +2088,12 @@ pub(super) fn archive(
     scene["activate_fog_of_war"] = json!(selected.fog_of_war);
     for side in 0..2 {
         let Some(source) = &selected.source_fighter[side] else { continue };
-        let FleetMix::SourceClass(kind) = selected.mix[side] else {
-            return Err(invalid("original fighter source has no matching class choice").into());
+        let kind = match selected.mix[side] {
+            FleetMix::SourceClass(kind) => kind,
+            FleetMix::OriginalCombined => source["ship_type"].as_u64()
+                .and_then(|kind| u8::try_from(kind).ok())
+                .ok_or_else(|| invalid("original mixed fleet has no source starter class"))?,
+            _ => return Err(invalid("original fighter source has no matching class choice").into()),
         };
         if source["ship_type"] != kind || source["side"] != side + 1 ||
             source["policy"].is_object() || source["special"].is_object() ||
@@ -2164,16 +2173,23 @@ pub(super) fn archive(
     let mut carrier_parents: Vec<(i64, i64, usize, [f32; 2], bool)> = Vec::new();
     let catalog = ShipAssetCatalog::embedded()
         .map_err(|_| invalid("native source ship collider catalogue is incomplete"))?;
+    let original_kinds: [Vec<u8>; 2] = std::array::from_fn(|side|
+        selected.original_fighters[side].iter().filter_map(|ship|
+            ship["ship_type"].as_u64().and_then(|kind| u8::try_from(kind).ok())
+        ).collect()
+    );
     let offsets = [
         if matches!(selected.mix[0], FleetMix::Fighters) {
             fleet_offsets(0, selected.fleet_sizes[0])
         } else {
-            mixed_fleet_offsets(0, selected.fleet_sizes[0], selected.mix[0], selected.arena_size, &catalog)?
+            mixed_fleet_offsets(0, selected.fleet_sizes[0], selected.mix[0],
+                selected.arena_size, &catalog, &original_kinds[0])?
         },
         if matches!(selected.mix[1], FleetMix::Fighters) {
             fleet_offsets(1, selected.fleet_sizes[1])
         } else {
-            mixed_fleet_offsets(1, selected.fleet_sizes[1], selected.mix[1], selected.arena_size, &catalog)?
+            mixed_fleet_offsets(1, selected.fleet_sizes[1], selected.mix[1],
+                selected.arena_size, &catalog, &original_kinds[1])?
         },
     ];
     let support_count = [
