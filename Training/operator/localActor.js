@@ -29,6 +29,7 @@ const {
 } = require('./common');
 
 const { binding: gpuBinding } = require('./gpuBinding');
+const { preflightExternalLearner } = require('./runtime');
 
 const LOCAL_ACTOR_ENTRYPOINT = 'bees_elastic_wan_actor_worker.py';
 
@@ -326,6 +327,9 @@ async function startLocalActorIfNeeded(
     }
 
     const gpu = gpuBinding(config, 'local-actor');
+    if (gpu.index !== null) {
+        preflightExternalLearner(preparedRuntime.learner_python, config, 'local-actor');
+    }
     const commandHash = localActorSupervisorCommandHash(
         bootstrapPython,
         agent,
