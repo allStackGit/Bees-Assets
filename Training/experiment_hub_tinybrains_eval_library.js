@@ -283,7 +283,9 @@ function nameOpponent(o,sourceId,name) {
 function customSuites(o) {
     const files=fs.existsSync(o.suites)?fs.readdirSync(o.suites):[];
     const names=files.filter(file=>MIX.test(file.slice(0,-5))&&file.endsWith('.json'));
-    if(names.length>48)throw Error('Too many archived mixed evaluation revisions; retain at most 48.');
+    // Leave room within the Hub's 64-suite/64-systemd-service cap for its
+    // existing base and historical opponent evaluators.
+    if(names.length>20)throw Error('Mixed evaluation archive has reached 20 revisions.');
     return Object.fromEntries(names.map(file=>{
         const name=file.slice(0,-5);
         const match=MIX.exec(name);
