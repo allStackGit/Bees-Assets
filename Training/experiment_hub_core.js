@@ -21,13 +21,25 @@ const {validateCatalog,supportsDesign}=require('./experiment_hub_design_fields')
 const {ObservationArchive}=require('./experiment_hub_observations');
 const {ThroughputHistory}=require('./experiment_hub_throughput');
 function supportsJobRuntime(machine,job) {
+    if(job?.project_id==='bees_rollout') {
+        const approved=machine?.design_catalog?.bees_rollout;
+        const frozen=job.frozen_parameters||{};
+        return machine?.agent_platform==='linux'&&
+            machine?.installed_projects?.includes('bees_rollout')&&
+            approved?.worker_sha256===frozen.worker_sha256&&
+            approved?.trainer_sha256===frozen.trainer_sha256&&
+            approved?.runtime_version===frozen.runtime_version&&
+            approved?.wan_key_fingerprint===frozen.wan_key_fingerprint;
+    }
     if(job?.project_id==='bees_native') {
         const pinned=machine?.design_catalog?.bees_native;
         return machine?.agent_platform==='linux'&&
             machine?.installed_projects?.includes('bees_native')&&
             pinned?.worker_sha256===job.frozen_parameters?.worker_sha256&&
             pinned?.trainer_sha256===job.frozen_parameters?.trainer_sha256&&
-            pinned?.runtime_version===job.frozen_parameters?.runtime_version;
+            pinned?.runtime_version===job.frozen_parameters?.runtime_version&&
+            ((job.frozen_parameters?.wan_actors||0)===0||
+                pinned?.wan_key_fingerprint===job.frozen_parameters.wan_key_fingerprint);
     }
     return supportsTinyBrainsProfile(machine,job);
 }
@@ -527,7 +539,8 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
     if(projectId!=='bees_native')return;
     const keys=new Set(['max_steps','envs','seed','device','hyperparameters',
         'environment_args','worker_sha256','trainer_sha256','runtime_version',
-        'evaluation_profile','evaluation_matches','batch_inference']);
+        'evaluation_profile','evaluation_matches','batch_inference',
+        'wan_actors','wan_key_fingerprint']);
     if(!object(parameters)||Object.keys(parameters).some(key=>!keys.has(key))||
         !SHA256.test(String(parameters.worker_sha256||''))||
         !SHA256.test(String(parameters.trainer_sha256||''))||
@@ -540,6 +553,12 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
         parameters.seed<0||parameters.seed>2147483647||
         !['cpu','cuda'].includes(parameters.device))
         throw Error('Bees native jobs require a pinned Unity worker and MA-POCA trainer, 1,000–100 billion steps, 1–64 environments, a seed and a CPU/ROCm device.');
+    const actors=parameters.wan_actors??0;
+    if(!Number.isSafeInteger(actors)||actors<0||actors>8||
+        actors>0&&!SHA256.test(String(parameters.wan_key_fingerprint||''))||
+        actors===0&&parameters.wan_key_fingerprint!==undefined&&
+            !SHA256.test(String(parameters.wan_key_fingerprint)))
+        throw Error('Bees WAN actors require a private key fingerprint and a frozen 1–8 machine capacity.');
     if(typeof (parameters.batch_inference??true)!=='boolean')
         throw Error('Bees native batched inference preference must be a boolean.');
     if(!['off','scripted-maps-v1','scripted-coverage-v2'].includes(parameters.evaluation_profile??'off')||
@@ -1959,6 +1978,7 @@ function ensureDistributedRoles(state) {
     for(const [parent,id,roleName] of [
         ['tinybrains','tinybrains_rollout','TinyBrains rollout collectors'],
         ['courier','courier_lineage','Courier remote lineages'],
+        ['bees_native','bees_rollout','Bees Unity WAN simulation actors'],
     ]) {
         if(!state.projects.some(p=>p.id===parent&&p.adapter==='unconfigured')||
             state.projects.some(p=>p.id===id))continue;
