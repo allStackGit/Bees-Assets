@@ -31,7 +31,7 @@
     }
     function allowActions() {
         const blocked=!connected||acting||!current||
-            current.pending_release||current.operator_operation||
+            current.pending_release||current.operator_operation?.status==='running'||
             current.experiment_owned||current.queue_armed;
         buttons.stop.disabled=blocked||!current.training_enabled;
         buttons.resume.disabled=blocked||current.training_enabled||
