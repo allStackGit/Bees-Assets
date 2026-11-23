@@ -453,8 +453,9 @@ file (mode 0600); on Windows restrict it with local NTFS permissions. Do
 not commit, upload through Hub configurations, or place SSH credentials in
 the repository. The Hub advertises only a SHA-256 fingerprint of the key.
 
-**Private connection.** Linux actors may own their SSH forward within the
-same native Hub service. Configure all five additional Linux-agent variables:
+**Private connection.** Linux **and Windows** actors may own their SSH
+forward within the same native Hub service. Configure all five additional
+machine-local agent variables:
 
 \`\`\`text
 EXPERIMENT_HUB_BEES_WAN_LEARNER_MACHINE=halifax
@@ -464,8 +465,15 @@ EXPERIMENT_HUB_BEES_WAN_SSH_IDENTITY_FILE=/absolute/private/path/id_ed25519
 EXPERIMENT_HUB_BEES_WAN_SSH_KNOWN_HOSTS_FILE=/absolute/path/known_hosts
 \`\`\`
 
-Replace the sample address with the learner's real Tailscale IPv4. A fixed
-SSH port may be configured using
+Replace the sample address with the learner's real Tailscale IPv4.
+Use Windows absolute paths for the SSH identity and known-hosts files
+on a Windows actor, with NTFS permissions limited to its Hub service
+account. The Windows OpenSSH client normally lives at
+`C:/Windows/System32/OpenSSH/ssh.exe`; when it is installed elsewhere,
+set `EXPERIMENT_HUB_BEES_WAN_SSH_EXECUTABLE` to the local approved
+absolute executable path. No remote SSH server is needed on an actor
+merely to connect its forwarding client to Halifax.
+A fixed SSH port may be configured using
 \`EXPERIMENT_HUB_BEES_WAN_SSH_PORT=22\`. The learner-side forwarded broker
 port defaults to 55051 and is configured using
 \`EXPERIMENT_HUB_BEES_WAN_BROKER_PORT\` when different. Only a pinned host
@@ -473,7 +481,7 @@ key and noninteractive key-based SSH login are accepted. The actor runner
 starts and supervises the SSH forward, and fails its own Hub service if the
 forward exits.
 
-Without the managed SSH settings (including on Windows), provision an
+Without the managed SSH settings, provision an
 authenticated private forward before starting the group. For example:
 
 \`\`\`sh
