@@ -233,6 +233,30 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
             completed = [future.result() for future in futures]
     results = [row for row, _ in completed]
     reused = sum(was_reused for _, was_reused in completed)
+    # A logical cuda:0/cuda:1 allocation is not proof of two physical
+    # accelerators. Verify actual completed model forwards on a stable
+    # physical card for every serialized GPU lane, including resumed work.
+    physical_devices = {}
+    if scenario_devices is not None:
+        for row in results:
+            lane = row["inference_device"]
+            placement = row["result"].get("verified_inference_placement")
+            identity = (placement.get("gpu_device_identity")
+                        if isinstance(placement, dict) else None)
+            if not isinstance(identity, str) or not identity:
+                raise ValueError(
+                    f"native evaluation GPU {lane} lacks physical execution identity"
+                )
+            previous = physical_devices.setdefault(lane, identity)
+            if previous != identity:
+                raise ValueError(
+                    f"native evaluation GPU {lane} changed physical identity between scenarios"
+                )
+        if (len(physical_devices) != scenario_workers or
+                len(set(physical_devices.values())) != scenario_workers):
+            raise ValueError(
+                "parallel native evaluation did not prove distinct physical GPUs"
+            )
     # Recheck ALL pinned physical scenes, Stage files, model inputs and
     # source configurations at publication, including early scenarios.
     for source, digest, row in zip(sources, original_sha, results):
@@ -281,6 +305,7 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
         for row in results:
             label = row["inference_device"]
             work = device_work.setdefault(label, {
+                "gpu_device_identity": physical_devices[label],
                 "scenarios": 0, "episodes": 0, "world_steps": 0,
                 "execution_wall_seconds_sum": 0.0,
                 "completed_gpu_forward_calls": 0,
@@ -336,6 +361,7 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
         ),
         "requested_parallel_scenarios": scenario_workers,
         **({"allocated_inference_devices": list(scenario_devices),
+            "physical_inference_device_identities": physical_devices,
             "per_inference_device": device_work}
            if scenario_devices is not None else {}),
         "measured_simulation_world_steps_per_second": steps / measured,
@@ -355,6 +381,8 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
             "result_path": row["result_path"],
             "result_sha256": row["result_sha256"],
             "inference_device": row["inference_device"],
+            **({"physical_inference_device": physical_devices[row["inference_device"]]}
+               if scenario_devices is not None else {}),
             "episodes": row["result"]["episodes"],
             "side_win_rate": row["result"]["side_win_rate"],
             "draw_rate": row["result"]["draw_rate"],
