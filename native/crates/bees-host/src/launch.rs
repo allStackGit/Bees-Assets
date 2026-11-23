@@ -1768,6 +1768,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees replay-campaign <campaign-replay-setup.json> --output-dir <new-dir> --replay-inputs <player-inputs.jsonl>
        bees build <catalog.json> --output-dir <battle-runs> --side <n> --ship-type <n> --squad <saved-id>
        bees transfer <catalog.json> --output-dir <battle-runs> --ship <fleet-id> --squad <saved-id>
+       bees transfer-batch <catalog.json> --output-dir <battle-runs> --side <1|2> --squad <saved-id|0> --ships <id,id,...>
        bees reassign <catalog.json> --output-dir <battle-runs> --side <n> --ship <fleet-id> --from <saved-id> --squad <saved-id>
        bees squad-create <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
        bees squad-duplicate <catalog.json> --output-dir <battle-runs> --side <n> --template <saved-id>
