@@ -134,13 +134,11 @@ impl MiniMapLayout {
         true
     }
 
-    pub fn camera_rect(self, bottom_left: Vec2, top_right: Vec2) ->
-        Option<(f32, f32, f32, f32)>
-    {
-        let min = Vec2::new(bottom_left.x.max(self.bounds.min.x),
-            bottom_left.y.max(self.bounds.min.y));
-        let max = Vec2::new(top_right.x.min(self.bounds.max.x),
-            top_right.y.min(self.bounds.max.y));
+    /// Clip the viewport or an authored objective zone to the navigable map.
+    pub fn project_rect(self, min: Vec2, max: Vec2) -> Option<(f32, f32, f32, f32)> {
+        if !min.is_finite() || !max.is_finite() { return None; }
+        let min = Vec2::new(min.x.max(self.bounds.min.x), min.y.max(self.bounds.min.y));
+        let max = Vec2::new(max.x.min(self.bounds.max.x), max.y.min(self.bounds.max.y));
         if min.x >= max.x || min.y >= max.y { return None; }
         Some((
             self.plot_left + (min.x - self.bounds.min.x) * self.scale,

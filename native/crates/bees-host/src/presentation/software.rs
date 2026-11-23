@@ -3726,14 +3726,12 @@ impl NativeSoftwareRenderer {
             .filter(|_| view.campaign_objective != Some(bees_gameplay::campaign_dialogue::CampaignObjectiveKind::TitaniaMinesweeper) ||
                 view.combat.active_extraction_bounds().is_some())
         {
-            if let (Some((x0, y0)), Some((x1, y1))) = (
-                layout.project(exit.min), layout.project(exit.max),
-            ) {
+            if let Some((left, top, right, bottom)) = layout.project_rect(exit.min, exit.max) {
                 let color = 0x75dbab;
-                self.line(x0, y1, x1, y1, color);
-                self.line(x1, y1, x1, y0, color);
-                self.line(x1, y0, x0, y0, color);
-                self.line(x0, y0, x0, y1, color);
+                self.line(left, top, right, top, color);
+                self.line(right, top, right, bottom, color);
+                self.line(right, bottom, left, bottom, color);
+                self.line(left, bottom, left, top, color);
                 counts.minimap_extraction_exit_markers += 1;
             }
         }
@@ -3748,7 +3746,7 @@ impl NativeSoftwareRenderer {
             0.0, self.height as f32, self.width, self.height);
         let top_right = self.camera.screen_to_world(
             self.width as f32, 0.0, self.width, self.height);
-        if let Some((x0, y0, x1, y1)) = layout.camera_rect(bottom_left, top_right) {
+        if let Some((x0, y0, x1, y1)) = layout.project_rect(bottom_left, top_right) {
             let color = 0xe2c473;
             self.line(x0, y0, x1, y0, color);
             self.line(x1, y0, x1, y1, color);

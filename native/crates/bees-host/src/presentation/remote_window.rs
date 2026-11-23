@@ -1847,11 +1847,12 @@ fn draw_remote_minimap(
         if let (Some(min), Some(max)) =
             (point_from_wire(&points[0]), point_from_wire(&points[1]))
         {
-            if let (Some((x0, y0)), Some((x1, y1))) =
-                (layout.project(min), layout.project(max))
-            {
-                outline(pixels, x0.round() as i32, y1.round() as i32,
-                    (x1-x0).round() as i32, (y0-y1).round() as i32, GREEN);
+            if let Some((left, top, right, bottom)) = layout.project_rect(min, max) {
+                let (left, top, right, bottom) = (
+                    left.round() as i32, top.round() as i32,
+                    right.round() as i32, bottom.round() as i32,
+                );
+                outline(pixels, left, top, right - left, bottom - top, GREEN);
                 objective_markers += 1;
             }
         }
@@ -1865,7 +1866,7 @@ fn draw_remote_minimap(
     }
     let bottom_left = camera.screen_to_world(0.0, HEIGHT as f32, FIELD, HEIGHT);
     let top_right = camera.screen_to_world(FIELD as f32, 0.0, FIELD, HEIGHT);
-    if let Some((x0, y0, x1, y1)) = layout.camera_rect(bottom_left, top_right) {
+    if let Some((x0, y0, x1, y1)) = layout.project_rect(bottom_left, top_right) {
         outline(pixels, x0.round() as i32, y0.round() as i32,
             (x1-x0).round() as i32, (y1-y0).round() as i32, 0xe2c473);
     }
