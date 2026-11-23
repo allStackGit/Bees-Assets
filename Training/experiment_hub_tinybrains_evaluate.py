@@ -88,7 +88,7 @@ def mixed_pins_ok(pool, suite_root):
 def validate_mixed_suite(file, suite):
     required = {"suite_id", "maps", "seeds", "max_turns",
                 "opponents", "rotations", "schema_version"}
-    optional = {"runtime_sha256", "environment_source"}
+    optional = {"runtime_sha256", "environment_source", "environment_parameters"}
     if (set(suite) - required - optional or not required <= set(suite)
             or suite["schema_version"] != 2
             or not isinstance(suite["suite_id"], str)
