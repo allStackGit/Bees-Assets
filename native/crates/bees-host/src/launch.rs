@@ -131,6 +131,11 @@ struct LevelConfig {
     /// Physical named-hull objective in the shared CombatWorld.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     target_ship: Option<TargetShipConfig>,
+    /// Game-only physical episode deadline. A multi-battle Fish Tank uses
+    /// the canonical EpisodeTerminal timeout to turn stalemates into draws;
+    /// ordinary one-battle games and MA-POCA sources remain unchanged.
+    #[serde(default)]
+    game_timeout_seconds: Option<f32>,
     campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
     #[serde(default)]
     reinforcements: Vec<ReinforcementConfig>,
@@ -826,6 +831,7 @@ fn make_setup(
                 attacking_side: objective.attacking_side,
                 target_ship_id: objective.target_ship_id,
             }),
+        game_timeout_seconds: level.game_timeout_seconds,
         campaign_dialogue: level.campaign_dialogue,
         campaign_codex: None,
         reinforcements: level.reinforcements.iter().map(|wave| {
