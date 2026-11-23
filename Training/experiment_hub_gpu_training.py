@@ -265,6 +265,41 @@ def discrete_action_logprob_entropy(logits, actions):
     return chosen_logp, entropy
 
 
+def gather_training_columns_once(columns, index_groups, *,
+                                 max_output_bytes=16*1048576):
+    """Gather immutable GPU columns once for a whole grouped minibatch.
+
+    Shape-heterogeneous PPO workloads repeatedly select action, behavior,
+    feature or metadata columns separately for every map group. A single
+    concatenated index selection amortizes GPU kernel launches across all
+    groups, then callers retain zero-copy views in the original group order.
+    Only the temporary gathered output has an extra bounded lifetime.
+    """
+    if (not isinstance(columns,(tuple,list)) or not columns or
+            not isinstance(index_groups,(tuple,list)) or
+            len(index_groups)<2 or
+            type(max_output_bytes) is not int or max_output_bytes<1):
+        return None
+    first=columns[0]
+    if (not isinstance(first,torch.Tensor) or first.ndim!=1 or
+            first.device.type!="cuda" or
+            any(not isinstance(column,torch.Tensor) or column.ndim!=1 or
+                column.device!=first.device or column.requires_grad
+                for column in columns) or
+            any(not isinstance(group,torch.Tensor) or group.ndim!=1 or
+                group.device!=first.device or group.requires_grad or
+                group.dtype not in (torch.int32,torch.int64)
+                for group in index_groups)):
+        return None
+    total=sum(group.numel() for group in index_groups)
+    if (not total or total*sum(column.element_size()
+                              for column in columns)>max_output_bytes):
+        return None
+    indices=torch.cat(tuple(index_groups))
+    result=tuple(column.index_select(0,indices) for column in columns)
+    return result,tuple(group.numel() for group in index_groups)
+
+
 def pack_immutable_gpu_scalar_columns(columns):
     """Coalesce repeated small GPU peer copies without reducing precision.
 
