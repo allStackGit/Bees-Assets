@@ -896,7 +896,25 @@ def author(args) -> tuple[dict, dict, dict]:
     if args.map_background is not None:
         scene["map_background"] = args.map_background
     scene["activate_hivemind"] = False
-    scene["activate_collision_asteroids"] = False
+    # Use the existing source Stage prefab palette, physical asteroid pool
+    # and Level-owned fixed-step timer. Both playable and policy scenes
+    # inherit these exact same collision and spawning rules.
+    asteroid_interval = getattr(args, "collision_asteroid_interval", None)
+    if asteroid_interval is not None:
+        minimum, maximum = asteroid_interval
+        if not 1 <= minimum <= maximum <= 3600:
+            raise ValueError("collision asteroid interval must be 1..3600 seconds, MIN <= MAX")
+        palette = run["native_stage"].get("asteroid_prefab_numbers")
+        if not isinstance(palette, list) or not palette:
+            raise ValueError("collision asteroid spawning requires source Stage asteroid prefabs")
+        scene["activate_collision_asteroids"] = True
+        run["levels"][0]["collision_asteroid_timer"] = {
+            "minimum_seconds": minimum,
+            "maximum_seconds": maximum,
+        }
+    else:
+        scene["activate_collision_asteroids"] = False
+        run["levels"][0].pop("collision_asteroid_timer", None)
     scene["activate_fog_of_war"] = args.fog
     if host is not None:
         scene["local_player_side"] = host
@@ -2364,6 +2382,10 @@ def battle_parser() -> argparse.ArgumentParser:
                         help="Beenoculars briefing variant when the base is under heavy fire")
     parser.add_argument("--fog", action="store_true",
                         help="use the authoritative native player fog system")
+    parser.add_argument("--collision-asteroid-interval", type=int, nargs=2,
+                        metavar=("MIN_SECONDS", "MAX_SECONDS"),
+                        help="enable real source collision asteroids using the shared Level timer; "
+                             "spawn interval in original integer seconds, 1..3600")
     parser.add_argument("--empty-map", action="store_true",
                         help="omit source mining resources, static boxes and map objects")
     parser.add_argument("--arena-size", type=float,
