@@ -191,10 +191,14 @@ class IndependentGpuTraining:
                 torch.cuda.Stream(device=self.device)
                 for _ in range(min(self.max_streams, len(self.models)))
             ]
+        # All inputs are ready on the caller's stream before this call.
+        # A stream needs one wait edge per batch, not per independent
+        # small model. The stream's own queue orders later model steps.
+        for stream in self.streams[:width]:
+            stream.wait_stream(caller)
         result = []
         for index, (step, tensors) in enumerate(zip(steps, inputs)):
             stream = self.streams[index % width]
-            stream.wait_stream(caller)
             with torch.cuda.stream(stream):
                 result.append(step())
             # The caller may discard a minibatch after run() returns even
