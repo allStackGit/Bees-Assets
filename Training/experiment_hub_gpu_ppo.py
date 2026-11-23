@@ -50,6 +50,7 @@ class QualifiedPpoActionTerms:
         self.min_rows = min_rows
         self.selected = {}
         self.speedups = {}
+        self.row_ranges = {}
 
     @staticmethod
     def _key(device, dtype, action_count):
@@ -111,23 +112,54 @@ class QualifiedPpoActionTerms:
                     not torch.allclose(reference_grad,trial_grad,
                                        rtol=3e-4,atol=3e-5)):
                 return False
-            # Two paired rounds avoid selecting a kernel solely because
-            # the ROCm GPU was transiently busy with a separate collector.
-            eager_times=[]
-            compiled_times=[]
-            for order in range(4):
-                options=((ppo_action_terms,eager_times),
-                         (candidate,compiled_times))
-                if order%2:
-                    options=options[::-1]
-                for fn,times in options:
-                    times.append(self._seconds(fn,inputs,clip,device))
-            eager=median(eager_times)
-            fused=median(compiled_times)
-            if eager<=0 or fused>=eager*(1-self.min_speedup):
+            # Short action cohorts are launch-bound while larger groups
+            # may favor fused arithmetic. Qualify both independently and
+            # select only sizes for which GPU forward+backward really wins.
+            results=[]
+            for rows in sorted(set((min(256,sample_rows),sample_rows))):
+                case=(inputs if rows==sample_rows else
+                      self._sample(device,dtype,action_count,rows))
+                if rows!=sample_rows:
+                    small_reference,small_grad=self._forward_backward(
+                        ppo_action_terms,case,clip)
+                    small_trial,small_trial_grad=self._forward_backward(
+                        candidate,case,clip)
+                    if (not torch.allclose(
+                            small_reference,small_trial,rtol=2e-4,atol=2e-5)
+                        or not torch.allclose(
+                            small_grad,small_trial_grad,
+                            rtol=3e-4,atol=3e-5)):
+                        results.append((rows,False,0.))
+                        continue
+                ordinary_times,compiled_times=[],[]
+                for order in range(4):
+                    options=((ppo_action_terms,ordinary_times),
+                             (candidate,compiled_times))
+                    if order%2:
+                        options=options[::-1]
+                    for fn,times in options:
+                        times.append(self._seconds(fn,case,clip,device))
+                eager=median(ordinary_times)
+                fused=median(compiled_times)
+                gain=(1-fused/eager if eager>0 else -1.)
+                results.append((rows,gain>=self.min_speedup,gain))
+            admitted=[row for row,winning,_ in results if winning]
+            if not admitted:
                 return False
+            if len(admitted)==len(results):
+                allowed=(self.min_rows,None)
+            elif admitted[0]==max(row for row,_,_ in results):
+                # Large cohorts win but small ones don't: keep eager for
+                # smaller launch-bound work, including unmeasured middles.
+                allowed=(max(admitted),None)
+            else:
+                # Small cohorts win but big ones don't: don't extrapolate
+                # a CUDA graph/codegen win into long ant populations.
+                allowed=(self.min_rows,min(admitted))
             self.selected[key]=candidate
-            self.speedups[key]=max(0.,1-fused/eager)
+            self.row_ranges[key]=allowed
+            self.speedups[key]=max(
+                gain for _,winning,gain in results if winning)
             return True
         except Exception:
             # Compilation is optional. Leave the numerically established
@@ -138,7 +170,11 @@ class QualifiedPpoActionTerms:
     def __call__(self, logits, actions, old_logp, advantages, clip):
         key=self._key(logits.device,logits.dtype,logits.shape[-1])
         compiled=self.selected.get(key)
-        if (compiled is None or len(logits)<self.min_rows):
+        low,high=self.row_ranges.get(key,(self.min_rows,None))
+        if (compiled is None or len(logits)<low or
+                (high is not None and len(logits)>high) or
+                old_logp.dtype!=logits.dtype or
+                advantages.dtype!=logits.dtype):
             return ppo_action_terms(
                 logits,actions,old_logp,advantages,clip)
         try:
@@ -148,6 +184,7 @@ class QualifiedPpoActionTerms:
             # live policy or optimizer. No gradients have been accumulated
             # by this pure forward when fallback is selected.
             self.selected[key]=None
+            self.row_ranges.pop(key,None)
             return ppo_action_terms(
                 logits,actions,old_logp,advantages,clip)
 
@@ -156,5 +193,6 @@ class QualifiedPpoActionTerms:
             "ppo_compiled_action_devices":sum(
                 item is not None for item in self.selected.values()),
             "ppo_compiled_action_speedup":(
-                max(self.speedups.values()) if self.speedups else 0.)
+                max((self.speedups[key] for key,fn in self.selected.items()
+                     if fn is not None),default=0.))
         }
