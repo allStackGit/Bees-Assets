@@ -167,6 +167,7 @@ pub struct NativeShopMenuRow {
     pub side: i32,
     pub ship_type: u8,
     pub saved_squad_id: i64,
+    pub quantity: u32,
 }
 
 /// Read-only projection from the committed source campaign ledger. No
@@ -248,7 +249,7 @@ pub enum NativeBattleMenuAction {
         match_speed: bool, color_setting: NativeSquadColorSetting,
         formation: NativeSavedSquadFormation,
         placements: Vec<NativeSavedShipPlacement> },
-    Buy { side: i32, ship_type: u8, saved_squad_id: i64 },
+    Buy { side: i32, ship_type: u8, saved_squad_id: i64, quantity: u32 },
     Transfer { fleet_ship_id: i64, to_saved_squad_id: i64 },
     TransferBatch { side: i32, fleet_ship_ids: Vec<i64>,
         to_saved_squad_id: i64 },
@@ -1128,6 +1129,7 @@ fn select_battle_inner(
                             side: row.side,
                             ship_type: row.ship_type,
                             saved_squad_id: row.saved_squad_id,
+                            quantity: row.quantity,
                         })
                 }
             };
