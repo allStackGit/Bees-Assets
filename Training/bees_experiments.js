@@ -32,6 +32,16 @@ const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig, resolvePython, 
 const HOST = '127.0.0.1';
 // A fixed port also prevents two coordinators from writing the same state file.
 const PORT = 7148;
+const forwardedPortRaw=String(process.env.BEES_EXPERIMENTS_FORWARDED_PORT||'');
+const forwardedPort=forwardedPortRaw?Number(forwardedPortRaw):null;
+if(forwardedPortRaw&&(
+    !/^[1-9][0-9]*$/.test(forwardedPortRaw)||
+    !Number.isSafeInteger(forwardedPort)||
+    forwardedPort<1024||forwardedPort>65535||
+    [PORT,7149].includes(forwardedPort)))
+    throw Error('BEES_EXPERIMENTS_FORWARDED_PORT must be a distinct private loopback TCP port.');
+const allowedManagerHosts=new Set([PORT,...(forwardedPort?[forwardedPort]:[])]
+    .flatMap(port=>['127.0.0.1:'+port,'localhost:'+port]));
 const DATA_ROOT = selectedRoot(paths.trainingRoot);
 const DB = path.join(DATA_ROOT, 'experiments-v1.json');
 const HTML = path.join(__dirname, 'experiments.html');
@@ -2344,9 +2354,10 @@ async function exportExperimentLogs(item, res, percent) {
 
 const server = http.createServer(async (req, res) => {
     const host = req.headers.host, origin = req.headers.origin;
-    if (!((host === HOST + ':' + PORT || host === 'localhost:' + PORT) &&
-        (!origin || origin === 'http://' + HOST + ':' + PORT ||
-         origin === 'http://localhost:' + PORT))) {
+    if (!allowedManagerHosts.has(host) ||
+        (origin&&!allowedManagerHosts.has(origin.replace(/^http:\/\//,''))) ||
+        (req.headers['sec-fetch-site']&&
+            !['same-origin','none'].includes(req.headers['sec-fetch-site']))) {
         return json(res, 403, { error: 'Loopback-only web interface.' });
     }
     try {
