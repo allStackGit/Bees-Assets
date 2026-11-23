@@ -12,7 +12,7 @@ const {validateProgress}=require('./experiment_hub_progress');
 const UUID=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 const SHA=/^[0-9a-f]{64}$/;
 const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
-const SAFE_PATH=/^[A-Za-z0-9_./:@=+\-,]+$/;
+const SAFE_PATH=/^[A-Za-z0-9_./:@=+\-, ]+$/;
 const FLAGS=/^--rl-[a-z0-9-]+(?:=[^\r\n\x00]{0,192})?$/i;
 const HYPER={
     batch_size:[1,65536,true],
@@ -104,6 +104,9 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         throw Error('The first native Bees Unity training adapter requires the Linux ROCm supervisor.');
     const project=fs.realpathSync(projectRoot);
     const artifacts=fs.realpathSync(artifactRoot);
+    if(!/^[A-Za-z0-9_./:@=+\-,]+$/.test(project)||
+        !/^[A-Za-z0-9_./:@=+\-,]+$/.test(artifacts))
+        throw Error('Bees native owner directories must be valid systemd argument paths.');
     if(!fs.statSync(project).isDirectory()||
         !fs.statSync(artifacts).isDirectory()||
         artifacts===project||artifacts.startsWith(project+path.sep)||
