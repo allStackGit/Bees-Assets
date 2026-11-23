@@ -50,6 +50,7 @@ function usage() {
         'an artifact manifest under ../Builds/OfflineWorkers/. No server, learner,',
         'experiment, checkpoint, remote worker or active release is modified.',
         'The Windows target requires Windows Build Support installed in Unity.',
+        'Every build also packages the exact matching Bees Python learner/actor runtime.',
     ].join('\n');
 }
 
@@ -226,6 +227,25 @@ async function build(argv = process.argv.slice(2)) {
         });
     }
 
+    // Freeze the actual Python learner/actor code from the same Assets
+    // snapshot as both Unity players. The WAN runtime is a content-addressed
+    // source release, never whatever an actor's checkout happens to contain.
+    const runtimeArchive=path.join(root,'bees-runtime.zip');
+    const runtimeTool=path.join(paths.assetsRoot,'Training','bees_release_runtime.py');
+    const packaged=runSync(python,['-B',runtimeTool,'package',
+        '--assets-root',paths.assetsRoot,'--output',runtimeArchive,
+        '--build-id',buildId,'--source-commit',commit],{
+        cwd:paths.assetsRoot,timeout:120000,maxBuffer:1024*1024,
+    });
+    const runtime=JSON.parse(String(packaged.stdout||''));
+    if(runtime.archive!==runtimeArchive||runtime.build_id!==buildId||
+        runtime.source_commit!==commit||
+        !/^[0-9a-f]{64}$/.test(String(runtime.archive_sha256||''))||
+        !/^[0-9a-f]{64}$/.test(String(runtime.runtime_version||''))||
+        runtime.archive_sha256!==(await sha256(runtimeArchive))||
+        runtime.archive_size_bytes!==fs.statSync(runtimeArchive).size)
+        throw Error('Compiled Bees runtime ZIP failed immutable source provenance verification.');
+
     if (getGitShortSha() !== commit ||
         (await sha256(packagesManifest)) !== packagesSha ||
         dirtySource() !== sourceDirty||
@@ -244,6 +264,12 @@ async function build(argv = process.argv.slice(2)) {
         unity_version: version,
         packages_manifest_sha256: packagesSha,
         artifacts,
+        runtime:{
+            archive:'bees-runtime.zip',
+            archive_sha256:runtime.archive_sha256,
+            archive_bytes:runtime.archive_size_bytes,
+            runtime_version:runtime.runtime_version,
+        },
     };
     const manifestPath = path.join(root, 'worker-build-manifest.json');
     fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + os.EOL, {
