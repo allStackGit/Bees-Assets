@@ -347,6 +347,9 @@ pub struct NativeArchivedBattleReceipt {
     /// already binds the COMPLETE token map; only exact matching
     /// credentials can authenticate those legacy participants.
     pub legacy_credentials_sha256: Option<[u8; 32]>,
+    // This physical match never had a player commander. Recovered
+    // terminal results can be delivered only through view-only credentials.
+    pub spectator_only: bool,
     pub battle_result: Value,
     pub campaign_outcome: Option<Value>,
     pub banked_minerals: Option<u64>,
@@ -885,6 +888,10 @@ impl NativeRemotePlay {
         sides
     }
 
+    pub fn spectator_only(&self) -> bool {
+        self.spectator_only_host
+    }
+
     /// Reuse the authenticated nonblocking LAN protocol for committed
     /// results even when no battle is running. No World is created here.
     pub fn serve_archived_only(&mut self) {
@@ -904,6 +911,7 @@ impl NativeRemotePlay {
         for receipt in receipts {
             if (receipt.authorized_sides.is_empty() !=
                     receipt.legacy_credentials_sha256.is_some()) ||
+                (receipt.spectator_only && receipt.authorized_sides.is_empty()) ||
                 receipt.authorized_sides.len() > 2 ||
                 receipt.authorized_sides.iter().any(|side|
                     !(1..=2).contains(side)) ||
@@ -1354,10 +1362,11 @@ impl NativeRemotePlay {
                                 // may satisfy that session identity.
                                 let Some(receipt) = self.archived_receipts.get(original)
                                     .filter(|receipt|
-                                        receipt.authorized_sides.contains(&side) ||
+                                        (!receipt.spectator_only || spectator) &&
+                                        (receipt.authorized_sides.contains(&side) ||
                                         (!spectator &&
                                             receipt.legacy_credentials_sha256.is_some_and(|prior|
-                                                prior == credential_digest(&self.side_tokens))))
+                                                prior == credential_digest(&self.side_tokens)))))
                                 else {
                                     peer.closed = true;
                                     break;
