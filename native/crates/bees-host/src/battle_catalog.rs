@@ -1799,7 +1799,8 @@ impl BattleCatalog {
                 if !matches!(squad.side, 1 | 2) ||
                     squad.saved_squad_id <= 0 ||
                     squad.saved_squad_id == i64::MAX ||
-                    progress.squads.contains_key(&squad.saved_squad_id) ||
+                    progress.squads.get(&squad.saved_squad_id)
+                        .is_some_and(|record| record.side != squad.side) ||
                     progress.awarded_saved_squad_ids.contains(&squad.saved_squad_id) ||
                     progress.retired_squad_ids.contains(&squad.saved_squad_id) ||
                     squad.template_saved_squad_id <= 0 ||
@@ -2001,7 +2002,8 @@ impl BattleCatalog {
                 if !matches!(squad.side, 1 | 2) ||
                     squad.saved_squad_id <= 0 ||
                     squad.saved_squad_id == i64::MAX ||
-                    progress.squads.contains_key(&squad.saved_squad_id) ||
+                    progress.squads.get(&squad.saved_squad_id)
+                        .is_some_and(|record| record.side != squad.side) ||
                     progress.retired_squad_ids.contains(&squad.saved_squad_id) ||
                     progress.created_squads.iter().any(|old|
                         old.saved_squad_id == squad.saved_squad_id) ||
