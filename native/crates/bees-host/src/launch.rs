@@ -2636,7 +2636,7 @@ fn run_session(
 ) -> Result<(), Box<dyn Error>> {
     run_session_with_queen_access(
         config_path, play, view, output, capture, replay_inputs, mission,
-        None, None, &[Vec::new(), Vec::new()],
+        None, None, &fleet_builder::OriginalGameSources::default(),
     )
 }
 
@@ -2648,7 +2648,7 @@ fn run_session_with_queen_access(
     config_path: &Path, play: bool, view: bool, output: Option<PathBuf>,
     capture: Option<PathBuf>, mut replay_inputs: Option<PathBuf>,
     mission: Option<CampaignMission<'_>>, original_queen: Option<&Value>,
-    original_factory: Option<&Value>, fighters: &[Vec<Value>; 2],
+    original_factory: Option<&Value>, sources: &fleet_builder::OriginalGameSources,
 ) -> Result<(), Box<dyn Error>> {
     let mut config_path = config_path.canonicalize()?;
     let mut replay_number = 0_u64;
@@ -2689,7 +2689,7 @@ fn run_session_with_queen_access(
                 .ok_or_else(||invalid("squad maker requires a native game library"))?;
             let Some(choice)=fleet_builder::choose_for_preferred_side(
                 save_root, restart.preferred_player_side,
-                original_queen, original_factory, fighters,
+                original_queen, original_factory, sources,
             )? else {
                 // Cancelling Squad Maker returns to the library rather
                 // than restoring the already-retired CombatWorld.
@@ -5829,7 +5829,7 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     library: &NativeLibrary, games: &[PathBuf],
     trained: &[trained_library::TrainedGame],
     freeplay_unlocked: bool, original_queen: Option<&Value>,
-    original_factory: Option<&Value>, fighters: &[Vec<Value>; 2])
+    original_factory: Option<&Value>, sources: &fleet_builder::OriginalGameSources)
     -> Result<(), Box<dyn Error>>
 {
     let settings:NativeSavedHost=serde_json::from_slice(&fs::read(settings_path)?)?;
@@ -6032,7 +6032,7 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
                 }).collect::<Vec<_>>();
             if saved.is_empty() {
                 fleet_builder::choose_multiplayer(
-                    None, save_root, original_queen, original_factory, fighters)?
+                    None, save_root, original_queen, original_factory, sources)?
             } else {
                 use bees_host::presentation::{select_library, BattleMenuRow};
                 let mut rows = Vec::with_capacity(saved.len() + 1);
@@ -6049,7 +6049,7 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
                 match select_library(&rows, &mut selected, false)? {
                     None => None,
                     Some(0) => fleet_builder::choose_multiplayer(
-                    None, save_root, original_queen, original_factory, fighters)?,
+                    None, save_root, original_queen, original_factory, sources)?,
                     Some(index) => {
                         saved_host_fleet = Some(saved[index - 1].1.clone());
                         None
@@ -6058,7 +6058,7 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
             }
         } else {
             fleet_builder::choose_multiplayer(
-                single_remote_side, save_root, original_queen, original_factory, fighters)?
+                single_remote_side, save_root, original_queen, original_factory, sources)?
         }
     } else { None };
     if custom_fleet && generated_recovery.is_none() &&
@@ -6387,13 +6387,13 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                         None
                     },
                 })
-            ).unwrap_or([Vec::new(), Vec::new()])
-        } else { [Vec::new(), Vec::new()] };
+            ).unwrap_or_default()
+        } else { fleet_builder::OriginalGameSources::default() };
         // The same source traversal collected production hulls, fighter
         // classes, genuine specialist abilities, and Carrier children.
         // Do not reparse the entire campaign for one Factory or let a
         // synthetic example override the canonical original assets.
-        let original_factory = original_fighters[1].iter()
+        let original_factory = original_fighters.ships[1].iter()
             .find(|ship| ship["ship_type"] == 9).cloned();
         let unlocked_games = library.games.iter().map(|game| -> io::Result<bool> {
             if let Some(gate) = game.unlock_after_playtime.as_ref() {
