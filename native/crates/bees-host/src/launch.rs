@@ -13032,12 +13032,34 @@ fn run_battle(
     let remote_session_id = remote.as_ref().map(|server| server.session_id().to_owned());
     let remote_authorized_sides = remote.as_ref().map(|server| server.authorized_sides());
     let remote_spectator_only = remote.as_ref().map(|server| server.spectator_only());
+    let fish_tank_series = if config.levels.len() == 1 &&
+        config.episodes_per_world > 1 &&
+        config.levels[0].game_timeout_seconds.is_some()
+    {
+        // Use the native terminal sink's already committed outcomes. A
+        // partial or failed session is not promoted to a full tournament.
+        let ledger = host.sink_mut().measurements();
+        Some(json!({
+            "scope": "committed_native_episode_final",
+            "requested_battles": config.episodes_per_world,
+            "completed_battles": ledger.episodes_finished,
+            "bees_wins": ledger.victories_by_side.get(&1).copied().unwrap_or(0),
+            "human_wins": ledger.victories_by_side.get(&2).copied().unwrap_or(0),
+            "draws": ledger.draws,
+            "timed_out_battles": ledger.episodes_timed_out,
+            "single_battle_timeout_seconds": config.levels[0].game_timeout_seconds,
+            "series_fully_completed": failed_window.is_none() &&
+                cleanup_errors.is_empty() &&
+                ledger.episodes_finished == u64::from(config.episodes_per_world),
+        }))
+    } else { None };
     let mut final_summary = json!({
         "kind": "run_final",
         "resident_policy_exit_clean": resident_policy_exit_clean,
         "remote_session_id": remote_session_id,
         "remote_authorized_sides": remote_authorized_sides,
         "remote_spectator_only": remote_spectator_only,
+        "fish_tank_series": fish_tank_series,
         "remote_terminal_receipt": remote_terminal_receipt,
         // Exactly one committed native World result, shared by LAN and
         // local score projections. Match history is derived from these
