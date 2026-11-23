@@ -158,6 +158,12 @@ const DESIGN_FIELDS=Object.freeze([
     {key:'evaluation_matches',label:'Matches per evaluation scenario',section:'training',
         type:'integer',default:8,min:1,max:100},
 ]);
+// Post-training benchmark suites are independent of PPO. The native runner
+// publishes these only after it has frozen the final ONNX checkpoint.
+const BEES_FINAL_SUITES=Object.freeze({
+    'scripted-maps-v1':'bees_scripted_maps_v1',
+    'scripted-coverage-v2':'bees_scripted_coverage_v2',
+});
 const METRICS=Object.freeze(['training_steps','elapsed_training_seconds',
     'environment_steps_per_second','mean_reward','mean_episode_steps',
     'policy_loss','value_loss','policy_entropy','self_play_elo',
@@ -334,6 +340,64 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         },
         checkpoint_ready(context) {checkpoint(context);return true;},
         model_checkpoint_sha256(context) {return checkpoint(context).sha256;},
+        evaluation_suites:Object.values(BEES_FINAL_SUITES),
+        readEvaluation(context) {
+            if(context?.project_id!=='bees_native'||
+                !UUID.test(String(context.job_id||''))||
+                !UUID.test(String(context.dispatch_id||''))||
+                !Object.values(BEES_FINAL_SUITES).includes(context.suite_id))
+                throw Error('Invalid Bees final evaluation dispatch or suite.');
+            const root=jobPath(artifacts,context);
+            const summary=path.join(root,'evaluations','summary.json');
+            if(!fs.existsSync(summary))return null;
+            if(fs.realpathSync(summary)!==summary||
+                fs.statSync(summary).size>32768||
+                !fs.statSync(summary).isFile())
+                throw Error('Bees final evaluation receipt is redirected or oversized.');
+            const input=path.join(root,'job.json');
+            if(fs.realpathSync(input)!==input||
+                fs.statSync(input).size>65536)
+                throw Error('Frozen Bees final evaluation job is unavailable.');
+            const job=JSON.parse(fs.readFileSync(input,'utf8'));
+            const suite=BEES_FINAL_SUITES[job.evaluation_profile];
+            if(job.job_id!==context.job_id||suite!==context.suite_id)
+                throw Error('Bees final evaluation suite differs from its frozen job.');
+            const digest=fileHash(summary);
+            // Reuse the strict per-case, opponent and total accounting already
+            // enforced by readProgress. No raw JSON observation may create a
+            // success claim independently of that existing verified summary.
+            const progress=this.readProgress(context);
+            if(!progress||fileHash(summary)!==digest)
+                throw Error('Bees final evaluation changed while being verified.');
+            const report=JSON.parse(fs.readFileSync(summary,'utf8'));
+            const matches=progress.metrics?.evaluation_matches?.value;
+            const wins=progress.metrics?.evaluation_win_rate?.value;
+            const score=progress.metrics?.evaluation_score_rate?.value;
+            const timeout=progress.metrics?.evaluation_timeout_rate?.value;
+            if(!Number.isSafeInteger(matches)||matches<1||
+                !Number.isSafeInteger(report.total_wins)||
+                matches!==report.total_matches||
+                !Number.isFinite(wins)||Math.abs(wins-report.total_wins/matches)>1e-10||
+                !Number.isFinite(score)||!Number.isFinite(timeout))
+                throw Error('Bees final evaluation accounting differs from its verified progress.');
+            const receipt=checkpoint(context);
+            if(report.model_sha256!==receipt.sha256||
+                fileHash(summary)!==digest)
+                throw Error('Bees final evaluation does not belong to the final model.');
+            return {
+                schema_version:1,suite_id:suite,
+                dispatch_id:context.dispatch_id,
+                checkpoint_sha256:receipt.sha256,
+                trials:matches,successes:report.total_wins,
+                runtime_sha256:approved.runtimeVersion,
+                evaluated_at:fs.statSync(summary).mtime.toISOString(),
+                metrics:{
+                    score_rate:{value:score,unit:'ratio'},
+                    timeout_rate:{value:timeout,unit:'ratio'},
+                    draw_count:{value:report.total_draws,unit:'count'},
+                },
+            };
+        },
         args(parameters,context) {
             jobPath(artifacts,context);
             const frozen=normalize(parameters,context,approved);
