@@ -2398,6 +2398,52 @@ pub(super) fn archive(
     }
     for side in 0..2_usize {
         for index in 1..selected.fleet_sizes[side] {
+            if matches!(selected.mix[side], FleetMix::OriginalCombined) {
+                let classes = &selected.original_fighters[side];
+                if classes.len() < 2 {
+                    return Err(invalid("combined original fleet needs multiple real source classes").into());
+                }
+                let template = &classes[index % classes.len()];
+                if template["side"] != side + 1 ||
+                    template["policy"].is_object() ||
+                    template["special"].is_object() ||
+                    template["special_weapon"].is_object()
+                {
+                    return Err(invalid("combined original fleet cannot clone a policy or special ship").into());
+                }
+                // Every distinct class remains its own original physical
+                // ship (including authentic turret/range, vision, and
+                // sprite metadata), yet all enter the ONE game/learner
+                // command roster and authoritative CombatWorld.
+                let ship_id = 600_i64 + side as i64 * 200 + index as i64;
+                let squad_id = 700_i64 + side as i64 * 200 + index as i64;
+                let controlled = !selected.ai_both &&
+                    selected.player_side.is_none_or(|player|
+                        player == side as i32 + 1);
+                let offset = offsets[side][index];
+                let mut ship = template.clone();
+                ship["entity_id"] = json!(ship_id);
+                ship["fleet_ship_id"] = json!(ship_id);
+                ship["persistent_fleet"] = json!(true);
+                ship["user_controlled"] = json!(controlled);
+                ship["position"] = json!([
+                    (if side == 0 { -75.0 } else { 75.0 }) + offset[0], offset[1],
+                ]);
+                ship["formation_offset"] = json!([0.0, 0.0]);
+                scene["ships"].as_array_mut()
+                    .ok_or_else(|| invalid("native mixed source lost its physical ship list"))?
+                    .push(ship);
+                scene["squads"].as_array_mut()
+                    .ok_or_else(|| invalid("native mixed source lost its physical squad list"))?
+                    .push(json!({
+                        "item_id": squad_id, "side": side as i32 + 1,
+                        "members": [ship_id], "shooting_strategy_id": 1,
+                        "user_controlled": controlled, "can_accept_input": controlled,
+                        "command_bans": [],
+                    }));
+                squad_ids[side].push(squad_id);
+                continue;
+            }
             let specialist = specialist_count[side] != 0 &&
                 (fighter_count[side]..fighter_count[side] + specialist_count[side])
                     .contains(&index);
@@ -2609,7 +2655,11 @@ pub(super) fn archive(
         let mut occupied = Vec::new();
         for side in 0..2_usize {
             for index in 0..selected.fleet_sizes[side] {
-                let kind = if index >= fighter_count[side] + specialist_count[side] {
+                let kind = if matches!(selected.mix[side], FleetMix::OriginalCombined) {
+                    original_kinds[side][index % original_kinds[side].len()]
+                } else if let FleetMix::SourceClass(kind) = selected.mix[side] {
+                    kind
+                } else if index >= fighter_count[side] + specialist_count[side] {
                     selected.mix[side].support_type(side)
                 } else if index >= fighter_count[side] {
                     selected.mix[side].specialist_type_at(
@@ -3208,7 +3258,14 @@ pub(super) fn archive(
             .and_then(|ship| ship["ship_type"].as_u64()).unwrap_or(21);
         let b = selected.source_fighter[1].as_ref()
             .and_then(|ship| ship["ship_type"].as_u64()).unwrap_or(13);
-        run["run_id"] = json!(format!("{id}-original-classes-{a}v{b}"));
+        let mixed = original_kinds.iter().map(|classes|
+            classes.iter().map(u8::to_string).collect::<Vec<_>>().join("_")
+        ).collect::<Vec<_>>();
+        run["run_id"] = json!(format!(
+            "{id}-original-classes-{a}v{b}-mix-{}v{}",
+            if mixed[0].is_empty() { "none" } else { mixed[0].as_str() },
+            if mixed[1].is_empty() { "none" } else { mixed[1].as_str() },
+        ));
     }
     let id = run["run_id"].as_str()
         .ok_or_else(|| invalid("planetary art selection needs a saved run identity"))?
