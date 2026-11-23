@@ -159,11 +159,13 @@ def executable_target(source: Path) -> tuple[str, str]:
 
 def check_compiled_training_targets(
     game: Path, rollout: Path | None, manifest: Path | None,
+    server: Path | None = None,
 ) -> tuple[str, str]:
     target = executable_target(game)
     if target[0] != ("windows" if game.suffix == ".exe" else "linux"):
         raise ValueError(f"native game binary name differs from executable platform: {game}")
-    for label, binary in (("rollout", rollout), ("manifest", manifest)):
+    for label, binary in (("rollout", rollout), ("manifest", manifest),
+                          ("dedicated server", server)):
         if binary is not None and executable_target(binary) != target:
             raise ValueError(
                 f"native {label} binary has a different OS/CPU target from the game"
@@ -560,7 +562,8 @@ def original_audio_paths() -> list[tuple[Path, Path]]:
     return refs
 
 
-def write_launchers(output: Path, binary_name: str) -> None:
+def write_launchers(output: Path, binary_name: str,
+                    server_binary: str | None = None) -> None:
     windows_start = (
         "@echo off\n"
         "setlocal EnableExtensions DisableDelayedExpansion\n"
@@ -624,8 +627,44 @@ def write_launchers(output: Path, binary_name: str) -> None:
         launcher.chmod(0o755)
 
 
+    if server_binary is not None:
+        # Stable save directories permit the existing authoritative
+        # checkpoint/session-recovery owner to re-open the SAME battle.
+        # Administrators select a fresh output directory for a new match.
+        # Secrets and listen addresses are supplied ONLY at runtime.
+        if binary_name.endswith(".exe"):
+            launcher = output / "serve-native-two-player.cmd"
+            launcher.write_text(
+                windows_start +
+                'if not defined BEES_NATIVE_REMOTE_LISTEN (echo Set BEES_NATIVE_REMOTE_LISTEN 1>&2 & popd & exit /b 2)\\n' +
+                'if not defined BEES_NATIVE_REMOTE_SIDE_TOKENS (echo Set BEES_NATIVE_REMOTE_SIDE_TOKENS 1>&2 & popd & exit /b 2)\\n' +
+                'if not defined BEES_NATIVE_SERVER_OUTPUT_DIR set "BEES_NATIVE_SERVER_OUTPUT_DIR=%BEES_SAVE%\\\\servers\\\\two-player"\\n' +
+                'if not exist "%BEES_SAVE%" mkdir "%BEES_SAVE%"\\n' +
+                f'".\\\\{server_binary}" serve "examples\\\\native-two-player.run.json" ' +
+                '--output-dir "%BEES_NATIVE_SERVER_OUTPUT_DIR%" %*\\n' + windows_finish,
+                encoding="utf-8", newline="\\r\\n",
+            )
+        else:
+            launcher = output / "serve-native-two-player.sh"
+            launcher.write_text(
+                "#!/bin/sh\\n"
+                "set -eu\\n"
+                'cd "$(dirname "$0")"\\n'
+                ': "${BEES_NATIVE_REMOTE_LISTEN:?Set BEES_NATIVE_REMOTE_LISTEN to the host TCP address}"\\n'
+                ': "${BEES_NATIVE_REMOTE_SIDE_TOKENS:?Set BEES_NATIVE_REMOTE_SIDE_TOKENS to JSON side credentials}"\\n'
+                'save="${XDG_DATA_HOME:-$HOME/.local/share}/bees-native"\\n'
+                'run="${BEES_NATIVE_SERVER_OUTPUT_DIR:-$save/servers/two-player}"\\n'
+                'mkdir -p "$(dirname "$run")"\\n'
+                f'exec "./{server_binary}" serve "examples/native-two-player.run.json" ' +
+                '--output-dir "$run" "$@"\\n',
+                encoding="utf-8", newline="\\n",
+            )
+            launcher.chmod(0o755)
+
+
 def create_manifest(
     output: Path, *, include_training: bool = False, audio_paths: list[Path] | None = None,
+    dedicated_server: bool = False,
 ) -> None:
     files = []
     for path in sorted(output.rglob("*")):
@@ -645,6 +684,7 @@ def create_manifest(
         "version": 1,
         "training_runtime": include_training,
         "content": files,
+        **({"dedicated_server": True} if dedicated_server else {}),
     }
     if audio_paths is not None:
         manifest["presentation_version"] = 2
@@ -790,10 +830,25 @@ def verify_native_package(directory: Path) -> dict:
     binary_suffix = ".exe" if game.suffix == ".exe" else ""
     rollout = directory / ("policy_rollout" + binary_suffix)
     generator = directory / ("policy_manifest" + binary_suffix)
+    headless_name = "bees-server" + binary_suffix
+    headless = directory / headless_name
+    dedicated_server = manifest.get("dedicated_server", False)
+    if type(dedicated_server) is not bool:
+        raise ValueError("native release dedicated-server marker must be boolean")
+    if dedicated_server != headless.is_file():
+        raise ValueError("native release dedicated-server executable differs from manifest")
     check_compiled_training_targets(
         game, rollout if rollout.is_file() else None,
         generator if generator.is_file() else None,
+        headless if dedicated_server else None,
     )
+    if dedicated_server:
+        launcher_name = ("serve-native-two-player.cmd" if binary_suffix
+                         else "serve-native-two-player.sh")
+        if launcher_name not in expected:
+            raise ValueError("native release has no restartable two-player dedicated host launcher")
+        if file_sha256(game) == file_sha256(headless):
+            raise ValueError("dedicated server must be a separately compiled native binary")
     if manifest.get("training_runtime", False) not in (True, False):
         raise ValueError("invalid native training distribution marker")
     training_runtime = manifest.get("training_runtime", False)
@@ -930,6 +985,7 @@ def verify_native_package(directory: Path) -> dict:
         "files": len(expected), "bytes": total_bytes,
         "battles": count_runs, "portable_models": len(policies),
         "training_runtime": training_runtime,
+        "dedicated_server": dedicated_server,
         "compiled_training_executables": (
             {
                 "policy_manifest": (
@@ -970,6 +1026,8 @@ def main() -> None:
                         help="optional prebuilt policy_rollout for the target game platform (requires --include-training)")
     parser.add_argument("--manifest-binary", type=Path,
                         help="optional prebuilt Rust policy_manifest ABI generator for compiler-free initialization")
+    parser.add_argument("--server-binary", type=Path,
+                        help="optional headless bees executable built for the same OS/CPU, shipped as bees-server")
     parser.add_argument("--python-command",
                         help="bare target-machine Python executable (python3, python, py)")
     parser.add_argument("--policy-device", choices=("cpu", "cuda"),
@@ -979,7 +1037,7 @@ def main() -> None:
         if (args.binary is not None or args.output is not None or
                 args.include_policies or args.include_training or
                 args.rollout_binary is not None or args.manifest_binary is not None or
-                args.policy_device is not None or args.python_command is not None or
+                args.server_binary is not None or args.policy_device is not None or args.python_command is not None or
                 args.campaign_library is not None or
                 args.challenge_library is not None or args.challenge_unlock_after is not None):
             parser.error("--verify accepts only the completed distribution directory")
@@ -996,13 +1054,18 @@ def main() -> None:
     binary = args.binary.resolve()
     rollout_binary = args.rollout_binary.resolve(strict=True) if args.rollout_binary else None
     manifest_binary = args.manifest_binary.resolve(strict=True) if args.manifest_binary else None
+    server_binary = args.server_binary.resolve(strict=True) if args.server_binary else None
     if any(path is not None and not path.is_file()
-           for path in (rollout_binary, manifest_binary)):
+           for path in (rollout_binary, manifest_binary, server_binary)):
         parser.error("training executables must be existing compiled files")
     output = args.output.resolve()
     if not binary.is_file() or binary.name not in ("bees", "bees.exe"):
         parser.error("Provide a compiled native graphical bees or bees.exe binary")
-    check_compiled_training_targets(binary, rollout_binary, manifest_binary)
+    check_compiled_training_targets(binary, rollout_binary, manifest_binary, server_binary)
+    if server_binary is not None and (
+            server_binary.name not in ("bees", "bees.exe") or
+            file_sha256(binary) == file_sha256(server_binary)):
+        parser.error("--server-binary requires a separate headless native bees build")
     if output.exists():
         parser.error("Output already exists; native releases are immutable")
     python_command = args.python_command or (
@@ -1016,6 +1079,11 @@ def main() -> None:
     staging = Path(tempfile.mkdtemp(prefix=".bees-native-", dir=output.parent))
     try:
         shutil.copy2(binary, staging / binary.name)
+        server_name = "bees-server.exe" if binary.suffix == ".exe" else "bees-server"
+        if server_binary is not None:
+            shutil.copy2(server_binary, staging / server_name)
+            if binary.suffix != ".exe":
+                (staging / server_name).chmod(0o755)
         assets = staging / "assets"
         assets.mkdir()
         converter_args = [sys.executable, str(CONVERTER)]
@@ -1069,9 +1137,11 @@ def main() -> None:
         clients.mkdir()
         for name in ("remote_play_client.py", "remote_play_window.py"):
             shutil.copy2(ROOT / "native/tools" / name, clients / name)
-        write_launchers(staging, binary.name)
+        write_launchers(staging, binary.name,
+                        server_name if server_binary is not None else None)
         create_manifest(staging, include_training=args.include_training,
-                        audio_paths=[relative for _, relative in audio])
+                        audio_paths=[relative for _, relative in audio],
+                        dedicated_server=server_binary is not None)
         # A release is only discoverable once all playable scenes, model
         # assets and optional learner/source dependencies have passed the
         # same complete inventory verifier used by a receiving computer.
