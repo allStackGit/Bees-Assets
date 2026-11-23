@@ -320,6 +320,117 @@ class MeasuredIndependentTrainForwards:
             ppo_shared_train_forward_profiles=len(self.profiles))
 
 
+class PinnedGpuStaging:
+    """Bounded CPU-to-GPU upload pipeline for immutable training tensors.
+
+    Large contiguous host fragments are copied into pinned staging banks,
+    then transferred on a dedicated device stream while the CPU assembles
+    later fragments. Exact destination tensor content and order are retained.
+    At the ownership boundary finish() waits ONCE for all DMA to complete,
+    so no pinned host storage outlives an outstanding GPU read.
+
+    Unsupported HIP pinning or small fragments retain torch.copy_'s
+    established synchronous behavior. This staging service owns no policy
+    or optimizer state and does not change minibatch membership.
+    """
+
+    def __init__(self, device, *, max_pinned_bytes=64*1048576,
+                 min_async_bytes=1048576):
+        if (not isinstance(device,torch.device) or device.type!="cuda" or
+                type(max_pinned_bytes) is not int or max_pinned_bytes<1048576 or
+                type(min_async_bytes) is not int or min_async_bytes<1):
+            raise ValueError("Invalid GPU staging lease or transfer threshold")
+        self.device,self.max_pinned_bytes = device,max_pinned_bytes
+        self.min_async_bytes = min_async_bytes
+        self._copy_stream = None
+        self._pending = deque()
+        self._pending_bytes = 0
+        self._known_banks = set()
+        self._closed = False
+        self.async_bytes = self.direct_bytes = self.async_copies = 0
+
+    def _make_stream(self):
+        if self._copy_stream is not None:
+            return True
+        try:
+            self._copy_stream = torch.cuda.Stream(device=self.device)
+        except (RuntimeError,NotImplementedError,AttributeError):
+            return False
+        return True
+
+    def _reap(self, required):
+        while self._pending and self._pending_bytes+required > self.max_pinned_bytes:
+            pinned,event,size = self._pending.popleft()
+            event.synchronize()
+            self._pending_bytes -= size
+
+    def copy_(self, destination, source):
+        if (self._closed or not isinstance(destination,torch.Tensor) or
+                destination.device!=self.device or
+                not isinstance(source,torch.Tensor) or
+                source.device.type!="cpu" or
+                source.shape!=destination.shape or
+                source.dtype!=destination.dtype):
+            raise ValueError("GPU staging requires matching leased output and CPU input")
+        nbytes = source.numel()*source.element_size()
+        if (not source.is_contiguous() or
+                nbytes < self.min_async_bytes or
+                nbytes > self.max_pinned_bytes//2 or
+                not self._make_stream()):
+            destination.copy_(source)
+            self.direct_bytes += nbytes
+            return destination
+        self._reap(nbytes)
+        try:
+            pinned = source.pin_memory()
+        except (RuntimeError,NotImplementedError,MemoryError):
+            destination.copy_(source)
+            self.direct_bytes += nbytes
+            return destination
+        # A newly allocated destination may belong to a stream different
+        # from the copy stream. Establish allocation/use order once per
+        # bank, without synchronizing the host or imposing a GPU barrier.
+        identity = destination.untyped_storage().data_ptr()
+        if identity not in self._known_banks:
+            self._copy_stream.wait_stream(torch.cuda.current_stream(self.device))
+            self._known_banks.add(identity)
+        try:
+            with torch.cuda.stream(self._copy_stream):
+                destination.copy_(pinned,non_blocking=True)
+                event = torch.cuda.Event()
+                event.record(self._copy_stream)
+            destination.record_stream(self._copy_stream)
+        except (RuntimeError,NotImplementedError):
+            # A partially submitted DMA must finish before its host
+            # staging buffer is released or rewritten by another request.
+            self._copy_stream.synchronize()
+            destination.copy_(source)
+            self.direct_bytes += nbytes
+            return destination
+        self._pending.append((pinned,event,nbytes))
+        self._pending_bytes += nbytes
+        self.async_bytes += nbytes
+        self.async_copies += 1
+        return destination
+
+    def finish(self):
+        if self._closed:
+            return
+        self._closed = True
+        if self._copy_stream is not None:
+            self._copy_stream.synchronize()
+        self._pending.clear()
+        self._pending_bytes = 0
+        self._known_banks.clear()
+        self._copy_stream = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.finish()
+
+
 class ImmutableGpuRowCache:
     """Reuse immutable observation rows already transferred to another GPU.
 
