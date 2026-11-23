@@ -1493,14 +1493,31 @@ function createTinyBrainsPersistentDockerAdapter({
     }
     function checkpointTrainingOpponents(out,ids,pins) {
         if(ids===undefined)return;
-        const selection=approvedTrainingOpponents(ids,pins);
-        const raw=JSON.stringify({pool:selection.pool,fixed:selection.fixed})+'\n';
-        const file=path.join(out,'hub-opponents.json');
-        if(fs.readFileSync(file,'utf8')!==raw)
+        // Existing finished jobs depend on their own immutable snapshot copies,
+        // not on another run's retention policy or a current agent catalogue.
+        if(!Array.isArray(ids)||!Array.isArray(pins)||!ids.length||
+            ids.length>16||ids.length!==pins.length)
+            throw Error('Frozen training opponent list is invalid.');
+        const pool=[],fixed=[];
+        for(let i=0;i<ids.length;i++) {
+            const pin=pins[i],id=ids[i];
+            if(!pin||pin.id!==id)throw Error('Saved opponent identity differs.');
+            if(['frozen','current','nano','micro'].includes(id))pool.push(id);
+            else {
+                if(!SHA.test(String(pin.checkpoint_sha256||''))||
+                    !SHA.test(String(pin.model_sha256||'')))
+                    throw Error('A named training opponent has no immutable fingerprint.');
+                const name='fixed_'+pin.checkpoint_sha256.slice(0,20);
+                pool.push(name);
+                fixed.push({id:name,sha256:pin.checkpoint_sha256});
+            }
+        }
+        const raw=JSON.stringify({pool,fixed})+'\n';
+        if(fs.readFileSync(path.join(out,'hub-opponents.json'),'utf8')!==raw)
             throw Error('Training checkpoint opponent roster differs from its frozen Design.');
-        for(const fixed of selection.fixed) {
-            const model=path.join(out,'self-play/opponents','hub-'+fixed.id.slice(6)+'.pt');
-            if(modelFileSha256(model)!==fixed.sha256)
+        for(const item of fixed) {
+            const model=path.join(out,'self-play/opponents','hub-'+item.id.slice(6)+'.pt');
+            if(modelFileSha256(model)!==item.sha256)
                 throw Error('Training checkpoint frozen opponent has changed.');
         }
     }
