@@ -8,12 +8,13 @@ const {spawnSync}=require('node:child_process');
 
 const MACHINE=/^[a-z][a-z0-9_-]{0,47}$/;
 const SERVICE=/^Bees-ExperimentHub-[A-Za-z0-9-]{1,64}$/;
-const MAX_SERVICES=16;
+// Bound status collection independently from per-job evaluation policy caps.
+const MAX_SERVICES=64;
 
 function command(file,args) {
     const result=spawnSync(file,args,{
         shell:false,windowsHide:true,encoding:'utf8',
-        timeout:2500,maxBuffer:32768,
+        timeout:2500,maxBuffer:131072,
     });
     if(result.error||result.status!==0||typeof result.stdout!=='string')
         throw Error(file+' service status unavailable.');
@@ -50,7 +51,7 @@ function linuxHealth(machine) {
     const files=list.split(/\r?\n/).map(line=>line.trim().split(/\s+/)[0])
         .filter(name=>regex.test(name)).sort();
     if(files.length>MAX_SERVICES)
-        throw Error('More than 16 evaluator timers; service health is incomplete.');
+        throw Error('More than 64 evaluator timers; service health is incomplete.');
     if(!files.length)return [];
     const units=files.flatMap(timer=>[timer,timer.slice(0,-6)+'.service']);
     const shown=command('systemctl',[

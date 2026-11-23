@@ -391,7 +391,7 @@ function boundedReport(value) {
          new Date(serviceChecked).toISOString()!==serviceChecked))||
         (serviceIssue!==null&&(typeof serviceIssue!=='string'||
         serviceIssue.length<1||serviceIssue.length>160))||
-        !Array.isArray(rawServices)||rawServices.length>16)
+        !Array.isArray(rawServices)||rawServices.length>64)
         throw Error('Invalid evaluator service health report.');
     const services=rawServices.map(row=>{
         if(!object(row)||
