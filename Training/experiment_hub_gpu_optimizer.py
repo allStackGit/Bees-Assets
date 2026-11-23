@@ -17,10 +17,10 @@ def qualify_fused_adam(optimizer, *, min_speedup=0.08,
                        max_parameter_bytes=16 * 1048576, samples=5):
     """Select fused Adam only when a representative real-device probe wins.
 
-    Return bounded status fields. Existing param groups and optimizer state
-    are left unchanged if fused Adam is unsupported, slower or numerically
-    incompatible. Both variants step the same cloned float32 parameter and
-    gradient data; the originals never participate in a test update.
+    Return bounded status fields. Model parameters, Adam moments and exact
+    update counters are unchanged by qualification. A restored execution-mode
+    flag may be reevaluated for a different machine; either kernel receives
+    identical real optimizer state. Both variants use cloned float32 tensors.
     """
     result = dict(gpu_optimizer_fused_adam=0,
                   gpu_optimizer_fused_adam_qualified=0,
@@ -30,10 +30,34 @@ def qualify_fused_adam(optimizer, *, min_speedup=0.08,
             not 0 <= min_speedup <= 0.5 or
             not 1 <= samples <= 32 or max_parameter_bytes < 1):
         return result
-    if any(group.get("fused") for group in optimizer.param_groups):
-        result["gpu_optimizer_fused_adam"] = 1
-        return result
     groups = optimizer.param_groups
+    # Execution backend is not checkpoint math. A checkpoint saved by fused
+    Adam on one GPU must not force an unqualified fused kernel on another
+    CUDA/HIP backend. Return step tensors to ordinary Adam's native CPU
+    location before comparing both alternatives on the current device.
+    if any(group.get("fused") for group in groups):
+        try:
+            moved_steps = []
+            for group in groups:
+                for parameter in group["params"]:
+                    entry = optimizer.state.get(parameter)
+                    if entry and "step" in entry:
+                        step = entry["step"]
+                        if step.device.type != "cpu":
+                            moved_steps.append((entry,step.to("cpu")))
+            for entry,step in moved_steps:
+                entry["step"] = step
+            for group in groups:
+                group["fused"] = None
+                group["foreach"] = None
+            optimizer.defaults["fused"] = None
+            optimizer.defaults["foreach"] = None
+            optimizer._step_supports_amp_scaling = False
+        except (RuntimeError,ValueError,TypeError,NotImplementedError):
+            # Retain the original checkpoint execution mode when even its
+            # scalar migration cannot complete; never modify Adam moments.
+            result["gpu_optimizer_fused_adam"] = 1
+            return result
     params = [p for group in groups for p in group["params"]]
     if (not params or
             any(not isinstance(p,torch.Tensor) or
