@@ -699,7 +699,7 @@ def existing_rounds(root, initial_manifest, initial_checkpoint, learner_slot,
 
 
 def verify_evaluation(directory, manifest_sha, source_sha, learner_side, policy_seed,
-                      inference_device=None):
+                      inference_device=None, candidate_slot=None, reference_slot=None):
     result = read_json(directory / "evaluation-result.json")
     summary_path = directory / "rollout-summary.json"
     if (result.get("kind") != "native_policy_evaluation_complete" or
@@ -709,6 +709,13 @@ def verify_evaluation(directory, manifest_sha, source_sha, learner_side, policy_
             result.get("learner_side") != learner_side or
             result.get("policy_sampling_seed") != policy_seed or
             result.get("inference_device_override") != inference_device or
+            (candidate_slot is None and result.get("candidate_side_assignment") is not None) or
+            (candidate_slot is not None and (
+                not isinstance(result.get("candidate_side_assignment"), dict) or
+                result["candidate_side_assignment"].get("candidate_slot") != candidate_slot or
+                result["candidate_side_assignment"].get("reference_slot") != reference_slot or
+                result["candidate_side_assignment"].get("candidate_physical_side") != learner_side
+            )) or
             result.get("rollout_summary_sha256") != file_sha256(summary_path)):
         raise ValueError(f"holdout evaluation does not match its pinned inputs: {directory}")
     # New standalone evaluation receipts carry the same pinned physical
@@ -846,7 +853,9 @@ def ensure_evaluation(round_directory, manifest, recipe):
     if completed:
         return verify_evaluation(completed[0], manifest_sha, source_sha,
                                  recipe["evaluation_side"], recipe["evaluation_policy_seed"],
-                                 recipe.get("evaluation_inference_device"))
+                                 recipe.get("evaluation_inference_device"),
+                                 recipe.get("evaluation_candidate_slot"),
+                                 recipe.get("evaluation_reference_slot"))
     attempt = max((number for number, _ in attempts), default=0) + 1
     if attempt > 999:
         raise ValueError("holdout evaluation exhausted its attempt numbers")
@@ -861,12 +870,19 @@ def ensure_evaluation(round_directory, manifest, recipe):
         command.extend(["--physics-workers", str(recipe["evaluation_physics_workers"])])
     if "evaluation_inference_device" in recipe:
         command.extend(["--inference-device", recipe["evaluation_inference_device"]])
+    if "evaluation_candidate_slot" in recipe:
+        command.extend([
+            "--candidate-slot", str(recipe["evaluation_candidate_slot"]),
+            "--reference-slot", str(recipe["evaluation_reference_slot"]),
+        ])
     print(json.dumps({"kind":"native_training_session_evaluation_started",
                       "round_directory":str(round_directory), "attempt":attempt}),flush=True)
     launch_round(command, round_directory / f"evaluation-attempt-{attempt:03d}.log")
     return verify_evaluation(output, manifest_sha, source_sha,
                              recipe["evaluation_side"], recipe["evaluation_policy_seed"],
-                             recipe.get("evaluation_inference_device"))
+                             recipe.get("evaluation_inference_device"),
+                             recipe.get("evaluation_candidate_slot"),
+                             recipe.get("evaluation_reference_slot"))
 
 
 
@@ -902,7 +918,19 @@ def evaluate_monitor_suites(directory, manifest, recipe, *, due):
             home.mkdir()
         if not home.is_dir() or home.is_symlink():
             raise ValueError(f"native monitor suite output is not an owned directory: {home}")
-        derived = {**recipe, "evaluation_config": suite}
+        side = suite.get("side", recipe["evaluation_side"])
+        derived = {
+            **recipe, "evaluation_config": suite, "evaluation_side": side,
+        }
+        if side != recipe["evaluation_side"]:
+            # A changed score label alone does not move the learner. Only
+            # an explicit source-owned model slot swap can evaluate the
+            # actual candidate from the opposite physical faction.
+            self_play = recipe.get("self_play")
+            if self_play is None:
+                raise ValueError("opposing-side monitor requires pinned native self-play")
+            derived["evaluation_candidate_slot"] = recipe["learner_slot"]
+            derived["evaluation_reference_slot"] = self_play["opponent_slot"]
         scheduled.append((suite_id, home, derived))
 
     parallel = recipe.get("monitor_evaluation_parallelism", 1)
@@ -1756,6 +1784,8 @@ def main():
                         help="primary fixed-seed Levels used for checkpoint selection and stopping")
     parser.add_argument("--monitor-evaluation-run-config", type=Path, action="append", default=[],
                         help="additional fixed-seed suite monitored against every evaluated checkpoint; repeatable")
+    parser.add_argument("--monitor-evaluation-side", type=int, action="append", default=[],
+                        help="physical learner side for the corresponding explicit monitor source; repeatable")
     parser.add_argument("--parallel-monitor-suites", type=int, default=1,
                         help="concurrent CPU-only monitoring evaluations (1..16); needs a frozen native rollout binary")
     parser.add_argument("--checkpoint-selection", choices=(
@@ -1869,6 +1899,13 @@ def main():
         parser.error("--evaluation-policy-seed requires a holdout and a nonnegative int63 seed")
     if args.monitor_evaluation_run_config and args.evaluation_run_config is None:
         parser.error("additional monitoring suites require a primary --evaluation-run-config")
+    if args.monitor_evaluation_side and (
+            len(args.monitor_evaluation_side) != len(args.monitor_evaluation_run_config) or
+            any(side not in (1, 2) for side in args.monitor_evaluation_side)):
+        parser.error("--monitor-evaluation-side requires one source-side 1 or 2 per explicit monitor")
+    if any(side != args.evaluation_side for side in args.monitor_evaluation_side) and (
+            args.self_play_opponent_slot is None or args.learner_slot is None):
+        parser.error("opposing-faction monitors require pinned learner and self-play opponent slots")
     if args.checkpoint_selection.startswith("mission") and args.evaluation_run_config is None:
         parser.error("physical mission ranking requires a pinned primary evaluation suite")
     if len(args.monitor_evaluation_run_config) > 16:
@@ -2135,7 +2172,18 @@ def main():
             recipe["evaluation_physics_workers"] = args.evaluation_physics_workers
     if args.monitor_evaluation_run_config or automatic_monitors:
         suites = [
-            *[pinned(path) for path in args.monitor_evaluation_run_config],
+            *[
+                {
+                    **pinned(path),
+                    **({"side": side} if side != args.evaluation_side else {}),
+                }
+                for path, side in zip(
+                    args.monitor_evaluation_run_config,
+                    args.monitor_evaluation_side or [
+                        args.evaluation_side
+                    ] * len(args.monitor_evaluation_run_config),
+                )
+            ],
             *automatic_monitors,
         ]
         hashes = [recipe["evaluation_config"]["sha256"], *(suite["sha256"] for suite in suites)]
