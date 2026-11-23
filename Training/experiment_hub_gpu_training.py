@@ -1198,11 +1198,19 @@ class PersistentGpuForwardPool:
         """
         if self._closed or current_thread() is not self._owner:
             raise RuntimeError("GPU forward update requires its owner")
+        # Last update's event samples have completed at the existing PPO
+        # GPU synchronization boundary. Preserve a bounded recent window:
+        # short on-policy updates may not contain three samples on their
+        # own, and clearing every update prevented adaptation entirely.
+        self._collect_device_timings()
         self._pending_device_timings.clear()
-        for rates in self._device_work_rates.values():
-            rates.clear()
         self._admitted_capacity_weights.clear()
         self.training_updates += 1
+        if self.training_updates % 8 == 0:
+            # Periodically remeasure under the current co-tenant load,
+            # rather than treating last hour's GPU sharing as permanent.
+            for rates in self._device_work_rates.values():
+                rates.clear()
 
     def _collect_device_timings(self):
         if not self._pending_device_timings:
@@ -1346,11 +1354,18 @@ class PersistentGpuForwardPool:
         grad_enabled = torch.is_grad_enabled()
         autocast_enabled = torch.is_autocast_enabled("cuda")
         autocast_dtype = torch.get_autocast_dtype("cuda")
-        # Sample a minority of real forwards. CUDA/HIP events are queried
-        # only on a subsequent request, never synchronized by this tuner.
-        sample = (pixel_work is not None and
-                  self.prepared_calls >= 4 and
-                  self.prepared_calls % 8 == 0 and
+        # Compare only balanced same-shape work. Unequal assigned batches
+        # have different fixed kernel launch costs and could otherwise
+        # teach a self-reinforcing slowdown on the GPU assigned fewer rows.
+        # Samples are retained over a short number of PPO updates; a
+        # steady job need not run dozens of shape groups per update merely
+        # to discover when its other GPU is inference-contended.
+        comparable = (pixel_work is not None and
+                      min(pixel_work)>0 and
+                      max(pixel_work)/min(pixel_work)<=1.12)
+        sample = (comparable and
+                  ordinals not in self._admitted_capacity_weights and
+                  self.prepared_calls % 4 == 0 and
                   len(self._pending_device_timings)<32)
         futures = [self._workers.submit(
             self._prepared_forward, model, factory, device, stream,
