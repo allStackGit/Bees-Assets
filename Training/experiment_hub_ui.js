@@ -4938,8 +4938,27 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
+    // The local evaluation library is server-owned and can publish an
+    // immutable suite before the independently running agent refreshes its
+    // advertisement. Preserve the distinction: authoring a monitoring policy
+    // is allowed, but native Start still requires fresh agent approval.
+    let savedLocalEvaluationSuites=new Map();
+    document.addEventListener('hub-local-services-status',event=>{
+        const library=event.detail?.evaluators?.custom_library;
+        savedLocalEvaluationSuites=new Map(
+            project!=='tinybrains'||!Array.isArray(library?.templates)?[]:
+                library.templates.filter(item=>
+                    /^tinybrains_mix_[a-f0-9]{20}_v[1-9][0-9]*$/.test(
+                        String(item.suite_id||''))&&
+                    typeof item.name==='string'&&item.name.length<=80&&
+                    Number.isSafeInteger(item.games)&&item.games>0)
+                .map(item=>[item.suite_id,{
+                    name:item.name,games:item.games
+                }]));
+        renderEvaluationSuiteChoices();
+    });
     // The browser's datalist autocomplete is inconsistent across browsers.
-    // Build an explicit selector using authenticated worker-advertised suite IDs.
+    // Combine immutable locally saved suites with connected agent reports.
     function advertisedEvaluationSuites() {
         const suites=new Map();
         for(const machine of state?.machines||[]) {
@@ -4960,13 +4979,24 @@ document.addEventListener('DOMContentLoaded', () => {
         return name+(machines?.size?' ('+[...machines].join(', ')+')':'');
     }
     function fillEvaluationSuiteSelect(select,chosen=select.value,available=advertisedEvaluationSuites()) {
-        const options=[new Option('Select an approved suite…','')];
-        for(const [id,machines] of [...available].sort(([a],[b])=>a.localeCompare(b)))
-            options.push(new Option(evaluationSuiteLabel(id,machines),id));
-        if(chosen&&!available.has(chosen)) {
-            // A saved draft must survive a temporarily disconnected worker.
-            // This fallback is only created for an existing selected suite.
-            options.push(new Option(chosen+' (saved; not currently advertised)',chosen));
+        const options=[new Option('Select an evaluation suite…','')];
+        const ids=new Set([...available.keys(),
+            ...(project==='tinybrains'?savedLocalEvaluationSuites.keys():[])]);
+        for(const id of [...ids].sort()) {
+            const saved=project==='tinybrains'
+                ?savedLocalEvaluationSuites.get(id):null;
+            const advertised=available.has(id);
+            const label=saved
+                ?saved.name+' — '+id+(advertised
+                    ?' ('+[...available.get(id)].join(', ')+')'
+                    :' (saved locally; awaiting agent advertisement)')
+                :evaluationSuiteLabel(id,available.get(id));
+            options.push(new Option(label,id));
+        }
+        if(chosen&&!ids.has(chosen)) {
+            // Existing drafts may refer to an offline/archived suite.
+            // Never silently replace their frozen suite identities.
+            options.push(new Option(chosen+' (saved in Design; not available in library or agent)',chosen));
         }
         refreshSelectOptions(select,options);
         select.value=chosen||'';
@@ -5210,13 +5240,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     return (machine.name||machine.id)+': '+service.unit+
                         ' ('+cpu+'; '+ram+')';
                 }))||[];
-        $('hub-evaluation-available-suites').textContent=available.size
-            ?available.size+' approved suite IDs available in the dropdown. '+(running.length
-                    ?'Observed evaluator services: '+running.slice(0,4).join('; ')+'.'
-                    :'No active evaluator scheduler confirmed for this project.')+
-                ' Evaluator CPU/RAM ceilings are independent service limits, not training-job allocations. Service observation does not prove frozen-suite compatibility or successful evaluations.'
-            :'No connected machine currently advertises '+project+
-                ' evaluation suites. Editing a saved configuration retains its suite IDs; new suites require a connected evaluator.';
+        const localPending=project==='tinybrains'
+            ?[...savedLocalEvaluationSuites.keys()].filter(id=>!available.has(id)).length
+            :0;
+        $('hub-evaluation-available-suites').textContent=
+            available.size+' agent-advertised suite(s)'+
+            (localPending?' · '+localPending+' saved locally and awaiting agent advertisement':'')+
+            '. '+(running.length
+                ?'Observed evaluator services: '+running.slice(0,4).join('; ')+'. '
+                :'No active evaluator scheduler confirmed for this project. ')+
+            'You can select saved local suites now; native Start still requires a fresh agent advertisement of every selected suite. '+
+            'Evaluator CPU/RAM ceilings and actual receipt compatibility are verified separately.';
         const defaults=state?.projects.find(p=>p.id===project)
             ?.default_evaluation_monitor;
         $('hub-evaluation-default-status').textContent=defaults
