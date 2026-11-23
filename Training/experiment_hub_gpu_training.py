@@ -648,6 +648,82 @@ class PinnedGpuStaging:
         self.finish()
 
 
+class ImmutableGpuScalarBank:
+    """Cache complete immutable training scalar columns once on a peer GPU.
+
+    PPO's advantage, old-value and target arrays do not change across
+    optimization epochs. Unlike a microbatch transfer cache, this compact
+    bank stores each logical record exactly once, then gathers arbitrary
+    reshuffled minibatches locally on the destination device. Ownership,
+    record keys, and the GPU memory lease remain with the calling trainer.
+    """
+
+    def __init__(self, device, *, max_bytes=64*1048576):
+        if (not isinstance(device,torch.device) or device.type!="cuda" or
+                type(max_bytes) is not int or max_bytes<1):
+            raise ValueError("Invalid secondary GPU scalar residency lease")
+        self.device,self.max_bytes=device,max_bytes
+        self._indices={}
+        self._values=None
+        self._ready=None
+        self.rows=self.saved_bytes=self.gather_calls=0
+
+    def stage(self, record_keys, columns):
+        if (not isinstance(record_keys,(list,tuple)) or
+                not isinstance(columns,(list,tuple)) or len(columns)<2 or
+                not all(isinstance(t,torch.Tensor) and t.ndim==1
+                        for t in columns) or
+                any(len(t)!=len(record_keys) or t.requires_grad
+                    for t in columns) or
+                len(set(record_keys))!=len(record_keys)):
+            return False
+        first=columns[0]
+        if (first.device.type!="cuda" or first.device==self.device or
+                any(t.device!=first.device or t.dtype!=first.dtype
+                    for t in columns)):
+            return False
+        wanted=len(record_keys)*len(columns)*first.element_size()
+        if wanted>self.max_bytes:
+            return False
+        try:
+            combined=torch.stack(columns,dim=1)
+            remote=combined.to(self.device,non_blocking=True)
+            # The next PPO worker may use a different per-thread stream.
+            # Record the peer copy's destination completion event now;
+            # gather() waits on it without a global device synchronization.
+            with torch.cuda.device(self.device):
+                ready=torch.cuda.Event()
+                ready.record(torch.cuda.current_stream(self.device))
+        except (RuntimeError,MemoryError,torch.OutOfMemoryError):
+            return False
+        self._indices={key:i for i,key in enumerate(record_keys)}
+        self._values=remote
+        self._ready=ready
+        self.rows=len(record_keys)
+        return True
+
+    def gather(self, record_keys):
+        if self._values is None:
+            return None
+        try:
+            positions=[self._indices[key] for key in record_keys]
+        except KeyError:
+            return None
+        stream=torch.cuda.current_stream(self.device)
+        if self._ready is not None:
+            stream.wait_event(self._ready)
+        indices=torch.as_tensor(positions,device=self.device,dtype=torch.int64)
+        result=self._values.index_select(0,indices)
+        self.saved_bytes += result.numel()*result.element_size()
+        self.gather_calls += 1
+        return tuple(result.unbind(1))
+
+    def clear(self):
+        self._indices.clear()
+        self._values=self._ready=None
+        self.rows=0
+
+
 class ImmutableGpuRowCache:
     """Reuse immutable observation rows already transferred to another GPU.
 
