@@ -251,6 +251,7 @@ function validateCatalog(raw,installed=[],approved={}) {
             source_sha256:raw.tinybrains.source_sha256,
             metric_catalog:metricCatalog(raw.tinybrains.metric_catalog),
             map_catalog:mapCatalog.map(map=>({...map})),
+            opponent_catalog:(raw.tinybrains.opponent_catalog||[]).map(item=>({...item})),
             profiles:Object.fromEntries(Object.entries(profiles).map(([id,entry])=>
                 [id,{profile_sha256:entry.profile_sha256}]))};
     }
