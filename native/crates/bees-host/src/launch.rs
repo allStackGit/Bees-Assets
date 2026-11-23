@@ -1768,6 +1768,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees replay-campaign <campaign-replay-setup.json> --output-dir <new-dir> --replay-inputs <player-inputs.jsonl>
        bees build <catalog.json> --output-dir <battle-runs> --side <n> --ship-type <n> --squad <saved-id>
        bees build-batch <catalog.json> --output-dir <battle-runs> --side <1|2> --ship-type <n> --squad <saved-id|0> --count <1-256>
+       bees build-fleet <catalog.json> --output-dir <battle-runs> --side <1|2> --items <type:squad:count,...>
        bees transfer <catalog.json> --output-dir <battle-runs> --ship <fleet-id> --squad <saved-id>
        bees transfer-batch <catalog.json> --output-dir <battle-runs> --side <1|2> --squad <saved-id|0> --ships <id,id,...>
        bees reassign <catalog.json> --output-dir <battle-runs> --side <n> --ship <fleet-id> --from <saved-id> --squad <saved-id>
@@ -2661,6 +2662,41 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             .to_string_lossy().parse()?;
         if args.next().is_some() { return Err(invalid(USAGE).into()); }
         return run_transfer_ship(&catalog, &output, fleet_ship_id, to_saved_squad_id);
+    }
+    if first == "build-fleet" {
+        let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--side") {
+            return Err(invalid(USAGE).into());
+        }
+        let side: i32 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--items") {
+            return Err(invalid(USAGE).into());
+        }
+        let value = args.next().ok_or_else(|| invalid(USAGE))?;
+        let value = value.to_string_lossy();
+        if value.is_empty() || value.len() > 256 * 64 || args.next().is_some() {
+            return Err(invalid("fleet requisition must contain 1..256 ship:destination:count entries").into());
+        }
+        let mut requisition = Vec::new();
+        for item in value.split(',') {
+            let mut fields = item.split(':');
+            let kind: u8 = fields.next()
+                .ok_or_else(|| invalid("fleet order is missing ship type"))?.parse()?;
+            let destination: i64 = fields.next()
+                .ok_or_else(|| invalid("fleet order is missing saved squad"))?.parse()?;
+            let count: u32 = fields.next()
+                .ok_or_else(|| invalid("fleet order is missing quantity"))?.parse()?;
+            if count == 0 || fields.next().is_some() || requisition.len() >= 256 {
+                return Err(invalid("fleet order entries need ship-type:squad-id:quantity").into());
+            }
+            requisition.push((kind, destination, count));
+        }
+        return run_build_fleet(&catalog, &output, side, &requisition);
     }
     if first == "build-batch" {
         let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
