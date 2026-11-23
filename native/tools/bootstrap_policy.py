@@ -152,7 +152,7 @@ def write_native_holdout(output: Path, training_run: dict,
 
 def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
               inference_device: str, cargo: str, scenario: str,
-              episodes_per_world: int = 1, holdout_worlds: int | None = None,
+              episodes_per_world: int | None = None, holdout_worlds: int | None = None,
               holdout_seed: int = 918273645, holdout_episodes: int = 1,
               source_scene_override: Path | None = None,
               source_run_override: Path | None = None) -> dict:
@@ -165,7 +165,10 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         raise ValueError("initial policy seed must be a uint32 value")
     if not inference_device:
         raise ValueError("inference device must be nonempty")
-    if type(episodes_per_world) is not int or not 1 <= episodes_per_world <= 1000000:
+    if (episodes_per_world is not None and (
+        type(episodes_per_world) is not int or
+        not 1 <= episodes_per_world <= 1000000
+    )):
         raise ValueError("episodes_per_world must be between 1 and 1000000")
 
     # Reject stale/mismatched authored scenarios and missing Rust tooling
@@ -190,6 +193,12 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         source_run = example_dir / f"native-{scenario}.run.json"
     scene = json.loads(source_scene.read_text(encoding="utf-8"))
     run = json.loads(source_run.read_text(encoding="utf-8"))
+    source_episodes = run.get("episodes_per_world")
+    if (type(source_episodes) is not int or
+            not 1 <= source_episodes <= 1000000):
+        raise ValueError("original native source has no valid episode count")
+    if episodes_per_world is None:
+        episodes_per_world = source_episodes
     if (not isinstance(scene, dict) or not isinstance(run, dict) or
             not isinstance(scene.get("stage_name"), str) or
             not scene["stage_name"] or
@@ -402,7 +411,15 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     # The native runner already increments its episode-owned RNG, team
     # permutation, model routing and reward membership on each reset.
     original_round_budget = run["max_rounds"]
-    run["max_rounds"] = original_round_budget * episodes_per_world
+    # Authored max_rounds already covers ALL source episodes. Do not
+    # multiply it by another full episode count or implicitly collapse
+    # a saved original multi-episode training run to one episode. Only
+    # an explicit override scales the source's per-episode tick budget.
+    if episodes_per_world != source_episodes:
+        run["max_rounds"] = (
+            original_round_budget * episodes_per_world +
+            source_episodes - 1
+        ) // source_episodes
     run["episodes_per_world"] = episodes_per_world
     if not 1 <= run["max_rounds"] <= (1 << 64) - 1:
         raise ValueError("requested episode budget exceeds native uint64 run rounds")
@@ -808,8 +825,9 @@ def main() -> None:
                         help="custom native_game_schema 1 policy scene")
     parser.add_argument("--source-run", type=Path,
                         help="paired custom native stage and run configuration")
-    parser.add_argument("--episodes-per-world", type=int, default=1,
-                        help="complete this many episodes per persistent native arena in each collection")
+    parser.add_argument("--episodes-per-world", type=int,
+                        help="explicit per-arena episode override; defaults to "
+                             "the authored native source Run's full episode plan")
     parser.add_argument("--cargo", default="cargo",
                         help="Rust cargo executable used to generate the canonical ABI manifest")
     parser.add_argument("--train-rounds", type=int,
@@ -949,8 +967,19 @@ def main() -> None:
     elif (args.early_stop_minimum_rounds != 3 or
           args.early_stop_minimum_extra_victories != 1):
         parser.error("early-stop thresholds require --early-stop-patience")
-    if not 1 <= args.episodes_per_world <= 1000000:
-        parser.error("--episodes-per-world must be between 1 and 1000000")
+    if args.episodes_per_world is None:
+        # Resolve before bootstrap AND resume so the saved checkpoint
+        # receipt is compared against the exact originally authored
+        # policy schedule, not against a command-line default.
+        run_file = (args.source_run.resolve(strict=True)
+                    if args.scenario == "custom" else
+                    ROOT / "native" / "examples" /
+                    f"native-{args.scenario}.run.json")
+        source_config = json.loads(run_file.read_text(encoding="utf-8"))
+        args.episodes_per_world = source_config.get("episodes_per_world")
+    if (type(args.episodes_per_world) is not int or
+            not 1 <= args.episodes_per_world <= 1000000):
+        parser.error("--episodes-per-world requires an authored or explicit count in 1..1000000")
     if args.learner_slot is not None and args.learner_slot not in args.slots:
         parser.error("--learner-slot must identify one of the configured model slots")
     if (args.self_play_opponent_slot is None) != (args.self_play_refresh_every is None):
