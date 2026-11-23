@@ -66,7 +66,7 @@
     function samplingCoverage() {
         const count=chosen.size;
         const seeds=$('hub-mixed-seeds').value.split(',')
-            .filter(value=>/^\\d+$/.test(value.trim())).length;
+            .filter(value=>/^\d+$/.test(value.trim())).length;
         const rotations=Number($('hub-mixed-rotations').value)||0;
         const lineups=seeds*rotations;
         $('hub-mixed-coverage').textContent=!count
