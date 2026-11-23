@@ -64,7 +64,7 @@ function fieldsFor(config,project) {
                 'training.entropy_coefficient':[0,1000000],
                 'training.value_coefficient':[0,1000000],
                 'training.baseline_coefficient':[0,1000000],
-                'environment.max_turns':[1,1000000000],
+                'environment.max_turns':[1,1000],
                 'environment.timeout_seconds':[0.000000001,1000000000],
                 'self_play.snapshot_every':[1,1000000000],
                 'self_play.max_snapshots':[1,1000000000],
