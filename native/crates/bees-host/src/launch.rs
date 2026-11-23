@@ -2130,10 +2130,16 @@ fn default_native_user_save_root(fallback: &Path) -> PathBuf {
 /// authoritative host and two standalone player files consumed by the
 /// existing Rust/Tk remote clients. No token is printed to the console,
 /// embedded in a release or stored in a game checkpoint.
-fn generate_server_credentials(folder: &Path) -> io::Result<()> {
-    if folder.as_os_str().is_empty() {
+fn generate_server_credentials(path: &Path) -> io::Result<()> {
+    if path.as_os_str().is_empty() {
         return Err(invalid("server credentials require a new directory"));
     }
+    let folder = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        env::current_dir()?.join(path)
+    };
+    let folder = folder.as_path();
     let parent = folder.parent().ok_or_else(|| invalid(
         "server credential directory requires an existing parent"
     ))?;
