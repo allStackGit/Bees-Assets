@@ -144,10 +144,10 @@ pub(super) fn original_campaign_hulls(
                     ship["sight"]["source_sight"].as_f64() != expected["sight"].as_f64() ||
                     ship["policy"].is_object() ||
                     (kind == 9 && ship["size_class"] != 4) ||
-                    (regular && (ship["special"].is_object() ||
+                    (regular && ((ship["special"].is_object() &&
+                        ship["special"]["kind"] != "none") ||
                         ship["special_weapon"].is_object() ||
-                        ship["drone_carrier_id"].is_number() ||
-                        ship["persistent_fleet"] != true)) ||
+                        ship["drone_carrier_id"].is_number())) ||
                     !ship["turrets"].is_array()
                 {
                     // A source example is not a canonical original class
@@ -155,8 +155,17 @@ pub(super) fn original_campaign_hulls(
                     continue;
                 }
                 let mut full_health = ship.clone();
+                // Enemy campaign ships are often transient rather than
+                // purchased FleetShips. Their original physical class is
+                // still valid FreePlay gameplay: give the new player fleet
+                // its own identity, not the enemy's historical ownership.
                 full_health["health"] = expected["health"].clone();
                 full_health["user_controlled"] = json!(true);
+                if regular && full_health["special"]["kind"] == "none" {
+                    full_health.as_object_mut().ok_or_else(||
+                        invalid("source original fighter is not a ship record"))?
+                        .remove("special");
+                }
                 result.ships[(side - 1) as usize].push(full_health);
             }
         }
