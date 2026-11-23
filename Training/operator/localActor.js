@@ -28,6 +28,8 @@ const {
     writeTextAtomic,
 } = require('./common');
 
+const { binding: gpuBinding } = require('./gpuBinding');
+
 const LOCAL_ACTOR_ENTRYPOINT = 'bees_elastic_wan_actor_worker.py';
 
 function localActorSupervisorAgentPath(preparedRuntime) {
@@ -169,6 +171,7 @@ function localActorSupervisorCommandHash(
     supervisorArgs,
     fallbackCommand,
     runtimeVersion,
+    gpuFingerprint = '',
 ) {
     return sha256Text([
         path.resolve(bootstrapPython),
@@ -176,6 +179,7 @@ function localActorSupervisorCommandHash(
         sha256File(agent),
         ...supervisorArgs.map(String),
         String(runtimeVersion || ''),
+        String(gpuFingerprint || ''),
         ...fallbackCommand.map(String),
     ].join(os.EOL));
 }
@@ -321,12 +325,14 @@ async function startLocalActorIfNeeded(
         }
     }
 
+    const gpu = gpuBinding(config, 'local-actor');
     const commandHash = localActorSupervisorCommandHash(
         bootstrapPython,
         agent,
         supervisorArgs,
         fallbackCommand,
         fallbackRuntimeVersion,
+        gpu.fingerprint,
     );
 
     if (existing) {
@@ -380,6 +386,7 @@ async function startLocalActorIfNeeded(
         owner_token: ownerToken,
         executable_path: path.resolve(bootstrapPython),
         command_hash: commandHash,
+        gpu_binding:gpu.fingerprint || null,
         supervisor_agent: path.resolve(agent),
         trainer_id: prepared.trainer_id,
         release_runtime_version: String(preparedRuntime.runtime_version),
@@ -401,6 +408,7 @@ async function startLocalActorIfNeeded(
     try {
         child = spawn(bootstrapPython, launchArgs, {
             cwd: path.resolve(preparedRuntime.runtime_root),
+            env: gpu.environment,
             detached: true,
             windowsHide: true,
             stdio: ['ignore', stdoutFd, stderrFd],
