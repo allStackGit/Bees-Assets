@@ -1413,7 +1413,8 @@ function createTinyBrainsPersistentDockerAdapter({
                     ?{checkpoint_sha256:opponent.checkpoint_sha256}:{}),
             };
             if(trainingOpponentSources.has(pin.id))continue;
-            trainingOpponentSources.set(pin.id,{...pin,checkpoint});
+            trainingOpponentSources.set(pin.id,{...pin,checkpoint,
+                model_dir:opponent.model_dir});
             opponentCatalog.push(pin);
         }
     }catch(error) {
@@ -1441,6 +1442,9 @@ function createTinyBrainsPersistentDockerAdapter({
                 (source.model_sha256??null)!==(pin.model_sha256??null)||
                 (source.checkpoint_sha256??null)!==(pin.checkpoint_sha256??null))
                 throw Error('Training opponent library fingerprint differs from the saved Design: '+String(id));
+            if(source.model_sha256&&
+                modelFileSha256(path.join(source.model_dir,'model.onnx'))!==source.model_sha256)
+                throw Error('Selected opponent ONNX model differs from the pinned worker approval.');
             if(source.checkpoint_sha256) {
                 if(!source.checkpoint||
                     modelFileSha256(source.checkpoint)!==source.checkpoint_sha256)
