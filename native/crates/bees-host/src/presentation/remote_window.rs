@@ -2116,9 +2116,22 @@ fn remote_tactical_rect(action: HudAction) -> Option<HudRect> {
     Some(HudRect {left,top,right:left+77,bottom:top+23})
 }
 
-fn remote_tactical_hit(x: f32,y: f32) -> Option<HudAction> {
-    ACTIONS.iter().copied().find(|&action|
-        remote_tactical_rect(action).is_some_and(|rect|rect.contains(x,y)))
+fn remote_tactical_hit(x: f32, y: f32, show_beacon: bool) -> Option<HudAction> {
+    ACTIONS.iter().copied().find(|&action| {
+        (action != HudAction::Beacon || show_beacon) &&
+            remote_tactical_rect(action).is_some_and(|rect| rect.contains(x, y))
+    })
+}
+
+fn selection_has_beacon_enabled_scout(state: Option<&Value>, selected: &[i64]) -> bool {
+    if selected.is_empty() { return false; }
+    // Older LAN hosts did not project the capability. Preserve their controls.
+    state.and_then(|state| state["squads"].as_array())
+        .into_iter().flatten().any(|squad| {
+            squad["controllable"] == true &&
+                squad["scout_beacon_enabled"].as_bool().unwrap_or(true) &&
+                squad["owner"]["squad_id"].as_i64().is_some_and(|id| selected.contains(&id))
+        })
 }
 
 // Side-panel squad rows are the same authoritative source-order projection
@@ -2197,6 +2210,9 @@ fn remote_tactical_action(
     }
     if selected.is_empty() {
         return Err(invalid("select a live controllable friendly squad").into());
+    }
+    if action == HudAction::Beacon && !selection_has_beacon_enabled_scout(peer.state.as_ref(), selected) {
+        return Ok(());
     }
     let target=match action {
         HudAction::Attack=>Some(TargetMode::Attack),
@@ -3144,7 +3160,9 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     }
     let actions: &[HudAction] = if state.is_some_and(|state|
         state["campaign_dialogue"]["opening_hud_locked"] == true) { &[] } else { &ACTIONS };
+    let show_beacon = selection_has_beacon_enabled_scout(state, selected);
     for &action in actions {
+        if action == HudAction::Beacon && !show_beacon { continue; }
         let Some(rect)=remote_tactical_rect(action) else{continue};
         let active=match action {
             HudAction::Attack=>mode==Some(TargetMode::Attack),
@@ -4752,7 +4770,9 @@ pub fn connect_remote_with_trust(
             if left && !last_left && window.is_active() {
                 drag_start=None;patrol_start=None;
                 hud_press = mouse.filter(|_| !opening_hud_locked)
-                    .and_then(|(x, y)| remote_tactical_hit(x, y));
+                    .and_then(|(x, y)| remote_tactical_hit(
+                        x, y, selection_has_beacon_enabled_scout(peer.state.as_ref(), &selected),
+                    ));
                 squad_tab_press=if hud_press.is_none() {
                     peer.state.as_ref().and_then(|state|
                         mouse.and_then(|(x,y)|remote_squad_tab_hit(state,x,y,squad_list_offset)))
@@ -4763,7 +4783,9 @@ pub fn connect_remote_with_trust(
             }
             if !left && last_left {
                 let clicked = hud_press.take().filter(|&action| !opening_hud_locked &&
-                    mouse.and_then(|(x,y)|remote_tactical_hit(x,y)) == Some(action));
+                    mouse.and_then(|(x, y)| remote_tactical_hit(
+                        x, y, selection_has_beacon_enabled_scout(peer.state.as_ref(), &selected),
+                    )) == Some(action));
                 let clicked_tab=squad_tab_press.take().filter(|&id|
                     peer.state.as_ref().and_then(|state|
                         mouse.and_then(|(x,y)|remote_squad_tab_hit(state,x,y,squad_list_offset)))

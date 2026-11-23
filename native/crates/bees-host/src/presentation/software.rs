@@ -2107,11 +2107,22 @@ impl NativeSoftwareRenderer {
 
     /// UI-only action hit-test; the client converts intent into the exact
     /// same typed player inputs used by keyboard shortcuts and replay.
-    pub fn tactical_action_at(&self, x: f32, y: f32) -> Option<super::HudAction> {
+    pub fn tactical_action_at(
+        &self, view: &NativeRenderWorldView<'_>, x: f32, y: f32,
+    ) -> Option<super::HudAction> {
         if self.show_shooting_menu || self.opening_hud_locked { return None; }
         let action = tactical_hud::hit(self.width, self.height, x, y)?;
-        (action == super::HudAction::SelectAll ||
-            !self.selection.squads().is_empty()).then_some(action)
+        let available = match action {
+            super::HudAction::SelectAll => true,
+            super::HudAction::Beacon => self.selection_has_beacon_enabled_scout(view),
+            _ => !self.selection.squads().is_empty(),
+        };
+        available.then_some(action)
+    }
+
+    pub(crate) fn selection_has_beacon_enabled_scout(&self, view: &NativeRenderWorldView<'_>) -> bool {
+        self.selection.squads().iter().copied().any(|owner|
+            view.is_local_player_squad(owner) && view.squad_has_beacon_enabled_scout(owner))
     }
 
     fn squad_tab_label(number: u32, ship_type: u8, ships: usize) -> String {
@@ -3615,7 +3626,9 @@ impl NativeSoftwareRenderer {
                 view.player_authority.player_permissions(owner)
                     .is_some_and(|permission| permission.locked_on));
         if !self.opening_hud_locked {
-            counts.tactical_buttons_drawn = self.draw_tactical_bar(gunship_attack_prompt == Some(true));
+            let show_beacon = self.selection_has_beacon_enabled_scout(view);
+            counts.tactical_buttons_drawn =
+                self.draw_tactical_bar(gunship_attack_prompt == Some(true), show_beacon);
             counts.selected_command_rows = self.draw_selected_command_status(view);
             self.draw_selected_priority(view);
             if self.show_shooting_menu { self.draw_shooting_menu(view); }
@@ -4050,10 +4063,11 @@ impl NativeSoftwareRenderer {
         scouts_ready + barges_ready + charges_ready + strikers_ready
     }
 
-    fn draw_tactical_bar(&mut self, prompt_attack_on_sight: bool) -> usize {
+    fn draw_tactical_bar(&mut self, prompt_attack_on_sight: bool, show_beacon: bool) -> usize {
         let has_selection = !self.selection.squads().is_empty();
         let mut drawn = 0usize;
         for (index, action) in tactical_hud::ACTIONS.iter().copied().enumerate() {
+            if action == super::HudAction::Beacon && !show_beacon { continue; }
             let Some(rect) = tactical_hud::action_rect(self.width, self.height, index)
                 else { return drawn };
             let background = if !has_selection &&

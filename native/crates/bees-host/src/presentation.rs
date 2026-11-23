@@ -453,6 +453,17 @@ impl<'a> NativeRenderWorldView<'a> {
         self.player_authority.player_owns_squad(owner, squad.side)
     }
 
+    pub(crate) fn squad_has_beacon_enabled_scout(&self, owner: SquadLifetime) -> bool {
+        if !self.player_authority.player_permissions(owner)
+            .is_some_and(|permissions| permissions.can_accept_input)
+        {
+            return false;
+        }
+        self.roster.get(owner).is_some_and(|squad| squad.members.iter().any(|&id|
+            self.combat.game_scout_beacon_charge_percent(id).is_some() &&
+            self.combat.ship_body(id).is_some_and(|body| body.active)))
+    }
+
     /// Read-only current CarrierShip.Carrier for a real source CarrierSquad.
     /// Parent reassignment happens in CombatWorld at Carrier death, so this
     /// never stores a stale presentation parent. Some(None) is an orphan;

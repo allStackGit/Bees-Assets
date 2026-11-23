@@ -1400,7 +1400,7 @@ impl NativeClient {
             self.hover_sampled = now;
             let picked = mouse.and_then(|(x, y)| {
                 if self.renderer.minimap_world_at(bounds, x, y).is_some() ||
-                    self.renderer.tactical_action_at(x, y).is_some() ||
+                    self.renderer.tactical_action_at(&view, x, y).is_some() ||
                     self.renderer.squad_tab_at(&view, x, y).is_some() {
                     None
                 } else {
@@ -1491,7 +1491,7 @@ impl NativeClient {
             self.squad_tab_press = None;
         } else if left_down && !self.left_was_down {
             self.hud_press = mouse.and_then(|(x, y)|
-                self.renderer.tactical_action_at(x, y));
+                self.renderer.tactical_action_at(&view, x, y));
             self.squad_tab_press = if self.hud_press.is_none() {
                 mouse.and_then(|(x, y)| self.renderer.squad_tab_at(&view, x, y))
             } else { None };
@@ -1505,7 +1505,7 @@ impl NativeClient {
         }
         let clicked_hud = if self.left_was_down && !left_down {
             self.hud_press.take().filter(|&action|
-                mouse.and_then(|(x, y)| self.renderer.tactical_action_at(x, y))
+                mouse.and_then(|(x, y)| self.renderer.tactical_action_at(&view, x, y))
                     == Some(action))
         } else { None };
         if clicked_hud.is_some() {
@@ -1732,7 +1732,8 @@ impl NativeClient {
         let special_kind = if accepts_orders && pointer_active &&
             !self.dialogue_visible && self.held_fire_target.is_none() &&
             (clicked_hud == Some(HudAction::Beacon) ||
-             self.controls.command_pressed(&self.window,"Beacon",KeyRepeat::No)) {
+             (self.controls.command_pressed(&self.window,"Beacon",KeyRepeat::No) &&
+              self.renderer.selection_has_beacon_enabled_scout(&view))) {
             Some(NativePlayerShipSpecialKind::DropBeacon)
         } else if accepts_orders && pointer_active &&
             self.held_fire_target.is_none() &&
@@ -2017,7 +2018,7 @@ impl NativeClient {
         self.right_was_down = right_down;
         self.renderer.focused_shooting_strategy = self.shooting_focus;
         self.renderer.hovered_tactical_action = if accepts_orders && pointer_active {
-            mouse.and_then(|(x, y)| self.renderer.tactical_action_at(x, y))
+            mouse.and_then(|(x, y)| self.renderer.tactical_action_at(&view, x, y))
         } else { None };
         self.renderer.active_tactical_action = match self.support_mode {
             Some(NativeTargetMode::Support(NativeSupportMode::Attack)) => Some(HudAction::Attack),

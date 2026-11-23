@@ -3461,6 +3461,7 @@ fn current_state(
             "owner": owner, "side": squad.side, "owned": owned,
             "command_targets": command_targets,
             "controllable": owned && permissions.is_some_and(|p| p.can_accept_input),
+            "scout_beacon_enabled": owned && view.squad_has_beacon_enabled_scout(owner),
             // Source Ctrl+A selects only top-level player squads. A live
             // Queen/Carrier child may be individually controllable, but
             // mass selection must not silently include every dependent
