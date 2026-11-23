@@ -1,0 +1,299 @@
+'use strict';
+
+// Immutable TinyBrains mixed-evaluation suite authoring. The local service
+// owns private catalog state; Hub jobs own their separately frozen suite IDs.
+// Browser input supplies names, IDs and numbers only, never paths or commands.
+const fs=require('node:fs');
+const path=require('node:path');
+const crypto=require('node:crypto');
+
+const HEX=/^[a-f0-9]{20}$/;
+const UUID=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
+const SHA=/^[a-f0-9]{64}$/;
+const MIX=/^tinybrains_mix_([a-f0-9]{20})_v([1-9][0-9]*)$/;
+const HISTORY=/^tinybrains_mini_[a-f0-9]{20}$/;
+const STAGES=new Set(['basic_tiny','tiny_two_player','small_two_player',
+    'all_two_player','full_multiplayer']);
+const MODES=new Set(['configuration','all_77','season_76']);
+const CATALOG='mixed-evaluations-catalog.json';
+
+function label(value,what='Name') {
+    if(typeof value!=='string'||!value.trim()||value.length>80||
+       /[\x00-\x1f\x7f]/.test(value))throw Error(what+' must be 1–80 printable characters.');
+    return value.trim();
+}
+function privateFile(file) {
+    if(!fs.existsSync(file))return null;
+    const stat=fs.lstatSync(file);
+    if(!stat.isFile()||stat.isSymbolicLink()||
+        fs.realpathSync(file)!==file||stat.uid!==process.getuid()||
+        (stat.mode&0o077)!==0||stat.size>1048576)
+        throw Error('Evaluator catalog file is unsafe or too large.');
+    return file;
+}
+function read(o) {
+    const file=privateFile(path.join(o.suites,CATALOG));
+    if(!file)return {version:1,templates:[],opponent_labels:{}};
+    const data=JSON.parse(fs.readFileSync(file,'utf8'));
+    if(!data||data.version!==1||!Array.isArray(data.templates)||
+       data.templates.length>100||!data.opponent_labels||
+       typeof data.opponent_labels!=='object'||Array.isArray(data.opponent_labels)||
+       Object.keys(data.opponent_labels).length>40||
+       Object.entries(data.opponent_labels).some(([id,name])=>
+           !HISTORY.test(id)||typeof name!=='string'||name.length>80))
+        throw Error('Invalid saved mixed-evaluation library.');
+    return data;
+}
+function saveCatalog(o,data) {
+    const file=path.join(o.suites,CATALOG);
+    privateFile(file);
+    const raw=JSON.stringify(data,null,2)+'\n';
+    if(Buffer.byteLength(raw)>1048576)
+        throw Error('Mixed-evaluation library exceeds 1 MiB.');
+    const pending=file+'.'+crypto.randomBytes(8).toString('hex')+'.tmp';
+    const fd=fs.openSync(pending,fs.constants.O_WRONLY|fs.constants.O_CREAT|
+        fs.constants.O_EXCL,0o600);
+    try {
+        fs.writeFileSync(fd,raw,'utf8');
+        fs.fsyncSync(fd);
+    }finally{fs.closeSync(fd);}
+    try{fs.renameSync(pending,file);}
+    finally{if(fs.existsSync(pending))fs.unlinkSync(pending);}
+}
+function shaFile(file) {
+    const stat=fs.lstatSync(file);
+    if(!stat.isFile()||stat.isSymbolicLink()||fs.realpathSync(file)!==file)
+        throw Error('Approved opponent file is redirected.');
+    return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+function lookupSuite(o,id) {
+    if(!/^[a-z][a-z0-9_]{0,63}$/.test(id))throw Error('Unsafe suite identity.');
+    const file=privateFile(path.join(o.suites,id+'.json'));
+    if(!file)return null;
+    const suite=JSON.parse(fs.readFileSync(file,'utf8'));
+    return suite.suite_id===id?suite:null;
+}
+function availableOpponents(o) {
+    const labels=read(o).opponent_labels;
+    const list=[];
+    for(const id of ['nano','micro']) {
+        const source=lookupSuite(o,'tinybrains_'+id+'_season_v1')||
+            lookupSuite(o,'tinybrains_'+id+'_tiny_v3');
+        if(!source)continue;
+        list.push({
+            id,label:id==='nano'?'Nano':'Micro',
+            checkpoint_sha256:null,
+            model_sha256:source.opponent_model_sha256,
+            manifest_sha256:source.opponent_manifest_sha256,
+            model_dir:path.join(o.project,'upstream/ants-starter/models',id+'-bc'),
+        });
+    }
+    const entries=fs.readdirSync(o.suites).filter(name=>
+        /^(?:tinybrains_mini_batch128_v1|tinybrains_mini_[a-f0-9]{20})\.json$/.test(name));
+    for(const file of entries) {
+        const id=file.slice(0,-5);
+        const suite=lookupSuite(o,id);
+        if(!suite||suite.opponent!=='mini')continue;
+        const labelValue=labels[id]||
+            (id==='tinybrains_mini_batch128_v1'
+                ?'Frozen Mini (Batch 128)'
+                :'Frozen checkpoint '+String(suite.opponent_source_job||'').slice(0,12));
+        list.push({id,label:labelValue,
+            checkpoint_sha256:suite.opponent_checkpoint_sha256,
+            source_job_id:suite.opponent_source_job,
+            model_sha256:suite.opponent_model_sha256,
+            manifest_sha256:suite.opponent_manifest_sha256,
+            model_dir:path.join(o.suites,'opponents',id)});
+    }
+    return list.filter(item=>{
+        try {
+            return SHA.test(String(item.model_sha256||''))&&
+                SHA.test(String(item.manifest_sha256||''))&&
+                shaFile(path.join(item.model_dir,'model.onnx'))===item.model_sha256&&
+                shaFile(path.join(item.model_dir,'manifest.json'))===item.manifest_sha256;
+        }catch{return false;}
+    }).sort((a,b)=>a.label.localeCompare(b.label));
+}
+function candidates(hub) {
+    return hub.snapshot().configurations.filter(c=>c.project_id==='tinybrains')
+        .map(c=>({id:c.id,revision:c.revision,name:c.name,
+            stage:c.parameters.training_stage||'full_multiplayer'}));
+}
+function boards(o) {
+    const root=path.join(o.project,'maps/hive-minds/boards');
+    if(fs.realpathSync(root)!==root)
+        throw Error('Installed competitive maps directory was redirected.');
+    const mapIds=fs.readdirSync(root).filter(name=>name.endsWith('.json'))
+        .map(name=>name.slice(0,-5)).sort();
+    if(mapIds.length!==76||new Set(mapIds).size!==76)
+        throw Error('Expected exactly 76 installed competitive maps.');
+    const counts={2:0,4:0,6:0};
+    for(const id of mapIds) {
+        if(!/^[a-z0-9_-]{1,80}$/.test(id))
+            throw Error('Invalid approved board name.');
+        const file=path.join(root,id+'.json');
+        const data=JSON.parse(fs.readFileSync(file,'utf8'));
+        if(data.id!==id||![2,4,6].includes(data.players))
+            throw Error('Installed board identity/player count differs.');
+        counts[data.players]++;
+    }
+    if(counts[2]!==30||counts[4]!==34||counts[6]!==12)
+        throw Error('Installed season maps have changed.');
+    return mapIds;
+}
+function mapsForStage(o,stage,mode) {
+    const all=['basic-tiny-2p',...boards(o)];
+    if(mode==='season_76')return all.slice(1);
+    if(mode==='all_77')return all;
+    const two=id=>id==='basic-tiny-2p'||/-2p(?:-|$)/.test(id);
+    const tiny=id=>id==='basic-tiny-2p'||/^tiny(?:wide)?-/.test(id);
+    const small=id=>tiny(id)||/^small(?:wide)?-/.test(id);
+    const filters={basic_tiny:id=>id==='basic-tiny-2p',
+        tiny_two_player:id=>two(id)&&tiny(id),
+        small_two_player:id=>two(id)&&small(id),
+        all_two_player:two,full_multiplayer:()=>true};
+    if(!STAGES.has(stage))throw Error('Unknown configured TinyBrains map stage.');
+    return all.filter(filters[stage]);
+}
+function sourceDefaults(hub,config) {
+    const p=config.parameters;
+    const host=hub.snapshot().machines.find(m=>m.status==='connected'&&
+        m.design_catalog?.tinybrains?.profiles?.[p.profile]?.profile_sha256===
+            p.profile_sha256);
+    const field=host?.design_catalog?.tinybrains?.fields?.find(f=>
+        f.key==='environment.max_turns');
+    const sourceTurn=p.design_overrides?.['environment.max_turns']??field?.default;
+    if(!Number.isSafeInteger(sourceTurn)||sourceTurn<1||sourceTurn>1000)
+        throw Error('An approved environment.max_turns default is required; reconnect the native trainer.');
+    const cap={basic_tiny:300,tiny_two_player:300,small_two_player:500,
+        all_two_player:750,full_multiplayer:sourceTurn}[p.training_stage||'full_multiplayer'];
+    if(!cap)throw Error('Saved configuration has an unknown training map stage.');
+    return {stage:p.training_stage||'full_multiplayer',
+        max_turns:Math.min(sourceTurn,cap)};
+}
+function saveEvaluation(o,hub,value) {
+    if(!value||typeof value!=='object'||Array.isArray(value)||
+        Object.keys(value).some(key=>!['action','confirm_action','id',
+            'expected_revision','name','configuration_id','configuration_revision',
+            'map_mode','max_turns','seeds','rotations','opponent_ids'].includes(key)))
+        throw Error('Unexpected custom evaluation fields.');
+    const name=label(value.name,'Evaluation name');
+    if(!UUID.test(String(value.configuration_id||''))||
+        !Number.isSafeInteger(value.configuration_revision)||
+        value.configuration_revision<1||!MODES.has(value.map_mode)||
+        !Array.isArray(value.seeds)||value.seeds.length<1||value.seeds.length>16||
+        value.seeds.some(n=>!Number.isSafeInteger(n)||n<0||n>=2**32)||
+        new Set(value.seeds).size!==value.seeds.length||
+        !Number.isSafeInteger(value.rotations)||value.rotations<1||value.rotations>8||
+        !Array.isArray(value.opponent_ids)||value.opponent_ids.length<1||
+        value.opponent_ids.length>16||
+        new Set(value.opponent_ids).size!==value.opponent_ids.length)
+        throw Error('Invalid saved evaluation configuration, map sampling or opponent set.');
+    const config=hub.snapshot().configurations.find(c=>
+        c.id===value.configuration_id&&c.revision===value.configuration_revision&&
+        c.project_id==='tinybrains');
+    if(!config)throw Error('Selected saved TinyBrains Design revision is not available.');
+    const environment=sourceDefaults(hub,config);
+    const turns=value.max_turns??environment.max_turns;
+    if(!Number.isSafeInteger(turns)||turns<1||turns>1000)
+        throw Error('Evaluation max turns must be a whole number from 1 to 1000.');
+    const maps=mapsForStage(o,environment.stage,value.map_mode);
+    if(!maps.length)
+        throw Error('The selected training environment contains no approved maps.');
+    const catalog=read(o),available=new Map(
+        availableOpponents(o).map(item=>[item.id,item]));
+    const pool=value.opponent_ids.map(id=>{
+        const item=available.get(id);
+        if(!item)throw Error('Selected evaluation opponent is not a verified frozen model: '+String(id));
+        const {source_job_id,...frozen}=item;
+        return {...frozen,name:undefined,
+            label:frozen.label};
+    }).map(item=>({
+        id:item.id,label:item.label,model_dir:item.model_dir,
+        model_sha256:item.model_sha256,
+        manifest_sha256:item.manifest_sha256,
+        checkpoint_sha256:item.checkpoint_sha256,
+    }));
+    const allBoards=Object.fromEntries(maps.map(id=>{
+        const file=path.join(o.project,'maps/hive-minds/boards',id+'.json');
+        const data=id==='basic-tiny-2p'?{players:2}:
+            JSON.parse(fs.readFileSync(file,'utf8'));
+        return [id,data.players];
+    }));
+    const games=Object.values(allBoards).reduce((a,n)=>a+n,0)*
+        value.seeds.length*value.rotations;
+    if(games>2048)
+        throw Error('Evaluation would exceed 2048 matches. Reduce seeds or rotations.');
+    const current=value.id==null?null:catalog.templates.find(t=>t.id===value.id);
+    if(value.id!=null&&(!HEX.test(String(value.id))||!current||
+        value.expected_revision!==current.revision))
+        throw Error('Evaluation revision changed. Reload before editing.');
+    if(catalog.templates.length>=100&&!current)
+        throw Error('Saved evaluation library is full.');
+    const id=current?current.id:crypto.randomBytes(10).toString('hex');
+    const revision=current?current.revision+1:1;
+    const suiteId='tinybrains_mix_'+id+'_v'+revision;
+    const configurationSha=crypto.createHash('sha256')
+        .update(JSON.stringify(config.parameters)).digest('hex');
+    const suite={
+        schema_version:2,suite_id:suiteId,
+        maps,seeds:value.seeds,max_turns:turns,rotations:value.rotations,
+        environment_source:{configuration_id:config.id,revision:config.revision,
+            sha256:configurationSha,stage:environment.stage},
+        opponents:pool,
+    };
+    const raw=JSON.stringify(suite,null,2)+'\n';
+    if(Buffer.byteLength(raw)>32768)
+        throw Error('Mixed evaluation definition exceeds 32 KiB.');
+    const file=path.join(o.suites,suiteId+'.json');
+    // First publish immutable suite bytes; a failed catalog update leaves
+    // an unreferenced immutable file, never a partly rewritten suite.
+    fs.writeFileSync(file,raw,{flag:'wx',mode:0o600});
+    const record={id,revision,name,suite_id:suiteId,
+        configuration_id:config.id,configuration_revision:config.revision,
+        map_mode:value.map_mode,max_turns:turns,seeds:value.seeds,
+        rotations:value.rotations,opponent_ids:value.opponent_ids,
+        games,created_at:current?.created_at||new Date().toISOString(),
+        updated_at:new Date().toISOString()};
+    if(current)catalog.templates.splice(catalog.templates.indexOf(current),1,record);
+    else catalog.templates.push(record);
+    saveCatalog(o,catalog);
+    return {record,message:'Saved immutable mixed evaluation '+name+
+        ' revision '+revision+' ('+games+' matches). Install its evaluator service and restart the idle local agent before selecting the suite in Design.'};
+}
+function deleteEvaluation(o,value) {
+    const catalog=read(o);
+    if(!HEX.test(String(value.id||'')))throw Error('Invalid saved evaluation ID.');
+    const current=catalog.templates.find(row=>row.id===value.id);
+    if(!current||current.revision!==value.expected_revision)
+        throw Error('Saved evaluation revision changed; reload before deleting.');
+    catalog.templates.splice(catalog.templates.indexOf(current),1);
+    saveCatalog(o,catalog);
+    return {message:'Saved evaluation removed from the editable library. Immutable versions, running jobs and historical receipts remain unchanged.'};
+}
+function nameOpponent(o,sourceId,name) {
+    if(!UUID.test(String(sourceId||'')))throw Error('Select a verified completed checkpoint.');
+    const id='tinybrains_mini_'+sourceId.replace(/-/g,'').slice(0,20);
+    if(!lookupSuite(o,id))throw Error('The selected checkpoint has not been frozen.');
+    const catalog=read(o);
+    catalog.opponent_labels[id]=label(name,'Opponent name');
+    saveCatalog(o,catalog);
+    return {message:'Frozen opponent saved as '+catalog.opponent_labels[id]+'. Existing checkpoints and evaluations remain unchanged.'};
+}
+function customSuites(o) {
+    const files=fs.existsSync(o.suites)?fs.readdirSync(o.suites):[];
+    const names=files.filter(file=>MIX.test(file.slice(0,-5))&&file.endsWith('.json'));
+    if(names.length>48)throw Error('Too many archived mixed evaluation revisions; retain at most 48.');
+    return Object.fromEntries(names.map(file=>{
+        const name=file.slice(0,-5);
+        const match=MIX.exec(name);
+        return ['mix-'+match[1]+'-v'+match[2],name];
+    }));
+}
+function library(o,hub) {
+    return {templates:read(o).templates,
+        opponents:availableOpponents(o).map(({id,label,source_job_id,checkpoint_sha256})=>
+            ({id,label,source_job_id,checkpoint_sha256})),
+        configurations:candidates(hub)};
+}
+module.exports={read,library,customSuites,saveEvaluation,deleteEvaluation,nameOpponent};
