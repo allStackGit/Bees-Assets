@@ -258,6 +258,28 @@ def current(root: Path) -> dict:
     return result
 
 
+def prune_verified_transfer(root: Path, manifest: Path, archive: Path,
+                            release: str) -> bool:
+    """Discard only this operator-owned incoming ZIP after verified install.
+
+    No installed release, job artifacts or arbitrary supplied files qualify
+    for removal; an interrupted installation leaves incoming files intact.
+    """
+    expected = root / "incoming" / release
+    if (manifest.parent != expected or archive.parent != expected or
+        expected.is_symlink() or not expected.is_dir() or
+        expected.resolve() != expected or
+        (root / "incoming").is_symlink()):
+        raise ValueError("Source cleanup is limited to the exact verified release's incoming directory.")
+    try:
+        shutil.rmtree(expected)
+        return True
+    except OSError as exc:
+        print("Bees Hub Unity staging cleanup unavailable: " + str(exc),
+              file=sys.stderr)
+        return False
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("install", "activate", "current"))
@@ -266,20 +288,32 @@ def main(argv=None) -> int:
     parser.add_argument("--archive", type=Path)
     parser.add_argument("--release")
     parser.add_argument("--activate", action="store_true")
+    parser.add_argument("--cleanup-staging", action="store_true")
     args = parser.parse_args(argv)
     try:
         if args.command == "install":
             if args.manifest is None or args.archive is None or args.release is not None:
                 raise ValueError("install requires --manifest and --archive, without --release.")
+            if args.cleanup_staging:
+                # Validate deletion scope before performing any state changes.
+                incoming = args.root / "incoming" / sha256_file(args.manifest)
+                if (args.manifest.parent != incoming or
+                    args.archive.parent != incoming or incoming.is_symlink() or
+                    not incoming.is_dir() or incoming.resolve() != incoming):
+                    raise ValueError("Cleanup may remove only the verified incoming release directory.")
             result = install(args.root, args.manifest, args.archive)
             if args.activate:
                 result = activate(args.root, result["release_sha256"])
+            if args.cleanup_staging:
+                result["staging_cleaned"] = prune_verified_transfer(
+                    args.root, args.manifest, args.archive, result["release_sha256"]
+                )
         elif args.command == "activate":
-            if not args.release or args.archive or args.manifest or args.activate:
+            if not args.release or args.archive or args.manifest or args.activate or args.cleanup_staging:
                 raise ValueError("activate requires --release only.")
             result = activate(args.root, args.release)
         else:
-            if args.archive or args.manifest or args.release or args.activate:
+            if args.archive or args.manifest or args.release or args.activate or args.cleanup_staging:
                 raise ValueError("current accepts only --root.")
             result = current(args.root)
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError,
