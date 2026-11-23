@@ -404,6 +404,8 @@ def gather_training_columns_once(columns, index_groups, *,
     feature or metadata columns separately for every map group. A single
     concatenated index selection amortizes GPU kernel launches across all
     groups, then callers retain zero-copy views in the original group order.
+    A two-column immutable value/target bank can be gathered as one 2D
+    tensor rather than launching separate index kernels for each column.
     Only the temporary gathered output has an extra bounded lifetime.
     """
     if (not isinstance(columns,(tuple,list)) or not columns or
@@ -412,9 +414,10 @@ def gather_training_columns_once(columns, index_groups, *,
             type(max_output_bytes) is not int or max_output_bytes<1):
         return None
     first=columns[0]
-    if (not isinstance(first,torch.Tensor) or first.ndim!=1 or
+    if (not isinstance(first,torch.Tensor) or first.ndim not in (1,2) or
             first.device.type!="cuda" or
-            any(not isinstance(column,torch.Tensor) or column.ndim!=1 or
+            any(not isinstance(column,torch.Tensor) or
+                column.ndim not in (1,2) or len(column)!=len(first) or
                 column.device!=first.device or column.requires_grad
                 for column in columns) or
             any(not isinstance(group,torch.Tensor) or group.ndim!=1 or
@@ -423,15 +426,37 @@ def gather_training_columns_once(columns, index_groups, *,
                 for group in index_groups)):
         return None
     total=sum(group.numel() for group in index_groups)
-    # Account for BOTH the selected columns and the transient concatenated
-    # index tensor. The original group index views cost no new allocation,
-    # but torch.cat does. This preserves the shared lease for integer- or
-    # byte-valued inputs whose indices may exceed their payload size.
-    index_bytes=total*max(group.element_size() for group in index_groups)
-    output_bytes=total*sum(column.element_size() for column in columns)
+    # Index groups produced as adjacent views of one packed minibatch bank
+    # can be selected directly. Avoid a separate device cat allocation and
+    # kernel for those groups; unrelated/non-contiguous sources keep the
+    # original concatenation path and identical index order.
+    contiguous=None
+    head=index_groups[0]
+    if total and head.is_contiguous() and head.stride(0)==1:
+        storage=head.untyped_storage().data_ptr()
+        offset=head.storage_offset()
+        position=offset
+        for group in index_groups:
+            if (not group.is_contiguous() or group.stride(0)!=1 or
+                    group.dtype!=head.dtype or
+                    group.untyped_storage().data_ptr()!=storage or
+                    group.storage_offset()!=position):
+                break
+            position+=group.numel()
+        else:
+            contiguous=torch.as_strided(head,(total,),(1,),offset)
+    # Count every selected scalar, including multi-column banks. Index
+    # storage is already resident for the contiguous path; otherwise
+    # reserve the original bounded transient concatenation allocation.
+    index_bytes=(0 if contiguous is not None else
+                 total*max(group.element_size() for group in index_groups))
+    output_bytes=total*sum(
+        column.element_size() * (column.shape[1] if column.ndim==2 else 1)
+        for column in columns)
     if not total or index_bytes+output_bytes>max_output_bytes:
         return None
-    indices=torch.cat(tuple(index_groups))
+    indices=(contiguous if contiguous is not None
+             else torch.cat(tuple(index_groups)))
     result=tuple(column.index_select(0,indices) for column in columns)
     return result,tuple(group.numel() for group in index_groups)
 
