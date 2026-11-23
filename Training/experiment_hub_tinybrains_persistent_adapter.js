@@ -2037,7 +2037,8 @@ function createTinyBrainsPersistentDockerAdapter({
             const out=targetFor(context);
             const checkpoint=checkpointReady(out,item.text,
                 context.frozen_parameters?.design_overrides,true);
-            checkpointStage(out,context.frozen_parameters?.training_stage??null);
+            checkpointStage(out,context.frozen_parameters?.training_stage??null,
+                context.frozen_parameters?.training_map_ids);
             return modelFileSha256(checkpoint);
         },
         readProgress(context){
