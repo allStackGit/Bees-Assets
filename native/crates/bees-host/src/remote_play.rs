@@ -56,6 +56,11 @@ const STATE_EVERY_TICKS: u64 = 5;
 const SPECTATOR_IDLE_STATE_EVERY_TICKS: u64 = STATE_EVERY_TICKS * 2;
 const MAX_PENDING_AUDIO_EVENTS: usize = 32;
 const MAX_PENDING_SHIP_INSPECTIONS: usize = 16;
+// No physical tick runs while one human faction is absent. A surviving
+// commander can explicitly adjudicate a FORFEIT after this wall-clock grace.
+// The grace resets on host recovery; never infer an expired timer from a
+// stale or untrusted client timestamp.
+const FORFEIT_GRACE: Duration = Duration::from_secs(180);
 
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -83,6 +88,10 @@ enum WireInput {
     /// The existing World is held at tick zero until both sides are ready.
     LobbyReady { request_id: u64, world_id: u64,
         episode_revision: u64 },
+    /// Request authoritative surrender of an absent opponent. The client
+    /// never supplies a victim side or a claimed absence duration.
+    ClaimForfeit { request_id: u64, world_id: u64,
+        episode_revision: u64 },
     /// An authenticated commander's time-control vote. Not a gameplay
     /// order: the one authoritative World simply stops advancing ticks.
     Pause { request_id: u64, world_id: u64,
@@ -103,6 +112,10 @@ pub struct RemoteOrder {
     pub side: i32,
     pub request_id: u64,
     pub action: NativePlayerInput,
+    /// Adjudicated by the host after a timed opponent absence. The action
+    /// itself remains the ONE canonical World surrender implementation.
+    #[serde(default)]
+    pub host_forfeit: bool,
 }
 
 /// One authenticated peer's gesture, independent of every other peer.
@@ -127,6 +140,7 @@ impl HeldFireLease {
     fn release(self) -> RemoteOrder {
         RemoteOrder {
             peer: self.peer, side: self.side, request_id: 0,
+            host_forfeit: false,
             action: NativePlayerInput::HeldFire(NativePlayerHeldFire {
                 world_id: self.world_id,
                 episode_revision: self.episode_revision,
@@ -380,6 +394,12 @@ pub struct RemotePlayMeasurements {
     #[serde(default)]
     pub reconnect_wait_polls: u64,
     #[serde(default)]
+    pub forfeit_claims_received: u64,
+    #[serde(default)]
+    pub forfeit_claims_admitted: u64,
+    #[serde(default)]
+    pub forfeit_claims_rejected: u64,
+    #[serde(default)]
     pub commander_pause_requests: u64,
     #[serde(default)]
     pub commander_pause_rejections: u64,
@@ -575,6 +595,10 @@ pub struct NativeRemotePlay {
     /// persisted as gameplay; restart requires both sides to rejoin.
     lobby_episode: Option<(u64, u64)>,
     lobby_ready_peers: HashSet<u64>,
+    /// Only the currently absent side and host-monotonic timestamp. This
+    /// is not persisted as game state; reconnect/recovery renews the grace.
+    forfeit_absence: Option<(i32, Instant)>,
+    forfeit_announced: bool,
     /// Cooperative human peers pause the same World, never its renderer
     /// or an independent simulation. Their votes expire on episode change
     /// and disconnect, with no durable replay/gameplay side effects.
@@ -689,6 +713,7 @@ impl NativeRemotePlay {
             held_fire: HashMap::new(), pending_releases: Vec::new(),
             briefing_ready: HashMap::new(),
             lobby_episode: None, lobby_ready_peers: HashSet::new(),
+            forfeit_absence: None, forfeit_announced: false,
             pause_episode: None, pause_peers: HashSet::new(),
             paused_step_owner: None,
             source_game_speed: 1.0, game_speed_override: None,
@@ -882,6 +907,8 @@ impl NativeRemotePlay {
         self.briefing_ready.clear();
         self.lobby_episode = None;
         self.lobby_ready_peers.clear();
+        self.forfeit_absence = None;
+        self.forfeit_announced = false;
         self.pause_peers.clear();
         self.pause_episode = None;
         self.paused_step_owner = None;
@@ -930,6 +957,8 @@ impl NativeRemotePlay {
         if self.lobby_episode != Some((world_id.0, revision)) {
             self.lobby_episode = Some((world_id.0, revision));
             self.lobby_ready_peers.clear();
+            self.forfeit_absence = None;
+            self.forfeit_announced = false;
             self.force_initial_state = true;
         }
         if self.pause_episode != Some((world_id.0, revision)) {
@@ -964,6 +993,9 @@ impl NativeRemotePlay {
         }
         let mut orders = std::mem::take(&mut self.pending_releases);
         orders.retain(|order| order.action.episode() == (world_id, revision));
+        // Defer forfeit adjudication until every socket has been polled and
+        // reaped: a reconnect in this very batch defeats an earlier claim.
+        let mut forfeit_claims = Vec::new();
         // A connection flood must not monopolize the authoritative game
         // tick. Unaccepted sockets remain queued by the OS.
         for _ in 0..MAX_ACCEPTS_PER_POLL {
@@ -1069,7 +1101,7 @@ impl NativeRemotePlay {
                 // complete unprocessed lines in the bounded TCP read buffer
                 // for the next fixed-tick poll, preserving request order.
                 if peer.side.is_some() && (peer_orders >= MAX_ORDERS_PER_PEER_POLL ||
-                    orders.len() >= MAX_ORDERS_PER_POLL ||
+                    orders.len() + forfeit_claims.len() >= MAX_ORDERS_PER_POLL ||
                     peer.input_replies.len() >= MAX_PENDING_INPUT_REPLIES) {
                     if peer.incoming[start..].contains(&b'\n') {
                         self.measurements.input_budget_deferred_polls += 1;
@@ -1293,6 +1325,24 @@ impl NativeRemotePlay {
                                 "Two-sided dedicated lobby unavailable or stale"
                             },
                         }));
+                    }
+                    Ok(WireInput::ClaimForfeit {
+                        request_id, world_id: claimed_world,
+                        episode_revision: claimed_revision,
+                    }) if peer.side.is_some() => {
+                        if request_id <= peer.last_request_id ||
+                            !peer.begin_input(request_id) {
+                            peer.closed = true;
+                            break;
+                        }
+                        peer.last_request_id = request_id;
+                        peer_orders += 1;
+                        self.measurements.forfeit_claims_received += 1;
+                        forfeit_claims.push((
+                            peer.id, peer.side.expect("authenticated forfeit caller"),
+                            request_id, claimed_world, claimed_revision,
+                            peer.spectator,
+                        ));
                     }
                     Ok(WireInput::Pause {
                         request_id, world_id: claimed_world,
@@ -1560,7 +1610,7 @@ impl NativeRemotePlay {
                         self.measurements.orders_received += 1;
                         orders.push(RemoteOrder {
                             peer: peer.id, side: peer.side.expect("checked authenticated peer"),
-                            request_id, action,
+                            request_id, action, host_forfeit: false,
                         });
                     }
                     _ => { peer.closed = true; break; }
@@ -1577,6 +1627,46 @@ impl NativeRemotePlay {
             self.force_initial_state = true;
         }
         self.reap();
+        // An actual reconnect arriving in this poll takes precedence over
+        // a pending claim. All choices are host-authenticated and checked
+        // against the same timed absence; clients cannot name the loser.
+        let mut forfeit_granted = false;
+        for (id, claimant, request_id, claimed_world, claimed_revision, spectator)
+            in forfeit_claims
+        {
+            let missing_side = 3 - claimant;
+            let claimant_live = self.peers.iter().any(|peer|
+                peer.id == id && !peer.closed && !peer.spectator &&
+                peer.side == Some(claimant));
+            let opponent_live = self.peers.iter().any(|peer|
+                !peer.closed && !peer.spectator &&
+                peer.side == Some(missing_side));
+            let admitted = !forfeit_granted && claimant_live && !opponent_live &&
+                !spectator && self.dedicated_briefing_gate &&
+                self.side_tokens.len() == 2 && !self.archive_only &&
+                claimed_world == world_id.0 && claimed_revision == revision &&
+                self.forfeit_absence.is_some_and(|(side, since)|
+                    side == missing_side && since.elapsed() >= FORFEIT_GRACE);
+            if admitted {
+                forfeit_granted = true;
+                self.measurements.forfeit_claims_admitted += 1;
+                orders.push(RemoteOrder {
+                    peer: id, side: missing_side, request_id, host_forfeit: true,
+                    action: NativePlayerInput::Surrender {
+                        world_id, episode_revision: revision, side: missing_side,
+                    },
+                });
+            } else {
+                self.measurements.forfeit_claims_rejected += 1;
+                if let Some(peer) = self.peers.iter_mut().find(|peer|peer.id == id) {
+                    peer.finish_input(request_id, json!({
+                        "kind": "input_result", "request_id": request_id,
+                        "processed": false,
+                        "feedback": "Opponent has reconnected or forfeit grace is not complete",
+                    }));
+                }
+            }
+        }
         // A peer that was already firing when it disconnected must release
         // before another peer's new Begin at this same tick boundary. But
         // a newly admitted Begin from a peer that disconnected mid-poll
@@ -1633,13 +1723,38 @@ impl NativeRemotePlay {
     pub fn reconnect_waiting(&mut self, tick: u64) -> bool {
         if tick == 0 || !self.dedicated_briefing_gate ||
             self.side_tokens.len() != 2 || self.archive_only {
+            self.forfeit_absence = None;
+            self.forfeit_announced = false;
             return false;
         }
-        let missing = self.side_tokens.keys().any(|&side|
-            !self.peers.iter().any(|peer|
-                !peer.closed && !peer.spectator && peer.side == Some(side)));
-        if missing { self.measurements.reconnect_wait_polls += 1; }
-        missing
+        let mut missing = None;
+        let mut connected = 0;
+        for &side in self.side_tokens.keys() {
+            if self.peers.iter().any(|peer|
+                !peer.closed && !peer.spectator && peer.side == Some(side)) {
+                connected += 1;
+            } else {
+                missing = Some(side);
+            }
+        }
+        // Two absent sides do not adjudicate one another. Begin a new
+        // grace when exactly one commander side is live, even after a
+        // host crash or when both factions briefly left the session.
+        let absent = if connected == 1 { missing } else { None };
+        if self.forfeit_absence.map(|(side,_)|side) != absent {
+            self.forfeit_absence = absent.map(|side|(side,Instant::now()));
+            self.forfeit_announced = false;
+        }
+        if self.forfeit_absence.is_some_and(|(_,since)|
+            since.elapsed() >= FORFEIT_GRACE) && !self.forfeit_announced {
+            self.forfeit_announced = true;
+            // This is a same-physical-tick presentation update, not a
+            // phantom gameplay step or a second simulation clock.
+            self.force_initial_state = true;
+        }
+        let waiting = connected < self.side_tokens.len();
+        if waiting { self.measurements.reconnect_wait_polls += 1; }
+        waiting
     }
 
     pub fn briefing_waiting(&mut self, world_id: WorldId, revision: u64,
@@ -1895,6 +2010,10 @@ impl NativeRemotePlay {
             view.terminal_result.is_none() &&
             view.combat.surrendered_side().is_none() &&
             connected_commander_sides.len() < self.side_tokens.len();
+        let claim_forfeit_side = if waiting_for_reconnect {
+            self.forfeit_absence.filter(|(_,since)|
+                since.elapsed() >= FORFEIT_GRACE).map(|(missing,_)| 3-missing)
+        } else { None };
         let lobby_active = self.dedicated_briefing_gate &&
             self.side_tokens.len() == 2 && view.tick == 0 &&
             view.terminal_result.is_none() && !self.archive_only;
@@ -2005,6 +2124,9 @@ impl NativeRemotePlay {
                 if two_sided {
                     state["connected_commander_sides"] = json!(&connected_commander_sides);
                     state["waiting_for_player_reconnect"] = json!(waiting_for_reconnect);
+                    state["forfeit_claim_available"] = json!(
+                        !spectator && claim_forfeit_side == Some(side)
+                    );
                 }
                 if lobby_active {
                     state["lobby"] = json!({
