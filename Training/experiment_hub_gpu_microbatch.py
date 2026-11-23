@@ -176,6 +176,7 @@ class FrozenInferenceMicrobatcher:
                               max_queue_depth=0, admitted_profiles=0,
                               rejected_profiles=0, qualification_seconds=0.0,
                               profile_refreshes=0, bucketed_groups=0,
+                              flat_groups=0, flat_packed_bytes=0,
                               head_of_line_bypasses=0, policy_refreshes=0,
                               policy_refresh_seconds=0.0,
                               policy_refresh_bytes=0)
@@ -467,6 +468,43 @@ class FrozenInferenceMicrobatcher:
         with torch.inference_mode():
             return [self.models[item.model_id](*item.inputs) for item in group]
 
+    @staticmethod
+    def _flat_model_inputs(owners, keys):
+        """Pack all compatible input tensors with one torch.cat per dtype.
+
+        This avoids separate tiny GPU concatenation launches for every
+        independent network and recurrent state. Returned model arguments
+        are zero-copy views into the owned dtype bank. Noncontiguous inputs
+        retain the original per-argument packer.
+        """
+        fragments, descriptors, offsets = OrderedDict(), [], {}
+        total_inputs = 0
+        for key in keys:
+            members = owners[key]
+            fields = []
+            for position in range(len(members[0].inputs)):
+                chunks = [item.inputs[position] for item in members]
+                if any(not t.is_contiguous() for t in chunks):
+                    raise ValueError("Flat pack requires contiguous GPU tensors")
+                dtype = chunks[0].dtype
+                if any(t.dtype!=dtype for t in chunks):
+                    raise ValueError("Frozen model inputs changed dtype")
+                shape = (sum(item.rows for item in members),*chunks[0].shape[1:])
+                count = sum(t.numel() for t in chunks)
+                start = offsets.get(dtype,0)
+                offsets[dtype] = start+count
+                fragments.setdefault(dtype,[]).extend(t.reshape(-1) for t in chunks)
+                fields.append((dtype,start,count,shape))
+                total_inputs += len(chunks)
+            descriptors.append(fields)
+        if total_inputs<2:
+            raise ValueError("No small input launches available to consolidate")
+        banks = {dtype:torch.cat(parts,dim=0)
+                 for dtype,parts in fragments.items()}
+        return [tuple(banks[dtype].narrow(0,start,count).view(shape)
+                      for dtype,start,count,shape in fields)
+                for fields in descriptors]
+
     def _dispatch(self, group):
         stream = (torch.cuda.current_stream(self.device)
                   if self.device.type == "cuda" else None)
@@ -498,17 +536,20 @@ class FrozenInferenceMicrobatcher:
                 self._executors.popitem(last=False)
         else:
             self._executors.move_to_end(keys)
-        def grouped(bucket=False):
-            inputs, original_rows, target_rows = [], [], []
-            for key in keys:
+        def grouped(bucket=False, flat=False):
+            if bucket and flat:
+                raise ValueError("Flat GPU packing and stable padding are alternative strategies")
+            inputs = (self._flat_model_inputs(owners,keys) if flat else [])
+            original_rows, target_rows = [], []
+            for index,key in enumerate(keys):
                 members = owners[key]
-                packed = tuple(
-                    torch.cat([item.inputs[i] for item in members], dim=0)
-                    if len(members)>1 else members[0].inputs[i]
-                    for i in range(len(members[0].inputs)))
+                if not flat:
+                    inputs.append(tuple(
+                        torch.cat([item.inputs[i] for item in members], dim=0)
+                        if len(members)>1 else members[0].inputs[i]
+                        for i in range(len(members[0].inputs))))
                 rows = sum(item.rows for item in members)
                 target = _stable_batch_rows(rows, self.max_batch_rows) if bucket else rows
-                inputs.append(packed)
                 original_rows.append(rows)
                 target_rows.append(target)
             if bucket:
@@ -571,12 +612,24 @@ class FrozenInferenceMicrobatcher:
                         "individual":lambda:self._individual(group),
                         "exact":lambda:grouped(),
                     }
+                    validated = {"individual":reference,"exact":candidate}
                     if self.allow_graphs:
                         try:
                             padded = grouped(bucket=True)
                             if all(_equivalent(a,b,1e-5,1e-6)
                                    for a,b in zip(reference,padded)):
                                 choices["bucket"] = lambda:grouped(bucket=True)
+                                validated["bucket"] = padded
+                        except (ValueError,TypeError,RuntimeError,
+                                torch.OutOfMemoryError):
+                            pass
+                    if self.device.type=="cuda":
+                        try:
+                            flat_output = grouped(flat=True)
+                            if all(_equivalent(a,b,1e-5,1e-6)
+                                   for a,b in zip(reference,flat_output)):
+                                choices["flat"] = lambda:grouped(flat=True)
+                                validated["flat"] = flat_output
                         except (ValueError,TypeError,RuntimeError,
                                 torch.OutOfMemoryError):
                             pass
@@ -593,8 +646,7 @@ class FrozenInferenceMicrobatcher:
                                     if name!="individual" and
                                     median(v)<baseline*0.95)
                     mode = faster[0][1] if faster else "individual"
-                    output = {"individual":reference,"exact":candidate,
-                              "bucket":locals().get("padded")}.get(mode)
+                    output = validated.get(mode)
                 except (ValueError,TypeError,RuntimeError,
                         torch.OutOfMemoryError):
                     mode = "individual"
@@ -609,9 +661,9 @@ class FrozenInferenceMicrobatcher:
             else:
                 self._admission.move_to_end(shape)
         if output is None:
-            if mode in ("exact","bucket"):
+            if mode in ("exact","bucket","flat"):
                 try:
-                    output = grouped(bucket=mode=="bucket")
+                    output = grouped(bucket=mode=="bucket",flat=mode=="flat")
                 except (ValueError,TypeError,RuntimeError,
                         torch.OutOfMemoryError):
                     output = self._individual(group)
@@ -623,7 +675,11 @@ class FrozenInferenceMicrobatcher:
                 output = self._individual(group)
         if mode=="bucket":
             self._counters["bucketed_groups"] += 1
-        if mode=="exact" or mode=="bucket":
+        if mode=="flat":
+            self._counters["flat_groups"] += 1
+            self._counters["flat_packed_bytes"] += sum(
+                item.input_bytes for item in group)
+        if mode in ("exact","bucket","flat"):
             self._counters["coalesced"] += len(group)-len(keys)
         resolved = {id(item):value for item,value in zip(group,output)}
         event = None
@@ -632,7 +688,7 @@ class FrozenInferenceMicrobatcher:
             event.record(stream)
         self._last_event = event
         self._counters["model_forwards"] += (
-            len(keys) if mode in ("exact","bucket") else len(group))
+            len(keys) if mode in ("exact","bucket","flat") else len(group))
         for item in group:
             item.future.done_event = event
             item.future.set_result(resolved[id(item)])
