@@ -7,6 +7,7 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const {spawnSync}=require('node:child_process');
+const {fileHash}=require('./experiment_hub_bees_immutable_runtime');
 const crypto=require('node:crypto');
 const {createTinyBrainsAdapter}=require('./experiment_hub_tinybrains_adapter');
 const {createCourierAdapter}=require('./experiment_hub_courier_adapter');
@@ -127,8 +128,7 @@ function installedUnityRelease() {
     if(runtime&&(
         fs.realpathSync(runtimeArchive)!==runtimeArchive||
         fs.statSync(runtimeArchive).size!==runtime.archive_bytes||
-        crypto.createHash('sha256').update(fs.readFileSync(runtimeArchive)).digest('hex')!==
-            runtime.archive_sha256))
+        fileHash(runtimeArchive)!==runtime.archive_sha256))
         throw Error('Selected Bees Python learner/actor archive differs from the activated Unity release.');
     return Object.freeze({
         workerExecutable:binary,releaseManifestPath:manifest,
