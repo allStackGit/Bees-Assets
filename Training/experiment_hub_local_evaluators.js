@@ -23,6 +23,13 @@ const BATCH_ID='nano-micro';
 const MINI_ID='mini';
 const MINI_SUITE='tinybrains_mini_batch128_v1';
 const SCHEDULED_IDS=[...Object.keys(SUITES),BATCH_ID];
+// Full-season suites preserve the fast two-seat benchmarks. All 76 enabled
+// season boards are evaluated with each board's actual 2/4/6 player count.
+const SEASON_SUITES=Object.freeze({
+    'nano-season':'tinybrains_nano_season_v1',
+    'micro-season':'tinybrains_micro_season_v1',
+    'mini-season':'tinybrains_mini_batch128_season_v1',
+});
 const UUID=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const SHA256=/^[a-f0-9]{64}$/;
 function suiteNames(options) {
@@ -31,6 +38,8 @@ function suiteNames(options) {
         ...SUITES,
         ...(fs.existsSync(path.join(options.suites,MINI_SUITE+'.json'))
             ?{mini:MINI_SUITE}:{}),
+        ...Object.fromEntries(Object.entries(SEASON_SUITES).filter(([,name])=>
+            fs.existsSync(path.join(options.suites,name+'.json')))),
     };
     const stat=fs.lstatSync(marker);
     if(!stat.isFile()||stat.isSymbolicLink()||
@@ -55,10 +64,13 @@ function suiteNames(options) {
         nano:approved.nano,micro:approved.micro,
         ...(fs.existsSync(path.join(options.suites,MINI_SUITE+'.json'))
             ?{mini:MINI_SUITE}:{}),
+        ...Object.fromEntries(Object.entries(SEASON_SUITES).filter(([,name])=>
+            fs.existsSync(path.join(options.suites,name+'.json')))),
     };
 }
 function scheduledIds(options) {
-    return [...SCHEDULED_IDS,...(suiteNames(options).mini?[MINI_ID]:[])];
+    return [...SCHEDULED_IDS,
+        ...Object.keys(suiteNames(options)).filter(id=>!Object.hasOwn(SUITES,id))];
 }
 const SAFE_PATH=/^\/[A-Za-z0-9._/@:+-]+$/;
 const MACHINE=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -180,6 +192,65 @@ function prepareInstall(o) {
     for(const dir of [o.suites,o.scratch,o.receipts,o.bin])
         privateDirectory(dir,true);
 }
+async function createSeasonSuites(o) {
+    const missing=Object.entries(SEASON_SUITES).filter(([id,name])=>
+        (id!=='mini-season'||fs.existsSync(path.join(o.suites,MINI_SUITE+'.json')))&&
+        !fs.existsSync(path.join(o.suites,name+'.json')));
+    if(!missing.length)return;
+    const boards=presentDirectory(path.join(o.project,'maps/hive-minds/boards'));
+    const filenames=fs.readdirSync(boards).filter(name=>name.endsWith('.json')).sort();
+    if(filenames.length!==76)
+        throw Error('The pinned Hive Minds season must contain exactly 76 approved board files.');
+    const ids=[],counts={2:0,4:0,6:0};
+    for(const name of filenames) {
+        const id=name.slice(0,-5);
+        if(!/^[a-z0-9_-]{1,80}$/.test(id))
+            throw Error('Invalid trusted TinyBrains season board filename.');
+        const file=presentFile(path.join(boards,name));
+        const stat=fs.statSync(file);
+        if(stat.size<1||stat.size>1048576)
+            throw Error('Trusted TinyBrains season board exceeds its size bound.');
+        const board=JSON.parse(fs.readFileSync(file,'utf8'));
+        if(board.id!==id||![2,4,6].includes(board.players))
+            throw Error('Trusted TinyBrains season board has invalid identity or player count: '+id);
+        counts[board.players]++;
+        ids.push(id);
+    }
+    if(counts[2]!==30||counts[4]!==34||counts[6]!==12)
+        throw Error('The trusted season map distribution has changed; an explicitly versioned suite is required.');
+    const {stdout}=await run(presentFile(o.launcher),[
+        '-B',path.join(o.hubRoot,'Training/experiment_hub_evaluation_runtime.py'),
+        '--project','tinybrains','--engine-path',o.engine,
+    ],{timeout:90000,maxBuffer:1024*1024});
+    const digest=JSON.parse(stdout).runtime_sha256;
+    if(!SHA256.test(String(digest||'')))
+        throw Error('The TinyBrains evaluation runtime fingerprint is missing.');
+    const names=suiteNames(o);
+    for(const [id,name] of missing) {
+        const opponent=id.split('-')[0];
+        const base=JSON.parse(fs.readFileSync(
+            presentFile(path.join(o.suites,
+                (opponent==='mini'?MINI_SUITE:names[opponent])+'.json')),'utf8'));
+        if(base.opponent!==opponent||
+            !SHA256.test(String(base.opponent_model_sha256||''))||
+            !SHA256.test(String(base.opponent_manifest_sha256||'')))
+            throw Error('Season suite requires a verified frozen baseline opponent.');
+        const definition={
+            suite_id:name,maps:ids,seeds:[813101],max_turns:1000,
+            opponent,
+            opponent_model_sha256:base.opponent_model_sha256,
+            opponent_manifest_sha256:base.opponent_manifest_sha256,
+            runtime_sha256:digest,
+            ...(opponent==='mini'?{
+                opponent_dir:base.opponent_dir,
+                opponent_source_job:base.opponent_source_job,
+                opponent_checkpoint_sha256:base.opponent_checkpoint_sha256,
+            }:{}),
+        };
+        fs.writeFileSync(path.join(o.suites,name+'.json'),
+            JSON.stringify(definition,null,2)+'\n',{flag:'wx',mode:0o600});
+    }
+}
 async function createMissingBaselineSuites(o) {
     // A previously approved version is immutable. Do not regenerate a
     // missing approved suite against potentially changed opponents.
@@ -262,7 +333,11 @@ function definitions(options,overrides={}) {
             suites,artifactRoot:options.artifacts,
             scratch:options.scratch,receiptRoot:options.receipts,
             enginePath:options.engine,cpus:'2',ramMb:'4096',
-            interval:'180',timeout:'7200',unitId:id,
+            // Season-wide sweeps are expensive; keep their cadence separate
+            // from short basic-map evaluations, with a bounded six-hour run.
+            interval:Object.hasOwn(SEASON_SUITES,id)?'21600':'180',
+            timeout:Object.hasOwn(SEASON_SUITES,id)?'21600':'7200',
+            unitId:id,
         }),
     ]));
 }
@@ -361,6 +436,7 @@ async function setup(hub) {
     }
     fs.chmodSync(o.launcher,0o700);
     await createMissingBaselineSuites(o);
+    await createSeasonSuites(o);
     const defs=definitions(o);
     // Never overwrite an installed service, even one sharing our fixed name.
     for(const [id,definition] of Object.entries(defs)) {
@@ -616,6 +692,7 @@ async function setupMini(hub,sourceJobId) {
         };
         fs.writeFileSync(destination,JSON.stringify(suite,null,2)+'\n',
             {flag:'wx',mode:0o600});
+        await createSeasonSuites(o);
         const defs=definitions(o);
         const unit=unitFiles(o,MINI_ID);
         installEvaluatorUnits(defs[MINI_ID],o.home,{repairPartial:true});
