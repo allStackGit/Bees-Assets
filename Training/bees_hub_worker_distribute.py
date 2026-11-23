@@ -187,7 +187,9 @@ def source_manifest(filename: Path) -> tuple[dict, str]:
 
 def stage_remote(machine: dict, target: str) -> None:
     if machine["platform"] == "linux":
-        command = "mkdir -p " + target
+        # Runtime ZIPs and release manifests are staged privately; do not
+        # inherit a permissive remote shell umask or an old directory mode.
+        command = "umask 077; mkdir -p -- " + target + " && chmod 700 -- " + target
     else:
         command = ('powershell.exe -NoProfile -NonInteractive -Command ' +
                    '"New-Item -ItemType Directory -Force -Path ' +
