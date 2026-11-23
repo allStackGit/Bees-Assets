@@ -70,7 +70,10 @@ function suiteNames(options) {
 }
 function scheduledIds(options) {
     return [...SCHEDULED_IDS,
-        ...Object.keys(suiteNames(options)).filter(id=>!Object.hasOwn(SUITES,id))];
+        ...(fs.existsSync(path.join(options.suites,MINI_SUITE+'.json'))?[MINI_ID]:[]),
+        'nano-season','micro-season',
+        ...(fs.existsSync(path.join(options.suites,MINI_SUITE+'.json'))
+            ?['mini-season']:[])];
 }
 const SAFE_PATH=/^\/[A-Za-z0-9._/@:+-]+$/;
 const MACHINE=/^[a-z][a-z0-9_-]{0,47}$/;

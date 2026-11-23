@@ -77,6 +77,9 @@
                 item.id==='nano'?'TinyBrains Nano (separate cadence)':
                     item.id==='micro'?'TinyBrains Micro (separate cadence)':
                         item.id==='mini'?'TinyBrains vs Frozen Mini (Batch 128)':
+                        item.id==='nano-season'?'TinyBrains Nano · all 76 season maps (2/4/6 players)':
+                        item.id==='micro-season'?'TinyBrains Micro · all 76 season maps (2/4/6 players)':
+                        item.id==='mini-season'?'TinyBrains Frozen Mini · all 76 season maps (2/4/6 players)':
                             'TinyBrains Nano + Micro (same checkpoint)';
             const status=document.createElement('span');
             status.textContent=!item.installed?(item.reason||'Not installed'):
@@ -285,7 +288,7 @@
             :action==='setup'
             ?(project==='courier'
                 ?'Set up the approved Courier survival evaluator using the installed local environment? The suite is pinned to the current environment file. A local agent restart is needed to advertise it.'
-                :'Set up TinyBrains Nano/Micro evaluators? The Hub creates missing frozen initial suites from the trusted installed runtime, then starts separate fixed-budget evaluation timers. Existing suites remain unchanged. This does not start or stop training.')
+                :'Set up TinyBrains evaluators? The Hub preserves existing frozen Nano/Micro/Mini suites, adds 76-map season-wide benchmarks for 2/4/6 players, and installs separate schedules. Full-season evaluations are CPU-intensive, with six-hour cadence and timeout. This does not start or stop training.')
             :action==='refresh'
                 ?'Create a new immutable '+id+' evaluation suite pinned to the installed runtime and replace its local schedule? Old suite files and receipts are preserved. Restart the local agent afterward.'
             :action==='stop'
