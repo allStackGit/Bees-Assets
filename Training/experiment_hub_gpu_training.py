@@ -86,6 +86,28 @@ def immutable_training_input_budget(free_bytes, desired_bytes, reuse_passes, *,
                       free_bytes - minimum_compute_bytes))
 
 
+def training_activation_workspace_budget(free_bytes, *,
+                                         max_bytes=4 * 1024**3,
+                                         free_fraction=0.16,
+                                         minimum_other_headroom=2 * 1024**3):
+    """Bound temporary GPU activations while keeping other GPU work viable.
+
+    A batch-width tuner may explore larger per-step work within this ceiling;
+    it is not an instruction to reserve or allocate the entire budget.
+    The same memory-headroom rule applies to any project's backward pass
+    using leased GPUs, including simultaneous inference collectors.
+    """
+    if (type(free_bytes) is not int or free_bytes < 0 or
+            type(max_bytes) is not int or max_bytes < 1 or
+            type(minimum_other_headroom) is not int or
+            minimum_other_headroom < 0 or
+            not isinstance(free_fraction,(int,float)) or
+            not 0 <= free_fraction <= 0.5):
+        raise ValueError("Invalid GPU activation workspace envelope")
+    return max(0, min(int(free_bytes*free_fraction), max_bytes,
+                      free_bytes-minimum_other_headroom))
+
+
 class IndependentGpuTraining:
     """Measure-and-select execution for genuinely independent GPU learners.
 
