@@ -39,6 +39,21 @@ def _candidate(round_number, checkpoint, evaluation, learner_slot, episodes):
     # checkpoint. A holdout may derive a fixed-reference opponent manifest,
     # but it cannot substitute a different learner policy.
     check_learner(manifest, checkpoint, learner_slot)
+    attributed = evaluation.get("candidate_terminal_matchup")
+    if attributed is not None:
+        counts = attributed.get("counts") if isinstance(attributed, dict) else None
+        routed = evaluation.get("candidate_side_assignment")
+        if (not isinstance(counts, dict) or not isinstance(routed, dict) or
+                routed.get("candidate_slot") != learner_slot or
+                counts.get("matches") != episodes or
+                type(counts.get("wins")) is not int or
+                type(counts.get("draws")) is not int or
+                counts["wins"] < 0 or counts["draws"] < 0 or
+                counts["wins"] + counts["draws"] > episodes or
+                attributed.get("candidate_win_rate") != counts["wins"] / episodes):
+            raise ValueError("candidate terminal policy ownership differs from the selected learner")
+        wins = counts["wins"]
+        draws = counts["draws"]
     return {
         "round": round_number,
         "checkpoint": str(checkpoint),
@@ -46,7 +61,9 @@ def _candidate(round_number, checkpoint, evaluation, learner_slot, episodes):
         "manifest": str(manifest),
         "manifest_sha256": manifest_digest,
         "wins": wins, "draws": draws, "episodes": episodes,
-        "win_rate": evaluation["side_win_rate"],
+        "win_rate": wins / episodes,
+        **({"physical_side_win_rate": evaluation["side_win_rate"]}
+           if attributed is not None else {}),
         "evaluation_run_id": evaluation["run_id"],
         "evaluation_summary_sha256": evaluation["rollout_summary_sha256"],
     }
@@ -283,6 +300,8 @@ def _rank_evaluation_suites(round_number, checkpoint, primary,
             "wins": candidate["wins"],
             "episodes": candidate["episodes"],
             "win_rate": candidate["win_rate"],
+            **({"policy_ownership_attributed": True}
+               if result.get("candidate_terminal_matchup") is not None else {}),
         })
     if mode in ("mean-scene", "worst-scene",
                 "mission-mean-scene", "mission-worst-scene"):
@@ -293,15 +312,25 @@ def _rank_evaluation_suites(round_number, checkpoint, primary,
         scene_rows = []
         distinct_scenes = set()
         for suite_id, receipt in source_receipts:
-            scenes = receipt.get("by_scene_sha256")
+            attribution = receipt.get("candidate_terminal_matchup")
+            scenes = (attribution.get("by_scene_sha256")
+                      if isinstance(attribution, dict)
+                      else receipt.get("by_scene_sha256"))
             if not isinstance(scenes, dict) or not scenes:
                 raise ValueError("per-scene checkpoint selection requires authentic physical scene receipts")
             for scene_sha, scene in sorted(scenes.items()):
-                episodes, wins = scene.get("episodes"), scene.get("side_victories")
+                if attribution is None:
+                    episodes, wins = scene.get("episodes"), scene.get("side_victories")
+                    rate = scene.get("side_win_rate")
+                else:
+                    episodes, wins = scene.get("matches"), scene.get("wins")
+                    rate = wins / episodes if (
+                        type(wins) is int and type(episodes) is int and episodes > 0
+                    ) else None
                 if (not isinstance(scene_sha, str) or len(scene_sha) != 64 or
                         type(episodes) is not int or episodes <= 0 or
                         type(wins) is not int or not 0 <= wins <= episodes or
-                        scene.get("side_win_rate") != wins / episodes):
+                        rate != wins / episodes):
                     raise ValueError("invalid native per-scene model selection outcome")
                 distinct_scenes.add(scene_sha)
                 row = {
