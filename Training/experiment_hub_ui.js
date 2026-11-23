@@ -4264,6 +4264,8 @@ document.addEventListener('DOMContentLoaded', () => {
             parameters.worker_sha256??=choice.entry.worker_sha256;
             parameters.trainer_sha256??=choice.entry.trainer_sha256;
             parameters.runtime_version??=choice.entry.runtime_version;
+            if(choice.entry.wan_key_fingerprint)
+                parameters.wan_key_fingerprint??=choice.entry.wan_key_fingerprint;
         }
         if(project==='courier'&&!parameters.config_sha256)
             parameters.config_sha256=choice.entry.config_sha256;
