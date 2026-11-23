@@ -52,7 +52,8 @@ def pinned_model(manifest, checkpoint, slot):
 def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
          incumbent_manifest, incumbent_checkpoint, incumbent_slot,
          promotion_config, output, binary, seed, physics_workers, device,
-         *, minimum_matches=None, parallel_assignments=1):
+         *, minimum_matches=None, parallel_assignments=1,
+         assignment_gpus=None):
     source, candidate_manifest, candidate_checkpoint, incumbent_manifest, incumbent_checkpoint, promotion_config = (
         path.resolve(strict=True) for path in (
             source, candidate_manifest, candidate_checkpoint, incumbent_manifest,
@@ -80,10 +81,21 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
         raise ValueError("invalid continual-learning incumbent gate")
     if parallel_assignments not in (1, 2) or type(parallel_assignments) is not int:
         raise ValueError("incumbent gate accepts only one or two native evaluation processes")
-    if parallel_assignments == 2 and (binary is None or device != "cpu"):
+    if assignment_gpus is not None:
+        if (parallel_assignments != 2 or device is not None or binary is None or
+                not isinstance(assignment_gpus, (list, tuple)) or
+                len(assignment_gpus) != 2 or
+                len(set(assignment_gpus)) != 2 or
+                any(gpu not in ("cuda:0", "cuda:1", "cuda:2", "cuda:3")
+                    for gpu in assignment_gpus)):
+            raise ValueError(
+                "parallel champion gate requires two distinct explicitly assigned GPUs "
+                "and a pinned native rollout executable"
+            )
+    elif parallel_assignments == 2 and (binary is None or device != "cpu"):
         raise ValueError(
-            "parallel incumbent gate requires a fixed native rollout binary "
-            "and explicit CPU inference; GPU evaluation remains externally scheduled"
+            "parallel incumbent gate requires a fixed native rollout binary and "
+            "explicit CPU inference, or one distinct GPU per faction assignment"
         )
     run = document(source)
     allocations = [set(level.get("model_slots", {}).values()) for level in run["levels"]]
@@ -108,6 +120,7 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
         "minimum_matches": minimum, "minimum_score_rate": threshold,
         "maximum_inference_batch_milliseconds": latency_limit,
         "policy_seed": seed, "physics_workers": physics_workers, "device": device,
+        **({"assignment_gpus": list(assignment_gpus)} if assignment_gpus is not None else {}),
         "rollout_binary_sha256": file_sha256(binary) if binary else None,
         **({"parallel_assignments": 2} if parallel_assignments == 2 else {}),
     }
@@ -120,6 +133,9 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
         else:
             atomic_json(recipe_path, recipe)
         def execute_assignment(index, candidate_route, incumbent_route):
+            assigned_device = (
+                assignment_gpus[index] if assignment_gpus is not None else device
+            )
             assignment_started = time.monotonic()
             # Each process owns its independent native World, scene and
             # model-output directory. Both use the one physical source and
@@ -146,9 +162,10 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
                 directory = completed[0]
             else:
                 directory = home / f"attempt-{len(attempts)+1:05d}"
-                evaluate(source, manifest, directory, 1, binary, seed, physics_workers, device)
+                evaluate(source, manifest, directory, 1, binary, seed,
+                         physics_workers, assigned_device)
             result = verify_evaluation(directory, file_sha256(manifest),
-                                       recipe["source_sha256"], 1, seed, device)
+                                       recipe["source_sha256"], 1, seed, assigned_device)
             if native_manifest_model_dependencies(manifest) != weights:
                 raise ValueError("native champion assignment weights changed")
             counts, per_scene = terminal_matchup(
@@ -161,6 +178,7 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
                 raise ValueError("native champion gate has no complete candidate inference latency")
             comparison = {
                 "candidate_slot": candidate_route, "incumbent_slot": incumbent_route,
+                "inference_device": assigned_device,
                 "receipt": str(directory / "evaluation-result.json"),
                 "receipt_sha256": file_sha256(directory / "evaluation-result.json"),
                 "journal_sha256": file_sha256(directory / "events.jsonl"),
@@ -238,6 +256,9 @@ def main():
     parser.add_argument("--inference-device", choices=("cpu", "cuda:0", "cuda:1", "cuda:2", "cuda:3"))
     parser.add_argument("--parallel-assignments", action="store_true",
                         help="run both canonical faction assignments on separate CPU native processes")
+    parser.add_argument("--assignment-gpus", nargs=2,
+                        choices=("cuda:0", "cuda:1", "cuda:2", "cuda:3"),
+                        help="run both faction assignments concurrently on two distinct GPUs")
     args = parser.parse_args()
     if not 0 <= args.policy_seed < (1 << 63):
         parser.error("policy seed must fit nonnegative int63")
@@ -245,7 +266,8 @@ def main():
                   args.candidate_slot, args.incumbent_manifest, args.incumbent_checkpoint,
                   args.incumbent_slot, args.promotion_config, args.output,
                   args.rollout_binary, args.policy_seed, args.physics_workers, args.inference_device,
-                  parallel_assignments=2 if args.parallel_assignments else 1)
+                  parallel_assignments=2 if args.parallel_assignments or args.assignment_gpus else 1,
+                  assignment_gpus=tuple(args.assignment_gpus) if args.assignment_gpus else None)
     print(json.dumps(result, sort_keys=True), flush=True)
 
 
