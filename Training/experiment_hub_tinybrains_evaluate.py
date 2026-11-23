@@ -66,8 +66,13 @@ def read_suite(file):
                  else suite["suite_id"]))
             or not UUID.fullmatch(str(suite["opponent_source_job"]))
             or not SHA256.fullmatch(str(suite["opponent_checkpoint_sha256"]))
-            or not re.fullmatch(r"tinybrains_mini_batch128_(?:season_)?v[1-9][0-9]*",
-                                suite["suite_id"])))
+            or not (re.fullmatch(
+                r"tinybrains_mini_batch128_(?:season_)?v[1-9][0-9]*",
+                suite["suite_id"]) or re.fullmatch(
+                r"tinybrains_mini_[a-f0-9]{20}", suite["suite_id"]))
+            or (re.fullmatch(r"tinybrains_mini_[a-f0-9]{20}", suite["suite_id"])
+                and suite["suite_id"] != "tinybrains_mini_" +
+                    str(suite["opponent_source_job"]).replace("-", "")[:20])))
         or (opponent != "mini" and any(key in suite for key in (
             "opponent_dir", "opponent_checkpoint_sha256", "opponent_source_job")))
         or (any(key in suite for key in pins) and not all(key in suite for key in pins))

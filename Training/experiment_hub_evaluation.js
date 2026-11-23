@@ -350,10 +350,13 @@ function evaluationComplete(evidence,policy,dispatchId) {
     }
 }
 function suiteIds(value) {
-    if(!Array.isArray(value)||value.length<1||value.length>8||
+    // Available adapter capabilities may include decades of pinned
+    // historical opponents. A single job's stop/monitor policy remains
+    // separately capped at eight suites.
+    if(!Array.isArray(value)||value.length<1||value.length>64||
         new Set(value).size!==value.length||
         value.some(id=>typeof id!=='string'||!SUITE.test(id)))
-        throw Error('Evaluation capability needs 1–8 distinct valid suite IDs.');
+        throw Error('Evaluation capability needs 1–64 distinct valid suite IDs.');
     return value.slice();
 }
 function supportsEvaluation(suites,job) {
