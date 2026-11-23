@@ -4,7 +4,6 @@
 // Manager. The manager remains the sole Bees run/build/worker authority.
 // A separate SSH local forward can connect Halifax to Exeter's loopback UI.
 const http=require('node:http');
-const {summary:beesRunSummary}=require('./experiment_hub_bees_comparison');
 
 const ACTIONS=new Set(['start','stop','build','update-workers','import-workers']);
 const READS=new Set(['control','workers']);
@@ -38,7 +37,7 @@ class BeesBridge {
             throw error;
         }
         const routeValid=(method==='GET'&&(
-            route==='/api/state'||
+            route==='/api/hub/bees/summary'||
             route==='/api/hub/progress?project_id=bees'||
             [...READS].some(name=>route==='/api/hub/bees/'+name)))||
             (method==='POST'&&[...ACTIONS].some(name=>route==='/api/hub/bees/'+name));
@@ -105,13 +104,13 @@ class BeesBridge {
         this.lastAttempt=Date.now();
         this.pending=(async()=>{
             try{
-                const data=await this.request('GET','/api/state');
-                if(!data||!Array.isArray(data.items))
+                const data=await this.request('GET','/api/hub/bees/summary');
+                if(!data||!Array.isArray(data.runs))
                     throw Error('Bees manager returned an invalid experiment queue snapshot.');
                 this.bees={
                     active_id:data.active_id||null,
-                    queue_armed:Boolean(data.armed),
-                    runs:data.items.map(beesRunSummary),
+                    queue_armed:Boolean(data.queue_armed),
+                    runs:data.runs,
                 };
                 this.lastSuccess=new Date().toISOString();
                 this.error=null;
