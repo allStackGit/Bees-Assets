@@ -206,6 +206,14 @@ class TrainingControlStore {
             process.env.BEES_TRAINING_ENVIRONMENT_VALIDATION_SECRET ??
             ''
         );
+        this.environmentValidationPlatform = String(
+            options.environmentValidationPlatform ??
+            process.env.BEES_TRAINING_ENVIRONMENT_VALIDATION_PLATFORM ??
+            'WindowsPlayer'
+        );
+        if (!['WindowsPlayer', 'LinuxPlayer'].includes(this.environmentValidationPlatform)) {
+            throw Error('training-control environment validation platform must be WindowsPlayer or LinuxPlayer');
+        }
         this.envOptimizer = new TrainingEnvOptimizer(options.envOptimizer || {});
         this.trainers = new Map();
         this.state = this._loadState();
@@ -1270,12 +1278,13 @@ class TrainingControlStore {
                         'training control has no environment validation secret configured'),
                     { statusCode: 503 });
             }
-            const windowsRecord = this.state.builds.WindowsPlayer &&
-                this.state.builds.WindowsPlayer[buildId];
-            if (!windowsRecord) {
+            const platform = this.environmentValidationPlatform;
+            const validationRecord = this.state.builds[platform] &&
+                this.state.builds[platform][buildId];
+            if (!validationRecord) {
                 throw Object.assign(
                     new Error(
-                        'environment validation requires a published dedicated WindowsPlayer artifact'),
+                        'environment validation requires a published dedicated ' + platform + ' artifact'),
                     { statusCode: 409 });
             }
             const suppliedValidationKey = typeof environmentValidationKey === 'string'
@@ -1283,7 +1292,7 @@ class TrainingControlStore {
                 : '';
             const expectedValidationKey = environmentValidationKeyForRelease(
                 buildId,
-                windowsRecord.archive_sha256,
+                validationRecord.archive_sha256,
                 effectiveEnvironmentArgs,
                 this.environmentValidationSecret,
             );
@@ -2403,6 +2412,9 @@ function startTrainingControl(options = {}) {
         environmentValidationSecret:
             options.environmentValidationSecret ||
             process.env.BEES_TRAINING_ENVIRONMENT_VALIDATION_SECRET,
+        environmentValidationPlatform:
+            options.environmentValidationPlatform ||
+            process.env.BEES_TRAINING_ENVIRONMENT_VALIDATION_PLATFORM,
     });
     const httpModule = options.httpModule || http;
     const server = httpModule.createServer(createTrainingControlHandler(store, token, adminToken));
