@@ -58,7 +58,7 @@ function jobPath(artifacts,context) {
 function normalize(parameters,context,approved) {
     const allowed=new Set([
         'max_steps','envs','device','seed','hyperparameters','environment_args',
-        'worker_sha256','trainer_sha256','evaluation_profile','evaluation_matches','batch_inference',
+        'worker_sha256','trainer_sha256','runtime_version','evaluation_profile','evaluation_matches','batch_inference',
     ]);
     if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
         Object.keys(parameters).some(key=>!allowed.has(key)))
@@ -76,7 +76,8 @@ function normalize(parameters,context,approved) {
             Boolean(context.gpu_pci_address||context.gpu_pci_addresses)))
         throw Error('Bees native device must match exactly one exclusive ROCm lease or a CPU-only allocation.');
     if(parameters.worker_sha256!==approved.worker_sha256||
-        parameters.trainer_sha256!==approved.trainer_sha256)
+        parameters.trainer_sha256!==approved.trainer_sha256||
+        parameters.runtime_version!==approved.runtime_version)
         throw Error('Bees native job source hashes differ from the locally approved Unity worker and MA-POCA configuration.');
     const envArgs=parameters.environment_args??[];
     if(!Array.isArray(envArgs)||envArgs.length>32||
