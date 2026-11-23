@@ -59,6 +59,9 @@ const MAX_ORDERS_PER_POLL: usize = 64;
 const MAX_PENDING_INPUT_REPLIES: usize = 256;
 const STATE_EVERY_TICKS: u64 = 5;
 const SPECTATOR_IDLE_STATE_EVERY_TICKS: u64 = STATE_EVERY_TICKS * 2;
+// Keep a fresh replaceable state in flight during congestion without
+// repeatedly encoding every intermediate World for a peer that cannot drain.
+const CONGESTED_STATE_EVERY_TICKS: u64 = STATE_EVERY_TICKS * 4;
 const MAX_PENDING_AUDIO_EVENTS: usize = 32;
 const MAX_PENDING_SHIP_INSPECTIONS: usize = 16;
 // No physical tick runs while one human faction is absent. A surviving
@@ -442,6 +445,10 @@ pub struct RemotePlayMeasurements {
     pub state_frames: u64,
     pub state_bytes: u64,
     pub states_superseded: u64,
+    /// Congested clients already had a complete unsent state behind a partial
+    /// TCP frame; skipped redundant projections while preserving key updates.
+    #[serde(default)]
+    pub congested_snapshots_deferred: u64,
     /// Actual time spent accepting/parsing/authenticating remote inputs at
     /// fixed-tick boundaries; does not include simulation or render work.
     pub input_poll_wall_seconds: f64,
@@ -2206,6 +2213,20 @@ impl NativeRemotePlay {
                     "minerals_mined_this_level": minerals,
                 }));
                 measurements.ship_inspection_replies += 1;
+            }
+            // The TCP stream may still be draining a partially written
+            // snapshot, with another complete snapshot already queued for
+            // replacement. Re-encoding each intervening world only wastes
+            // CPU and memory bandwidth. Every fourth normal state pulse
+            // refreshes that queued frame; first joins, terminal outcomes,
+            // briefing/lobby transitions and audible events remain immediate.
+            if !force_view && view.tick % CONGESTED_STATE_EVERY_TICKS != 0 &&
+                peer.writing_state && peer.written > 0 &&
+                peer.newest_state.is_some() &&
+                pending_audio.get(&side).is_none_or(Vec::is_empty)
+            {
+                measurements.congested_snapshots_deferred += 1;
+                continue;
             }
             let encoded = snapshots.entry((side, spectator)).or_insert_with(|| {
                 let started = Instant::now();
