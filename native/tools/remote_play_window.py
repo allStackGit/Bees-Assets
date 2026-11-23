@@ -9,6 +9,7 @@ import argparse
 import json
 import math
 import os
+from pathlib import Path
 import socket
 import threading
 from queue import Empty, SimpleQueue
@@ -16,7 +17,7 @@ import time
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-from remote_play_client import ENEMY_MANEUVERS, RemoteConsole, remote_token
+from remote_play_client import ENEMY_MANEUVERS, RemoteConsole, remote_token, open_remote_transport
 
 
 BACKGROUND = "#101925"
@@ -2201,6 +2202,8 @@ def main():
                         help="authenticated faction for commanders or spectators")
     parser.add_argument("--spectator", action="store_true",
                         help="open a read-only faction-filtered native battle viewer")
+    parser.add_argument("--tls-ca-der", type=Path,
+                        help="trusted DER CA; require certificate-verified native host TLS")
     args = parser.parse_args()
     try:
         token = remote_token(args.side, spectator=args.spectator)
@@ -2209,8 +2212,7 @@ def main():
     def connect(expected_session_id=None):
         # The new TCP peer is always freshly authenticated; only the
         # original checkpointed host session may resume the old battle.
-        connection = socket.create_connection((args.host, args.port), timeout=10)
-        connection.settimeout(None)
+        connection = open_remote_transport(args.host, args.port, args.tls_ca_der)
         try:
             console = RemoteConsole(
                 connection, silent=True, expected_side=args.side,
