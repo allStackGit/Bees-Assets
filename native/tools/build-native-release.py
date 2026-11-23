@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -53,19 +54,48 @@ def package_arguments(argv: list[str]) -> tuple[list[str], list[str]]:
     return argv[:index], extra
 
 
-def cargo_build(cargo: str, target: Path, *flags: str) -> None:
+def release_target(triple: str | None) -> tuple[str | None, str]:
+    """Resolve the executable suffix independently of the build host.
+
+    The packager checks the compiled PE/ELF machine and architecture; this
+    narrow validation prevents silently selecting a host executable when a
+    cross-target Cargo artifact is missing.
+    """
+    if triple is None:
+        return None, ".exe" if os.name == "nt" else ""
+    if not re.fullmatch(r"[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+){2,4}", triple):
+        raise ValueError("invalid Rust target triple")
+    architecture = triple.split("-", 1)[0]
+    if architecture not in ("x86_64", "aarch64"):
+        raise ValueError("native releases support x86_64 and aarch64 targets")
+    if triple in (
+        f"{architecture}-pc-windows-gnu",
+        f"{architecture}-pc-windows-msvc",
+    ):
+        return triple, ".exe"
+    if triple in (
+        f"{architecture}-unknown-linux-gnu",
+        f"{architecture}-unknown-linux-musl",
+    ):
+        return triple, ""
+    raise ValueError("native releases require a supported Windows or Linux Rust target")
+
+
+def cargo_build(cargo: str, target: Path, triple: str | None, *flags: str) -> None:
     command = [
         cargo, "build", "--release", "--locked",
         "-p", "bees-host", *flags,
     ]
+    if triple is not None:
+        command.extend(("--target", triple))
     environment = os.environ.copy()
     environment["CARGO_TARGET_DIR"] = str(target)
     print("Native build:", " ".join(command), flush=True)
     subprocess.run(command, cwd=WORKSPACE, env=environment, check=True)
 
 
-def copy_binary(target: Path, location: Path, name: str) -> Path:
-    executable = target / "release" / name
+def copy_binary(target: Path, location: Path, name: str, triple: str | None) -> Path:
+    executable = target / triple / "release" / name if triple else target / "release" / name
     if executable.is_symlink() or not executable.is_file():
         raise ValueError(f"native build did not produce {name}")
     location.mkdir(parents=True, exist_ok=True)
@@ -80,6 +110,8 @@ def main(argv: list[str] | None = None) -> None:
                         help="new immutable native game distribution; never overwritten")
     parser.add_argument("--cargo", default="cargo",
                         help="Cargo executable in PATH, or an explicit executable path")
+    parser.add_argument("--target", metavar="RUST_TRIPLE",
+                        help="compile a Windows/Linux x86_64 or aarch64 release for this Rust target; requires an installed toolchain and cross-linker")
     parser.add_argument("--target-dir", type=Path,
                         help="persistent Cargo cache location, shared across client/server builds")
     parser.add_argument("--include-training", action="store_true",
@@ -93,6 +125,10 @@ def main(argv: list[str] | None = None) -> None:
     except ValueError as error:
         parser.error(str(error))
     args = parser.parse_args(builder_args)
+    try:
+        triple, suffix = release_target(args.target)
+    except ValueError as error:
+        parser.error(str(error))
     if not CARGO.is_file() or not LOCK.is_file() or not PACKAGER.is_file():
         parser.error("the canonical native workspace, lockfile or packager is missing")
     output = args.output.resolve()
@@ -104,30 +140,29 @@ def main(argv: list[str] | None = None) -> None:
     ).resolve()
     target.mkdir(parents=True, exist_ok=True)
 
-    suffix = ".exe" if os.name == "nt" else ""
     with tempfile.TemporaryDirectory(
         prefix=".bees-native-built-", dir=output.parent,
     ) as staging_name:
         stage = Path(staging_name)
-        cargo_build(args.cargo, target, "--bin", "bees", "--features", "client")
-        graphical = copy_binary(target, stage / "game", "bees" + suffix)
+        cargo_build(args.cargo, target, triple, "--bin", "bees", "--features", "client")
+        graphical = copy_binary(target, stage / "game", "bees" + suffix, triple)
 
         # Cargo feature unification may reuse a target artifact filename.
         # Copy the graphical binary BEFORE the separate no-client rebuild,
         # retaining incremental compiler caches in one target directory.
         headless = None
         if not args.without_server:
-            cargo_build(args.cargo, target, "--bin", "bees", "--no-default-features")
-            headless = copy_binary(target, stage / "server", "bees" + suffix)
+            cargo_build(args.cargo, target, triple, "--bin", "bees", "--no-default-features")
+            headless = copy_binary(target, stage / "server", "bees" + suffix, triple)
 
         manifest = rollout = None
         if args.include_training:
             cargo_build(
-                args.cargo, target, "--no-default-features",
+                args.cargo, target, triple, "--no-default-features",
                 "--example", "policy_rollout", "--example", "policy_manifest",
             )
-            rollout = copy_binary(target, stage / "training", "policy_rollout" + suffix)
-            manifest = copy_binary(target, stage / "training", "policy_manifest" + suffix)
+            rollout = copy_binary(target, stage / "training", "policy_rollout" + suffix, triple)
+            manifest = copy_binary(target, stage / "training", "policy_manifest" + suffix, triple)
 
         package = [
             sys.executable, str(PACKAGER),
