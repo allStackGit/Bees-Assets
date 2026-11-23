@@ -3690,6 +3690,24 @@ pub(super) fn archive(
             .ok_or_else(|| invalid("Fish Tank series round budget overflows"))?;
         run["max_rounds"] = json!(series_budget);
         run["episodes_per_world"] = json!(selected.spectator_episodes);
+        if selected.spectator_episodes > 1 {
+            // The normal one-battle game is deliberately unbounded by a
+            // fabricated mission deadline. A multi-battle Fish Tank must
+            // instead finish every physical episode, even if a scripted
+            // patrol or surviving turret stalemates. The shared game
+            // terminal records a draw at the SOURCE single-battle budget,
+            // after which the existing Level reset owns the next match.
+            let fixed_dt = scene["fixed_dt_seconds"].as_f64()
+                .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
+                .ok_or_else(|| invalid("Fish Tank source has no fixed physical step"))?;
+            let timeout = single_battle_budget as f64 * fixed_dt;
+            if !timeout.is_finite() || timeout <= 0.0 ||
+                timeout > f64::from(f32::MAX)
+            {
+                return Err(invalid("Fish Tank episode timeout is outside physical limits").into());
+            }
+            run["levels"][0]["game_timeout_seconds"] = json!(timeout as f32);
+        }
         run["status_every_rounds"] = json!(2_000);
     }
     if selected.benchmark {
